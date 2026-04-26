@@ -38,8 +38,10 @@ export default function App() {
   // window.aethon.registerSkill(skill) and switch to its layout.
   const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
 
-  // Track the trailing agent message id so streaming text deltas append to
-  // the same chat bubble instead of creating a new bubble per chunk.
+  // Fallback id for text bubbles when the bridge doesn't supply one. The
+  // bridge now sends a stable `messageId` per pi assistant message so text
+  // deltas after a tool card still land in the original bubble; this ref
+  // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
 
   // Theme — persisted to localStorage so the choice survives reloads.
@@ -263,7 +265,8 @@ export default function App() {
       case "response_delta": {
         const delta = (data.content as string) ?? "";
         if (!delta) break;
-        appendOrAmendAgentText(delta);
+        const messageId = (data.messageId as string) || undefined;
+        appendOrAmendAgentText(delta, messageId);
         break;
       }
       case "response_end": {
@@ -319,12 +322,32 @@ export default function App() {
     });
   }
 
-  function appendOrAmendAgentText(delta: string) {
+  // Append a streaming text delta to its bubble. When the bridge supplies a
+  // stable `messageId` (one per pi assistant message), look up the bubble by
+  // id anywhere in the array — this keeps text from a single agent message in
+  // one bubble even after tool cards land between deltas. Without a messageId
+  // (legacy bridges), fall back to the previous "is it the last message?"
+  // behavior tracked via activeResponseIdRef.
+  function appendOrAmendAgentText(delta: string, messageId?: string) {
     setState((prev) => {
       const messages = [...((prev.messages as ChatMessage[]) ?? [])];
+
+      if (messageId) {
+        const idx = messages.findIndex((m) => m.id === messageId);
+        if (idx >= 0) {
+          messages[idx] = {
+            ...messages[idx],
+            text: (messages[idx].text ?? "") + delta,
+          };
+        } else {
+          messages.push({ id: messageId, role: "agent", text: delta });
+        }
+        activeResponseIdRef.current = messageId;
+        return { ...prev, messages };
+      }
+
       const activeId = activeResponseIdRef.current;
       const last = messages[messages.length - 1];
-
       if (activeId && last && last.id === activeId && last.role === "agent") {
         messages[messages.length - 1] = {
           ...last,
@@ -335,7 +358,6 @@ export default function App() {
         activeResponseIdRef.current = id;
         messages.push({ id, role: "agent", text: delta });
       }
-
       return { ...prev, messages };
     });
   }
