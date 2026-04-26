@@ -250,62 +250,42 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
-  // Per-tool streaming state. We track the cumulative byte position we last
-  // forwarded from `partialResult.text`. The common case is monotonic growth
-  // (pi accumulates), in which case `slice(sent)` is the new suffix.
-  // If `fullText.length` shrinks below `sent`, upstream has rolled to a
-  // tail-window — we emit a one-time "[…possible gap]" banner and re-emit
-  // whatever the current payload holds. This may duplicate the most recent
-  // bytes but never silently drops a delta (which the previous tail-match
-  // approach did for repeated identical chunks).
+  // Format and forward bash output to the terminal panel in chunks. Caps a
+  // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
+  // can't choke the IPC pipe.
+  //
+  // We deliberately only stream on tool_execution_end, not partial updates.
+  // pi's bash tool exposes `partialResult.text` as a rolling tail (see
+  // pi-coding-agent/.../core/tools/bash.js — "rolling buffer of recent
+  // output for tail truncation"), so accumulating from partials reliably
+  // would require either (a) an upstream cumulative byte counter we don't
+  // have or (b) overlap matching that breaks on identical repeated chunks.
+  // Streaming only the final result avoids gap/duplication tradeoffs at
+  // the cost of not seeing live progress on long-running commands.
   const TERMINAL_MAX_BYTES = 64 * 1024;
   const TERMINAL_CHUNK_BYTES = 8 * 1024;
 
-  const bashSentBytes = new Map<string, number>();
-  const bashGapWarned = new Set<string>();
-
-  function emitTerminalText(text: string): void {
+  function emitBashResult(text: string): void {
     if (!text) return;
-    const normalized = text.replace(/\r?\n/g, "\r\n");
+    let body = text;
+    let truncated = false;
+    if (body.length > TERMINAL_MAX_BYTES) {
+      body = body.slice(body.length - TERMINAL_MAX_BYTES);
+      truncated = true;
+    }
+    if (truncated) {
+      send({
+        type: "terminal_output",
+        content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
+      });
+    }
+    const normalized = body.replace(/\r?\n/g, "\r\n");
     for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
       send({
         type: "terminal_output",
         content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
       });
     }
-  }
-
-  function streamBashOutputDelta(callId: string, fullText: string): void {
-    if (!fullText) return;
-    const sent = bashSentBytes.get(callId) ?? 0;
-    let suffix: string;
-    if (fullText.length < sent) {
-      // Upstream rolled past what we've seen.
-      if (!bashGapWarned.has(callId)) {
-        bashGapWarned.add(callId);
-        send({
-          type: "terminal_output",
-          content: `\r\n[…possible gap in bash stream — upstream rolled past prior output]\r\n`,
-        });
-      }
-      suffix = fullText;
-    } else if (fullText.length === sent) {
-      return;
-    } else {
-      suffix = fullText.slice(sent);
-    }
-    if (suffix.length > TERMINAL_MAX_BYTES) {
-      suffix = suffix.slice(suffix.length - TERMINAL_MAX_BYTES);
-      if (!bashGapWarned.has(callId)) {
-        bashGapWarned.add(callId);
-        send({
-          type: "terminal_output",
-          content: `\r\n[…single delta truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
-        });
-      }
-    }
-    emitTerminalText(suffix);
-    bashSentBytes.set(callId, fullText.length);
   }
 
   // Stream text deltas, surface tool calls as A2UI cards, and flush
@@ -356,18 +336,6 @@ async function main() {
         }
         break;
       }
-      case "tool_execution_update": {
-        // Stream partial bash output as it arrives so long-running commands
-        // (test runs, installs) are visible in the terminal panel before
-        // they exit. Only the new bytes are forwarded each tick.
-        if (event.toolName === "bash") {
-          const extracted = extractToolContent(event.partialResult);
-          if (extracted.text) {
-            streamBashOutputDelta(event.toolCallId, extracted.text);
-          }
-        }
-        break;
-      }
       case "tool_execution_end": {
         const cached = toolArgsCache.get(event.toolCallId);
         const payload = toolCardPayload({
@@ -380,12 +348,8 @@ async function main() {
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
         if (event.toolName === "bash") {
           const extracted = extractToolContent(event.result);
-          // Forward only the suffix that wasn't already streamed via
-          // tool_execution_update events.
-          streamBashOutputDelta(event.toolCallId, extracted.text);
+          emitBashResult(extracted.text);
           send({ type: "terminal_output", content: "\r\n" });
-          bashSentBytes.delete(event.toolCallId);
-          bashGapWarned.delete(event.toolCallId);
         }
         toolArgsCache.delete(event.toolCallId);
         break;
