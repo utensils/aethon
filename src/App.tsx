@@ -6,6 +6,12 @@ import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
+import {
+  buildBuiltinSlashCommands,
+  parseSlashCommand,
+  type SlashCommand,
+  type SlashCommandContext,
+} from "./slashCommands";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
@@ -401,10 +407,63 @@ export default function App() {
     setState((prev) => ({ ...prev, ...flags }));
   }
 
+  // Built once — handlers close over App-scope helpers via the ctx passed at
+  // dispatch time, so the registry itself doesn't need state in scope.
+  const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
+
+  function appendSystem(text: string) {
+    appendMessage({ id: crypto.randomUUID(), role: "system", text });
+  }
+
+  // Build the dispatch context fresh per invocation so handlers see latest
+  // state (model list, skills) without re-creating the command registry.
+  function slashContext(): SlashCommandContext {
+    return {
+      appendSystem,
+      clearChat,
+      setTheme,
+      setModel,
+      resetLayout: () => setLayout(BOOT_LAYOUT),
+      listSkills: () => registry.list().map((s) => s.name),
+      listModels: () => {
+        const sidebar = (stateRef.current.sidebar as Record<string, unknown>) ?? {};
+        return ((sidebar.models as { id: string; label: string; active?: boolean }[]) ?? []);
+      },
+      toggleTerminal: () =>
+        setState((prev) => {
+          const term = (prev.terminal as { open?: boolean }) ?? {};
+          return { ...prev, terminal: { ...term, open: !term.open } };
+        }),
+    };
+  }
+
   async function sendChat(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    appendMessage({ id: crypto.randomUUID(), role: "user", text: trimmed });
+
+    // Client-side slash commands handle UI-only actions (clear, theme, etc.).
+    // Unknown slash commands fall through to the agent so pi's own slash
+    // command handling and any prompt-template / skill commands still reach
+    // it. `//foo` escapes to force a literal `/foo` to be sent.
+    const parsed = parseSlashCommand(trimmed);
+    if (parsed) {
+      const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
+      if (cmd) {
+        appendMessage({ id: crypto.randomUUID(), role: "user", text: trimmed });
+        setState((prev) => ({ ...prev, draft: "" }));
+        try {
+          await cmd.run(parsed.args, slashContext());
+        } catch (err) {
+          appendSystem(`Slash command \`/${parsed.name}\` failed: ${err}`);
+        }
+        return;
+      }
+      // Unknown — fall through to send_message. Pi's own command handling on
+      // the agent side may pick it up; if not, the LLM sees the literal text.
+    }
+
+    const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
+    appendMessage({ id: crypto.randomUUID(), role: "user", text: sendText });
     setState((prev) => ({
       ...prev,
       draft: "",
@@ -414,7 +473,7 @@ export default function App() {
     }));
 
     try {
-      await invoke("send_message", { message: trimmed });
+      await invoke("send_message", { message: sendText });
     } catch (err) {
       appendMessage({
         id: crypto.randomUUID(),
