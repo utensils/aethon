@@ -228,13 +228,13 @@ export function Image({ component, state }: ComponentProps) {
 
   return (
     <figure className="a2ui-image" style={{ margin: 0 }}>
-      <img src={src} alt={alt} style={style} />
+      {src && <img src={src} alt={alt} style={style} />}
       {caption && (
         <figcaption
           style={{
             fontSize: "0.8125rem",
             color: "var(--text-dim)",
-            marginTop: "4px",
+            marginTop: src ? "4px" : 0,
           }}
         >
           {caption}
