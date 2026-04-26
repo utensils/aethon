@@ -16,6 +16,7 @@ import {
   readStateWithLocalStorageFallback,
   writeState,
 } from "./persist";
+import { getConfig } from "./config";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
@@ -55,21 +56,24 @@ export default function App() {
   const activeResponseIdRef = useRef<string | null>(null);
 
   // Theme — persisted to `~/.aethon/theme` so the choice survives reloads.
-  // Default: whatever the OS prefers; fall back to dark. Migrates from the
-  // legacy `aethon-theme` localStorage entry on first read.
+  // Resolution priority: per-session disk file → config.toml `[ui] theme`
+  // → OS `prefers-color-scheme` → dark. Migrates the legacy
+  // `aethon-theme` localStorage entry on first read.
   useEffect(() => {
     (async () => {
-      const saved = await readStateWithLocalStorageFallback(
-        "theme",
-        "aethon-theme",
-      );
+      const [saved, config] = await Promise.all([
+        readStateWithLocalStorageFallback("theme", "aethon-theme"),
+        getConfig(),
+      ]);
       const trimmed = saved.trim();
       const initial =
         trimmed === "light" || trimmed === "dark"
           ? trimmed
-          : window.matchMedia?.("(prefers-color-scheme: light)").matches
-            ? "light"
-            : "dark";
+          : config.ui.theme
+            ? config.ui.theme
+            : window.matchMedia?.("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
       document.documentElement.dataset.theme = initial;
     })();
   }, []);

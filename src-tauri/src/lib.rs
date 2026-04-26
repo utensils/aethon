@@ -1,8 +1,9 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
+use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Resolve `<home>/.aethon/<name>` after rejecting path-traversal segments.
@@ -40,6 +41,72 @@ fn read_state(name: String, app: AppHandle) -> Result<String, String> {
 fn write_state(name: String, content: String, app: AppHandle) -> Result<(), String> {
     let path = aethon_state_path(&app, &name)?;
     std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))
+}
+
+/// Schema for `~/.aethon/config.toml`. All fields optional with sane defaults
+/// — the file is read-only from Aethon's perspective and intended as a
+/// single place for user-level overrides (theme, model, etc.).
+#[derive(Default, Deserialize)]
+struct UiConfig {
+    theme: Option<String>,
+    font_size: Option<u32>,
+}
+
+#[derive(Default, Deserialize)]
+struct AgentConfig {
+    model: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct AethonConfig {
+    #[serde(default)]
+    ui: UiConfig,
+    #[serde(default)]
+    agent: AgentConfig,
+}
+
+/// Read `~/.aethon/config.toml` and return its parsed contents as JSON. Missing
+/// file → defaults (no fields). Malformed TOML → defaults + stderr warning so
+/// a bad user config never blocks app boot. File size capped at 64 KiB to
+/// guard against accidental gigantic configs.
+#[tauri::command]
+fn read_config(app: AppHandle) -> Result<serde_json::Value, String> {
+    let path = aethon_state_path(&app, "config.toml")?;
+    const MAX_BYTES: u64 = 64 * 1024;
+    let mut buf = String::new();
+    match std::fs::File::open(&path) {
+        Ok(file) => {
+            // Cap the read so a runaway config can't pull a huge file into memory.
+            if let Err(e) = file.take(MAX_BYTES).read_to_string(&mut buf) {
+                eprintln!("[config] read {}: {e}; using defaults", path.display());
+                buf.clear();
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => { /* defaults */ }
+        Err(e) => {
+            eprintln!("[config] open {}: {e}; using defaults", path.display());
+        }
+    }
+    let cfg: AethonConfig = if buf.is_empty() {
+        AethonConfig::default()
+    } else {
+        match toml::from_str(&buf) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[config] parse {}: {e}; using defaults", path.display());
+                AethonConfig::default()
+            }
+        }
+    };
+    Ok(serde_json::json!({
+        "ui": {
+            "theme": cfg.ui.theme,
+            "fontSize": cfg.ui.font_size,
+        },
+        "agent": {
+            "model": cfg.agent.model,
+        },
+    }))
 }
 
 #[cfg(debug_assertions)]
@@ -326,6 +393,7 @@ pub fn run() {
             dispatch_a2ui_event,
             read_state,
             write_state,
+            read_config,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
