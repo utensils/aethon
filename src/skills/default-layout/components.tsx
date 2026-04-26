@@ -367,11 +367,22 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     fontSize?: NumberValue;
     output?: StringValue;
     onInput?: string;
+    // Opt-in: when true, this instance subscribes to the agent's bash output
+    // stream (`aethon:terminal` window event). Off by default so skills can
+    // mount independent terminals without receiving the agent's bash chatter.
+    subscribeToBash?: BooleanValue;
   };
 
   const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
   const cols = props.cols ? resolveNumber(props.cols, state) : undefined;
   const rows = props.rows ? resolveNumber(props.rows, state) : undefined;
+  const subscribeToBash = props.subscribeToBash
+    ? resolveBoolean(props.subscribeToBash, state)
+    : false;
+  // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
+  // to drive the terminal via state — the diff effect below handles it the
+  // same way it used to. The default layout no longer uses this; bash output
+  // arrives via the `aethon:terminal` window event instead.
   const output = props.output ? resolveString(props.output, state) : "";
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -420,6 +431,23 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       term.onData((data) => onEvent("input", { data }));
     }
 
+    // App.tsx fires this event whenever the agent's bash tool produces
+    // output. Writing through xterm directly keeps the bounded scrollback
+    // buffer xterm already manages — no parallel growing string in React
+    // state. Only this terminal subscribes when subscribeToBash is true,
+    // so skills can mount independent terminals without picking up the
+    // agent's bash stream.
+    let onTerminalEvent: ((e: Event) => void) | null = null;
+    if (subscribeToBash) {
+      onTerminalEvent = (e: Event) => {
+        const detail = (e as CustomEvent<string>).detail;
+        if (typeof detail === "string" && detail.length > 0) {
+          term.write(detail);
+        }
+      };
+      window.addEventListener("aethon:terminal", onTerminalEvent);
+    }
+
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -431,25 +459,31 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
 
     return () => {
       ro.disconnect();
+      if (onTerminalEvent) {
+        window.removeEventListener("aethon:terminal", onTerminalEvent);
+      }
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-    // Mount once — runtime updates flow via the `output` effect below.
+    // Mount once — terminal output flows through the `aethon:terminal` event,
+    // not React props, so we don't list `output` as a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Prop-driven write path. When a skill or A2UI payload binds the `output`
+  // prop to a state $ref, write deltas to xterm. Append-only diff: when the
+  // new value starts with the previous one, write the suffix; otherwise
+  // write the full string (treats it as a reset).
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    if (output && output !== lastOutputRef.current) {
-      // Only write the delta when output is appended.
-      const delta = output.startsWith(lastOutputRef.current)
-        ? output.slice(lastOutputRef.current.length)
-        : output;
-      term.write(delta);
-      lastOutputRef.current = output;
-    }
+    if (!output || output === lastOutputRef.current) return;
+    const delta = output.startsWith(lastOutputRef.current)
+      ? output.slice(lastOutputRef.current.length)
+      : output;
+    term.write(delta);
+    lastOutputRef.current = output;
   }, [output]);
 
   return (

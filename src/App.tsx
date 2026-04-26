@@ -373,6 +373,20 @@ export default function App() {
         if (data.done) setStatusFlags({ waiting: false, status: "ready" });
         break;
       }
+      case "terminal_output": {
+        const content = (data.content as string) ?? "";
+        if (!content) break;
+        // Stream straight to the Terminal component via a window event — no
+        // React state involved. xterm's own scrollback buffer is bounded
+        // (default 1000 rows) so we don't need to grow a string in app state
+        // that React re-copies on every append. The Terminal component stays
+        // mounted while hidden (Layout toggles visibility via `display`), so
+        // events still land while the panel is collapsed.
+        window.dispatchEvent(
+          new CustomEvent("aethon:terminal", { detail: content }),
+        );
+        break;
+      }
     }
   }
 

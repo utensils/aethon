@@ -250,6 +250,44 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
+  // Format and forward bash output to the terminal panel in chunks. Caps a
+  // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
+  // can't choke the IPC pipe.
+  //
+  // We deliberately only stream on tool_execution_end, not partial updates.
+  // pi's bash tool exposes `partialResult.text` as a rolling tail (see
+  // pi-coding-agent/.../core/tools/bash.js — "rolling buffer of recent
+  // output for tail truncation"), so accumulating from partials reliably
+  // would require either (a) an upstream cumulative byte counter we don't
+  // have or (b) overlap matching that breaks on identical repeated chunks.
+  // Streaming only the final result avoids gap/duplication tradeoffs at
+  // the cost of not seeing live progress on long-running commands.
+  const TERMINAL_MAX_BYTES = 64 * 1024;
+  const TERMINAL_CHUNK_BYTES = 8 * 1024;
+
+  function emitBashResult(text: string): void {
+    if (!text) return;
+    let body = text;
+    let truncated = false;
+    if (body.length > TERMINAL_MAX_BYTES) {
+      body = body.slice(body.length - TERMINAL_MAX_BYTES);
+      truncated = true;
+    }
+    if (truncated) {
+      send({
+        type: "terminal_output",
+        content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
+      });
+    }
+    const normalized = body.replace(/\r?\n/g, "\r\n");
+    for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
+      send({
+        type: "terminal_output",
+        content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
+      });
+    }
+  }
+
   // Stream text deltas, surface tool calls as A2UI cards, and flush
   // `response_end` when the agent settles. The frontend appends text deltas
   // to the trailing chat bubble, replaces tool messages by their stable id
@@ -282,6 +320,20 @@ async function main() {
           running: true,
         });
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
+        // Echo the bash command into the visible terminal panel so the user
+        // can follow what the agent is running. The card uses a one-line
+        // summary, but here we want the verbatim multi-line command so
+        // heredocs / inline scripts read accurately in xterm.
+        if (event.toolName === "bash") {
+          const cmd = String(
+            (event.args as { command?: unknown } | undefined)?.command ?? "",
+          );
+          const echoed = cmd.replace(/\r?\n/g, "\r\n");
+          send({
+            type: "terminal_output",
+            content: `\r\n$ ${echoed}\r\n`,
+          });
+        }
         break;
       }
       case "tool_execution_end": {
@@ -294,6 +346,11 @@ async function main() {
           isError: event.isError,
         });
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
+        if (event.toolName === "bash") {
+          const extracted = extractToolContent(event.result);
+          emitBashResult(extracted.text);
+          send({ type: "terminal_output", content: "\r\n" });
+        }
         toolArgsCache.delete(event.toolCallId);
         break;
       }

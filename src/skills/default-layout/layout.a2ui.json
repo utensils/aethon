@@ -114,7 +114,7 @@
             "area": "terminal",
             "visible": { "$ref": "/terminal/open" },
             "fontSize": 13,
-            "output": { "$ref": "/terminal/output" },
+            "subscribeToBash": true,
             "onInput": "terminal:input"
           }
         },
@@ -155,8 +155,7 @@
       "models": []
     },
     "terminal": {
-      "open": false,
-      "output": ""
+      "open": false
     }
   }
 }

@@ -150,6 +150,10 @@ export interface TerminalComponent extends A2UIComponent {
     fontSize?: NumberValue;
     output?: StringValue; // raw text written to the terminal
     onInput?: string;
+    // Opt-in: subscribe to the agent's bash output stream. When false (the
+    // default), this terminal is independent and only renders what its
+    // `output` prop or its own input handler provide.
+    subscribeToBash?: BooleanValue;
   };
 }
 
