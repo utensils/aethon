@@ -12,6 +12,10 @@ import {
   type SlashCommand,
   type SlashCommandContext,
 } from "./slashCommands";
+import {
+  readStateWithLocalStorageFallback,
+  writeState,
+} from "./persist";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
@@ -50,33 +54,38 @@ export default function App() {
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
 
-  // Theme — persisted to localStorage so the choice survives reloads.
-  // Default: whatever the OS prefers; fall back to dark.
+  // Theme — persisted to `~/.aethon/theme` so the choice survives reloads.
+  // Default: whatever the OS prefers; fall back to dark. Migrates from the
+  // legacy `aethon-theme` localStorage entry on first read.
   useEffect(() => {
-    const saved = localStorage.getItem("aethon-theme");
-    const initial =
-      saved === "light" || saved === "dark"
-        ? saved
-        : window.matchMedia?.("(prefers-color-scheme: light)").matches
-          ? "light"
-          : "dark";
-    document.documentElement.dataset.theme = initial;
+    (async () => {
+      const saved = await readStateWithLocalStorageFallback(
+        "theme",
+        "aethon-theme",
+      );
+      const trimmed = saved.trim();
+      const initial =
+        trimmed === "light" || trimmed === "dark"
+          ? trimmed
+          : window.matchMedia?.("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+      document.documentElement.dataset.theme = initial;
+    })();
   }, []);
 
   function setTheme(theme: "dark" | "light") {
     document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem("aethon-theme", theme);
-    } catch {
-      /* localStorage may be denied in sandboxed webviews */
-    }
+    writeState("theme", theme).catch(() => {
+      /* ignore */
+    });
   }
 
-  // Persistent chat history — restore on mount, write on each change. Cap at
-  // 200 messages and 8KB per text field so a single huge tool result can't
-  // blow out localStorage's quota. Disk persistence (~/.aethon/state.json)
-  // arrives with the broader Aethon-config work.
-  const PERSIST_KEY = "aethon-messages";
+  // Persistent chat history — restore on mount, write debounced on change.
+  // Cap at 200 messages and 8KB per text field. Storage is `~/.aethon/messages.json`
+  // via Tauri commands; the previous localStorage key is migrated on first read.
+  const PERSIST_FILE = "messages.json";
+  const LEGACY_LS_KEY = "aethon-messages";
   const MAX_MESSAGES = 200;
   const MAX_TEXT_BYTES = 8 * 1024;
 
@@ -118,49 +127,71 @@ export default function App() {
     return out;
   }
 
-  // Restore on mount.
+  // Restore on mount. First read disk; if empty, migrate any legacy
+  // localStorage value the first build wrote. Tracked as state (not a ref)
+  // so the persistence effect re-runs once restore completes — otherwise a
+  // message that arrived during the async read window would never trigger
+  // a disk write on a fresh install.
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PERSIST_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setState((prev) => ({ ...prev, messages: parsed }));
+    (async () => {
+      const raw = await readStateWithLocalStorageFallback(
+        PERSIST_FILE,
+        LEGACY_LS_KEY,
+      );
+      try {
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Prepend restored history but keep messages that landed during
+            // the async read (agent-stderr, an early send, etc.). Dedupe by
+            // id so a re-mount-after-restore doesn't double up.
+            setState((prev) => {
+              const live = (prev.messages as ChatMessage[]) ?? [];
+              const seen = new Set(live.map((m) => m.id));
+              const merged = [
+                ...(parsed as ChatMessage[]).filter((m) => !seen.has(m.id)),
+                ...live,
+              ];
+              return { ...prev, messages: merged };
+            });
+          }
+        }
+      } catch {
+        /* corrupt — ignore */
+      } finally {
+        setRestored(true);
       }
-    } catch {
-      /* corrupt / denied / quota — ignore */
-    }
+    })();
   }, []);
 
-  // Debounced write on messages change.
+  // Debounced write on messages change. Skipped until the initial restore
+  // completes so we don't overwrite the on-disk file with the empty boot state.
   const persistTimerRef = useRef<number | null>(null);
   useEffect(() => {
+    if (!restored) return;
     const messages = (state.messages as ChatMessage[]) ?? [];
     if (persistTimerRef.current !== null) {
       window.clearTimeout(persistTimerRef.current);
     }
     persistTimerRef.current = window.setTimeout(() => {
-      try {
-        const slim = messages.slice(-MAX_MESSAGES).map(trimMessage);
-        localStorage.setItem(PERSIST_KEY, JSON.stringify(slim));
-      } catch {
-        /* quota — surface later if we add a disk fallback */
-      }
+      const slim = messages.slice(-MAX_MESSAGES).map(trimMessage);
+      writeState(PERSIST_FILE, JSON.stringify(slim)).catch(() => {
+        /* surfaced via console.warn in persist.ts */
+      });
     }, 400);
     return () => {
       if (persistTimerRef.current !== null) {
         window.clearTimeout(persistTimerRef.current);
       }
     };
-  }, [state.messages]);
+  }, [state.messages, restored]);
 
   function clearChat() {
     setState((prev) => ({ ...prev, messages: [] }));
-    try {
-      localStorage.removeItem(PERSIST_KEY);
-    } catch {
+    writeState(PERSIST_FILE, "[]").catch(() => {
       /* ignore */
-    }
+    });
   }
 
   // Latest state, kept in a ref so the aethon-debug skill can read it via
