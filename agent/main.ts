@@ -283,12 +283,17 @@ async function main() {
         });
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
         // Echo the bash command into the visible terminal panel so the user
-        // can follow what the agent is running. The card still renders too;
-        // this is a parallel stream into xterm.
+        // can follow what the agent is running. The card uses a one-line
+        // summary, but here we want the verbatim multi-line command so
+        // heredocs / inline scripts read accurately in xterm.
         if (event.toolName === "bash") {
+          const cmd = String(
+            (event.args as { command?: unknown } | undefined)?.command ?? "",
+          );
+          const echoed = cmd.replace(/\r?\n/g, "\r\n");
           send({
             type: "terminal_output",
-            content: `\r\n$ ${summary}\r\n`,
+            content: `\r\n$ ${echoed}\r\n`,
           });
         }
         break;
@@ -305,14 +310,34 @@ async function main() {
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
         if (event.toolName === "bash") {
           const extracted = extractToolContent(event.result);
+          // Cap forwarded output and stream it in chunks so a `cat huge_file`
+          // can't freeze the IPC pipe or the webview. xterm's scrollback is
+          // bounded so older lines fall off; the tail (most recent) wins.
+          const TERMINAL_MAX_BYTES = 64 * 1024;
+          const TERMINAL_CHUNK_BYTES = 8 * 1024;
+          let body = extracted.text;
+          let truncated = false;
+          if (body.length > TERMINAL_MAX_BYTES) {
+            body = body.slice(body.length - TERMINAL_MAX_BYTES);
+            truncated = true;
+          }
           // Normalize unix line endings to xterm's CRLF so each output line
           // starts at column 0 instead of staircasing across the panel.
-          const normalized = extracted.text.replace(/\r?\n/g, "\r\n");
-          if (normalized) {
+          const normalized = body.replace(/\r?\n/g, "\r\n");
+          if (truncated) {
             send({
               type: "terminal_output",
-              content: normalized + "\r\n",
+              content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
             });
+          }
+          for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
+            send({
+              type: "terminal_output",
+              content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
+            });
+          }
+          if (normalized && !normalized.endsWith("\r\n")) {
+            send({ type: "terminal_output", content: "\r\n" });
           }
         }
         toolArgsCache.delete(event.toolCallId);
