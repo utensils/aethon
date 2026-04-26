@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background — rounded square with warm radial gradient -->
+    <radialGradient id="sun" cx="50%" cy="56%" r="62%">
+      <stop offset="0%"  stop-color="#ffb74d"/>
+      <stop offset="40%" stop-color="#f57c00"/>
+      <stop offset="80%" stop-color="#bf360c"/>
+      <stop offset="100%" stop-color="#3e1208"/>
+    </radialGradient>
+
+    <!-- The alpha glyph itself, with a soft warm tint -->
+    <linearGradient id="glyph" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"  stop-color="#fff8e1"/>
+      <stop offset="100%" stop-color="#ffe0b2"/>
+    </linearGradient>
+
+    <!-- Inner glow for the glyph — gives the illusion of being lit from within -->
+    <filter id="innerGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Subtle outer glow on the disc edge -->
+    <filter id="discGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded-square background (matches modern macOS / iOS icon shape) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="#1a0805"/>
+
+  <!-- Sun disc -->
+  <g transform="translate(512 540)">
+    <!-- Glow halo behind the disc -->
+    <circle r="380" fill="url(#sun)" opacity="0.45" filter="url(#discGlow)"/>
+    <!-- The disc itself -->
+    <circle r="340" fill="url(#sun)"/>
+    <!-- Subtle inner highlight, slightly upper-left -->
+    <ellipse cx="-90" cy="-110" rx="170" ry="90" fill="#ffe082" opacity="0.18"/>
+  </g>
+
+  <!-- Three chariot-ray accents radiating from the disc -->
+  <g stroke="#ffd180" stroke-width="14" stroke-linecap="round" opacity="0.55" fill="none">
+    <line x1="512" y1="120" x2="512" y2="180"/>
+    <line x1="120" y1="540" x2="180" y2="540"/>
+    <line x1="844" y1="540" x2="904" y2="540"/>
+    <line x1="220" y1="248" x2="266" y2="294"/>
+    <line x1="758" y1="294" x2="804" y2="248"/>
+  </g>
+
+  <!-- The Α (Greek alpha) — geometrical, bold, single-stroke feel.
+       Two slanted legs joined at apex; cross-bar replaced by a brighter
+       horizon glow so the silhouette reads as both a letterform and the
+       wheel of Helios's chariot. -->
+  <g transform="translate(512 540)" filter="url(#innerGlow)">
+    <!-- Left leg -->
+    <path d="M -180 220
+             L -28  -200
+             L  28  -200
+             L 180   220
+             L 110   220
+             L  86   140
+             L -86   140
+             L -110  220 Z"
+          fill="url(#glyph)"/>
+    <!-- Cross-bar / horizon -->
+    <rect x="-86" y="32" width="172" height="36" rx="14" ry="14" fill="url(#glyph)"/>
+  </g>
+
+  <!-- A faint horizon line behind the alpha — implies the sun cresting -->
+  <line x1="180" y1="572" x2="844" y2="572"
+        stroke="#ffe0b2" stroke-width="3" opacity="0.18"/>
+</svg>
