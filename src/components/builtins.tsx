@@ -105,7 +105,7 @@ export function Button({ component, state, onEvent }: ComponentProps) {
           : "transparent",
     color:
       variant === "primary"
-        ? "#0e0e10"
+        ? "var(--btn-text)"
         : variant === "secondary"
           ? "var(--text)"
           : "var(--accent)",

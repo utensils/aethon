@@ -132,7 +132,8 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Model picker (sidebar) — switch model at runtime via `session.setModel()`
 - [x] Errors from the agent surface as visible chat messages, not silent hangs
 - [x] Hot reload of the agent during dev — Rust watches `agent/` and respawns the child on change (debug builds only)
-- [ ] Theme system (dark + light variants, runtime switcher) — currently dark-only
+- [x] Theme system — dark + light variants behind `data-theme` on `<html>`, switcher in sidebar, persisted to `localStorage`. Boots from `localStorage` then OS `prefers-color-scheme`.
+- [ ] Theme registry (custom themes via skills / `~/.aethon/themes/`)
 - [ ] Compiled `aethon-agent` binary via `bun build --compile` — currently runs from source
 - [x] Filter model picker to user's `enabledModels` patterns from `~/.pi/agent/settings.json` (compiled glob patterns; falls back to authed models if none configured)
 

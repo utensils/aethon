@@ -42,6 +42,28 @@ export default function App() {
   // the same chat bubble instead of creating a new bubble per chunk.
   const activeResponseIdRef = useRef<string | null>(null);
 
+  // Theme — persisted to localStorage so the choice survives reloads.
+  // Default: whatever the OS prefers; fall back to dark.
+  useEffect(() => {
+    const saved = localStorage.getItem("aethon-theme");
+    const initial =
+      saved === "light" || saved === "dark"
+        ? saved
+        : window.matchMedia?.("(prefers-color-scheme: light)").matches
+          ? "light"
+          : "dark";
+    document.documentElement.dataset.theme = initial;
+  }, []);
+
+  function setTheme(theme: "dark" | "light") {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("aethon-theme", theme);
+    } catch {
+      /* localStorage may be denied in sandboxed webviews */
+    }
+  }
+
   // Latest state, kept in a ref so the aethon-debug skill can read it via
   // `window.__AETHON_STATE__()` without going through React's state lifecycle.
   const stateRef = useRef(state);
@@ -298,6 +320,13 @@ export default function App() {
         }
         if (selected?.sectionId === "models" && selected.itemId) {
           await setModel(selected.itemId);
+          return true;
+        }
+        if (
+          selected?.sectionId === "themes" &&
+          (selected.itemId === "dark" || selected.itemId === "light")
+        ) {
+          setTheme(selected.itemId);
           return true;
         }
       }

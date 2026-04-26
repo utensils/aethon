@@ -1,8 +1,13 @@
 :root {
   font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Default to dark; the App attribute-sets `data-theme` on the html element. */
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
-  background: #0e0e10;
-  color: #e8e8ec;
   --bg: #0e0e10;
   --bg-elev: #16161a;
   --bg-input: #1c1c21;
@@ -10,8 +15,33 @@
   --text: #e8e8ec;
   --text-dim: #9a9aa3;
   --accent: #7c8cff;
+  --accent-soft: rgba(124, 140, 255, 0.18);
+  --accent-hover-tint: rgba(124, 140, 255, 0.08);
+  --accent-active-tint: rgba(124, 140, 255, 0.16);
+  --btn-text: #0e0e10;
   --user-bubble: #2a2f4a;
   --agent-bubble: #1c1c21;
+  --scrollbar-thumb: #2a2a30;
+  --scrollbar-thumb-hover: #3a3a44;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbfaf6;
+  --bg-elev: #ffffff;
+  --bg-input: #f3f1ec;
+  --border: #e3e1da;
+  --text: #1a1a20;
+  --text-dim: #6a6a72;
+  --accent: #6066ee;
+  --accent-soft: rgba(96, 102, 238, 0.18);
+  --accent-hover-tint: rgba(96, 102, 238, 0.08);
+  --accent-active-tint: rgba(96, 102, 238, 0.16);
+  --btn-text: #ffffff;
+  --user-bubble: #e2e7ff;
+  --agent-bubble: #f3f1ec;
+  --scrollbar-thumb: #d0cec6;
+  --scrollbar-thumb-hover: #b0aea4;
 }
 
 * {
@@ -46,13 +76,13 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--scrollbar-thumb);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #3a3a44;
+  background: var(--scrollbar-thumb-hover);
   background-clip: padding-box;
   border: 2px solid transparent;
 }
@@ -143,12 +173,12 @@ body {
 }
 
 .a2ui-sidebar-item:hover {
-  background: rgba(124, 140, 255, 0.08);
+  background: var(--accent-hover-tint);
   color: var(--accent);
 }
 
 .a2ui-sidebar-item:active {
-  background: rgba(124, 140, 255, 0.16);
+  background: var(--accent-active-tint);
 }
 
 .a2ui-sidebar-empty {
@@ -298,12 +328,12 @@ body {
 
 .a2ui-chat-input-field:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.18);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .a2ui-chat-input-send {
   background: var(--accent);
-  color: #0e0e10;
+  color: var(--btn-text);
   border: none;
   border-radius: 8px;
   padding: 0 18px;

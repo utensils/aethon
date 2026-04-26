@@ -82,6 +82,14 @@
                 "items": { "$ref": "/sidebar/models" }
               },
               {
+                "id": "themes",
+                "title": "Themes",
+                "items": [
+                  { "id": "dark", "label": "Dark" },
+                  { "id": "light", "label": "Light" }
+                ]
+              },
+              {
                 "id": "history",
                 "title": "Chat History",
                 "items": { "$ref": "/sidebar/history" }
