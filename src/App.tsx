@@ -140,9 +140,19 @@ export default function App() {
       if (!raw) return;
       try {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setState((prev) => ({ ...prev, messages: parsed }));
-        }
+        if (!Array.isArray(parsed) || parsed.length === 0) return;
+        // Prepend restored history but keep any messages that landed during
+        // the async read (agent-stderr, an early send, etc.). Dedupe by id
+        // so a re-mount-after-restore doesn't double up.
+        setState((prev) => {
+          const live = (prev.messages as ChatMessage[]) ?? [];
+          const seen = new Set(live.map((m) => m.id));
+          const merged = [
+            ...(parsed as ChatMessage[]).filter((m) => !seen.has(m.id)),
+            ...live,
+          ];
+          return { ...prev, messages: merged };
+        });
       } catch {
         /* corrupt — ignore */
       }
