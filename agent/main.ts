@@ -11,9 +11,27 @@
  *                                               // webview reloads but bun is
  *                                               // already running)
  *   { "type": "a2ui_event", "event": { ... } }   // not yet wired into the agent
+ *   { "type": "register_component", "componentType": "...", "template": {...} }
+ *      // Register an A2UI subtree under a custom component type. When the
+ *      // renderer encounters {type:"<componentType>"} it expands the
+ *      // template in place. Templates may use `$ref` to bind to state.
+ *   { "type": "set_state", "path": "/foo/bar", "value": <any> }
+ *      // Mutate frontend layout state at the given JSON Pointer path.
+ *      // Used by extensions to push live data (clocks, notifications) into
+ *      // bound templates.
  *
  * Outbound (bridge → stdout):
- *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...] }
+ *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...],
+ *     "extensionComponents": {<componentType>: <template>, ...} }
+ *      // Snapshot of currently-registered extension templates, sent on every
+ *      // ready emission so a webview reload picks them up without losing
+ *      // state.
+ *   { "type": "extension_components", "components": {<componentType>: <template>, ...} }
+ *      // Emitted after each registration delta; frontend hydrates templates
+ *      // into the SkillRegistry.
+ *   { "type": "state_patch", "path": "/foo", "value": <any> }
+ *      // Forward of an extension's set_state call. Frontend applies via
+ *      // JSON Pointer.
  *   { "type": "notice", "message": "..." }
  *      // Non-terminal informational message. The frontend renders it as a
  *      // system chat bubble WITHOUT touching the waiting/status flags, so
@@ -45,6 +63,10 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { createInterface } from "node:readline";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 function send(obj: Record<string, unknown>) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -206,6 +228,49 @@ function toolCardPayload(opts: {
   };
 }
 
+interface AethonExtensionApi {
+  registerComponent(componentType: string, template: unknown): void;
+  setState(path: string, value: unknown): void;
+}
+
+interface AethonExtensionModule {
+  register?: (api: AethonExtensionApi) => void | Promise<void>;
+  default?: { register?: (api: AethonExtensionApi) => void | Promise<void> };
+}
+
+// Discover and load Aethon extensions from ~/.aethon/extensions/*.{ts,js}.
+// Each extension exports `register(api)` (named or as default.register).
+// Bun executes .ts directly so authors don't need a build step.
+async function loadAethonExtensions(api: AethonExtensionApi): Promise<void> {
+  const dir = join(homedir(), ".aethon", "extensions");
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch (err) {
+    // Missing dir is the common case — extensions are optional.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[aethon-ext] readdir ${dir}: ${(err as Error).message}`);
+    }
+    return;
+  }
+  for (const name of entries) {
+    if (!/\.(ts|js|mjs)$/.test(name)) continue;
+    const file = join(dir, name);
+    try {
+      const mod: AethonExtensionModule = await import(pathToFileURL(file).href);
+      const register = mod.register ?? mod.default?.register;
+      if (typeof register !== "function") {
+        console.error(`[aethon-ext] ${name}: no register() export, skipping`);
+        continue;
+      }
+      await register(api);
+      console.error(`[aethon-ext] loaded ${name}`);
+    } catch (err) {
+      console.error(`[aethon-ext] ${name}: ${(err as Error).message}`);
+    }
+  }
+}
+
 async function main() {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
@@ -243,10 +308,48 @@ async function main() {
   }
   const models = pickerModels.map(modelDescriptor);
 
+  // Aethon-specific extension UI registry. Pi extensions can register A2UI
+  // component templates and push state via the `aethon` API exposed below.
+  // Templates are plain A2UI subtrees keyed by component type; the frontend
+  // wraps each as a synthetic React component in the SkillRegistry so that
+  // `{type: "<componentType>"}` in any A2UI tree expands the template inline.
+  const extensionComponents = new Map<string, unknown>();
+
   function emitReady() {
     const currentModelId = session.model ? modelKey(session.model) : "";
-    send({ type: "ready", model: currentModelId, models });
+    send({
+      type: "ready",
+      model: currentModelId,
+      models,
+      extensionComponents: Object.fromEntries(extensionComponents),
+    });
   }
+
+  // Aethon-side extension API. Loaded extensions get an instance via the
+  // `aethon` namespace (see loadAethonExtensions below). All registrations
+  // also work via stdin commands so external tools / debug skills can drive
+  // the same surface.
+  const aethonApi = {
+    registerComponent(componentType: string, template: unknown): void {
+      if (!componentType || typeof componentType !== "string") return;
+      extensionComponents.set(componentType, template);
+      send({
+        type: "extension_components",
+        components: Object.fromEntries(extensionComponents),
+      });
+    },
+    setState(path: string, value: unknown): void {
+      if (!path || typeof path !== "string") return;
+      send({ type: "state_patch", path, value });
+    },
+  };
+  type AethonApi = typeof aethonApi;
+
+  // Discover Aethon extensions in `~/.aethon/extensions/*.ts` and call their
+  // `register(api)` default export. Failures in one extension don't block
+  // others — log and continue so a broken extension can't take the agent
+  // down at boot.
+  await loadAethonExtensions(aethonApi);
 
   emitReady();
 
@@ -382,7 +485,15 @@ async function main() {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    let msg: { type: string; content?: string; id?: string };
+    let msg: {
+      type: string;
+      content?: string;
+      id?: string;
+      componentType?: string;
+      template?: unknown;
+      path?: string;
+      value?: unknown;
+    };
     try {
       msg = JSON.parse(trimmed);
     } catch {
@@ -483,6 +594,29 @@ async function main() {
         case "a2ui_event": {
           // Reserved for skill/tool routing — accept silently for now so the
           // frontend's optimistic dispatch doesn't error.
+          break;
+        }
+        case "register_component": {
+          // External registration path — same surface as ctx.aethon
+          // .registerComponent in extensions, but accessible over the
+          // protocol so debug tools and one-off scripts can register
+          // templates without packaging a full extension.
+          if (!msg.componentType) {
+            send({
+              type: "error",
+              message: "register_component: missing componentType",
+            });
+            break;
+          }
+          aethonApi.registerComponent(msg.componentType, msg.template);
+          break;
+        }
+        case "set_state": {
+          if (!msg.path) {
+            send({ type: "error", message: "set_state: missing path" });
+            break;
+          }
+          aethonApi.setState(msg.path, msg.value);
           break;
         }
         default: {

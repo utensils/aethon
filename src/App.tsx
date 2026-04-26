@@ -6,6 +6,7 @@ import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
+import { setPointer } from "./utils/jsonPointer";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -298,6 +299,13 @@ export default function App() {
       case "ready": {
         const model = (data.model as string) || "";
         const models = (data.models as ModelDescriptor[]) ?? [];
+        // Hydrate any extension-registered component templates the bridge
+        // discovered at boot. setTemplates is wholesale (bridge is the
+        // source of truth) so reload-after-restart picks up the same set.
+        const extComponents = (data.extensionComponents as
+          | Record<string, unknown>
+          | undefined) ?? {};
+        registry.setTemplates(extComponents);
         setState((prev) => ({
           ...prev,
           model,
@@ -312,6 +320,19 @@ export default function App() {
             })),
           },
         }));
+        break;
+      }
+      case "extension_components": {
+        const components = (data.components as Record<string, unknown>) ?? {};
+        registry.setTemplates(components);
+        break;
+      }
+      case "state_patch": {
+        // An extension pushed a state mutation. Apply the JSON Pointer
+        // path as an immutable update so bound components re-render.
+        const path = data.path as string | undefined;
+        if (!path) break;
+        setState((prev) => setPointer(prev, path, data.value));
         break;
       }
       case "model_changed": {

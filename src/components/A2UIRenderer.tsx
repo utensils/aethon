@@ -85,6 +85,12 @@ export default function A2UIRenderer({
   const [internalState, setInternalState] = useState<Record<string, unknown>>(
     payload.state || {},
   );
+  // Bump on extension template registry changes so the renderer re-evaluates
+  // any `<Unknown>` types into newly-registered templates without unmounting.
+  const [, setTemplateVersion] = useState(0);
+  useEffect(() => {
+    return registry.onTemplatesChanged(() => setTemplateVersion((n) => n + 1));
+  }, [registry]);
 
   // External state wins when the caller is driving state. Otherwise we own it.
   const state = externalState ?? internalState;
@@ -135,6 +141,20 @@ export default function A2UIRenderer({
       PRIMITIVE_REGISTRY[component.type] ?? registry.resolve(component.type);
 
     if (!Component) {
+      // No React impl — try the extension template registry. Templates are
+      // declarative A2UI subtrees registered by pi extensions via the
+      // bridge; we expand them in place using the same renderer + state.
+      const template = registry.resolveTemplate(component.type);
+      if (template && typeof template === "object") {
+        const tpl = template as A2UIComponent;
+        // Use a stable id derived from the host component so React keys
+        // don't collide when the same template renders in multiple places.
+        const expanded: A2UIComponent = {
+          ...tpl,
+          id: tpl.id ?? `${component.id}__tpl`,
+        };
+        return renderComponent(expanded);
+      }
       console.warn(`Unknown A2UI component type: ${component.type}`);
       return null;
     }
