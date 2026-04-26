@@ -250,6 +250,12 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
+  // Tracks whether a prompt is mid-flight (between `session.prompt()` call
+  // and the agent_end event). Used to reject overlapping `chat` messages so
+  // the frontend doesn't get confused by AgentSession's "already processing"
+  // rejection.
+  let promptInFlight = false;
+
   // Format and forward bash output to the terminal panel in chunks. Caps a
   // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
   // can't choke the IPC pipe.
@@ -355,6 +361,7 @@ async function main() {
         break;
       }
       case "agent_end": {
+        promptInFlight = false;
         send({ type: "response_end" });
         break;
       }
@@ -382,12 +389,25 @@ async function main() {
             send({ type: "error", message: "chat: missing content" });
             break;
           }
+          // Gate concurrent chats: pi's session.prompt() rejects with
+          // "Agent is already processing" if called while a previous run
+          // is still streaming. The UI's chat-input is disabled while
+          // waiting, but a stray IPC could still arrive — bounce it
+          // explicitly so the frontend doesn't mistake the rejection for
+          // a real response_end.
+          if (promptInFlight) {
+            send({ type: "error", message: "chat: agent busy — send /stop first" });
+            break;
+          }
           // CRITICAL: do NOT await — `for await (const line of rl)` processes
           // one stdin line at a time, so awaiting here would queue any
           // subsequent "stop" message behind the in-flight prompt and Stop
           // would never reach session.abort() until the prompt finished
-          // naturally. Errors are surfaced via the error message channel.
+          // naturally. Track in-flight state via promptInFlight so we can
+          // reject overlapping chats above; cleared on agent_end.
+          promptInFlight = true;
           session.prompt(msg.content).catch((err) => {
+            promptInFlight = false;
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "error", message: `prompt: ${message}` });
           });
