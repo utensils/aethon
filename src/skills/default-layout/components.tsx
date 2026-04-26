@@ -367,11 +367,18 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     fontSize?: NumberValue;
     output?: StringValue;
     onInput?: string;
+    // Opt-in: when true, this instance subscribes to the agent's bash output
+    // stream (`aethon:terminal` window event). Off by default so skills can
+    // mount independent terminals without receiving the agent's bash chatter.
+    subscribeToBash?: BooleanValue;
   };
 
   const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
   const cols = props.cols ? resolveNumber(props.cols, state) : undefined;
   const rows = props.rows ? resolveNumber(props.rows, state) : undefined;
+  const subscribeToBash = props.subscribeToBash
+    ? resolveBoolean(props.subscribeToBash, state)
+    : false;
   // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
   // to drive the terminal via state — the diff effect below handles it the
   // same way it used to. The default layout no longer uses this; bash output
@@ -427,14 +434,19 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     // App.tsx fires this event whenever the agent's bash tool produces
     // output. Writing through xterm directly keeps the bounded scrollback
     // buffer xterm already manages — no parallel growing string in React
-    // state.
-    const onTerminalEvent = (e: Event) => {
-      const detail = (e as CustomEvent<string>).detail;
-      if (typeof detail === "string" && detail.length > 0) {
-        term.write(detail);
-      }
-    };
-    window.addEventListener("aethon:terminal", onTerminalEvent);
+    // state. Only this terminal subscribes when subscribeToBash is true,
+    // so skills can mount independent terminals without picking up the
+    // agent's bash stream.
+    let onTerminalEvent: ((e: Event) => void) | null = null;
+    if (subscribeToBash) {
+      onTerminalEvent = (e: Event) => {
+        const detail = (e as CustomEvent<string>).detail;
+        if (typeof detail === "string" && detail.length > 0) {
+          term.write(detail);
+        }
+      };
+      window.addEventListener("aethon:terminal", onTerminalEvent);
+    }
 
     const ro = new ResizeObserver(() => {
       try {
@@ -447,7 +459,9 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
 
     return () => {
       ro.disconnect();
-      window.removeEventListener("aethon:terminal", onTerminalEvent);
+      if (onTerminalEvent) {
+        window.removeEventListener("aethon:terminal", onTerminalEvent);
+      }
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
