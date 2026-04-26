@@ -33,6 +33,30 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Dark, slim scrollbars — defaults are jarring on the elevated panels. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a3a44;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -114,10 +138,17 @@ body {
   font-size: 0.85rem;
   cursor: pointer;
   color: var(--text);
+  transition: background 120ms ease, color 120ms ease;
+  user-select: none;
 }
 
 .a2ui-sidebar-item:hover {
   background: rgba(124, 140, 255, 0.08);
+  color: var(--accent);
+}
+
+.a2ui-sidebar-item:active {
+  background: rgba(124, 140, 255, 0.16);
 }
 
 .a2ui-sidebar-empty {
@@ -262,10 +293,12 @@ body {
   font: inherit;
   outline: none;
   min-height: 44px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .a2ui-chat-input-field:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.18);
 }
 
 .a2ui-chat-input-send {
@@ -324,6 +357,18 @@ body {
   height: 240px;
   width: 100%;
   overflow: hidden;
+  animation: a2ui-terminal-rise 160ms ease-out;
+}
+
+@keyframes a2ui-terminal-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .a2ui-terminal-header {
