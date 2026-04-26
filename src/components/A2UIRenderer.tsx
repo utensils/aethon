@@ -7,7 +7,7 @@
  * bindings without prop-drilling.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, setPointer } from "../utils/jsonPointer";
@@ -92,8 +92,19 @@ export default function A2UIRenderer({
     return registry.onTemplatesChanged(() => setTemplateVersion((n) => n + 1));
   }, [registry]);
 
+  // Merge external (parent/app) state with payload-local state. Payload
+  // state wins for keys it defines so per-message A2UI cards keep their
+  // own local refs working; the app state still provides shared globals
+  // (extension-pushed state, theme, etc.) that aren't shadowed by the
+  // payload. Empty payload.state degrades to "external state only".
+  const mergedExternalState = useMemo(() => {
+    if (!externalState) return undefined;
+    if (!payload.state) return externalState;
+    return { ...externalState, ...payload.state };
+  }, [externalState, payload.state]);
+
   // External state wins when the caller is driving state. Otherwise we own it.
-  const state = externalState ?? internalState;
+  const state = mergedExternalState ?? internalState;
   const updateState = (
     updater: (prev: Record<string, unknown>) => Record<string, unknown>,
   ) => {
