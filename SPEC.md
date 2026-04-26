@@ -157,7 +157,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Skill registry primitive (`SkillRegistry`, exposed via React context)
 - [x] Default-layout shipped as a registered skill (eats its own dog food)
 - [x] Runtime API on `window.aethon` — `setLayout`, `resetLayout`, `registerSkill`, `listSkills`
-- [ ] Pi extension loading with Aethon UI extensions (`registerA2UIComponent`, `registerPanel`, `registerTheme`)
+- [~] Aethon-side extensions can register A2UI component templates and push state via the `aethon` API. Extensions live at `~/.aethon/extensions/*.{ts,js}` and export `register(api)`; api surface: `registerComponent(type, template)`, `setState(path, value)`. Bridge retains state as a tree and replays on `ready`. Frontend hydrates templates into the SkillRegistry; the renderer expands them inline (with host-prefixed ids for repeated instances). Same surface also exposed as `register_component` / `set_state` stdin commands for external tooling. Demo at `examples/aethon-extensions/clock-demo.ts`. Pi-extension API namespace (`ctx.aethon.*`) and panel/theme registration are follow-ups.
 - [ ] Skill manifest with A2UI component declarations (read from `package.json#aethon`)
 - [ ] Extension hot-reload
 - [ ] Discovery from `~/.aethon/extensions/` and `.aethon/extensions/`
