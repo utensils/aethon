@@ -14,6 +14,10 @@
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...] }
+ *   { "type": "notice", "message": "..." }
+ *      // Non-terminal informational message. The frontend renders it as a
+ *      // system chat bubble WITHOUT touching the waiting/status flags, so
+ *      // an in-flight prompt stays in flight (Stop button stays visible).
  *   { "type": "response_delta", "messageId": "<msg-id>", "content": "..." }
  *      // messageId groups deltas that belong to the same pi assistant message
  *      // (timestamp-derived). The frontend uses it to keep all text from one
@@ -396,7 +400,10 @@ async function main() {
           // explicitly so the frontend doesn't mistake the rejection for
           // a real response_end.
           if (promptInFlight) {
-            send({ type: "error", message: "chat: agent busy — send /stop first" });
+            // `error` would flip the frontend's waiting=false, taking the
+            // Stop button down even though the first prompt is still
+            // running. `notice` is a non-terminal system message instead.
+            send({ type: "notice", message: "agent busy — send /stop first" });
             break;
           }
           // CRITICAL: do NOT await — `for await (const line of rl)` processes

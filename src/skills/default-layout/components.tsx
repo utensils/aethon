@@ -297,16 +297,27 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     return [];
   }, [commandsRaw, state]);
 
+  // Tracks the draft value the user pressed Escape on. While the live value
+  // matches that snapshot, the picker stays dismissed so Escape doesn't
+  // require clearing the input. Editing the draft (any change) re-opens.
+  const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (dismissedDraft !== null && value !== dismissedDraft) {
+      setDismissedDraft(null);
+    }
+  }, [value, dismissedDraft]);
+
   // Slash autocomplete: show when the input begins with `/` (but not `//`,
   // which is the literal-slash escape) and matches at least one command.
   const slashMatch = useMemo(() => {
     if (disabled) return null;
+    if (dismissedDraft !== null && value === dismissedDraft) return null;
     const m = value.match(/^\/([A-Za-z][\w-]*)?$/);
     if (!m) return null;
     const prefix = (m[1] ?? "").toLowerCase();
     const matches = commands.filter((c) => c.name.toLowerCase().startsWith(prefix));
     return matches.length > 0 ? { prefix, matches } : null;
-  }, [value, commands, disabled]);
+  }, [value, commands, disabled, dismissedDraft]);
 
   const [highlightIdx, setHighlightIdx] = useState(0);
   // Reset highlight when the visible list changes so the cursor stays inside
@@ -377,9 +388,10 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        // Stash any chars after the slash and just clear the slash itself
-        // so Escape feels predictable: it dismisses the menu.
-        onEvent("change", { value: "" });
+        // Just dismiss the picker — keep the typed text intact. The
+        // dismissedDraft snapshot above re-opens the picker as soon as
+        // the user edits the draft again.
+        setDismissedDraft(value);
         return;
       }
       // Enter behavior with the picker open:
