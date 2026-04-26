@@ -5,14 +5,19 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// Resolve `~/.aethon/<name>` after stripping any path-traversal segments.
-/// Returns the absolute path; the parent directory is created on demand.
-fn aethon_state_path(name: &str) -> Result<PathBuf, String> {
+/// Resolve `<home>/.aethon/<name>` after rejecting path-traversal segments.
+/// The parent directory is created on demand. Uses Tauri's cross-platform
+/// `home_dir()` so Windows (USERPROFILE), macOS, and Linux all resolve
+/// without env-var assumptions.
+fn aethon_state_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name == ".." {
         return Err(format!("invalid state name: {name}"));
     }
-    let home = std::env::var_os("HOME").ok_or("HOME not set")?;
-    let dir = PathBuf::from(home).join(".aethon");
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let dir = home.join(".aethon");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     Ok(dir.join(name))
 }
@@ -21,8 +26,8 @@ fn aethon_state_path(name: &str) -> Result<PathBuf, String> {
 /// doesn't exist so callers can do a "first run" check without distinguishing
 /// missing from empty.
 #[tauri::command]
-fn read_state(name: String) -> Result<String, String> {
-    let path = aethon_state_path(&name)?;
+fn read_state(name: String, app: AppHandle) -> Result<String, String> {
+    let path = aethon_state_path(&app, &name)?;
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(s),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
@@ -32,8 +37,8 @@ fn read_state(name: String) -> Result<String, String> {
 
 /// Write a file to `~/.aethon/`. Creates the directory if missing.
 #[tauri::command]
-fn write_state(name: String, content: String) -> Result<(), String> {
-    let path = aethon_state_path(&name)?;
+fn write_state(name: String, content: String, app: AppHandle) -> Result<(), String> {
+    let path = aethon_state_path(&app, &name)?;
     std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
