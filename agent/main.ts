@@ -257,8 +257,11 @@ async function main() {
   // Tracks whether a prompt is mid-flight (between `session.prompt()` call
   // and the agent_end event). Used to reject overlapping `chat` messages so
   // the frontend doesn't get confused by AgentSession's "already processing"
-  // rejection.
+  // rejection. `agentEndFired` distinguishes prompts that triggered an agent
+  // run from prompts pi handled without one (e.g. server-side slash commands
+  // that short-circuit before invoking the LLM).
   let promptInFlight = false;
+  let agentEndFired = false;
 
   // Format and forward bash output to the terminal panel in chunks. Caps a
   // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
@@ -365,6 +368,7 @@ async function main() {
         break;
       }
       case "agent_end": {
+        agentEndFired = true;
         promptInFlight = false;
         send({ type: "response_end" });
         break;
@@ -411,13 +415,25 @@ async function main() {
           // subsequent "stop" message behind the in-flight prompt and Stop
           // would never reach session.abort() until the prompt finished
           // naturally. Track in-flight state via promptInFlight so we can
-          // reject overlapping chats above; cleared on agent_end.
+          // reject overlapping chats above; cleared on agent_end OR in
+          // .finally() if pi short-circuited the prompt without an agent
+          // run (e.g. a server-side slash command). The finally branch
+          // also synthesizes a `response_end` so the frontend's waiting
+          // flag clears when no streaming happened.
           promptInFlight = true;
-          session.prompt(msg.content).catch((err) => {
-            promptInFlight = false;
-            const message = err instanceof Error ? err.message : String(err);
-            send({ type: "error", message: `prompt: ${message}` });
-          });
+          agentEndFired = false;
+          session
+            .prompt(msg.content)
+            .catch((err) => {
+              const message = err instanceof Error ? err.message : String(err);
+              send({ type: "error", message: `prompt: ${message}` });
+            })
+            .finally(() => {
+              if (!agentEndFired) {
+                promptInFlight = false;
+                send({ type: "response_end" });
+              }
+            });
           break;
         }
         case "set_model": {
