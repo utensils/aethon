@@ -26,12 +26,18 @@ export async function readState(name: string): Promise<string> {
   }
 }
 
-export async function writeState(name: string, content: string): Promise<void> {
-  if (!hasTauri()) return;
+// Returns true on a confirmed disk write. Returns false (and logs) when
+// running outside Tauri or when the Tauri command rejects — callers that
+// need to know whether the write actually landed (e.g. legacy-key
+// migration) must check the boolean.
+export async function writeState(name: string, content: string): Promise<boolean> {
+  if (!hasTauri()) return false;
   try {
     await invoke<void>("write_state", { name, content });
+    return true;
   } catch (err) {
     console.warn(`write_state(${name}) failed:`, err);
+    return false;
   }
 }
 
@@ -48,8 +54,13 @@ export async function readStateWithLocalStorageFallback(
   try {
     const legacy = window.localStorage.getItem(legacyLocalStorageKey);
     if (legacy) {
-      await writeState(name, legacy);
-      window.localStorage.removeItem(legacyLocalStorageKey);
+      const wrote = await writeState(name, legacy);
+      // Only drop the legacy copy once the disk write has been confirmed —
+      // otherwise a permission/HOME/disk-full failure would silently delete
+      // the user's only persisted copy of state.
+      if (wrote) {
+        window.localStorage.removeItem(legacyLocalStorageKey);
+      }
       return legacy;
     }
   } catch {
