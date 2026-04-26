@@ -441,25 +441,25 @@ export default function App() {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    // Slash commands are intercepted client-side. `//foo` escapes to send a
-    // literal `/foo` to the agent.
+    // Client-side slash commands handle UI-only actions (clear, theme, etc.).
+    // Unknown slash commands fall through to the agent so pi's own slash
+    // command handling and any prompt-template / skill commands still reach
+    // it. `//foo` escapes to force a literal `/foo` to be sent.
     const parsed = parseSlashCommand(trimmed);
     if (parsed) {
-      appendMessage({ id: crypto.randomUUID(), role: "user", text: trimmed });
-      setState((prev) => ({ ...prev, draft: "" }));
       const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
-      if (!cmd) {
-        appendSystem(
-          `Unknown slash command: \`/${parsed.name}\`. Type \`/help\` for the list.`,
-        );
+      if (cmd) {
+        appendMessage({ id: crypto.randomUUID(), role: "user", text: trimmed });
+        setState((prev) => ({ ...prev, draft: "" }));
+        try {
+          await cmd.run(parsed.args, slashContext());
+        } catch (err) {
+          appendSystem(`Slash command \`/${parsed.name}\` failed: ${err}`);
+        }
         return;
       }
-      try {
-        await cmd.run(parsed.args, slashContext());
-      } catch (err) {
-        appendSystem(`Slash command \`/${parsed.name}\` failed: ${err}`);
-      }
-      return;
+      // Unknown — fall through to send_message. Pi's own command handling on
+      // the agent side may pick it up; if not, the LLM sees the literal text.
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
