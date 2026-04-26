@@ -54,6 +54,41 @@ function decodePointerToken(token: string): string {
 }
 
 /**
+ * Returns a new state object with `value` written at `pointer`.
+ * Does not mutate `state`. Intermediate objects are cloned along the
+ * write path; sibling branches keep their existing references.
+ */
+export function setPointer(
+  state: Record<string, unknown>,
+  pointer: string,
+  value: unknown,
+): Record<string, unknown> {
+  if (!pointer || pointer === "" || pointer === "/") {
+    return state;
+  }
+
+  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  const tokens = path.split("/").map(decodePointerToken);
+
+  const next: Record<string, unknown> = { ...state };
+  let cursor: Record<string, unknown> = next;
+
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const key = tokens[i];
+    const existing = cursor[key];
+    const child =
+      typeof existing === "object" && existing !== null
+        ? { ...(existing as Record<string, unknown>) }
+        : {};
+    cursor[key] = child;
+    cursor = child;
+  }
+
+  cursor[tokens[tokens.length - 1]] = value;
+  return next;
+}
+
+/**
  * Checks if a value is a dynamic reference ($ref property)
  */
 export function isDynamicRef(

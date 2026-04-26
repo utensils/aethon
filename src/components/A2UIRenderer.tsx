@@ -3,12 +3,38 @@
  * Renders A2UI component trees as React components with data binding and event dispatch
  */
 
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
+import { isDynamicRef, setPointer } from "../utils/jsonPointer";
 import { Button, Card, Code, Container, Text, TextInput } from "./builtins";
 
 interface A2UIRendererProps {
   payload: A2UIPayload;
+}
+
+/**
+ * Optimistically merges a UI-emitted event into local state so controlled
+ * inputs stay responsive while the agent is the source of truth.
+ *
+ * The agent will eventually send back an authoritative state update; until
+ * then, this lets the user see their own typing/clicks reflected.
+ */
+function applyOptimisticUpdate(
+  prev: Record<string, unknown>,
+  component: A2UIComponent,
+  eventType: string,
+  data: unknown,
+): Record<string, unknown> {
+  if (eventType !== "change" && eventType !== "submit") return prev;
+
+  const valueProp = component.props?.value;
+  if (!isDynamicRef(valueProp)) return prev;
+
+  const next = (data as { value?: unknown } | undefined)?.value;
+  if (next === undefined) return prev;
+
+  return setPointer(prev, valueProp.$ref, next);
 }
 
 // Component registry mapping A2UI type names to React components
@@ -17,7 +43,7 @@ const COMPONENT_REGISTRY: Record<
   React.ComponentType<{
     component: A2UIComponent;
     state: Record<string, unknown>;
-    onEvent: (componentId: string, eventType: string, data?: unknown) => void;
+    onEvent: (eventType: string, data?: unknown) => void;
     renderChildren?: () => React.ReactNode;
   }>
 > = {
@@ -30,33 +56,35 @@ const COMPONENT_REGISTRY: Record<
 };
 
 export default function A2UIRenderer({ payload }: A2UIRendererProps) {
-  const state = payload.state || {};
+  const [state, setState] = useState<Record<string, unknown>>(
+    payload.state || {},
+  );
 
-  /**
-   * Handles events from A2UI components and routes them to the agent
-   */
+  // Re-sync when the agent ships a new payload (authoritative state wins).
+  useEffect(() => {
+    setState(payload.state || {});
+  }, [payload]);
+
   const handleEvent = async (
-    componentId: string,
+    component: A2UIComponent,
     eventType: string,
     data?: unknown,
   ) => {
-    const event = {
-      componentId,
-      eventType,
-      data,
-    };
+    setState((prev) => applyOptimisticUpdate(prev, component, eventType, data));
 
     try {
-      // Send event to agent via Tauri command
-      await invoke("dispatch_a2ui_event", { event: JSON.stringify(event) });
+      await invoke("dispatch_a2ui_event", {
+        event: JSON.stringify({
+          componentId: component.id,
+          eventType,
+          data,
+        }),
+      });
     } catch (err) {
       console.error("Failed to dispatch A2UI event:", err);
     }
   };
 
-  /**
-   * Recursively renders an A2UI component and its children
-   */
   const renderComponent = (component: A2UIComponent): React.ReactNode => {
     const Component = COMPONENT_REGISTRY[component.type];
 
@@ -76,7 +104,7 @@ export default function A2UIRenderer({ payload }: A2UIRendererProps) {
         key={component.id}
         component={component}
         state={state}
-        onEvent={handleEvent}
+        onEvent={(eventType, data) => handleEvent(component, eventType, data)}
         renderChildren={renderChildren}
       />
     );

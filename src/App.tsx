@@ -21,7 +21,7 @@ const demoA2UIPayload: A2UIPayload = {
       type: "card",
       props: {
         title: "A2UI Demo",
-        subtitle: "Phase 2 Implementation",
+        description: "Phase 2 Implementation",
         padding: 20,
       },
       children: [

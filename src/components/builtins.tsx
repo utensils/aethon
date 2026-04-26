@@ -18,7 +18,7 @@ import {
 interface ComponentProps {
   component: A2UIComponent;
   state: Record<string, unknown>;
-  onEvent: (componentId: string, eventType: string, data?: unknown) => void;
+  onEvent: (eventType: string, data?: unknown) => void;
   renderChildren?: () => React.ReactNode;
 }
 
@@ -92,7 +92,7 @@ export function Button({ component, state, onEvent }: ComponentProps) {
 
   const handleClick = () => {
     if (props.onClick) {
-      onEvent(component.id, "click", {});
+      onEvent("click", {});
     }
   };
 
@@ -213,14 +213,12 @@ export function TextInput({ component, state, onEvent }: ComponentProps) {
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (props.onChange) {
-      onEvent(component.id, "change", { value: e.target.value });
-    }
+    onEvent("change", { value: e.target.value });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && props.onSubmit) {
-      onEvent(component.id, "submit", { value: (e.target as HTMLInputElement).value });
+      onEvent("submit", { value: (e.target as HTMLInputElement).value });
     }
   };
 
