@@ -14,6 +14,13 @@ import type { A2UIComponentImpl, A2UISkill } from "./types";
 export class SkillRegistry {
   private readonly skills = new Map<string, A2UISkill>();
   private readonly components = new Map<string, A2UIComponentImpl>();
+  // Declarative A2UI subtree templates registered by extensions. Looked up
+  // alongside `components` — the renderer prefers React components if both
+  // are present, falling back to template expansion. Independent of the
+  // `skills` map because templates can be re-registered live without
+  // affecting any React-component skills.
+  private readonly templates = new Map<string, unknown>();
+  private readonly templateListeners = new Set<() => void>();
 
   register(skill: A2UISkill): void {
     this.skills.set(skill.name, skill);
@@ -39,6 +46,27 @@ export class SkillRegistry {
 
   resolve(type: string): A2UIComponentImpl | undefined {
     return this.components.get(type);
+  }
+
+  resolveTemplate(type: string): unknown | undefined {
+    return this.templates.get(type);
+  }
+
+  // Replace the template registry wholesale. Called when the bridge sends
+  // an `extension_components` snapshot — the bridge is the source of truth.
+  setTemplates(templates: Record<string, unknown>): void {
+    this.templates.clear();
+    for (const [type, template] of Object.entries(templates)) {
+      this.templates.set(type, template);
+    }
+    for (const fn of this.templateListeners) fn();
+  }
+
+  // Lets components subscribe to template-set changes so they re-render
+  // when an extension registers (or hot-reloads) a new component type.
+  onTemplatesChanged(fn: () => void): () => void {
+    this.templateListeners.add(fn);
+    return () => this.templateListeners.delete(fn);
   }
 
   list(): A2UISkill[] {

@@ -6,6 +6,34 @@ import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
+import { setPointer } from "./utils/jsonPointer";
+
+// Recursive structural merge. Plain objects recurse; arrays and primitives
+// replace. Used when folding the bridge's extension state snapshot into
+// app state so an extension's nested key doesn't wipe siblings.
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  );
+}
+function deepMergeState(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...target };
+  for (const [k, v] of Object.entries(source)) {
+    const existing = out[k];
+    if (isPlainObject(existing) && isPlainObject(v)) {
+      out[k] = deepMergeState(existing, v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -298,20 +326,52 @@ export default function App() {
       case "ready": {
         const model = (data.model as string) || "";
         const models = (data.models as ModelDescriptor[]) ?? [];
-        setState((prev) => ({
-          ...prev,
-          model,
-          status: "ready",
-          connection: "connected",
-          sidebar: {
-            ...((prev.sidebar as Record<string, unknown>) ?? {}),
-            models: models.map((m) => ({
-              id: m.id,
-              label: m.label,
-              active: m.id === model,
-            })),
-          },
-        }));
+        // Hydrate any extension-registered component templates the bridge
+        // discovered at boot. setTemplates is wholesale (bridge is the
+        // source of truth) so reload-after-restart picks up the same set.
+        const extComponents = (data.extensionComponents as
+          | Record<string, unknown>
+          | undefined) ?? {};
+        const extState = (data.extensionState as
+          | Record<string, unknown>
+          | undefined) ?? {};
+        registry.setTemplates(extComponents);
+        setState((prev) => {
+          let next: Record<string, unknown> = {
+            ...prev,
+            model,
+            status: "ready",
+            connection: "connected",
+            sidebar: {
+              ...((prev.sidebar as Record<string, unknown>) ?? {}),
+              models: models.map((m) => ({
+                id: m.id,
+                label: m.label,
+                active: m.id === model,
+              })),
+            },
+          };
+          // Fold the extension state tree into app state via a recursive
+          // deep merge. Plain objects recurse; primitives and arrays
+          // replace. Without the recursion, an extension setting a
+          // descendant of an app-owned key (e.g. /sidebar/foo) would
+          // wipe the rest of the parent on hydration.
+          next = deepMergeState(next, extState);
+          return next;
+        });
+        break;
+      }
+      case "extension_components": {
+        const components = (data.components as Record<string, unknown>) ?? {};
+        registry.setTemplates(components);
+        break;
+      }
+      case "state_patch": {
+        // An extension pushed a state mutation. Apply the JSON Pointer
+        // path as an immutable update so bound components re-render.
+        const path = data.path as string | undefined;
+        if (!path) break;
+        setState((prev) => setPointer(prev, path, data.value));
         break;
       }
       case "model_changed": {

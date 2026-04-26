@@ -194,7 +194,7 @@ export function ChatHistory({ component, state }: BuiltinComponentProps) {
                 <ReactMarkdown>{m.text}</ReactMarkdown>
               </div>
             )}
-            {m.a2ui && <A2UIRenderer payload={m.a2ui} />}
+            {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} />}
           </div>
         ))
       )}
@@ -244,12 +244,12 @@ export function MainCanvas({ component, state }: BuiltinComponentProps) {
               <ReactMarkdown>{m.text}</ReactMarkdown>
             </div>
           )}
-          {m.a2ui && <A2UIRenderer payload={m.a2ui} />}
+          {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} />}
         </div>
       ))}
       {liveSubtree && (
         <div className="a2ui-canvas-live">
-          <A2UIRenderer payload={liveSubtree} />
+          <A2UIRenderer payload={liveSubtree} state={state} />
         </div>
       )}
     </main>
