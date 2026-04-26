@@ -53,11 +53,24 @@ fn send_message(
     Ok(())
 }
 
+#[tauri::command]
+fn dispatch_a2ui_event(event: String, state: State<'_, AgentProcess>) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    let child = guard.as_mut().ok_or("agent not running")?;
+    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+
+    let payload = serde_json::json!({"type": "a2ui_event", "event": serde_json::from_str::<serde_json::Value>(&event).map_err(|e| e.to_string())?});
+    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
+    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(AgentProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![send_message])
+        .invoke_handler(tauri::generate_handler![send_message, dispatch_a2ui_event])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

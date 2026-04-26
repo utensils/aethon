@@ -1,13 +1,100 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import A2UIRenderer from "./components/A2UIRenderer";
+import type { A2UIPayload } from "./types/a2ui";
 
 type Role = "user" | "agent";
 
 type Message = {
   id: string;
   role: Role;
-  text: string;
+  text?: string;
+  a2ui?: A2UIPayload;
+};
+
+// Demo A2UI payload for testing Phase 2
+const demoA2UIPayload: A2UIPayload = {
+  components: [
+    {
+      id: "demo-card",
+      type: "card",
+      props: {
+        title: "A2UI Demo",
+        subtitle: "Phase 2 Implementation",
+        padding: 20,
+      },
+      children: [
+        {
+          id: "demo-container",
+          type: "container",
+          props: {
+            direction: "column",
+            gap: 16,
+          },
+          children: [
+            {
+              id: "demo-text",
+              type: "text",
+              props: {
+                content: "This is a working A2UI renderer with data binding and event dispatch.",
+              },
+            },
+            {
+              id: "demo-code",
+              type: "code",
+              props: {
+                content: `const greeting = "Hello from A2UI!";
+console.log(greeting);`,
+                language: "typescript",
+                showLineNumbers: true,
+              },
+            },
+            {
+              id: "demo-input",
+              type: "text-input",
+              props: {
+                value: { $ref: "/userInput" },
+                placeholder: "Type something...",
+                onChange: "input-changed",
+              },
+            },
+            {
+              id: "demo-button-container",
+              type: "container",
+              props: {
+                direction: "row",
+                gap: 8,
+              },
+              children: [
+                {
+                  id: "demo-button-primary",
+                  type: "button",
+                  props: {
+                    label: "Primary Action",
+                    variant: "primary",
+                    onClick: "primary-clicked",
+                  },
+                },
+                {
+                  id: "demo-button-secondary",
+                  type: "button",
+                  props: {
+                    label: "Secondary Action",
+                    variant: "secondary",
+                    onClick: "secondary-clicked",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  state: {
+    userInput: "Initial value",
+  },
 };
 
 export default function App() {
@@ -26,6 +113,13 @@ export default function App() {
           setMessages((prev) => [
             ...prev,
             { id: crypto.randomUUID(), role: "agent", text: data.content },
+          ]);
+          if (data.done) setWaiting(false);
+        } else if (data.type === "a2ui" && data.payload) {
+          // A2UI payload from agent
+          setMessages((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), role: "agent", a2ui: data.payload },
           ]);
           if (data.done) setWaiting(false);
         } else if (data.type === "error") {
@@ -99,6 +193,11 @@ export default function App() {
         </span>
       </header>
 
+      {/* A2UI Demo Section */}
+      <div style={{ padding: "20px", borderBottom: "1px solid var(--border)" }}>
+        <A2UIRenderer payload={demoA2UIPayload} />
+      </div>
+
       <div className="message-list" ref={listRef}>
         {messages.length === 0 ? (
           <div className="message-empty">
@@ -108,7 +207,8 @@ export default function App() {
           messages.map((m) => (
             <div key={m.id} className={`message ${m.role}`}>
               <span className="message-role">{m.role}</span>
-              {m.text}
+              {m.text && m.text}
+              {m.a2ui && <A2UIRenderer payload={m.a2ui} />}
             </div>
           ))
         )}
