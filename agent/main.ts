@@ -250,6 +250,49 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
+  // Track how many bytes of bash output we've already streamed to the terminal
+  // panel so partial updates only forward the suffix. Cleared on tool end.
+  const bashSentBytes = new Map<string, number>();
+
+  // Format and chunk bash output for the terminal panel. Streams the suffix
+  // after `alreadySent` bytes; if the new total exceeds the per-tool cap,
+  // emits a truncation notice and only sends the trailing window.
+  function streamBashOutputDelta(callId: string, fullText: string): void {
+    const TERMINAL_MAX_BYTES = 64 * 1024;
+    const TERMINAL_CHUNK_BYTES = 8 * 1024;
+    const sent = bashSentBytes.get(callId) ?? 0;
+    let body = fullText;
+    let truncated = false;
+    if (body.length > TERMINAL_MAX_BYTES) {
+      body = body.slice(body.length - TERMINAL_MAX_BYTES);
+      truncated = true;
+    }
+    // After possible truncation, recompute what hasn't been sent. If we
+    // truncated, the byte counter is no longer aligned with the original
+    // string — drop the cache and re-send the whole window once.
+    let suffix: string;
+    if (truncated || sent > body.length) {
+      suffix = body;
+      if (truncated) {
+        send({
+          type: "terminal_output",
+          content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
+        });
+      }
+    } else {
+      suffix = body.slice(sent);
+    }
+    if (!suffix) return;
+    const normalized = suffix.replace(/\r?\n/g, "\r\n");
+    for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
+      send({
+        type: "terminal_output",
+        content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
+      });
+    }
+    bashSentBytes.set(callId, body.length);
+  }
+
   // Stream text deltas, surface tool calls as A2UI cards, and flush
   // `response_end` when the agent settles. The frontend appends text deltas
   // to the trailing chat bubble, replaces tool messages by their stable id
@@ -298,6 +341,18 @@ async function main() {
         }
         break;
       }
+      case "tool_execution_update": {
+        // Stream partial bash output as it arrives so long-running commands
+        // (test runs, installs) are visible in the terminal panel before
+        // they exit. Only the new bytes are forwarded each tick.
+        if (event.toolName === "bash") {
+          const extracted = extractToolContent(event.partialResult);
+          if (extracted.text) {
+            streamBashOutputDelta(event.toolCallId, extracted.text);
+          }
+        }
+        break;
+      }
       case "tool_execution_end": {
         const cached = toolArgsCache.get(event.toolCallId);
         const payload = toolCardPayload({
@@ -310,35 +365,11 @@ async function main() {
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
         if (event.toolName === "bash") {
           const extracted = extractToolContent(event.result);
-          // Cap forwarded output and stream it in chunks so a `cat huge_file`
-          // can't freeze the IPC pipe or the webview. xterm's scrollback is
-          // bounded so older lines fall off; the tail (most recent) wins.
-          const TERMINAL_MAX_BYTES = 64 * 1024;
-          const TERMINAL_CHUNK_BYTES = 8 * 1024;
-          let body = extracted.text;
-          let truncated = false;
-          if (body.length > TERMINAL_MAX_BYTES) {
-            body = body.slice(body.length - TERMINAL_MAX_BYTES);
-            truncated = true;
-          }
-          // Normalize unix line endings to xterm's CRLF so each output line
-          // starts at column 0 instead of staircasing across the panel.
-          const normalized = body.replace(/\r?\n/g, "\r\n");
-          if (truncated) {
-            send({
-              type: "terminal_output",
-              content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
-            });
-          }
-          for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
-            send({
-              type: "terminal_output",
-              content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
-            });
-          }
-          if (normalized && !normalized.endsWith("\r\n")) {
-            send({ type: "terminal_output", content: "\r\n" });
-          }
+          // Forward only the suffix that wasn't already streamed via
+          // tool_execution_update events.
+          streamBashOutputDelta(event.toolCallId, extracted.text);
+          send({ type: "terminal_output", content: "\r\n" });
+          bashSentBytes.delete(event.toolCallId);
         }
         toolArgsCache.delete(event.toolCallId);
         break;
