@@ -165,6 +165,9 @@ export interface ChatInputComponent extends A2UIComponent {
     disabled?: BooleanValue;
     onSubmit?: string;
     onChange?: string;
+    // Slash command suggestions. When the input starts with `/`, the
+    // matching commands surface in an autocomplete dropdown.
+    commands?: { name: string; description?: string; usage?: string }[] | { $ref: string };
   };
 }
 

@@ -36,3 +36,4 @@ lcov.info
 .playwright-mcp/
 /aethon-*.png
 /run-phase*.sh
+uat-*.png

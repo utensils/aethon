@@ -124,8 +124,9 @@
           "props": {
             "area": "chat-input",
             "value": { "$ref": "/draft" },
-            "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline)",
+            "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
             "disabled": { "$ref": "/waiting" },
+            "commands": { "$ref": "/slashCommands" },
             "onSubmit": "chat:send"
           }
         },
@@ -156,6 +157,7 @@
     },
     "terminal": {
       "open": false
-    }
+    },
+    "slashCommands": []
   }
 }

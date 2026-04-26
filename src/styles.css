@@ -412,6 +412,52 @@ body {
   background: var(--bg-elev);
   width: 100%;
   align-items: stretch;
+  position: relative;
+}
+
+/* Slash command autocomplete — portal-rendered to document.body and
+   anchored via inline `position: fixed` (see ChatInput). The default
+   layout grid cell uses overflow: hidden, so the menu must escape the
+   cell's clipping context. */
+.a2ui-slash-menu {
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 4px 0;
+  z-index: 50;
+}
+
+.a2ui-slash-item {
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: baseline;
+  color: var(--text);
+}
+
+.a2ui-slash-item-active {
+  background: var(--accent-hover-tint);
+}
+
+.a2ui-slash-item-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.a2ui-slash-item-usage {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+}
+
+.a2ui-slash-item-desc {
+  color: var(--text-dim);
 }
 
 .a2ui-chat-input-field {

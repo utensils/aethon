@@ -14,6 +14,10 @@
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...] }
+ *   { "type": "notice", "message": "..." }
+ *      // Non-terminal informational message. The frontend renders it as a
+ *      // system chat bubble WITHOUT touching the waiting/status flags, so
+ *      // an in-flight prompt stays in flight (Stop button stays visible).
  *   { "type": "response_delta", "messageId": "<msg-id>", "content": "..." }
  *      // messageId groups deltas that belong to the same pi assistant message
  *      // (timestamp-derived). The frontend uses it to keep all text from one
@@ -250,6 +254,15 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
+  // Tracks whether a prompt is mid-flight (between `session.prompt()` call
+  // and the agent_end event). Used to reject overlapping `chat` messages so
+  // the frontend doesn't get confused by AgentSession's "already processing"
+  // rejection. `agentEndFired` distinguishes prompts that triggered an agent
+  // run from prompts pi handled without one (e.g. server-side slash commands
+  // that short-circuit before invoking the LLM).
+  let promptInFlight = false;
+  let agentEndFired = false;
+
   // Format and forward bash output to the terminal panel in chunks. Caps a
   // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
   // can't choke the IPC pipe.
@@ -355,6 +368,8 @@ async function main() {
         break;
       }
       case "agent_end": {
+        agentEndFired = true;
+        promptInFlight = false;
         send({ type: "response_end" });
         break;
       }
@@ -382,12 +397,59 @@ async function main() {
             send({ type: "error", message: "chat: missing content" });
             break;
           }
-          await session.prompt(msg.content);
+          // Gate concurrent chats: pi's session.prompt() rejects with
+          // "Agent is already processing" if called while a previous run
+          // is still streaming. The UI's chat-input is disabled while
+          // waiting, but a stray IPC could still arrive — bounce it
+          // explicitly so the frontend doesn't mistake the rejection for
+          // a real response_end.
+          if (promptInFlight) {
+            // `error` would flip the frontend's waiting=false, taking the
+            // Stop button down even though the first prompt is still
+            // running. `notice` is a non-terminal system message instead.
+            send({ type: "notice", message: "agent busy — send /stop first" });
+            break;
+          }
+          // CRITICAL: do NOT await — `for await (const line of rl)` processes
+          // one stdin line at a time, so awaiting here would queue any
+          // subsequent "stop" message behind the in-flight prompt and Stop
+          // would never reach session.abort() until the prompt finished
+          // naturally. Track in-flight state via promptInFlight so we can
+          // reject overlapping chats above; cleared on agent_end OR in
+          // .finally() if pi short-circuited the prompt without an agent
+          // run (e.g. a server-side slash command). The finally branch
+          // also synthesizes a `response_end` so the frontend's waiting
+          // flag clears when no streaming happened.
+          promptInFlight = true;
+          agentEndFired = false;
+          session
+            .prompt(msg.content)
+            .catch((err) => {
+              const message = err instanceof Error ? err.message : String(err);
+              send({ type: "error", message: `prompt: ${message}` });
+            })
+            .finally(() => {
+              if (!agentEndFired) {
+                promptInFlight = false;
+                send({ type: "response_end" });
+              }
+            });
           break;
         }
         case "set_model": {
           if (!msg.id) {
             send({ type: "error", message: "set_model: missing id" });
+            break;
+          }
+          // Same in-flight gate as `chat`: pi rejects setModel while a run
+          // is active, and the resulting `error` would clobber waiting=true
+          // and hide the Stop button on the original prompt. Surface as a
+          // non-terminal notice instead so the user keeps their stop UI.
+          if (promptInFlight) {
+            send({
+              type: "notice",
+              message: "agent busy — stop the current prompt before switching models",
+            });
             break;
           }
           const [provider, ...rest] = msg.id.split("/");
@@ -402,9 +464,16 @@ async function main() {
           break;
         }
         case "stop": {
-          // session.abort() resolves once the agent settles to idle; the
-          // existing agent_end → response_end path then flips /waiting.
-          await session.abort();
+          // session.abort() cancels the LLM stream / agent loop. The agent's
+          // run signal propagates to the bash tool's `signal.addEventListener
+          // ("abort", ...)` handler, which calls killProcessTree(child.pid),
+          // so any in-flight bash subprocess gets SIGKILLed. Don't await —
+          // we want to free the message loop immediately so a follow-up
+          // chat doesn't queue behind a slow settle.
+          session.abort().catch((err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", message: `abort: ${message}` });
+          });
           break;
         }
         case "report": {

@@ -8,8 +8,9 @@
  * their own components.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -259,6 +260,12 @@ export function MainCanvas({ component, state }: BuiltinComponentProps) {
 // ChatInput — single-line composer. Submits via onSubmit event with `{ value }`.
 // ---------------------------------------------------------------------------
 
+interface SlashCommandHint {
+  name: string;
+  description?: string;
+  usage?: string;
+}
+
 export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
     value?: StringValue;
@@ -266,6 +273,10 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     disabled?: BooleanValue;
     onSubmit?: string;
     onChange?: string;
+    // Slash command suggestions surfaced in a dropdown when the input
+    // starts with `/`. Resolved as raw value (not via resolveString) so
+    // the array shape comes through intact when bound by $ref.
+    commands?: SlashCommandHint[] | { $ref: string };
   };
 
   const value = props.value ? resolveString(props.value, state) : "";
@@ -274,11 +285,134 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     : "";
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
 
+  // Resolve the commands list. Supports inline arrays or $ref-bound state.
+  const commandsRaw = props.commands;
+  const commands: SlashCommandHint[] = useMemo(() => {
+    if (!commandsRaw) return [];
+    if (Array.isArray(commandsRaw)) return commandsRaw;
+    if (typeof commandsRaw === "object" && "$ref" in commandsRaw) {
+      const resolved = resolvePointer(state, commandsRaw.$ref);
+      return Array.isArray(resolved) ? (resolved as SlashCommandHint[]) : [];
+    }
+    return [];
+  }, [commandsRaw, state]);
+
+  // Tracks the draft value the user pressed Escape on. While the live value
+  // matches that snapshot, the picker stays dismissed so Escape doesn't
+  // require clearing the input. Editing the draft (any change) re-opens.
+  const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (dismissedDraft !== null && value !== dismissedDraft) {
+      setDismissedDraft(null);
+    }
+  }, [value, dismissedDraft]);
+
+  // Slash autocomplete: show when the input begins with `/` (but not `//`,
+  // which is the literal-slash escape) and matches at least one command.
+  const slashMatch = useMemo(() => {
+    if (disabled) return null;
+    if (dismissedDraft !== null && value === dismissedDraft) return null;
+    const m = value.match(/^\/([A-Za-z][\w-]*)?$/);
+    if (!m) return null;
+    const prefix = (m[1] ?? "").toLowerCase();
+    const matches = commands.filter((c) => c.name.toLowerCase().startsWith(prefix));
+    return matches.length > 0 ? { prefix, matches } : null;
+  }, [value, commands, disabled, dismissedDraft]);
+
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  // Reset highlight when the visible list changes so the cursor stays inside
+  // bounds and on the first suggestion for a new prefix.
+  useEffect(() => {
+    setHighlightIdx(0);
+  }, [slashMatch?.matches.length, slashMatch?.prefix]);
+
+  // The slash menu is portalled to document.body so it can't be clipped by
+  // ancestor `overflow: hidden` (the default-layout grid cell uses that to
+  // contain chat history scrolling). Track the chat-input rect so we can
+  // anchor the menu in fixed coordinates above it.
+  const inputContainerRef = useRef<HTMLDivElement>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    left: number;
+    bottom: number;
+    width: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!slashMatch || !inputContainerRef.current) {
+      setMenuAnchor(null);
+      return;
+    }
+    const update = () => {
+      const r = inputContainerRef.current!.getBoundingClientRect();
+      setMenuAnchor({
+        left: r.left + 16,
+        bottom: window.innerHeight - r.top + 4,
+        width: r.width - 32,
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [slashMatch]);
+
+  const insertCommand = (cmd: SlashCommandHint) => {
+    const text = `/${cmd.name} `;
+    onEvent("change", { value: text });
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onEvent("change", { value: e.target.value });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashMatch) {
+      const list = slashMatch.matches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightIdx((i) => (i + 1) % list.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightIdx((i) => (i - 1 + list.length) % list.length);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        insertCommand(list[highlightIdx] ?? list[0]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        // Just dismiss the picker — keep the typed text intact. The
+        // dismissedDraft snapshot above re-opens the picker as soon as
+        // the user edits the draft again.
+        setDismissedDraft(value);
+        return;
+      }
+      // Enter behavior with the picker open:
+      //   - If the draft already matches a command exactly (`/help`,
+      //     `/clear`), submit it. Otherwise the user would have to press
+      //     Enter twice — once to "insert" the same text, once to submit.
+      //   - Else insert the highlighted suggestion to complete the prefix.
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const v = (e.target as HTMLTextAreaElement).value;
+        const exact = list.find(
+          (c) => v === `/${c.name}` || v.startsWith(`/${c.name} `),
+        );
+        if (exact && v.trim().length > 0 && !disabled) {
+          onEvent("submit", { value: v });
+          return;
+        }
+        insertCommand(list[highlightIdx] ?? list[0]);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const v = (e.target as HTMLTextAreaElement).value;
@@ -299,7 +433,49 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   };
 
   return (
-    <div className="a2ui-chat-input">
+    <div className="a2ui-chat-input" ref={inputContainerRef}>
+      {slashMatch && menuAnchor &&
+        createPortal(
+          <div
+            className="a2ui-slash-menu"
+            role="listbox"
+            style={{
+              position: "fixed",
+              left: `${menuAnchor.left}px`,
+              bottom: `${menuAnchor.bottom}px`,
+              width: `${menuAnchor.width}px`,
+            }}
+          >
+            {slashMatch.matches.map((c, i) => (
+              <div
+                key={c.name}
+                role="option"
+                aria-selected={i === highlightIdx}
+                className={
+                  i === highlightIdx
+                    ? "a2ui-slash-item a2ui-slash-item-active"
+                    : "a2ui-slash-item"
+                }
+                onMouseDown={(e) => {
+                  // mousedown (not click) so the textarea doesn't lose focus
+                  // before the insertion fires.
+                  e.preventDefault();
+                  insertCommand(c);
+                }}
+                onMouseEnter={() => setHighlightIdx(i)}
+              >
+                <span className="a2ui-slash-item-name">/{c.name}</span>
+                {c.usage && (
+                  <span className="a2ui-slash-item-usage"> {c.usage}</span>
+                )}
+                {c.description && (
+                  <span className="a2ui-slash-item-desc"> — {c.description}</span>
+                )}
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
       <textarea
         className="a2ui-chat-input-field"
         rows={2}
