@@ -5,6 +5,7 @@
  * Inbound (stdin → bridge):
  *   { "type": "chat", "content": "..." }
  *   { "type": "set_model", "id": "provider/model-id" }
+ *   { "type": "stop" }                          // abort the in-flight prompt
  *   { "type": "a2ui_event", "event": { ... } }   // not yet wired into the agent
  *
  * Outbound (bridge → stdout):
@@ -289,6 +290,12 @@ async function main() {
           }
           await session.setModel(next);
           send({ type: "model_changed", model: msg.id });
+          break;
+        }
+        case "stop": {
+          // session.abort() resolves once the agent settles to idle; the
+          // existing agent_end → response_end path then flips /waiting.
+          await session.abort();
           break;
         }
         case "a2ui_event": {

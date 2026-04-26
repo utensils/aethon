@@ -309,6 +309,21 @@ export default function App() {
         // Optimistic update already wrote /draft; nothing more to forward.
         return true;
       }
+      if (component.id === "chat-input" && eventType === "cancel") {
+        try {
+          await invoke("agent_command", {
+            payload: JSON.stringify({ type: "stop" }),
+          });
+          setStatusFlags({ status: "stopping…" });
+        } catch (err) {
+          appendMessage({
+            id: crypto.randomUUID(),
+            role: "agent",
+            text: `Failed to stop: ${err}`,
+          });
+        }
+        return true;
+      }
       if (component.id === "sidebar" && eventType === "select") {
         const selected = data as { sectionId?: string; itemId?: string } | undefined;
         if (selected?.itemId === "toggle-terminal") {

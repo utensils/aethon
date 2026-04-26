@@ -279,6 +279,10 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     }
   };
 
+  const handleStop = () => {
+    onEvent("cancel");
+  };
+
   return (
     <div className="a2ui-chat-input">
       <textarea
@@ -290,14 +294,24 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         onChange={handleChange}
         onKeyDown={handleKeyDown}
       />
-      <button
-        type="button"
-        className="a2ui-chat-input-send"
-        onClick={handleClick}
-        disabled={disabled || value.trim().length === 0}
-      >
-        Send
-      </button>
+      {disabled ? (
+        <button
+          type="button"
+          className="a2ui-chat-input-send a2ui-chat-input-stop"
+          onClick={handleStop}
+        >
+          Stop
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="a2ui-chat-input-send"
+          onClick={handleClick}
+          disabled={value.trim().length === 0}
+        >
+          Send
+        </button>
+      )}
     </div>
   );
 }

@@ -131,6 +131,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Real model name surfaced in the status bar (replaces hardcoded label)
 - [x] Model picker (sidebar) — switch model at runtime via `session.setModel()`
 - [x] Errors from the agent surface as visible chat messages, not silent hangs
+- [x] Stop button — chat input swaps Send → Stop while `state.waiting` is true; Stop calls `session.abort()` via the bridge `stop` command
 - [x] Hot reload of the agent during dev — Rust watches `agent/` and respawns the child on change (debug builds only)
 - [x] Theme system — dark + light variants behind `data-theme` on `<html>`, switcher in sidebar, persisted to `localStorage`. Boots from `localStorage` then OS `prefers-color-scheme`.
 - [ ] Theme registry (custom themes via skills / `~/.aethon/themes/`)
