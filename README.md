@@ -52,9 +52,12 @@ Inside the dev shell, helper commands are available:
 aethon/
 ├── src/             # React frontend (entry: src/main.tsx)
 ├── src-tauri/       # Rust Tauri shell
+├── agent/           # Pi agent bridge (run as a bun subprocess)
 ├── flake.nix        # Nix dev environment
 └── package.json     # Frontend deps + tauri CLI
 ```
+
+See [`CLAUDE.md`](CLAUDE.md) for architecture notes and implementation status.
 
 ## License
 
