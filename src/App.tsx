@@ -128,33 +128,39 @@ export default function App() {
   }
 
   // Restore on mount. First read disk; if empty, migrate any legacy
-  // localStorage value the first build wrote.
-  const restoredRef = useRef(false);
+  // localStorage value the first build wrote. Tracked as state (not a ref)
+  // so the persistence effect re-runs once restore completes — otherwise a
+  // message that arrived during the async read window would never trigger
+  // a disk write on a fresh install.
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
     (async () => {
       const raw = await readStateWithLocalStorageFallback(
         PERSIST_FILE,
         LEGACY_LS_KEY,
       );
-      restoredRef.current = true;
-      if (!raw) return;
       try {
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed) || parsed.length === 0) return;
-        // Prepend restored history but keep any messages that landed during
-        // the async read (agent-stderr, an early send, etc.). Dedupe by id
-        // so a re-mount-after-restore doesn't double up.
-        setState((prev) => {
-          const live = (prev.messages as ChatMessage[]) ?? [];
-          const seen = new Set(live.map((m) => m.id));
-          const merged = [
-            ...(parsed as ChatMessage[]).filter((m) => !seen.has(m.id)),
-            ...live,
-          ];
-          return { ...prev, messages: merged };
-        });
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Prepend restored history but keep messages that landed during
+            // the async read (agent-stderr, an early send, etc.). Dedupe by
+            // id so a re-mount-after-restore doesn't double up.
+            setState((prev) => {
+              const live = (prev.messages as ChatMessage[]) ?? [];
+              const seen = new Set(live.map((m) => m.id));
+              const merged = [
+                ...(parsed as ChatMessage[]).filter((m) => !seen.has(m.id)),
+                ...live,
+              ];
+              return { ...prev, messages: merged };
+            });
+          }
+        }
       } catch {
         /* corrupt — ignore */
+      } finally {
+        setRestored(true);
       }
     })();
   }, []);
@@ -163,7 +169,7 @@ export default function App() {
   // completes so we don't overwrite the on-disk file with the empty boot state.
   const persistTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!restoredRef.current) return;
+    if (!restored) return;
     const messages = (state.messages as ChatMessage[]) ?? [];
     if (persistTimerRef.current !== null) {
       window.clearTimeout(persistTimerRef.current);
@@ -179,7 +185,7 @@ export default function App() {
         window.clearTimeout(persistTimerRef.current);
       }
     };
-  }, [state.messages]);
+  }, [state.messages, restored]);
 
   function clearChat() {
     setState((prev) => ({ ...prev, messages: [] }));
