@@ -175,6 +175,7 @@ expand canvas, add panels) because everything is A2UI.
 ### Cross-cutting
 
 - [x] Terminal panel — `xterm.js` with WebGL renderer, toggled from sidebar
+- [~] Bash tool output streams into the terminal panel via the `aethon:terminal` window event (default-layout terminal opts in via `subscribeToBash`). End-only streaming for now: pi's bash tool exposes partial output as a rolling tail buffer, so reliable interim streaming needs a real test rig before re-enabling.
 - [x] In-memory session per app launch (`SessionManager.inMemory()`)
 - [x] `aethon-debug` skill — TCP eval server (`127.0.0.1:19433` in dev) + slash command for driving the running app from Claude (eval, send, set-model, screenshot, wait, status). Mirrors Claudette's `claudette-debug` pattern.
 - [ ] Multiple canvases / tabs (one pi session per tab)
