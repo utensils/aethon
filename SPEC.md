@@ -178,7 +178,8 @@ expand canvas, add panels) because everything is A2UI.
 - [x] In-memory session per app launch (`SessionManager.inMemory()`)
 - [x] `aethon-debug` skill — TCP eval server (`127.0.0.1:19433` in dev) + slash command for driving the running app from Claude (eval, send, set-model, screenshot, wait, status). Mirrors Claudette's `claudette-debug` pattern.
 - [ ] Multiple canvases / tabs (one pi session per tab)
-- [~] Persistent state — chat history persists across reloads via `localStorage` (cap 200 messages, 8KB per text field). Layout, theme, and pi session state still need disk persistence at `~/.aethon/state.json`.
+- [x] Persistent state — chat history (`~/.aethon/messages.json`, capped at 200 messages / 8KB per text field, image data URLs stripped before persist) and theme (`~/.aethon/theme`) persist to disk via Tauri commands `read_state` / `write_state`. Cross-platform via Tauri's `home_dir()`. Legacy localStorage values migrate on first read; legacy entries are removed only after a confirmed disk write.
+- [x] Client-side slash commands (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`). Unknown commands fall through to the agent so pi-side handling and prompt templates aren't blocked. `//foo` escapes to send a literal `/foo`.
 - [ ] Configuration file (`~/.aethon/config.toml`) — currently inheriting `~/.pi/agent/settings.json`
 - [~] `dispatch_a2ui_event` consumed by the agent — agent now accepts `a2ui_event` messages without erroring, but doesn't yet route them to handlers
 
