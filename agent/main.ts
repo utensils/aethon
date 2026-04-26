@@ -250,39 +250,36 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
-  // Track how many bytes of bash output we've already streamed to the terminal
-  // panel so partial updates only forward the suffix. Cleared on tool end.
+  // Per-tool streaming state. `sent` tracks bytes of the ORIGINAL fullText
+  // we've already forwarded (not the truncated window) so subsequent updates
+  // can compute the new suffix correctly. `truncationFired` is a one-shot
+  // flag so we only emit the "[…truncated]" banner the first time we cross
+  // the cap. Both cleared on tool_execution_end.
   const bashSentBytes = new Map<string, number>();
+  const bashTruncationFired = new Set<string>();
 
-  // Format and chunk bash output for the terminal panel. Streams the suffix
-  // after `alreadySent` bytes; if the new total exceeds the per-tool cap,
-  // emits a truncation notice and only sends the trailing window.
+  // Forward the new portion of a bash command's accumulated output to the
+  // terminal panel. Per-tool cap: at most TERMINAL_MAX_BYTES of any single
+  // forwarded chunk so a sudden burst can't blow IPC; if a single delta
+  // exceeds the cap, only the trailing window is sent and the banner fires
+  // once for that call.
   function streamBashOutputDelta(callId: string, fullText: string): void {
     const TERMINAL_MAX_BYTES = 64 * 1024;
     const TERMINAL_CHUNK_BYTES = 8 * 1024;
     const sent = bashSentBytes.get(callId) ?? 0;
-    let body = fullText;
-    let truncated = false;
-    if (body.length > TERMINAL_MAX_BYTES) {
-      body = body.slice(body.length - TERMINAL_MAX_BYTES);
-      truncated = true;
-    }
-    // After possible truncation, recompute what hasn't been sent. If we
-    // truncated, the byte counter is no longer aligned with the original
-    // string — drop the cache and re-send the whole window once.
-    let suffix: string;
-    if (truncated || sent > body.length) {
-      suffix = body;
-      if (truncated) {
+    if (fullText.length <= sent) return;
+
+    let suffix = fullText.slice(sent);
+    if (suffix.length > TERMINAL_MAX_BYTES) {
+      suffix = suffix.slice(suffix.length - TERMINAL_MAX_BYTES);
+      if (!bashTruncationFired.has(callId)) {
+        bashTruncationFired.add(callId);
         send({
           type: "terminal_output",
-          content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
+          content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes per chunk]\r\n`,
         });
       }
-    } else {
-      suffix = body.slice(sent);
     }
-    if (!suffix) return;
     const normalized = suffix.replace(/\r?\n/g, "\r\n");
     for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
       send({
@@ -290,7 +287,7 @@ async function main() {
         content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
       });
     }
-    bashSentBytes.set(callId, body.length);
+    bashSentBytes.set(callId, fullText.length);
   }
 
   // Stream text deltas, surface tool calls as A2UI cards, and flush
@@ -370,6 +367,7 @@ async function main() {
           streamBashOutputDelta(event.toolCallId, extracted.text);
           send({ type: "terminal_output", content: "\r\n" });
           bashSentBytes.delete(event.toolCallId);
+          bashTruncationFired.delete(event.toolCallId);
         }
         toolArgsCache.delete(event.toolCallId);
         break;
