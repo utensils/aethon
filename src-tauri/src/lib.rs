@@ -5,6 +5,38 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// Resolve `~/.aethon/<name>` after stripping any path-traversal segments.
+/// Returns the absolute path; the parent directory is created on demand.
+fn aethon_state_path(name: &str) -> Result<PathBuf, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name == ".." {
+        return Err(format!("invalid state name: {name}"));
+    }
+    let home = std::env::var_os("HOME").ok_or("HOME not set")?;
+    let dir = PathBuf::from(home).join(".aethon");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
+    Ok(dir.join(name))
+}
+
+/// Read a file from `~/.aethon/`. Returns an empty string when the file
+/// doesn't exist so callers can do a "first run" check without distinguishing
+/// missing from empty.
+#[tauri::command]
+fn read_state(name: String) -> Result<String, String> {
+    let path = aethon_state_path(&name)?;
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
+}
+
+/// Write a file to `~/.aethon/`. Creates the directory if missing.
+#[tauri::command]
+fn write_state(name: String, content: String) -> Result<(), String> {
+    let path = aethon_state_path(&name)?;
+    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))
+}
+
 #[cfg(debug_assertions)]
 mod debug;
 
@@ -287,6 +319,8 @@ pub fn run() {
             send_message,
             agent_command,
             dispatch_a2ui_event,
+            read_state,
+            write_state,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
