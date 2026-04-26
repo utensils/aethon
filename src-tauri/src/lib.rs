@@ -1,10 +1,113 @@
 use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+#[cfg(debug_assertions)]
+mod debug;
 
 struct AgentProcess(Mutex<Option<Child>>);
+
+/// Find the project root (the directory containing `agent/main.ts`). Tauri
+/// launches the dev binary with cwd set to `src-tauri/`, but our agent script
+/// lives one level up, so a naive relative path resolves to the wrong place.
+/// Walk up from cwd until we find the marker; fall back to cwd if nothing
+/// matches.
+fn project_root() -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut dir: &Path = &cwd;
+    for _ in 0..6 {
+        if dir.join("agent").join("main.ts").exists() {
+            return dir.to_path_buf();
+        }
+        match dir.parent() {
+            Some(p) => dir = p,
+            None => break,
+        }
+    }
+    cwd
+}
+
+/// Spawn `bun run agent/main.ts` if no live child is held. Idempotent.
+/// If a previously-held child has exited, drops it and respawns. Callers
+/// own the mutex around this. Stdout is read on a background thread; each
+/// line is emitted as an `agent-response` Tauri event.
+fn ensure_agent_spawned(
+    guard: &mut Option<Child>,
+    app: &AppHandle,
+) -> Result<(), String> {
+    // Reap a dead child if present — try_wait returns Ok(Some(_)) when exited.
+    if let Some(child) = guard.as_mut()
+        && let Ok(Some(status)) = child.try_wait()
+    {
+        eprintln!("[agent] previous child exited with {status:?}; respawning");
+        *guard = None;
+    }
+
+    if guard.is_some() {
+        return Ok(());
+    }
+
+    let root = project_root();
+    let mut child = Command::new("bun")
+        .current_dir(&root)
+        .arg("run")
+        .arg("agent/main.ts")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn agent (cwd={}): {e}", root.display()))?;
+
+    let pid = child.id();
+    eprintln!("[agent] spawned bun pid={pid}");
+
+    let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
+    let app_stdout = app.clone();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(text) => {
+                    let _ = app_stdout.emit("agent-response", text);
+                }
+                Err(_) => break,
+            }
+        }
+        eprintln!("[agent] stdout reader for pid={pid} exited");
+    });
+
+    // Capture stderr too — when the agent crashes inside Tauri's spawn env,
+    // stderr is the only visible signal. Lines are mirrored to Rust's stderr
+    // and forwarded to the frontend as `agent-stderr` events for the
+    // aethon-debug skill / status bar to surface.
+    let stderr = child.stderr.take().ok_or("no stderr on spawned agent")?;
+    let app_stderr = app.clone();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(text) => {
+                    eprintln!("[agent stderr pid={pid}] {text}");
+                    let _ = app_stderr.emit("agent-stderr", text);
+                }
+                Err(_) => break,
+            }
+        }
+        eprintln!("[agent] stderr reader for pid={pid} exited");
+    });
+
+    *guard = Some(child);
+    Ok(())
+}
+
+#[tauri::command]
+fn start_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    ensure_agent_spawned(&mut guard, &app)
+}
 
 #[tauri::command]
 fn send_message(
@@ -13,65 +116,192 @@ fn send_message(
     app: AppHandle,
 ) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    ensure_agent_spawned(&mut guard, &app)?;
 
-    // Spawn agent if not running
-    if guard.is_none() {
-        let child = Command::new("bun")
-            .arg("run")
-            .arg("agent/main.ts")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| format!("failed to spawn agent: {e}"))?;
-        *guard = Some(child);
-
-        // Spawn a reader thread for stdout
-        let child_ref = guard.as_mut().unwrap();
-        let stdout = child_ref.stdout.take().ok_or("no stdout")?;
-        let app_clone = app.clone();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                match line {
-                    Ok(text) => {
-                        let _ = app_clone.emit("agent-response", text);
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-    }
-
-    // Write message to agent stdin
     let child = guard.as_mut().ok_or("agent not running")?;
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
     let payload = serde_json::json!({"type": "chat", "content": message});
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+    Ok(())
+}
 
+/// Forward an arbitrary JSON command (e.g. `{"type":"set_model","id":"..."}`)
+/// to the agent's stdin. Used by the model picker and any future runtime
+/// controls that aren't wrapped in `dispatch_a2ui_event`.
+#[tauri::command]
+fn agent_command(
+    payload: String,
+    state: State<'_, AgentProcess>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    ensure_agent_spawned(&mut guard, &app)?;
+
+    let child = guard.as_mut().ok_or("agent not running")?;
+    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
+    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
     Ok(())
 }
 
 #[tauri::command]
-fn dispatch_a2ui_event(event: String, state: State<'_, AgentProcess>) -> Result<(), String> {
+fn dispatch_a2ui_event(
+    event: String,
+    state: State<'_, AgentProcess>,
+    app: AppHandle,
+) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    ensure_agent_spawned(&mut guard, &app)?;
+
     let child = guard.as_mut().ok_or("agent not running")?;
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-
-    let payload = serde_json::json!({"type": "a2ui_event", "event": serde_json::from_str::<serde_json::Value>(&event).map_err(|e| e.to_string())?});
+    let event_value: serde_json::Value =
+        serde_json::from_str(&event).map_err(|e| e.to_string())?;
+    let payload = serde_json::json!({"type": "a2ui_event", "event": event_value});
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
-
     Ok(())
+}
+
+/// In debug builds, watch `agent/` for file changes and kill the running
+/// agent child so the next request respawns it with fresh code. Held in
+/// Tauri state to keep the watcher thread alive for the app's lifetime.
+struct AgentWatcher {
+    _watcher: notify::RecommendedWatcher,
+}
+
+#[cfg(debug_assertions)]
+fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
+    use notify::event::{DataChange, ModifyKind};
+    use notify::{EventKind, RecursiveMode, Watcher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let agent_dir = project_root().join("agent");
+    if !agent_dir.exists() {
+        eprintln!(
+            "[agent-watch] {} does not exist; hot reload disabled",
+            agent_dir.display()
+        );
+        return None;
+    }
+
+    let last_fire = Arc::new(AtomicU64::new(0));
+    let app_clone = app.clone();
+    let last_fire_clone = last_fire.clone();
+
+    let mut watcher = match notify::recommended_watcher(
+        move |res: notify::Result<notify::Event>| {
+            let event = match res {
+                Ok(ev) => ev,
+                Err(err) => {
+                    eprintln!("[agent-watch] error: {err}");
+                    return;
+                }
+            };
+
+            // Only react to actual content writes — `Modify(Data(_))` is the
+            // editor-saved-the-file event. Everything else (metadata, opens,
+            // creates from build-tool atime updates, etc.) is ignored to
+            // avoid spurious respawns at app startup.
+            let is_data_modify = matches!(
+                event.kind,
+                EventKind::Modify(ModifyKind::Data(DataChange::Any | DataChange::Content))
+            );
+            // Some platforms (macOS fsevents) report renames from atomic
+            // editors as `Modify(Name(_))`. Treat those as content changes too.
+            let is_atomic_rename =
+                matches!(event.kind, EventKind::Modify(ModifyKind::Name(_)));
+
+            if !(is_data_modify || is_atomic_rename) {
+                return;
+            }
+
+            // Only kill on changes to source files we actually care about.
+            let touched_source = event.paths.iter().any(|p| {
+                matches!(
+                    p.extension().and_then(|s| s.to_str()),
+                    Some("ts" | "tsx" | "json" | "mjs" | "js")
+                )
+            });
+            if !touched_source {
+                return;
+            }
+
+            // Debounce — editors fire several events per save (1.5s window).
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let last = last_fire_clone.load(Ordering::Relaxed);
+            if now.saturating_sub(last) < 1500 {
+                return;
+            }
+            last_fire_clone.store(now, Ordering::Relaxed);
+
+            // Kill the current child; the next inbound message will respawn.
+            let state: State<'_, AgentProcess> = app_clone.state();
+            if let Ok(mut guard) = state.0.lock()
+                && let Some(mut child) = guard.take()
+            {
+                let pid = child.id();
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = app_clone.emit("agent-reloaded", "");
+                eprintln!(
+                    "[agent-watch] killed pid={pid}; will respawn on next request (paths={:?})",
+                    event.paths
+                );
+            }
+        },
+    ) {
+        Ok(w) => w,
+        Err(err) => {
+            eprintln!("[agent-watch] failed to create watcher: {err}");
+            return None;
+        }
+    };
+
+    if let Err(err) = watcher.watch(&agent_dir, RecursiveMode::Recursive) {
+        eprintln!("[agent-watch] failed to watch {}: {err}", agent_dir.display());
+        return None;
+    }
+
+    eprintln!("[agent-watch] watching {} for changes", agent_dir.display());
+    Some(AgentWatcher { _watcher: watcher })
+}
+
+#[cfg(not(debug_assertions))]
+fn start_agent_watcher(_app: AppHandle) -> Option<AgentWatcher> {
+    None
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .manage(AgentProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![send_message, dispatch_a2ui_event])
-        .setup(|_app| Ok(()))
+        .invoke_handler(tauri::generate_handler![
+            start_agent,
+            send_message,
+            agent_command,
+            dispatch_a2ui_event,
+            #[cfg(debug_assertions)]
+            debug::debug_eval_js,
+            #[cfg(debug_assertions)]
+            debug::debug_eval_result,
+        ]);
+
+    builder
+        .setup(|app| {
+            if let Some(watcher) = start_agent_watcher(app.handle().clone()) {
+                app.manage(watcher);
+            }
+            #[cfg(debug_assertions)]
+            debug::start_debug_server(app.handle().clone());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

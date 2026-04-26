@@ -142,20 +142,53 @@ the toolchain or build inputs:
 - `~/Projects/utensils/claudex` — sibling Rust-only project. Good source of
   patterns for the flake skeleton (flake-parts + devshell + treefmt + crane).
 
+## Hot reload
+
+Vite hot-reloads the frontend automatically. The agent subprocess (`bun run
+agent/main.ts`) is held alive across reloads in Tauri state, so editing the
+agent on its own would not pick up changes — to fix this, in debug builds
+the Rust shell uses `notify` to watch `agent/` recursively and kills the
+child whenever a file changes. The next Tauri command (e.g. `start_agent`,
+`send_message`) lazily respawns it with the new code, and the frontend
+receives an `agent-reloaded` event so it can show "agent reloaded" in the
+status bar. Production builds skip the watcher entirely.
+
+If you find yourself wanting to manually restart the agent during dev, the
+simplest path is `touch agent/main.ts`.
+
+## Driving the app from Claude (`aethon-debug` skill)
+
+`.claude/skills/aethon-debug/` ships a slash-commandable skill for inspecting
+and driving the running dev app. In debug builds the Rust shell starts a TCP
+eval server on `127.0.0.1:19433` (override with `AETHON_DEBUG_PORT`); the
+script `scripts/debug-eval.sh` ships JS to that server, which wraps it in
+an async IIFE, evals it inside the webview, and returns the stringified
+result. Patterned on Claudette's `claudette-debug` skill — see its `SKILL.md`
+for the full action list.
+
+Webview globals exposed in dev only:
+
+- `window.__AETHON_STATE__()` — snapshot of the layout state object
+- `window.__AETHON_INVOKE__` — Tauri `invoke` (used by the eval wrapper)
+- `window.__AETHON_REGISTRY__` — `SkillRegistry` instance
+- `window.__AETHON_SET_STATE__(next)` — replace state (advanced)
+- `window.aethon` — public runtime API (`setLayout`, `registerSkill`, etc.)
+
+Use this proactively after touching any UI / agent code: connect, send a
+chat, screenshot, verify. The dev build must already be running — never
+launch a release build (the debug server is gated by `cfg(debug_assertions)`).
+
 ## Status — what is and isn't wired up
 
-**Done:** Tauri shell + React frontend; agent subprocess bridge with
-JSON-lines protocol; A2UI renderer with primitives, data binding (JSON
-Pointer `$ref`), and event dispatch; skill registry with the default-layout
-skill providing sidebar/canvas/terminal/status-bar/chat-input; runtime
-`window.aethon` API for layout/skill swapping.
+The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
+keyed against milestones M1–M4). Update both that checklist and any
+relevant notes here when capabilities land.
 
-**Not yet:** Streaming agent responses (currently sent as one chunk when the
-prompt resolves); compiled `aethon-agent` binary via `bun build --compile`
-(agent is run from source via `bun run agent/main.ts`); extension/hot-reload
-loading from `~/.aethon/`; multiple canvases/tabs; cross-platform release
-bundles; mobile (`tauri::mobile_entry_point` is wired but untested). See
-`SPEC.md` milestones M1–M4 for the broader roadmap.
+**Quick highlights as of writing:** chat round-trips with streaming text
+deltas, model picker in the sidebar (348 raw pi-ai entries, will be
+filtered later), agent hot reload during dev, and the `aethon-debug` skill
+above. Not yet: tool execution surfaced as A2UI cards, real `~/.aethon/`
+config, light theme, compiled binary, or release bundles.
 
 ## Local-only files (gitignored)
 

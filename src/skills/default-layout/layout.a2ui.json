@@ -77,6 +77,11 @@
                 ]
               },
               {
+                "id": "models",
+                "title": "Models",
+                "items": { "$ref": "/sidebar/models" }
+              },
+              {
                 "id": "history",
                 "title": "Chat History",
                 "items": { "$ref": "/sidebar/history" }
@@ -129,15 +134,16 @@
     }
   ],
   "state": {
-    "status": "ready",
+    "status": "starting…",
     "connection": "disconnected",
-    "model": "claude-sonnet-4-6",
+    "model": "—",
     "draft": "",
     "waiting": false,
     "messages": [],
     "canvas": null,
     "sidebar": {
-      "history": []
+      "history": [],
+      "models": []
     },
     "terminal": {
       "open": false,
