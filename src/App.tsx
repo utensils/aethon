@@ -181,8 +181,9 @@ export default function App() {
       }
       case "a2ui": {
         const payload = data.payload as A2UIPayload | undefined;
+        const id = (data.id as string) || crypto.randomUUID();
         if (payload) {
-          appendMessage({ id: crypto.randomUUID(), role: "agent", a2ui: payload });
+          appendMessage({ id, role: "agent", a2ui: payload });
         }
         if (data.done) setStatusFlags({ waiting: false, status: "ready" });
         break;
@@ -190,11 +191,20 @@ export default function App() {
     }
   }
 
+  // Append a chat message, or replace in place if a message with the same
+  // id already exists. This is what lets the bridge stream "running…" tool
+  // cards and update them with the final result without duplicating bubbles.
   function appendMessage(msg: ChatMessage) {
-    setState((prev) => ({
-      ...prev,
-      messages: [...((prev.messages as ChatMessage[]) ?? []), msg],
-    }));
+    setState((prev) => {
+      const messages = [...((prev.messages as ChatMessage[]) ?? [])];
+      const idx = messages.findIndex((m) => m.id === msg.id);
+      if (idx >= 0) {
+        messages[idx] = msg;
+      } else {
+        messages.push(msg);
+      }
+      return { ...prev, messages };
+    });
   }
 
   function appendOrAmendAgentText(delta: string) {

@@ -11,6 +11,10 @@
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...] }
  *   { "type": "response_delta", "content": "..." }
  *   { "type": "response_end" }
+ *   { "type": "a2ui", "id": "<message-id>", "payload": { ... } }
+ *      // Used for tool execution cards. Frontend treats `id` as a stable
+ *      // chat-message identity — re-emitting the same id replaces in place
+ *      // (so we can stream "running…" → final result).
  *   { "type": "model_changed", "model": "<id>" }
  *   { "type": "error", "message": "..." }
  *
@@ -24,6 +28,7 @@ import {
   AuthStorage,
   ModelRegistry,
   SessionManager,
+  SettingsManager,
   createAgentSession,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
@@ -45,40 +50,183 @@ function modelDescriptor(m: Model<Api>) {
   };
 }
 
+// Compile a pi-style enabledModels glob ("anthropic/claude-*") into a RegExp
+// rooted at the model key. Only `*` is treated as a wildcard (matches any
+// chars except `/`); everything else is escaped literally.
+function compilePattern(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const withWild = escaped.replace(/\*/g, "[^/]*");
+  return new RegExp(`^${withWild}$`);
+}
+
+// Render a one-line summary of tool args so the card description shows what
+// the tool was actually invoked with, not just `{...}`. Pi's built-in tools
+// have stable arg shapes; unknown tools fall back to a JSON preview.
+function summarizeToolArgs(toolName: string, args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const a = args as Record<string, unknown>;
+  switch (toolName) {
+    case "read":
+      return [a.path, a.startLine && `lines ${a.startLine}-${a.endLine ?? "end"}`]
+        .filter(Boolean)
+        .join(" ");
+    case "bash":
+      return String(a.command ?? "").split("\n")[0]?.slice(0, 200) ?? "";
+    case "edit":
+    case "write":
+      return String(a.path ?? "");
+    case "grep":
+      return `${a.pattern ?? ""}${a.path ? ` in ${a.path}` : ""}`;
+    case "find":
+      return String(a.pattern ?? a.path ?? "");
+    case "ls":
+      return String(a.path ?? ".");
+    default: {
+      const json = JSON.stringify(args);
+      return json.length > 200 ? json.slice(0, 197) + "…" : json;
+    }
+  }
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
+}
+
+function stringifyResult(result: unknown): string {
+  if (result === null || result === undefined) return "";
+  if (typeof result === "string") return result;
+  try {
+    return JSON.stringify(result, null, 2);
+  } catch {
+    return String(result);
+  }
+}
+
+// Build the A2UI payload for a tool-call card. `running` controls the title
+// suffix; `result` (when present) renders as a fenced code block child.
+function toolCardPayload(opts: {
+  callId: string;
+  toolName: string;
+  argsSummary: string;
+  result?: unknown;
+  isError?: boolean;
+  running?: boolean;
+}) {
+  const { callId, toolName, argsSummary, result, isError, running } = opts;
+  const titleSuffix = running ? " · running…" : isError ? " · error" : "";
+  const children: unknown[] = [];
+  if (result !== undefined) {
+    children.push({
+      id: `tool-${callId}-result`,
+      type: "code",
+      props: {
+        content: truncate(stringifyResult(result), 1500),
+        language: "text",
+      },
+    });
+  }
+  return {
+    components: [
+      {
+        id: `tool-${callId}`,
+        type: "card",
+        props: {
+          title: `${toolName}${titleSuffix}`,
+          description: argsSummary || undefined,
+        },
+        children,
+      },
+    ],
+  };
+}
+
 async function main() {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
+  const settingsManager = SettingsManager.create(process.cwd());
 
   const { session } = await createAgentSession({
     authStorage,
     modelRegistry,
+    settingsManager,
     sessionManager: SessionManager.inMemory(),
   });
 
-  // Only authed models are switchable from the UI. Always include the
-  // current session model even if its provider isn't authed (edge case).
-  const availableModels = modelRegistry.getAvailable();
-  const seen = new Set(availableModels.map(modelKey));
-  if (session.model && !seen.has(modelKey(session.model))) {
-    availableModels.unshift(session.model);
+  // Filter the picker to the user's enabledModels patterns from
+  // ~/.pi/agent/settings.json. Patterns may include `*` wildcards
+  // (e.g., "anthropic/claude-*"). When no patterns are configured,
+  // fall back to authed models so the picker is never empty.
+  const all = modelRegistry.getAll();
+  const enabled = settingsManager.getEnabledModels();
+  let pickerModels: Model<Api>[];
+  if (enabled && enabled.length > 0) {
+    const patterns = enabled.map(compilePattern);
+    pickerModels = all.filter((m) => {
+      const key = modelKey(m);
+      return patterns.some((p) => p.test(key));
+    });
+  } else {
+    pickerModels = modelRegistry.getAvailable();
   }
-  const models = availableModels.map(modelDescriptor);
+
+  // Always include the current session model so the active model is
+  // selectable even if its provider isn't authed or matched.
+  const seen = new Set(pickerModels.map(modelKey));
+  if (session.model && !seen.has(modelKey(session.model))) {
+    pickerModels.unshift(session.model);
+  }
+  const models = pickerModels.map(modelDescriptor);
 
   const currentModelId = session.model ? modelKey(session.model) : "";
   send({ type: "ready", model: currentModelId, models });
 
-  // Stream text deltas as they arrive; flush an explicit `response_end` when
-  // the agent's run settles. The frontend appends deltas to the trailing
-  // message, then unsets the waiting flag on response_end.
+  // Cache tool args from start so we can include them in the end-state card
+  // (tool_execution_end doesn't carry args).
+  const toolArgsCache = new Map<string, { name: string; summary: string }>();
+
+  // Stream text deltas, surface tool calls as A2UI cards, and flush
+  // `response_end` when the agent settles. The frontend appends text deltas
+  // to the trailing chat bubble, replaces tool messages by their stable id
+  // (so "running…" → "done" updates in place), and unsets the waiting flag
+  // on response_end.
   session.subscribe((event) => {
-    if (
-      event.type === "message_update" &&
-      event.assistantMessageEvent.type === "text_delta"
-    ) {
-      const delta = event.assistantMessageEvent.delta ?? "";
-      if (delta) send({ type: "response_delta", content: delta });
-    } else if (event.type === "agent_end") {
-      send({ type: "response_end" });
+    switch (event.type) {
+      case "message_update": {
+        if (event.assistantMessageEvent.type === "text_delta") {
+          const delta = event.assistantMessageEvent.delta ?? "";
+          if (delta) send({ type: "response_delta", content: delta });
+        }
+        break;
+      }
+      case "tool_execution_start": {
+        const summary = summarizeToolArgs(event.toolName, event.args);
+        toolArgsCache.set(event.toolCallId, { name: event.toolName, summary });
+        const payload = toolCardPayload({
+          callId: event.toolCallId,
+          toolName: event.toolName,
+          argsSummary: summary,
+          running: true,
+        });
+        send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
+        break;
+      }
+      case "tool_execution_end": {
+        const cached = toolArgsCache.get(event.toolCallId);
+        const payload = toolCardPayload({
+          callId: event.toolCallId,
+          toolName: event.toolName,
+          argsSummary: cached?.summary ?? "",
+          result: event.result,
+          isError: event.isError,
+        });
+        send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
+        toolArgsCache.delete(event.toolCallId);
+        break;
+      }
+      case "agent_end": {
+        send({ type: "response_end" });
+        break;
+      }
     }
   });
 

@@ -134,7 +134,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Hot reload of the agent during dev — Rust watches `agent/` and respawns the child on change (debug builds only)
 - [ ] Theme system (dark + light variants, runtime switcher) — currently dark-only
 - [ ] Compiled `aethon-agent` binary via `bun build --compile` — currently runs from source
-- [ ] Filter model picker to user's `enabledModels` patterns (currently lists all 348 pi-ai models)
+- [x] Filter model picker to user's `enabledModels` patterns from `~/.pi/agent/settings.json` (compiled glob patterns; falls back to authed models if none configured)
 
 ### M2 — A2UI Renderer
 
@@ -144,9 +144,9 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Data binding via JSON Pointer (`{"$ref": "/path"}`) — `DynamicString`/`Number`/`Boolean`
 - [x] Event dispatch (button clicks, form submissions → agent via Tauri IPC)
 - [x] Optimistic state updates for `change`/`submit` events on `$ref`-bound inputs
-- [~] Agent emits A2UI payloads — protocol carries `{type:"a2ui", payload}`, frontend renders it; agent does not yet *produce* A2UI output beyond plain text
-- [ ] Streaming progressive component renders (partial A2UI subtrees)
-- [ ] Tool execution surfaced as A2UI cards (read/bash/edit/write events → visible UI)
+- [x] Agent emits A2UI payloads — tool execution surfaces as `card` components with summarized args + result
+- [x] Tool execution surfaced as A2UI cards (read/bash/edit/write/grep/find/ls events → visible UI). Cards are emitted with a stable `tool-<callId>` message id, so the "running…" state updates in place to the final result instead of duplicating bubbles.
+- [~] Streaming progressive component renders — text deltas amend the trailing bubble; tool cards replace by id; full mid-stream A2UI subtree mutation via state $refs is not yet wired
 
 ### M3 — Extension & Skill System
 
