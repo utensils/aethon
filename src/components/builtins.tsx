@@ -173,9 +173,10 @@ export function Code({ component, state }: ComponentProps) {
 
   const content = resolveString(props.content, state);
   const language = props.language;
-  const showLineNumbers = props.showLineNumbers
-    ? resolveBoolean(props.showLineNumbers, state)
-    : false;
+  // Note: showLineNumbers could be used for future enhancement
+  // const showLineNumbers = props.showLineNumbers
+  //   ? resolveBoolean(props.showLineNumbers, state)
+  //   : false;
 
   const style: CSSProperties = {
     background: "var(--bg-input)",
