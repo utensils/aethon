@@ -100,39 +100,59 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+type ExtractedImage = { data: string; mimeType: string };
+type ExtractedResult = { text: string; images: ExtractedImage[] };
+
+// Cap images per tool card so a screenshot-spamming tool can't bloat a single
+// chat message past localStorage / IPC sanity limits.
+const MAX_IMAGES_PER_RESULT = 4;
+
 // Pi tool results follow the shape `{ content: [{type:"text", text:"..."}, ...] }`
-// (matching the LLM provider tool-result content format). Extract the text
-// content for display so the card shows readable output, not raw JSON.
-function stringifyResult(result: unknown): string {
-  if (result === null || result === undefined) return "";
-  if (typeof result === "string") return result;
-  if (typeof result === "object") {
-    const obj = result as Record<string, unknown>;
-    if (Array.isArray(obj.content)) {
-      const text = obj.content
-        .map((p) => {
-          if (p && typeof p === "object") {
-            const part = p as { type?: string; text?: string };
-            if (part.type === "text" && typeof part.text === "string") return part.text;
-            if (part.type === "image") return "[image]";
-          }
-          return "";
-        })
-        .filter(Boolean)
-        .join("\n");
-      if (text) return text;
-    }
-    if (typeof obj.text === "string") return obj.text;
+// (matching the LLM provider tool-result content format). Walk the content
+// array, pull out text for the code-block child and image data for any
+// `image` primitives we render alongside it.
+function extractToolContent(result: unknown): ExtractedResult {
+  const empty: ExtractedResult = { text: "", images: [] };
+  if (result === null || result === undefined) return empty;
+  if (typeof result === "string") return { text: result, images: [] };
+  if (typeof result !== "object") {
+    return { text: String(result), images: [] };
   }
+
+  const obj = result as Record<string, unknown>;
+  if (Array.isArray(obj.content)) {
+    const texts: string[] = [];
+    const images: ExtractedImage[] = [];
+    for (const p of obj.content) {
+      if (!p || typeof p !== "object") continue;
+      const part = p as { type?: string; text?: string; data?: string; mimeType?: string };
+      if (part.type === "text" && typeof part.text === "string") {
+        texts.push(part.text);
+      } else if (
+        part.type === "image" &&
+        typeof part.data === "string" &&
+        typeof part.mimeType === "string"
+      ) {
+        if (images.length < MAX_IMAGES_PER_RESULT) {
+          images.push({ data: part.data, mimeType: part.mimeType });
+        }
+      }
+    }
+    if (texts.length > 0 || images.length > 0) {
+      return { text: texts.join("\n"), images };
+    }
+  }
+  if (typeof obj.text === "string") return { text: obj.text, images: [] };
   try {
-    return JSON.stringify(result, null, 2);
+    return { text: JSON.stringify(result, null, 2), images: [] };
   } catch {
-    return String(result);
+    return { text: String(result), images: [] };
   }
 }
 
 // Build the A2UI payload for a tool-call card. `running` controls the title
-// suffix; `result` (when present) renders as a fenced code block child.
+// suffix; `result` (when present) renders as a fenced code block plus any
+// image children extracted from the tool result content.
 function toolCardPayload(opts: {
   callId: string;
   toolName: string;
@@ -145,13 +165,26 @@ function toolCardPayload(opts: {
   const titleSuffix = running ? " · running…" : isError ? " · error" : "";
   const children: unknown[] = [];
   if (result !== undefined) {
-    children.push({
-      id: `tool-${callId}-result`,
-      type: "code",
-      props: {
-        content: truncate(stringifyResult(result), 1500),
-        language: "text",
-      },
+    const extracted = extractToolContent(result);
+    if (extracted.text) {
+      children.push({
+        id: `tool-${callId}-result`,
+        type: "code",
+        props: {
+          content: truncate(extracted.text, 1500),
+          language: "text",
+        },
+      });
+    }
+    extracted.images.forEach((img, i) => {
+      children.push({
+        id: `tool-${callId}-image-${i}`,
+        type: "image",
+        props: {
+          src: `data:${img.mimeType};base64,${img.data}`,
+          alt: `${toolName} image ${i + 1}`,
+        },
+      });
     });
   }
   return {
