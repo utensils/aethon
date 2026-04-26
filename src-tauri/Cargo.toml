@@ -25,6 +25,7 @@ serde_json = "1"
 notify = "8"
 uuid = { version = "1.23.1", features = ["v4"] }
 tokio = { version = "1.52.1", features = ["net", "io-util", "time", "sync"] }
+toml = { version = "0.8", features = ["parse"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

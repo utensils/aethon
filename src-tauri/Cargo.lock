@@ -18,6 +18,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "toml 0.8.2",
  "uuid",
 ]
 
