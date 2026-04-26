@@ -1,1 +1,34 @@
+# Project-internal
 SPEC.md
+.aethon/
+
+# Claude Code session state
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.agents/
+
+# Node / Bun
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri
+target/
+src-tauri/gen/schemas/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Nix
+result
+result-*
+.direnv/
+
+# Coverage
+*.profraw
+*.profdata
+lcov.info

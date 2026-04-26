@@ -1,0 +1,28 @@
+[package]
+name = "aethon"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Pi with a face — agent-driven desktop shell with A2UI"
+homepage = "https://github.com/utensils/aethon"
+repository = "https://github.com/utensils/aethon"
+authors = ["James Brink <brink.james@gmail.com>"]
+readme = "../README.md"
+keywords = ["tauri", "desktop", "agent", "a2ui", "ai"]
+categories = ["gui", "command-line-utilities"]
+
+[lib]
+name = "aethon_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "aethon"
+path = "src/main.rs"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
