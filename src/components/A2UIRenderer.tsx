@@ -103,13 +103,33 @@ export default function A2UIRenderer({
     return { ...externalState, ...payload.state };
   }, [externalState, payload.state]);
 
-  // External state wins when the caller is driving state. Otherwise we own it.
-  const state = mergedExternalState ?? internalState;
+  // When the renderer is given external state but no upward write channel
+  // (the nested-message case: MainCanvas passes state but no onStateChange),
+  // optimistic local writes need somewhere to land that reads can see. The
+  // overlay holds those writes and is applied on top of mergedExternalState
+  // for reads. Without it, change/submit on payload-local controls would
+  // disappear into setInternalState and never appear in the rendered state.
+  const [overlay, setOverlay] = useState<Record<string, unknown>>({});
+
+  // Effective state for rendering. Three modes:
+  //   1. external + onStateChange: external is authoritative
+  //   2. external + no onStateChange: external + overlay (local writes here)
+  //   3. fully local: internalState
+  const state = useMemo(() => {
+    if (mergedExternalState) {
+      if (onStateChange) return mergedExternalState;
+      return { ...mergedExternalState, ...overlay };
+    }
+    return internalState;
+  }, [mergedExternalState, onStateChange, overlay, internalState]);
+
   const updateState = (
     updater: (prev: Record<string, unknown>) => Record<string, unknown>,
   ) => {
-    if (externalState && onStateChange) {
-      onStateChange(updater(externalState));
+    if (mergedExternalState && onStateChange) {
+      onStateChange(updater(mergedExternalState));
+    } else if (mergedExternalState) {
+      setOverlay((prev) => updater({ ...mergedExternalState, ...prev }));
     } else {
       setInternalState(updater);
     }
