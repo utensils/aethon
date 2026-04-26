@@ -7,6 +7,33 @@ import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { setPointer } from "./utils/jsonPointer";
+
+// Recursive structural merge. Plain objects recurse; arrays and primitives
+// replace. Used when folding the bridge's extension state snapshot into
+// app state so an extension's nested key doesn't wipe siblings.
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  );
+}
+function deepMergeState(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...target };
+  for (const [k, v] of Object.entries(source)) {
+    const existing = out[k];
+    if (isPlainObject(existing) && isPlainObject(v)) {
+      out[k] = deepMergeState(existing, v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -324,14 +351,12 @@ export default function App() {
               })),
             },
           };
-          // Fold the extension state tree into our state. Top-level keys
-          // owned by an extension are replaced wholesale (the tree is the
-          // bridge's authoritative snapshot), preserving the rest of app
-          // state. Done this way so overlapping setState writes that have
-          // already collapsed in the tree don't resurrect descendants.
-          for (const [k, v] of Object.entries(extState)) {
-            next = { ...next, [k]: v };
-          }
+          // Fold the extension state tree into app state via a recursive
+          // deep merge. Plain objects recurse; primitives and arrays
+          // replace. Without the recursion, an extension setting a
+          // descendant of an app-owned key (e.g. /sidebar/foo) would
+          // wipe the rest of the parent on hydration.
+          next = deepMergeState(next, extState);
           return next;
         });
         break;

@@ -62,6 +62,20 @@ export interface BuiltinComponentProps {
 }
 
 // A2UI primitives — always available, can't be overridden by skills.
+// Recursively prefix every component id in an extension template subtree
+// with the host instance's id. Used when expanding a template so multiple
+// instances don't share React keys or emit ambiguous event componentIds.
+function rewriteTemplateIds(node: A2UIComponent, prefix: string): A2UIComponent {
+  const out: A2UIComponent = {
+    ...node,
+    id: node.id ? `${prefix}__${node.id}` : prefix,
+  };
+  if (node.children && node.children.length > 0) {
+    out.children = node.children.map((c) => rewriteTemplateIds(c, prefix));
+  }
+  return out;
+}
+
 const PRIMITIVE_REGISTRY: Record<
   string,
   React.ComponentType<BuiltinComponentProps>
@@ -129,6 +143,15 @@ export default function A2UIRenderer({
       // Without the diff, snapshotted external keys would freeze in
       // internal and shadow future global updates (e.g. extension
       // state_patch values arriving after a local click).
+      //
+      // Known limitation: the diff is top-level only. If a chat-card
+      // text-input writes `/foo/bar` while extension state ALSO writes
+      // under `/foo/...`, the entire `foo` subtree freezes in the
+      // overlay and live extension updates to siblings stop reflecting
+      // in this card. The contrived collision (extension key namespace
+      // overlapping with a card-local input path) is unlikely in
+      // practice; deeper-path tracking would require threading the
+      // optimistic-update path out of applyOptimisticUpdate.
       setInternalState((prev) => {
         const ext = externalState as Record<string, unknown>;
         const merged = { ...ext, ...prev };
@@ -192,13 +215,11 @@ export default function A2UIRenderer({
       const template = registry.resolveTemplate(component.type);
       if (template && typeof template === "object") {
         const tpl = template as A2UIComponent;
-        // ALWAYS derive the expanded id from the host component, never
-        // reuse the template's own id — otherwise multiple renderings of
-        // the same template type collide on React keys and event ids.
-        const expanded: A2UIComponent = {
-          ...tpl,
-          id: `${component.id}__tpl`,
-        };
+        // Rewrite EVERY id in the template tree to be host-prefixed so
+        // multiple renderings don't collide on React keys nor on event
+        // componentIds (events from interactive children would otherwise
+        // be ambiguous between instances).
+        const expanded = rewriteTemplateIds(tpl, `${component.id}__tpl`);
         return renderComponent(expanded);
       }
       console.warn(`Unknown A2UI component type: ${component.type}`);
