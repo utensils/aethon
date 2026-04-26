@@ -202,6 +202,48 @@ export function Code({ component, state }: ComponentProps) {
   );
 }
 
+// Image component — renders a data URL or remote URL with a max-width cap.
+// Used by tool result cards (e.g. read tool returning an image).
+export function Image({ component, state }: ComponentProps) {
+  const props = component.props as {
+    src: StringValue;
+    alt?: StringValue;
+    maxWidth?: NumberValue;
+    caption?: StringValue;
+  };
+
+  const src = resolveString(props.src, state);
+  const alt = props.alt ? resolveString(props.alt, state) : "";
+  const maxWidth = props.maxWidth ? resolveNumber(props.maxWidth, state) : 480;
+  const caption = props.caption ? resolveString(props.caption, state) : undefined;
+
+  const style: CSSProperties = {
+    display: "block",
+    maxWidth: `${maxWidth}px`,
+    width: "100%",
+    height: "auto",
+    borderRadius: "6px",
+    border: "1px solid var(--border)",
+  };
+
+  return (
+    <figure className="a2ui-image" style={{ margin: 0 }}>
+      <img src={src} alt={alt} style={style} />
+      {caption && (
+        <figcaption
+          style={{
+            fontSize: "0.8125rem",
+            color: "var(--text-dim)",
+            marginTop: "4px",
+          }}
+        >
+          {caption}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 // TextInput component
 export function TextInput({ component, state, onEvent }: ComponentProps) {
   const props = component.props as {

@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, setPointer } from "../utils/jsonPointer";
 import { useSkillRegistry } from "../skills/registry";
-import { Button, Card, Code, Container, Text, TextInput } from "./builtins";
+import { Button, Card, Code, Container, Image, Text, TextInput } from "./builtins";
 
 export type A2UIEventHandler = (
   component: A2UIComponent,
@@ -71,6 +71,7 @@ const PRIMITIVE_REGISTRY: Record<
   button: Button,
   container: Container,
   code: Code,
+  image: Image,
   "text-input": TextInput,
 };
 
