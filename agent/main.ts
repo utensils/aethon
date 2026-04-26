@@ -425,6 +425,17 @@ async function main() {
             send({ type: "error", message: "set_model: missing id" });
             break;
           }
+          // Same in-flight gate as `chat`: pi rejects setModel while a run
+          // is active, and the resulting `error` would clobber waiting=true
+          // and hide the Stop button on the original prompt. Surface as a
+          // non-terminal notice instead so the user keeps their stop UI.
+          if (promptInFlight) {
+            send({
+              type: "notice",
+              message: "agent busy — stop the current prompt before switching models",
+            });
+            break;
+          }
           const [provider, ...rest] = msg.id.split("/");
           const id = rest.join("/");
           const next = modelRegistry.find(provider, id);
