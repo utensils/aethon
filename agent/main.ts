@@ -250,44 +250,80 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
-  // Per-tool streaming state. `sent` tracks bytes of the ORIGINAL fullText
-  // we've already forwarded (not the truncated window) so subsequent updates
-  // can compute the new suffix correctly. `truncationFired` is a one-shot
-  // flag so we only emit the "[…truncated]" banner the first time we cross
-  // the cap. Both cleared on tool_execution_end.
-  const bashSentBytes = new Map<string, number>();
-  const bashTruncationFired = new Set<string>();
+  // Per-tool streaming state. We track the trailing tail of what we last
+  // forwarded (not a byte count) because pi's bash tool may rotate its
+  // partialResult into a rolling tail-window for long-running commands —
+  // the cumulative-length approach silently loses updates once that window
+  // overlaps. Tail-overlap matching forwards new bytes correctly even when
+  // earlier output has been dropped from partialResult.
+  const TERMINAL_MAX_BYTES = 64 * 1024;
+  const TERMINAL_CHUNK_BYTES = 8 * 1024;
+  const TAIL_MATCH_BYTES = 4 * 1024;
 
-  // Forward the new portion of a bash command's accumulated output to the
-  // terminal panel. Per-tool cap: at most TERMINAL_MAX_BYTES of any single
-  // forwarded chunk so a sudden burst can't blow IPC; if a single delta
-  // exceeds the cap, only the trailing window is sent and the banner fires
-  // once for that call.
-  function streamBashOutputDelta(callId: string, fullText: string): void {
-    const TERMINAL_MAX_BYTES = 64 * 1024;
-    const TERMINAL_CHUNK_BYTES = 8 * 1024;
-    const sent = bashSentBytes.get(callId) ?? 0;
-    if (fullText.length <= sent) return;
+  const bashLastTail = new Map<string, string>();
+  const bashGapWarned = new Set<string>();
 
-    let suffix = fullText.slice(sent);
-    if (suffix.length > TERMINAL_MAX_BYTES) {
-      suffix = suffix.slice(suffix.length - TERMINAL_MAX_BYTES);
-      if (!bashTruncationFired.has(callId)) {
-        bashTruncationFired.add(callId);
-        send({
-          type: "terminal_output",
-          content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes per chunk]\r\n`,
-        });
-      }
-    }
-    const normalized = suffix.replace(/\r?\n/g, "\r\n");
+  function emitTerminalText(text: string): void {
+    if (!text) return;
+    const normalized = text.replace(/\r?\n/g, "\r\n");
     for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
       send({
         type: "terminal_output",
         content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
       });
     }
-    bashSentBytes.set(callId, fullText.length);
+  }
+
+  // Forward the new portion of a bash command's accumulated/rolling output
+  // to the terminal. Strategy:
+  //   1. Compare against the last-seen tail; emit only the slice that
+  //      follows it.
+  //   2. If we can't find the tail in the new payload, the upstream
+  //      partialResult has rotated past what we last saw — emit a one-time
+  //      "[…possible gap]" banner and resume from whatever we have now.
+  //   3. Cap any single emit at TERMINAL_MAX_BYTES so an enormous burst
+  //      can't choke the IPC pipe.
+  function streamBashOutputDelta(callId: string, fullText: string): void {
+    if (!fullText) return;
+    const tail = bashLastTail.get(callId);
+    let suffix: string;
+    if (!tail) {
+      suffix = fullText;
+    } else if (fullText === tail) {
+      return;
+    } else {
+      const idx = fullText.lastIndexOf(tail);
+      if (idx >= 0) {
+        suffix = fullText.slice(idx + tail.length);
+      } else {
+        if (!bashGapWarned.has(callId)) {
+          bashGapWarned.add(callId);
+          send({
+            type: "terminal_output",
+            content: `\r\n[…possible gap in bash stream — upstream rolled past prior output]\r\n`,
+          });
+        }
+        suffix = fullText;
+      }
+    }
+    if (!suffix) return;
+    if (suffix.length > TERMINAL_MAX_BYTES) {
+      suffix = suffix.slice(suffix.length - TERMINAL_MAX_BYTES);
+      if (!bashGapWarned.has(callId)) {
+        bashGapWarned.add(callId);
+        send({
+          type: "terminal_output",
+          content: `\r\n[…single delta truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
+        });
+      }
+    }
+    emitTerminalText(suffix);
+    // Remember enough trailing context that the next partial can locate it
+    // with lastIndexOf even under heavy interleaving.
+    const newTail = fullText.length > TAIL_MATCH_BYTES
+      ? fullText.slice(fullText.length - TAIL_MATCH_BYTES)
+      : fullText;
+    bashLastTail.set(callId, newTail);
   }
 
   // Stream text deltas, surface tool calls as A2UI cards, and flush
@@ -366,8 +402,8 @@ async function main() {
           // tool_execution_update events.
           streamBashOutputDelta(event.toolCallId, extracted.text);
           send({ type: "terminal_output", content: "\r\n" });
-          bashSentBytes.delete(event.toolCallId);
-          bashTruncationFired.delete(event.toolCallId);
+          bashLastTail.delete(event.toolCallId);
+          bashGapWarned.delete(event.toolCallId);
         }
         toolArgsCache.delete(event.toolCallId);
         break;
