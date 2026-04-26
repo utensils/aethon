@@ -10,6 +10,7 @@
 
 import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
+import ReactMarkdown from "react-markdown";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -108,10 +109,12 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
 
   const resolveItems = (
     items: SidebarSection["items"],
-  ): { id: string; label: string }[] => {
+  ): { id: string; label: string; active?: boolean }[] => {
     if (Array.isArray(items)) return items;
     const resolved = resolvePointer(state, items.$ref);
-    return Array.isArray(resolved) ? (resolved as { id: string; label: string }[]) : [];
+    return Array.isArray(resolved)
+      ? (resolved as { id: string; label: string; active?: boolean }[])
+      : [];
   };
 
   return (
@@ -130,7 +133,11 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
                   {items.map((item) => (
                     <li
                       key={item.id}
-                      className="a2ui-sidebar-item"
+                      className={
+                        item.active
+                          ? "a2ui-sidebar-item a2ui-sidebar-item-active"
+                          : "a2ui-sidebar-item"
+                      }
                       onClick={() =>
                         onEvent("select", {
                           sectionId: section.id,
@@ -181,7 +188,11 @@ export function ChatHistory({ component, state }: BuiltinComponentProps) {
         messages.map((m) => (
           <div key={m.id} className={`a2ui-chat-message ${m.role}`}>
             <span className="a2ui-chat-role">{m.role}</span>
-            {m.text && <div className="a2ui-chat-text">{m.text}</div>}
+            {m.text && (
+              <div className="a2ui-chat-text a2ui-markdown">
+                <ReactMarkdown>{m.text}</ReactMarkdown>
+              </div>
+            )}
             {m.a2ui && <A2UIRenderer payload={m.a2ui} />}
           </div>
         ))
@@ -227,7 +238,11 @@ export function MainCanvas({ component, state }: BuiltinComponentProps) {
       {messages.map((m) => (
         <div key={m.id} className={`a2ui-canvas-message ${m.role}`}>
           <span className="a2ui-canvas-role">{m.role}</span>
-          {m.text && <div className="a2ui-canvas-text">{m.text}</div>}
+          {m.text && (
+            <div className="a2ui-canvas-text a2ui-markdown">
+              <ReactMarkdown>{m.text}</ReactMarkdown>
+            </div>
+          )}
           {m.a2ui && <A2UIRenderer payload={m.a2ui} />}
         </div>
       ))}

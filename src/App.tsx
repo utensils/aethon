@@ -153,14 +153,25 @@ export default function App() {
   }, [layout, registry]);
 
   useEffect(() => {
-    invoke("start_agent").catch((err) => {
-      appendMessage({
-        id: crypto.randomUUID(),
-        role: "agent",
-        text: `Failed to start agent: ${err}`,
-      });
-      setStatusFlags({ status: "error" });
-    });
+    (async () => {
+      try {
+        await invoke("start_agent");
+        // Request a fresh `ready` event in case the agent process was already
+        // running before this React tree mounted (e.g. after a webview
+        // hot-reload). Newly-spawned agents emit ready unconditionally, so
+        // the duplicate is harmless.
+        await invoke("agent_command", {
+          payload: JSON.stringify({ type: "report" }),
+        });
+      } catch (err) {
+        appendMessage({
+          id: crypto.randomUUID(),
+          role: "agent",
+          text: `Failed to start agent: ${err}`,
+        });
+        setStatusFlags({ status: "error" });
+      }
+    })();
 
     const unlistenResponse = listen<string>("agent-response", (event) => {
       try {
@@ -218,14 +229,35 @@ export default function App() {
           connection: "connected",
           sidebar: {
             ...((prev.sidebar as Record<string, unknown>) ?? {}),
-            models: models.map((m) => ({ id: m.id, label: m.label })),
+            models: models.map((m) => ({
+              id: m.id,
+              label: m.label,
+              active: m.id === model,
+            })),
           },
         }));
         break;
       }
       case "model_changed": {
         const model = (data.model as string) || "";
-        setState((prev) => ({ ...prev, model, status: `switched to ${model}` }));
+        setState((prev) => {
+          const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+          const items =
+            (sidebar.models as { id: string; label: string }[] | undefined) ?? [];
+          return {
+            ...prev,
+            model,
+            status: `switched to ${model}`,
+            sidebar: {
+              ...sidebar,
+              models: items.map((m) => ({
+                id: m.id,
+                label: m.label,
+                active: m.id === model,
+              })),
+            },
+          };
+        });
         break;
       }
       case "response_delta": {

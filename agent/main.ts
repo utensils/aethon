@@ -6,6 +6,10 @@
  *   { "type": "chat", "content": "..." }
  *   { "type": "set_model", "id": "provider/model-id" }
  *   { "type": "stop" }                          // abort the in-flight prompt
+ *   { "type": "report" }                        // re-emit current ready state
+ *                                               // (frontend uses this when the
+ *                                               // webview reloads but bun is
+ *                                               // already running)
  *   { "type": "a2ui_event", "event": { ... } }   // not yet wired into the agent
  *
  * Outbound (bridge → stdout):
@@ -199,8 +203,12 @@ async function main() {
   }
   const models = pickerModels.map(modelDescriptor);
 
-  const currentModelId = session.model ? modelKey(session.model) : "";
-  send({ type: "ready", model: currentModelId, models });
+  function emitReady() {
+    const currentModelId = session.model ? modelKey(session.model) : "";
+    send({ type: "ready", model: currentModelId, models });
+  }
+
+  emitReady();
 
   // Cache tool args from start so we can include them in the end-state card
   // (tool_execution_end doesn't carry args).
@@ -296,6 +304,10 @@ async function main() {
           // session.abort() resolves once the agent settles to idle; the
           // existing agent_end → response_end path then flips /waiting.
           await session.abort();
+          break;
+        }
+        case "report": {
+          emitReady();
           break;
         }
         case "a2ui_event": {

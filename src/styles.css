@@ -181,6 +181,18 @@ body {
   background: var(--accent-active-tint);
 }
 
+/* Active selection (e.g. the currently-loaded model). Dot prefix keeps the
+   label aligned even when nothing is active. */
+.a2ui-sidebar-item-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.a2ui-sidebar-item-active::before {
+  content: "● ";
+  color: var(--accent);
+  margin-right: 2px;
+}
+
 .a2ui-sidebar-empty {
   padding: 6px 16px;
   font-size: 0.75rem;
@@ -248,6 +260,96 @@ body {
 .a2ui-canvas-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ---- Markdown rendering (used inside chat bubbles) --------------------- */
+
+.a2ui-markdown {
+  white-space: normal;
+  line-height: 1.55;
+}
+.a2ui-markdown > :first-child { margin-top: 0; }
+.a2ui-markdown > :last-child { margin-bottom: 0; }
+
+.a2ui-markdown p {
+  margin: 0.4em 0;
+}
+
+.a2ui-markdown h1,
+.a2ui-markdown h2,
+.a2ui-markdown h3,
+.a2ui-markdown h4 {
+  margin: 0.8em 0 0.3em;
+  line-height: 1.25;
+  font-weight: 700;
+}
+.a2ui-markdown h1 { font-size: 1.25rem; }
+.a2ui-markdown h2 { font-size: 1.1rem; }
+.a2ui-markdown h3,
+.a2ui-markdown h4 { font-size: 1rem; }
+
+.a2ui-markdown ul,
+.a2ui-markdown ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.a2ui-markdown li {
+  margin: 0.15em 0;
+}
+
+.a2ui-markdown code {
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.88em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.a2ui-markdown pre {
+  margin: 0.5em 0;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.a2ui-markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.a2ui-markdown blockquote {
+  margin: 0.5em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+
+.a2ui-markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.a2ui-markdown a:hover {
+  text-decoration: underline;
+}
+
+.a2ui-markdown table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.a2ui-markdown th,
+.a2ui-markdown td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+.a2ui-markdown th {
+  background: var(--bg-input);
+}
+
+.a2ui-markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.8em 0;
 }
 
 .a2ui-canvas-live {
