@@ -176,7 +176,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] In-memory session per app launch (`SessionManager.inMemory()`)
 - [x] `aethon-debug` skill — TCP eval server (`127.0.0.1:19433` in dev) + slash command for driving the running app from Claude (eval, send, set-model, screenshot, wait, status). Mirrors Claudette's `claudette-debug` pattern.
 - [ ] Multiple canvases / tabs (one pi session per tab)
-- [ ] Persistent state (`~/.aethon/state.json`) — restore last layout on launch
+- [~] Persistent state — chat history persists across reloads via `localStorage` (cap 200 messages, 8KB per text field). Layout, theme, and pi session state still need disk persistence at `~/.aethon/state.json`.
 - [ ] Configuration file (`~/.aethon/config.toml`) — currently inheriting `~/.pi/agent/settings.json`
 - [~] `dispatch_a2ui_event` consumed by the agent — agent now accepts `a2ui_event` messages without erroring, but doesn't yet route them to handlers
 

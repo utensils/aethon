@@ -64,6 +64,64 @@ export default function App() {
     }
   }
 
+  // Persistent chat history — restore on mount, write on each change. Cap at
+  // 200 messages and 8KB per text field so a single huge tool result can't
+  // blow out localStorage's quota. Disk persistence (~/.aethon/state.json)
+  // arrives with the broader Aethon-config work.
+  const PERSIST_KEY = "aethon-messages";
+  const MAX_MESSAGES = 200;
+  const MAX_TEXT_BYTES = 8 * 1024;
+
+  function trimMessage(m: ChatMessage): ChatMessage {
+    if (!m.text || m.text.length <= MAX_TEXT_BYTES) return m;
+    return { ...m, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
+  }
+
+  // Restore on mount.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PERSIST_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setState((prev) => ({ ...prev, messages: parsed }));
+      }
+    } catch {
+      /* corrupt / denied / quota — ignore */
+    }
+  }, []);
+
+  // Debounced write on messages change.
+  const persistTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const messages = (state.messages as ChatMessage[]) ?? [];
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = window.setTimeout(() => {
+      try {
+        const slim = messages.slice(-MAX_MESSAGES).map(trimMessage);
+        localStorage.setItem(PERSIST_KEY, JSON.stringify(slim));
+      } catch {
+        /* quota — surface later if we add a disk fallback */
+      }
+    }, 400);
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, [state.messages]);
+
+  function clearChat() {
+    setState((prev) => ({ ...prev, messages: [] }));
+    try {
+      localStorage.removeItem(PERSIST_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Latest state, kept in a ref so the aethon-debug skill can read it via
   // `window.__AETHON_STATE__()` without going through React's state lifecycle.
   const stateRef = useRef(state);
@@ -331,6 +389,10 @@ export default function App() {
             const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
             return { ...prev, terminal: { ...term, open: !term.open } };
           });
+          return true;
+        }
+        if (selected?.itemId === "clear-chat") {
+          clearChat();
           return true;
         }
         if (selected?.sectionId === "models" && selected.itemId) {

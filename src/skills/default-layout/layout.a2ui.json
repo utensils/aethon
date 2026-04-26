@@ -73,7 +73,8 @@
                 "id": "panels",
                 "title": "Panels",
                 "items": [
-                  { "id": "toggle-terminal", "label": "Toggle Terminal" }
+                  { "id": "toggle-terminal", "label": "Toggle Terminal" },
+                  { "id": "clear-chat", "label": "Clear Chat" }
                 ]
               },
               {
