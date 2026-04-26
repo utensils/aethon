@@ -324,11 +324,13 @@ export default function App() {
               })),
             },
           };
-          // Replay extension state snapshots so a webview reload that
-          // missed prior state_patch events still has the latest values
-          // bound by extension templates.
-          for (const [path, value] of Object.entries(extState)) {
-            next = setPointer(next, path, value);
+          // Fold the extension state tree into our state. Top-level keys
+          // owned by an extension are replaced wholesale (the tree is the
+          // bridge's authoritative snapshot), preserving the rest of app
+          // state. Done this way so overlapping setState writes that have
+          // already collapsed in the tree don't resurrect descendants.
+          for (const [k, v] of Object.entries(extState)) {
+            next = { ...next, [k]: v };
           }
           return next;
         });

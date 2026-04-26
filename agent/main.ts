@@ -78,6 +78,38 @@ function modelKey(m: Model<Api>): string {
   return `${m.provider}/${m.id}`;
 }
 
+// Decode a JSON Pointer token (RFC 6901). `~1` → `/`, `~0` → `~`.
+function decodePointerToken(t: string): string {
+  return t.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+// Apply value at JSON Pointer path inside an immutable tree. Mirror of the
+// frontend's setPointer so the bridge can keep extensionStateTree in sync
+// with what the frontend computes from the same patches.
+function setAtPointer(
+  state: Record<string, unknown>,
+  pointer: string,
+  value: unknown,
+): Record<string, unknown> {
+  if (!pointer || pointer === "" || pointer === "/") return state;
+  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  const tokens = path.split("/").map(decodePointerToken);
+  const next: Record<string, unknown> = { ...state };
+  let cursor: Record<string, unknown> = next;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const key = tokens[i];
+    const existing = cursor[key];
+    const child =
+      typeof existing === "object" && existing !== null
+        ? { ...(existing as Record<string, unknown>) }
+        : {};
+    cursor[key] = child;
+    cursor = child;
+  }
+  cursor[tokens[tokens.length - 1]] = value;
+  return next;
+}
+
 function modelDescriptor(m: Model<Api>) {
   return {
     id: modelKey(m),
@@ -316,11 +348,13 @@ async function main() {
   // wraps each as a synthetic React component in the SkillRegistry so that
   // `{type: "<componentType>"}` in any A2UI tree expands the template inline.
   const extensionComponents = new Map<string, unknown>();
-  // Latest value for every JSON Pointer path an extension has pushed via
-  // setState. Retained so a webview reload (which re-emits ready but has
-  // already missed the original state_patch events) can hydrate the same
-  // bindings without waiting for the extension's next tick.
-  const extensionState = new Map<string, unknown>();
+  // Hydrated tree of the current extension state. Each `setState(path, v)`
+  // is applied into this tree via JSON Pointer; on `ready` we emit the
+  // tree as a single snapshot the frontend folds into its layout state.
+  // We use a tree (not an ordered list of (path,value) pairs) because
+  // overlapping writes to ancestor and descendant paths would otherwise
+  // resurrect stale descendants when the snapshot is replayed.
+  let extensionStateTree: Record<string, unknown> = {};
 
   function emitReady() {
     const currentModelId = session.model ? modelKey(session.model) : "";
@@ -329,7 +363,7 @@ async function main() {
       model: currentModelId,
       models,
       extensionComponents: Object.fromEntries(extensionComponents),
-      extensionState: Object.fromEntries(extensionState),
+      extensionState: extensionStateTree,
     });
   }
 
@@ -348,11 +382,11 @@ async function main() {
     },
     setState(path: string, value: unknown): void {
       if (!path || typeof path !== "string") return;
-      // Retain the latest value so a webview reload's `report` → `ready`
-      // can replay it via extensionState. Without this, extensions whose
-      // state was set once at registration would lose their bindings on
-      // every reload.
-      extensionState.set(path, value);
+      // Apply into the in-memory tree so a webview reload's `report` →
+      // `ready` can hydrate the same state. Storing as a tree (not an
+      // ordered list of patches) avoids resurrecting overwritten
+      // descendants when the snapshot is replayed.
+      extensionStateTree = setAtPointer(extensionStateTree, path, value);
       send({ type: "state_patch", path, value });
     },
   };
