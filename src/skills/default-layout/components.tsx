@@ -382,10 +382,21 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         onEvent("change", { value: "" });
         return;
       }
-      // Enter inserts the highlighted command instead of submitting an
-      // incomplete `/` prefix.
+      // Enter behavior with the picker open:
+      //   - If the draft already matches a command exactly (`/help`,
+      //     `/clear`), submit it. Otherwise the user would have to press
+      //     Enter twice — once to "insert" the same text, once to submit.
+      //   - Else insert the highlighted suggestion to complete the prefix.
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        const v = (e.target as HTMLTextAreaElement).value;
+        const exact = list.find(
+          (c) => v === `/${c.name}` || v.startsWith(`/${c.name} `),
+        );
+        if (exact && v.trim().length > 0 && !disabled) {
+          onEvent("submit", { value: v });
+          return;
+        }
         insertCommand(list[highlightIdx] ?? list[0]);
         return;
       }

@@ -131,7 +131,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Real model name surfaced in the status bar (replaces hardcoded label)
 - [x] Model picker (sidebar) — switch model at runtime via `session.setModel()`
 - [x] Errors from the agent surface as visible chat messages, not silent hangs
-- [x] Stop button — chat input swaps Send → Stop while `state.waiting` is true; Stop calls `session.abort()` via the bridge `stop` command
+- [x] Stop button — chat input swaps Send → Stop while `state.waiting` is true; Stop calls `session.abort()` via the bridge `stop` command. Bridge does not await `session.prompt()` so subsequent stdin messages (the stop) aren't queued behind it; verified killing in-flight bash within ~3s.
 - [x] Hot reload of the agent during dev — Rust watches `agent/` and respawns the child on change (debug builds only)
 - [x] Theme system — dark + light variants behind `data-theme` on `<html>`, switcher in sidebar, persisted to `localStorage`. Boots from `localStorage` then OS `prefers-color-scheme`.
 - [ ] Theme registry (custom themes via skills / `~/.aethon/themes/`)
@@ -181,6 +181,7 @@ expand canvas, add panels) because everything is A2UI.
 - [ ] Multiple canvases / tabs (one pi session per tab)
 - [x] Persistent state — chat history (`~/.aethon/messages.json`, capped at 200 messages / 8KB per text field, image data URLs stripped before persist) and theme (`~/.aethon/theme`) persist to disk via Tauri commands `read_state` / `write_state`. Cross-platform via Tauri's `home_dir()`. Legacy localStorage values migrate on first read; legacy entries are removed only after a confirmed disk write.
 - [x] Client-side slash commands (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`). Unknown commands fall through to the agent so pi-side handling and prompt templates aren't blocked. `//foo` escapes to send a literal `/foo`.
+- [x] Slash command picker UI — autocomplete dropdown above the chat input when the draft starts with `/`. Prefix-filters; ↑/↓/Tab/Enter navigate+insert; Esc dismisses; click inserts. Portalled to `document.body` so the layout cell's `overflow:hidden` doesn't clip it. Bound via the `commands` prop on `chat-input` (inline array or `$ref`).
 - [ ] Configuration file (`~/.aethon/config.toml`) — currently inheriting `~/.pi/agent/settings.json`
 - [~] `dispatch_a2ui_event` consumed by the agent — agent now accepts `a2ui_event` messages without erroring, but doesn't yet route them to handlers
 
