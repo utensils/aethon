@@ -376,15 +376,15 @@ export default function App() {
       case "terminal_output": {
         const content = (data.content as string) ?? "";
         if (!content) break;
-        // Append to terminal output state. The terminal component does an
-        // append-only diff (output.startsWith(lastOutput)), so we must NOT
-        // trim from the front of the buffer — that would invalidate the
-        // diff and cause a full re-write to xterm. Buffer lives only in
-        // memory for the lifetime of the session; not persisted to disk.
-        setState((prev) => {
-          const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
-          return { ...prev, terminal: { ...term, output: (term.output ?? "") + content } };
-        });
+        // Stream straight to the Terminal component via a window event — no
+        // React state involved. xterm's own scrollback buffer is bounded
+        // (default 1000 rows) so we don't need to grow a string in app state
+        // that React re-copies on every append. The Terminal component stays
+        // mounted while hidden (Layout toggles visibility via `display`), so
+        // events still land while the panel is collapsed.
+        window.dispatchEvent(
+          new CustomEvent("aethon:terminal", { detail: content }),
+        );
         break;
       }
     }

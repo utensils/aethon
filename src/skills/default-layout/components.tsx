@@ -365,19 +365,16 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     cols?: NumberValue;
     rows?: NumberValue;
     fontSize?: NumberValue;
-    output?: StringValue;
     onInput?: string;
   };
 
   const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
   const cols = props.cols ? resolveNumber(props.cols, state) : undefined;
   const rows = props.rows ? resolveNumber(props.rows, state) : undefined;
-  const output = props.output ? resolveString(props.output, state) : "";
 
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const lastOutputRef = useRef<string>("");
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -420,6 +417,18 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       term.onData((data) => onEvent("input", { data }));
     }
 
+    // App.tsx fires this event whenever the agent's bash tool produces
+    // output. Writing through xterm directly keeps the bounded scrollback
+    // buffer xterm already manages — no parallel growing string in React
+    // state.
+    const onTerminalEvent = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === "string" && detail.length > 0) {
+        term.write(detail);
+      }
+    };
+    window.addEventListener("aethon:terminal", onTerminalEvent);
+
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -431,26 +440,15 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
 
     return () => {
       ro.disconnect();
+      window.removeEventListener("aethon:terminal", onTerminalEvent);
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-    // Mount once — runtime updates flow via the `output` effect below.
+    // Mount once — terminal output flows through the `aethon:terminal` event,
+    // not React props, so we don't list `output` as a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const term = termRef.current;
-    if (!term) return;
-    if (output && output !== lastOutputRef.current) {
-      // Only write the delta when output is appended.
-      const delta = output.startsWith(lastOutputRef.current)
-        ? output.slice(lastOutputRef.current.length)
-        : output;
-      term.write(delta);
-      lastOutputRef.current = output;
-    }
-  }, [output]);
 
   return (
     <div className="a2ui-terminal">
