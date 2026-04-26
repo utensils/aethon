@@ -92,9 +92,30 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+// Pi tool results follow the shape `{ content: [{type:"text", text:"..."}, ...] }`
+// (matching the LLM provider tool-result content format). Extract the text
+// content for display so the card shows readable output, not raw JSON.
 function stringifyResult(result: unknown): string {
   if (result === null || result === undefined) return "";
   if (typeof result === "string") return result;
+  if (typeof result === "object") {
+    const obj = result as Record<string, unknown>;
+    if (Array.isArray(obj.content)) {
+      const text = obj.content
+        .map((p) => {
+          if (p && typeof p === "object") {
+            const part = p as { type?: string; text?: string };
+            if (part.type === "text" && typeof part.text === "string") return part.text;
+            if (part.type === "image") return "[image]";
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n");
+      if (text) return text;
+    }
+    if (typeof obj.text === "string") return obj.text;
+  }
   try {
     return JSON.stringify(result, null, 2);
   } catch {
