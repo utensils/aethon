@@ -90,6 +90,91 @@ export interface TextInputComponent extends A2UIComponent {
   };
 }
 
+// Layout primitive — CSS Grid with template-areas. Children opt into a region
+// via their own `area` prop. Consumed by the layout skill, but available to
+// agents and skills too.
+export interface LayoutComponent extends A2UIComponent {
+  type: "layout";
+  props: {
+    columns?: StringValue;
+    rows?: StringValue;
+    areas?: string[]; // grid-template-areas rows
+    gap?: NumberValue;
+  };
+  children?: A2UIComponent[];
+}
+
+export interface SidebarSection {
+  id: string;
+  title: string;
+  items: SidebarItem[] | { $ref: string };
+}
+
+export interface SidebarItem {
+  id: string;
+  label: string;
+  icon?: string;
+  onClick?: string;
+}
+
+export interface SidebarComponent extends A2UIComponent {
+  type: "sidebar";
+  props: {
+    title?: StringValue;
+    sections?: SidebarSection[];
+  };
+}
+
+export interface ChatHistoryComponent extends A2UIComponent {
+  type: "chat-history";
+  props: {
+    messages: { $ref: string };
+    emptyHint?: StringValue;
+  };
+}
+
+export interface StatusBarComponent extends A2UIComponent {
+  type: "status-bar";
+  props: {
+    left?: StringValue;
+    center?: StringValue;
+    right?: StringValue;
+  };
+}
+
+export interface TerminalComponent extends A2UIComponent {
+  type: "terminal";
+  props: {
+    cols?: NumberValue;
+    rows?: NumberValue;
+    fontSize?: NumberValue;
+    output?: StringValue; // raw text written to the terminal
+    onInput?: string;
+  };
+}
+
+export interface ChatInputComponent extends A2UIComponent {
+  type: "chat-input";
+  props: {
+    value?: StringValue;
+    placeholder?: StringValue;
+    disabled?: BooleanValue;
+    onSubmit?: string;
+    onChange?: string;
+  };
+}
+
+// MainCanvas is a slot — it renders whatever A2UI subtree lives at the
+// pointer it's bound to, plus a scrollable message feed. This is how
+// agent-emitted UI flows into the layout without the layout knowing about it.
+export interface MainCanvasComponent extends A2UIComponent {
+  type: "main-canvas";
+  props: {
+    slot?: string; // JSON Pointer into state for live A2UI subtree
+    messages?: { $ref: string };
+  };
+}
+
 // A2UI payload from agent
 export interface A2UIPayload {
   components: A2UIComponent[];
@@ -110,3 +195,18 @@ export type ButtonProps = ButtonComponent["props"];
 export type ContainerProps = ContainerComponent["props"];
 export type CodeProps = CodeComponent["props"];
 export type TextInputProps = TextInputComponent["props"];
+export type LayoutProps = LayoutComponent["props"];
+export type SidebarProps = SidebarComponent["props"];
+export type ChatHistoryProps = ChatHistoryComponent["props"];
+export type StatusBarProps = StatusBarComponent["props"];
+export type TerminalProps = TerminalComponent["props"];
+export type ChatInputProps = ChatInputComponent["props"];
+export type MainCanvasProps = MainCanvasComponent["props"];
+
+// Message shape used by ChatHistory and MainCanvas — text or embedded A2UI subtree.
+export interface ChatMessage {
+  id: string;
+  role: "user" | "agent" | "system";
+  text?: string;
+  a2ui?: A2UIPayload;
+}

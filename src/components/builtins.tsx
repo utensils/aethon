@@ -139,6 +139,7 @@ export function Container({ component, state, renderChildren }: ComponentProps) 
     padding?: NumberValue;
     align?: "start" | "center" | "end" | "stretch";
     justify?: "start" | "center" | "end" | "space-between";
+    className?: string;
   };
 
   const direction = props.direction || "column";
@@ -154,10 +155,15 @@ export function Container({ component, state, renderChildren }: ComponentProps) 
     padding: `${padding}px`,
     alignItems: align,
     justifyContent: justify,
+    width: "100%",
   };
 
+  const cls = props.className
+    ? `a2ui-container ${props.className}`
+    : "a2ui-container";
+
   return (
-    <div className="a2ui-container" style={style}>
+    <div className={cls} style={style}>
       {renderChildren && renderChildren()}
     </div>
   );

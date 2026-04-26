@@ -1,0 +1,124 @@
+{
+  "components": [
+    {
+      "id": "root-layout",
+      "type": "layout",
+      "props": {
+        "columns": "240px 1fr",
+        "rows": "auto 1fr auto auto",
+        "areas": [
+          "sidebar header",
+          "sidebar canvas",
+          "sidebar chat-input",
+          "status status"
+        ]
+      },
+      "children": [
+        {
+          "id": "header",
+          "type": "container",
+          "props": {
+            "area": "header",
+            "direction": "row",
+            "align": "center",
+            "justify": "space-between",
+            "padding": 12,
+            "className": "app-header"
+          },
+          "children": [
+            {
+              "id": "header-title",
+              "type": "text",
+              "props": {
+                "content": "Aethon",
+                "variant": "large"
+              }
+            },
+            {
+              "id": "header-status",
+              "type": "text",
+              "props": {
+                "content": { "$ref": "/status" },
+                "variant": "small",
+                "color": "var(--text-dim)"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sidebar",
+          "type": "sidebar",
+          "props": {
+            "area": "sidebar",
+            "title": "Aethon",
+            "sections": [
+              {
+                "id": "files",
+                "title": "Files",
+                "items": [
+                  { "id": "file-1", "label": "SPEC.md" },
+                  { "id": "file-2", "label": "README.md" },
+                  { "id": "file-3", "label": "src/App.tsx" }
+                ]
+              },
+              {
+                "id": "skills",
+                "title": "Skills",
+                "items": [
+                  { "id": "skill-layout", "label": "default-layout" }
+                ]
+              },
+              {
+                "id": "history",
+                "title": "Chat History",
+                "items": { "$ref": "/sidebar/history" }
+              }
+            ]
+          }
+        },
+        {
+          "id": "main-canvas",
+          "type": "main-canvas",
+          "props": {
+            "area": "canvas",
+            "slot": "/canvas",
+            "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "chat-input",
+          "type": "chat-input",
+          "props": {
+            "area": "chat-input",
+            "value": { "$ref": "/draft" },
+            "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline)",
+            "disabled": { "$ref": "/waiting" },
+            "onSubmit": "chat:send"
+          }
+        },
+        {
+          "id": "status-bar",
+          "type": "status-bar",
+          "props": {
+            "area": "status",
+            "left": { "$ref": "/status" },
+            "center": { "$ref": "/connection" },
+            "right": { "$ref": "/model" }
+          }
+        }
+      ]
+    }
+  ],
+  "state": {
+    "status": "ready",
+    "connection": "disconnected",
+    "model": "claude-sonnet-4-6",
+    "draft": "",
+    "waiting": false,
+    "messages": [],
+    "canvas": null,
+    "sidebar": {
+      "history": []
+    }
+  }
+}

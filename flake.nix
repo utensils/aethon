@@ -41,7 +41,10 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          # Pinned: 1.95.0 stable currently fails to compile `icu_provider`
+          # 2.2.0, `regex-automata` 0.4.14, and `objc2` (transitive deps of
+          # tauri 2.10). Holding at 1.92 until upstream catches up.
+          rustToolchain = pkgs.rust-bin.stable."1.92.0".default.override {
             extensions = [
               "rust-src"
               "rustfmt"

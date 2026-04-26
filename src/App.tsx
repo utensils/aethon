@@ -1,137 +1,48 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import A2UIRenderer from "./components/A2UIRenderer";
-import type { A2UIPayload } from "./types/a2ui";
+import type { A2UIPayload, ChatMessage } from "./types/a2ui";
+import defaultLayoutJson from "./layouts/default.a2ui.json";
 
-type Role = "user" | "agent";
-
-type Message = {
-  id: string;
-  role: Role;
-  text?: string;
-  a2ui?: A2UIPayload;
-};
-
-// Demo A2UI payload for testing Phase 2
-const demoA2UIPayload: A2UIPayload = {
-  components: [
-    {
-      id: "demo-card",
-      type: "card",
-      props: {
-        title: "A2UI Demo",
-        description: "Phase 2 Implementation",
-        padding: 20,
-      },
-      children: [
-        {
-          id: "demo-container",
-          type: "container",
-          props: {
-            direction: "column",
-            gap: 16,
-          },
-          children: [
-            {
-              id: "demo-text",
-              type: "text",
-              props: {
-                content: "This is a working A2UI renderer with data binding and event dispatch.",
-              },
-            },
-            {
-              id: "demo-code",
-              type: "code",
-              props: {
-                content: `const greeting = "Hello from A2UI!";
-console.log(greeting);`,
-                language: "typescript",
-                showLineNumbers: true,
-              },
-            },
-            {
-              id: "demo-input",
-              type: "text-input",
-              props: {
-                value: { $ref: "/userInput" },
-                placeholder: "Type something...",
-                onChange: "input-changed",
-              },
-            },
-            {
-              id: "demo-button-container",
-              type: "container",
-              props: {
-                direction: "row",
-                gap: 8,
-              },
-              children: [
-                {
-                  id: "demo-button-primary",
-                  type: "button",
-                  props: {
-                    label: "Primary Action",
-                    variant: "primary",
-                    onClick: "primary-clicked",
-                  },
-                },
-                {
-                  id: "demo-button-secondary",
-                  type: "button",
-                  props: {
-                    label: "Secondary Action",
-                    variant: "secondary",
-                    onClick: "secondary-clicked",
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-  ],
-  state: {
-    userInput: "Initial value",
-  },
-};
+const DEFAULT_LAYOUT: A2UIPayload = defaultLayoutJson as A2UIPayload;
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [draft, setDraft] = useState("");
-  const [waiting, setWaiting] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
+  // The layout's state IS the app state. Single source of truth, addressed by
+  // JSON Pointer from the layout payload.
+  const [state, setState] = useState<Record<string, unknown>>(
+    () => ({ ...(DEFAULT_LAYOUT.state ?? {}) }),
+  );
 
-  // Listen for agent responses
+  // The active layout payload — replaceable. Skills could call setLayout()
+  // (via an exposed API) to swap the chrome wholesale.
+  const [layout] = useState<A2UIPayload>(DEFAULT_LAYOUT);
+
   useEffect(() => {
     const unlisten = listen<string>("agent-response", (event) => {
       try {
         const data = JSON.parse(event.payload);
         if (data.type === "response" && data.content) {
-          setMessages((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), role: "agent", text: data.content },
-          ]);
-          if (data.done) setWaiting(false);
+          appendMessage({
+            id: crypto.randomUUID(),
+            role: "agent",
+            text: data.content,
+          });
+          if (data.done) setStatusFlags({ waiting: false, status: "ready" });
         } else if (data.type === "a2ui" && data.payload) {
-          // A2UI payload from agent
-          setMessages((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), role: "agent", a2ui: data.payload },
-          ]);
-          if (data.done) setWaiting(false);
+          appendMessage({
+            id: crypto.randomUUID(),
+            role: "agent",
+            a2ui: data.payload,
+          });
+          if (data.done) setStatusFlags({ waiting: false, status: "ready" });
         } else if (data.type === "error") {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: "agent",
-              text: `Error: ${data.message}`,
-            },
-          ]);
-          setWaiting(false);
+          appendMessage({
+            id: crypto.randomUUID(),
+            role: "agent",
+            text: `Error: ${data.message}`,
+          });
+          setStatusFlags({ waiting: false, status: "error" });
         }
       } catch {
         // non-JSON event, ignore
@@ -142,103 +53,68 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
-
-  async function send() {
-    const text = draft.trim();
-    if (!text || waiting) return;
-    setMessages((prev) => [
+  function appendMessage(msg: ChatMessage) {
+    setState((prev) => ({
       ...prev,
-      { id: crypto.randomUUID(), role: "user", text },
-    ]);
-    setDraft("");
-    setWaiting(true);
-    setConnected(true);
+      messages: [...((prev.messages as ChatMessage[]) ?? []), msg],
+    }));
+  }
+
+  function setStatusFlags(flags: Partial<{ waiting: boolean; status: string; connection: string }>) {
+    setState((prev) => ({ ...prev, ...flags }));
+  }
+
+  async function sendChat(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    appendMessage({ id: crypto.randomUUID(), role: "user", text: trimmed });
+    setState((prev) => ({
+      ...prev,
+      draft: "",
+      waiting: true,
+      status: "thinking…",
+      connection: "connected",
+    }));
 
     try {
-      await invoke("send_message", { message: text });
+      await invoke("send_message", { message: trimmed });
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "agent",
-          text: `Connection error: ${err}`,
-        },
-      ]);
-      setWaiting(false);
+      appendMessage({
+        id: crypto.randomUUID(),
+        role: "agent",
+        text: `Connection error: ${err}`,
+      });
+      setStatusFlags({ waiting: false, status: "error" });
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
+  // Intercept events from layout-level components before they reach the agent.
+  // The layout speaks A2UI, but a few interactions need to drive native APIs
+  // (Tauri IPC for chat send) — this is where the renderer hands off control.
+  const onEvent = useMemo(
+    () => async (component: { id: string }, eventType: string, data?: unknown) => {
+      if (component.id === "chat-input" && eventType === "submit") {
+        const value = (data as { value?: string } | undefined)?.value ?? "";
+        await sendChat(value);
+        return true;
+      }
+      if (component.id === "chat-input" && eventType === "change") {
+        // Optimistic update already wrote /draft; nothing more to forward.
+        return true;
+      }
+      return false;
+    },
+    [],
+  );
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1 className="app-title">Aethon</h1>
-        <span className="app-status">
-          {waiting
-            ? "thinking..."
-            : connected
-              ? "connected"
-              : "ready"}
-        </span>
-      </header>
-
-      {/* A2UI Demo Section */}
-      <div style={{ padding: "20px", borderBottom: "1px solid var(--border)" }}>
-        <A2UIRenderer payload={demoA2UIPayload} />
-      </div>
-
-      <div className="message-list" ref={listRef}>
-        {messages.length === 0 ? (
-          <div className="message-empty">
-            Send a message to start a conversation with the pi agent.
-          </div>
-        ) : (
-          messages.map((m) => (
-            <div key={m.id} className={`message ${m.role}`}>
-              <span className="message-role">{m.role}</span>
-              {m.text && m.text}
-              {m.a2ui && <A2UIRenderer payload={m.a2ui} />}
-            </div>
-          ))
-        )}
-        {waiting && (
-          <div className="message agent">
-            <span className="message-role">agent</span>
-            <span className="typing-indicator">...</span>
-          </div>
-        )}
-      </div>
-
-      <div className="composer">
-        <textarea
-          className="composer-input"
-          rows={2}
-          placeholder="Message Aethon&hellip; (Enter to send, Shift+Enter for newline)"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={waiting}
-        />
-        <button
-          type="button"
-          className="composer-send"
-          onClick={send}
-          disabled={draft.trim().length === 0 || waiting}
-        >
-          Send
-        </button>
-      </div>
+      <A2UIRenderer
+        payload={layout}
+        state={state}
+        onStateChange={setState}
+        onEvent={onEvent}
+      />
     </div>
   );
 }
