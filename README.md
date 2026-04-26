@@ -1,6 +1,20 @@
+<p align="center">
+  <img src="src-tauri/icons/icon.svg" alt="Aethon logo — a Greek alpha rising over a sun disc" width="160" height="160" />
+</p>
+
 # Aethon
 
 > Pi with a face. A native desktop shell where the agent decides what you see.
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Status: early development" src="https://img.shields.io/badge/status-early%20development-orange">
+  <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=white">
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black">
+  <img alt="Rust 1.92" src="https://img.shields.io/badge/Rust-1.92-DEA584?logo=rust&logoColor=white">
+  <img alt="Nix flake" src="https://img.shields.io/badge/Nix-flake-5277C3?logo=nixos&logoColor=white">
+  <img alt="Platforms: macOS | Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey">
+</p>
 
 > ⚠️ **Early development — not ready for use.** This is a scaffold. Expect breaking changes and missing features.
 
@@ -19,7 +33,7 @@ Helios's sun chariot. The blazing one that shapes what you see.
 
 - **Tauri 2** — native binary, system webview, ~5MB shell
 - **React 19 + TypeScript + Vite** — frontend
-- **Rust** — OS shim (window, filesystem, system tray)
+- **Rust** — OS shim (window, filesystem, agent subprocess)
 - **Bun** — JS runtime and package manager
 - **Nix flake** — reproducible dev environment
 
@@ -36,12 +50,12 @@ bun tauri dev        # launch the app (hot reload)
 
 Inside the dev shell, helper commands are available:
 
-| Command     | What it does                                          |
-| ----------- | ----------------------------------------------------- |
-| `dev`       | `cargo tauri dev` with hot-reload                     |
-| `build-app` | Release bundle (`.app` / `.deb` / `.msi`)             |
-| `check`     | clippy + tsc typecheck                                |
-| `fmt`       | format Rust + Nix with treefmt                        |
+| Command     | What it does                                            |
+| ----------- | ------------------------------------------------------- |
+| `dev`       | `cargo tauri dev` with hot-reload                       |
+| `build-app` | Release bundle (`.app` / `.dmg` / `.deb` / `.AppImage`) |
+| `check`     | clippy + tsc typecheck                                  |
+| `fmt`       | format Rust + Nix with treefmt                          |
 
 [Nix]: https://nixos.org/download
 [direnv]: https://direnv.net
@@ -61,4 +75,4 @@ See [`CLAUDE.md`](CLAUDE.md) for architecture notes and implementation status.
 
 ## License
 
-MIT © James Brink
+[MIT](LICENSE) © James Brink
