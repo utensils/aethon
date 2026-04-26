@@ -74,9 +74,42 @@ export default function App() {
   const MAX_MESSAGES = 200;
   const MAX_TEXT_BYTES = 8 * 1024;
 
+  // Replace `image` component data URLs with a placeholder so persisted history
+  // doesn't blow past the localStorage quota. The in-memory message keeps the
+  // full data URL — only the persisted copy is slimmed.
+  function stripImageDataUrls(component: unknown): unknown {
+    if (!component || typeof component !== "object") return component;
+    const c = component as {
+      type?: string;
+      props?: Record<string, unknown>;
+      children?: unknown[];
+    };
+    let next = c;
+    if (
+      c.type === "image" &&
+      typeof c.props?.src === "string" &&
+      (c.props.src as string).startsWith("data:")
+    ) {
+      next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
+    }
+    if (Array.isArray(c.children) && c.children.length > 0) {
+      next = { ...next, children: c.children.map(stripImageDataUrls) };
+    }
+    return next;
+  }
+
   function trimMessage(m: ChatMessage): ChatMessage {
-    if (!m.text || m.text.length <= MAX_TEXT_BYTES) return m;
-    return { ...m, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
+    let out = m;
+    if (m.text && m.text.length > MAX_TEXT_BYTES) {
+      out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
+    }
+    if (m.a2ui && Array.isArray(m.a2ui.components)) {
+      out = {
+        ...out,
+        a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
+      };
+    }
+    return out;
   }
 
   // Restore on mount.
