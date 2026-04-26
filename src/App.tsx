@@ -456,6 +456,21 @@ export default function App() {
   // dispatch time, so the registry itself doesn't need state in scope.
   const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
 
+  // Surface the slash command list into layout state so the chat-input
+  // autocomplete can resolve it via `$ref:/slashCommands`. Done once on
+  // mount because the registry is static for now (skill-registered
+  // commands will arrive in a later phase and trigger an update then).
+  useEffect(() => {
+    setState((prev) => ({
+      ...prev,
+      slashCommands: slashCommandsRef.current.map((c) => ({
+        name: c.name,
+        description: c.description,
+        usage: c.usage,
+      })),
+    }));
+  }, []);
+
   function appendSystem(text: string) {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });
   }

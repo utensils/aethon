@@ -382,7 +382,15 @@ async function main() {
             send({ type: "error", message: "chat: missing content" });
             break;
           }
-          await session.prompt(msg.content);
+          // CRITICAL: do NOT await — `for await (const line of rl)` processes
+          // one stdin line at a time, so awaiting here would queue any
+          // subsequent "stop" message behind the in-flight prompt and Stop
+          // would never reach session.abort() until the prompt finished
+          // naturally. Errors are surfaced via the error message channel.
+          session.prompt(msg.content).catch((err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", message: `prompt: ${message}` });
+          });
           break;
         }
         case "set_model": {
@@ -402,9 +410,16 @@ async function main() {
           break;
         }
         case "stop": {
-          // session.abort() resolves once the agent settles to idle; the
-          // existing agent_end → response_end path then flips /waiting.
-          await session.abort();
+          // session.abort() cancels the LLM stream / agent loop. The agent's
+          // run signal propagates to the bash tool's `signal.addEventListener
+          // ("abort", ...)` handler, which calls killProcessTree(child.pid),
+          // so any in-flight bash subprocess gets SIGKILLed. Don't await —
+          // we want to free the message loop immediately so a follow-up
+          // chat doesn't queue behind a slow settle.
+          session.abort().catch((err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", message: `abort: ${message}` });
+          });
           break;
         }
         case "report": {
