@@ -92,44 +92,41 @@ export default function A2UIRenderer({
     return registry.onTemplatesChanged(() => setTemplateVersion((n) => n + 1));
   }, [registry]);
 
-  // Merge external (parent/app) state with payload-local state. Payload
-  // state wins for keys it defines so per-message A2UI cards keep their
-  // own local refs working; the app state still provides shared globals
-  // (extension-pushed state, theme, etc.) that aren't shadowed by the
-  // payload. Empty payload.state degrades to "external state only".
-  const mergedExternalState = useMemo(() => {
-    if (!externalState) return undefined;
-    if (!payload.state) return externalState;
-    return { ...externalState, ...payload.state };
-  }, [externalState, payload.state]);
+  // Three rendering modes, each with different state semantics:
+  //   - controlled: caller provides both `state` and `onStateChange`. The
+  //     external state is the single source of truth (root layout).
+  //     payload.state is NOT merged — that would shadow live app state
+  //     with stale boot defaults on every render.
+  //   - observer:   caller provides `state` but no `onStateChange` (nested
+  //     A2UI inside a chat message). External state = read-only base of
+  //     globals (extension state, theme). payload.state seeds an internal
+  //     write overlay so the agent's per-message locals (and optimistic
+  //     change/submit writes) survive without leaking into app state.
+  //   - self:       no external — renderer fully owns internalState,
+  //     seeded from payload.state. Used for standalone embedded renders.
+  const mode = onStateChange
+    ? "controlled"
+    : externalState
+      ? "observer"
+      : "self";
 
-  // When the renderer is given external state but no upward write channel
-  // (the nested-message case: MainCanvas passes state but no onStateChange),
-  // optimistic local writes need somewhere to land that reads can see. The
-  // overlay holds those writes and is applied on top of mergedExternalState
-  // for reads. Without it, change/submit on payload-local controls would
-  // disappear into setInternalState and never appear in the rendered state.
-  const [overlay, setOverlay] = useState<Record<string, unknown>>({});
-
-  // Effective state for rendering. Three modes:
-  //   1. external + onStateChange: external is authoritative
-  //   2. external + no onStateChange: external + overlay (local writes here)
-  //   3. fully local: internalState
   const state = useMemo(() => {
-    if (mergedExternalState) {
-      if (onStateChange) return mergedExternalState;
-      return { ...mergedExternalState, ...overlay };
+    if (mode === "controlled") return externalState as Record<string, unknown>;
+    if (mode === "observer") {
+      return { ...(externalState as Record<string, unknown>), ...internalState };
     }
     return internalState;
-  }, [mergedExternalState, onStateChange, overlay, internalState]);
+  }, [mode, externalState, internalState]);
 
   const updateState = (
     updater: (prev: Record<string, unknown>) => Record<string, unknown>,
   ) => {
-    if (mergedExternalState && onStateChange) {
-      onStateChange(updater(mergedExternalState));
-    } else if (mergedExternalState) {
-      setOverlay((prev) => updater({ ...mergedExternalState, ...prev }));
+    if (mode === "controlled") {
+      onStateChange!(updater(externalState as Record<string, unknown>));
+    } else if (mode === "observer") {
+      setInternalState((prev) =>
+        updater({ ...(externalState as Record<string, unknown>), ...prev }),
+      );
     } else {
       setInternalState(updater);
     }
