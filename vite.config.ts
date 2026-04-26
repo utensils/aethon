@@ -8,7 +8,7 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 1420,
-    strictPort: true,
+    strictPort: false,
   },
   build: {
     target: "es2022",
