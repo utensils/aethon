@@ -7,9 +7,8 @@ description = "Pi with a face — agent-driven desktop shell with A2UI"
 homepage = "https://github.com/utensils/aethon"
 repository = "https://github.com/utensils/aethon"
 authors = ["James Brink <brink.james@gmail.com>"]
-readme = "../README.md"
 keywords = ["tauri", "desktop", "agent", "a2ui", "ai"]
-categories = ["gui", "command-line-utilities"]
+categories = ["gui"]
 
 [lib]
 name = "aethon_lib"
