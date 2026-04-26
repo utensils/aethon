@@ -14,9 +14,18 @@ export default function App() {
     () => ({ ...(DEFAULT_LAYOUT.state ?? {}) }),
   );
 
-  // The active layout payload — replaceable. Skills could call setLayout()
-  // (via an exposed API) to swap the chrome wholesale.
-  const [layout] = useState<A2UIPayload>(DEFAULT_LAYOUT);
+  // The active layout payload — replaceable. Skills can swap the chrome
+  // wholesale by calling window.aethon.setLayout(payload).
+  const [layout, setLayout] = useState<A2UIPayload>(DEFAULT_LAYOUT);
+
+  useEffect(() => {
+    const api = {
+      setLayout,
+      resetLayout: () => setLayout(DEFAULT_LAYOUT),
+      getLayout: () => layout,
+    };
+    (window as unknown as { aethon: typeof api }).aethon = api;
+  }, [layout]);
 
   useEffect(() => {
     const unlisten = listen<string>("agent-response", (event) => {
@@ -101,6 +110,16 @@ export default function App() {
       if (component.id === "chat-input" && eventType === "change") {
         // Optimistic update already wrote /draft; nothing more to forward.
         return true;
+      }
+      if (component.id === "sidebar" && eventType === "select") {
+        const selected = data as { sectionId?: string; itemId?: string } | undefined;
+        if (selected?.itemId === "toggle-terminal") {
+          setState((prev) => {
+            const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
+            return { ...prev, terminal: { ...term, open: !term.open } };
+          });
+          return true;
+        }
       }
       return false;
     },

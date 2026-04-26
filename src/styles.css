@@ -313,19 +313,34 @@ body {
 
 /* ---- Terminal ----------------------------------------------------------- */
 
+/* The terminal cell is auto-rowed in the grid, so it sizes to its content.
+   We give the terminal a fixed default height when shown — users can resize
+   later via a drag handle (M2/M3). */
 .a2ui-terminal {
   display: flex;
-  flex: 1;
+  flex-direction: column;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px;
-  height: 100%;
+  border-top: 1px solid var(--border);
+  height: 220px;
   width: 100%;
+}
+
+.a2ui-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 
 .a2ui-terminal-mount {
   flex: 1;
-  height: 100%;
+  min-height: 0;
+  padding: 6px;
   width: 100%;
 }

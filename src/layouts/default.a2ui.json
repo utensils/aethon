@@ -5,10 +5,11 @@
       "type": "layout",
       "props": {
         "columns": "240px 1fr",
-        "rows": "auto 1fr auto auto",
+        "rows": "auto 1fr auto auto auto",
         "areas": [
           "sidebar header",
           "sidebar canvas",
+          "sidebar terminal",
           "sidebar chat-input",
           "status status"
         ]
@@ -56,9 +57,9 @@
                 "id": "files",
                 "title": "Files",
                 "items": [
-                  { "id": "file-1", "label": "SPEC.md" },
-                  { "id": "file-2", "label": "README.md" },
-                  { "id": "file-3", "label": "src/App.tsx" }
+                  { "id": "file-spec", "label": "SPEC.md" },
+                  { "id": "file-readme", "label": "README.md" },
+                  { "id": "file-app", "label": "src/App.tsx" }
                 ]
               },
               {
@@ -66,6 +67,13 @@
                 "title": "Skills",
                 "items": [
                   { "id": "skill-layout", "label": "default-layout" }
+                ]
+              },
+              {
+                "id": "panels",
+                "title": "Panels",
+                "items": [
+                  { "id": "toggle-terminal", "label": "Toggle Terminal" }
                 ]
               },
               {
@@ -83,6 +91,17 @@
             "area": "canvas",
             "slot": "/canvas",
             "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "terminal",
+          "type": "terminal",
+          "props": {
+            "area": "terminal",
+            "visible": { "$ref": "/terminal/open" },
+            "fontSize": 13,
+            "output": { "$ref": "/terminal/output" },
+            "onInput": "terminal:input"
           }
         },
         {
@@ -119,6 +138,10 @@
     "canvas": null,
     "sidebar": {
       "history": []
+    },
+    "terminal": {
+      "open": false,
+      "output": ""
     }
   }
 }

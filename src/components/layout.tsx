@@ -66,12 +66,19 @@ export function Layout({
   return (
     <div className="a2ui-layout" style={style}>
       {component.children?.map((child) => {
-        const area = (child.props as { area?: string } | undefined)?.area;
+        const childProps = child.props as
+          | { area?: string; visible?: BooleanValue }
+          | undefined;
+        const area = childProps?.area;
+        const visible =
+          childProps?.visible === undefined
+            ? true
+            : resolveBoolean(childProps.visible, state);
         const cellStyle: CSSProperties = {
           gridArea: area,
           minWidth: 0,
           minHeight: 0,
-          display: "flex",
+          display: visible ? "flex" : "none",
         };
         return (
           <div key={child.id} className="a2ui-layout-cell" style={cellStyle}>
@@ -415,6 +422,10 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
 
   return (
     <div className="a2ui-terminal">
+      <div className="a2ui-terminal-header">
+        <span>Terminal</span>
+        <span>xterm.js · WebGL</span>
+      </div>
       <div ref={containerRef} className="a2ui-terminal-mount" />
     </div>
   );
