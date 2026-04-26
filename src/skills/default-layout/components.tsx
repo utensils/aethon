@@ -1,8 +1,11 @@
 /**
- * Layout-skill A2UI components — Sidebar, ChatHistory, StatusBar, Terminal,
- * Layout (CSS-grid), ChatInput, MainCanvas. These are registered as built-ins
- * so the default-layout payload renders through the same path as
- * agent-emitted UI.
+ * Default-layout skill: A2UI components — Sidebar, ChatHistory, StatusBar,
+ * Terminal, Layout (CSS-grid), ChatInput, MainCanvas. Bundled with
+ * layout.a2ui.json (same directory) and exposed via `index.ts`.
+ *
+ * The renderer treats these no differently from agent-emitted components —
+ * the default workspace UI uses the exact same path skills will use to ship
+ * their own components.
  */
 
 import { useEffect, useRef } from "react";
@@ -19,15 +22,15 @@ import type {
   NumberValue,
   SidebarSection,
   StringValue,
-} from "../types/a2ui";
+} from "../../types/a2ui";
 import {
   resolveBoolean,
   resolveNumber,
   resolveString,
-} from "../utils/dataBinding";
-import { resolvePointer } from "../utils/jsonPointer";
-import A2UIRenderer from "./A2UIRenderer";
-import type { BuiltinComponentProps } from "./A2UIRenderer";
+} from "../../utils/dataBinding";
+import { resolvePointer } from "../../utils/jsonPointer";
+import A2UIRenderer from "../../components/A2UIRenderer";
+import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 
 // ---------------------------------------------------------------------------
 // Layout — CSS Grid container with template-areas. Children opt into a region

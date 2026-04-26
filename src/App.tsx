@@ -1,31 +1,50 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import A2UIRenderer from "./components/A2UIRenderer";
+import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
+import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
-import defaultLayoutJson from "./layouts/default.a2ui.json";
+import type { A2UISkill } from "./skills/types";
 
-const DEFAULT_LAYOUT: A2UIPayload = defaultLayoutJson as A2UIPayload;
+// The default-layout skill ships a layout — that's the boot payload.
+const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
 
 export default function App() {
+  // The registry is created once and shared across the app via context.
+  // Skills register their components/layouts here; the renderer resolves
+  // unknown component types through it.
+  const registryRef = useRef<SkillRegistry | null>(null);
+  if (!registryRef.current) {
+    registryRef.current = new SkillRegistry();
+    registryRef.current.register(defaultLayoutSkill);
+  }
+  const registry = registryRef.current;
+
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload.
   const [state, setState] = useState<Record<string, unknown>>(
-    () => ({ ...(DEFAULT_LAYOUT.state ?? {}) }),
+    () => ({ ...(BOOT_LAYOUT.state ?? {}) }),
   );
 
-  // The active layout payload — replaceable. Skills can swap the chrome
-  // wholesale by calling window.aethon.setLayout(payload).
-  const [layout, setLayout] = useState<A2UIPayload>(DEFAULT_LAYOUT);
+  // Active layout payload — replaceable. Skills can swap the chrome wholesale
+  // by calling window.aethon.setLayout(payload), or register a new skill via
+  // window.aethon.registerSkill(skill) and switch to its layout.
+  const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
 
   useEffect(() => {
     const api = {
       setLayout,
-      resetLayout: () => setLayout(DEFAULT_LAYOUT),
+      resetLayout: () => setLayout(BOOT_LAYOUT),
       getLayout: () => layout,
+      registerSkill: (skill: A2UISkill) => {
+        registry.register(skill);
+        if (skill.layout) setLayout(skill.layout);
+      },
+      listSkills: () => registry.list().map((s) => s.name),
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
-  }, [layout]);
+  }, [layout, registry]);
 
   useEffect(() => {
     const unlisten = listen<string>("agent-response", (event) => {
@@ -127,13 +146,15 @@ export default function App() {
   );
 
   return (
-    <div className="app">
-      <A2UIRenderer
-        payload={layout}
-        state={state}
-        onStateChange={setState}
-        onEvent={onEvent}
-      />
-    </div>
+    <SkillRegistryProvider registry={registry}>
+      <div className="app">
+        <A2UIRenderer
+          payload={layout}
+          state={state}
+          onStateChange={setState}
+          onEvent={onEvent}
+        />
+      </div>
+    </SkillRegistryProvider>
   );
 }

@@ -1,22 +1,18 @@
 /**
  * A2UI Renderer
- * Renders A2UI component trees as React components with data binding and event dispatch
+ * Renders A2UI component trees as React components with data binding and event
+ * dispatch. Built-in A2UI primitives (text, card, button, …) are hardcoded;
+ * skill-registered components (sidebar, terminal, layout, …) come from the
+ * SkillRegistry pulled in via context, so nested renderers see the same
+ * bindings without prop-drilling.
  */
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, setPointer } from "../utils/jsonPointer";
+import { useSkillRegistry } from "../skills/registry";
 import { Button, Card, Code, Container, Text, TextInput } from "./builtins";
-import {
-  ChatHistory,
-  ChatInput,
-  Layout,
-  MainCanvas,
-  Sidebar,
-  StatusBar,
-  Terminal,
-} from "./layout";
 
 export type A2UIEventHandler = (
   component: A2UIComponent,
@@ -39,9 +35,6 @@ interface A2UIRendererProps {
 /**
  * Optimistically merges a UI-emitted event into local state so controlled
  * inputs stay responsive while the agent is the source of truth.
- *
- * The agent will eventually send back an authoritative state update; until
- * then, this lets the user see their own typing/clicks reflected.
  */
 function applyOptimisticUpdate(
   prev: Record<string, unknown>,
@@ -68,10 +61,8 @@ export interface BuiltinComponentProps {
   renderChild?: (child: A2UIComponent) => React.ReactNode;
 }
 
-// Component registry mapping A2UI type names to React components.
-// Layout/chrome components (sidebar, terminal, etc.) live alongside the
-// generic primitives — the renderer doesn't distinguish.
-const COMPONENT_REGISTRY: Record<
+// A2UI primitives — always available, can't be overridden by skills.
+const PRIMITIVE_REGISTRY: Record<
   string,
   React.ComponentType<BuiltinComponentProps>
 > = {
@@ -81,13 +72,6 @@ const COMPONENT_REGISTRY: Record<
   container: Container,
   code: Code,
   "text-input": TextInput,
-  layout: Layout,
-  sidebar: Sidebar,
-  "chat-history": ChatHistory,
-  "chat-input": ChatInput,
-  "status-bar": StatusBar,
-  terminal: Terminal,
-  "main-canvas": MainCanvas,
 };
 
 export default function A2UIRenderer({
@@ -96,6 +80,7 @@ export default function A2UIRenderer({
   onStateChange,
   onEvent: externalOnEvent,
 }: A2UIRendererProps) {
+  const registry = useSkillRegistry();
   const [internalState, setInternalState] = useState<Record<string, unknown>>(
     payload.state || {},
   );
@@ -145,7 +130,8 @@ export default function A2UIRenderer({
   };
 
   const renderComponent = (component: A2UIComponent): React.ReactNode => {
-    const Component = COMPONENT_REGISTRY[component.type];
+    const Component =
+      PRIMITIVE_REGISTRY[component.type] ?? registry.resolve(component.type);
 
     if (!Component) {
       console.warn(`Unknown A2UI component type: ${component.type}`);
