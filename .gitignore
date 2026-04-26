@@ -32,3 +32,8 @@ result-*
 *.profraw
 *.profdata
 lcov.info
+
+# Phase test harness (local-only run scripts and screenshots)
+.playwright-mcp/
+aethon-phase*.png
+run-phase*.sh
