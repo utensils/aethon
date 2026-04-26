@@ -305,21 +305,33 @@ export default function App() {
         const extComponents = (data.extensionComponents as
           | Record<string, unknown>
           | undefined) ?? {};
+        const extState = (data.extensionState as
+          | Record<string, unknown>
+          | undefined) ?? {};
         registry.setTemplates(extComponents);
-        setState((prev) => ({
-          ...prev,
-          model,
-          status: "ready",
-          connection: "connected",
-          sidebar: {
-            ...((prev.sidebar as Record<string, unknown>) ?? {}),
-            models: models.map((m) => ({
-              id: m.id,
-              label: m.label,
-              active: m.id === model,
-            })),
-          },
-        }));
+        setState((prev) => {
+          let next: Record<string, unknown> = {
+            ...prev,
+            model,
+            status: "ready",
+            connection: "connected",
+            sidebar: {
+              ...((prev.sidebar as Record<string, unknown>) ?? {}),
+              models: models.map((m) => ({
+                id: m.id,
+                label: m.label,
+                active: m.id === model,
+              })),
+            },
+          };
+          // Replay extension state snapshots so a webview reload that
+          // missed prior state_patch events still has the latest values
+          // bound by extension templates.
+          for (const [path, value] of Object.entries(extState)) {
+            next = setPointer(next, path, value);
+          }
+          return next;
+        });
         break;
       }
       case "extension_components": {

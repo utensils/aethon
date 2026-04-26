@@ -132,12 +132,17 @@ export default function A2UIRenderer({
     }
   };
 
-  // Re-sync when the agent ships a new payload (authoritative state wins).
+  // Re-sync when the agent ships a new payload. In `self` mode the new
+  // payload.state replaces internal state. In `observer` mode (nested
+  // chat card with no upward write channel) the overlay is reseeded from
+  // the new payload.state — without this, replacing a tool card by id
+  // (running → done) would keep showing the old payload's bindings even
+  // though the payload prop changed. `controlled` mode owns no internal
+  // state to reset.
   useEffect(() => {
-    if (!externalState) {
-      setInternalState(payload.state || {});
-    }
-  }, [payload, externalState]);
+    if (mode === "controlled") return;
+    setInternalState(payload.state || {});
+  }, [payload, mode]);
 
   const handleEvent = async (
     component: A2UIComponent,

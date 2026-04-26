@@ -22,10 +22,12 @@
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...],
- *     "extensionComponents": {<componentType>: <template>, ...} }
- *      // Snapshot of currently-registered extension templates, sent on every
- *      // ready emission so a webview reload picks them up without losing
- *      // state.
+ *     "extensionComponents": {<componentType>: <template>, ...},
+ *     "extensionState": {<jsonPointer>: <value>, ...} }
+ *      // Snapshot of currently-registered extension templates AND the
+ *      // most recent value at every path an extension pushed via setState,
+ *      // sent on every ready emission so a webview reload picks them up
+ *      // without losing state.
  *   { "type": "extension_components", "components": {<componentType>: <template>, ...} }
  *      // Emitted after each registration delta; frontend hydrates templates
  *      // into the SkillRegistry.
@@ -314,6 +316,11 @@ async function main() {
   // wraps each as a synthetic React component in the SkillRegistry so that
   // `{type: "<componentType>"}` in any A2UI tree expands the template inline.
   const extensionComponents = new Map<string, unknown>();
+  // Latest value for every JSON Pointer path an extension has pushed via
+  // setState. Retained so a webview reload (which re-emits ready but has
+  // already missed the original state_patch events) can hydrate the same
+  // bindings without waiting for the extension's next tick.
+  const extensionState = new Map<string, unknown>();
 
   function emitReady() {
     const currentModelId = session.model ? modelKey(session.model) : "";
@@ -322,6 +329,7 @@ async function main() {
       model: currentModelId,
       models,
       extensionComponents: Object.fromEntries(extensionComponents),
+      extensionState: Object.fromEntries(extensionState),
     });
   }
 
@@ -340,6 +348,11 @@ async function main() {
     },
     setState(path: string, value: unknown): void {
       if (!path || typeof path !== "string") return;
+      // Retain the latest value so a webview reload's `report` → `ready`
+      // can replay it via extensionState. Without this, extensions whose
+      // state was set once at registration would lose their bindings on
+      // every reload.
+      extensionState.set(path, value);
       send({ type: "state_patch", path, value });
     },
   };
