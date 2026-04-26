@@ -250,17 +250,18 @@ async function main() {
   // (tool_execution_end doesn't carry args).
   const toolArgsCache = new Map<string, { name: string; summary: string }>();
 
-  // Per-tool streaming state. We track the trailing tail of what we last
-  // forwarded (not a byte count) because pi's bash tool may rotate its
-  // partialResult into a rolling tail-window for long-running commands —
-  // the cumulative-length approach silently loses updates once that window
-  // overlaps. Tail-overlap matching forwards new bytes correctly even when
-  // earlier output has been dropped from partialResult.
+  // Per-tool streaming state. We track the cumulative byte position we last
+  // forwarded from `partialResult.text`. The common case is monotonic growth
+  // (pi accumulates), in which case `slice(sent)` is the new suffix.
+  // If `fullText.length` shrinks below `sent`, upstream has rolled to a
+  // tail-window — we emit a one-time "[…possible gap]" banner and re-emit
+  // whatever the current payload holds. This may duplicate the most recent
+  // bytes but never silently drops a delta (which the previous tail-match
+  // approach did for repeated identical chunks).
   const TERMINAL_MAX_BYTES = 64 * 1024;
   const TERMINAL_CHUNK_BYTES = 8 * 1024;
-  const TAIL_MATCH_BYTES = 4 * 1024;
 
-  const bashLastTail = new Map<string, string>();
+  const bashSentBytes = new Map<string, number>();
   const bashGapWarned = new Set<string>();
 
   function emitTerminalText(text: string): void {
@@ -274,39 +275,25 @@ async function main() {
     }
   }
 
-  // Forward the new portion of a bash command's accumulated/rolling output
-  // to the terminal. Strategy:
-  //   1. Compare against the last-seen tail; emit only the slice that
-  //      follows it.
-  //   2. If we can't find the tail in the new payload, the upstream
-  //      partialResult has rotated past what we last saw — emit a one-time
-  //      "[…possible gap]" banner and resume from whatever we have now.
-  //   3. Cap any single emit at TERMINAL_MAX_BYTES so an enormous burst
-  //      can't choke the IPC pipe.
   function streamBashOutputDelta(callId: string, fullText: string): void {
     if (!fullText) return;
-    const tail = bashLastTail.get(callId);
+    const sent = bashSentBytes.get(callId) ?? 0;
     let suffix: string;
-    if (!tail) {
+    if (fullText.length < sent) {
+      // Upstream rolled past what we've seen.
+      if (!bashGapWarned.has(callId)) {
+        bashGapWarned.add(callId);
+        send({
+          type: "terminal_output",
+          content: `\r\n[…possible gap in bash stream — upstream rolled past prior output]\r\n`,
+        });
+      }
       suffix = fullText;
-    } else if (fullText === tail) {
+    } else if (fullText.length === sent) {
       return;
     } else {
-      const idx = fullText.lastIndexOf(tail);
-      if (idx >= 0) {
-        suffix = fullText.slice(idx + tail.length);
-      } else {
-        if (!bashGapWarned.has(callId)) {
-          bashGapWarned.add(callId);
-          send({
-            type: "terminal_output",
-            content: `\r\n[…possible gap in bash stream — upstream rolled past prior output]\r\n`,
-          });
-        }
-        suffix = fullText;
-      }
+      suffix = fullText.slice(sent);
     }
-    if (!suffix) return;
     if (suffix.length > TERMINAL_MAX_BYTES) {
       suffix = suffix.slice(suffix.length - TERMINAL_MAX_BYTES);
       if (!bashGapWarned.has(callId)) {
@@ -318,12 +305,7 @@ async function main() {
       }
     }
     emitTerminalText(suffix);
-    // Remember enough trailing context that the next partial can locate it
-    // with lastIndexOf even under heavy interleaving.
-    const newTail = fullText.length > TAIL_MATCH_BYTES
-      ? fullText.slice(fullText.length - TAIL_MATCH_BYTES)
-      : fullText;
-    bashLastTail.set(callId, newTail);
+    bashSentBytes.set(callId, fullText.length);
   }
 
   // Stream text deltas, surface tool calls as A2UI cards, and flush
@@ -402,7 +384,7 @@ async function main() {
           // tool_execution_update events.
           streamBashOutputDelta(event.toolCallId, extracted.text);
           send({ type: "terminal_output", content: "\r\n" });
-          bashLastTail.delete(event.toolCallId);
+          bashSentBytes.delete(event.toolCallId);
           bashGapWarned.delete(event.toolCallId);
         }
         toolArgsCache.delete(event.toolCallId);
