@@ -282,6 +282,15 @@ async function main() {
           running: true,
         });
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
+        // Echo the bash command into the visible terminal panel so the user
+        // can follow what the agent is running. The card still renders too;
+        // this is a parallel stream into xterm.
+        if (event.toolName === "bash") {
+          send({
+            type: "terminal_output",
+            content: `\r\n$ ${summary}\r\n`,
+          });
+        }
         break;
       }
       case "tool_execution_end": {
@@ -294,6 +303,18 @@ async function main() {
           isError: event.isError,
         });
         send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
+        if (event.toolName === "bash") {
+          const extracted = extractToolContent(event.result);
+          // Normalize unix line endings to xterm's CRLF so each output line
+          // starts at column 0 instead of staircasing across the panel.
+          const normalized = extracted.text.replace(/\r?\n/g, "\r\n");
+          if (normalized) {
+            send({
+              type: "terminal_output",
+              content: normalized + "\r\n",
+            });
+          }
+        }
         toolArgsCache.delete(event.toolCallId);
         break;
       }

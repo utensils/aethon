@@ -373,6 +373,20 @@ export default function App() {
         if (data.done) setStatusFlags({ waiting: false, status: "ready" });
         break;
       }
+      case "terminal_output": {
+        const content = (data.content as string) ?? "";
+        if (!content) break;
+        // Append to terminal output state. The terminal component does an
+        // append-only diff (output.startsWith(lastOutput)), so we must NOT
+        // trim from the front of the buffer — that would invalidate the
+        // diff and cause a full re-write to xterm. Buffer lives only in
+        // memory for the lifetime of the session; not persisted to disk.
+        setState((prev) => {
+          const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
+          return { ...prev, terminal: { ...term, output: (term.output ?? "") + content } };
+        });
+        break;
+      }
     }
   }
 
