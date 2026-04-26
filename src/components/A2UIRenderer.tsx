@@ -124,9 +124,21 @@ export default function A2UIRenderer({
     if (mode === "controlled") {
       onStateChange!(updater(externalState as Record<string, unknown>));
     } else if (mode === "observer") {
-      setInternalState((prev) =>
-        updater({ ...(externalState as Record<string, unknown>), ...prev }),
-      );
+      // Compute the post-update merged state, then DIFF against the parent
+      // external state so internalState only retains keys that diverge.
+      // Without the diff, snapshotted external keys would freeze in
+      // internal and shadow future global updates (e.g. extension
+      // state_patch values arriving after a local click).
+      setInternalState((prev) => {
+        const ext = externalState as Record<string, unknown>;
+        const merged = { ...ext, ...prev };
+        const next = updater(merged);
+        const diff: Record<string, unknown> = {};
+        for (const k of Object.keys(next)) {
+          if (!Object.is(next[k], ext[k])) diff[k] = next[k];
+        }
+        return diff;
+      });
     } else {
       setInternalState(updater);
     }
@@ -180,11 +192,12 @@ export default function A2UIRenderer({
       const template = registry.resolveTemplate(component.type);
       if (template && typeof template === "object") {
         const tpl = template as A2UIComponent;
-        // Use a stable id derived from the host component so React keys
-        // don't collide when the same template renders in multiple places.
+        // ALWAYS derive the expanded id from the host component, never
+        // reuse the template's own id — otherwise multiple renderings of
+        // the same template type collide on React keys and event ids.
         const expanded: A2UIComponent = {
           ...tpl,
-          id: tpl.id ?? `${component.id}__tpl`,
+          id: `${component.id}__tpl`,
         };
         return renderComponent(expanded);
       }
