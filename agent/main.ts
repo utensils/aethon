@@ -14,7 +14,10 @@
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...] }
- *   { "type": "response_delta", "content": "..." }
+ *   { "type": "response_delta", "messageId": "<msg-id>", "content": "..." }
+ *      // messageId groups deltas that belong to the same pi assistant message
+ *      // (timestamp-derived). The frontend uses it to keep all text from one
+ *      // message in a single bubble even when tool cards land in between.
  *   { "type": "response_end" }
  *   { "type": "a2ui", "id": "<message-id>", "payload": { ... } }
  *      // Used for tool execution cards. Frontend treats `id` as a stable
@@ -224,7 +227,15 @@ async function main() {
       case "message_update": {
         if (event.assistantMessageEvent.type === "text_delta") {
           const delta = event.assistantMessageEvent.delta ?? "";
-          if (delta) send({ type: "response_delta", content: delta });
+          if (delta) {
+            // pi assigns each AssistantMessage a unique `timestamp` at message
+            // start; reuse it as a stable per-message id so the frontend can
+            // append later deltas to the same chat bubble after tool calls.
+            const ts =
+              (event.message as { timestamp?: number } | undefined)?.timestamp ?? 0;
+            const messageId = `text-${ts}`;
+            send({ type: "response_delta", messageId, content: delta });
+          }
         }
         break;
       }
