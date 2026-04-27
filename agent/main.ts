@@ -546,8 +546,18 @@ async function main() {
       ...(attributedTab ? { tabId: attributedTab } : {}),
     });
   }
+  // Pi may re-run extension register() per session, and `tabs` create
+  // sessions on demand — so without dedup, every new tab would re-add
+  // every extension handler, multiplying side effects on each click.
+  // Key by (stringified match + handler source) so a logically identical
+  // re-registration is a no-op while truly distinct handlers (different
+  // match or different fn body) still register.
+  const registeredHandlerKeys = new Set<string>();
   function _onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
     if (typeof handler !== "function") return;
+    const key = JSON.stringify(match) + "::" + handler.toString();
+    if (registeredHandlerKeys.has(key)) return;
+    registeredHandlerKeys.add(key);
     a2uiEventHandlers.push({ match, handler });
   }
   function _setLayout(payload: unknown): void {
