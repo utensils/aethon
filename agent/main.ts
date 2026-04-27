@@ -918,6 +918,11 @@ async function main() {
               }
               promptInFlight = true;
               agentEndFired = false;
+              // Tell the frontend a turn is starting so it can flip
+              // waiting=true (Stop button visible, chat input disabled).
+              // Without this, a handler-fired prompt would stream invisibly
+              // and the user couldn't interrupt it.
+              send({ type: "prompt_started", source: "handler" });
               // Same fire-and-forget shape as the `chat` IPC path so the
               // frontend's response_delta / response_end flow handles
               // streaming identically.
@@ -945,12 +950,12 @@ async function main() {
                 messages: messages.slice(-50),
               };
             },
-            // Pi exposes the active turn's abort signal on AgentSession's
-            // internal state — surface a best-effort version. Undefined
-            // outside a turn matches pi's own ctx.signal contract.
+            // Pi's active-turn AbortSignal lives on `session.agent.signal`
+            // (verified via @mariozechner/pi-agent-core agent.d.ts:90).
+            // Returns undefined outside a turn — matches pi's own
+            // `ctx.signal` contract for extension handlers.
             get signal() {
-              const s = session as unknown as { signal?: AbortSignal };
-              return s.signal;
+              return session.agent?.signal;
             },
           };
           for (const { match, handler } of a2uiEventHandlers) {

@@ -607,6 +607,15 @@ export default function App() {
         appendOrAmendAgentText(delta, messageId);
         break;
       }
+      case "prompt_started": {
+        // Bridge tells us a prompt has begun. Sent by the handler-driven
+        // ctx.pi.prompt path so the chat input flips to Stop and the
+        // user can cancel a turn they didn't type. The user-typed
+        // chat path sets waiting locally before invoking send_message,
+        // so this re-flip is harmless when it arrives.
+        setStatusFlags({ waiting: true, status: "thinking…" });
+        break;
+      }
       case "response_end": {
         activeResponseIdRef.current = null;
         setStatusFlags({ waiting: false, status: "ready" });
