@@ -497,16 +497,21 @@ async function main() {
   function _setState(path: string, value: unknown, sourceTabId?: string): void {
     if (!path || typeof path !== "string") return;
     extensionStateTree = setAtPointer(extensionStateTree, path, value);
-    // sourceTabId is set when an a2ui handler called ctx.setState — the
-    // patch belongs to the tab the click came from, not whatever tab is
-    // active when this fires (handler may run async). Without it the
-    // frontend would apply mirrored-key patches to the wrong tab if the
-    // user switched mid-handler.
+    // tabId attribution priority:
+    //   1. explicit sourceTabId (handler-scoped ctx.setState)
+    //   2. currentAgentTabId — set while a tab's pi.prompt is in flight,
+    //      so direct globalThis.aethon.setState calls from the agent /
+    //      from extensions reacting to agent events route to the tab
+    //      whose turn is running.
+    //   3. omit tabId — frontend falls back to active. Last resort for
+    //      truly tab-less setStates (e.g. a clock interval fired with
+    //      no agent turn).
+    const attributedTab = sourceTabId ?? currentAgentTabId;
     send({
       type: "state_patch",
       path,
       value,
-      ...(sourceTabId ? { tabId: sourceTabId } : {}),
+      ...(attributedTab ? { tabId: attributedTab } : {}),
     });
   }
   function _onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
@@ -625,6 +630,19 @@ async function main() {
   }
 
   const tabs = new Map<string, TabRecord>();
+
+  // Tab whose pi turn is currently running. Set when a chat / handler
+  // prompt is dispatched; cleared on agent_end. Used by _setState so
+  // direct globalThis.aethon.setState calls from the agent or extensions
+  // reacting to agent events get attributed to the right tab even
+  // though the API itself takes no tabId argument.
+  //
+  // Concurrent prompts across tabs would race this — pi's followUp
+  // queue serializes within a tab, but a handler could fire
+  // ctx.pi.prompt on tab A while a chat is processing on tab B.
+  // For now we track only the most recent prompt's tab; multi-tab
+  // concurrency is an acknowledged sharp edge.
+  let currentAgentTabId: string | undefined;
 
   // Filter the picker to the user's enabledModels patterns from
   // ~/.pi/agent/settings.json. Patterns may include `*` wildcards
@@ -754,6 +772,10 @@ async function main() {
     session.subscribe((event) => {
       switch (event.type) {
         case "agent_start": {
+          // Each turn (initial or queue-drained) is owned by this tab —
+          // set currentAgentTabId so any setStates the agent triggers
+          // route correctly. Cleared in agent_end below.
+          currentAgentTabId = tabId;
           if (rec.queuedCount > 0) {
             rec.queuedCount -= 1;
             send({ type: "prompt_started", tabId, source: "queue", queued: rec.queuedCount });
@@ -809,6 +831,7 @@ async function main() {
         case "agent_end": {
           rec.agentEndFired = true;
           rec.promptInFlight = false;
+          if (currentAgentTabId === tabId) currentAgentTabId = undefined;
           send({ type: "response_end", tabId });
           break;
         }
@@ -900,6 +923,7 @@ async function main() {
           } else {
             tab.queuedCount += 1;
           }
+          if (!queued) currentAgentTabId = tabId;
           tab.session
             .prompt(msg.content, queued ? { streamingBehavior: "followUp" } : undefined)
             .catch((err) => {
@@ -910,6 +934,9 @@ async function main() {
               if (!queued && !tab.agentEndFired) {
                 tab.promptInFlight = false;
                 send({ type: "response_end", tabId });
+              }
+              if (!queued && currentAgentTabId === tabId) {
+                currentAgentTabId = undefined;
               }
             });
           if (queued) {
@@ -1046,6 +1073,7 @@ async function main() {
               }
               handlerTab.promptInFlight = true;
               handlerTab.agentEndFired = false;
+              currentAgentTabId = handlerTabId;
               // Tell the frontend a turn is starting so it can flip
               // waiting=true (Stop button visible, chat input disabled).
               send({ type: "prompt_started", tabId: handlerTabId, source: "handler" });
@@ -1059,6 +1087,9 @@ async function main() {
                 if (!handlerTab.agentEndFired) {
                   handlerTab.promptInFlight = false;
                   send({ type: "response_end", tabId: handlerTabId });
+                }
+                if (currentAgentTabId === handlerTabId) {
+                  currentAgentTabId = undefined;
                 }
               }
             },
@@ -1118,7 +1149,10 @@ async function main() {
               )
               .catch((err) => {
                 const message = err instanceof Error ? err.message : String(err);
-                send({ type: "notice", message: `a2ui handler: ${message}` });
+                // Route the notice back to the originating tab so the
+                // error appears in the conversation the user clicked
+                // from, not whichever tab is currently active.
+                send({ type: "notice", tabId: handlerTabId, message: `a2ui handler: ${message}` });
               });
           }
           break;
