@@ -22,10 +22,12 @@
             "area": "sidebar",
             "visible": { "$ref": "/layout/sidebarVisible" },
             "title": "aethon",
+            "brandMark": true,
             "sections": [
               {
                 "id": "layouts",
                 "title": "layouts",
+                "monoItems": true,
                 "items": { "$ref": "/sidebar/layouts" }
               },
               {
@@ -36,17 +38,19 @@
               {
                 "id": "components",
                 "title": "components in layout",
+                "monoItems": true,
                 "items": [
                   { "id": "c-sidebar", "label": "sidebar", "active": true },
                   { "id": "c-tab-strip", "label": "tab-strip", "active": true },
                   { "id": "c-main-canvas", "label": "main-canvas", "active": true },
                   { "id": "c-chat-input", "label": "chat-input", "active": true },
-                  { "id": "c-inspector", "label": "inspector", "active": true }
+                  { "id": "c-inspector", "label": "inspector", "hint": "new", "active": true }
                 ]
               },
               {
                 "id": "themes",
                 "title": "themes",
+                "monoItems": true,
                 "items": { "$ref": "/sidebar/themes" }
               }
             ],
@@ -102,7 +106,8 @@
             "visible": { "$ref": "/livePill/toastVisible" },
             "title": { "$ref": "/livePill/title" },
             "diff": { "$ref": "/livePill/diff" },
-            "when": { "$ref": "/livePill/when" }
+            "when": { "$ref": "/livePill/when" },
+            "meta": "layout.a2ui.json"
           }
         },
         {
@@ -189,7 +194,7 @@
       "diff": "+ inspector pane · areas → \"sidebar header inspector / sidebar canvas inspector / status status status\"",
       "when": "just now",
       "visible": true,
-      "toastVisible": false
+      "toastVisible": true
     },
     "inspector": {
       "messageCount": "0",

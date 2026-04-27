@@ -51,23 +51,99 @@ export function AgentStatusPill({
 }
 
 // ---------------------------------------------------------------------------
-// EditorialSpine — vertical brand rail used in V2 (Editorial). Logo at the
-// top, vertical "ÆTHON · π" text, optional buttons at the bottom.
+// EditorialSpine / brand-spine — vertical brand rail used in V2 (Editorial).
+// Layout: AeMark on top, vertical Bodoni "ÆTHON · π" text, spacer, then
+// three icon buttons at the bottom (skills · commands · terminal).
+//
+// Mirrors the prototype's V2 spine (aethon-variations.jsx 211-224) so the
+// 54px-wide column reads as a brand rail rather than a generic sidebar.
 // ---------------------------------------------------------------------------
 
-export function EditorialSpine({ component, state }: BuiltinComponentProps) {
+interface SpineButton {
+  id: string;
+  icon: string;
+  active?: boolean;
+}
+
+const SPINE_DEFAULT_BUTTONS: SpineButton[] = [
+  { id: "skills", icon: "✺", active: true },
+  { id: "commands", icon: "⌘" },
+  { id: "terminal", icon: "▣" },
+];
+
+export function EditorialSpine({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
-    logoUrl?: StringValue;
     title?: StringValue;
+    buttons?: SpineButton[];
   };
-  const logoUrl = props.logoUrl ? resolveString(props.logoUrl, state) : "";
   const title = props.title ? resolveString(props.title, state) : "ÆTHON · π";
+  const buttons = Array.isArray(props.buttons) ? props.buttons : SPINE_DEFAULT_BUTTONS;
   return (
     <div className="ae-spine">
-      {logoUrl && <img className="ae-spine-mark" src={logoUrl} alt="Aethon" />}
+      <AeMarkSvg size={28} radius={6} />
       <div className="ae-spine-title">{title}</div>
       <div className="ae-spine-spacer" />
+      <div className="ae-spine-buttons">
+        {buttons.map((b) => (
+          <button
+            type="button"
+            key={b.id}
+            data-active={b.active === true}
+            aria-label={b.id}
+            title={b.id}
+            onClick={() => onEvent("select", { id: b.id })}
+          >
+            {b.icon}
+          </button>
+        ))}
+      </div>
     </div>
+  );
+}
+
+// Re-usable inline AeMark for variation chrome (spine, rail header).
+// Deliberately co-located with the components that use it so adding a new
+// chrome composite doesn't require a registry round-trip.
+function AeMarkSvg({ size = 28, radius = 6 }: { size?: number; radius?: number }) {
+  return (
+    <svg
+      className="ae-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 320 320"
+      role="img"
+      aria-label="Aethon"
+      style={{ display: "block", borderRadius: radius, flexShrink: 0 }}
+    >
+      <title>Aethon</title>
+      <rect width="320" height="320" rx="60" fill="var(--bg-elev, #1f1f23)" />
+      <text
+        x="152"
+        y="160"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", "Bodoni 72", Didot, Georgia, serif'
+        fontSize="236"
+        fontWeight={700}
+        fill="var(--text, #fef3e2)"
+      >
+        Æ
+      </text>
+      <circle cx="248" cy="82" r="38" fill="var(--accent, #ff6a18)" opacity="0.85" />
+      <text
+        x="248"
+        y="86"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", Didot, Georgia, serif'
+        fontSize="44"
+        fontWeight={700}
+        fontStyle="italic"
+        fill="var(--text, #fef3e2)"
+      >
+        π
+      </text>
+    </svg>
   );
 }
 
@@ -188,10 +264,18 @@ export function CanvasOrnament({ component, state }: BuiltinComponentProps) {
 
 export function CommandBar({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
+    /** Current query text — usually $ref-bound to /commandQuery so the
+     *  agent (or a future ⌘K palette) can drive the value. Empty value
+     *  shows the placeholder; non-empty renders in --text + a blinking
+     *  caret to read like an active editor. */
     text?: StringValue;
+    placeholder?: StringValue;
     shortcut?: StringValue;
   };
-  const text = props.text ? resolveString(props.text, state) : "Search · ⌘P";
+  const text = props.text ? resolveString(props.text, state) : "";
+  const placeholder = props.placeholder
+    ? resolveString(props.placeholder, state)
+    : "Search · type / for commands";
   const shortcut = props.shortcut ? resolveString(props.shortcut, state) : "⌘P";
   return (
     <div
@@ -200,8 +284,15 @@ export function CommandBar({ component, state, onEvent }: BuiltinComponentProps)
       tabIndex={0}
       onClick={() => onEvent("invoke")}
     >
-      <span className="ae-command-bar-icon">⌘</span>
-      <span className="ae-command-bar-text">{text}</span>
+      <span className="ae-command-bar-icon" aria-hidden="true">⌘</span>
+      {text ? (
+        <span className="ae-command-bar-text">
+          {text}
+          <span className="ae-command-bar-caret">▍</span>
+        </span>
+      ) : (
+        <span className="ae-command-bar-placeholder">{placeholder}</span>
+      )}
       <span className="ae-command-bar-shortcut">{shortcut}</span>
     </div>
   );
@@ -217,6 +308,15 @@ export function CommandBar({ component, state, onEvent }: BuiltinComponentProps)
 
 interface RailTab extends TabItem {
   hint?: string;
+  /** Subtitle line under the title — e.g. "sonnet · 12 turns" or
+   *  "sonnet · idle 3m". Mono, dim. */
+  meta?: string;
+}
+
+interface RailShelfItem {
+  id: string;
+  label: string;
+  icon?: string;
 }
 
 export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentProps) {
@@ -224,7 +324,10 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
     tabs?: { $ref: string } | RailTab[];
     activeId?: StringValue;
     title?: StringValue;
+    version?: StringValue;
     sectionTitle?: StringValue;
+    shelfTitle?: StringValue;
+    shelfItems?: RailShelfItem[];
   };
   const tabs: RailTab[] = useMemo(() => {
     if (!props.tabs) return [];
@@ -234,14 +337,23 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
   }, [props.tabs, state]);
   const activeId = props.activeId ? resolveString(props.activeId, state) : "";
   const title = props.title ? resolveString(props.title, state) : "aethon";
+  const version = props.version ? resolveString(props.version, state) : "";
   const sectionTitle = props.sectionTitle
     ? resolveString(props.sectionTitle, state)
     : "sessions";
+  const shelfTitle = props.shelfTitle
+    ? resolveString(props.shelfTitle, state)
+    : "shelf";
+  const shelfItems = Array.isArray(props.shelfItems) ? props.shelfItems : [];
 
   return (
     <div className="ae-session-rail">
       <div className="ae-session-rail-header">
+        <AeMarkSvg size={22} radius={5} />
         <span className="ae-session-rail-header-title">{title}</span>
+        {version && (
+          <span className="ae-session-rail-header-version">{version}</span>
+        )}
         <button
           type="button"
           className="ae-session-rail-new"
@@ -252,42 +364,62 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
           +
         </button>
       </div>
-      <div className="ae-session-rail-section">{sectionTitle}</div>
-      {tabs.map((t, i) => {
-        const isActive = t.id === activeId;
-        const num = String(i + 1).padStart(2, "0");
-        return (
-          <div
-            key={t.id}
-            data-active={isActive}
-            className="ae-session-card"
-            onMouseDown={(e) => {
-              if ((e.target as HTMLElement).closest(".ae-session-rail-close")) return;
-              e.preventDefault();
-              onEvent("select", { tabId: t.id });
-            }}
-          >
-            <div className="ae-session-card-meta">
-              <span>tab.{num}</span>
-              {t.dirty && <span className="ae-session-card-meta-dot" />}
-              <button
-                type="button"
-                className="ae-session-rail-close"
-                aria-label={`Close ${t.label}`}
-                title={`Close ${t.label}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEvent("close", { tabId: t.id });
-                }}
-              >
-                ×
-              </button>
+      <div className="ae-session-rail-body">
+        <div className="ae-session-rail-section">{sectionTitle}</div>
+        {tabs.map((t, i) => {
+          const isActive = t.id === activeId;
+          const num = String(i + 1).padStart(2, "0");
+          return (
+            <div
+              key={t.id}
+              data-active={isActive}
+              className="ae-session-card"
+              onMouseDown={(e) => {
+                if ((e.target as HTMLElement).closest(".ae-session-rail-close")) return;
+                e.preventDefault();
+                onEvent("select", { tabId: t.id });
+              }}
+            >
+              <div className="ae-session-card-meta">
+                <span>tab.{num}</span>
+                {t.dirty && <span className="ae-session-card-meta-dot" />}
+                <button
+                  type="button"
+                  className="ae-session-rail-close"
+                  aria-label={`Close ${t.label}`}
+                  title={`Close ${t.label}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEvent("close", { tabId: t.id });
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="ae-session-card-title">{t.label}</div>
+              {t.meta && <div className="ae-session-card-hint">{t.meta}</div>}
+              {!t.meta && t.hint && (
+                <div className="ae-session-card-hint">{t.hint}</div>
+              )}
             </div>
-            <div className="ae-session-card-title">{t.label}</div>
-            {t.hint && <div className="ae-session-card-hint">{t.hint}</div>}
-          </div>
-        );
-      })}
+          );
+        })}
+        {shelfItems.length > 0 && (
+          <>
+            <div className="ae-session-rail-section">{shelfTitle}</div>
+            {shelfItems.map((it) => (
+              <div
+                key={it.id}
+                className="ae-session-shelf-item"
+                onClick={() => onEvent("shelf", { id: it.id })}
+              >
+                {it.icon && <span className="ae-session-shelf-icon">{it.icon}</span>}
+                <span>{it.label}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -311,7 +443,7 @@ export function InspectorPane({ component, state }: BuiltinComponentProps) {
     badge?: StringValue;
     layoutSummary?: StringValue;
     layoutSummaryRef?: { $ref: string };
-    stateRows?: { label: string; value: string }[] | { $ref: string };
+    stateRows?: { label: string; value: StringValue }[] | { $ref: string };
     ops?: InspectorOp[] | { $ref: string };
   };
   const title = props.title ? resolveString(props.title, state) : "Inspector";
@@ -321,13 +453,19 @@ export function InspectorPane({ component, state }: BuiltinComponentProps) {
     : props.layoutSummaryRef
       ? (resolvePointer(state, props.layoutSummaryRef.$ref) as string) ?? ""
       : "";
-  const stateRows: { label: string; value: string }[] = (() => {
+  // Each row's `value` may be a literal string OR a $ref-bound StringValue.
+  // Resolve here so the renderer never receives a raw object as a child.
+  type RowInput = { label: string; value: StringValue };
+  const stateRowsRaw: RowInput[] = (() => {
     const raw = props.stateRows;
     if (!raw) return [];
     if (Array.isArray(raw)) return raw;
     const v = resolvePointer(state, raw.$ref);
-    return Array.isArray(v) ? (v as { label: string; value: string }[]) : [];
+    return Array.isArray(v) ? (v as RowInput[]) : [];
   })();
+  const stateRows: { label: string; value: string }[] = stateRowsRaw.map(
+    (r) => ({ label: r.label, value: resolveString(r.value, state) }),
+  );
   const ops: InspectorOp[] = (() => {
     const raw = props.ops;
     if (!raw) return [];
@@ -447,19 +585,26 @@ export function LayoutChangePill({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
     visible?: BooleanValue;
     label?: StringValue;
+    /** When "agent-rewrite" the pill is sticky-pulsing; when "user-applied"
+     *  it's solid (no animation) and dismisses after the next state tick.
+     *  Mirrors `LayoutChangePillProps.kind` from the design contract. */
+    kind?: StringValue;
   };
   const visible = props.visible === undefined ? true : resolveBoolean(props.visible, state);
   if (!visible) return null;
   const label = props.label
     ? resolveString(props.label, state)
-    : "agent rewrote layout";
+    : "agent rewrote layout · split-view";
+  const kind = props.kind ? resolveString(props.kind, state) : "agent-rewrite";
   return (
     <span
       className="ae-live-layout-pill"
+      data-kind={kind}
       role="status"
       aria-live="polite"
     >
-      {label}
+      <span className="ae-live-layout-pill-icon" aria-hidden="true">✺</span>
+      <span className="ae-live-layout-pill-label">{label}</span>
     </span>
   );
 }

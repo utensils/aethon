@@ -21,7 +21,14 @@
           "props": {
             "area": "sidebar",
             "title": "aethon",
+            "version": "v0.3",
             "sectionTitle": "sessions",
+            "shelfTitle": "shelf",
+            "shelfItems": [
+              { "id": "default-layout", "label": "default-layout", "icon": "✺" },
+              { "id": "aethon-debug", "label": "aethon-debug", "icon": "⌘" },
+              { "id": "terminal", "label": "terminal", "icon": "▣" }
+            ],
             "tabs": { "$ref": "/tabs" },
             "activeId": { "$ref": "/activeTabId" }
           }
@@ -42,7 +49,8 @@
               "id": "command-bar",
               "type": "command-bar",
               "props": {
-                "text": { "$ref": "/commandHint" },
+                "text": { "$ref": "/commandQuery" },
+                "placeholder": "Search · type / for commands",
                 "shortcut": "⌘P"
               }
             },
@@ -128,7 +136,7 @@
     "empty": false,
     "hasTabs": true,
     "recentSessions": [],
-    "commandHint": "Search · ⌘P or type / for commands",
+    "commandQuery": "",
     "agentStatus": {
       "label": "agent · ready",
       "state": "live"

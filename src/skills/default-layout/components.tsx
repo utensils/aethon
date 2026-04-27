@@ -35,6 +35,52 @@ import { resolvePointer } from "../../utils/jsonPointer";
 import A2UIRenderer from "../../components/A2UIRenderer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 
+// Inline Æπ monogram — used by Sidebar / TabRail / etc. without going
+// through the A2UI registry (so brand-chrome inside a composite doesn't
+// require a payload to declare an `ae-mark` child).
+function AeMarkInline({ size = 20, radius = 4 }: { size?: number; radius?: number }) {
+  return (
+    <svg
+      className="ae-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 320 320"
+      role="img"
+      aria-label="Aethon"
+      style={{ display: "block", borderRadius: radius, flexShrink: 0 }}
+    >
+      <title>Aethon</title>
+      <rect width="320" height="320" rx="60" fill="var(--bg-elev, #1f1f23)" />
+      <text
+        x="152"
+        y="160"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", "Bodoni 72", Didot, Georgia, serif'
+        fontSize="236"
+        fontWeight={700}
+        fill="var(--text, #fef3e2)"
+      >
+        Æ
+      </text>
+      <circle cx="248" cy="82" r="38" fill="var(--accent, #ff6a18)" opacity="0.85" />
+      <text
+        x="248"
+        y="86"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", Didot, Georgia, serif'
+        fontSize="44"
+        fontWeight={700}
+        fontStyle="italic"
+        fill="var(--text, #fef3e2)"
+      >
+        π
+      </text>
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Layout — CSS Grid container with template-areas. Children opt into a region
 // by setting their own `area` prop; the layout reads it and wraps the child
@@ -135,7 +181,16 @@ export function Sidebar({
 }: BuiltinComponentProps) {
   const props = component.props as {
     title?: StringValue;
-    sections?: SidebarSection[];
+    /** Optional version chip rendered right-aligned in the title row
+     *  (e.g. "v0.3"). Mono, dim. Mirrors the design's brand-mark row. */
+    version?: StringValue;
+    /** When true, render an inline AeMark monogram before the title. */
+    brandMark?: BooleanValue;
+    sections?: (SidebarSection & {
+      /** When true, render section items in mono. Used for model ids,
+       *  layout names — anything that reads as code. */
+      monoItems?: boolean;
+    })[];
     // Optional list of extra sections appended after the inline `sections`.
     // Bound via $ref so extensions can push into a state path and have
     // their sections appear without modifying the layout payload.
@@ -143,6 +198,10 @@ export function Sidebar({
   };
 
   const title = props.title ? resolveString(props.title, state) : "";
+  const version = props.version ? resolveString(props.version, state) : "";
+  const showBrand = props.brandMark
+    ? resolveBoolean(props.brandMark, state)
+    : !!title;
 
   const resolveItems = (
     items: SidebarSection["items"] | undefined,
@@ -168,10 +227,19 @@ export function Sidebar({
 
   return (
     <aside className="a2ui-sidebar">
-      {title && <div className="a2ui-sidebar-title">{title}</div>}
+      {(title || version) && (
+        <div className="a2ui-sidebar-title">
+          {showBrand && <AeMarkInline size={20} radius={4} />}
+          {title && <span>{title}</span>}
+          {version && (
+            <span className="a2ui-sidebar-title-version">{version}</span>
+          )}
+        </div>
+      )}
       <div className="a2ui-sidebar-sections">
         {allSections.map((section) => {
           const items = resolveItems(section.items);
+          const monoItems = (section as { monoItems?: boolean }).monoItems === true;
           return (
             <div key={section.id} className="a2ui-sidebar-section">
               <div className="a2ui-sidebar-section-title">{section.title}</div>
@@ -211,13 +279,18 @@ export function Sidebar({
                         </li>
                       );
                     }
+                    const hint = (item as { hint?: string }).hint;
                     return (
                       <li
                         key={item.id}
                         className={
-                          item.active
-                            ? "a2ui-sidebar-item a2ui-sidebar-item-active"
-                            : "a2ui-sidebar-item"
+                          [
+                            "a2ui-sidebar-item",
+                            item.active ? "a2ui-sidebar-item-active" : "",
+                            monoItems ? "a2ui-sidebar-item-mono" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")
                         }
                         onClick={() =>
                           // descendantId carries item.id so onEvent matchers
@@ -231,7 +304,10 @@ export function Sidebar({
                           )
                         }
                       >
-                        {item.label}
+                        <span className="a2ui-sidebar-item-label">{item.label}</span>
+                        {hint && (
+                          <span className="a2ui-sidebar-item-hint">{hint}</span>
+                        )}
                       </li>
                     );
                   })}

@@ -1,5 +1,12 @@
 :root {
-  font-family: system-ui, -apple-system, sans-serif;
+  /* Typography — design ships Geist (UI), Geist Mono (mono), Playfair
+     Display (editorial). Inter + JetBrains Mono fall back gracefully when
+     the network can't reach Google Fonts. */
+  --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
+  --font-editorial: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  font-family: var(--font-ui);
   background: var(--bg);
   color: var(--text);
 }
@@ -124,12 +131,15 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  font-family: var(--font-ui);
   /* `~/.aethon/config.toml` `[ui] font_size` writes to --app-font-size
      in App.tsx; the fallback keeps existing builds rendering the
-     default 14px when the user hasn't set the option. */
-  font-size: var(--app-font-size, 14px);
+     default 13px when the user hasn't set the option (design uses 13px
+     body, tightened from the previous 14px default). */
+  font-size: var(--app-font-size, 13px);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Dark, slim scrollbars — defaults are jarring on the elevated panels. */
@@ -200,43 +210,54 @@ body {
 }
 
 .a2ui-sidebar-title {
-  /* Match the header bar's height + bottom border so the sidebar title
-     and the app header align on a single horizontal baseline. The
-     header's `.app-header` is 44px with `border-bottom: 1px solid` —
-     mirror both here so the row of "Aethon" labels lines up exactly.
-     `min-height` (not `height`) + `flex-shrink: 0` because the
-     sidebar is a flex column and would otherwise collapse this row
+  /* 38px header (design "compact-header" token) — matches `.app-header`
+     so the sidebar title and the app header align on a single horizontal
+     baseline. `min-height` (not `height`) + `flex-shrink: 0` because
+     the sidebar is a flex column and would otherwise collapse this row
      to its content height. */
   display: flex;
   align-items: center;
-  min-height: 44px;
+  gap: 9px;
+  min-height: 38px;
   flex-shrink: 0;
-  padding: 0 16px;
-  font-size: 0.95rem;
+  padding: 0 14px;
+  font-size: 0.81rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   border-bottom: 1px solid var(--border);
+}
+
+.a2ui-sidebar-title .ae-mark {
+  flex-shrink: 0;
+}
+
+.a2ui-sidebar-title-version {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
 }
 
 .a2ui-sidebar-sections {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
+  gap: 2px;
+  padding: 6px 0;
 }
 
 .a2ui-sidebar-section {
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .a2ui-sidebar-section-title {
-  padding: 8px 16px 4px;
-  font-size: 0.65rem;
+  padding: 6px 14px 4px;
+  font-size: 0.59rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .a2ui-sidebar-list {
@@ -246,11 +267,14 @@ body {
 }
 
 .a2ui-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 5px 14px;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   cursor: pointer;
   color: var(--text);
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
   user-select: none;
   border-left: 2px solid transparent;
 }
@@ -264,6 +288,24 @@ body {
   background: var(--accent-active-tint);
 }
 
+/* Right-aligned hint chip — `⌘\``, `⌘K`, `2h`, `yest`. Mono, dim, 10px. */
+.a2ui-sidebar-item-hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Mono-item variant — model ids, layout names, theme keys.
+   Set via the section's `monoItems: true` flag. */
+.a2ui-sidebar-item-mono {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: -0.005em;
+}
+
 /* Active selection — accent stripe on the left + tinted background, no dot
    prefix. Aligns the label with siblings and keeps the chrome quiet. */
 .a2ui-sidebar-item-active {
@@ -273,11 +315,19 @@ body {
   border-left-color: var(--accent);
 }
 
+.a2ui-sidebar-item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .a2ui-sidebar-empty {
   padding: 6px 16px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
   font-style: italic;
+  font-family: var(--font-mono);
 }
 
 /* ---- Header (Container with className=app-header) ----------------------- */
@@ -1048,19 +1098,20 @@ body {
   align-items: center;
   gap: 16px;
   height: 100%;
-  background: var(--bg-elev);
+  background: var(--bg);
+  position: relative;
 }
 
 .ae-editorial-title {
   display: flex;
   flex-direction: column;
-  line-height: 1.05;
+  line-height: 1;
   flex-shrink: 0;
 }
 
 .ae-editorial-title-main {
-  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
-  font-size: 1.3rem;
+  font-family: var(--font-editorial);
+  font-size: 1.4rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text);
@@ -1068,15 +1119,16 @@ body {
 .ae-editorial-title-pi {
   font-style: italic;
   color: var(--accent);
+  margin-left: 0.18em;
 }
 
 .ae-editorial-subtitle {
-  font-size: 0.6rem;
+  font-size: 0.59rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--text-dim);
   margin-top: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .ae-editorial-tabs {
@@ -1094,7 +1146,12 @@ body {
   gap: 2px;
   cursor: pointer;
   opacity: 0.55;
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-fast) ease;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
 }
 .ae-editorial-tab:hover { opacity: 0.85; }
 .ae-editorial-tab[data-active="true"] { opacity: 1; }
@@ -1103,10 +1160,11 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.6rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.59rem;
+  font-family: var(--font-mono);
   color: var(--text-dim);
   letter-spacing: 0.06em;
+  font-weight: 500;
 }
 
 .ae-editorial-tab-meta .ae-dot {
@@ -1114,12 +1172,13 @@ body {
   height: 4px;
   border-radius: 99px;
   background: var(--accent);
+  flex-shrink: 0;
 }
 
 .ae-editorial-tab-title {
-  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  font-family: var(--font-editorial);
   font-style: italic;
-  font-size: 0.82rem;
+  font-size: 0.81rem;
   color: var(--text-dim);
   max-width: 180px;
   overflow: hidden;
@@ -1213,6 +1272,27 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ae-command-bar-placeholder {
+  color: var(--text-dim);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-command-bar-caret {
+  color: var(--text);
+  animation: ae-caret-blink 1s step-end infinite;
+}
+
+@keyframes ae-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .ae-command-bar-shortcut {
@@ -1250,28 +1330,67 @@ body {
 }
 
 /* Vertical session rail — replaces sidebar in command-deck. Each tab
-   becomes a card with model + last-active hint. */
+   becomes a card with model + last-active hint. The rail is a flex column
+   with a fixed-height header row + a scrolling body so the brand mark and
+   "+" button stay pinned while the session list scrolls. */
 .ae-session-rail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 8px;
   width: 100%;
   height: 100%;
   background: var(--bg-elev);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
+.ae-session-rail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .ae-session-rail-section {
-  padding: 8px 6px 4px;
-  font-size: 0.6rem;
+  padding: 8px 8px 4px;
+  font-size: 0.59rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-weight: 600;
+}
+
+.ae-session-rail-header-version {
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+}
+
+/* Shelf entries — one-line items below the session cards (default-layout,
+   aethon-debug, terminal). */
+.ae-session-shelf-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.ae-session-shelf-item:hover {
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+}
+.ae-session-shelf-icon {
+  color: var(--text-dim);
+  display: inline-flex;
+  width: 14px;
 }
 
 .ae-session-card {
@@ -1377,7 +1496,8 @@ body {
 
 .ae-session-rail-header-title {
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.81rem;
+  letter-spacing: 0.01em;
 }
 
 /* =========================================================================
@@ -1388,21 +1508,29 @@ body {
 .ae-live-layout-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 4px 10px;
   border-radius: 99px;
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   font-weight: 600;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   animation: ae-layout-pulse 1.4s ease-out infinite;
   flex-shrink: 0;
+  margin-left: auto;
 }
-.ae-live-layout-pill::before {
-  content: "✺";
+.ae-live-layout-pill[data-kind="user-applied"] {
+  animation: none;
+}
+.ae-live-layout-pill-icon {
   font-style: normal;
+  line-height: 1;
+}
+.ae-live-layout-pill-label {
+  letter-spacing: 0.04em;
 }
 
 @keyframes ae-layout-pulse {
