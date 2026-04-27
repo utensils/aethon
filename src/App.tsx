@@ -121,6 +121,11 @@ export default function App() {
     queueCount: number;
     canvas: unknown;
     model: string;
+    // Rolling buffer of bash output for this tab. The Terminal component
+    // writes to xterm directly for the active tab; this buffer survives
+    // tab switches so the panel can replay it when the user comes back.
+    // Capped client-side too (TERMINAL_REPLAY_MAX) to bound memory.
+    terminalBuffer: string;
   }
   function makeEmptyTab(id: string, label: string): Tab {
     return {
@@ -132,8 +137,13 @@ export default function App() {
       queueCount: 0,
       canvas: null,
       model: "",
+      terminalBuffer: "",
     };
   }
+  // Per-tab terminal buffer cap. Bash output bursts can be huge; without
+  // a ceiling the buffer would grow forever and slow tab switches as the
+  // replay payload grows.
+  const TERMINAL_REPLAY_MAX = 256 * 1024;
 
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
@@ -489,12 +499,17 @@ export default function App() {
   }
 
   // Switch the active tab. Re-mirrors the new tab's view to the root keys
-  // so layout bindings update without needing a per-key refresh.
+  // so layout bindings update without needing a per-key refresh. Also
+  // dispatches a replay event so the shared xterm panel clears and
+  // re-writes the new tab's buffered output (the buffer survives switches
+  // even though there's only one xterm instance on screen).
   function setActiveTab(tabId: string) {
+    let nextBuffer = "";
     setState((prev) => {
       const tabs = (prev.tabs as Tab[] | undefined) ?? [];
       const target = tabs.find((t) => t.id === tabId);
       if (!target) return prev;
+      nextBuffer = target.terminalBuffer ?? "";
       const result: Record<string, unknown> = { ...prev, activeTabId: tabId };
       const targetRec = target as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
@@ -505,6 +520,14 @@ export default function App() {
         target.model,
       );
       return result;
+    });
+    // Microtask so xterm's mount-once useEffect has resolved before we
+    // try to write to it (matters on the very first tab switch after
+    // boot when the layout is rendering for the first time).
+    Promise.resolve().then(() => {
+      window.dispatchEvent(
+        new CustomEvent("aethon:terminal-replay", { detail: nextBuffer }),
+      );
     });
   }
 
@@ -520,18 +543,23 @@ export default function App() {
   // ---------------------------------------------------------------------
   function newTab() {
     const id = crypto.randomUUID();
+    // Inherit the previously-active tab's model so the picker stays
+    // consistent. Without this, the new tab's pi session would default
+    // to whatever ~/.pi/agent/settings.json declares — which is often
+    // outside the user's enabledModels glob and would leave the picker
+    // showing nothing highlighted.
+    const inheritedModel =
+      ((stateRef.current.model as string | undefined) ?? "").trim();
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       const label = `Tab ${tabs.length + 1}`;
-      const tab = makeEmptyTab(id, label);
+      const tab: Tab = { ...makeEmptyTab(id, label), model: inheritedModel };
       tabs.push(tab);
       const result: Record<string, unknown> = { ...prev, tabs, activeTabId: id };
       const tabRec = tab as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = tabRec[key as string];
       }
-      // New tab has no model yet — picker should clear all `active` flags
-      // until the bridge's tab_ready arrives with the chosen default.
       result.sidebar = recomputeModelPicker(
         prev.sidebar as Record<string, unknown> | undefined,
         tab.model,
@@ -540,9 +568,19 @@ export default function App() {
     });
     invoke("agent_command", {
       payload: JSON.stringify({ type: "tab_open", tabId: id }),
-    }).catch((err) => {
-      appendSystem(`Failed to open tab: ${err}`);
-    });
+    })
+      .then(() => {
+        // Sync the bridge session's model to the inherited one so chat
+        // turns on this tab use the same model as the parent. tab_open
+        // creates the session with pi's default; this overrides it.
+        if (!inheritedModel) return;
+        return invoke("agent_command", {
+          payload: JSON.stringify({ type: "set_model", id: inheritedModel, tabId: id }),
+        });
+      })
+      .catch((err) => {
+        appendSystem(`Failed to open tab: ${err}`);
+      });
   }
 
   function nextTab(direction: 1 | -1) {
@@ -1120,15 +1158,23 @@ export default function App() {
       case "terminal_output": {
         const content = (data.content as string) ?? "";
         if (!content) break;
-        // Stream straight to the Terminal component via a window event — no
-        // React state involved. xterm's own scrollback buffer is bounded
-        // (default 1000 rows) so we don't need to grow a string in app state
-        // that React re-copies on every append. The Terminal component stays
-        // mounted while hidden (Layout toggles visibility via `display`), so
-        // events still land while the panel is collapsed.
-        window.dispatchEvent(
-          new CustomEvent("aethon:terminal", { detail: content }),
-        );
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        // Append to the originating tab's buffer (cap from the right so
+        // older content rotates out first). When the tab is active, also
+        // dispatch the live-stream event so xterm writes the chunk
+        // immediately without waiting for a state-driven re-render.
+        updateTab(tabId, (tab) => {
+          const next = (tab.terminalBuffer ?? "") + content;
+          const trimmed = next.length > TERMINAL_REPLAY_MAX
+            ? next.slice(next.length - TERMINAL_REPLAY_MAX)
+            : next;
+          return { ...tab, terminalBuffer: trimmed };
+        });
+        if ((stateRef.current.activeTabId as string | undefined) === tabId) {
+          window.dispatchEvent(
+            new CustomEvent("aethon:terminal", { detail: content }),
+          );
+        }
         break;
       }
     }

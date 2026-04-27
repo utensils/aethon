@@ -671,13 +671,13 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       term.onData((data) => onEvent("input", { data }));
     }
 
-    // App.tsx fires this event whenever the agent's bash tool produces
-    // output. Writing through xterm directly keeps the bounded scrollback
-    // buffer xterm already manages — no parallel growing string in React
-    // state. Only this terminal subscribes when subscribeToBash is true,
-    // so skills can mount independent terminals without picking up the
-    // agent's bash stream.
+    // App.tsx fires `aethon:terminal` for live bash output and
+    // `aethon:terminal-replay` on tab switch (clear + replay the active
+    // tab's buffered scrollback). Only this terminal subscribes when
+    // subscribeToBash is true so skills can mount independent terminals
+    // without picking up the agent's bash stream.
     let onTerminalEvent: ((e: Event) => void) | null = null;
+    let onReplayEvent: ((e: Event) => void) | null = null;
     if (subscribeToBash) {
       onTerminalEvent = (e: Event) => {
         const detail = (e as CustomEvent<string>).detail;
@@ -685,7 +685,18 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
           term.write(detail);
         }
       };
+      onReplayEvent = (e: Event) => {
+        const detail = (e as CustomEvent<string>).detail;
+        // Clear restores the prompt-style header line plus the buffered
+        // contents for the now-active tab. Empty buffer = fresh prompt.
+        term.clear();
+        term.write("Aethon Terminal\r\n$ ");
+        if (typeof detail === "string" && detail.length > 0) {
+          term.write(detail);
+        }
+      };
       window.addEventListener("aethon:terminal", onTerminalEvent);
+      window.addEventListener("aethon:terminal-replay", onReplayEvent);
     }
 
     const ro = new ResizeObserver(() => {
@@ -701,6 +712,9 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       ro.disconnect();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);
+      }
+      if (onReplayEvent) {
+        window.removeEventListener("aethon:terminal-replay", onReplayEvent);
       }
       term.dispose();
       termRef.current = null;

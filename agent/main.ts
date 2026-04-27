@@ -678,12 +678,12 @@ async function main() {
 
   // Format and forward bash output to the terminal panel in chunks. Caps a
   // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
-  // can't choke the IPC pipe. Terminal output is global (one shared panel
-  // across tabs) so events carry no tabId.
+  // can't choke the IPC pipe. Now per-tab — the frontend buffers each tab
+  // independently and only renders the active tab's stream.
   const TERMINAL_MAX_BYTES = 64 * 1024;
   const TERMINAL_CHUNK_BYTES = 8 * 1024;
 
-  function emitBashResult(text: string): void {
+  function emitBashResult(text: string, tabId: string): void {
     if (!text) return;
     let body = text;
     let truncated = false;
@@ -694,6 +694,7 @@ async function main() {
     if (truncated) {
       send({
         type: "terminal_output",
+        tabId,
         content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
       });
     }
@@ -701,6 +702,7 @@ async function main() {
     for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
       send({
         type: "terminal_output",
+        tabId,
         content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
       });
     }
@@ -774,7 +776,7 @@ async function main() {
           if (event.toolName === "bash") {
             const cmd = String((event.args as { command?: unknown } | undefined)?.command ?? "");
             const echoed = cmd.replace(/\r?\n/g, "\r\n");
-            send({ type: "terminal_output", content: `\r\n$ ${echoed}\r\n` });
+            send({ type: "terminal_output", tabId, content: `\r\n$ ${echoed}\r\n` });
           }
           break;
         }
@@ -790,8 +792,8 @@ async function main() {
           send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
           if (event.toolName === "bash") {
             const extracted = extractToolContent(event.result);
-            emitBashResult(extracted.text);
-            send({ type: "terminal_output", content: "\r\n" });
+            emitBashResult(extracted.text, tabId);
+            send({ type: "terminal_output", tabId, content: "\r\n" });
           }
           rec.toolArgsCache.delete(event.toolCallId);
           break;
