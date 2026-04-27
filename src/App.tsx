@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer from "./components/A2UIRenderer";
 import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
@@ -839,6 +840,18 @@ export default function App() {
         case "check_updates": {
           checkForUpdates().catch((err) => {
             appendSystem(`Update check failed: ${err}`);
+          });
+          break;
+        }
+        case "help_docs": {
+          openUrl("https://github.com/utensils/aethon").catch(() => {
+            /* opener errors are noisy and rarely actionable */
+          });
+          break;
+        }
+        case "help_issues": {
+          openUrl("https://github.com/utensils/aethon/issues/new").catch(() => {
+            /* opener errors are noisy and rarely actionable */
           });
           break;
         }
