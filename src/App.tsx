@@ -474,6 +474,20 @@ export default function App() {
     });
   }
 
+  // Recompute the global model picker's `active` flag against `model`.
+  // Called whenever the active tab changes (switch / new / close) so the
+  // sidebar highlight tracks the active session's chosen model. Returns
+  // a new sidebar object — caller is responsible for splatting into state.
+  function recomputeModelPicker(
+    sidebar: Record<string, unknown> | undefined,
+    model: string,
+  ): Record<string, unknown> {
+    const items =
+      ((sidebar?.models as { id: string; label: string }[] | undefined) ?? [])
+        .map((m) => ({ id: m.id, label: m.label, active: m.id === model }));
+    return { ...(sidebar ?? {}), models: items };
+  }
+
   // Switch the active tab. Re-mirrors the new tab's view to the root keys
   // so layout bindings update without needing a per-key refresh.
   function setActiveTab(tabId: string) {
@@ -486,6 +500,10 @@ export default function App() {
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = targetRec[key as string];
       }
+      result.sidebar = recomputeModelPicker(
+        prev.sidebar as Record<string, unknown> | undefined,
+        target.model,
+      );
       return result;
     });
   }
@@ -512,6 +530,12 @@ export default function App() {
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = tabRec[key as string];
       }
+      // New tab has no model yet — picker should clear all `active` flags
+      // until the bridge's tab_ready arrives with the chosen default.
+      result.sidebar = recomputeModelPicker(
+        prev.sidebar as Record<string, unknown> | undefined,
+        tab.model,
+      );
       return result;
     });
     invoke("agent_command", {
@@ -545,6 +569,10 @@ export default function App() {
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = targetRec[key as string];
       }
+      result.sidebar = recomputeModelPicker(
+        prev.sidebar as Record<string, unknown> | undefined,
+        target.model,
+      );
       return result;
     });
     invoke("agent_command", {
@@ -901,10 +929,21 @@ export default function App() {
       case "tab_ready": {
         // Bridge confirms a per-tab pi session is up and tells us its
         // chosen model. Update the tab record so the sidebar can reflect
-        // it on next switch.
+        // it on next switch. If the tab is currently active, also refresh
+        // the model picker's `active` flag now (otherwise it'd lag until
+        // the user manually switched).
         const tabId = (data.tabId as string | undefined) ?? "default";
         const model = (data.model as string) ?? "";
         updateTab(tabId, (tab) => ({ ...tab, model }));
+        if (stateRef.current.activeTabId === tabId) {
+          setState((prev) => ({
+            ...prev,
+            sidebar: recomputeModelPicker(
+              prev.sidebar as Record<string, unknown> | undefined,
+              model,
+            ),
+          }));
+        }
         break;
       }
       case "tab_closed": {
@@ -924,6 +963,10 @@ export default function App() {
           for (const key of TAB_MIRROR_KEYS) {
             result[key as string] = targetRec[key as string];
           }
+          result.sidebar = recomputeModelPicker(
+            prev.sidebar as Record<string, unknown> | undefined,
+            target.model,
+          );
           return result;
         });
         break;

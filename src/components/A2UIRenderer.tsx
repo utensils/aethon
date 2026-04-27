@@ -63,6 +63,11 @@ export interface BuiltinComponentProps {
   onEvent: (eventType: string, data?: unknown) => void;
   renderChildren?: () => React.ReactNode;
   renderChild?: (child: A2UIComponent) => React.ReactNode;
+  // Tab the component lives on. Components that nest their own
+  // A2UIRenderer (e.g. ChatHistory rendering a tool card's payload)
+  // forward this so events from inside the card route to the
+  // correct pi session, not whatever tab happens to be "default".
+  tabId?: string;
 }
 
 // A2UI primitives — always available, can't be overridden by skills.
@@ -267,6 +272,7 @@ export default function A2UIRenderer({
         }
         renderChildren={renderChildren}
         renderChild={renderChild}
+        tabId={tabId}
       />
     );
   };

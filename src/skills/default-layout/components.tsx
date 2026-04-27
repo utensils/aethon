@@ -182,7 +182,7 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
 // embedded A2UI subtrees (rendered recursively).
 // ---------------------------------------------------------------------------
 
-export function ChatHistory({ component, state }: BuiltinComponentProps) {
+export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
     messages: { $ref: string };
     emptyHint?: StringValue;
@@ -212,7 +212,9 @@ export function ChatHistory({ component, state }: BuiltinComponentProps) {
                 <ReactMarkdown>{m.text}</ReactMarkdown>
               </div>
             )}
-            {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} />}
+            {/* tabId forwards so clicks inside the embedded card route
+                back to the originating tab's pi session. */}
+            {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} tabId={tabId} />}
           </div>
         ))
       )}
@@ -225,7 +227,7 @@ export function ChatHistory({ component, state }: BuiltinComponentProps) {
 // feed (history) plus a live "current canvas" subtree if state.canvas is set.
 // ---------------------------------------------------------------------------
 
-export function MainCanvas({ component, state }: BuiltinComponentProps) {
+export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
     slot?: string;
     messages?: { $ref: string };
@@ -262,12 +264,12 @@ export function MainCanvas({ component, state }: BuiltinComponentProps) {
               <ReactMarkdown>{m.text}</ReactMarkdown>
             </div>
           )}
-          {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} />}
+          {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} tabId={tabId} />}
         </div>
       ))}
       {liveSubtree && (
         <div className="a2ui-canvas-live">
-          <A2UIRenderer payload={liveSubtree} state={state} />
+          <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
     </main>
