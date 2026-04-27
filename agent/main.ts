@@ -83,6 +83,7 @@ import {
   SessionManager,
   SettingsManager,
   createAgentSession,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { createInterface } from "node:readline";
@@ -546,15 +547,18 @@ async function main() {
 
   // Inject Aethon-awareness into pi's system prompt so the model knows it
   // has a GUI and can mutate `globalThis.aethon` directly. Goes through the
-  // resource loader's appendSystemPrompt option so it survives every
-  // resourceLoader.reload() inside the session.
-  const cwd = process.cwd();
-  const agentDir = join(homedir(), ".pi", "agent");
+  // resource loader's appendSystemPromptOverride callback (NOT the
+  // appendSystemPrompt source) so the user's existing project / global
+  // APPEND_SYSTEM.md files are still discovered and preserved — our text
+  // is concatenated AFTER theirs so user instructions take precedence.
+  // agentDir comes from pi's getAgentDir() so PI_CODING_AGENT_DIR /
+  // alternate config dirs work the same way they do for the rest of pi.
+  const aethonAppend = resolveAethonSystemPrompt();
   const resourceLoader = new DefaultResourceLoader({
-    cwd,
-    agentDir,
+    cwd: process.cwd(),
+    agentDir: getAgentDir(),
     settingsManager,
-    appendSystemPrompt: resolveAethonSystemPrompt(),
+    appendSystemPromptOverride: (base) => [...base, ...aethonAppend],
   });
   await resourceLoader.reload();
 
