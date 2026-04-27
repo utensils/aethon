@@ -30,6 +30,10 @@ interface A2UIRendererProps {
   // Intercept events before (or instead of) the default Tauri dispatch.
   // Return true to indicate the event was handled — prevents agent forwarding.
   onEvent?: A2UIEventHandler;
+  // Tab the rendered tree belongs to. Threaded into dispatch_a2ui_event so
+  // the bridge routes handler-fired pi prompts back to the right session
+  // (otherwise non-default tabs would always trigger the default tab).
+  tabId?: string;
 }
 
 /**
@@ -94,6 +98,7 @@ export default function A2UIRenderer({
   state: externalState,
   onStateChange,
   onEvent: externalOnEvent,
+  tabId,
 }: A2UIRendererProps) {
   const registry = useSkillRegistry();
   const [internalState, setInternalState] = useState<Record<string, unknown>>(
@@ -207,6 +212,7 @@ export default function A2UIRenderer({
           eventType,
           data,
         }),
+        tabId,
       });
     } catch (err) {
       console.error("Failed to dispatch A2UI event:", err);

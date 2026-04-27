@@ -375,6 +375,7 @@ fn agent_command(
 #[tauri::command]
 fn dispatch_a2ui_event(
     event: String,
+    tab_id: Option<String>,
     state: State<'_, AgentProcess>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -385,7 +386,13 @@ fn dispatch_a2ui_event(
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
     let event_value: serde_json::Value =
         serde_json::from_str(&event).map_err(|e| e.to_string())?;
-    let payload = serde_json::json!({"type": "a2ui_event", "event": event_value});
+    // tabId routes the event (and any handler-fired pi.prompt()) to the
+    // originating tab's session instead of always defaulting to "default".
+    let payload = serde_json::json!({
+        "type": "a2ui_event",
+        "event": event_value,
+        "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
+    });
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
     Ok(())

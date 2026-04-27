@@ -408,11 +408,18 @@ export default function App() {
   }, [defaultTabMessages, restored]);
 
   function clearChat() {
-    // Clear only the active tab's messages.
+    // Clear only the active tab's messages. Only flush the persisted
+    // history file when the active tab IS the default — non-default tabs
+    // aren't persisted, so writing `[]` here would wipe the saved
+    // default-tab history that's still showing under another tab.
+    const wasDefault =
+      (stateRef.current.activeTabId as string | undefined) === "default";
     updateActiveTab((tab) => ({ ...tab, messages: [] }));
-    writeState(PERSIST_FILE, "[]").catch(() => {
-      /* ignore */
-    });
+    if (wasDefault) {
+      writeState(PERSIST_FILE, "[]").catch(() => {
+        /* ignore */
+      });
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1244,7 +1251,12 @@ export default function App() {
         return true;
       }
       if (component.id === "chat-input" && eventType === "change") {
-        // Optimistic update already wrote /draft; nothing more to forward.
+        // The renderer's optimistic update wrote /draft (the active-tab
+        // mirror); also write into the active tab record so an unsent
+        // draft survives a tab switch and isn't clobbered when the
+        // tab is re-mirrored to root on switch-back.
+        const value = (data as { value?: string } | undefined)?.value ?? "";
+        updateActiveTab((tab) => ({ ...tab, draft: value }));
         return true;
       }
       if (component.id === "chat-input" && eventType === "cancel") {
@@ -1319,6 +1331,7 @@ export default function App() {
           state={state}
           onStateChange={setState}
           onEvent={onEvent}
+          tabId={state.activeTabId as string | undefined}
         />
       </div>
     </SkillRegistryProvider>
