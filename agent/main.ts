@@ -444,6 +444,12 @@ async function main() {
   // preserved on iteration so the sidebar shows them in registration order.
   const extensionThemes = new Map<string, ThemeRecord>();
   let extensionStateTree: Record<string, unknown> = {};
+  // Per-tab mirrored-key writes (canvas / messages / draft / waiting /
+  // queueCount / model). Kept separate from the global extensionStateTree
+  // so a webview reload's `ready` can replay each tab's UI state without
+  // smearing one tab's writes into another. Frontend reads this from
+  // data.extensionTabState on ready and merges per tab record.
+  const perTabExtState = new Map<string, Record<string, unknown>>();
   // Latest extension-supplied layout (set by setLayout, mutated by
   // patchLayout). Retained so a webview reload's `report` → `ready`
   // re-emits it instead of falling back to the boot layout. `undefined`
@@ -537,15 +543,18 @@ async function main() {
     // queueCount / model) DON'T belong in the global extensionStateTree
     // — that gets replayed wholesale on `ready` and would smear one
     // tab's state across whichever tab is active after the reload.
-    // Keep them off the global tree; the frontend stores them on the
-    // tab record (which survives reload via React state).
+    // Instead route them into perTabExtState so each tab's mirrored
+    // values can be replayed back into its own record on ready.
     const segs = path.split("/").filter(Boolean);
     const top = segs[0];
     const isMirroredPerTab =
       attributedTab !== undefined &&
       (top === "messages" || top === "draft" || top === "waiting" ||
        top === "queueCount" || top === "canvas" || top === "model");
-    if (!isMirroredPerTab) {
+    if (isMirroredPerTab && attributedTab) {
+      const before = perTabExtState.get(attributedTab) ?? {};
+      perTabExtState.set(attributedTab, setAtPointer(before, path, value));
+    } else {
       extensionStateTree = setAtPointer(extensionStateTree, path, value);
     }
     send({
@@ -726,6 +735,7 @@ async function main() {
       })),
       extensionComponents: Object.fromEntries(extensionComponents),
       extensionState: extensionStateTree,
+      extensionTabState: Object.fromEntries(perTabExtState),
       extensionLayout,
       extensionLayoutPatches: pendingLayoutPatches,
       extensionThemes: [...extensionThemes.values()],

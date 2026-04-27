@@ -887,17 +887,22 @@ export default function App() {
           //       the user can re-access those sessions.
           //   (b) bridge restart — local has tabs the bridge doesn't;
           //       the post-ready replay below re-establishes them.
+          //
+          // Also hydrate per-tab mirrored state from extensionTabState
+          // — those values are the bridge's record of what extensions /
+          // agents wrote to /canvas, /messages, etc. for each tab. On a
+          // webview reload they're the only way to restore tab UI state
+          // that was driven by the agent (React state didn't survive).
           {
             const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
             const bridgeTabs =
               (data.tabs as { id: string; model: string }[] | undefined) ?? [];
-            // Update default's model from data.model (canonical).
+            const tabReplay =
+              (data.extensionTabState as Record<string, Record<string, unknown>> | undefined) ?? {};
             const dIdx = localTabs.findIndex((t) => t.id === "default");
             if (dIdx >= 0) {
               localTabs[dIdx] = { ...localTabs[dIdx], model };
             }
-            // For any bridge tab missing locally, append a new record
-            // labeled by position so the user has a recognizable handle.
             for (const bt of bridgeTabs) {
               if (bt.id === "default") continue;
               const exists = localTabs.find((t) => t.id === bt.id);
@@ -910,6 +915,25 @@ export default function App() {
               }
               const label = `Tab ${localTabs.length + 1}`;
               localTabs.push({ ...makeEmptyTab(bt.id, label), model: bt.model });
+            }
+            // Apply the bridge's per-tab replay over each tab record.
+            // prev wins for keys the React side already restored (e.g.
+            // local-only message history) — agent-driven canvas /
+            // model fills the gaps.
+            for (let i = 0; i < localTabs.length; i++) {
+              const replay = tabReplay[localTabs[i].id];
+              if (!replay) continue;
+              const merged = { ...localTabs[i] } as unknown as Record<string, unknown>;
+              for (const [k, v] of Object.entries(replay)) {
+                // Only fill keys that aren't already populated locally,
+                // so a real local update beats a possibly-stale replay.
+                if (merged[k] === undefined || merged[k] === null ||
+                    (Array.isArray(merged[k]) && (merged[k] as unknown[]).length === 0) ||
+                    merged[k] === "") {
+                  merged[k] = v;
+                }
+              }
+              localTabs[i] = merged as unknown as Tab;
             }
             next.tabs = localTabs;
           }
