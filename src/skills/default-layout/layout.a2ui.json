@@ -75,15 +75,6 @@
             "title": "Aethon",
             "sections": [
               {
-                "id": "files",
-                "title": "Files",
-                "items": [
-                  { "id": "file-spec", "label": "SPEC.md" },
-                  { "id": "file-readme", "label": "README.md" },
-                  { "id": "file-app", "label": "src/App.tsx" }
-                ]
-              },
-              {
                 "id": "skills",
                 "title": "Skills",
                 "items": [
