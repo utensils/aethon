@@ -134,9 +134,60 @@ fn project_root() -> PathBuf {
     cwd
 }
 
-/// Spawn `bun run agent/main.ts` if no live child is held. Idempotent.
-/// If a previously-held child has exited, drops it and respawns. Callers
-/// own the mutex around this. Stdout is read on a background thread; each
+/// Locate the bundled `aethon-agent` sidecar binary. Tauri's externalBin
+/// mechanism places sidecars next to the main executable on each platform
+/// (e.g. `Aethon.app/Contents/MacOS/aethon-agent-aarch64-apple-darwin`).
+/// Returns Err with a descriptive message when none of the candidate paths
+/// exist — the caller falls back to `bun run` in dev or surfaces the error
+/// in release.
+///
+/// The sidecar suffix is the host's Rust target triple at build time; we
+/// read it from the `TARGET` env var Cargo sets during `build.rs` (see
+/// `src-tauri/build.rs`) so the same binary works no matter what triple
+/// the running machine reports.
+fn find_sidecar_binary() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe: {e}"))?;
+    let exe_dir = exe
+        .parent()
+        .ok_or("current_exe has no parent dir")?
+        .to_path_buf();
+    let triple = env!("AETHON_TARGET_TRIPLE");
+    // Tauri's externalBin strips the triple suffix before placing the file
+    // alongside the main exe (so users see `aethon-agent`, not the full
+    // triple name). On Windows both the stripped and triple-suffixed
+    // names get a `.exe` extension. Check the stripped variant first
+    // (the one the bundler actually produces), then the raw triple
+    // form as a fallback for builds where the script ran but bundling
+    // didn't (e.g. running the dev exe straight out of target/release).
+    let ext = std::env::consts::EXE_SUFFIX; // "" on unix, ".exe" on windows
+    let candidates = [
+        exe_dir.join(format!("aethon-agent{ext}")),
+        exe_dir.join(format!("aethon-agent-{triple}{ext}")),
+    ];
+    for path in &candidates {
+        if path.exists() {
+            return Ok(path.clone());
+        }
+    }
+    Err(format!(
+        "aethon-agent sidecar not found next to {} (looked for: {})",
+        exe.display(),
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+    ))
+}
+
+/// Spawn the agent if no live child is held. Idempotent. Callers own the
+/// mutex around this. In dev (`debug_assertions`) we run `bun run
+/// agent/main.ts` from the project root so source edits hot-reload via
+/// the watcher in `debug.rs`. In release we run the compiled
+/// `aethon-agent` sidecar bundled by Tauri, with `PI_PACKAGE_DIR` set to
+/// the shipped pi metadata so `pi-coding-agent`'s package.json read at
+/// module load doesn't fail. Stdout is read on a background thread; each
 /// line is emitted as an `agent-response` Tauri event.
 fn ensure_agent_spawned(
     guard: &mut Option<Child>,
@@ -154,19 +205,36 @@ fn ensure_agent_spawned(
         return Ok(());
     }
 
-    let root = project_root();
-    let mut child = Command::new("bun")
-        .current_dir(&root)
-        .arg("run")
-        .arg("agent/main.ts")
+    let mut command = if cfg!(debug_assertions) {
+        let root = project_root();
+        let mut c = Command::new("bun");
+        c.current_dir(&root).arg("run").arg("agent/main.ts");
+        c
+    } else {
+        let bin = find_sidecar_binary()?;
+        // pi-coding-agent reads its own package.json at module load. The
+        // shipped copy lives in Tauri's resource dir at `pi/package.json`
+        // (see tauri.conf.json `bundle.resources`); pi honors
+        // PI_PACKAGE_DIR for the lookup, so point it there.
+        let resource_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("resource_dir: {e}"))?;
+        let pi_dir = resource_dir.join("pi");
+        let mut c = Command::new(&bin);
+        c.env("PI_PACKAGE_DIR", &pi_dir);
+        c
+    };
+
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("failed to spawn agent (cwd={}): {e}", root.display()))?;
+        .map_err(|e| format!("failed to spawn agent: {e}"))?;
 
     let pid = child.id();
-    eprintln!("[agent] spawned bun pid={pid}");
+    eprintln!("[agent] spawned pid={pid}");
 
     let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
     let app_stdout = app.clone();

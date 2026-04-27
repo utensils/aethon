@@ -15,6 +15,11 @@ dist/
 target/
 src-tauri/gen/schemas/
 
+# Compiled aethon-agent sidecar (per-platform, ~70 MB; rebuilt by
+# scripts/build-agent.sh / `build-agent`). Holds platform-specific
+# triples so each developer builds their own.
+src-tauri/binaries/
+
 # Editor / OS
 .vscode/
 .idea/
