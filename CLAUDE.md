@@ -87,6 +87,38 @@ console) can swap chrome at runtime:
   `layout`, also activate it
 - `window.aethon.listSkills()` — names of currently registered skills
 
+### Agent runtime contract
+
+The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
+
+| Env var | Purpose |
+|---------|---------|
+| `AETHON_DOCS_DIR` | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). The system prompt points the model at these for the authoritative API/component reference. |
+| `AETHON_USER_DIR` | `~/.aethon/` — user extensions, skills, sessions, state file. |
+| `AETHON_STATE_FILE` | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration. |
+| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts. |
+| `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead. |
+| `AETHON_PROJECT_ROOT` | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work. |
+
+The bridge's `agent/system-prompt.ts` composes a layered prompt:
+DEFAULT (static API + primitives reference, mentioning the docs/state-file
+paths) → optional user override at `~/.aethon/system-prompt.md` →
+optional user append at `~/.aethon/system-prompt-append.md` → **runtime
+snapshot** built from `getRuntimeSnapshot()` (extensions, themes,
+components, layout summary, tabs). The snapshot is rebuilt every time
+`resourceLoader.reload()` runs, so the bootstrap order is important —
+extensions load **before** the default tab is created so its session
+prompt sees them.
+
+### globalThis.aethon (bridge side, in agent/main.ts)
+
+Mutation: `registerComponent`, `setState`, `setLayout`, `patchLayout`,
+`registerSidebarSection`, `registerTheme`, `onEvent`. Introspection:
+`listExtensions`, `listComponents`, `listThemes`, `getLayout`,
+`getRuntimeSnapshot` — these let the agent answer "what's loaded?"
+without scraping the filesystem. The same data is also written to
+`$AETHON_STATE_FILE` so a `cat` works without an introspection round-trip.
+
 ### Event flow gotcha
 
 `A2UIRenderer` accepts an `onEvent` prop. Returning `true` from it marks the

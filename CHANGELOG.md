@@ -8,6 +8,43 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Persistent per-tab pi sessions.** Each tab uses
+  `SessionManager.continueRecent($AETHON_SESSIONS_DIR/<tabId>)` instead
+  of `inMemory()`, so the model's conversation history survives bun
+  restarts (file-watcher in dev, app relaunch in release). Closes the
+  "I have no context from a previous session" gap that surfaced when
+  the bridge respawned mid-conversation.
+- **Live runtime snapshot in the agent's system prompt.** Bootstrap
+  reordered so extensions load **before** the default tab — pi's
+  `appendSystemPromptOverride` callback then sees a fresh
+  `getRuntimeSnapshot()` (loaded extensions, themes, custom A2UI
+  components, layout summary, open tabs) and bakes it into the first
+  session's prompt. The agent can answer "what extensions are loaded?"
+  on its first turn without scraping the filesystem.
+- **Bundled reference docs.** `docs/aethon-agent/{api,components,extensions}.md`
+  ship inside the binary via `tauri.conf.json` `bundle.resources`, and
+  the spawn env exports `AETHON_DOCS_DIR` so the system prompt and
+  agent `read` calls reach them in any build mode.
+- **`~/.aethon/state.json` live snapshot.** Bridge writes the full
+  runtime registry (extensions, themes, components, layout summary,
+  tabs) to disk debounced 200 ms on every register* call. The system
+  prompt instructs the agent to `cat $AETHON_STATE_FILE` for an
+  always-fresh view.
+- **Introspection methods on `globalThis.aethon`.** `listExtensions`,
+  `listComponents`, `listThemes`, `getLayout`, `getRuntimeSnapshot`
+  give the agent in-process queries over the same data the state file
+  exposes.
+- **Pi extension discovery.** `discoverPiAethonExtensions` greps
+  `~/.pi/agent/extensions/*.{ts,js,mjs}` for `globalThis.aethon` /
+  `aethon.register` references and lists the matches in the runtime
+  snapshot tagged `pi-extension`. Pi loads them itself; we just record
+  their existence so the agent's "what's loaded?" answer covers all
+  UI-driving sources.
+- **Bridge env-var contract.** Tauri shell sets `AETHON_DOCS_DIR`,
+  `AETHON_USER_DIR`, `AETHON_STATE_FILE`, `AETHON_SESSIONS_DIR`,
+  `AETHON_RELEASE_MODE`, and `AETHON_PROJECT_ROOT` (dev only) when
+  spawning the agent. System prompt branches on these so release
+  builds don't tell the model to read source files that aren't there.
 - **Multi-tab sessions.** Per-tab pi `AgentSession` records sharing one
   `auth/registry/resourceLoader`. Each tab owns its own message history,
   draft, canvas, queue counter, terminal buffer, and model. `Cmd+T` new
@@ -62,6 +99,16 @@ All notable changes to Aethon. Format loosely follows
 - **Slash commands no longer leave their text "stuck" in the input.**
   The slash-command path now clears via `updateActiveTab` so the next
   mirror doesn't write the stale draft back into root.
+- **Agent in release mode no longer tries to edit Aethon source.**
+  `AETHON_RELEASE_MODE=1` flips a system-prompt branch instructing the
+  model to use `$AETHON_USER_DIR/extensions/` (or skill packages)
+  rather than touching source files that aren't shipped with the
+  bundle.
+- **Agent now knows what extensions are loaded.** Static system prompt
+  + per-session runtime snapshot + on-disk state file + introspection
+  API combine so "list loaded extensions" / "what themes are
+  registered?" answers correctly on the first turn instead of
+  filesystem-scraping or hallucinating.
 
 ### Changed
 

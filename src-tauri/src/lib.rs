@@ -254,10 +254,20 @@ fn ensure_agent_spawned(
         return Ok(());
     }
 
+    // Docs live under `<project>/docs/aethon-agent/` in dev and under
+    // `<resource_dir>/docs/aethon-agent/` in release (declared as a Tauri
+    // resource bundle entry). The agent reads them via its `read` tool to
+    // get an authoritative reference for the A2UI primitives and the
+    // globalThis.aethon API surface — without them, the model would have to
+    // rely on training data, which lags this codebase.
     let mut command = if cfg!(debug_assertions) {
         let root = project_root();
+        let docs_dir = root.join("docs").join("aethon-agent");
         let mut c = Command::new("bun");
         c.current_dir(&root).arg("run").arg("agent/main.ts");
+        c.env("AETHON_RELEASE_MODE", "0");
+        c.env("AETHON_PROJECT_ROOT", &root);
+        c.env("AETHON_DOCS_DIR", &docs_dir);
         c
     } else {
         let bin = find_sidecar_binary()?;
@@ -270,8 +280,11 @@ fn ensure_agent_spawned(
             .resource_dir()
             .map_err(|e| format!("resource_dir: {e}"))?;
         let pi_dir = resource_dir.join("pi");
+        let docs_dir = resource_dir.join("docs").join("aethon-agent");
         let mut c = Command::new(&bin);
         c.env("PI_PACKAGE_DIR", &pi_dir);
+        c.env("AETHON_RELEASE_MODE", "1");
+        c.env("AETHON_DOCS_DIR", &docs_dir);
         // Bundled .app launches inherit launchd's minimal PATH on macOS, so
         // pi's `npm root -g` (run when resolving user packages from
         // ~/.pi/agent/settings.json) fails with ENOENT. Source the user's
@@ -281,6 +294,17 @@ fn ensure_agent_spawned(
         }
         c
     };
+    // User dir is the same in both modes; the bridge writes its live state
+    // snapshot here so a `cat $AETHON_STATE_FILE` always reflects the
+    // current registrations without having to evaluate JS in the webview.
+    if let Ok(home) = app.path().home_dir() {
+        let user_dir = home.join(".aethon");
+        let state_file = user_dir.join("state.json");
+        let sessions_dir = user_dir.join("sessions");
+        command.env("AETHON_USER_DIR", &user_dir);
+        command.env("AETHON_STATE_FILE", &state_file);
+        command.env("AETHON_SESSIONS_DIR", &sessions_dir);
+    }
 
     let mut child = command
         .stdin(Stdio::piped())

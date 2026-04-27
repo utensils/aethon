@@ -88,11 +88,37 @@ import {
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
-import { readdir } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { resolveAethonSystemPrompt } from "./system-prompt";
+import {
+  resolveAethonSystemPrompt,
+  type RuntimeSnapshot,
+} from "./system-prompt";
+
+// Filesystem locations passed in by the Tauri shell. They have sensible
+// defaults so the bridge still runs when launched directly (tests, dev
+// against `bun run agent/main.ts` without Tauri). The shell sets these
+// to absolute paths in both dev and release.
+const USER_DIR =
+  process.env.AETHON_USER_DIR ?? join(homedir(), ".aethon");
+const STATE_FILE =
+  process.env.AETHON_STATE_FILE ?? join(USER_DIR, "state.json");
+const SESSIONS_DIR =
+  process.env.AETHON_SESSIONS_DIR ?? join(USER_DIR, "sessions");
+const DOCS_DIR = process.env.AETHON_DOCS_DIR;
+const PROJECT_ROOT = process.env.AETHON_PROJECT_ROOT;
+const RELEASE_MODE = process.env.AETHON_RELEASE_MODE === "1";
+
+// Source attribution for the loaded-extension list. "directory" =
+// ~/.aethon/extensions/*.{ts,js,mjs}, "skill-package" = npm-style
+// install under ~/.aethon/skills/node_modules/, "pi-extension" =
+// discovered in ~/.pi/agent/extensions/ and observed to touch
+// `globalThis.aethon`. Used to surface this in the state file and
+// the runtime snapshot.
+type ExtensionSource = "directory" | "skill-package" | "pi-extension";
 
 // Per-turn tabId propagated through the async call chain that runs
 // inside session.prompt(). Concurrent prompts on different tabs each
@@ -393,8 +419,11 @@ interface AethonExtensionModule {
 //     "name": "@example/aethon-pretty-themes",
 //     "aethon": { "entry": "./dist/index.js" }
 //   }
-async function loadAethonSkillManifests(api: AethonExtensionApi): Promise<void> {
-  const skillsRoot = join(homedir(), ".aethon", "skills", "node_modules");
+async function loadAethonSkillManifests(
+  api: AethonExtensionApi,
+  registry: Map<string, ExtensionSource>,
+): Promise<void> {
+  const skillsRoot = join(USER_DIR, "skills", "node_modules");
   // Each candidate is { displayName, packageDir, manifest }
   type Candidate = {
     name: string;
@@ -454,6 +483,7 @@ async function loadAethonSkillManifests(api: AethonExtensionApi): Promise<void> 
         continue;
       }
       await register(api);
+      registry.set(c.name, "skill-package");
       console.error(`[aethon-skill] loaded ${c.name} from ${entry}`);
     } catch (err) {
       console.error(`[aethon-skill] ${c.name}: ${(err as Error).message}`);
@@ -461,11 +491,61 @@ async function loadAethonSkillManifests(api: AethonExtensionApi): Promise<void> 
   }
 }
 
+// Discover pi extensions that touch `globalThis.aethon`. Pi loads its
+// own extensions from ~/.pi/agent/extensions/ — we don't load them, but
+// the agent should know they exist so it can answer "what extensions
+// drive the GUI?" without scraping the filesystem itself. We grep each
+// file for "globalThis.aethon" or "aethon.register" as a cheap signal
+// of Aethon-awareness; non-Aethon pi extensions are skipped to keep
+// the snapshot focused on UI-affecting code.
+//
+// File-only discovery — we don't recursively walk subdirs. Pi also
+// supports `<dir>/index.ts` and project-local `.pi/extensions/`; if
+// users start relying on those for Aethon-aware extensions we can
+// extend this to match. Errors per file are swallowed so one
+// unreadable file doesn't break the whole scan.
+async function discoverPiAethonExtensions(
+  registry: Map<string, ExtensionSource>,
+): Promise<void> {
+  const dir = join(homedir(), ".pi", "agent", "extensions");
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[aethon-pi] readdir ${dir}: ${(err as Error).message}`);
+    }
+    return;
+  }
+  for (const name of entries) {
+    if (!/\.(ts|js|mjs)$/.test(name)) continue;
+    const file = join(dir, name);
+    try {
+      const text = await Bun.file(file).text();
+      if (!text.includes("globalThis.aethon") && !text.includes("aethon.register")) {
+        continue;
+      }
+      const display = name.replace(/\.(ts|js|mjs)$/, "");
+      // Don't overwrite an existing entry from a higher-precedence
+      // source — Aethon-direct (`directory`) extensions win over pi-side.
+      if (!registry.has(display)) {
+        registry.set(display, "pi-extension");
+      }
+    } catch {
+      // Unreadable file — skip silently. Pi will surface its own load
+      // error if the file is truly broken at import time.
+    }
+  }
+}
+
 // Discover and load Aethon extensions from ~/.aethon/extensions/*.{ts,js}.
 // Each extension exports `register(api)` (named or as default.register).
 // Bun executes .ts directly so authors don't need a build step.
-async function loadAethonExtensions(api: AethonExtensionApi): Promise<void> {
-  const dir = join(homedir(), ".aethon", "extensions");
+async function loadAethonExtensions(
+  api: AethonExtensionApi,
+  registry: Map<string, ExtensionSource>,
+): Promise<void> {
+  const dir = join(USER_DIR, "extensions");
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -487,6 +567,10 @@ async function loadAethonExtensions(api: AethonExtensionApi): Promise<void> {
         continue;
       }
       await register(api);
+      // Display name is the file's basename without extension so the
+      // runtime snapshot reads cleanly ("model-picker" not "model-picker.ts").
+      const displayName = name.replace(/\.(ts|js|mjs)$/, "");
+      registry.set(displayName, "directory");
       console.error(`[aethon-ext] loaded ${name}`);
     } catch (err) {
       console.error(`[aethon-ext] ${name}: ${(err as Error).message}`);
@@ -517,6 +601,21 @@ async function main() {
   // concurrency is an acknowledged sharp edge.
   let currentAgentTabId: string | undefined;
 
+  // Per-tab record. Hoisted up here (above getRuntimeSnapshot) because
+  // resolveAethonSystemPrompt → getRuntimeSnapshot fires during the
+  // resourceLoader.reload() call below, before the original declaration
+  // site would have run. The tabs map starts empty; it's filled by
+  // ensureTab() once extensions and the default tab are set up.
+  interface TabRecord {
+    id: string;
+    session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+    toolArgsCache: Map<string, { name: string; summary: string }>;
+    promptInFlight: boolean;
+    agentEndFired: boolean;
+    queuedCount: number;
+  }
+  const tabs = new Map<string, TabRecord>();
+
   // Build the Aethon extension API and attach it to globalThis BEFORE
   // createAgentSession runs, because pi loads extensions inside that call.
   // Without this ordering, pi extensions that try to call
@@ -545,6 +644,103 @@ async function main() {
   // received them. Cleared whenever setLayout is called (the new layout
   // replaces everything those patches were targeting).
   let pendingLayoutPatches: { path: string; value: unknown }[] = [];
+
+  // Loaded extension registry. Populated by loadAethonExtensions and
+  // loadAethonSkillManifests at startup. Used by getRuntimeSnapshot and
+  // the listExtensions introspection method so the agent (and any user
+  // querying the state file) can see what's actually been loaded —
+  // previously the bridge had no record and the agent had to guess.
+  const loadedExtensions = new Map<string, ExtensionSource>();
+
+  // Compose a one-line summary of the active layout for the runtime
+  // snapshot. The full layout is available via getLayout(); this is a
+  // human-readable hint suitable for the system prompt and state file.
+  function summarizeLayout(): string {
+    const layout = (extensionLayout ?? null) as { components?: unknown[] } | null;
+    if (!layout?.components || layout.components.length === 0) {
+      // No extension has overridden the default — describe it via patches.
+      return pendingLayoutPatches.length > 0
+        ? `default-layout (with ${pendingLayoutPatches.length} runtime patch(es))`
+        : "default-layout (boot tree, sidebar=left)";
+    }
+    const root = layout.components[0] as
+      | { type?: string; props?: { columns?: string; areas?: string[] } }
+      | undefined;
+    const cols = root?.props?.columns ?? "?";
+    const sidebarSide = (() => {
+      const areas = root?.props?.areas;
+      if (!Array.isArray(areas) || areas.length === 0) return "?";
+      const firstRow = String(areas[0]).split(/\s+/);
+      if (firstRow[0] === "sidebar") return "left";
+      if (firstRow[firstRow.length - 1] === "sidebar") return "right";
+      return "custom";
+    })();
+    return `extension layout (root=${root?.type ?? "?"}, columns="${cols}", sidebar=${sidebarSide})`;
+  }
+
+  // Build the live runtime snapshot. Cheap; safe to call from the
+  // appendSystemPromptOverride callback on every resourceLoader.reload.
+  // Tab data is read from the live `tabs` Map declared further down,
+  // so this closes over it after that map is created (the function is
+  // never invoked before main() finishes setup).
+  function getRuntimeSnapshot(): RuntimeSnapshot {
+    return {
+      release: RELEASE_MODE,
+      cwd: process.cwd(),
+      docsDir: DOCS_DIR,
+      projectRoot: PROJECT_ROOT,
+      userDir: USER_DIR,
+      stateFile: STATE_FILE,
+      extensions: [...loadedExtensions.entries()].map(([name, source]) => ({
+        name,
+        source,
+      })),
+      themes: [...extensionThemes.values()].map((t) => ({
+        id: t.id,
+        label: t.label,
+      })),
+      components: [...extensionComponents.keys()],
+      layoutSummary: summarizeLayout(),
+      tabs: [...tabs.values()].map((t) => ({
+        id: t.id,
+        model: t.session.model ? modelKey(t.session.model) : "",
+        messageCount: t.session.messages?.length ?? 0,
+      })),
+    };
+  }
+
+  // Persist a JSON snapshot to disk so the agent can `cat $AETHON_STATE_FILE`
+  // and read fresh state without invoking JS. Debounced because bursty
+  // registrations (a skill registering 5 themes in a row) shouldn't write
+  // 5 times. The file is small (<10 KiB typically) so this is cheap.
+  let stateFileTimer: ReturnType<typeof setTimeout> | null = null;
+  let stateFileWriting = false;
+  let stateFileDirty = false;
+  function scheduleStateFileWrite() {
+    stateFileDirty = true;
+    if (stateFileTimer) return;
+    stateFileTimer = setTimeout(async () => {
+      stateFileTimer = null;
+      // Coalesce again at flush time — additional dirties during the
+      // 200 ms window will already be reflected in getRuntimeSnapshot().
+      while (stateFileDirty) {
+        stateFileDirty = false;
+        if (stateFileWriting) return; // overlap guard
+        stateFileWriting = true;
+        try {
+          mkdirSync(USER_DIR, { recursive: true });
+          await writeFile(
+            STATE_FILE,
+            JSON.stringify(getRuntimeSnapshot(), null, 2),
+          );
+        } catch (err) {
+          console.error(`[aethon-state] write ${STATE_FILE}: ${(err as Error).message}`);
+        } finally {
+          stateFileWriting = false;
+        }
+      }
+    }, 200);
+  }
 
   // Handlers registered by extensions for a2ui_event messages from the
   // frontend. Each entry's `match` predicates filter which events the
@@ -608,6 +804,7 @@ async function main() {
       type: "extension_components",
       components: Object.fromEntries(extensionComponents),
     });
+    scheduleStateFileWrite();
   }
   function _setState(path: string, value: unknown, sourceTabId?: string): void {
     if (!path || typeof path !== "string") return;
@@ -669,6 +866,7 @@ async function main() {
     // targeting — drop them so they don't replay against the new tree.
     pendingLayoutPatches = [];
     send({ type: "layout_set", payload });
+    scheduleStateFileWrite();
   }
   function _patchLayout(path: string, value: unknown): void {
     if (!path || typeof path !== "string") return;
@@ -682,6 +880,7 @@ async function main() {
       pendingLayoutPatches.push({ path, value });
     }
     send({ type: "layout_patch", path, value });
+    scheduleStateFileWrite();
   }
   function _registerSidebarSection(section: {
     id: string;
@@ -720,6 +919,30 @@ async function main() {
     extensionThemes.set(normalized.id, normalized);
     const list = [...extensionThemes.values()];
     send({ type: "extension_themes", themes: list });
+    scheduleStateFileWrite();
+  }
+
+  // Introspection — read-only views over the live state. Lets the agent
+  // (and dev-console / debug-eval users) ask "what's loaded?" without
+  // scraping the filesystem or guessing from message history. The
+  // state file at $AETHON_STATE_FILE has the same data in JSON form.
+  function _listExtensions(): { name: string; source: ExtensionSource }[] {
+    return [...loadedExtensions.entries()].map(([name, source]) => ({
+      name,
+      source,
+    }));
+  }
+  function _listComponents(): Record<string, unknown> {
+    return Object.fromEntries(extensionComponents);
+  }
+  function _listThemes(): ThemeRecord[] {
+    return [...extensionThemes.values()];
+  }
+  function _getLayout(): unknown {
+    return extensionLayout ?? null;
+  }
+  function _getRuntimeSnapshot(): RuntimeSnapshot {
+    return getRuntimeSnapshot();
   }
 
   const aethonApi = {
@@ -730,24 +953,34 @@ async function main() {
     patchLayout: _patchLayout,
     registerSidebarSection: _registerSidebarSection,
     registerTheme: _registerTheme,
+    listExtensions: _listExtensions,
+    listComponents: _listComponents,
+    listThemes: _listThemes,
+    getLayout: _getLayout,
+    getRuntimeSnapshot: _getRuntimeSnapshot,
   };
   type AethonApi = typeof aethonApi;
   (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
 
   // Inject Aethon-awareness into pi's system prompt so the model knows it
-  // has a GUI and can mutate `globalThis.aethon` directly. Goes through the
-  // resource loader's appendSystemPromptOverride callback (NOT the
-  // appendSystemPrompt source) so the user's existing project / global
-  // APPEND_SYSTEM.md files are still discovered and preserved — our text
-  // is concatenated AFTER theirs so user instructions take precedence.
-  // agentDir comes from pi's getAgentDir() so PI_CODING_AGENT_DIR /
-  // alternate config dirs work the same way they do for the rest of pi.
-  const aethonAppend = resolveAethonSystemPrompt();
+  // has a GUI and can mutate `globalThis.aethon` directly. The callback
+  // resolves a fresh snapshot every time the resourceLoader is reloaded,
+  // so when extensions register components/themes/layouts before a
+  // session is created, the resulting system prompt reflects the live
+  // state — fixing the previous "agent had no idea what was loaded" bug.
+  // User's existing project / global APPEND_SYSTEM.md files are still
+  // discovered and preserved; our text is concatenated AFTER theirs so
+  // user instructions take precedence. agentDir comes from pi's
+  // getAgentDir() so PI_CODING_AGENT_DIR / alternate config dirs work
+  // the same way they do for the rest of pi.
   const resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir: getAgentDir(),
     settingsManager,
-    appendSystemPromptOverride: (base) => [...base, ...aethonAppend],
+    appendSystemPromptOverride: (base) => [
+      ...base,
+      ...resolveAethonSystemPrompt(getRuntimeSnapshot()),
+    ],
   });
   await resourceLoader.reload();
 
@@ -763,17 +996,11 @@ async function main() {
   // frontend always sends tabId; legacy callers without it default to
   // "default". Closing a tab aborts its in-flight prompt and drops the
   // session reference; pi reclaims the in-memory history with the GC.
+  //
+  // (TabRecord interface and the `tabs` map are declared near the top
+  // of main() so getRuntimeSnapshot can reference them during the
+  // initial resourceLoader.reload() that fires before this point.)
   // ---------------------------------------------------------------------
-  interface TabRecord {
-    id: string;
-    session: Awaited<ReturnType<typeof createAgentSession>>["session"];
-    toolArgsCache: Map<string, { name: string; summary: string }>;
-    promptInFlight: boolean;
-    agentEndFired: boolean;
-    queuedCount: number;
-  }
-
-  const tabs = new Map<string, TabRecord>();
 
   // Filter the picker to the user's enabledModels patterns from
   // ~/.pi/agent/settings.json. Patterns may include `*` wildcards
@@ -868,6 +1095,16 @@ async function main() {
   // initialModel lets the caller create the session with a specific model
   // already selected, avoiding a tab_open → set_model round-trip race
   // where a fast first prompt could land before the model switch.
+  // Sanitize a tabId for use as a directory name on disk. Frontend tab
+  // ids are crypto.randomUUID() (hex + hyphens) so the regex below is a
+  // no-op for them; the filter exists only as a defense against legacy
+  // / external callers passing odd characters. We fall back to a fixed
+  // bucket on rejection so the bridge never throws on a malformed id.
+  function tabSessionDir(tabId: string): string {
+    const safe = /^[A-Za-z0-9_-]{1,128}$/.test(tabId) ? tabId : "_unsafe";
+    return join(SESSIONS_DIR, safe);
+  }
+
   async function ensureTab(
     tabId: string,
     initialModel?: Model<Api>,
@@ -875,11 +1112,32 @@ async function main() {
     const existing = tabs.get(tabId);
     if (existing) return existing;
 
+    // Persistent per-tab session: the file lives at
+    // $AETHON_SESSIONS_DIR/<tabId>/<id>.jsonl. continueRecent picks up
+    // the most recent file in that dir and resumes from its leaf — so a
+    // bun restart (file watcher, app relaunch) restores the LLM's view
+    // of the conversation instead of greeting the user with "I have no
+    // context from a previous session". If the dir is empty (new tab),
+    // continueRecent silently creates a fresh session.
+    let sessionManager;
+    try {
+      const dir = tabSessionDir(tabId);
+      mkdirSync(dir, { recursive: true });
+      sessionManager = SessionManager.continueRecent(process.cwd(), dir);
+    } catch (err) {
+      console.error(
+        `[aethon-session] persistent setup for tab ${tabId} failed (${
+          (err as Error).message
+        }); falling back to in-memory`,
+      );
+      sessionManager = SessionManager.inMemory();
+    }
+
     const { session } = await createAgentSession({
       authStorage,
       modelRegistry,
       settingsManager,
-      sessionManager: SessionManager.inMemory(),
+      sessionManager,
       resourceLoader,
       ...(initialModel ? { model: initialModel } : {}),
     });
@@ -987,21 +1245,40 @@ async function main() {
     return rec;
   }
 
+  // Load extensions BEFORE creating the default tab so the first
+  // session's system prompt reflects what's loaded. Without this, the
+  // default tab would see an empty "currently loaded" snapshot until
+  // something forced a resourceLoader.reload(), and the agent would
+  // give wrong answers to "what extensions are loaded?" on its very
+  // first turn (the exact failure the user reported). Failures in one
+  // extension don't block others.
+  await loadAethonExtensions(aethonApi, loadedExtensions);
+  // Discover npm-distributed skill packages (manifest with `aethon` field
+  // in package.json) under ~/.aethon/skills/node_modules/. This lets users
+  // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
+  // skills that bundle layouts, components, and themes.
+  await loadAethonSkillManifests(aethonApi, loadedExtensions);
+  // Discover pi extensions in ~/.pi/agent/extensions/ that touch
+  // globalThis.aethon. Pi loads them itself; we just record their
+  // existence so the runtime snapshot covers all UI-driving extensions
+  // regardless of source.
+  await discoverPiAethonExtensions(loadedExtensions);
+
+  // Refresh the resource loader so the appendSystemPromptOverride
+  // callback re-runs against the now-populated extension state. The
+  // freshly built system prompt is what the default tab's session
+  // captures on createAgentSession.
+  await resourceLoader.reload();
+
   // Pre-create the default tab so emitReady has a populated cachedModels
   // and the frontend can start dispatching to "default" without first
   // racing an ensureTab call.
   await ensureTab("default");
 
-  // Discover Aethon-only extensions in `~/.aethon/extensions/*.ts` and call
-  // their `register(api)` default export. (Pi extensions reach the same API
-  // via `globalThis.aethon` — set above before createAgentSession.)
-  // Failures in one extension don't block others.
-  await loadAethonExtensions(aethonApi);
-  // Discover npm-distributed skill packages (manifest with `aethon` field
-  // in package.json) under ~/.aethon/skills/node_modules/. This lets users
-  // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
-  // skills that bundle layouts, components, and themes.
-  await loadAethonSkillManifests(aethonApi);
+  // Initial state-file write so `cat $AETHON_STATE_FILE` works before
+  // any extension runs a registration. Subsequent registrations
+  // schedule their own writes.
+  scheduleStateFileWrite();
 
   emitReady();
 

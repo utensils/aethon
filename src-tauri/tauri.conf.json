@@ -36,7 +36,11 @@
       "binaries/aethon-agent"
     ],
     "resources": {
-      "binaries/pi/package.json": "pi/package.json"
+      "binaries/pi/package.json": "pi/package.json",
+      "../docs/aethon-agent/README.md": "docs/aethon-agent/README.md",
+      "../docs/aethon-agent/api.md": "docs/aethon-agent/api.md",
+      "../docs/aethon-agent/components.md": "docs/aethon-agent/components.md",
+      "../docs/aethon-agent/extensions.md": "docs/aethon-agent/extensions.md"
     },
     "icon": [
       "icons/32x32.png",

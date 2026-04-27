@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-26.
+Last reviewed: 2026-04-27.
 
 ---
 
@@ -163,7 +163,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Extensions can mutate the entire UI: `aethon.setLayout(payload)` replaces the active layout wholesale, `aethon.patchLayout(path, value)` JSON-Pointer patches it (array-preserving), `aethon.registerSidebarSection({id,title,items})` is a convenience wrapper that appends into the sidebar's `extraSections`. Bridge retains both the layout and pending pre-setLayout patches for ready/report replay. Frontend treats layout state as boot defaults so live runtime fields (model, status, messages, draft) survive reload. Demo at `examples/pi-extensions/aethon-sidebar-panel.ts`.
 - [x] `ctx.pi` namespace for handlers — `aethon.onEvent` handlers receive a typed pi-coding-agent surface scoped for UI work: `ctx.pi.prompt(text)` fires an LLM turn from a click (frontend flips waiting/Stop via a `prompt_started` outbound message, just like a user-typed prompt), `ctx.pi.notify(message)` pushes a non-terminal system bubble, `ctx.pi.session` exposes current model + last 50 messages read-only, `ctx.pi.signal` is pi's active turn AbortSignal so handler-side fetch/spawn cancels with Stop. The dispatch loop is fire-and-forget so handler awaits never block bridge IPC; handler errors emit as `notice` so they can't clobber waiting state for an in-flight prompt. Demo at `examples/pi-extensions/aethon-actions.ts` (Quick Actions sidebar: Summarize commits, Explain README, Show current model).
 - [x] Extensions can register color themes: `aethon.registerTheme({id, label?, vars})` ships a CSS custom-property map (`--bg`, `--text`, `--accent`, …). Bridge sanitizes the id/keys, retains the theme map, emits `extension_themes` deltas, and includes the snapshot in `ready` for reload-replay. Frontend hydrates each theme into a `<style>` tag built via CSSOM `setProperty` so malformed values can't escape the declaration; stale tags are dropped when the list shrinks. Built-in `dark`/`light` ids are reserved. Themes appear in the sidebar Themes section alongside built-ins and persist to `~/.aethon/theme`. Demo at `examples/pi-extensions/aethon-theme.ts` (Solarized Dark + Synthwave).
-- [x] Agent self-awareness — `agent/system-prompt.ts` ships a default Aethon system prompt that's injected via pi's `DefaultResourceLoader` `appendSystemPromptOverride` (preserves user `APPEND_SYSTEM.md` and honors `PI_CODING_AGENT_DIR`). Tells the model it has a GUI, lists the `globalThis.aethon` API surface, the A2UI primitives, and anti-patterns ("don't restart the agent for UI — mutate live state"). Overridable via `~/.aethon/system-prompt.md` (full replace) or `~/.aethon/system-prompt-append.md` (extra context).
+- [x] Agent self-awareness — `agent/system-prompt.ts` composes a layered prompt: static Aethon base (API surface, A2UI primitives, anti-patterns, env-var contract) → optional `~/.aethon/system-prompt.md` override / `~/.aethon/system-prompt-append.md` append → **runtime snapshot** (loaded extensions, registered themes, custom components, layout summary, open tabs). Snapshot rebuilds every `resourceLoader.reload()`, and the bootstrap loads extensions BEFORE the default tab so the first session's prompt sees them. Bundled docs ship at `$AETHON_DOCS_DIR` (`docs/aethon-agent/{api,components,extensions}.md`) so the agent has authoritative reference material in any build. Live state mirrors to `$AETHON_STATE_FILE` (`~/.aethon/state.json`) — `cat`-able from the agent's bash tool, debounced 200 ms, regenerated on every register* call. Introspection methods on `globalThis.aethon` (`listExtensions`, `listComponents`, `listThemes`, `getLayout`, `getRuntimeSnapshot`) cover the same surface for in-process queries. Pi extensions in `~/.pi/agent/extensions/` that touch `globalThis.aethon` are discovered (grep-based, no execution) and listed alongside Aethon-direct ones so the snapshot covers all UI-driving sources.
 - [x] Skill manifest from `package.json#aethon` — `loadAethonSkillManifests` in the bridge walks `~/.aethon/skills/node_modules/*` (plus `@scope/*`), reads each package.json, and for any package with an `aethon.entry` field dynamically imports the entry and calls its `register(api)` export with the same Aethon API surface directory extensions get. Lets users `npm install --prefix ~/.aethon/skills <pkg>` to install third-party skills. Demo at `examples/skill-package/`.
 - [x] Extension hot-reload — bridge file watcher now runs in dev AND release, watches `~/.aethon/extensions/`, `~/.aethon/skills/node_modules/`, and `~/.pi/agent/extensions/` (when present), plus `<project>/agent/` in dev only. Trailing-edge debounce via a single dedicated worker thread (mpsc channel + `recv_timeout`) collapses npm-install bursts into one settle-then-fire kill. `~/.aethon/extensions` is pre-created on boot so first-install Create events fire without a manual restart.
 - [ ] Package install (npm/git) — for now, users `npm install --prefix ~/.aethon/skills <pkg>` to install npm-distributed skills; an in-app install command is a follow-up.
@@ -183,7 +183,7 @@ expand canvas, add panels) because everything is A2UI.
 
 - [x] Terminal panel — `xterm.js` with WebGL renderer, toggled from sidebar
 - [~] Bash tool output streams into the terminal panel via the `aethon:terminal` window event (default-layout terminal opts in via `subscribeToBash`). End-only streaming for now: pi's bash tool exposes partial output as a rolling tail buffer, so reliable interim streaming needs a real test rig before re-enabling.
-- [x] In-memory session per app launch (`SessionManager.inMemory()`)
+- [x] Per-tab persistent sessions — each tab uses `SessionManager.continueRecent(cwd, $AETHON_SESSIONS_DIR/<tabId>)`, so pi context survives bun restarts (file-watcher in dev, app relaunch in release). Restored from disk on bridge spawn; new tabs (no prior file) start fresh. Falls back to `inMemory()` if the per-tab dir can't be created. `tabId` is sanitized against `[A-Za-z0-9_-]{1,128}` before use as a directory name (defense against malformed external callers).
 - [x] `aethon-debug` skill — TCP eval server (`127.0.0.1:19433` in dev) + slash command for driving the running app from Claude (eval, send, set-model, screenshot, wait, status). Mirrors Claudette's `claudette-debug` pattern.
 - [x] Multi-tab — per-tab pi sessions (`Map<TabId, AgentSession>` sharing
       one auth/registry/resourceLoader), per-tab message history, draft,
@@ -199,6 +199,7 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Client-side slash commands (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`). Unknown commands fall through to the agent so pi-side handling and prompt templates aren't blocked. `//foo` escapes to send a literal `/foo`.
 - [x] Slash command picker UI — autocomplete dropdown above the chat input when the draft starts with `/`. Prefix-filters; ↑/↓/Tab/Enter navigate+insert; Esc dismisses; click inserts. Portalled to `document.body` so the layout cell's `overflow:hidden` doesn't clip it. Bound via the `commands` prop on `chat-input` (inline array or `$ref`).
 - [~] Configuration file (`~/.aethon/config.toml`) — `read_config` Tauri command parses TOML into `[ui]` (`theme`, `font_size`) + `[agent]` (`model`) sections, capped at 64 KiB, malformed → defaults + stderr warning. Frontend reads it during boot to seed theme. Pi settings (`~/.pi/agent/settings.json`) still drive model picker filtering and provider/auth — the Aethon config is layered on top, not a replacement.
+- [x] Bridge env-var contract — Tauri shell passes `AETHON_DOCS_DIR` (bundled reference docs), `AETHON_USER_DIR` (~/.aethon/), `AETHON_STATE_FILE` (snapshot path), `AETHON_SESSIONS_DIR` (per-tab pi sessions), `AETHON_RELEASE_MODE` (1/0), and `AETHON_PROJECT_ROOT` (dev only). Bundled docs live in the binary via `tauri.conf.json` `bundle.resources` (`docs/aethon-agent/*.md` → `<resource_dir>/docs/aethon-agent/`). System prompt branches on these so release builds don't tell the agent to read source files that aren't there.
 - [x] `dispatch_a2ui_event` routes to extension handlers — bridge extracts `descendantId` from host-prefixed `componentId` and matches against `aethon.onEvent({templateRootType, componentType, descendantId, eventType})` predicates. Handlers run fire-and-forget so a slow handler can't block the bridge IPC loop; errors emit as `notice` (not `error`) so they don't clobber the `waiting` flag for an in-flight prompt.
 - [x] Window opens maximized via `tauri.conf.json` `app.windows[0].maximized: true` (existing center/width/height stay as the unmaximized fallback).
 
@@ -394,9 +395,13 @@ from pi's own `~/.pi/agent/settings.json`.
    layout props. The layout skill uses these to define the default workspace.
    Agents and skills use the same Container primitives to modify layout
    dynamically.
-2. **Persistent state** — Yes. Canvas layout persists across sessions in
-   `~/.aethon/state.json`. Fresh sessions restore the last layout. `aethon
-   reset` clears to default.
+2. **Persistent state** — Yes. Frontend chat history (`~/.aethon/messages.json`)
+   and theme (`~/.aethon/theme`) persist across launches. Pi LLM context
+   persists per-tab under `~/.aethon/sessions/<tabId>/*.jsonl` via pi's
+   own session manager. `~/.aethon/state.json` is a *live* snapshot of
+   the bridge's runtime registry (extensions, themes, components, layout
+   summary, tabs) — rewritten on every registration so the agent can
+   `cat` it for an up-to-date view; not a layout persistence file.
 3. **Multiple canvases** — Yes, tabs for multiple agent sessions in v1. Each
    tab gets its own pi session and canvas state.
 4. **Pi upstream** — No. The A2UI extension API stays Aethon-specific. If pi
