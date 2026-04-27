@@ -262,6 +262,14 @@ body {
   font-size: 0.9rem;
 }
 
+/* When a sidebar item carries a custom componentType, the row is just a
+   bare flex container so the registered template controls its own
+   padding/spacing. The default label-only row keeps its original styling. */
+.a2ui-sidebar-item-custom {
+  padding: 0;
+  display: block;
+}
+
 /* ---- Empty-state composite ---------------------------------------------- */
 
 .a2ui-empty-state {

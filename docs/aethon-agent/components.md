@@ -169,6 +169,47 @@ need exact prop shapes; bundled docs are reference, not source).
 CSS Grid. `areas` is the same as `grid-template-areas` (one string per
 row, names separated by spaces). Children should set `area: "<name>"`.
 
+### `sidebar` — compositional items
+
+Each item in a `sections[].items` array can opt out of the default
+"label-only" rendering by setting `componentType`:
+
+```ts
+{
+  id: "model-row-1",
+  label: "claude-sonnet-4-6",
+  componentType: "my-model-row",  // skill-registered template
+  // any extra fields are surfaced under /$item alongside id/label
+  active: true,
+  badge: "fast",
+  context: "200K",
+}
+```
+
+The sidebar resolves `componentType` through the SkillRegistry and
+renders the registered template per item with `/$item` (the full item
+object), `/$index` (position), and `/$parent` (sidebar's surrounding
+state) available to nested `$ref`s — same scope keys as the `for-each`
+primitive.
+
+```ts
+globalThis.aethon.registerComponent("my-model-row", {
+  id: "row", type: "container",
+  props: { direction: "row", align: "center", gap: 8, padding: 8 },
+  children: [
+    { id: "label", type: "text",
+      props: { content: { "$ref": "/$item/label" } } },
+    { id: "badge", type: "text",
+      props: { content: { "$ref": "/$item/badge" }, variant: "small" } },
+  ],
+});
+```
+
+The row's `<li>` still emits `select` with `{sectionId, itemId}` on click
+and the existing `descendantId` matcher (`{componentType:"sidebar",
+descendantId:"<itemId>"}`) still fires. The custom template controls
+visual layout only.
+
 ### `sidebar`
 
 ```ts

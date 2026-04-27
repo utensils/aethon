@@ -69,6 +69,15 @@ export interface BuiltinComponentProps {
   onEvent: (eventType: string, data?: unknown, descendantId?: string) => void;
   renderChildren?: () => React.ReactNode;
   renderChild?: (child: A2UIComponent) => React.ReactNode;
+  // Composites that want to expand a registered template per-row (sidebar
+  // with item-level componentType, list/table cells) get a renderer that
+  // accepts an extra state overlay. The overlay merges over the active
+  // state, so descendant `$ref`s see iteration locals like /$item /
+  // /$index — same shape as the for-each primitive's scope keys.
+  renderChildWithState?: (
+    child: A2UIComponent,
+    overlay: Record<string, unknown>,
+  ) => React.ReactNode;
   // Tab the component lives on. Components that nest their own
   // A2UIRenderer (e.g. ChatHistory rendering a tool card's payload)
   // forward this so events from inside the card route to the
@@ -346,6 +355,11 @@ export default function A2UIRenderer({
     const renderChild = (child: A2UIComponent) =>
       renderComponent(child, templateRootType, scopedState);
 
+    const renderChildWithState = (
+      child: A2UIComponent,
+      overlay: Record<string, unknown>,
+    ) => renderComponent(child, templateRootType, { ...activeState, ...overlay });
+
     return (
       <Component
         key={component.id}
@@ -356,6 +370,7 @@ export default function A2UIRenderer({
         }
         renderChildren={renderChildren}
         renderChild={renderChild}
+        renderChildWithState={renderChildWithState}
         tabId={tabId}
       />
     );

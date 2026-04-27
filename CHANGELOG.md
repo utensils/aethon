@@ -8,6 +8,15 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Compositional sidebar items.** Each `SidebarItem` can carry
+  `componentType`. When set, the sidebar resolves it through the
+  SkillRegistry and renders the registered template per row with
+  `/$item` (the full item object), `/$index` (position), and
+  `/$parent` (surrounding state) available to nested `$ref`s — same
+  scope keys as the `for-each` primitive. New
+  `BuiltinComponentProps.renderChildWithState(child, overlay)` exposes
+  the renderer's scoped expansion to composites. Click semantics
+  unchanged (`select` event with `{sectionId, itemId}` + descendantId).
 - **Registerable keyboard shortcuts.** New
   `aethon.registerKeybinding({combo, action?, description?})` and
   `aethon.unregisterKeybinding(combo)`. Combos accept any human-readable

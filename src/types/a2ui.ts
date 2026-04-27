@@ -115,6 +115,18 @@ export interface SidebarItem {
   label: string;
   icon?: string;
   onClick?: string;
+  // Optional active flag — true highlights the row.
+  active?: boolean;
+  // When set, the sidebar resolves this through the SkillRegistry and
+  // renders that template per item instead of the default label row.
+  // Templates can $ref into /$item for per-row data
+  // (icon, badge, sub-text, last-modified, …). The standard $item /
+  // $index / $parent for-each scope keys are available because the
+  // sidebar passes the item as $item when expanding.
+  componentType?: string;
+  // Free-form extra fields available to a custom componentType template.
+  // Surfaced under /$item alongside id/label/active.
+  [extra: string]: unknown;
 }
 
 export interface SidebarComponent extends A2UIComponent {

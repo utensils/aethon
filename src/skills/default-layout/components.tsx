@@ -22,6 +22,7 @@ import type {
   BooleanValue,
   ChatMessage,
   NumberValue,
+  SidebarItem,
   SidebarSection,
   StringValue,
 } from "../../types/a2ui";
@@ -100,7 +101,12 @@ export function Layout({
 // or bound to state via a $ref.
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
+export function Sidebar({
+  component,
+  state,
+  onEvent,
+  renderChildWithState,
+}: BuiltinComponentProps) {
   const props = component.props as {
     title?: StringValue;
     sections?: SidebarSection[];
@@ -114,14 +120,12 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
 
   const resolveItems = (
     items: SidebarSection["items"] | undefined,
-  ): { id: string; label: string; active?: boolean }[] => {
+  ): SidebarItem[] => {
     if (!items) return [];
     if (Array.isArray(items)) return items;
     if (typeof items !== "object" || !("$ref" in items)) return [];
     const resolved = resolvePointer(state, items.$ref);
-    return Array.isArray(resolved)
-      ? (resolved as { id: string; label: string; active?: boolean }[])
-      : [];
+    return Array.isArray(resolved) ? (resolved as SidebarItem[]) : [];
   };
 
   // Resolve the extra-sections list (inline array or $ref). Both lists
@@ -149,29 +153,62 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
                 <div className="a2ui-sidebar-empty">empty</div>
               ) : (
                 <ul className="a2ui-sidebar-list">
-                  {items.map((item) => (
-                    <li
-                      key={item.id}
-                      className={
-                        item.active
-                          ? "a2ui-sidebar-item a2ui-sidebar-item-active"
-                          : "a2ui-sidebar-item"
-                      }
-                      onClick={() =>
-                        // descendantId carries item.id so onEvent matchers
-                        // like {componentType:"sidebar", descendantId:"open-readme"}
-                        // resolve as documented. data.{sectionId,itemId}
-                        // remain available for handlers that prefer payload.
-                        onEvent(
-                          "select",
-                          { sectionId: section.id, itemId: item.id },
-                          item.id,
-                        )
-                      }
-                    >
-                      {item.label}
-                    </li>
-                  ))}
+                  {items.map((item, idx) => {
+                    // When an item carries `componentType`, render the
+                    // skill-registered template per row with $item /
+                    // $index in scope (same convention as the for-each
+                    // primitive). Falls back to the default label row
+                    // when no componentType is set or the renderer is
+                    // missing the scoped helper.
+                    if (item.componentType && renderChildWithState) {
+                      const synthetic: A2UIComponent = {
+                        id: `${component.id}__sec_${section.id}__item_${item.id}`,
+                        type: item.componentType,
+                      };
+                      return (
+                        <li
+                          key={item.id}
+                          className="a2ui-sidebar-item a2ui-sidebar-item-custom"
+                          onClick={() =>
+                            onEvent(
+                              "select",
+                              { sectionId: section.id, itemId: item.id },
+                              item.id,
+                            )
+                          }
+                        >
+                          {renderChildWithState(synthetic, {
+                            $item: item,
+                            $index: idx,
+                            $parent: state,
+                          })}
+                        </li>
+                      );
+                    }
+                    return (
+                      <li
+                        key={item.id}
+                        className={
+                          item.active
+                            ? "a2ui-sidebar-item a2ui-sidebar-item-active"
+                            : "a2ui-sidebar-item"
+                        }
+                        onClick={() =>
+                          // descendantId carries item.id so onEvent matchers
+                          // like {componentType:"sidebar", descendantId:"open-readme"}
+                          // resolve as documented. data.{sectionId,itemId}
+                          // remain available for handlers that prefer payload.
+                          onEvent(
+                            "select",
+                            { sectionId: section.id, itemId: item.id },
+                            item.id,
+                          )
+                        }
+                      >
+                        {item.label}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
