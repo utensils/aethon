@@ -566,11 +566,14 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
 
+    // Cmd+W is reserved for `close_tab` (browser/IDE convention).
+    // Tauri's PredefinedMenuItem::close_window also binds Cmd+W on
+    // macOS, so we omit it here — the user closes the window via the
+    // red traffic light or Cmd+Q. Adding both would let macOS route
+    // Cmd+W to whichever menu item it picks first.
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_tab)
         .item(&close_tab)
-        .separator()
-        .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -601,8 +604,6 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::maximize(app, None)?)
         .item(&PredefinedMenuItem::fullscreen(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
 
     #[cfg(target_os = "macos")]
