@@ -35,6 +35,12 @@
  *      // Promise so the awaiting extension call returns
  *      // {ok:true} (or {ok:false, error} on failure). Sent for every
  *      // mutating outbound message that carries a `mutationId`.
+ *   { "type": "frontend_state_patch", "path": "/sidebar/models", "value": <any> }
+ *      // One-way mirror — frontend pushes a slice value the bridge
+ *      // wouldn't otherwise see (model picker, themes, connection,
+ *      // status, tabs, draft, messagesCount). Stored in `frontendState`
+ *      // map and exposed via `aethon.getFrontendState(path)` and the
+ *      // `uiState` field of `getRuntimeSnapshot()`. Best-effort, no ack.
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...],
@@ -713,6 +719,16 @@ async function main() {
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
 
+  // Bridge-readable mirror of frontend-populated state slices. The
+  // frontend pushes `frontend_state_patch { path, value }` whenever an
+  // allowlisted slice changes (models, themes, connection, status, tabs,
+  // draft, messagesCount). Without this, extensions calling
+  // `aethon.getFrontendState("/sidebar/models")` would have to scrape
+  // — the bridge sees only its own writes via setState. Surface in
+  // getRuntimeSnapshot().uiState too so the agent's first-turn snapshot
+  // includes what's currently on screen, not just what was registered.
+  const frontendState = new Map<string, unknown>();
+
   // Compose a one-line summary of the active layout for the runtime
   // snapshot. The full layout is available via getLayout(); this is a
   // human-readable hint suitable for the system prompt and state file.
@@ -794,6 +810,7 @@ async function main() {
         ...(match.descendantId ? { descendantId: match.descendantId } : {}),
         ...(match.eventType ? { eventType: match.eventType } : {}),
       })),
+      uiState: Object.fromEntries(frontendState),
     };
   }
 
@@ -1120,6 +1137,15 @@ async function main() {
   function _listThemes(): ThemeRecord[] {
     return [...extensionThemes.values()];
   }
+  // Snapshot of the frontend-mirrored state slices. Returns a copy so
+  // callers can't mutate the bridge's internal map. Useful for the agent
+  // to introspect "what is the UI showing?" without scraping.
+  function _getFrontendState(path?: string): unknown {
+    if (!path || typeof path !== "string") {
+      return Object.fromEntries(frontendState);
+    }
+    return frontendState.has(path) ? frontendState.get(path) : undefined;
+  }
   function _getLayout(): unknown {
     // Return the active rendered tree:
     //   1. extensionLayout if any extension has called setLayout — that's
@@ -1155,6 +1181,7 @@ async function main() {
     listComponents: _listComponents,
     listThemes: _listThemes,
     getLayout: _getLayout,
+    getFrontendState: _getFrontendState,
     getRuntimeSnapshot: _getRuntimeSnapshot,
   };
   type AethonApi = typeof aethonApi;
@@ -1873,6 +1900,23 @@ async function main() {
             break;
           }
           aethonApi.registerTheme(msg.theme);
+          break;
+        }
+        case "frontend_state_patch": {
+          // One-way mirror — frontend pushes a slice value the bridge
+          // wouldn't otherwise see (model picker, themes, connection,
+          // status, tabs, draft, messagesCount). Bridge stores it under
+          // the supplied path so extensions can call
+          // `aethon.getFrontendState("/sidebar/models")` for the live
+          // value. No ack: this is best-effort mirroring, the next
+          // patch supersedes the previous regardless of delivery.
+          if (!msg.path || typeof msg.path !== "string") break;
+          frontendState.set(msg.path, msg.value);
+          // Refresh state file so $AETHON_STATE_FILE reflects the slice
+          // change. Debounced 200 ms via the same coalescer that handles
+          // registration writes, so a typing burst into the composer
+          // doesn't write 60 times/sec.
+          scheduleStateFileWrite();
           break;
         }
         case "boot_layout": {

@@ -42,6 +42,10 @@ export interface RuntimeSnapshot {
     descendantId?: string;
     eventType?: string;
   }[];
+  // Frontend-mirrored UI state slices (sidebar.models, sidebar.themes,
+  // connection, status, tabs, draft, messagesCount). Populated from the
+  // `frontend_state_patch` channel — what's actually visible on screen.
+  uiState: Record<string, unknown>;
 }
 
 // The static base prompt — describes the API surface and renderer
@@ -278,6 +282,24 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
       if (h.descendantId) parts.push(`descendantId=${h.descendantId}`);
       if (h.eventType) parts.push(`eventType=${h.eventType}`);
       lines.push(`- ${parts.length ? parts.join(", ") : "(matches everything)"}`);
+    }
+  }
+
+  const uiKeys = Object.keys(snapshot.uiState);
+  if (uiKeys.length > 0) {
+    lines.push("");
+    lines.push(
+      "Frontend-mirrored state (what's currently visible — read via `aethon.getFrontendState(path)`):",
+    );
+    for (const key of uiKeys.sort()) {
+      const value = snapshot.uiState[key];
+      // Single-line JSON preview, truncated so the snapshot stays
+      // skimmable. Full data lives in $AETHON_STATE_FILE.
+      let preview = JSON.stringify(value);
+      if (preview && preview.length > 200) {
+        preview = preview.slice(0, 197) + "…";
+      }
+      lines.push(`- \`${key}\` = ${preview}`);
     }
   }
 

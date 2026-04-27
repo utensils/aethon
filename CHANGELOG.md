@@ -8,6 +8,15 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Bridge-readable frontend state.** Frontend pushes
+  `frontend_state_patch { path, value }` whenever an allowlisted slice
+  changes — `/sidebar/models`, `/sidebar/themes`, `/connection`, `/status`,
+  `/tabs`, `/draft`, `/messagesCount`. Bridge stores in `frontendState`
+  Map. New introspection method `aethon.getFrontendState(path?)` returns
+  the live value (or full map). `getRuntimeSnapshot().uiState` exposes
+  the full mirror so the system prompt + `~/.aethon/state.json` reflect
+  what's actually on screen, not just what extensions wrote via setState.
+  Diff-on-frontend keeps IPC chatter low (one patch per slice per change).
 - **Mutation feedback channel.** Every mutating outbound bridge → frontend
   message (`state_patch`, `layout_set`, `layout_patch`,
   `extension_components`, `extension_themes`) now carries a `mutationId`.

@@ -223,6 +223,28 @@ or before mutating something you didn't register yourself.
 Returns the active layout payload (extension-supplied if any, otherwise
 the default-layout boot tree).
 
+### `getFrontendState(path?)`
+
+Read a frontend-mirrored state slice. With no argument, returns the full
+map; with a path returns just that slice (or `undefined`).
+
+```ts
+const models = globalThis.aethon.getFrontendState("/sidebar/models");
+// → [{id, label, active}, …]
+
+globalThis.aethon.getFrontendState("/connection"); // "connected" | "disconnected"
+globalThis.aethon.getFrontendState("/status");     // "ready" | "indexing…" | …
+globalThis.aethon.getFrontendState("/tabs");       // [{id, label, model, active}, …]
+globalThis.aethon.getFrontendState("/draft");      // active tab's composer text
+globalThis.aethon.getFrontendState("/sidebar/themes"); // theme list
+globalThis.aethon.getFrontendState("/messagesCount");  // active tab message count
+```
+
+The frontend pushes patches into the bridge whenever these slices change,
+so the bridge sees the live UI state — not just what extensions have
+written via `setState`. Best-effort mirror; small lag (<100 ms) is normal
+during state churn.
+
 ### `getRuntimeSnapshot()`
 
 One-call summary suitable for chat output:
@@ -238,6 +260,16 @@ One-call summary suitable for chat output:
   themes: [...],
   layoutSummary: string,          // e.g. "default-layout (sidebar=left)"
   tabs: [{ id, model, messageCount }],
+  eventHandlers: [...],           // match shape only (no fn bodies)
+  uiState: {                      // frontend-mirrored slices
+    "/sidebar/models": [...],
+    "/sidebar/themes": [...],
+    "/connection": "connected",
+    "/status": "ready",
+    "/tabs": [...],
+    "/draft": "",
+    "/messagesCount": 0,
+  },
 }
 ```
 
