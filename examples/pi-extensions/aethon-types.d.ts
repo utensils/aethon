@@ -30,9 +30,39 @@ interface AethonEventMatch {
   eventType?: string;
 }
 
+interface AethonPiHandlerCtx {
+  /**
+   * Fire an LLM turn from the handler — the chat input UI updates the
+   * same way it would for a user-typed message. Use this to wire
+   * buttons / sidebar items to agent actions ("summarize git log",
+   * "explain this file"). Rejects via a system notice if a prompt is
+   * already in flight.
+   */
+  prompt(text: string): Promise<void>;
+  /**
+   * Push a system message into the chat history. Non-terminal — does
+   * not toggle the waiting/Stop flags. Use for handler progress notes.
+   */
+  notify(message: string): void;
+  /** Read-only session info: current model id and last 50 messages. */
+  readonly session: {
+    readonly model: string;
+    readonly messages: ReadonlyArray<unknown>;
+  };
+  /**
+   * AbortSignal that fires when the user presses Stop or a new chat
+   * comes in. Pass to fetch / spawn / model calls so handler work
+   * cancels with the rest of the turn. Undefined when the handler
+   * fires outside an agent turn (most sidebar clicks).
+   */
+  readonly signal: AbortSignal | undefined;
+}
+
 interface AethonEventCtx {
   setState(path: string, value: unknown): void;
   registerComponent(componentType: string, template: unknown): void;
+  /** Pi-coding-agent surface scoped for UI handlers. */
+  pi: AethonPiHandlerCtx;
 }
 
 declare global {

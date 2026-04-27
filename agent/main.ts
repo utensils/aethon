@@ -448,9 +448,39 @@ async function main() {
     eventType?: string;
     data?: unknown;
   }
+  // ctx.pi is a thin facade over pi-coding-agent's AgentSession scoped to
+  // what makes sense for an A2UI event handler. Following pi's convention,
+  // it's typed and intentionally narrow — handlers shouldn't need pi's
+  // full ExtensionContext and shouldn't be able to mutate pi's session
+  // state directly. Adding methods here is a deliberate choice: they
+  // become the contract for every UI handler in the ecosystem.
+  interface PiHandlerCtx {
+    /** Fire an LLM turn from the handler. The chat input UI updates the
+     *  same way it would for a user-typed message. Use this to wire
+     *  buttons / sidebar items to agent actions ("summarize git log",
+     *  "explain this file"). Rejects if a prompt is already in flight. */
+    prompt(text: string): Promise<void>;
+    /** Push a system message into the chat history. Non-terminal — does
+     *  not toggle waiting/Stop. Use for handler progress notes. */
+    notify(message: string): void;
+    /** Read-only session info: current model id and last 50 messages. */
+    readonly session: {
+      readonly model: string;
+      readonly messages: ReadonlyArray<unknown>;
+    };
+    /** AbortSignal that fires when the user presses Stop or a new chat
+     *  comes in. Pass to fetch / spawn / model calls so handler work
+     *  cancels with the rest of the turn. Undefined when the handler
+     *  fires outside an agent turn (most sidebar clicks). */
+    readonly signal: AbortSignal | undefined;
+  }
   type A2UIEventHandler = (
     event: A2UIEventInfo,
-    ctx: { setState: AethonApi["setState"]; registerComponent: AethonApi["registerComponent"] },
+    ctx: {
+      setState: AethonApi["setState"];
+      registerComponent: AethonApi["registerComponent"];
+      pi: PiHandlerCtx;
+    },
   ) => void | Promise<void>;
   const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
 
@@ -872,6 +902,57 @@ async function main() {
           const descendantId = ev.componentId?.includes("__tpl__")
             ? ev.componentId.split("__tpl__").slice(1).join("__tpl__")
             : undefined;
+          // Build the ctx.pi facade fresh per dispatch so handlers always
+          // see the current session model + last 50 messages. session.state
+          // is mutable, so reading it through a getter keeps the handler's
+          // view consistent with pi without leaking the AgentSession itself.
+          const piCtx: PiHandlerCtx = {
+            async prompt(text: string) {
+              if (!text || typeof text !== "string") return;
+              if (promptInFlight) {
+                send({
+                  type: "notice",
+                  message: "agent busy — handler prompt rejected",
+                });
+                return;
+              }
+              promptInFlight = true;
+              agentEndFired = false;
+              // Same fire-and-forget shape as the `chat` IPC path so the
+              // frontend's response_delta / response_end flow handles
+              // streaming identically.
+              session
+                .prompt(text)
+                .catch((err) => {
+                  const m = err instanceof Error ? err.message : String(err);
+                  send({ type: "error", message: `handler prompt: ${m}` });
+                })
+                .finally(() => {
+                  if (!agentEndFired) {
+                    promptInFlight = false;
+                    send({ type: "response_end" });
+                  }
+                });
+            },
+            notify(message: string) {
+              if (!message) return;
+              send({ type: "notice", message });
+            },
+            get session() {
+              const messages = session.messages ?? [];
+              return {
+                model: session.model ? modelKey(session.model) : "",
+                messages: messages.slice(-50),
+              };
+            },
+            // Pi exposes the active turn's abort signal on AgentSession's
+            // internal state — surface a best-effort version. Undefined
+            // outside a turn matches pi's own ctx.signal contract.
+            get signal() {
+              const s = session as unknown as { signal?: AbortSignal };
+              return s.signal;
+            },
+          };
           for (const { match, handler } of a2uiEventHandlers) {
             if (match.templateRootType && match.templateRootType !== ev.templateRootType) continue;
             if (match.componentType && match.componentType !== ev.componentType) continue;
@@ -881,6 +962,7 @@ async function main() {
               await handler(ev, {
                 setState: aethonApi.setState,
                 registerComponent: aethonApi.registerComponent,
+                pi: piCtx,
               });
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
