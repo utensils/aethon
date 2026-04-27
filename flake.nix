@@ -157,8 +157,14 @@
               {
                 category = "dev";
                 name = "dev";
-                help = "Start Tauri dev mode with hot-reload";
-                command = "cargo tauri dev \"$@\"";
+                help = "Start Tauri dev mode (Vite-style port auto-increment if 1420/19433 busy)";
+                # Vite-style port auto-increment so a leaked 1420 from a
+                # prior run doesn't break `dev`. The wrapper finds free
+                # ports for Vite + the debug TCP server, writes them to
+                # ~/.aethon/dev-info.json (read by the aethon-debug skill),
+                # and overrides Tauri's devUrl via $TAURI_CONFIG before
+                # exec'ing `cargo tauri dev`.
+                command = "exec ./scripts/dev.sh \"$@\"";
               }
               {
                 category = "build";

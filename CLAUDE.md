@@ -134,8 +134,12 @@ through this path.
 - **Two-space indent** for Nix; standard for everything else.
 - **TypeScript strict mode** + `verbatimModuleSyntax` + `erasableSyntaxOnly`.
   Use `import type { ... }` for type-only imports.
-- **Frontend port is fixed at 1420** (Vite `strictPort: true`) — Tauri's
-  `devUrl` points there.
+- **Vite port defaults to 1420 but auto-increments via `scripts/dev.sh`**
+  when busy. The wrapper finds free Vite + debug ports, writes them to
+  `~/.aethon/dev-info.json`, exports `VITE_PORT` + `AETHON_DEBUG_PORT`,
+  and overrides Tauri's `devUrl` via `$TAURI_CONFIG`. `strictPort: true`
+  stays on so Vite fails loudly if the wrapper hands it a busy port. The
+  aethon-debug skill reads `dev-info.json` to follow the chosen port.
 - **No global state in the Rust shell** beyond what Tauri's `Manager` exposes
   (currently just the `AgentProcess` mutex). Business logic belongs in the
   agent, not the shell.

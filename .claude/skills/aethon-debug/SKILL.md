@@ -10,7 +10,7 @@ allowed-tools: Bash Read Grep Glob
 
 Execute JavaScript inside the running Aethon Tauri webview via a TCP debug server on `127.0.0.1`. Dev-build only (`#[cfg(debug_assertions)]`).
 
-The server listens on **19433** by default (Claudette uses 19432; Aethon picks the next port to avoid collision). Override with `AETHON_DEBUG_PORT` if running multiple instances.
+The server listens on **19433** by default (Claudette uses 19432; Aethon picks the next port to avoid collision). When 19433 is busy the dev wrapper (`scripts/dev.sh`) auto-increments to the next free port and writes the chosen port to `~/.aethon/dev-info.json`. The skill scripts read that file automatically — no need to set `AETHON_DEBUG_PORT` manually unless you're running multiple dev instances or pinning a specific port.
 
 ## Quick start
 
@@ -191,7 +191,7 @@ Terminal ◀──TCP─────── debug server ◀──debug_eval_resu
 ```
 
 - **TCP server**: `src-tauri/src/debug.rs` — wraps JS in async IIFE, evals in webview, 10s timeout
-- **Port**: `19433` by default; `$AETHON_DEBUG_PORT` overrides
+- **Port discovery**: `$AETHON_DEBUG_PORT` → `~/.aethon/dev-info.json` (`debugPort`) → `19433` default. Wrapper-chosen ports flow through `dev-info.json` so the skill follows the auto-increment.
 - **Input cap**: 1 MB per eval request
 
 The wrapped JS calls `window.__AETHON_INVOKE__('debug_eval_result', { requestId, data })` to send the result back. Rust forwards that into a oneshot channel, the TCP server reads from the channel, and writes the result back over the socket.
