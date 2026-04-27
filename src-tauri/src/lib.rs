@@ -406,14 +406,20 @@ fn dispatch_a2ui_event(
     Ok(())
 }
 
-/// In debug builds, watch `agent/` for file changes and kill the running
-/// agent child so the next request respawns it with fresh code. Held in
-/// Tauri state to keep the watcher thread alive for the app's lifetime.
+/// Watch source / extension directories for file changes and kill the
+/// running agent child so the next request respawns it with fresh code.
+/// Held in Tauri state to keep the watcher thread alive for the app's
+/// lifetime.
+///
+/// Watch paths:
+///   - `~/.aethon/extensions/` — user-installed Aethon extensions
+///   - `~/.pi/agent/extensions/` — pi extensions (loaded via pi's
+///     resourceLoader on session create)
+///   - `<project>/agent/` — bridge source, dev only
 struct AgentWatcher {
     _watcher: notify::RecommendedWatcher,
 }
 
-#[cfg(debug_assertions)]
 fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     use notify::event::{DataChange, ModifyKind};
     use notify::{EventKind, RecursiveMode, Watcher};
@@ -421,12 +427,27 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let agent_dir = project_root().join("agent");
-    if !agent_dir.exists() {
-        eprintln!(
-            "[agent-watch] {} does not exist; hot reload disabled",
-            agent_dir.display()
-        );
+    // Compose the watch list. Each path is included only if it exists
+    // — missing extension dirs are normal for fresh installs.
+    let home = match app.path().home_dir() {
+        Ok(h) => Some(h),
+        Err(_) => None,
+    };
+    let mut watch_paths: Vec<PathBuf> = Vec::new();
+    if let Some(h) = home {
+        for sub in [".aethon/extensions", ".pi/agent/extensions"] {
+            let p = h.join(sub);
+            if p.exists() { watch_paths.push(p); }
+        }
+    }
+    // Bridge source dir is dev-only — release ships a compiled sidecar
+    // and editing the source has no effect on the running binary.
+    if cfg!(debug_assertions) {
+        let agent_dir = project_root().join("agent");
+        if agent_dir.exists() { watch_paths.push(agent_dir); }
+    }
+    if watch_paths.is_empty() {
+        eprintln!("[agent-watch] nothing to watch — hot reload disabled");
         return None;
     }
 
@@ -456,8 +477,16 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
             // editors as `Modify(Name(_))`. Treat those as content changes too.
             let is_atomic_rename =
                 matches!(event.kind, EventKind::Modify(ModifyKind::Name(_)));
+            // Extensions land in their watched dirs as a Create event when
+            // the user copies a new file in. Treat those as reload triggers.
+            let is_create =
+                matches!(event.kind, EventKind::Create(_));
+            // Removing an extension should also trigger reload so the
+            // bridge stops loading it on the next spawn.
+            let is_remove =
+                matches!(event.kind, EventKind::Remove(_));
 
-            if !(is_data_modify || is_atomic_rename) {
+            if !(is_data_modify || is_atomic_rename || is_create || is_remove) {
                 return;
             }
 
@@ -506,18 +535,28 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         }
     };
 
-    if let Err(err) = watcher.watch(&agent_dir, RecursiveMode::Recursive) {
-        eprintln!("[agent-watch] failed to watch {}: {err}", agent_dir.display());
+    let mut watching: Vec<PathBuf> = Vec::new();
+    for path in &watch_paths {
+        if let Err(err) = watcher.watch(path, RecursiveMode::Recursive) {
+            eprintln!("[agent-watch] failed to watch {}: {err}", path.display());
+        } else {
+            watching.push(path.clone());
+        }
+    }
+    if watching.is_empty() {
         return None;
     }
 
-    eprintln!("[agent-watch] watching {} for changes", agent_dir.display());
+    eprintln!(
+        "[agent-watch] watching {} dir(s) for changes: {}",
+        watching.len(),
+        watching
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     Some(AgentWatcher { _watcher: watcher })
-}
-
-#[cfg(not(debug_assertions))]
-fn start_agent_watcher(_app: AppHandle) -> Option<AgentWatcher> {
-    None
 }
 
 /// Build and attach the native app menu. The frontend listens for a
