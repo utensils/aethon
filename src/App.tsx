@@ -361,23 +361,31 @@ export default function App() {
   stateRef.current = state;
 
   // Global keyboard shortcuts. Bound on the document so they fire regardless
-  // of focus; preventDefault when handled so the browser's own bindings
-  // (e.g. cmd+` cycling windows in WebKit) don't double-fire.
+  // of focus; preventDefault + stopPropagation when handled so xterm
+  // doesn't also receive the keystroke as input data (otherwise pressing
+  // Cmd+` while focused in the terminal both toggles the panel AND types
+  // a backtick into the shell).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Cmd+` (macOS) / Ctrl+` (others) toggles the terminal panel. Mirrors
       // VS Code / iTerm / most other dev tools' default. The sidebar
       // "Toggle Terminal" item still works for mouse-only use.
+      // Skip auto-repeat (held key) so a brief hold doesn't fire
+      // twice and immediately re-close the panel after opening.
+      if (e.repeat) return;
       if (e.key === "`" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         e.preventDefault();
+        e.stopPropagation();
         setState((prev) => {
           const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
           return { ...prev, terminal: { ...term, open: !term.open } };
         });
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // useCapture=true so we run BEFORE xterm's keydown listener;
+    // stopPropagation then keeps the keystroke out of the shell.
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, []);
 
   useEffect(() => {
