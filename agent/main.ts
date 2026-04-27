@@ -114,7 +114,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { mkdirSync, readFileSync } from "node:fs";
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -588,6 +588,61 @@ async function discoverPiAethonExtensions(
       // error if the file is truly broken at import time.
     }
   }
+}
+
+// Discover persisted per-tab sessions on disk under SESSIONS_DIR/<tabId>/.
+// Each subdir holds the rolling JSONL files SessionManager.continueRecent
+// resumes from. Returns an array of {tabId, lastModified} for the bridge
+// to ship in `ready` so the frontend can surface them in the empty-state
+// "Recent sessions" list and reopen on demand.
+//
+// "default" is excluded — the frontend always pre-creates a default tab,
+// and surfacing it as "recent" would duplicate it. Other tabIds are
+// presented in lastModified-descending order (most recent first).
+async function discoverPersistedTabs(): Promise<
+  { tabId: string; lastModified: number }[]
+> {
+  let entries: string[];
+  try {
+    entries = await readdir(SESSIONS_DIR);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(
+        `[aethon-tabs] readdir ${SESSIONS_DIR}: ${(err as Error).message}`,
+      );
+    }
+    return [];
+  }
+  const results: { tabId: string; lastModified: number }[] = [];
+  for (const name of entries) {
+    if (name === "default") continue;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
+    const dir = join(SESSIONS_DIR, name);
+    try {
+      let files: string[];
+      try {
+        files = await readdir(dir);
+      } catch {
+        continue;
+      }
+      const jsonl = files.filter((f) => f.endsWith(".jsonl"));
+      if (jsonl.length === 0) continue;
+      let mtime = 0;
+      for (const f of jsonl) {
+        try {
+          const st = await stat(join(dir, f));
+          if (st.mtimeMs > mtime) mtime = st.mtimeMs;
+        } catch {
+          /* skip */
+        }
+      }
+      if (mtime > 0) results.push({ tabId: name, lastModified: mtime });
+    } catch {
+      /* skip — best effort */
+    }
+  }
+  results.sort((a, b) => b.lastModified - a.lastModified);
+  return results;
 }
 
 // Discover and load loose-file themes from ~/.aethon/themes/*.json.
@@ -1458,6 +1513,11 @@ async function main() {
   // Cache the picker so emitReady doesn't recompute on every report.
   // First populated when the default tab is created.
   let cachedModels: ReturnType<typeof modelDescriptor>[] = [];
+  // Persisted per-tab session directories discovered at boot. Shipped
+  // in `ready` so the frontend can offer "Recent sessions" in the
+  // empty-state composite. Excludes "default" (which the frontend
+  // pre-creates anyway). Sorted descending by lastModified.
+  let discoveredTabs: { tabId: string; lastModified: number }[] = [];
 
   function defaultModelKey(): string {
     const def = tabs.get("default");
@@ -1481,6 +1541,7 @@ async function main() {
       extensionThemes: [...extensionThemes.values()],
       extensionSlashCommands: [...extensionSlashCommands.values()],
       extensionKeybindings: [...extensionKeybindings.values()],
+      discoveredTabs,
     });
   }
 
@@ -1710,6 +1771,14 @@ async function main() {
   // and the frontend can start dispatching to "default" without first
   // racing an ensureTab call.
   await ensureTab("default");
+
+  // Discover persisted per-tab sessions on disk. Surfaces in `ready`
+  // so the frontend can populate the empty-state's "Recent sessions"
+  // list. Done after ensureTab("default") so the read sees any rolling
+  // file the default session just created. The discovery itself doesn't
+  // open any of the tabs — they materialize when the user clicks
+  // restore-session and the frontend issues a tab_open.
+  discoveredTabs = await discoverPersistedTabs();
 
   // Initial state-file write so `cat $AETHON_STATE_FILE` works before
   // any extension runs a registration. Subsequent registrations

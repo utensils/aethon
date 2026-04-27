@@ -138,6 +138,7 @@
             "title": "Welcome to Aethon",
             "subtitle": "All tabs are closed. Open a new one to start a conversation.",
             "primaryButtonLabel": "New Tab",
+            "recentSessions": { "$ref": "/recentSessions" },
             "tips": [
               "Press ⌘T to open a new conversation tab.",
               "Type / in the composer to see slash commands.",
@@ -194,6 +195,7 @@
     "canvas": null,
     "empty": false,
     "hasTabs": true,
+    "recentSessions": [],
     "sidebar": {
       "history": [],
       "models": [],

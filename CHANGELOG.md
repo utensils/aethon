@@ -8,6 +8,16 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Multi-tab restore via empty-state recent sessions.** Bridge walks
+  `~/.aethon/sessions/` at boot, returns `[{tabId, lastModifiedMs}]`
+  sorted by last-modified, ships as `discoveredTabs` in the `ready`
+  payload. Frontend filters out currently-open tabs, formats relative
+  timestamps ("2m ago", "yesterday"), and pushes the list into
+  `/recentSessions`. The empty-state composite (visible when all tabs
+  are closed) renders the list as clickable rows. Clicking restores
+  the persisted session by reusing the same `tabId` so
+  `SessionManager.continueRecent` resumes the LLM history. Auto-restore
+  on launch (without clicking) tracked as a follow-up.
 - **A2UI primitives expanded.** New built-in components the renderer
   always understands: `heading` (level 1-6), `paragraph`, `divider`
   (horizontal/vertical), `checkbox`, `select` (`options` accepts

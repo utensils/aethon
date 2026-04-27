@@ -654,7 +654,9 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
     subtitle?: StringValue;
     primaryButtonLabel?: StringValue;
     tips?: StringValue[];
-    recentSessions?: { id: string; label: string; lastModified?: string }[];
+    recentSessions?:
+      | { id: string; label: string; lastModified?: string }[]
+      | { $ref: string };
   };
   const title = props.title ? resolveString(props.title, state) : "Welcome to Aethon";
   const subtitle = props.subtitle
@@ -664,7 +666,18 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
     ? resolveString(props.primaryButtonLabel, state)
     : "New Tab";
   const tips = props.tips ?? [];
-  const recentSessions = props.recentSessions ?? [];
+  // Support both inline arrays AND $ref-bound recent-sessions lists so
+  // App can push discovered persistent sessions into a single state
+  // path (/recentSessions) and have the empty-state pick them up.
+  const recentSessionsRaw = props.recentSessions;
+  const recentSessions = (() => {
+    if (!recentSessionsRaw) return [];
+    if (Array.isArray(recentSessionsRaw)) return recentSessionsRaw;
+    const resolved = resolvePointer(state, recentSessionsRaw.$ref);
+    return Array.isArray(resolved)
+      ? (resolved as { id: string; label: string; lastModified?: string }[])
+      : [];
+  })();
 
   return (
     <div className="a2ui-empty-state">

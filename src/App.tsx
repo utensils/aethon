@@ -95,6 +95,28 @@ interface ModelDescriptor {
   provider: string;
 }
 
+// Format a millisecond timestamp into a compact relative-time label like
+// "2m ago" / "3h ago" / "yesterday" / "Apr 22". Used by the empty-state's
+// recent-sessions list — full timestamps are too noisy and "12345678 ms"
+// is meaningless to a user.
+function formatRelativeTime(ms: number): string {
+  if (!ms) return "";
+  const now = Date.now();
+  const diff = Math.max(0, now - ms);
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 // Normalize a keyboard event to the same canonical combo string the bridge
 // stores (lowercased, sorted modifiers, "+"-joined). Returns null when no
 // printable key was involved (modifier keys alone don't match a combo).
@@ -611,8 +633,12 @@ export default function App() {
   // race-create the tab via the chat path with the wrong model.
   const pendingTabOpens = useRef(new Map<string, Promise<void>>());
 
-  function newTab() {
-    const id = crypto.randomUUID();
+  function newTab(restoreId?: string, restoreLabel?: string) {
+    // restoreId lets the caller open a tab with a specific tabId so the
+    // bridge's SessionManager.continueRecent picks up the persisted
+    // session for that id. Used by the empty-state's "Recent sessions"
+    // list. Omitted for normal new-tab gestures (Cmd+T, +, menu).
+    const id = restoreId ?? crypto.randomUUID();
     // Inherit the previously-active tab's model so the picker stays
     // consistent. Without this, the new tab's pi session would default
     // to whatever ~/.pi/agent/settings.json declares — which is often
@@ -622,7 +648,10 @@ export default function App() {
       ((stateRef.current.model as string | undefined) ?? "").trim();
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const label = `Tab ${tabs.length + 1}`;
+      // Use the restoreLabel when restoring a persisted session so the
+      // user sees a meaningful name; otherwise fall back to the
+      // sequential "Tab N" naming the empty-tab path has used.
+      const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
       const tab: Tab = { ...makeEmptyTab(id, label), model: inheritedModel };
       tabs.push(tab);
       const result: Record<string, unknown> = {
@@ -1088,6 +1117,9 @@ export default function App() {
         const extKeys = (data.extensionKeybindings as
           | { combo: string; action: string; description?: string }[]
           | undefined) ?? [];
+        const discTabs = (data.discoveredTabs as
+          | { tabId: string; lastModified: number }[]
+          | undefined) ?? [];
         // Hydrate extension themes BEFORE the layout state merge below so
         // /sidebar/themes carries the full list (built-ins + extension)
         // when the merge runs. hydrateThemes also injects the CSS so a
@@ -1101,6 +1133,23 @@ export default function App() {
         // and bumps /slashCommands so the picker re-resolves via $ref.
         hydrateSlashCommands(extSlash);
         hydrateKeybindings(extKeys);
+        // Surface discovered persistent sessions in the empty-state's
+        // recent-sessions list. Filter out tabIds we already have local
+        // records for so the same session isn't listed twice (open AND
+        // restorable). Format the lastModified into a "10m ago"-style
+        // label for the row's right-hand meta.
+        const knownIds = new Set(
+          (((data.tabs as { id: string }[] | undefined) ?? []).map((t) => t.id))
+            .concat(["default"]),
+        );
+        const recentSessions = discTabs
+          .filter((d) => !knownIds.has(d.tabId))
+          .slice(0, 8)
+          .map((d) => ({
+            id: d.tabId,
+            label: `Session ${d.tabId.slice(0, 8)}`,
+            lastModified: formatRelativeTime(d.lastModified),
+          }));
         // Restore any extension-supplied layout, then replay queued
         // patches. Falls back to the boot layout when none is reported
         // so a removed/disabled extension stops bleeding stale chrome
@@ -1214,6 +1263,7 @@ export default function App() {
             model: activeModel,
             status: "ready",
             connection: "connected",
+            recentSessions,
             sidebar: {
               ...((next.sidebar as Record<string, unknown>) ?? {}),
               models: models.map((m) => ({
@@ -2005,10 +2055,17 @@ export default function App() {
           return true;
         }
         if (eventType === "restore-session") {
-          // Future hook for restoring a persisted session by id. For now
-          // we just open a new tab and surface a notice — the recent
-          // sessions list is empty until multi-tab restore lands (M5).
-          newTab();
+          const sel = data as
+            | { sessionId?: string; label?: string }
+            | undefined;
+          if (sel?.sessionId) {
+            // Re-open the persisted session by reusing the same tabId.
+            // The bridge's SessionManager.continueRecent reads the
+            // existing JSONL files so the LLM history is restored too.
+            newTab(sel.sessionId, sel.label ?? "Restored Session");
+          } else {
+            newTab();
+          }
           return true;
         }
       }
