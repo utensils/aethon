@@ -880,17 +880,38 @@ export default function App() {
             );
           }
           next = deepMergeState(next, extState);
-          // Sync the default tab's model from the bridge's reported model.
-          // Other local tabs keep their previously-known model id; we'll
-          // re-establish their bridge sessions via the post-ready replay
-          // below.
+          // Reconcile our local tabs with the bridge's reported tabs.
+          // Two cases:
+          //   (a) webview reload while bridge is alive — bridge has tabs
+          //       we don't know about; create local records for them so
+          //       the user can re-access those sessions.
+          //   (b) bridge restart — local has tabs the bridge doesn't;
+          //       the post-ready replay below re-establishes them.
           {
-            const tabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
-            const dIdx = tabs.findIndex((t) => t.id === "default");
+            const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
+            const bridgeTabs =
+              (data.tabs as { id: string; model: string }[] | undefined) ?? [];
+            // Update default's model from data.model (canonical).
+            const dIdx = localTabs.findIndex((t) => t.id === "default");
             if (dIdx >= 0) {
-              tabs[dIdx] = { ...tabs[dIdx], model };
-              next.tabs = tabs;
+              localTabs[dIdx] = { ...localTabs[dIdx], model };
             }
+            // For any bridge tab missing locally, append a new record
+            // labeled by position so the user has a recognizable handle.
+            for (const bt of bridgeTabs) {
+              if (bt.id === "default") continue;
+              const exists = localTabs.find((t) => t.id === bt.id);
+              if (exists) {
+                if (!exists.model && bt.model) {
+                  const idx = localTabs.indexOf(exists);
+                  localTabs[idx] = { ...exists, model: bt.model };
+                }
+                continue;
+              }
+              const label = `Tab ${localTabs.length + 1}`;
+              localTabs.push({ ...makeEmptyTab(bt.id, label), model: bt.model });
+            }
+            next.tabs = localTabs;
           }
           // The model + sidebar mirror tracks the ACTIVE tab, not the
           // default — so a `ready` arriving while a non-default tab is
@@ -928,15 +949,25 @@ export default function App() {
           if (t.id === "default") continue;
           // Pass `model` so the new bridge session boots with the same
           // model the user previously selected — no race window.
-          invoke("agent_command", {
+          // Track in pendingTabOpens so a fast first chat on the
+          // restored tab waits for the bridge to register the session
+          // (otherwise send_message would race tab_open and lazily
+          // create the tab without the inherited model).
+          const opening = invoke("agent_command", {
             payload: JSON.stringify({
               type: "tab_open",
               tabId: t.id,
               ...(t.model ? { model: t.model } : {}),
             }),
-          }).catch(() => {
-            /* surfaced on next chat send */
-          });
+          }) as Promise<void>;
+          pendingTabOpens.current.set(t.id, opening);
+          opening
+            .catch(() => {
+              /* surfaced on next chat send */
+            })
+            .finally(() => {
+              pendingTabOpens.current.delete(t.id);
+            });
         }
         break;
       }
