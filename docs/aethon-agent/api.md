@@ -10,6 +10,28 @@ the standalone pi CLI.
 
 ## Mutation
 
+Every mutating method below returns `Promise<MutationResult>` where
+`MutationResult = { ok: boolean; error?: string }`. Sync use is still
+fully supported — fire-and-forget callers (`aethon.setState(...)`)
+ignore the Promise and behave exactly as before. Awaiting (`await
+aethon.setState(...)`) gives you the frontend's confirmation:
+
+```ts
+const r = await globalThis.aethon.setState("/status", "indexing…");
+if (!r.ok) console.error("setState failed:", r.error);
+```
+
+Failure modes:
+- `"timeout"` — frontend didn't ack within 5 s (likely crashed or
+  unreachable).
+- `"frontend_rejected: …"` — frontend received the message but applied
+  it with errors (e.g. invalid layout payload, malformed pointer).
+- `"<arg> required"` — bridge-side validation (path/payload missing).
+
+Calls made before the frontend has reported `ready` resolve immediately
+with `{ ok: true }` — the bridge's retained-state replay covers them
+on the next `ready`, so awaiting at register-time doesn't block.
+
 ### `setState(path, value)`
 
 Write to frontend layout state at a JSON-Pointer path. Components bound

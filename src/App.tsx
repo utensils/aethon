@@ -875,6 +875,25 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Ack a mutation back to the bridge so the awaiting Promise resolves.
+  // Called from every mutation case in handleAgentMessage that successfully
+  // applied (or rejected) the change. Fire-and-forget — we don't await the
+  // ack-send because the bridge ack channel is independent of any other
+  // outgoing message.
+  function ackMutation(mutationId: unknown, success: boolean, error?: string) {
+    if (typeof mutationId !== "string" || mutationId.length === 0) return;
+    invoke("agent_command", {
+      payload: JSON.stringify({
+        type: "mutation_ack",
+        mutationId,
+        success,
+        ...(error ? { error } : {}),
+      }),
+    }).catch(() => {
+      /* bridge gone — extension's awaiter will hit the timeout instead */
+    });
+  }
+
   function handleAgentMessage(data: { type?: string; [k: string]: unknown }) {
     switch (data.type) {
       case "ready": {
@@ -1071,11 +1090,13 @@ export default function App() {
       case "extension_components": {
         const components = (data.components as Record<string, unknown>) ?? {};
         registry.setTemplates(components);
+        ackMutation(data.mutationId, true);
         break;
       }
       case "extension_themes": {
         const themes = (data.themes as ExtensionTheme[] | undefined) ?? [];
         hydrateThemes(themes);
+        ackMutation(data.mutationId, true);
         break;
       }
       case "state_patch": {
@@ -1094,7 +1115,10 @@ export default function App() {
         //      /counter/value, /custom): write directly to root state.
         //      No tab-scoping needed — these aren't mirrored.
         const path = data.path as string | undefined;
-        if (!path) break;
+        if (!path) {
+          ackMutation(data.mutationId, false, "missing path");
+          break;
+        }
         const segs = path.split("/").filter(Boolean);
         const top = segs[0] as keyof Tab | undefined;
         const isMirrored = top !== undefined && TAB_MIRROR_KEYS.includes(top);
@@ -1123,6 +1147,7 @@ export default function App() {
         } else {
           setState((prev) => setPointer(prev, path, data.value));
         }
+        ackMutation(data.mutationId, true);
         break;
       }
       case "layout_set": {
@@ -1130,7 +1155,10 @@ export default function App() {
         // the same path window.aethon.setLayout uses so the new payload
         // hydrates state and renders identically to a default-layout boot.
         const next = data.payload as A2UIPayload | undefined;
-        if (!next || typeof next !== "object" || !Array.isArray(next.components)) break;
+        if (!next || typeof next !== "object" || !Array.isArray(next.components)) {
+          ackMutation(data.mutationId, false, "payload missing components[]");
+          break;
+        }
         setLayout(next);
         if (next.state) {
           // Layout state contributes BOOT DEFAULTS — only fills keys
@@ -1141,6 +1169,7 @@ export default function App() {
             deepMergeState(next.state as Record<string, unknown>, prev),
           );
         }
+        ackMutation(data.mutationId, true);
         break;
       }
       case "layout_patch": {
@@ -1151,8 +1180,12 @@ export default function App() {
         // which would crash the renderer on `components.map()`. Walk
         // manually here so arrays stay arrays.
         const path = data.path as string | undefined;
-        if (!path) break;
+        if (!path) {
+          ackMutation(data.mutationId, false, "missing path");
+          break;
+        }
         setLayout((prev) => layoutPatch(prev, path, data.value));
+        ackMutation(data.mutationId, true);
         break;
       }
       case "model_changed": {

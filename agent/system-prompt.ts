@@ -161,6 +161,26 @@ they specifically need pi-level hooks. Don't touch the Aethon source.
 See \`$AETHON_DOCS_DIR/extensions.md\` for examples and the
 \`register(api)\` contract.
 
+## Knowing whether a mutation succeeded
+
+Every mutating method on \`globalThis.aethon\` (\`setState\`, \`setLayout\`,
+\`patchLayout\`, \`registerComponent\`, \`registerTheme\`,
+\`registerSidebarSection\`) returns \`Promise<{ok: boolean, error?: string}>\`.
+Sync calls are unchanged — the Promise just GCs if you don't await. If
+you need to know whether the change applied (e.g. before sending a
+follow-up message that depends on it):
+
+\`\`\`ts
+const r = await globalThis.aethon.setLayout(payload);
+if (!r.ok) {
+  // r.error is "timeout", "frontend_rejected: …", or a bridge validation error
+}
+\`\`\`
+
+Calls made at register-time (before the frontend connects) resolve as
+\`{ok: true}\` immediately — retained state replays on the next
+\`ready\`. Don't await in tight loops; the ack round-trip costs IPC.
+
 ## A2UI templates do not iterate arrays
 
 A2UI templates are static trees — there is no \`for-each\` primitive yet.

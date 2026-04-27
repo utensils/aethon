@@ -30,6 +30,11 @@
  *      // Register a color scheme. `vars` is a map of CSS custom properties
  *      // (keys must start with `--`); the frontend injects them into a
  *      // `:root[data-theme="<id>"]` rule and adds the theme to the sidebar.
+ *   { "type": "mutation_ack", "mutationId": "...", "success": true, "error"?: "..." }
+ *      // Frontend acks a mutation it received. Resolves the bridge-side
+ *      // Promise so the awaiting extension call returns
+ *      // {ok:true} (or {ok:false, error} on failure). Sent for every
+ *      // mutating outbound message that carries a `mutationId`.
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...],
@@ -41,17 +46,18 @@
  *      // sent on every ready emission so a webview reload picks them up
  *      // without losing state. extensionThemes ships the full theme list
  *      // so the frontend can rebuild its <style> tags + sidebar items.
- *   { "type": "extension_components", "components": {<componentType>: <template>, ...} }
+ *   { "type": "extension_components", "mutationId"?: "...", "components": {<componentType>: <template>, ...} }
  *      // Emitted after each registration delta; frontend hydrates templates
- *      // into the SkillRegistry.
- *   { "type": "state_patch", "path": "/foo", "value": <any> }
+ *      // into the SkillRegistry. Carries mutationId so the extension can
+ *      // await the registration outcome.
+ *   { "type": "state_patch", "mutationId"?: "...", "path": "/foo", "value": <any> }
  *      // Forward of an extension's set_state call. Frontend applies via
- *      // JSON Pointer.
- *   { "type": "layout_set", "payload": {...} }
+ *      // JSON Pointer. mutationId set when an awaiter wants confirmation.
+ *   { "type": "layout_set", "mutationId"?: "...", "payload": {...} }
  *      // Replace the active A2UI layout. Frontend calls window.aethon.setLayout.
- *   { "type": "layout_patch", "path": "/foo", "value": <any> }
+ *   { "type": "layout_patch", "mutationId"?: "...", "path": "/foo", "value": <any> }
  *      // Patch a path inside the active layout payload via JSON Pointer.
- *   { "type": "extension_themes", "themes": [{id, label, vars}, ...] }
+ *   { "type": "extension_themes", "mutationId"?: "...", "themes": [{id, label, vars}, ...] }
  *      // Emitted after each registerTheme call. The frontend rebuilds its
  *      // theme registry from the full list (no incremental delta).
  *   { "type": "notice", "message": "..." }
@@ -129,6 +135,32 @@ const tabContext = new AsyncLocalStorage<string>();
 
 function send(obj: Record<string, unknown>) {
   process.stdout.write(JSON.stringify(obj) + "\n");
+}
+
+// Mutation feedback — every mutating bridge → frontend message carries a
+// `mutationId`. The frontend acks via `mutation_ack { mutationId, success,
+// error? }` after applying. Bridge resolves a Promise so the API can return
+// `Promise<MutationResult>` and the agent can `await` for confirmation.
+//
+// Backwards compatibility: callers that don't await the Promise see the
+// old fire-and-forget semantics. Mutations made before the frontend
+// reports `ready` resolve immediately with {ok:true} on the assumption
+// that retained-state replay will deliver them — otherwise an extension
+// that awaits at register-time would block until the webview connects.
+export interface MutationResult {
+  ok: boolean;
+  /** Frontend-reported reason on failure. Common values:
+   *  - "frontend_rejected: <detail>" — explicit ack failure
+   *  - "timeout"                      — no ack within MUTATION_ACK_TIMEOUT_MS
+   *  - "frontend_disconnected"        — bridge died mid-flight
+   */
+  error?: string;
+}
+const MUTATION_ACK_TIMEOUT_MS = 5_000;
+let _mutationCounter = 0;
+function nextMutationId(): string {
+  _mutationCounter += 1;
+  return `m${Date.now().toString(36)}-${_mutationCounter}`;
 }
 
 function modelKey(m: Model<Api>): string {
@@ -851,10 +883,59 @@ async function main() {
   ) => void | Promise<void>;
   const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
 
+  // Pending mutation acks — keyed by mutationId. Resolved when the
+  // frontend sends `mutation_ack { mutationId, success, error? }`.
+  // Each entry also has a timeout that auto-resolves with `{ok:false,
+  // error:"timeout"}` after MUTATION_ACK_TIMEOUT_MS so a runaway extension
+  // can't accumulate pending Promises forever (e.g. if the frontend
+  // crashes between the bridge send and the ack).
+  const pendingMutations = new Map<
+    string,
+    { resolve: (r: MutationResult) => void; timer: ReturnType<typeof setTimeout> }
+  >();
+  // True once the frontend has reported `ready` (via the `report` inbound).
+  // Mutations made before this resolve immediately with {ok:true} on the
+  // assumption that retained-state replay will deliver them — extensions
+  // that await at register-time would otherwise block 5s on the timeout.
+  let frontendReady = false;
+
+  function trackMutation(): { id: string; promise: Promise<MutationResult> } {
+    const id = nextMutationId();
+    if (!frontendReady) {
+      // Pre-connect mutations — the bridge retains state and replays on
+      // the next `ready`. Treat as success for the awaiter; the ack-bound
+      // path is still attached to the outbound message in case the
+      // frontend wants to log it, but we don't keep a Promise alive.
+      return { id, promise: Promise.resolve({ ok: true }) };
+    }
+    const promise = new Promise<MutationResult>((resolve) => {
+      const timer = setTimeout(() => {
+        if (!pendingMutations.has(id)) return;
+        pendingMutations.delete(id);
+        resolve({ ok: false, error: "timeout" });
+      }, MUTATION_ACK_TIMEOUT_MS);
+      pendingMutations.set(id, { resolve, timer });
+    });
+    return { id, promise };
+  }
+
+  function ackMutation(id: string, success: boolean, error?: string) {
+    const entry = pendingMutations.get(id);
+    if (!entry) return;
+    pendingMutations.delete(id);
+    clearTimeout(entry.timer);
+    entry.resolve({ ok: !!success, ...(error ? { error } : {}) });
+  }
+
   // Plain functions so methods can call each other without `this` binding
   // ambiguity (extensions sometimes destructure: `const { setState } = aethon`).
-  function _registerComponent(componentType: string, template: unknown): void {
-    if (!componentType || typeof componentType !== "string") return;
+  function _registerComponent(
+    componentType: string,
+    template: unknown,
+  ): Promise<MutationResult> {
+    if (!componentType || typeof componentType !== "string") {
+      return Promise.resolve({ ok: false, error: "componentType required" });
+    }
     // Accept both shapes:
     //   - bare component:    { id, type, props?, children? }
     //   - payload wrapper:   { components: [<single component>] }
@@ -872,14 +953,23 @@ async function main() {
       if (wrapped.length === 1) normalized = wrapped[0];
     }
     extensionComponents.set(componentType, normalized);
+    const { id, promise } = trackMutation();
     send({
       type: "extension_components",
+      mutationId: id,
       components: Object.fromEntries(extensionComponents),
     });
     scheduleStateFileWrite();
+    return promise;
   }
-  function _setState(path: string, value: unknown, sourceTabId?: string): void {
-    if (!path || typeof path !== "string") return;
+  function _setState(
+    path: string,
+    value: unknown,
+    sourceTabId?: string,
+  ): Promise<MutationResult> {
+    if (!path || typeof path !== "string") {
+      return Promise.resolve({ ok: false, error: "path required" });
+    }
     // tabId attribution priority:
     //   1. explicit sourceTabId (handler-scoped ctx.setState)
     //   2. tabContext.getStore() — per-turn ALS value, propagates through
@@ -910,12 +1000,15 @@ async function main() {
     } else {
       extensionStateTree = setAtPointer(extensionStateTree, path, value);
     }
+    const { id, promise } = trackMutation();
     send({
       type: "state_patch",
+      mutationId: id,
       path,
       value,
       ...(attributedTab ? { tabId: attributedTab } : {}),
     });
+    return promise;
   }
   // Pi may re-run extension register() per session, and `tabs` create
   // sessions on demand — so without dedup, every new tab would re-add
@@ -935,17 +1028,23 @@ async function main() {
     // file undercounted what the agent could reach via onEvent.
     scheduleStateFileWrite();
   }
-  function _setLayout(payload: unknown): void {
-    if (!payload || typeof payload !== "object") return;
+  function _setLayout(payload: unknown): Promise<MutationResult> {
+    if (!payload || typeof payload !== "object") {
+      return Promise.resolve({ ok: false, error: "payload required" });
+    }
     extensionLayout = payload;
     // The new layout replaces whatever the pending patches were
     // targeting — drop them so they don't replay against the new tree.
     pendingLayoutPatches = [];
-    send({ type: "layout_set", payload });
+    const { id, promise } = trackMutation();
+    send({ type: "layout_set", mutationId: id, payload });
     scheduleStateFileWrite();
+    return promise;
   }
-  function _patchLayout(path: string, value: unknown): void {
-    if (!path || typeof path !== "string") return;
+  function _patchLayout(path: string, value: unknown): Promise<MutationResult> {
+    if (!path || typeof path !== "string") {
+      return Promise.resolve({ ok: false, error: "path required" });
+    }
     // Apply into the retained extension layout if there is one; otherwise
     // queue against the default layout so reload-replay still applies
     // it. The live frontend gets the same `layout_patch` event either
@@ -955,15 +1054,19 @@ async function main() {
     } else {
       pendingLayoutPatches.push({ path, value });
     }
-    send({ type: "layout_patch", path, value });
+    const { id, promise } = trackMutation();
+    send({ type: "layout_patch", mutationId: id, path, value });
     scheduleStateFileWrite();
+    return promise;
   }
   function _registerSidebarSection(section: {
     id: string;
     title: string;
     items?: { id: string; label: string; active?: boolean }[];
-  }): void {
-    if (!section || typeof section.id !== "string") return;
+  }): Promise<MutationResult> {
+    if (!section || typeof section.id !== "string") {
+      return Promise.resolve({ ok: false, error: "section.id required" });
+    }
     const existing =
       ((extensionStateTree.sidebar as Record<string, unknown> | undefined)
         ?.extraSections as { id: string }[] | undefined) ?? [];
@@ -971,31 +1074,34 @@ async function main() {
     const next = idx >= 0
       ? existing.map((s, i) => (i === idx ? section : s))
       : [...existing, section];
-    _setState("/sidebar/extraSections", next);
+    return _setState("/sidebar/extraSections", next);
   }
   // Register a color scheme. Extension-side, the contract is "give me an
   // id, a label, and a CSS-variable map" — the bridge sanitizes it (see
   // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
   // from the full list and appends id/label entries to /sidebar/themes
   // alongside the built-in dark/light items.
-  function _registerTheme(theme: unknown): void {
+  function _registerTheme(theme: unknown): Promise<MutationResult> {
     const normalized = normalizeTheme(theme);
     if (!normalized) {
       const id = (theme as { id?: unknown } | null)?.id;
       const reserved =
         typeof id === "string" && RESERVED_THEME_IDS.has(id.trim());
-      send({
-        type: "error",
-        message: reserved
-          ? `registerTheme: id "${id}" is reserved (built-in theme)`
-          : "registerTheme: theme requires {id, label?, vars}",
-      });
-      return;
+      const errorMsg = reserved
+        ? `registerTheme: id "${id}" is reserved (built-in theme)`
+        : "registerTheme: theme requires {id, label?, vars}";
+      // notice (non-terminal) — register failures shouldn't clobber
+      // a running prompt's UI state. The Promise carries the same
+      // detail for awaiters.
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
     }
     extensionThemes.set(normalized.id, normalized);
     const list = [...extensionThemes.values()];
-    send({ type: "extension_themes", themes: list });
+    const { id, promise } = trackMutation();
+    send({ type: "extension_themes", mutationId: id, themes: list });
     scheduleStateFileWrite();
+    return promise;
   }
 
   // Introspection — read-only views over the live state. Lets the agent
@@ -1391,6 +1497,9 @@ async function main() {
       value?: unknown;
       payload?: unknown;
       theme?: unknown;
+      mutationId?: string;
+      success?: boolean;
+      error?: string;
       event?: {
         componentId?: string;
         componentType?: string;
@@ -1577,7 +1686,26 @@ async function main() {
           break;
         }
         case "report": {
+          // Frontend has rendered and is ready to ack mutations. Flip the
+          // gate so subsequent mutations return Promises that wait for an
+          // ack instead of resolving immediately. Pre-report mutations
+          // were assumed-ok via retained-state replay.
+          frontendReady = true;
           emitReady();
+          break;
+        }
+        case "mutation_ack": {
+          // Frontend acknowledges a mutation by id. Resolves the
+          // corresponding pending Promise so awaiters unblock.
+          const mid = (msg as { mutationId?: unknown }).mutationId;
+          const success = (msg as { success?: unknown }).success;
+          const errorField = (msg as { error?: unknown }).error;
+          if (typeof mid !== "string") break;
+          ackMutation(
+            mid,
+            success === undefined ? true : !!success,
+            typeof errorField === "string" ? errorField : undefined,
+          );
           break;
         }
         case "a2ui_event": {

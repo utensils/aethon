@@ -8,6 +8,21 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Mutation feedback channel.** Every mutating outbound bridge → frontend
+  message (`state_patch`, `layout_set`, `layout_patch`,
+  `extension_components`, `extension_themes`) now carries a `mutationId`.
+  The frontend acks via `mutation_ack { mutationId, success, error? }`,
+  and the bridge resolves a per-mutation Promise so the public API
+  (`aethon.setState`, `aethon.setLayout`, `aethon.patchLayout`,
+  `aethon.registerComponent`, `aethon.registerTheme`,
+  `aethon.registerSidebarSection`) returns `Promise<{ok: boolean,
+  error?: string}>`. Backwards compatible: sync callers ignore the
+  Promise and behave exactly as before. Failure modes: `timeout` (5 s
+  no ack), `frontend_rejected: <detail>`, bridge-side validation. Calls
+  made before the frontend has reported `ready` resolve immediately
+  with `{ok: true}` so register-time awaits don't block on the cold-start
+  webview. System prompt + bundled docs (`docs/aethon-agent/api.md`)
+  document the contract.
 - **`eventHandlers` in `RuntimeSnapshot` and `~/.aethon/state.json`.**
   Match-shape only (templateRootType / componentType / descendantId /
   eventType) — no function bodies, so the snapshot stays small and
