@@ -709,11 +709,20 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
-    let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&toggle_terminal)
-        .item(&clear_chat)
-        .item(&stop_prompt)
-        .build()?;
+    // On macOS the App submenu owns "Check for Updates…" (HIG-standard
+    // location). Non-macOS desktops put it in View since they have no
+    // App submenu and stuffing it into File would clash with tab items.
+    let view_menu = {
+        let mut b = SubmenuBuilder::new(app, "View")
+            .item(&toggle_terminal)
+            .item(&clear_chat)
+            .item(&stop_prompt);
+        #[cfg(not(target_os = "macos"))]
+        {
+            b = b.separator().item(&check_updates);
+        }
+        b.build()?
+    };
 
     let tabs_menu = SubmenuBuilder::new(app, "Tabs")
         .item(&new_tab)
