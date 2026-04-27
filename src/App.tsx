@@ -15,7 +15,7 @@ import {
 import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
-import { setPointer } from "./utils/jsonPointer";
+import { deletePointer, setPointer } from "./utils/jsonPointer";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -396,7 +396,7 @@ export default function App() {
           ...prev,
           // Use as the initial display value; the actual session model
           // is still authoritative and wins on `ready` hydration.
-          model: (prev.model as string | undefined) || config.agent.model!,
+          model: (prev.model) || config.agent.model!,
         }));
       }
     })();
@@ -431,7 +431,7 @@ export default function App() {
     if (
       c.type === "image" &&
       typeof c.props?.src === "string" &&
-      (c.props.src as string).startsWith("data:")
+      (c.props.src).startsWith("data:")
     ) {
       next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
     }
@@ -663,7 +663,11 @@ export default function App() {
   // Per-tab promise that resolves once the bridge has accepted tab_open.
   // sendChat awaits this before invoking send_message so the bridge can't
   // race-create the tab via the chat path with the wrong model.
-  const pendingTabOpens = useRef(new Map<string, Promise<void>>());
+  // Map of tab id → in-flight tab_open Promise. Tracks pending so a
+  // fast first chat on the new tab can await registration before sending.
+  // The Promise's resolved value is unused (Tauri invoke returns
+  // Promise<unknown>); we only care about completion.
+  const pendingTabOpens = useRef(new Map<string, Promise<unknown>>());
 
   function newTab(restoreId?: string, restoreLabel?: string) {
     // restoreId lets the caller open a tab with a specific tabId so the
@@ -721,7 +725,7 @@ export default function App() {
         tabId: id,
         ...(inheritedModel ? { model: inheritedModel } : {}),
       }),
-    }) as Promise<void>;
+    });
     // Track until done so a fast first chat on the new tab can wait
     // for the bridge to register the tab + initial model before send.
     // Otherwise send_message would race tab_open and the bridge would
@@ -1215,6 +1219,7 @@ export default function App() {
         const extEventRoutes = (data.extensionEventRoutes as
           | { componentId?: string; eventType?: string }[]
           | undefined) ?? [];
+        const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
         const discTabs = (data.discoveredTabs as
           | { tabId: string; lastModified: number }[]
           | undefined) ?? [];
@@ -1276,6 +1281,19 @@ export default function App() {
           baseLayout,
         );
         setLayout(patchedLayout);
+        // Snapshot the prune set BEFORE the setState callback so the side
+        // effect of updating lastExtensionStateKeysRef can stay outside
+        // setState — otherwise concurrent-mode re-runs of the callback
+        // would update the ref multiple times and race with the next
+        // ready's read. Compute willPrune (= prev set − new set) here
+        // and freeze it for the duration of this handler.
+        const willPruneKeys: string[] = [];
+        for (const stale of lastExtensionStateKeysRef.current) {
+          if (!extStateKeys.includes(stale)) willPruneKeys.push(stale);
+        }
+        // Update the ref BEFORE calling setState so the next ready (which
+        // may arrive in the same React batch) sees the new "previous" set.
+        lastExtensionStateKeysRef.current = new Set(extStateKeys);
         setState((prev) => {
           // Three-layer hydration in priority order (lowest → highest):
           //   1. extension layout state — TREATED AS BOOT DEFAULTS
@@ -1285,18 +1303,21 @@ export default function App() {
           //   2. extension setState patches (last-write-wins overrides)
           //   3. ready-owned runtime fields (model picker, status, etc.)
           //
-          // Known limitation: keys an extension wrote earlier in the
-          // session via setState are NOT cleared when that extension
-          // stops reporting them (e.g. uninstalled mid-session). They
-          // survive in `prev` and re-appear here. Reset Aethon to clear
-          // — fix would require the bridge tracking extension-owned
-          // keys explicitly. Acceptable for the current scope.
+          // Stale-key pruning: drop paths the previous ready tracked but
+          // this ready dropped (an extension was uninstalled). Without
+          // this, `prev` keeps the leftover slice forever (deepMerge
+          // doesn't remove keys, only adds/updates). The willPruneKeys
+          // diff was captured outside this callback so it's stable
+          // across concurrent-mode re-runs.
           let next: Record<string, unknown> = { ...prev };
+          for (const stale of willPruneKeys) {
+            next = deletePointer(next, stale);
+          }
           if (extLayout && extLayout.state) {
             // Defaults semantics: deep-merge layout into a fresh object
             // and let prev win for any overlapping keys.
             next = deepMergeState(
-              extLayout.state as Record<string, unknown>,
+              extLayout.state,
               next,
             );
           }
@@ -1374,7 +1395,7 @@ export default function App() {
             connection: "connected",
             recentSessions,
             sidebar: {
-              ...((next.sidebar as Record<string, unknown>) ?? {}),
+              ...((next.sidebar) ?? {}),
               models: models.map((m) => ({
                 id: m.id,
                 label: m.label,
@@ -1416,7 +1437,7 @@ export default function App() {
               tabId: t.id,
               ...(t.model ? { model: t.model } : {}),
             }),
-          }) as Promise<void>;
+          });
           pendingTabOpens.current.set(t.id, opening);
           opening
             .catch(() => {
@@ -1983,6 +2004,14 @@ export default function App() {
   // smaller list (extension uninstall / hot-reload drop). Without this
   // we'd never garbage-collect names removed from the bridge's map.
   const extensionSlashNamesRef = useRef<Set<string>>(new Set());
+  // Set of JSON Pointer paths the bridge tracked as extension-owned in
+  // the LAST `ready` snapshot. On the next `ready`, we delete these from
+  // the live state before merging the new tree — so a deleted extension's
+  // sidebar section / canvas card / state slice goes away instead of
+  // lingering as a frozen artifact. The bridge's NEW snapshot replaces
+  // this ref after the merge, so the next ready prunes whatever's stale
+  // by then. Boots empty (no prior ready means no stale keys yet).
+  const lastExtensionStateKeysRef = useRef<Set<string>>(new Set());
 
   // Surface the slash command list into layout state so the chat-input
   // autocomplete can resolve it via `$ref:/slashCommands`. Done once on

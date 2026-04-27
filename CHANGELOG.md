@@ -8,6 +8,54 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Test coverage scaffolding.** Cargo unit tests under
+  `src-tauri/src/helpers.rs` cover `validate_state_name`,
+  `parse_config_toml`, and `clamp_font_size` (14 cases). Vitest covers
+  `utils/jsonPointer`, `utils/dataBinding`, `slashCommands`, and the
+  layout-slot catalogue / inspector (53 cases, ~95% coverage on those
+  modules). Both wired into the new `test` and `coverage` devshell
+  commands.
+- **ESLint with type-aware rules + react-hooks plugin.** Frontend +
+  agent linted via `bunx eslint .` with 0 errors and a small set of
+  tracked warnings (`react-hooks/set-state-in-effect`, `react-hooks/refs`,
+  `react-refresh/only-export-components`) flagging known anti-patterns
+  in `App.tsx` / `ChatInput` / `registry.tsx` to address in a follow-up.
+- **`check` devshell command runs the full CI gate** — clippy + tsc +
+  eslint + cargo test + vitest, in order, fail-fast.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) — runs the same
+  gate on push / PR across `ubuntu-24.04` + `macos-15`. TS job needs
+  Bun only; Rust job pins toolchain `1.92.0`, installs the GTK/WebKit
+  closure on Linux, and reuses `Swatinem/rust-cache`.
+- **Extension-deletion UI cleanup.** Bridge tracks
+  `extensionStateKeys: Set<string>` of every JSON Pointer path written
+  via extension `setState`, reports the list in `ready`. Frontend keeps
+  a ref of the previous ready's set; on each new ready, paths in
+  (previous − new) are deleted from live state via a new
+  `deletePointer` helper. So uninstalling an extension wipes its
+  sidebar section / canvas card / state slice without a page reload.
+- **Cargo helpers extracted for testability.** `validate_state_name` +
+  `parse_config_toml` + `clamp_font_size` moved out of `lib.rs` into
+  `src-tauri/src/helpers.rs` so they can be unit-tested without a
+  Tauri `AppHandle`. `read_config` now also clamps `[ui] font_size` to
+  [10, 24] and warns on out-of-range values.
+- **`globalThis.aethon.getLayoutSlots()`** documented in `api.md` —
+  the bridge-side accessor for the canonical slot catalogue (matching
+  the existing `window.aethon.layoutSlots` on the frontend).
+
+### Changed
+
+- **README.md beautified.** Categorized feature list (Workspace /
+  Agent-controlled UI / Extensibility), expanded devshell command table
+  with `lint` / `test` / `coverage`, larger architecture diagram with
+  layer responsibility table, link out to `docs/aethon-agent/`.
+- **Hero SVGs redesigned.** `assets/brand/aethon-hero-{dark,light}.svg`
+  now render the wordmark as a single text element (robust kerning
+  across font fallbacks), with a properly-anchored π badge over the
+  upper-right serif of the Æ. Larger viewBox (960×240) for clean
+  rendering at typical README widths.
+- **CLAUDE.md status section** updated to reflect M1–M5 completion +
+  test/lint stack.
+
 - **Extension lifecycle feedback.** Bridge now emits a generic
   `extension_lifecycle` event for every extension load (`{name, source,
   status: "loaded"|"failed"|"skipped", error?, path}`) from

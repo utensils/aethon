@@ -36,6 +36,7 @@ result-*
 *.profraw
 *.profdata
 lcov.info
+coverage/
 
 # Phase test harness and ad-hoc screenshots (local-only)
 .playwright-mcp/

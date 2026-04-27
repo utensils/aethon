@@ -311,7 +311,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
   const liveSubtree =
-    live && typeof live === "object" && "components" in (live as object)
+    live && typeof live === "object" && "components" in (live)
       ? (live as { components: A2UIComponent[] })
       : null;
 

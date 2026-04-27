@@ -844,6 +844,13 @@ async function main() {
   // preserved on iteration so the sidebar shows them in registration order.
   const extensionThemes = new Map<string, ThemeRecord>();
   let extensionStateTree: Record<string, unknown> = {};
+  // Every JSON Pointer path written via extension setState (excluding the
+  // per-tab mirrored slices below). Reported in the `ready` snapshot so
+  // the frontend can wipe stale slices when an extension is uninstalled
+  // — the next ready's tree no longer has those paths, but the frontend's
+  // local state still does. The frontend uses the previous ready's set
+  // as the "what to clear" list before merging the new tree.
+  const extensionStateKeys = new Set<string>();
   // Per-tab mirrored-key writes (canvas / messages / draft / waiting /
   // queueCount / model). Kept separate from the global extensionStateTree
   // so a webview reload's `ready` can replay each tab's UI state without
@@ -1276,7 +1283,7 @@ async function main() {
     if (
       template &&
       typeof template === "object" &&
-      !("type" in (template as object)) &&
+      !("type" in (template)) &&
       Array.isArray((template as { components?: unknown }).components)
     ) {
       const wrapped = (template as { components: unknown[] }).components;
@@ -1333,6 +1340,7 @@ async function main() {
       perTabExtState.set(attributedTab, setAtPointer(before, path, value));
     } else {
       extensionStateTree = setAtPointer(extensionStateTree, path, value);
+      extensionStateKeys.add(path);
     }
     const { id, promise } = trackMutation();
     send({
@@ -1800,6 +1808,12 @@ async function main() {
       })),
       extensionComponents: Object.fromEntries(extensionComponents),
       extensionState: extensionStateTree,
+      // List of paths the bridge currently tracks as extension-owned.
+      // Frontend uses the PREVIOUS ready's list as a "stale slice clear"
+      // set so an uninstalled extension's leftover state vanishes from
+      // local state on the next ready. Live state (chat, draft, etc.)
+      // is unaffected since those paths aren't in this set.
+      extensionStateKeys: [...extensionStateKeys],
       extensionTabState: Object.fromEntries(perTabExtState),
       extensionLayout,
       extensionLayoutPatches: pendingLayoutPatches,
