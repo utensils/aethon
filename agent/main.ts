@@ -368,6 +368,12 @@ async function main() {
   // re-emits it instead of falling back to the boot layout. `undefined`
   // means no extension has overridden the default layout.
   let extensionLayout: unknown = undefined;
+  // Patches applied via patchLayout when no extensionLayout has been set
+  // yet — they target the default layout. Retained as an ordered list
+  // so reload-replay applies them in the same sequence the live frontend
+  // received them. Cleared whenever setLayout is called (the new layout
+  // replaces everything those patches were targeting).
+  let pendingLayoutPatches: { path: string; value: unknown }[] = [];
 
   // Handlers registered by extensions for a2ui_event messages from the
   // frontend. Each entry's `match` predicates filter which events the
@@ -414,18 +420,21 @@ async function main() {
   function _setLayout(payload: unknown): void {
     if (!payload || typeof payload !== "object") return;
     extensionLayout = payload;
+    // The new layout replaces whatever the pending patches were
+    // targeting — drop them so they don't replay against the new tree.
+    pendingLayoutPatches = [];
     send({ type: "layout_set", payload });
   }
   function _patchLayout(path: string, value: unknown): void {
     if (!path || typeof path !== "string") return;
-    // Apply into the retained layout so reload-replay matches the live
-    // frontend state. If no setLayout has been called yet, the patch
-    // can't apply (we don't have the boot layout in the bridge); the
-    // event still goes out so the active mounted frontend handles it,
-    // and the next remount falls back to the boot layout — same trade
-    // pi extensions accept when patching their host's settings.
+    // Apply into the retained extension layout if there is one; otherwise
+    // queue against the default layout so reload-replay still applies
+    // it. The live frontend gets the same `layout_patch` event either
+    // way and folds it via its own array-preserving patcher.
     if (extensionLayout) {
       extensionLayout = patchLayoutTree(extensionLayout, path, value);
+    } else {
+      pendingLayoutPatches.push({ path, value });
     }
     send({ type: "layout_patch", path, value });
   }
@@ -497,6 +506,7 @@ async function main() {
       extensionComponents: Object.fromEntries(extensionComponents),
       extensionState: extensionStateTree,
       extensionLayout,
+      extensionLayoutPatches: pendingLayoutPatches,
     });
   }
 

@@ -369,21 +369,27 @@ export default function App() {
           | Record<string, unknown>
           | undefined) ?? {};
         const extLayout = data.extensionLayout as A2UIPayload | undefined;
+        const extPatches = (data.extensionLayoutPatches as
+          | { path: string; value: unknown }[]
+          | undefined) ?? [];
         registry.setTemplates(extComponents);
-        // Restore any extension-supplied layout. Falls back to the boot
-        // layout when none is reported so a removed/disabled extension
-        // stops bleeding stale chrome across agent reloads. The layout's
-        // own `state` hydrates below alongside extensionState — same
-        // semantics as the live `layout_set` path so replay matches.
-        if (
+        // Restore any extension-supplied layout, then replay queued
+        // patches. Falls back to the boot layout when none is reported
+        // so a removed/disabled extension stops bleeding stale chrome
+        // across agent reloads. The layout's own `state` hydrates below
+        // alongside extensionState — same semantics as the live
+        // `layout_set` path so replay matches.
+        const baseLayout: A2UIPayload =
           extLayout &&
           typeof extLayout === "object" &&
           Array.isArray(extLayout.components)
-        ) {
-          setLayout(extLayout);
-        } else {
-          setLayout(BOOT_LAYOUT);
-        }
+            ? extLayout
+            : BOOT_LAYOUT;
+        const patchedLayout = extPatches.reduce<A2UIPayload>(
+          (acc, p) => layoutPatch(acc, p.path, p.value),
+          baseLayout,
+        );
+        setLayout(patchedLayout);
         setState((prev) => {
           // Three-layer hydration in priority order (lowest → highest):
           //   1. extension layout state — TREATED AS BOOT DEFAULTS
