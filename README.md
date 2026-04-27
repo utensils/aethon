@@ -19,7 +19,7 @@
   <img alt="Platforms: macOS | Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey">
 </p>
 
-> ⚠️ **Early development — not ready for use.** This is a scaffold. Expect breaking changes and missing features.
+> ⚠️ **Early development — not ready for production use.** API and protocol surface are still settling; expect breaking changes between commits.
 
 Aethon is a cross-platform desktop application that embeds the pi coding agent
 and renders its output as rich, interactive UI via the [A2UI] protocol. Instead
@@ -31,6 +31,25 @@ The name comes from Greek mythology: Αἴθων, one of the horses that pulled
 Helios's sun chariot. The blazing one that shapes what you see.
 
 [A2UI]: https://github.com/google/a2ui
+
+## What you can do today
+
+- **Multi-tab agent sessions.** Each tab owns its own pi conversation, model,
+  draft, and terminal buffer. `⌘T` new, `⌘]` / `⌘[` next/prev, `⌘W` close.
+- **Native macOS menu + system tray.** App-specific items (New Tab, Toggle
+  Terminal, Stop Prompt, Check for Updates, …) plus the standard NS items
+  (Quit, Hide, Cut/Copy/Paste, Minimize) for free.
+- **Live terminal panel.** Toggle with `⌘\``. Streams the agent's bash output
+  per tab.
+- **Skills + themes via extensions.** Drop a `.ts` into `~/.aethon/extensions/`
+  and the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>`
+  to install an npm-distributed skill (manifest via `package.json#aethon`).
+- **Slash commands.** `/clear`, `/help`, `/theme`, `/model`, `/reset`,
+  `/terminal`, `/skills`. Unknown commands fall through to pi.
+- **Persistent chat history + theme.** Stored under `~/.aethon/`.
+
+See [`SPEC.md`](SPEC.md) for the full status checklist and [`CHANGELOG.md`](CHANGELOG.md)
+for recent changes.
 
 ## Stack
 
@@ -75,6 +94,12 @@ aethon/
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for architecture notes and implementation status.
+
+## Releasing
+
+[`RELEASING.md`](RELEASING.md) walks through generating an updater signing
+keypair, configuring GitHub Actions secrets, and cutting a release that the
+in-app updater can consume.
 
 ## License
 
