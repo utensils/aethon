@@ -282,8 +282,7 @@ export default function App() {
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
-    { id: "dark", label: "Dark" },
-    { id: "light", label: "Light" },
+    { id: "signature", label: "Æther — signature" },
   ];
 
   // Inject (or replace) the <style> element holding an extension theme's
@@ -369,9 +368,7 @@ export default function App() {
           ? trimmed
           : config.ui.theme
             ? config.ui.theme
-            : window.matchMedia?.("(prefers-color-scheme: light)").matches
-              ? "light"
-              : "dark";
+            : "signature";
       document.documentElement.dataset.theme = initial;
       // Apply [ui] font_size as a CSS custom property — components that
       // care can read it via var(--app-font-size, 14px). Clamped to a
@@ -918,8 +915,9 @@ export default function App() {
         active: t.id === stateRef.current.activeTabId,
       })),
       // Layout catalogue. Lets the user / agent swap between named
-      // layouts (default, single-pane, focus-mode) without having to
-      // ship a full setLayout payload. Extensions append more via
+      // layouts (workstation, editorial, command-deck, live-layout)
+      // without having to ship a full setLayout payload. Extensions
+      // append more via
       // registerLayout. Activation goes through setLayout so all the
       // existing state-merge / layout-bound-state semantics apply.
       listLayouts: (): LayoutCatalogueEntry[] =>

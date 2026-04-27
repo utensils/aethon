@@ -437,7 +437,7 @@ interface ThemeRecord {
 // with these labels and the rule comes from the static stylesheet, so
 // shadowing would either show a duplicate item or silently override
 // the built-in palette. The bridge rejects collisions here.
-const RESERVED_THEME_IDS = new Set(["dark", "light"]);
+const RESERVED_THEME_IDS = new Set(["signature"]);
 
 // Validate theme metadata. The id is constrained to a slug so it's safe
 // to embed in a CSS selector and a <style> element id; the variable
@@ -697,7 +697,7 @@ async function discoverPersistedTabs(): Promise<
 // Each file is a JSON object matching the registerTheme contract:
 //   { id: string, label?: string, vars: { "--bg": "...", "--text": "...", ... } }
 // Validated through the bridge's existing normalizeTheme so reserved ids
-// (dark/light) and malformed CSS variable names are rejected the same way
+// (signature) and malformed CSS variable names are rejected the same way
 // as extension-registered themes. Failures per file are logged and the
 // loader continues — one bad theme doesn't poison the directory.
 async function loadAethonThemeDirectory(
@@ -1422,7 +1422,7 @@ async function main() {
   // id, a label, and a CSS-variable map" — the bridge sanitizes it (see
   // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
   // from the full list and appends id/label entries to /sidebar/themes
-  // alongside the built-in dark/light items.
+  // alongside the built-in signature item.
   function _registerEventRoute(
     route: unknown,
   ): Promise<MutationResult> {

@@ -330,7 +330,7 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
 
   if (snapshot.themes.length > 0) {
     lines.push("");
-    lines.push("Registered themes (in addition to built-in dark/light):");
+    lines.push("Registered themes (in addition to the built-in signature palette):");
     for (const t of snapshot.themes) {
       lines.push(`- \`${t.id}\` — ${t.label}`);
     }

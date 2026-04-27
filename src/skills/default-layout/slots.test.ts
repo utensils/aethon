@@ -6,9 +6,10 @@ import {
   isKnownSlot,
   layoutSlots,
 } from "./slots";
-import layoutPayload from "./layout.a2ui.json";
-import singlePanePayload from "./single-pane.a2ui.json";
-import focusModePayload from "./focus-mode.a2ui.json";
+import workstationPayload from "./workstation.a2ui.json";
+import editorialPayload from "./editorial.a2ui.json";
+import commandDeckPayload from "./command-deck.a2ui.json";
+import liveLayoutPayload from "./live-layout.a2ui.json";
 
 describe("layout-slot catalogue", () => {
   it("ships every documented canonical slot", () => {
@@ -50,30 +51,44 @@ describe("layout-slot catalogue", () => {
 });
 
 describe("inspectLayoutSlotCoverage — built-in layouts", () => {
-  it("default-layout fills every canonical slot", () => {
-    const r = inspectLayoutSlotCoverage(layoutPayload);
+  it("workstation fills every canonical slot", () => {
+    const r = inspectLayoutSlotCoverage(workstationPayload);
     expect(r.missingRequired).toEqual([]);
     expect(r.unknownAreasUsed).toEqual([]);
     expect([...r.filledSlots].sort()).toEqual([...SLOT_NAMES].sort());
-    // default-layout uses {$ref} for `areas` so the inspector tags it.
+    // workstation uses {$ref} for `areas` so the inspector tags it.
     expect(r.dynamicAreas).toBe(true);
   });
 
-  it("single-pane covers required slots, omits sidebar/terminal", () => {
-    const r = inspectLayoutSlotCoverage(singlePanePayload);
+  it("editorial covers required slots, hosts sidebar via the spine column", () => {
+    const r = inspectLayoutSlotCoverage(editorialPayload);
     expect(r.missingRequired).toEqual([]);
     expect(r.unknownAreasUsed).toEqual([]);
     expect(r.filledSlots).toContain("canvas");
     expect(r.filledSlots).toContain("composer");
-    expect(r.filledSlots).not.toContain("sidebar");
-    expect(r.filledSlots).not.toContain("terminal");
-    expect(r.dynamicAreas).toBe(false);
+    expect(r.filledSlots).toContain("sidebar");
+    expect(r.filledSlots).toContain("status");
   });
 
-  it("focus-mode is the minimum viable layout", () => {
-    const r = inspectLayoutSlotCoverage(focusModePayload);
+  it("command-deck covers required slots and uses sidebar for the session rail", () => {
+    const r = inspectLayoutSlotCoverage(commandDeckPayload);
     expect(r.missingRequired).toEqual([]);
-    expect([...r.filledSlots].sort()).toEqual(["canvas", "composer", "status"]);
+    expect(r.unknownAreasUsed).toEqual([]);
+    expect(r.filledSlots).toContain("canvas");
+    expect(r.filledSlots).toContain("composer");
+    expect(r.filledSlots).toContain("sidebar");
+    expect(r.filledSlots).toContain("header");
+  });
+
+  it("live-layout adds an inspector pane alongside the canonical slots", () => {
+    const r = inspectLayoutSlotCoverage(liveLayoutPayload);
+    expect(r.missingRequired).toEqual([]);
+    // The inspector slot is non-canonical, so the inspector lists it under
+    // unknownAreasUsed — that's expected and stable for this layout.
+    expect(r.unknownAreasUsed).toEqual(["inspector"]);
+    expect(r.filledSlots).toContain("canvas");
+    expect(r.filledSlots).toContain("composer");
+    expect(r.filledSlots).toContain("sidebar");
   });
 });
 

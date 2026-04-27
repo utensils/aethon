@@ -4,50 +4,28 @@
   color: var(--text);
 }
 
-/* Default dark theme — palette mirrors the brand mark
-   (assets/brand/aethon-logo.svg): warm near-black tile #1f1f23,
-   cream Bodoni text #fef3e2, muted orange accent #ff6a18. The
-   App attribute-sets `data-theme` on <html> so theme switching
-   stays an attribute swap. */
+/* Æther signature theme — the only theme. Deep ink-blue base, cream
+   Bodoni text (#fef3e2), brass-orange accent (#ff6a18). The brand's
+   signature look. The App attribute-sets `data-theme="signature"` on
+   <html> so future palette extensions still hang off the same hook. */
 :root,
-:root[data-theme="dark"] {
+:root[data-theme="signature"] {
   color-scheme: dark;
-  --bg: #161618;
-  --bg-elev: #1f1f23;
-  --bg-input: #25252a;
-  --border: #2e2e34;
+  --bg: #0e1118;
+  --bg-elev: #161a24;
+  --bg-input: #1c2030;
+  --border: #262b3a;
   --text: #fef3e2;
-  --text-dim: #9c9a92;
+  --text-dim: #8b91a8;
   --accent: #ff6a18;
-  --accent-soft: rgba(255, 106, 24, 0.18);
-  --accent-hover-tint: rgba(255, 106, 24, 0.08);
-  --accent-active-tint: rgba(255, 106, 24, 0.16);
-  --btn-text: #1f1f23;
-  --user-bubble: #2a2620;
-  --agent-bubble: #1f1f23;
-  --scrollbar-thumb: #2e2e34;
-  --scrollbar-thumb-hover: #3a3a40;
-}
-
-/* Light theme — cream paper background, deep ink text, same orange
-   accent so brand identity carries across themes. */
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #fef3e2;
-  --bg-elev: #fffaee;
-  --bg-input: #f5e8d0;
-  --border: #e3d8be;
-  --text: #1f1f23;
-  --text-dim: #6a6356;
-  --accent: #ff6a18;
-  --accent-soft: rgba(255, 106, 24, 0.18);
-  --accent-hover-tint: rgba(255, 106, 24, 0.08);
-  --accent-active-tint: rgba(255, 106, 24, 0.16);
-  --btn-text: #fef3e2;
-  --user-bubble: #fbe5c4;
-  --agent-bubble: #fffaee;
-  --scrollbar-thumb: #d8cdb3;
-  --scrollbar-thumb-hover: #b8ad94;
+  --accent-soft: rgba(255, 106, 24, 0.20);
+  --accent-hover-tint: rgba(255, 106, 24, 0.10);
+  --accent-active-tint: rgba(255, 106, 24, 0.18);
+  --btn-text: #0e1118;
+  --user-bubble: #1f2436;
+  --agent-bubble: #161a24;
+  --scrollbar-thumb: #262b3a;
+  --scrollbar-thumb-hover: #353b52;
 }
 
 * {
@@ -170,11 +148,13 @@ body {
 }
 
 .a2ui-sidebar-section-title {
-  padding: 6px 16px;
-  font-size: 0.7rem;
+  padding: 8px 16px 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .a2ui-sidebar-list {
@@ -184,12 +164,13 @@ body {
 }
 
 .a2ui-sidebar-item {
-  padding: 6px 16px;
-  font-size: 0.85rem;
+  padding: 5px 14px;
+  font-size: 0.8rem;
   cursor: pointer;
   color: var(--text);
   transition: background 120ms ease, color 120ms ease;
   user-select: none;
+  border-left: 2px solid transparent;
 }
 
 .a2ui-sidebar-item:hover {
@@ -201,16 +182,13 @@ body {
   background: var(--accent-active-tint);
 }
 
-/* Active selection (e.g. the currently-loaded model). Dot prefix keeps the
-   label aligned even when nothing is active. */
+/* Active selection — accent stripe on the left + tinted background, no dot
+   prefix. Aligns the label with siblings and keeps the chrome quiet. */
 .a2ui-sidebar-item-active {
   color: var(--accent);
   font-weight: 600;
-}
-.a2ui-sidebar-item-active::before {
-  content: "● ";
-  color: var(--accent);
-  margin-right: 2px;
+  background: var(--accent-hover-tint);
+  border-left-color: var(--accent);
 }
 
 .a2ui-sidebar-empty {
@@ -225,8 +203,8 @@ body {
 .app-header {
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
-  padding: 0 16px !important;
-  height: 44px;
+  padding: 0 14px !important;
+  height: 38px;
 }
 
 .app-header-brand {
@@ -236,12 +214,43 @@ body {
 }
 
 .app-header-logo {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   display: block;
-  border-radius: 6px;
+  border-radius: 5px;
   /* The mark already has its own dark tile background, so the radius
      just clips the outer rounded corners cleanly against the header. */
+}
+
+/* "agent live" / "agent thinking" pill rendered as a tiny dot + label on
+   the right side of the header. Mirrors the design's monospace pill. */
+.app-header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.66rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.app-header-pill::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: #19c332;
+}
+.app-header-pill[data-state="thinking"] {
+  color: var(--accent);
+}
+.app-header-pill[data-state="thinking"]::before {
+  background: var(--accent);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ae-pill-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 /* ---- Main canvas / chat history ----------------------------------------- */
@@ -690,21 +699,36 @@ body {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  height: 24px;
+  height: 22px;
   padding: 0 12px;
   background: var(--bg-elev);
   border-top: 1px solid var(--border);
-  font-size: 0.72rem;
+  font-size: 0.66rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
   color: var(--text-dim);
   width: 100%;
 }
 
 .a2ui-status-left {
   text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.a2ui-status-left::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+  flex-shrink: 0;
 }
 
 .a2ui-status-center {
   text-align: center;
+  color: var(--text);
 }
 
 .a2ui-status-right {
@@ -720,13 +744,14 @@ body {
 .a2ui-tab-strip {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 2px;
-  padding: 4px 8px 0;
-  background: var(--bg);
+  padding: 0 8px;
+  background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   min-height: 32px;
+  height: 32px;
 }
 
 .a2ui-tab {
@@ -734,33 +759,51 @@ body {
   align-items: center;
   gap: 6px;
   padding: 6px 10px 6px 12px;
-  background: var(--bg-elevated, var(--bg));
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   border-bottom: none;
   border-radius: 6px 6px 0 0;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 0.78rem;
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
   position: relative;
   top: 1px; /* sits flush with the tab-strip's bottom border when active */
+  margin-bottom: -1px;
 }
 
 .a2ui-tab:hover {
   color: var(--text);
-  background: var(--bg-hover, var(--bg-elevated, var(--bg)));
+  background: var(--accent-hover-tint);
 }
 
 .a2ui-tab-active {
   color: var(--text);
   background: var(--bg);
+  border-color: var(--border);
   border-bottom: 1px solid var(--bg);
   box-shadow: 0 -2px 0 0 var(--accent) inset;
 }
 
+/* Dirty indicator — small accent dot rendered before the label when a
+   tab carries unsaved/in-flight state (e.g. an active prompt). */
+.a2ui-tab-dirty::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--accent);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
 .a2ui-tab-label {
   pointer-events: none;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .a2ui-tab-close {
@@ -843,4 +886,626 @@ body {
   min-height: 0;
   padding: 6px;
   width: 100%;
+}
+
+/* =========================================================================
+   Editorial layout — Æπ as system motif. Vertical brand spine on the left,
+   serif header with italic π, chapter-style tabs, ornamental Æ in canvas.
+   ========================================================================= */
+
+.ae-spine {
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.ae-spine-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.ae-spine-title {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.4em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-top: 8px;
+  white-space: nowrap;
+}
+
+.ae-spine-spacer {
+  flex: 1;
+}
+
+.ae-spine-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ae-spine-buttons button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 7px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
+.ae-spine-buttons button:hover {
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+}
+
+.ae-spine-buttons button[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ae-editorial-header {
+  border-bottom: 1px solid var(--border);
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 100%;
+  background: var(--bg-elev);
+}
+
+.ae-editorial-title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  flex-shrink: 0;
+}
+
+.ae-editorial-title-main {
+  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.ae-editorial-title-pi {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.ae-editorial-subtitle {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ae-editorial-tabs {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  overflow: hidden;
+}
+
+.ae-editorial-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+.ae-editorial-tab:hover { opacity: 0.85; }
+.ae-editorial-tab[data-active="true"] { opacity: 1; }
+
+.ae-editorial-tab-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+}
+
+.ae-editorial-tab-meta .ae-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+.ae-editorial-tab-title {
+  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 1px;
+}
+
+.ae-editorial-tab[data-active="true"] .ae-editorial-tab-title {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.ae-editorial-tab-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 4px;
+  margin-left: 4px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.ae-editorial-tab-close:hover {
+  background: var(--accent-hover-tint);
+  color: var(--text);
+}
+
+.ae-editorial-tab-new {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  align-self: center;
+}
+.ae-editorial-tab-new:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Big italic Æ ornament floating in the canvas */
+.ae-ornament {
+  position: absolute;
+  right: -60px;
+  bottom: -40px;
+  pointer-events: none;
+  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 26rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--accent) 5%, transparent);
+  user-select: none;
+}
+
+/* =========================================================================
+   Command-deck layout — vertical session rail + persistent ⌘ command bar
+   replaces the chrome tab strip.
+   ========================================================================= */
+
+.ae-command-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  flex: 1;
+  max-width: 540px;
+}
+
+.ae-command-bar-icon {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+}
+
+.ae-command-bar-text {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-command-bar-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-elev);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.ae-agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ae-agent-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+
+/* Vertical session rail — replaces sidebar in command-deck. Each tab
+   becomes a card with model + last-active hint. */
+.ae-session-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.ae-session-rail-section {
+  padding: 8px 6px 4px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+}
+
+.ae-session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+}
+.ae-session-card:hover {
+  background: var(--accent-hover-tint);
+}
+.ae-session-card[data-active="true"] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.ae-session-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.06em;
+}
+
+.ae-session-card-meta-dot {
+  margin-left: auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+.ae-session-card-title {
+  font-size: 0.78rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+.ae-session-card[data-active="true"] .ae-session-card-title {
+  font-weight: 600;
+}
+
+.ae-session-card-hint {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ae-session-rail-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  margin-left: auto;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.ae-session-rail-close:hover {
+  background: var(--accent-hover-tint);
+  color: var(--text);
+}
+
+.ae-session-rail-new {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  margin-left: auto;
+}
+.ae-session-rail-new:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ae-session-rail-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  height: 46px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ae-session-rail-header-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* =========================================================================
+   Live-layout layout — agent rewrites its own UI live. 3-column grid with
+   inspector pane on the right + sticky setLayout toast at bottom of canvas.
+   ========================================================================= */
+
+.ae-live-layout-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: ae-layout-pulse 1.4s ease-out infinite;
+  flex-shrink: 0;
+}
+.ae-live-layout-pill::before {
+  content: "✺";
+  font-style: normal;
+}
+
+@keyframes ae-layout-pulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
+.ae-inspector {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ae-inspector-header {
+  height: 38px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ae-inspector-header-title {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.ae-inspector-header-icon {
+  color: var(--accent);
+  display: inline-flex;
+}
+
+.ae-inspector-badge {
+  margin-left: auto;
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  letter-spacing: 0.08em;
+}
+
+.ae-inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ae-inspector-section-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ae-inspector-pre {
+  margin: 0;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  overflow: auto;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.ae-inspector-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+}
+
+.ae-inspector-kv-row {
+  display: flex;
+  gap: 8px;
+}
+.ae-inspector-kv-row > span:first-child {
+  color: var(--text-dim);
+}
+
+.ae-inspector-op {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+  color: var(--text);
+}
+.ae-inspector-op[data-recent="true"] {
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+.ae-inspector-op-when {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+/* Sticky setLayout toast — shows the diff with undo/keep buttons. */
+.ae-layout-toast {
+  position: sticky;
+  bottom: 12px;
+  margin: 12px 18px 0;
+  background: var(--bg-elev);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.74rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.ae-layout-toast-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ae-layout-toast-row-title {
+  font-weight: 700;
+  color: var(--accent);
+}
+.ae-layout-toast-row-when {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 0.65rem;
+}
+
+.ae-layout-toast-diff {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.ae-layout-toast-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.ae-layout-toast-btn {
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.7rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ae-layout-toast-btn[data-primary="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.ae-layout-toast-btn:hover {
+  background: var(--accent-hover-tint);
+}
+
+.ae-layout-toast-meta {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 0.66rem;
 }

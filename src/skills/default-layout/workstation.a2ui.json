@@ -51,12 +51,11 @@
               ]
             },
             {
-              "id": "header-status",
-              "type": "text",
+              "id": "header-pill",
+              "type": "agent-status-pill",
               "props": {
-                "content": { "$ref": "/status" },
-                "variant": "small",
-                "color": "var(--text-dim)"
+                "label": { "$ref": "/agentStatus/label" },
+                "state": { "$ref": "/agentStatus/state" }
               }
             }
           ]
@@ -71,14 +70,14 @@
             "sections": [
               {
                 "id": "skills",
-                "title": "Skills",
+                "title": "skills",
                 "items": [
                   { "id": "skill-layout", "label": "default-layout" }
                 ]
               },
               {
                 "id": "panels",
-                "title": "Panels",
+                "title": "panels",
                 "items": [
                   { "id": "toggle-terminal", "label": "Toggle Terminal" },
                   { "id": "clear-chat", "label": "Clear Chat" }
@@ -86,17 +85,17 @@
               },
               {
                 "id": "models",
-                "title": "Models",
+                "title": "models",
                 "items": { "$ref": "/sidebar/models" }
               },
               {
                 "id": "themes",
-                "title": "Themes",
+                "title": "themes",
                 "items": { "$ref": "/sidebar/themes" }
               },
               {
                 "id": "history",
-                "title": "Chat History",
+                "title": "chat history",
                 "items": { "$ref": "/sidebar/history" }
               }
             ],
@@ -190,6 +189,10 @@
     "empty": false,
     "hasTabs": true,
     "recentSessions": [],
+    "agentStatus": {
+      "label": "agent live",
+      "state": "live"
+    },
     "layout": {
       "sidebarVisible": true,
       "columns": "240px 1fr",
@@ -207,8 +210,7 @@
       "models": [],
       "extraSections": [],
       "themes": [
-        { "id": "dark", "label": "Dark" },
-        { "id": "light", "label": "Light" }
+        { "id": "signature", "label": "Æther — signature" }
       ]
     },
     "terminal": {

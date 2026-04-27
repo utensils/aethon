@@ -1,0 +1,130 @@
+{
+  "components": [
+    {
+      "id": "root-layout",
+      "type": "layout",
+      "props": {
+        "columns": "54px 1fr",
+        "rows": "52px 1fr auto auto auto",
+        "areas": [
+          "spine header",
+          "spine canvas",
+          "spine terminal",
+          "spine composer",
+          "spine status"
+        ]
+      },
+      "children": [
+        {
+          "id": "spine",
+          "type": "editorial-spine",
+          "props": {
+            "area": "sidebar",
+            "logoUrl": { "$ref": "/logoUrl" },
+            "title": "ÆTHON · π"
+          }
+        },
+        {
+          "id": "header",
+          "type": "editorial-header",
+          "props": {
+            "area": "header",
+            "title": "Æthon π",
+            "subtitle": "the blazing one",
+            "tabs": { "$ref": "/tabs" },
+            "activeId": { "$ref": "/activeTabId" }
+          }
+        },
+        {
+          "id": "main-canvas",
+          "type": "main-canvas",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/hasTabs" },
+            "slot": "/canvas",
+            "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "empty-state",
+          "type": "empty-state",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/empty" },
+            "title": "Æthon awaits.",
+            "subtitle": "Open a chapter to begin a session.",
+            "primaryButtonLabel": "New Chapter",
+            "recentSessions": { "$ref": "/recentSessions" },
+            "tips": [
+              "Press ⌘T to open a new conversation chapter.",
+              "Type / in the composer to see slash commands."
+            ]
+          }
+        },
+        {
+          "id": "terminal",
+          "type": "terminal",
+          "props": {
+            "area": "terminal",
+            "visible": { "$ref": "/terminal/open" },
+            "fontSize": 13,
+            "subscribeToBash": true,
+            "readOnly": true
+          }
+        },
+        {
+          "id": "chat-input",
+          "type": "chat-input",
+          "props": {
+            "area": "composer",
+            "visible": { "$ref": "/hasTabs" },
+            "value": { "$ref": "/draft" },
+            "placeholder": "Speak to Æthon…",
+            "disabled": { "$ref": "/waiting" },
+            "queueCount": { "$ref": "/queueCount" },
+            "commands": { "$ref": "/slashCommands" },
+            "onSubmit": "chat:send"
+          }
+        },
+        {
+          "id": "status-bar",
+          "type": "status-bar",
+          "props": {
+            "area": "status",
+            "left": { "$ref": "/status" },
+            "center": { "$ref": "/connection" },
+            "right": { "$ref": "/model" }
+          }
+        }
+      ]
+    }
+  ],
+  "state": {
+    "status": "starting…",
+    "connection": "disconnected",
+    "model": "—",
+    "draft": "",
+    "waiting": false,
+    "queueCount": 0,
+    "messages": [],
+    "canvas": null,
+    "empty": false,
+    "hasTabs": true,
+    "recentSessions": [],
+    "layout": {
+      "sidebarVisible": true
+    },
+    "sidebar": {
+      "history": [],
+      "models": [],
+      "extraSections": [],
+      "themes": [
+        { "id": "signature", "label": "Æther — signature" }
+      ]
+    },
+    "terminal": {
+      "open": false
+    },
+    "slashCommands": []
+  }
+}

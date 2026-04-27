@@ -1,0 +1,234 @@
+{
+  "components": [
+    {
+      "id": "root-layout",
+      "type": "layout",
+      "props": {
+        "columns": "244px 1fr 280px",
+        "rows": "44px 1fr auto auto auto",
+        "areas": [
+          "sidebar header inspector",
+          "sidebar canvas inspector",
+          "sidebar terminal inspector",
+          "sidebar composer inspector",
+          "status status status"
+        ]
+      },
+      "children": [
+        {
+          "id": "sidebar",
+          "type": "sidebar",
+          "props": {
+            "area": "sidebar",
+            "visible": { "$ref": "/layout/sidebarVisible" },
+            "title": "aethon",
+            "sections": [
+              {
+                "id": "layouts",
+                "title": "layouts",
+                "items": { "$ref": "/sidebar/layouts" }
+              },
+              {
+                "id": "tabs",
+                "title": "tabs",
+                "items": { "$ref": "/sidebar/tabsAsItems" }
+              },
+              {
+                "id": "components",
+                "title": "components in layout",
+                "items": [
+                  { "id": "c-sidebar", "label": "sidebar", "active": true },
+                  { "id": "c-tab-strip", "label": "tab-strip", "active": true },
+                  { "id": "c-main-canvas", "label": "main-canvas", "active": true },
+                  { "id": "c-chat-input", "label": "chat-input", "active": true },
+                  { "id": "c-inspector", "label": "inspector", "active": true }
+                ]
+              },
+              {
+                "id": "themes",
+                "title": "themes",
+                "items": { "$ref": "/sidebar/themes" }
+              }
+            ],
+            "extraSections": { "$ref": "/sidebar/extraSections" }
+          }
+        },
+        {
+          "id": "header",
+          "type": "container",
+          "props": {
+            "area": "header",
+            "direction": "row",
+            "align": "center",
+            "gap": 10,
+            "padding": 10,
+            "className": "app-header"
+          },
+          "children": [
+            {
+              "id": "tab-strip",
+              "type": "tab-strip",
+              "props": {
+                "visible": { "$ref": "/hasTabs" },
+                "tabs": { "$ref": "/tabs" },
+                "activeId": { "$ref": "/activeTabId" }
+              }
+            },
+            {
+              "id": "live-layout-pill",
+              "type": "container",
+              "props": {
+                "direction": "row",
+                "align": "center",
+                "gap": 8,
+                "className": "ae-header-spacer-flex"
+              },
+              "children": [
+                {
+                  "id": "live-pill",
+                  "type": "text",
+                  "props": {
+                    "content": { "$ref": "/livePill/text" },
+                    "className": "ae-live-layout-pill"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "main-canvas",
+          "type": "main-canvas",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/hasTabs" },
+            "slot": "/canvas",
+            "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "layout-toast",
+          "type": "layout-toast",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/livePill/toastVisible" },
+            "title": { "$ref": "/livePill/title" },
+            "diff": { "$ref": "/livePill/diff" },
+            "when": { "$ref": "/livePill/when" }
+          }
+        },
+        {
+          "id": "empty-state",
+          "type": "empty-state",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/empty" },
+            "title": "Live layout",
+            "subtitle": "The agent rearranges its own UI here. Open a tab to see it in motion.",
+            "primaryButtonLabel": "New Tab",
+            "recentSessions": { "$ref": "/recentSessions" }
+          }
+        },
+        {
+          "id": "inspector",
+          "type": "inspector-pane",
+          "props": {
+            "area": "inspector",
+            "title": "Inspector",
+            "badge": "live",
+            "layoutSummary": "{\n  \"rows\": \"44px 1fr 22px\",\n  \"cols\": \"244 1fr 280\",\n  \"areas\": [\n    \"sidebar  header  inspector\",\n    \"sidebar  canvas  inspector\",\n    \"status   status  status\"\n  ]\n}",
+            "stateRows": [
+              { "label": "messages", "value": { "$ref": "/inspector/messageCount" } },
+              { "label": "tab", "value": { "$ref": "/activeTabId" } },
+              { "label": "model", "value": { "$ref": "/model" } }
+            ],
+            "ops": { "$ref": "/inspector/ops" }
+          }
+        },
+        {
+          "id": "terminal",
+          "type": "terminal",
+          "props": {
+            "area": "terminal",
+            "visible": { "$ref": "/terminal/open" },
+            "fontSize": 13,
+            "subscribeToBash": true,
+            "readOnly": true
+          }
+        },
+        {
+          "id": "chat-input",
+          "type": "chat-input",
+          "props": {
+            "area": "composer",
+            "visible": { "$ref": "/hasTabs" },
+            "value": { "$ref": "/draft" },
+            "placeholder": "prompt the layout…",
+            "disabled": { "$ref": "/waiting" },
+            "queueCount": { "$ref": "/queueCount" },
+            "commands": { "$ref": "/slashCommands" },
+            "onSubmit": "chat:send"
+          }
+        },
+        {
+          "id": "status-bar",
+          "type": "status-bar",
+          "props": {
+            "area": "status",
+            "left": { "$ref": "/status" },
+            "center": { "$ref": "/connection" },
+            "right": { "$ref": "/model" }
+          }
+        }
+      ]
+    }
+  ],
+  "state": {
+    "status": "starting…",
+    "connection": "disconnected",
+    "model": "—",
+    "draft": "",
+    "waiting": false,
+    "queueCount": 0,
+    "messages": [],
+    "canvas": null,
+    "empty": false,
+    "hasTabs": true,
+    "recentSessions": [],
+    "livePill": {
+      "text": "agent · live layout",
+      "title": "aethon.setLayout(splitViewLayout)",
+      "diff": "+ inspector pane · areas → \"sidebar header inspector / sidebar canvas inspector / status status status\"",
+      "when": "just now",
+      "toastVisible": false
+    },
+    "inspector": {
+      "messageCount": "0",
+      "ops": [
+        { "text": "registerSkill(default-layout)", "when": "boot" }
+      ]
+    },
+    "layout": {
+      "sidebarVisible": true
+    },
+    "sidebar": {
+      "history": [],
+      "models": [],
+      "extraSections": [],
+      "layouts": [
+        { "id": "workstation", "label": "workstation", "active": true },
+        { "id": "editorial", "label": "editorial" },
+        { "id": "command-deck", "label": "command-deck" },
+        { "id": "live-layout", "label": "live-layout" }
+      ],
+      "tabsAsItems": [],
+      "themes": [
+        { "id": "signature", "label": "Æther — signature" }
+      ]
+    },
+    "terminal": {
+      "open": false
+    },
+    "slashCommands": []
+  }
+}

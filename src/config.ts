@@ -5,7 +5,9 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface AethonConfig {
   ui: {
-    theme: "dark" | "light" | null;
+    /** Theme id from `[ui] theme = "..."`. Built-in is `signature`;
+     *  extensions can register additional ids via `aethon.registerTheme`. */
+    theme: string | null;
     fontSize: number | null;
   };
   agent: {
@@ -56,6 +58,6 @@ export function getConfig(): Promise<AethonConfig> {
   return inflight;
 }
 
-function normalizeTheme(t: unknown): "dark" | "light" | null {
-  return t === "dark" || t === "light" ? t : null;
+function normalizeTheme(t: unknown): string | null {
+  return typeof t === "string" && t.length > 0 ? t : null;
 }

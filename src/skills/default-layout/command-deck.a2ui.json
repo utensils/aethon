@@ -1,0 +1,152 @@
+{
+  "components": [
+    {
+      "id": "root-layout",
+      "type": "layout",
+      "props": {
+        "columns": "220px 1fr",
+        "rows": "46px 1fr auto auto auto",
+        "areas": [
+          "sidebar header",
+          "sidebar canvas",
+          "sidebar terminal",
+          "sidebar composer",
+          "status status"
+        ]
+      },
+      "children": [
+        {
+          "id": "tab-strip",
+          "type": "vertical-tab-rail",
+          "props": {
+            "area": "sidebar",
+            "title": "aethon",
+            "sectionTitle": "sessions",
+            "tabs": { "$ref": "/tabs" },
+            "activeId": { "$ref": "/activeTabId" }
+          }
+        },
+        {
+          "id": "header",
+          "type": "container",
+          "props": {
+            "area": "header",
+            "direction": "row",
+            "align": "center",
+            "gap": 10,
+            "padding": 10,
+            "className": "app-header"
+          },
+          "children": [
+            {
+              "id": "command-bar",
+              "type": "command-bar",
+              "props": {
+                "text": { "$ref": "/commandHint" },
+                "shortcut": "⌘P"
+              }
+            },
+            {
+              "id": "header-pill",
+              "type": "agent-status-pill",
+              "props": {
+                "label": { "$ref": "/agentStatus/label" },
+                "state": { "$ref": "/agentStatus/state" }
+              }
+            }
+          ]
+        },
+        {
+          "id": "main-canvas",
+          "type": "main-canvas",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/hasTabs" },
+            "slot": "/canvas",
+            "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "empty-state",
+          "type": "empty-state",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/empty" },
+            "title": "Command deck",
+            "subtitle": "Spin up a new session in the rail to start a conversation.",
+            "primaryButtonLabel": "New Session",
+            "recentSessions": { "$ref": "/recentSessions" }
+          }
+        },
+        {
+          "id": "terminal",
+          "type": "terminal",
+          "props": {
+            "area": "terminal",
+            "visible": { "$ref": "/terminal/open" },
+            "fontSize": 13,
+            "subscribeToBash": true,
+            "readOnly": true
+          }
+        },
+        {
+          "id": "chat-input",
+          "type": "chat-input",
+          "props": {
+            "area": "composer",
+            "visible": { "$ref": "/hasTabs" },
+            "value": { "$ref": "/draft" },
+            "placeholder": "Message Aethon… (⌘P for commands)",
+            "disabled": { "$ref": "/waiting" },
+            "queueCount": { "$ref": "/queueCount" },
+            "commands": { "$ref": "/slashCommands" },
+            "onSubmit": "chat:send"
+          }
+        },
+        {
+          "id": "status-bar",
+          "type": "status-bar",
+          "props": {
+            "area": "status",
+            "left": { "$ref": "/status" },
+            "center": { "$ref": "/connection" },
+            "right": { "$ref": "/model" }
+          }
+        }
+      ]
+    }
+  ],
+  "state": {
+    "status": "starting…",
+    "connection": "disconnected",
+    "model": "—",
+    "draft": "",
+    "waiting": false,
+    "queueCount": 0,
+    "messages": [],
+    "canvas": null,
+    "empty": false,
+    "hasTabs": true,
+    "recentSessions": [],
+    "commandHint": "Search · ⌘P or type / for commands",
+    "agentStatus": {
+      "label": "agent · ready",
+      "state": "live"
+    },
+    "layout": {
+      "sidebarVisible": true
+    },
+    "sidebar": {
+      "history": [],
+      "models": [],
+      "extraSections": [],
+      "themes": [
+        { "id": "signature", "label": "Æther — signature" }
+      ]
+    },
+    "terminal": {
+      "open": false
+    },
+    "slashCommands": []
+  }
+}
