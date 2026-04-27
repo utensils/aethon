@@ -19,6 +19,13 @@
  *      // Mutate frontend layout state at the given JSON Pointer path.
  *      // Used by extensions to push live data (clocks, notifications) into
  *      // bound templates.
+ *   { "type": "set_layout", "payload": {...} }
+ *      // Replace the active A2UI layout wholesale. The same payload shape
+ *      // the default-layout skill ships — A2UI tree + initial state.
+ *      // Reaches the frontend as a `layout_set` event.
+ *   { "type": "patch_layout", "path": "/components/0/children/2", "value": {...} }
+ *      // Apply a JSON Pointer mutation to the active layout tree without
+ *      // shipping a full replacement. Reaches the frontend as `layout_patch`.
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...],
@@ -34,6 +41,10 @@
  *   { "type": "state_patch", "path": "/foo", "value": <any> }
  *      // Forward of an extension's set_state call. Frontend applies via
  *      // JSON Pointer.
+ *   { "type": "layout_set", "payload": {...} }
+ *      // Replace the active A2UI layout. Frontend calls window.aethon.setLayout.
+ *   { "type": "layout_patch", "path": "/foo", "value": <any> }
+ *      // Patch a path inside the active layout payload via JSON Pointer.
  *   { "type": "notice", "message": "..." }
  *      // Non-terminal informational message. The frontend renders it as a
  *      // system chat bubble WITHOUT touching the waiting/status flags, so
@@ -342,24 +353,56 @@ async function main() {
   ) => void | Promise<void>;
   const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
 
+  // Plain functions so methods can call each other without `this` binding
+  // ambiguity (extensions sometimes destructure: `const { setState } = aethon`).
+  function _registerComponent(componentType: string, template: unknown): void {
+    if (!componentType || typeof componentType !== "string") return;
+    extensionComponents.set(componentType, template);
+    send({
+      type: "extension_components",
+      components: Object.fromEntries(extensionComponents),
+    });
+  }
+  function _setState(path: string, value: unknown): void {
+    if (!path || typeof path !== "string") return;
+    extensionStateTree = setAtPointer(extensionStateTree, path, value);
+    send({ type: "state_patch", path, value });
+  }
+  function _onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
+    if (typeof handler !== "function") return;
+    a2uiEventHandlers.push({ match, handler });
+  }
+  function _setLayout(payload: unknown): void {
+    if (!payload || typeof payload !== "object") return;
+    send({ type: "layout_set", payload });
+  }
+  function _patchLayout(path: string, value: unknown): void {
+    if (!path || typeof path !== "string") return;
+    send({ type: "layout_patch", path, value });
+  }
+  function _registerSidebarSection(section: {
+    id: string;
+    title: string;
+    items?: { id: string; label: string; active?: boolean }[];
+  }): void {
+    if (!section || typeof section.id !== "string") return;
+    const existing =
+      ((extensionStateTree.sidebar as Record<string, unknown> | undefined)
+        ?.extraSections as { id: string }[] | undefined) ?? [];
+    const idx = existing.findIndex((s) => s.id === section.id);
+    const next = idx >= 0
+      ? existing.map((s, i) => (i === idx ? section : s))
+      : [...existing, section];
+    _setState("/sidebar/extraSections", next);
+  }
+
   const aethonApi = {
-    registerComponent(componentType: string, template: unknown): void {
-      if (!componentType || typeof componentType !== "string") return;
-      extensionComponents.set(componentType, template);
-      send({
-        type: "extension_components",
-        components: Object.fromEntries(extensionComponents),
-      });
-    },
-    setState(path: string, value: unknown): void {
-      if (!path || typeof path !== "string") return;
-      extensionStateTree = setAtPointer(extensionStateTree, path, value);
-      send({ type: "state_patch", path, value });
-    },
-    onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
-      if (typeof handler !== "function") return;
-      a2uiEventHandlers.push({ match, handler });
-    },
+    registerComponent: _registerComponent,
+    setState: _setState,
+    onEvent: _onEvent,
+    setLayout: _setLayout,
+    patchLayout: _patchLayout,
+    registerSidebarSection: _registerSidebarSection,
   };
   type AethonApi = typeof aethonApi;
   (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
@@ -555,6 +598,7 @@ async function main() {
       template?: unknown;
       path?: string;
       value?: unknown;
+      payload?: unknown;
       event?: {
         componentId?: string;
         componentType?: string;
@@ -706,6 +750,22 @@ async function main() {
             break;
           }
           aethonApi.setState(msg.path, msg.value);
+          break;
+        }
+        case "set_layout": {
+          if (!msg.payload) {
+            send({ type: "error", message: "set_layout: missing payload" });
+            break;
+          }
+          aethonApi.setLayout(msg.payload);
+          break;
+        }
+        case "patch_layout": {
+          if (!msg.path) {
+            send({ type: "error", message: "patch_layout: missing path" });
+            break;
+          }
+          aethonApi.patchLayout(msg.path, msg.value);
           break;
         }
         default: {

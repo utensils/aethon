@@ -66,6 +66,31 @@ declare global {
           match: AethonEventMatch,
           handler: (event: AethonEventInfo, ctx: AethonEventCtx) => void | Promise<void>,
         ): void;
+
+        /**
+         * Replace the active layout payload wholesale. Same shape as
+         * src/skills/default-layout/layout.a2ui.json — A2UI tree plus
+         * initial state. The frontend rerenders entirely from this.
+         */
+        setLayout(payload: unknown): void;
+
+        /**
+         * Patch the active layout at the given JSON Pointer path
+         * without shipping a full replacement.
+         */
+        patchLayout(path: string, value: unknown): void;
+
+        /**
+         * Append (or replace by id) a section in the sidebar. Convenience
+         * wrapper around setState that targets `/sidebar/extraSections`.
+         * Section item clicks fire `select` events on the `sidebar`
+         * component with `{sectionId, itemId}` data; route via onEvent.
+         */
+        registerSidebarSection(section: {
+          id: string;
+          title: string;
+          items?: { id: string; label: string; active?: boolean }[];
+        }): void;
       }
     | undefined;
 }

@@ -374,6 +374,35 @@ export default function App() {
         setState((prev) => setPointer(prev, path, data.value));
         break;
       }
+      case "layout_set": {
+        // Extension swapped the active layout wholesale. Goes through
+        // the same path window.aethon.setLayout uses so the new payload
+        // hydrates state and renders identically to a default-layout boot.
+        const next = data.payload as A2UIPayload | undefined;
+        if (!next || typeof next !== "object" || !Array.isArray(next.components)) break;
+        setLayout(next);
+        if (next.state) {
+          setState((prev) => ({ ...prev, ...(next.state as Record<string, unknown>) }));
+        }
+        break;
+      }
+      case "layout_patch": {
+        // Extension mutated a path inside the active layout (e.g. add a
+        // sidebar section, swap a child). Immutable JSON Pointer write.
+        const path = data.path as string | undefined;
+        if (!path) break;
+        setLayout((prev) => {
+          // setPointer expects Record; layouts have a `components` array
+          // at the top, treat as a record for navigation.
+          const next = setPointer(
+            prev as unknown as Record<string, unknown>,
+            path,
+            data.value,
+          );
+          return next as unknown as A2UIPayload;
+        });
+        break;
+      }
       case "model_changed": {
         const model = (data.model as string) || "";
         setState((prev) => {
