@@ -382,17 +382,20 @@ export default function App() {
           setLayout(extLayout);
         }
         setState((prev) => {
-          // Three-layer hydration in priority order (lowest first):
-          //   1. extension layout state (boot defaults from setLayout)
+          // Three-layer hydration in priority order (lowest → highest):
+          //   1. extension layout state — TREATED AS BOOT DEFAULTS
+          //      (only fills keys not already set; existing live state
+          //      like `messages` / `canvas` wins to avoid wiping
+          //      restored history when ready replays after a reload)
           //   2. extension setState patches (last-write-wins overrides)
           //   3. ready-owned runtime fields (model picker, status, etc.)
-          // Ready fields go LAST so a layout's `sidebar.models = []`
-          // default can't blank out the freshly-built picker on reload.
           let next: Record<string, unknown> = { ...prev };
           if (extLayout && extLayout.state) {
+            // Defaults semantics: deep-merge layout into a fresh object
+            // and let prev win for any overlapping keys.
             next = deepMergeState(
-              next,
               extLayout.state as Record<string, unknown>,
+              next,
             );
           }
           next = deepMergeState(next, extState);
