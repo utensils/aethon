@@ -22,7 +22,7 @@ function isDynamic(
     typeof value === "object" &&
     value !== null &&
     "$ref" in value &&
-    typeof (value as { $ref: unknown }).$ref === "string"
+    typeof (value).$ref === "string"
   );
 }
 

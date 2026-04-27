@@ -48,7 +48,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "main-canvas": MainCanvas,
     "empty-state": EmptyState,
   },
-  layout: layoutPayload as A2UIPayload,
+  layout: layoutPayload,
 };
 
 // Built-in layout catalogue. Each entry is a complete A2UI payload the
@@ -66,18 +66,18 @@ export const builtinLayouts: LayoutCatalogueEntry[] = [
     id: "default",
     name: "Default",
     description: "Sidebar, header, canvas, terminal, chat input, status bar.",
-    payload: layoutPayload as A2UIPayload,
+    payload: layoutPayload,
   },
   {
     id: "single-pane",
     name: "Single Pane",
     description: "No sidebar — header + canvas + chat input across full width.",
-    payload: singlePanePayload as A2UIPayload,
+    payload: singlePanePayload,
   },
   {
     id: "focus-mode",
     name: "Focus Mode",
     description: "Just canvas + chat input + status bar. No sidebar, header, or tabs.",
-    payload: focusModePayload as A2UIPayload,
+    payload: focusModePayload,
   },
 ];

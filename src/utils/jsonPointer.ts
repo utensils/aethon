@@ -89,6 +89,45 @@ export function setPointer(
 }
 
 /**
+ * Returns a new state object with the value at `pointer` removed. Does not
+ * mutate `state`. Intermediate objects are cloned along the path. If the
+ * pointer doesn't resolve to an existing key, returns the original state
+ * reference (no allocation). Empty intermediate objects are NOT pruned —
+ * /a/b removed from `{a:{b:1, c:2}}` yields `{a:{c:2}}`, not `{}`. Used
+ * by the ready-hydration path to wipe extension-owned slices when an
+ * extension has been uninstalled.
+ */
+export function deletePointer(
+  state: Record<string, unknown>,
+  pointer: string,
+): Record<string, unknown> {
+  if (!pointer || pointer === "" || pointer === "/") return state;
+  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  const tokens = path.split("/").map(decodePointerToken);
+
+  // Pre-flight: walk to confirm the leaf exists. Returning the same
+  // reference when no-op lets callers skip a re-render.
+  let probe: unknown = state;
+  for (const t of tokens) {
+    if (probe === null || typeof probe !== "object") return state;
+    if (!Object.hasOwn(probe, t)) return state;
+    probe = (probe as Record<string, unknown>)[t];
+  }
+
+  const next: Record<string, unknown> = { ...state };
+  let cursor: Record<string, unknown> = next;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const key = tokens[i];
+    const existing = cursor[key] as Record<string, unknown>;
+    const child = { ...existing };
+    cursor[key] = child;
+    cursor = child;
+  }
+  delete cursor[tokens[tokens.length - 1]];
+  return next;
+}
+
+/**
  * Checks if a value is a dynamic reference ($ref property)
  */
 export function isDynamicRef(
@@ -98,7 +137,7 @@ export function isDynamicRef(
     typeof value === "object" &&
     value !== null &&
     "$ref" in value &&
-    typeof (value as { $ref: unknown }).$ref === "string"
+    typeof (value).$ref === "string"
   );
 }
 
@@ -115,5 +154,5 @@ export function resolveValue<T>(
   if (isDynamicRef(value)) {
     return resolvePointer(state, value.$ref) as T;
   }
-  return value as T;
+  return value;
 }

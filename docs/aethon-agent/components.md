@@ -523,7 +523,8 @@ type from an extension if you want a different welcome surface.
 ## Layout Payload Shape
 
 The whole UI is one tree. The default layout (boot payload) lives at
-`src/skills/default-layout/layout.a2ui.json`. Its top-level grid is:
+`src/skills/default-layout/layout.a2ui.json`. Its top-level grid uses
+the canonical slot names defined in `slots.json`:
 
 ```
 columns: "240px 1fr"   // sidebar | content
@@ -533,7 +534,7 @@ areas:
   "sidebar tabs"
   "sidebar canvas"
   "sidebar terminal"
-  "sidebar chat-input"
+  "sidebar composer"
   "status status"
 ```
 
@@ -543,7 +544,32 @@ Common patches:
 |------|-------|
 | Move sidebar right | `/components/0/props/columns` → `"1fr 240px"` and rewrite each area row to put `sidebar` second |
 | Hide sidebar | `/components/0/props/columns` → `"1fr"`, drop `sidebar` from each area row |
-| Add a row above chat-input | extend `rows` and `areas`, add a new `container` child |
+| Add a row above the composer | extend `rows` and `areas`, add a new `container` child with `area: "your-area-name"` |
 
 For deeper rewrites use `setLayout` with a fresh payload and copy what
 you need from `getLayout()`.
+
+## Window-event channels
+
+The frontend exposes a small set of `window.addEventListener` channels
+extensions can hook for UI-level concerns:
+
+| Event | Detail | Fires when |
+|-------|--------|-----------|
+| `aethon:terminal` | `string` (raw text chunk) | Active tab gets new bash output |
+| `aethon:terminal-tap` | `{ tabId: string, content: string }` | Any tab gets bash output (multi-subscriber) |
+| `aethon:terminal-replay` | `string` (full buffer) | Tab switch — terminal needs to repaint |
+| `aethon:extension-lifecycle` | `{ name, source, status: "loaded"\|"failed"\|"skipped", error?, path }` | Extension loads, fails, or gets skipped |
+
+The `extension-lifecycle` event is **cancelable** — call
+`event.preventDefault()` from your listener to suppress the default
+chat-side system-notice rendering. Use this to substitute a toast,
+sidebar pulse, status pill, or any other layout-specific feedback.
+
+```ts
+window.addEventListener("aethon:extension-lifecycle", (e) => {
+  const { name, status, error } = e.detail;
+  showToast(`${name} ${status}${error ? `: ${error}` : ""}`);
+  e.preventDefault(); // skip the default chat bubble
+});
+```

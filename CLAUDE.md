@@ -26,12 +26,15 @@ by the agent.
 Run inside `nix develop` (or via direnv — `.envrc` is `use flake`). The
 devshell exposes these helpers (defined in `flake.nix`):
 
-| Command     | What it does                                          |
-| ----------- | ----------------------------------------------------- |
-| `dev`       | `cargo tauri dev` — launches the app with hot reload  |
-| `build-app` | `cargo tauri build` — release bundle                  |
-| `check`     | `cargo clippy -- -D warnings` + `bunx tsc -b --noEmit`|
-| `fmt`       | `treefmt` (rustfmt + nixfmt)                          |
+| Command     | What it does                                                   |
+| ----------- | -------------------------------------------------------------- |
+| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment  |
+| `build-app` | `cargo tauri build` — release bundle                           |
+| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest      |
+| `lint`      | ESLint frontend + agent (no auto-fix)                          |
+| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)            |
+| `coverage`  | TS coverage report under `coverage/` (vitest v8)               |
+| `fmt`       | `treefmt` (rustfmt + nixfmt)                                   |
 
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
@@ -217,14 +220,34 @@ launch a release build (the debug server is gated by `cfg(debug_assertions)`).
 ## Status — what is and isn't wired up
 
 The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
-keyed against milestones M1–M4). Update both that checklist and any
+keyed against milestones M1–M5). Update both that checklist and any
 relevant notes here when capabilities land.
 
-**Quick highlights as of writing:** chat round-trips with streaming text
-deltas, model picker in the sidebar (348 raw pi-ai entries, will be
-filtered later), agent hot reload during dev, and the `aethon-debug` skill
-above. Not yet: tool execution surfaced as A2UI cards, real `~/.aethon/`
-config, light theme, compiled binary, or release bundles.
+**Quick highlights as of writing:** M1–M5 essentially complete. Tool
+execution surfaces as A2UI cards, multi-tab persistent sessions, light
+theme, system tray + native menu, slash command picker, real
+`~/.aethon/config.toml`, layout-slot contract (`canvas` + `composer`
+required, `slotMap` for non-canonical layouts), generic
+`extension_lifecycle` feedback channel, registerable slash commands /
+keybindings / menu items / event routes, mutation-feedback channel
+(every mutation returns `Promise<MutationResult>`). Not yet: Nix flake
+overlay for distribution, first public release.
+
+## Test coverage + linting
+
+| Tool | Scope | Devshell command |
+|---|---|---|
+| `cargo clippy -D warnings` | Rust shell + helpers | `check` |
+| `cargo test --lib` | Rust unit tests under `src-tauri/src/helpers.rs` | `test` |
+| `bunx tsc -b --noEmit` | TypeScript types (frontend + agent) | `check` |
+| `bunx eslint .` | TS + React lint, type-aware via tsconfig | `lint` |
+| `bunx vitest run` | TS unit tests (`src/**/*.test.ts`) | `test` |
+| `bunx vitest run --coverage` | TS coverage report (v8) | `coverage` |
+
+The `check` devshell command runs all of the above as a single CI gate.
+ESLint is configured for **0 errors**; some warnings in `App.tsx` /
+`ChatInput` are tracked anti-patterns to address in a follow-up (set-state
+in effect, ref access during render).
 
 ## Local-only files (gitignored)
 

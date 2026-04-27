@@ -25,19 +25,19 @@ export interface LayoutSlotCatalogue {
   slots: Record<string, LayoutSlotDefinition>;
 }
 
-export const layoutSlots: LayoutSlotCatalogue = slotsJson as LayoutSlotCatalogue;
+export const layoutSlots: LayoutSlotCatalogue = slotsJson;
 
 /** Canonical slot names. */
 export const SLOT_NAMES = Object.freeze(
   Object.keys(layoutSlots.slots),
-) as readonly string[];
+);
 
 /** Slot names any layout MUST provide to be considered "complete". */
 export const REQUIRED_SLOT_NAMES = Object.freeze(
   Object.entries(layoutSlots.slots)
     .filter(([, def]) => def.required)
     .map(([name]) => name),
-) as readonly string[];
+);
 
 /** True when `name` is a documented canonical slot. */
 export function isKnownSlot(name: string): boolean {
@@ -92,11 +92,11 @@ export function inspectLayoutSlotCoverage(
   }
 
   const rootProps = root.props ?? {};
-  const slotMap = (rootProps.slotMap ?? {}) as Record<string, string>;
+  const slotMap = (rootProps.slotMap ?? {});
   if (
     rootProps.areas &&
     typeof rootProps.areas === "object" &&
-    "$ref" in (rootProps.areas as object)
+    "$ref" in (rootProps.areas)
   ) {
     dynamicAreas = true;
   }

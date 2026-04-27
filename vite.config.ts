@@ -1,4 +1,6 @@
-import { defineConfig } from "vite";
+// vitest/config re-exports Vite's defineConfig with a `test` field on
+// the schema; Vite's own defineConfig narrows it away.
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Tauri requires a fixed dev port (devUrl in tauri.conf.json). For
@@ -18,5 +20,23 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
+  },
+  test: {
+    // Pure-logic unit tests live next to the source as `*.test.ts`.
+    // jsdom is reserved for the renderer when we add component tests;
+    // current suite is utility code only so node is faster.
+    environment: "node",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      include: ["src/**/*.ts", "src/**/*.tsx"],
+      exclude: [
+        "src/main.tsx",
+        "src/**/*.d.ts",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+      ],
+    },
   },
 });

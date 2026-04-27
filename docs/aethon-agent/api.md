@@ -346,6 +346,23 @@ or before mutating something you didn't register yourself.
 Returns the active layout payload (extension-supplied if any, otherwise
 the default-layout boot tree).
 
+### `getLayoutSlots()`
+
+Returns the canonical layout-slot catalogue
+(`{ version, slots: { <name>: { description, defaultComposite, required } } }`)
+or `null` if the bridge couldn't read `slots.json` at boot. Use this to
+discover the slot contract any layout that wants to host the standard
+composites must honor — see `components.md` "Layout-slot contract" for
+the full design.
+
+```ts
+const slots = globalThis.aethon.getLayoutSlots();
+const required = Object.entries(slots?.slots ?? {})
+  .filter(([, def]) => def.required)
+  .map(([name]) => name);
+// → ["canvas", "composer"]
+```
+
 ### `getFrontendState(path?)`
 
 Read a frontend-mirrored state slice. With no argument, returns the full

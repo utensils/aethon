@@ -175,12 +175,44 @@
               {
                 category = "check";
                 name = "check";
-                help = "cargo clippy + tsc typecheck";
+                help = "Full CI gate: clippy + tsc + ESLint + cargo test + vitest";
                 command = ''
                   set -euo pipefail
+                  echo "==> cargo clippy"
                   cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+                  echo "==> bunx tsc -b --noEmit"
                   bunx tsc -b --noEmit
+                  echo "==> bunx eslint . --max-warnings=0 (warnings only)"
+                  bunx eslint .
+                  echo "==> cargo test --lib"
+                  cargo test --manifest-path src-tauri/Cargo.toml --lib
+                  echo "==> bunx vitest run"
+                  bunx vitest run
                 '';
+              }
+              {
+                category = "check";
+                name = "lint";
+                help = "ESLint frontend + agent (no auto-fix)";
+                command = "bunx eslint \"$@\" .";
+              }
+              {
+                category = "check";
+                name = "test";
+                help = "Run Rust + TS tests (cargo test --lib + vitest run)";
+                command = ''
+                  set -euo pipefail
+                  echo "==> cargo test --lib"
+                  cargo test --manifest-path src-tauri/Cargo.toml --lib "$@"
+                  echo "==> bunx vitest run"
+                  bunx vitest run "$@"
+                '';
+              }
+              {
+                category = "check";
+                name = "coverage";
+                help = "TS coverage report under coverage/ (vitest v8)";
+                command = "bunx vitest run --coverage \"$@\"";
               }
               {
                 category = "check";

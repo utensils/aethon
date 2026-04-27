@@ -433,7 +433,7 @@ export function List({
   renderChildWithState,
 }: ComponentProps & {
   renderChildWithState?: (
-    child: import("../types/a2ui").A2UIComponent,
+    child: A2UIComponent,
     overlay: Record<string, unknown>,
   ) => React.ReactNode;
 }) {
@@ -481,7 +481,7 @@ export function Table({
   renderChildWithState,
 }: ComponentProps & {
   renderChildWithState?: (
-    child: import("../types/a2ui").A2UIComponent,
+    child: A2UIComponent,
     overlay: Record<string, unknown>,
   ) => React.ReactNode;
 }) {
@@ -491,7 +491,7 @@ export function Table({
       header?: string;
       field?: string;
       width?: string;
-      cell?: import("../types/a2ui").A2UIComponent;
+      cell?: A2UIComponent;
     }[];
   };
   let rows: unknown = props.rows;

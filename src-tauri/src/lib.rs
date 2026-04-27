@@ -6,6 +6,9 @@ use std::sync::{Mutex, OnceLock};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod helpers;
+use helpers::{clamp_font_size, parse_config_toml, validate_state_name, FONT_SIZE_MAX, FONT_SIZE_MIN};
+
 /// Extension-registered menu item. Mirrors the shape the bridge ships
 /// in `extension_menu_items` events so deserialization is direct.
 #[derive(Debug, Clone, Deserialize)]
@@ -29,9 +32,7 @@ pub struct ExtensionMenuStore(pub Mutex<Vec<ExtensionMenuItem>>);
 /// `home_dir()` so Windows (USERPROFILE), macOS, and Linux all resolve
 /// without env-var assumptions.
 fn aethon_state_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name == ".." {
-        return Err(format!("invalid state name: {name}"));
-    }
+    validate_state_name(name)?;
     let home = app
         .path()
         .home_dir()
@@ -61,32 +62,13 @@ fn write_state(name: String, content: String, app: AppHandle) -> Result<(), Stri
     std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Schema for `~/.aethon/config.toml`. All fields optional with sane defaults
-/// — the file is read-only from Aethon's perspective and intended as a
-/// single place for user-level overrides (theme, model, etc.).
-#[derive(Default, Deserialize)]
-struct UiConfig {
-    theme: Option<String>,
-    font_size: Option<u32>,
-}
-
-#[derive(Default, Deserialize)]
-struct AgentConfig {
-    model: Option<String>,
-}
-
-#[derive(Default, Deserialize)]
-struct AethonConfig {
-    #[serde(default)]
-    ui: UiConfig,
-    #[serde(default)]
-    agent: AgentConfig,
-}
-
 /// Read `~/.aethon/config.toml` and return its parsed contents as JSON. Missing
 /// file → defaults (no fields). Malformed TOML → defaults + stderr warning so
 /// a bad user config never blocks app boot. File size capped at 64 KiB to
 /// guard against accidental gigantic configs.
+///
+/// The actual parsing lives in `helpers::parse_config_toml` (unit-tested);
+/// this function only handles the I/O wrapper.
 #[tauri::command]
 fn read_config(app: AppHandle) -> Result<serde_json::Value, String> {
     let path = aethon_state_path(&app, "config.toml")?;
@@ -105,26 +87,26 @@ fn read_config(app: AppHandle) -> Result<serde_json::Value, String> {
             eprintln!("[config] open {}: {e}; using defaults", path.display());
         }
     }
-    let cfg: AethonConfig = if buf.is_empty() {
-        AethonConfig::default()
-    } else {
-        match toml::from_str(&buf) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[config] parse {}: {e}; using defaults", path.display());
-                AethonConfig::default()
-            }
+    let mut value = parse_config_toml(&buf);
+    // Clamp font_size in-place so the JSON the frontend reads is already
+    // safe — keeps the clamp policy in one place (helpers) and out of the
+    // CSS rule.
+    if let Some(n) = value
+        .get("ui")
+        .and_then(|u| u.get("fontSize"))
+        .and_then(serde_json::Value::as_u64)
+    {
+        let clamped = clamp_font_size(n.min(u32::MAX as u64) as u32);
+        value["ui"]["fontSize"] = serde_json::json!(clamped);
+        // Surface a warning if the user's value was outside the supported
+        // range — easier to discover than silently rewriting it.
+        if u64::from(clamped) != n {
+            eprintln!(
+                "[config] font_size {n} outside [{FONT_SIZE_MIN}, {FONT_SIZE_MAX}]; using {clamped}"
+            );
         }
-    };
-    Ok(serde_json::json!({
-        "ui": {
-            "theme": cfg.ui.theme,
-            "fontSize": cfg.ui.font_size,
-        },
-        "agent": {
-            "model": cfg.agent.model,
-        },
-    }))
+    }
+    Ok(value)
 }
 
 #[cfg(debug_assertions)]
