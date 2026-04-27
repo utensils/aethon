@@ -435,10 +435,17 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     };
     let mut watch_paths: Vec<PathBuf> = Vec::new();
     if let Some(h) = home {
-        for sub in [".aethon/extensions", ".pi/agent/extensions"] {
-            let p = h.join(sub);
-            if p.exists() { watch_paths.push(p); }
-        }
+        // ~/.aethon/extensions belongs to us — create it on boot so a
+        // first-time extension drop fires Create events and the agent
+        // hot-reloads without a manual restart.
+        let aethon_ext = h.join(".aethon/extensions");
+        let _ = std::fs::create_dir_all(&aethon_ext);
+        if aethon_ext.exists() { watch_paths.push(aethon_ext); }
+        // ~/.pi/agent/extensions is pi's territory — only watch if it
+        // already exists. Users on a fresh pi install can `pi install`
+        // (or mkdir) and restart Aethon to start watching.
+        let pi_ext = h.join(".pi/agent/extensions");
+        if pi_ext.exists() { watch_paths.push(pi_ext); }
     }
     // Bridge source dir is dev-only — release ships a compiled sidecar
     // and editing the source has no effect on the running binary.
