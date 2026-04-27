@@ -628,6 +628,83 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Status-bar / tray icon with a tiny menu (Show, New Tab, Quit).
+/// Left-click on the icon focuses the main window so users who hide
+/// Aethon (Cmd+H) can re-summon it without going through the dock.
+/// Reuses the bundled app icon as the tray glyph; macOS gets the
+/// template-image treatment so it adapts to dark/light menu bars.
+fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    use tauri::Manager;
+
+    fn focus_main(app: &AppHandle) {
+        // Cmd+H on macOS hides the app at the application level —
+        // WebviewWindow::show() doesn't unhide that. AppHandle::show()
+        // does. Call it first; on other platforms it's effectively a
+        // no-op since GUI apps can't be hidden the same way.
+        #[cfg(target_os = "macos")]
+        let _ = app.show();
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }
+
+    let show_item = MenuItem::with_id(app, "tray:show", "Show Aethon", true, None::<&str>)?;
+    let new_tab_item =
+        MenuItem::with_id(app, "tray:new_tab", "New Tab", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "tray:quit", "Quit Aethon", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &new_tab_item, &quit_item])?;
+
+    let icon = app
+        .default_window_icon()
+        .ok_or("no default_window_icon — bundle.icon missing?")?
+        .clone();
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
+        // Template image renders as a monochrome glyph that adapts to
+        // the user's menu-bar appearance on macOS. No-op elsewhere.
+        .icon_as_template(cfg!(target_os = "macos"))
+        // macOS HIG: left-click activates, right-click shows the menu.
+        // On Linux/Windows the menu opens on left-click by default,
+        // which matches their conventions — leave as the platform default.
+        .show_menu_on_left_click(!cfg!(target_os = "macos"))
+        .menu(&menu)
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "tray:show" => focus_main(app),
+                "tray:new_tab" => {
+                    // Forward as a "menu" event so the React side's
+                    // existing dispatcher fires the same handler the
+                    // app menu's New Tab uses. Bring the window forward
+                    // first so the user sees the new tab.
+                    focus_main(app);
+                    let _ = tauri::Emitter::emit(app, "menu", "new_tab");
+                }
+                "tray:quit" => app.exit(0),
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            // Single left-click = focus window. Anything else (right
+            // click, dragging) is left to the menu.
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                focus_main(tray.app_handle());
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -662,6 +739,7 @@ pub fn run() {
             // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
             // get native NS actions for free, no event handler needed.
             install_app_menu(app.handle())?;
+            install_tray(app.handle())?;
             Ok(())
         })
         .run(tauri::generate_context!())
