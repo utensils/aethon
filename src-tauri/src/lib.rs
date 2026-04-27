@@ -158,16 +158,24 @@ fn resolved_login_path() -> Option<String> {
             // -i forces interactive mode so ~/.zshrc / ~/.bashrc /
             // ~/.config/fish/config.fish are sourced. -l makes it a
             // login shell so ~/.zprofile / ~/.bash_profile fire too.
-            // `printf %s "$PATH"` works in zsh, bash, and fish.
+            //
+            // Run `env` instead of trying to `echo $PATH` directly: fish
+            // treats $PATH as a list and prints entries space-separated
+            // (POSIX wants colons), which would silently corrupt the
+            // recovered value. `env` always emits the actual exported
+            // environment with PATH= colon-separated, regardless of the
+            // shell that runs it.
             let out = Command::new(&shell)
-                .args(["-ilc", "printf %s \"$PATH\""])
+                .args(["-ilc", "env"])
                 .output()
                 .ok()?;
             if !out.status.success() {
                 return None;
             }
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if s.is_empty() { None } else { Some(s) }
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let path_line = stdout.lines().find(|l| l.starts_with("PATH="))?;
+            let value = path_line.strip_prefix("PATH=")?.to_string();
+            if value.is_empty() { None } else { Some(value) }
         })
         .clone()
 }

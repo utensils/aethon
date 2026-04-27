@@ -865,6 +865,33 @@ export default function App() {
         const path = data.path as string | undefined;
         if (!path) break;
         setState((prev) => setPointer(prev, path, data.value));
+        // If the path is one of the per-tab mirrored keys, also write
+        // into the active tab record. Otherwise the next tab switch
+        // would re-mirror the stale tab value over this update — an
+        // extension's setState('/canvas', x) would render once and
+        // disappear the moment the user changed tabs.
+        const segs = path.split("/").filter(Boolean);
+        const top = segs[0] as keyof Tab | undefined;
+        if (top && TAB_MIRROR_KEYS.includes(top)) {
+          updateActiveTab((tab) => {
+            const tabRec = { ...tab } as unknown as Record<string, unknown>;
+            // Whole-key replace vs nested patch: if the path is just `/canvas`
+            // overwrite directly; for `/canvas/foo` use setPointer on the
+            // tab field so nested updates merge cleanly.
+            if (segs.length === 1) {
+              tabRec[top as string] = data.value;
+            } else {
+              const before = tabRec[top as string];
+              const baseObj =
+                typeof before === "object" && before !== null
+                  ? (before as Record<string, unknown>)
+                  : {};
+              const nested = setPointer(baseObj, "/" + segs.slice(1).join("/"), data.value);
+              tabRec[top as string] = nested;
+            }
+            return tabRec as unknown as Tab;
+          });
+        }
         break;
       }
       case "layout_set": {

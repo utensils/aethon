@@ -902,12 +902,12 @@ async function main() {
             send({ type: "error", message: "set_model: missing id" });
             break;
           }
+          // Lazily create the session if the user hits set_model on a brand
+          // new tab before the async tab_open round-trip finishes — the
+          // chat / a2ui_event paths already do this; mirror the behavior
+          // here so fast switches don't fail with "unknown tab".
           const tabId = msg.tabId ?? "default";
-          const tab = tabs.get(tabId);
-          if (!tab) {
-            send({ type: "error", tabId, message: `set_model: unknown tab ${tabId}` });
-            break;
-          }
+          const tab = await ensureTab(tabId);
           // Same in-flight gate as `chat`: pi rejects setModel while a run
           // is active, and the resulting `error` would clobber waiting=true
           // and hide the Stop button on the original prompt. Surface as a
