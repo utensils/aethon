@@ -382,26 +382,13 @@ export default function App() {
           setLayout(extLayout);
         }
         setState((prev) => {
-          let next: Record<string, unknown> = {
-            ...prev,
-            model,
-            status: "ready",
-            connection: "connected",
-            sidebar: {
-              ...((prev.sidebar as Record<string, unknown>) ?? {}),
-              models: models.map((m) => ({
-                id: m.id,
-                label: m.label,
-                active: m.id === model,
-              })),
-            },
-          };
-          // Order matters and must match the live ordering: layout state
-          // is the "boot defaults" (first-set), then extension setState
-          // patches win for any overlapping keys (last-set). Apply layout
-          // state FIRST, then the patch tree on top — otherwise reload
-          // would resurrect stale layout-state defaults over fresh
-          // extension-pushed values.
+          // Three-layer hydration in priority order (lowest first):
+          //   1. extension layout state (boot defaults from setLayout)
+          //   2. extension setState patches (last-write-wins overrides)
+          //   3. ready-owned runtime fields (model picker, status, etc.)
+          // Ready fields go LAST so a layout's `sidebar.models = []`
+          // default can't blank out the freshly-built picker on reload.
+          let next: Record<string, unknown> = { ...prev };
           if (extLayout && extLayout.state) {
             next = deepMergeState(
               next,
@@ -409,6 +396,20 @@ export default function App() {
             );
           }
           next = deepMergeState(next, extState);
+          next = {
+            ...next,
+            model,
+            status: "ready",
+            connection: "connected",
+            sidebar: {
+              ...((next.sidebar as Record<string, unknown>) ?? {}),
+              models: models.map((m) => ({
+                id: m.id,
+                label: m.label,
+                active: m.id === model,
+              })),
+            },
+          };
           return next;
         });
         break;
