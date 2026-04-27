@@ -8,6 +8,17 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Empty-state composite when the last tab closes.** `closeTab` no
+  longer guards against closing the only/default tab — every tab is
+  closable. When the tab list reaches zero the layout swaps to an
+  `empty-state` composite (welcome card, "New Tab" button, quick-start
+  tips, recent-sessions slot) registered by the `default-layout` skill
+  (NOT hardcoded React in `App.tsx`). Extensions can override it by
+  re-registering the `empty-state` component type. Layout JSON owns
+  the visibility wiring via `/empty` and `/hasTabs` `$ref` flags. Bridge
+  `tab_close` now accepts the default tab and gracefully handles an
+  empty `tabs` map; `currentAgentTabId` is cleared and `ensureTab`
+  lazily recreates whatever tab the next inbound message references.
 - **Bridge-readable frontend state.** Frontend pushes
   `frontend_state_patch { path, value }` whenever an allowlisted slice
   changes — `/sidebar/models`, `/sidebar/themes`, `/connection`, `/status`,

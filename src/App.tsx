@@ -571,7 +571,16 @@ export default function App() {
       const label = `Tab ${tabs.length + 1}`;
       const tab: Tab = { ...makeEmptyTab(id, label), model: inheritedModel };
       tabs.push(tab);
-      const result: Record<string, unknown> = { ...prev, tabs, activeTabId: id };
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs,
+        activeTabId: id,
+        // We're back from the empty-state — flip the layout's $ref-driven
+        // visibility flags so the canvas/composer/tab-strip reappear and
+        // the empty-state composite hides itself.
+        empty: false,
+        hasTabs: true,
+      };
       const tabRec = tab as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = tabRec[key as string];
@@ -624,39 +633,66 @@ export default function App() {
 
   function closeTab(tabId: string) {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    if (tabs.length <= 1) return; // never close the last tab
-    if (tabId === "default") return; // bridge refuses; keep parity
+    if (tabs.length === 0) return; // already empty — nothing to close
     let nextBuffer = "";
     let switched = false;
+    let becameEmpty = false;
     setState((prev) => {
       const list = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
       let activeTabId = prev.activeTabId as string | undefined;
+      // Choose a new active tab. When list is empty, we drop into the
+      // empty-state composite (no active tab; layout swaps via /empty).
       if (activeTabId === tabId) {
-        activeTabId = list[list.length - 1].id;
+        activeTabId = list.length > 0 ? list[list.length - 1].id : undefined;
         switched = true;
       }
       const result: Record<string, unknown> = { ...prev, tabs: list, activeTabId };
-      const target = list.find((t) => t.id === activeTabId)!;
-      nextBuffer = target.terminalBuffer ?? "";
-      const targetRec = target as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = targetRec[key as string];
+      if (list.length === 0) {
+        becameEmpty = true;
+        // Clear mirrored keys so stale per-tab state doesn't bleed
+        // through the empty-state view (the composer's value, the
+        // canvas, etc. shouldn't render any prior tab's data).
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = undefined;
+        }
+        result.empty = true;
+        result.hasTabs = false;
+      } else {
+        const target = list.find((t) => t.id === activeTabId)!;
+        nextBuffer = target.terminalBuffer ?? "";
+        const targetRec = target as unknown as Record<string, unknown>;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = targetRec[key as string];
+        }
+        result.sidebar = recomputeModelPicker(
+          prev.sidebar as Record<string, unknown> | undefined,
+          target.model,
+        );
+        result.empty = false;
+        result.hasTabs = true;
       }
-      result.sidebar = recomputeModelPicker(
-        prev.sidebar as Record<string, unknown> | undefined,
-        target.model,
-      );
       return result;
     });
     // If the closed tab was the active one, the visible terminal was
-    // showing its buffer — replay the new active tab's buffer so the
-    // shared xterm doesn't keep displaying the dead tab's output.
+    // showing its buffer — replay the new active tab's buffer (or empty
+    // string when no tabs remain) so the shared xterm doesn't keep
+    // displaying the dead tab's output.
     if (switched) dispatchTerminalReplay(nextBuffer);
-    invoke("agent_command", {
-      payload: JSON.stringify({ type: "tab_close", tabId }),
-    }).catch(() => {
-      /* ignore — UI already closed */
-    });
+    if (becameEmpty) {
+      // Tell the bridge to tear down the session too. tab_close on an
+      // empty Map is a no-op on the bridge side; gracefully handled.
+      invoke("agent_command", {
+        payload: JSON.stringify({ type: "tab_close", tabId }),
+      }).catch(() => {
+        /* ignore — UI already closed */
+      });
+    } else {
+      invoke("agent_command", {
+        payload: JSON.stringify({ type: "tab_close", tabId }),
+      }).catch(() => {
+        /* ignore — UI already closed */
+      });
+    }
   }
 
   // Global keyboard shortcuts. Bound on the document so they fire regardless
@@ -1775,6 +1811,19 @@ export default function App() {
           return true;
         }
         if (eventType === "new") {
+          newTab();
+          return true;
+        }
+      }
+      if (component.id === "empty-state") {
+        if (eventType === "new-tab") {
+          newTab();
+          return true;
+        }
+        if (eventType === "restore-session") {
+          // Future hook for restoring a persisted session by id. For now
+          // we just open a new tab and surface a notice — the recent
+          // sessions list is empty until multi-tab restore lands (M5).
           newTab();
           return true;
         }

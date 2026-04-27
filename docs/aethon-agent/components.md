@@ -204,6 +204,27 @@ The default chat canvas. Most extensions don't need to touch this — to
 add ad-hoc UI, return a per-message A2UI payload from the agent or set
 state on a bound `$ref`.
 
+### `empty-state`
+
+```ts
+{
+  area?: string,
+  title?: StringValue,             // default: "Welcome to Aethon"
+  subtitle?: StringValue,          // default: "All tabs are closed. …"
+  primaryButtonLabel?: StringValue, // default: "New Tab"
+  tips?: StringValue[],
+  recentSessions?: { id, label, lastModified? }[],
+}
+```
+
+Shown when the tab list is empty. Visibility is wired via the layout
+state flags `/empty` (true → show empty-state) and `/hasTabs` (false →
+hide canvas/composer/tab-strip). The default layout already binds them
+both. Emits `new-tab` on the primary button click and
+`restore-session` on a recent-session row click (descendantId =
+session id). Replace it by re-registering the `empty-state` component
+type from an extension if you want a different welcome surface.
+
 ## Layout Payload Shape
 
 The whole UI is one tree. The default layout (boot payload) lives at

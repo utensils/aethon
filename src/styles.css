@@ -262,6 +262,126 @@ body {
   font-size: 0.9rem;
 }
 
+/* ---- Empty-state composite ---------------------------------------------- */
+
+.a2ui-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  padding: 40px 20px;
+  overflow-y: auto;
+}
+
+.a2ui-empty-state-card {
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.a2ui-empty-state-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.a2ui-empty-state-subtitle {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.a2ui-empty-state-primary {
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.a2ui-empty-state-primary:hover {
+  opacity: 0.85;
+}
+
+.a2ui-empty-state-recent {
+  width: 100%;
+  text-align: left;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.a2ui-empty-state-recent h2 {
+  margin: 0 0 8px 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.a2ui-empty-state-recent ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.a2ui-empty-state-recent li {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  transition: background 0.15s ease;
+}
+
+.a2ui-empty-state-recent li:hover {
+  background: var(--bg-input);
+}
+
+.a2ui-empty-state-recent-meta {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.a2ui-empty-state-tips {
+  list-style: disc;
+  margin: 0;
+  padding-left: 20px;
+  text-align: left;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.a2ui-empty-state-tips li {
+  margin: 4px 0;
+}
+
 .a2ui-canvas-message {
   max-width: 70%;
   padding: 10px 14px;

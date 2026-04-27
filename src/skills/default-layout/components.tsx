@@ -580,6 +580,79 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
 }
 
 // ---------------------------------------------------------------------------
+// EmptyState — shown when the tabs array is empty (the user closed every
+// open conversation). Lives inside default-layout, NOT inside App.tsx, so
+// extensions can swap it for a different welcome screen by registering an
+// override with the same component type. Emits "new-tab" on the primary
+// button so App's onEvent handler can spin up a fresh tab.
+// ---------------------------------------------------------------------------
+
+export function EmptyState({ component, state, onEvent }: BuiltinComponentProps) {
+  const props = component.props as {
+    title?: StringValue;
+    subtitle?: StringValue;
+    primaryButtonLabel?: StringValue;
+    tips?: StringValue[];
+    recentSessions?: { id: string; label: string; lastModified?: string }[];
+  };
+  const title = props.title ? resolveString(props.title, state) : "Welcome to Aethon";
+  const subtitle = props.subtitle
+    ? resolveString(props.subtitle, state)
+    : "All tabs are closed. Open a new one to start a conversation.";
+  const primaryLabel = props.primaryButtonLabel
+    ? resolveString(props.primaryButtonLabel, state)
+    : "New Tab";
+  const tips = props.tips ?? [];
+  const recentSessions = props.recentSessions ?? [];
+
+  return (
+    <div className="a2ui-empty-state">
+      <div className="a2ui-empty-state-card">
+        <h1 className="a2ui-empty-state-title">{title}</h1>
+        <p className="a2ui-empty-state-subtitle">{subtitle}</p>
+        <button
+          type="button"
+          className="a2ui-empty-state-primary"
+          onClick={() => onEvent("new-tab")}
+        >
+          {primaryLabel}
+        </button>
+        {recentSessions.length > 0 && (
+          <div className="a2ui-empty-state-recent">
+            <h2>Recent sessions</h2>
+            <ul>
+              {recentSessions.map((s) => (
+                <li
+                  key={s.id}
+                  onClick={() =>
+                    // descendantId carries the session id so an extension's
+                    // onEvent({componentType:"empty-state", descendantId:"…"})
+                    // matcher can target a specific session row.
+                    onEvent("restore-session", { sessionId: s.id, label: s.label }, s.id)
+                  }
+                >
+                  <span className="a2ui-empty-state-recent-label">{s.label}</span>
+                  {s.lastModified && (
+                    <span className="a2ui-empty-state-recent-meta">{s.lastModified}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {tips.length > 0 && (
+          <ul className="a2ui-empty-state-tips">
+            {tips.map((tip, i) => (
+              <li key={i}>{resolveString(tip, state)}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Terminal — xterm.js with WebGL renderer. Falls back to canvas if WebGL
 // init fails (which it can on some Linux GPUs / older webviews).
 // ---------------------------------------------------------------------------
@@ -797,7 +870,10 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     <div className="a2ui-tab-strip" role="tablist">
       {tabs.map((t) => {
         const isActive = t.id === activeId;
-        const canClose = t.id !== "default" && tabs.length > 1;
+        // Every tab is closable now — when the list reaches zero the
+        // layout swaps to the empty-state composite (registered by
+        // default-layout, not hardcoded React in App.tsx).
+        const canClose = true;
         return (
           <div
             key={t.id}

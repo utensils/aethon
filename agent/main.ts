@@ -1690,15 +1690,16 @@ async function main() {
         }
         case "tab_close": {
           // Tear down a tab's session. Aborts any in-flight prompt first
-          // so kill signals propagate before we drop the reference. The
-          // "default" tab can't be closed — there must always be one.
+          // so kill signals propagate before we drop the reference.
+          //
+          // Every tab is closable, including "default" — when the user
+          // closes the last open conversation the frontend swaps to the
+          // empty-state composite. Bridge's tabs map can be empty too;
+          // ensureTab() lazily recreates whatever tab the next inbound
+          // message references.
           const tabId = msg.tabId;
           if (!tabId || typeof tabId !== "string") {
             send({ type: "error", message: "tab_close: missing tabId" });
-            break;
-          }
-          if (tabId === "default") {
-            send({ type: "notice", message: "cannot close the default tab" });
             break;
           }
           const tab = tabs.get(tabId);
@@ -1709,6 +1710,10 @@ async function main() {
             });
           }
           tabs.delete(tabId);
+          // If we just closed the tab whose turn was "current", clear
+          // the global so a stray setState doesn't try to attribute to
+          // a tab that no longer exists.
+          if (currentAgentTabId === tabId) currentAgentTabId = undefined;
           send({ type: "tab_closed", tabId });
           break;
         }

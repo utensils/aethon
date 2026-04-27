@@ -10,6 +10,7 @@ import type { A2UISkill } from "../types";
 import {
   ChatHistory,
   ChatInput,
+  EmptyState,
   Layout,
   MainCanvas,
   Sidebar,
@@ -30,6 +31,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "tab-strip": TabStrip,
     terminal: Terminal,
     "main-canvas": MainCanvas,
+    "empty-state": EmptyState,
   },
   layout: layoutPayload as A2UIPayload,
 };

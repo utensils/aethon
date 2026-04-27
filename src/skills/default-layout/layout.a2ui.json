@@ -114,6 +114,7 @@
           "type": "tab-strip",
           "props": {
             "area": "tabs",
+            "visible": { "$ref": "/hasTabs" },
             "tabs": { "$ref": "/tabs" },
             "activeId": { "$ref": "/activeTabId" }
           }
@@ -123,8 +124,25 @@
           "type": "main-canvas",
           "props": {
             "area": "canvas",
+            "visible": { "$ref": "/hasTabs" },
             "slot": "/canvas",
             "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "empty-state",
+          "type": "empty-state",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/empty" },
+            "title": "Welcome to Aethon",
+            "subtitle": "All tabs are closed. Open a new one to start a conversation.",
+            "primaryButtonLabel": "New Tab",
+            "tips": [
+              "Press ⌘T to open a new conversation tab.",
+              "Type / in the composer to see slash commands.",
+              "Run /skills to see what extensions are loaded."
+            ]
           }
         },
         {
@@ -143,6 +161,7 @@
           "type": "chat-input",
           "props": {
             "area": "chat-input",
+            "visible": { "$ref": "/hasTabs" },
             "value": { "$ref": "/draft" },
             "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
             "disabled": { "$ref": "/waiting" },
@@ -173,6 +192,8 @@
     "queueCount": 0,
     "messages": [],
     "canvas": null,
+    "empty": false,
+    "hasTabs": true,
     "sidebar": {
       "history": [],
       "models": [],
