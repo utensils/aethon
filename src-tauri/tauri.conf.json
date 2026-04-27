@@ -5,7 +5,7 @@
   "identifier": "com.utensils.aethon",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "beforeBuildCommand": "scripts/build-agent.sh && bun run build",
+    "beforeBuildCommand": "bun run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
