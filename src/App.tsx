@@ -944,8 +944,8 @@ export default function App() {
           // back to data.model on first boot when no tab record exists.
           const activeId = (next.activeTabId as string | undefined) ?? "default";
           const tabsList = (next.tabs as Tab[] | undefined) ?? [];
-          const activeModel =
-            tabsList.find((t) => t.id === activeId)?.model || model;
+          const activeTab = tabsList.find((t) => t.id === activeId);
+          const activeModel = activeTab?.model || model;
           next = {
             ...next,
             model: activeModel,
@@ -960,6 +960,17 @@ export default function App() {
               })),
             },
           };
+          // Re-mirror the active tab's full state to the root keys.
+          // Without this, ready-replayed values for /messages, /canvas,
+          // etc. live only on the tab record but the layout binds via
+          // the root mirror, so the user wouldn't see the restored
+          // state until they switched tabs and back.
+          if (activeTab) {
+            const tabRec = activeTab as unknown as Record<string, unknown>;
+            for (const key of TAB_MIRROR_KEYS) {
+              next[key as string] = tabRec[key as string];
+            }
+          }
           return next;
         });
         // Re-establish bridge sessions for any non-default local tabs the

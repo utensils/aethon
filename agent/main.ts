@@ -1047,9 +1047,21 @@ async function main() {
           // so any in-flight bash subprocess gets SIGKILLed. Don't await —
           // we want to free the message loop immediately so a follow-up
           // chat doesn't queue behind a slow settle.
+          //
+          // Also drop pi's followUp queue and reset the local counter
+          // so the frontend's "waiting while queueCount > 0" gate
+          // doesn't keep the Stop button visible after abort.
           const tabId = msg.tabId ?? "default";
           const tab = tabs.get(tabId);
           if (!tab) break; // nothing to stop on a tab we never spun up
+          if (typeof (tab.session as { clearQueue?: () => unknown }).clearQueue === "function") {
+            try {
+              (tab.session as { clearQueue: () => unknown }).clearQueue();
+            } catch {
+              /* best effort — abort still fires below */
+            }
+          }
+          tab.queuedCount = 0;
           tab.session.abort().catch((err) => {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "error", tabId, message: `abort: ${message}` });
