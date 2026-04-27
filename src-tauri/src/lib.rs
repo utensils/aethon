@@ -420,12 +420,57 @@ struct AgentWatcher {
     _watcher: notify::RecommendedWatcher,
 }
 
+struct DebounceMsg {
+    settle_ms: u64,
+    paths: Vec<PathBuf>,
+}
+
+/// Single-thread debounce worker — collapses bursts of file events
+/// into one agent kill after the channel goes quiet for `settle_ms`.
+/// Each new message resets the timeout; the largest settle requested
+/// across the burst wins (so a node_modules event that arrives during
+/// an extension burst doesn't get prematurely fired).
+fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandle) {
+    use std::sync::mpsc::RecvTimeoutError;
+
+    loop {
+        // Block until we have at least one event to act on.
+        let first = match rx.recv() {
+            Ok(m) => m,
+            Err(_) => return, // sender dropped — watcher gone
+        };
+        let mut settle = first.settle_ms;
+        let mut last_paths = first.paths;
+        // Drain further events until the channel is quiet for `settle` ms.
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_millis(settle)) {
+                Ok(next) => {
+                    settle = settle.max(next.settle_ms);
+                    last_paths = next.paths;
+                }
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        }
+        // Quiet — fire the kill once.
+        let state: State<'_, AgentProcess> = app.state();
+        if let Ok(mut guard) = state.0.lock()
+            && let Some(mut child) = guard.take()
+        {
+            let pid = child.id();
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = app.emit("agent-reloaded", "");
+            eprintln!(
+                "[agent-watch] killed pid={pid} after {settle}ms settle; will respawn on next request (last paths={last_paths:?})",
+            );
+        }
+    }
+}
+
 fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     use notify::event::{DataChange, ModifyKind};
     use notify::{EventKind, RecursiveMode, Watcher};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     // Compose the watch list. Each path is included only if it exists
     // — missing extension dirs are normal for fresh installs.
@@ -465,14 +510,16 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         return None;
     }
 
-    // Trailing-edge debounce: each event bumps the "latest event"
-    // timestamp; a worker thread spawned per-event sleeps the debounce
-    // window and only fires the kill if no newer event has landed.
-    // This matters for npm install bursts where the first file write
-    // would otherwise trigger a reload mid-install.
-    let latest_event = Arc::new(AtomicU64::new(0));
+    // Trailing-edge debounce backed by a single worker thread (NOT
+    // one thread per event). The watcher posts each qualifying event
+    // through a channel; the worker's `recv_timeout` resets on each
+    // arrival and only fires the kill when the channel goes quiet for
+    // the configured settle window. npm install bursts produce
+    // thousands of events; spawning a thread per event would exhaust
+    // OS resources on the very scenario this is supposed to handle.
     let app_clone = app.clone();
-    let latest_event_clone = latest_event.clone();
+    let (debounce_tx, debounce_rx) = std::sync::mpsc::channel::<DebounceMsg>();
+    std::thread::spawn(move || run_debounce_worker(debounce_rx, app_clone.clone()));
 
     let mut watcher = match notify::recommended_watcher(
         move |res: notify::Result<notify::Event>| {
@@ -520,49 +567,18 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
                 return;
             }
 
-            // Trailing-edge debounce: bump the latest-event timestamp,
-            // spawn a thread that sleeps the debounce window, then
-            // only fires if THIS event is still the latest. Bursts
-            // (e.g. npm install writing 50 files) collapse into a
-            // single fire after they settle.
-            //
             // node_modules events get a longer settle window because
             // npm install can produce IO bursts spaced out beyond the
             // editor-save scale. Edits in agent/ or extension dirs
             // use a tighter window so the dev cycle stays snappy.
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            latest_event_clone.store(now, Ordering::Relaxed);
             let in_node_modules = event.paths.iter().any(|p| {
                 p.components()
                     .any(|c| matches!(c.as_os_str().to_str(), Some("node_modules")))
             });
             let settle_ms: u64 = if in_node_modules { 3000 } else { 1000 };
-            let app_for_thread = app_clone.clone();
-            let latest_for_thread = latest_event_clone.clone();
-            let event_paths = event.paths.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(settle_ms));
-                let observed = latest_for_thread.load(Ordering::Relaxed);
-                if observed != now {
-                    // A newer event landed during our sleep — that
-                    // thread will handle the fire; bail.
-                    return;
-                }
-                let state: State<'_, AgentProcess> = app_for_thread.state();
-                if let Ok(mut guard) = state.0.lock()
-                    && let Some(mut child) = guard.take()
-                {
-                    let pid = child.id();
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = app_for_thread.emit("agent-reloaded", "");
-                    eprintln!(
-                        "[agent-watch] killed pid={pid} after {settle_ms}ms settle; will respawn on next request (paths={event_paths:?})",
-                    );
-                }
+            let _ = debounce_tx.send(DebounceMsg {
+                settle_ms,
+                paths: event.paths.clone(),
             });
         },
     ) {
