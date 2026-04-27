@@ -186,8 +186,8 @@ by an extension without touching React source.
 
 #### A2UI primitive gaps
 
-- [ ] **Array-iteration template primitive (`for-each`)** — A2UI templates can't expand an array into N child components. Dynamic lists (model picker filter, search results, log tails) require imperative `patchLayout` per keystroke. Fix: add `{type: "for-each", props: {items: {$ref: "/some/array"}, item: <template>}}` that the renderer expands at bind time with `$item` (current element) and `$index` (position) accessible to nested `$ref`s. Re-renders automatically on array mutation. Same shape for `key` selection so React reconciliation stays stable.
-- [ ] **`$ref` resolution scope inside `for-each`** — extend the `$ref` resolver to understand `$item` / `$index` / `$parent` so templates can address values inside the iteration. Document precedence (`$item` shadows root for the path it covers, fall through to root otherwise).
+- [x] **Array-iteration template primitive (`for-each`)** — `{type: "for-each", props: {items: {$ref: "/some/array"}, key?: "<field>"}, children: [<template>]}`. Renderer expands `children` once per array element, suffixing every nested id with `__$idx<n>` so React keys stay stable. Auto-rerenders on array mutation.
+- [x] **`$ref` resolution scope inside `for-each`** — iteration injects three special keys into the scoped state map: `/$item` (current element), `/$index` (position), `/$parent` (surrounding state). Standard JSON Pointer resolution finds them — no resolver changes needed. Templates address values via `{ $ref: "/$item/label" }`. Documented in bundled docs (`components.md`) and the system prompt's iteration section.
 
 #### Hardcoded chrome → registerable
 
@@ -219,7 +219,7 @@ by an extension without touching React source.
 
 #### Documentation + agent guardrails
 
-- [x] **System prompt warns about array iteration limit** — `agent/system-prompt.ts` now ships an "A2UI templates do not iterate arrays" section with the supported pattern (regenerate via `patchLayout`) and a worked example. Will be replaced by `for-each` documentation once that primitive lands.
+- [x] **System prompt covers `for-each` iteration** — replaces the prior "no array iteration" warning. Documents `{$item, $index, $parent}` scope keys with a worked example.
 - [x] **System prompt covers the mutation feedback contract** — `agent/system-prompt.ts` now ships a "Knowing whether a mutation succeeded" section explaining the Promise return, the failure modes (`timeout`, `frontend_rejected: …`, validation), and the pre-connect immediate-resolve behavior. Bundled `docs/aethon-agent/api.md` carries the same contract at the head of the Mutation section.
 - [ ] **`docs/aethon-agent/{api,components,extensions}.md` updated** as each M5 item lands so the bundled reference matches reality. Currently docs describe the API as it exists today.
 

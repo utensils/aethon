@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
-import { isDynamicRef, setPointer } from "../utils/jsonPointer";
+import { isDynamicRef, resolvePointer, setPointer } from "../utils/jsonPointer";
 import { useSkillRegistry } from "../skills/registry";
 import { Button, Card, Code, Container, Image, Text, TextInput } from "./builtins";
 
@@ -87,6 +87,20 @@ function rewriteTemplateIds(node: A2UIComponent, prefix: string): A2UIComponent 
   };
   if (node.children && node.children.length > 0) {
     out.children = node.children.map((c) => rewriteTemplateIds(c, prefix));
+  }
+  return out;
+}
+
+// Suffix every id in a subtree with `__$idx<n>` so React keys stay
+// stable across N iterations of a for-each expansion. Without this all
+// rows would share the same key and clicks/events would be ambiguous.
+function suffixIds(node: A2UIComponent, suffix: string): A2UIComponent {
+  const out: A2UIComponent = {
+    ...node,
+    id: node.id ? `${node.id}${suffix}` : suffix,
+  };
+  if (node.children && node.children.length > 0) {
+    out.children = node.children.map((c) => suffixIds(c, suffix));
   }
   return out;
 }
@@ -242,7 +256,62 @@ export default function A2UIRenderer({
   const renderComponent = (
     component: A2UIComponent,
     templateRootType?: string,
+    scopedState?: Record<string, unknown>,
   ): React.ReactNode => {
+    // for-each: expand `children` once per element in `props.items`.
+    // The bound state for each iteration adds three keys consumable by
+    // nested $refs:
+    //   /$item   — current array element
+    //   /$index  — 0-based position
+    //   /$parent — the surrounding state (the same `state` outside scope)
+    // Use these from a child as `{ $ref: "/$item/label" }`.
+    if (component.type === "for-each") {
+      const props = component.props as
+        | { items?: unknown; key?: string }
+        | undefined;
+      let items: unknown = props?.items;
+      // Resolve $ref through the active state so the items can be
+      // bound to the global store (e.g. /sidebar/models).
+      if (isDynamicRef(items)) {
+        items = resolvePointer(scopedState ?? state, items.$ref);
+      }
+      if (!Array.isArray(items) || items.length === 0) return null;
+      const childTemplates = component.children ?? [];
+      const keyProp = props?.key;
+      const baseState = scopedState ?? state;
+      return items.map((item, index) => {
+        // Augment the surrounding state with the iteration locals. The
+        // resolver finds them via standard JSON Pointer lookup.
+        const iterState: Record<string, unknown> = {
+          ...baseState,
+          $item: item,
+          $index: index,
+          $parent: baseState,
+        };
+        // Pick a stable React key — explicit prop on the item wins,
+        // otherwise the index (rows can re-order at the cost of
+        // mounting/unmounting child controls).
+        const key =
+          keyProp && item && typeof item === "object" && keyProp in (item as object)
+            ? String((item as Record<string, unknown>)[keyProp])
+            : String(index);
+        return (
+          <div key={key}>
+            {childTemplates.map((child) =>
+              renderComponent(
+                suffixIds(child, `__$idx${index}`),
+                templateRootType,
+                iterState,
+              ),
+            )}
+          </div>
+        );
+      });
+    }
+
+    // Use the iteration-augmented state if we're inside a for-each;
+    // otherwise the renderer's own state.
+    const activeState = scopedState ?? state;
     const Component =
       PRIMITIVE_REGISTRY[component.type] ?? registry.resolve(component.type);
 
@@ -261,7 +330,7 @@ export default function A2UIRenderer({
         // Track the host template type so descendants' events carry it —
         // extension handlers register by template type to filter events
         // from their own template instances.
-        return renderComponent(expanded, component.type);
+        return renderComponent(expanded, component.type, scopedState);
       }
       console.warn(`Unknown A2UI component type: ${component.type}`);
       return null;
@@ -270,18 +339,18 @@ export default function A2UIRenderer({
     const renderChildren = component.children
       ? () =>
           component.children!.map((child) => (
-            <div key={child.id}>{renderComponent(child, templateRootType)}</div>
+            <div key={child.id}>{renderComponent(child, templateRootType, scopedState)}</div>
           ))
       : undefined;
 
     const renderChild = (child: A2UIComponent) =>
-      renderComponent(child, templateRootType);
+      renderComponent(child, templateRootType, scopedState);
 
     return (
       <Component
         key={component.id}
         component={component}
-        state={state}
+        state={activeState}
         onEvent={(eventType, data, descendantId) =>
           handleEvent(component, eventType, data, templateRootType, descendantId)
         }

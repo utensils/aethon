@@ -8,6 +8,17 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **`for-each` template primitive.** Renders one copy of `children` per
+  element of `props.items` (resolved through `$ref` against the surrounding
+  state). Optional `props.key` selects a field on each item to use as
+  the React reconciliation key. Three special keys are injected into the
+  per-iteration state for nested `$ref`s: `/$item` (current element),
+  `/$index` (position), `/$parent` (surrounding state). Child ids are
+  suffixed with `__$idx<n>` so React keys stay stable across N
+  iterations. Replaces the "regenerate the subtree on every mutation
+  via patchLayout" pattern for dynamic lists (model picker filters,
+  search results, log tails). Documented in bundled docs
+  (`components.md`) and the system prompt.
 - **Empty-state composite when the last tab closes.** `closeTab` no
   longer guards against closing the only/default tab — every tab is
   closable. When the tab list reaches zero the layout swaps to an

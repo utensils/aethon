@@ -185,32 +185,45 @@ Calls made at register-time (before the frontend connects) resolve as
 \`{ok: true}\` immediately — retained state replays on the next
 \`ready\`. Don't await in tight loops; the ack round-trip costs IPC.
 
-## A2UI templates do not iterate arrays
+## Iterating arrays with \`for-each\`
 
-A2UI templates are static trees — there is no \`for-each\` primitive yet.
-If the data you want to render is an N-element array (model picker filter
-results, a log tail, search hits), you cannot bind \`{$ref: "/some/array"}\`
-to children and have the renderer fan out one child per element.
+To render N components from an array of data, use the \`for-each\`
+primitive instead of regenerating the subtree on every mutation. The
+renderer expands each child once per array element with three special
+state keys available to nested \`$ref\`s:
 
-The supported pattern today: regenerate the subtree on each mutation via
-\`patchLayout\` or \`setState\`, building the array of components on the
-agent / extension side. Example:
+- \`/$item\` — the current array element
+- \`/$index\` — the 0-based position
+- \`/$parent\` — the surrounding state (still reachable for outside refs)
 
-\`\`\`ts
-function renderRows(items) {
-  return items.map((it, i) => ({
-    id: \`row-\${i}\`, type: "container",
-    children: [{ id: \`row-\${i}-label\`, type: "text",
-      props: { content: it.label } }],
-  }));
+\`\`\`json
+{
+  "id": "models-list", "type": "for-each",
+  "props": {
+    "items": { "$ref": "/sidebar/models" },
+    "key": "id"
+  },
+  "children": [
+    {
+      "id": "row", "type": "container",
+      "props": { "direction": "row", "gap": 8 },
+      "children": [
+        { "id": "label", "type": "text",
+          "props": { "content": { "$ref": "/$item/label" } } }
+      ]
+    }
+  ]
 }
-globalThis.aethon.patchLayout("/components/0/children/0/children", renderRows(items));
 \`\`\`
 
-Composite components like \`sidebar\` accept their items as a \`$ref\` and
-expand them internally — that is NOT a generic primitive, it's per-composite
-behavior. Custom-components registered via \`registerComponent\` do not get
-array iteration.
+\`props.key\` (optional) names the field on each item used as the React
+key for stable identity across reorder; defaults to the index. Re-renders
+automatically when the bound array mutates — no \`patchLayout\` per
+keystroke.
+
+When you need *programmatic* control (rendering rows from data computed
+outside any state path), still use \`patchLayout\` to build the children
+array in JavaScript and write it into the layout tree directly.
 
 ## What you should NOT do
 

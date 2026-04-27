@@ -99,6 +99,43 @@ formatting in body text — use Markdown in `text` content instead.
 `src` accepts `data:` URLs (used for tool result images), file:// URLs in
 dev, and http(s) URLs. Tool images cap at 4 per result.
 
+### `for-each`
+
+```ts
+{
+  items: ArrayValue,           // bound via {$ref: "/path"} (or inline)
+  key?: string,                // optional item field used as React key
+}
+```
+
+Iterates `items` and renders each child once per element. Inside the
+expansion, three special state keys are available to nested `$ref`s:
+
+- `/$item` — the current array element
+- `/$index` — the 0-based position
+- `/$parent` — the surrounding state (still reachable for outside refs)
+
+```json
+{
+  "type": "for-each",
+  "props": {
+    "items": { "$ref": "/results" },
+    "key": "id"
+  },
+  "children": [
+    { "id": "row", "type": "container",
+      "children": [
+        { "id": "label", "type": "text",
+          "props": { "content": { "$ref": "/$item/label" } } }
+      ] }
+  ]
+}
+```
+
+Each iteration's child ids get suffixed with `__$idx<n>` so React keys
+stay stable across N expansions. Re-renders automatically when the
+bound array mutates.
+
 ### `text-input`
 
 ```ts
