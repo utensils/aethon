@@ -328,17 +328,26 @@ interface ThemeRecord {
   vars: Record<string, string>;
 }
 
+// Theme ids the frontend ships built-in CSS for (see src/styles.css).
+// Extensions can't reuse these — the frontend always seeds the sidebar
+// with these labels and the rule comes from the static stylesheet, so
+// shadowing would either show a duplicate item or silently override
+// the built-in palette. The bridge rejects collisions here.
+const RESERVED_THEME_IDS = new Set(["dark", "light"]);
+
 // Validate theme metadata. The id is constrained to a slug so it's safe
 // to embed in a CSS selector and a <style> element id; the variable
 // names must look like CSS custom properties (`--*`). Variable values
 // are passed through as-is — the frontend writes them via CSSOM
 // `setProperty`, which silently rejects anything that would escape
-// the declaration. Returns null when the input is too malformed to use.
+// the declaration. Returns null when the input is too malformed to use
+// (or collides with a reserved built-in id).
 function normalizeTheme(input: unknown): ThemeRecord | null {
   if (!input || typeof input !== "object") return null;
   const t = input as { id?: unknown; label?: unknown; vars?: unknown };
   const id = typeof t.id === "string" ? t.id.trim() : "";
   if (!/^[A-Za-z][\w-]*$/.test(id)) return null;
+  if (RESERVED_THEME_IDS.has(id)) return null;
   const label = typeof t.label === "string" && t.label.trim().length > 0
     ? t.label.trim()
     : id;
@@ -505,9 +514,14 @@ async function main() {
   function _registerTheme(theme: unknown): void {
     const normalized = normalizeTheme(theme);
     if (!normalized) {
+      const id = (theme as { id?: unknown } | null)?.id;
+      const reserved =
+        typeof id === "string" && RESERVED_THEME_IDS.has(id.trim());
       send({
         type: "error",
-        message: "registerTheme: theme requires {id, label?, vars}",
+        message: reserved
+          ? `registerTheme: id "${id}" is reserved (built-in theme)`
+          : "registerTheme: theme requires {id, label?, vars}",
       });
       return;
     }
