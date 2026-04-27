@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -134,6 +134,52 @@ fn project_root() -> PathBuf {
     cwd
 }
 
+/// Capture the user's login-shell PATH so the sidecar can find tools that
+/// live outside launchd's minimal `/usr/bin:/bin:/usr/sbin:/sbin`. macOS
+/// .app launches inherit that minimal PATH and lose Homebrew, Nix profile
+/// dirs, `~/.npm-global/bin`, etc. — pi's package resolver hits this
+/// immediately with `npm root -g` when settings.json declares any npm
+/// package source. Mirrors the workaround VS Code / Sublime / iTerm use.
+///
+/// Cached forever once computed (the shell hop costs ~50–200 ms). Only
+/// runs on macOS in release builds — Linux/Windows GUI launchers preserve
+/// the inherited environment, and dev launches happen from a terminal that
+/// already has the right PATH.
+fn resolved_login_path() -> Option<String> {
+    static CACHED: OnceLock<Option<String>> = OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            if !cfg!(target_os = "macos") {
+                return None;
+            }
+            // SHELL points at the user's login shell; fall back to zsh
+            // (the macOS default since 10.15) when unset.
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+            // -i forces interactive mode so ~/.zshrc / ~/.bashrc /
+            // ~/.config/fish/config.fish are sourced. -l makes it a
+            // login shell so ~/.zprofile / ~/.bash_profile fire too.
+            //
+            // Run `env` instead of trying to `echo $PATH` directly: fish
+            // treats $PATH as a list and prints entries space-separated
+            // (POSIX wants colons), which would silently corrupt the
+            // recovered value. `env` always emits the actual exported
+            // environment with PATH= colon-separated, regardless of the
+            // shell that runs it.
+            let out = Command::new(&shell)
+                .args(["-ilc", "env"])
+                .output()
+                .ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let path_line = stdout.lines().find(|l| l.starts_with("PATH="))?;
+            let value = path_line.strip_prefix("PATH=")?.to_string();
+            if value.is_empty() { None } else { Some(value) }
+        })
+        .clone()
+}
+
 /// Locate the bundled `aethon-agent` sidecar binary. Tauri's externalBin
 /// mechanism places sidecars next to the main executable on each platform
 /// (e.g. `Aethon.app/Contents/MacOS/aethon-agent-aarch64-apple-darwin`).
@@ -187,8 +233,11 @@ fn find_sidecar_binary() -> Result<PathBuf, String> {
 /// the watcher in `debug.rs`. In release we run the compiled
 /// `aethon-agent` sidecar bundled by Tauri, with `PI_PACKAGE_DIR` set to
 /// the shipped pi metadata so `pi-coding-agent`'s package.json read at
-/// module load doesn't fail. Stdout is read on a background thread; each
-/// line is emitted as an `agent-response` Tauri event.
+/// module load doesn't fail, plus an enriched PATH (see
+/// `resolved_login_path`) so pi can find npm/git when scanning user
+/// packages from `~/.pi/agent/settings.json`. Stdout is read on a
+/// background thread; each line is emitted as an `agent-response`
+/// Tauri event.
 fn ensure_agent_spawned(
     guard: &mut Option<Child>,
     app: &AppHandle,
@@ -223,6 +272,13 @@ fn ensure_agent_spawned(
         let pi_dir = resource_dir.join("pi");
         let mut c = Command::new(&bin);
         c.env("PI_PACKAGE_DIR", &pi_dir);
+        // Bundled .app launches inherit launchd's minimal PATH on macOS, so
+        // pi's `npm root -g` (run when resolving user packages from
+        // ~/.pi/agent/settings.json) fails with ENOENT. Source the user's
+        // login shell once to recover the real PATH and inject it.
+        if let Some(path) = resolved_login_path() {
+            c.env("PATH", path);
+        }
         c
     };
 
@@ -284,6 +340,7 @@ fn start_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), Str
 #[tauri::command]
 fn send_message(
     message: String,
+    tab_id: Option<String>,
     state: State<'_, AgentProcess>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -292,7 +349,13 @@ fn send_message(
 
     let child = guard.as_mut().ok_or("agent not running")?;
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-    let payload = serde_json::json!({"type": "chat", "content": message});
+    // tabId routes to a specific pi session; the bridge defaults to
+    // "default" when omitted so legacy single-tab callers keep working.
+    let payload = serde_json::json!({
+        "type": "chat",
+        "content": message,
+        "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
+    });
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
     Ok(())
@@ -320,6 +383,7 @@ fn agent_command(
 #[tauri::command]
 fn dispatch_a2ui_event(
     event: String,
+    tab_id: Option<String>,
     state: State<'_, AgentProcess>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -330,7 +394,13 @@ fn dispatch_a2ui_event(
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
     let event_value: serde_json::Value =
         serde_json::from_str(&event).map_err(|e| e.to_string())?;
-    let payload = serde_json::json!({"type": "a2ui_event", "event": event_value});
+    // tabId routes the event (and any handler-fired pi.prompt()) to the
+    // originating tab's session instead of always defaulting to "default".
+    let payload = serde_json::json!({
+        "type": "a2ui_event",
+        "event": event_value,
+        "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
+    });
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
     Ok(())

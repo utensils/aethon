@@ -182,7 +182,7 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
 // embedded A2UI subtrees (rendered recursively).
 // ---------------------------------------------------------------------------
 
-export function ChatHistory({ component, state }: BuiltinComponentProps) {
+export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
     messages: { $ref: string };
     emptyHint?: StringValue;
@@ -212,7 +212,9 @@ export function ChatHistory({ component, state }: BuiltinComponentProps) {
                 <ReactMarkdown>{m.text}</ReactMarkdown>
               </div>
             )}
-            {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} />}
+            {/* tabId forwards so clicks inside the embedded card route
+                back to the originating tab's pi session. */}
+            {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} tabId={tabId} />}
           </div>
         ))
       )}
@@ -225,7 +227,7 @@ export function ChatHistory({ component, state }: BuiltinComponentProps) {
 // feed (history) plus a live "current canvas" subtree if state.canvas is set.
 // ---------------------------------------------------------------------------
 
-export function MainCanvas({ component, state }: BuiltinComponentProps) {
+export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
     slot?: string;
     messages?: { $ref: string };
@@ -262,12 +264,12 @@ export function MainCanvas({ component, state }: BuiltinComponentProps) {
               <ReactMarkdown>{m.text}</ReactMarkdown>
             </div>
           )}
-          {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} />}
+          {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} tabId={tabId} />}
         </div>
       ))}
       {liveSubtree && (
         <div className="a2ui-canvas-live">
-          <A2UIRenderer payload={liveSubtree} state={state} />
+          <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
     </main>
@@ -588,6 +590,13 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     // stream (`aethon:terminal` window event). Off by default so skills can
     // mount independent terminals without receiving the agent's bash chatter.
     subscribeToBash?: BooleanValue;
+    // Display-only mode: hides the cursor and ignores keystrokes entirely.
+    // Aethon ships no PTY backend, so the default terminal panel is a
+    // window onto the agent's bash output, not an interactive shell —
+    // accepting keystrokes that lead nowhere just confuses users into
+    // thinking the panel is broken. Skills with their own input pipeline
+    // can opt out by leaving readOnly unset.
+    readOnly?: BooleanValue;
   };
 
   const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
@@ -595,6 +604,9 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   const rows = props.rows ? resolveNumber(props.rows, state) : undefined;
   const subscribeToBash = props.subscribeToBash
     ? resolveBoolean(props.subscribeToBash, state)
+    : false;
+  const readOnly = props.readOnly
+    ? resolveBoolean(props.readOnly, state)
     : false;
   // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
   // to drive the terminal via state — the diff effect below handles it the
@@ -619,9 +631,17 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       theme: {
         background: "#0e0e10",
         foreground: "#e8e8ec",
-        cursor: "#7c8cff",
+        // Make the cursor invisible in read-only mode by drawing it the same
+        // color as the background — xterm.js doesn't expose a cursor.hide flag.
+        cursor: readOnly ? "#0e0e10" : "#7c8cff",
       },
-      cursorBlink: true,
+      cursorBlink: !readOnly,
+      // disableStdin tells xterm to ignore keystrokes entirely. Without this
+      // a focused terminal still calls onData for each keystroke (which we
+      // currently dispatch as an a2ui_event with no handler), and any
+      // unrelated re-render on the same tick can collapse the panel via
+      // the layout's `visible` binding.
+      disableStdin: readOnly,
       allowProposedApi: true,
     });
     termRef.current = term;
@@ -642,19 +662,22 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     }
 
     fit.fit();
-    term.write("aethon terminal — xterm.js + WebGL\r\n$ ");
+    term.write("Aethon Terminal\r\n$ ");
 
-    if (props.onInput) {
+    // onInput wires xterm's keystroke stream to an A2UI event so a future
+    // skill with a real PTY backend can plug in. Skip it in read-only mode
+    // to keep the terminal display-only.
+    if (props.onInput && !readOnly) {
       term.onData((data) => onEvent("input", { data }));
     }
 
-    // App.tsx fires this event whenever the agent's bash tool produces
-    // output. Writing through xterm directly keeps the bounded scrollback
-    // buffer xterm already manages — no parallel growing string in React
-    // state. Only this terminal subscribes when subscribeToBash is true,
-    // so skills can mount independent terminals without picking up the
-    // agent's bash stream.
+    // App.tsx fires `aethon:terminal` for live bash output and
+    // `aethon:terminal-replay` on tab switch (clear + replay the active
+    // tab's buffered scrollback). Only this terminal subscribes when
+    // subscribeToBash is true so skills can mount independent terminals
+    // without picking up the agent's bash stream.
     let onTerminalEvent: ((e: Event) => void) | null = null;
+    let onReplayEvent: ((e: Event) => void) | null = null;
     if (subscribeToBash) {
       onTerminalEvent = (e: Event) => {
         const detail = (e as CustomEvent<string>).detail;
@@ -662,7 +685,18 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
           term.write(detail);
         }
       };
+      onReplayEvent = (e: Event) => {
+        const detail = (e as CustomEvent<string>).detail;
+        // Clear restores the prompt-style header line plus the buffered
+        // contents for the now-active tab. Empty buffer = fresh prompt.
+        term.clear();
+        term.write("Aethon Terminal\r\n$ ");
+        if (typeof detail === "string" && detail.length > 0) {
+          term.write(detail);
+        }
+      };
       window.addEventListener("aethon:terminal", onTerminalEvent);
+      window.addEventListener("aethon:terminal-replay", onReplayEvent);
     }
 
     const ro = new ResizeObserver(() => {
@@ -678,6 +712,9 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       ro.disconnect();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);
+      }
+      if (onReplayEvent) {
+        window.removeEventListener("aethon:terminal-replay", onReplayEvent);
       }
       term.dispose();
       termRef.current = null;
@@ -706,10 +743,100 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   return (
     <div className="a2ui-terminal">
       <div className="a2ui-terminal-header">
-        <span>Terminal</span>
-        <span>xterm.js · WebGL</span>
+        <span>Aethon Terminal</span>
       </div>
       <div ref={containerRef} className="a2ui-terminal-mount" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TabStrip — horizontal row of tab pills + a "+" button to create new ones.
+// Each tab shows its label; the active one is highlighted; non-default tabs
+// have a small "×" close button. All interactions go through onEvent so
+// App.tsx can route them to its tab helpers (newTab / closeTab / switch).
+//
+// Props:
+//   tabs:        $ref to /tabs (array of { id, label }) — items to render
+//   activeId:    $ref to /activeTabId — which tab is highlighted
+//
+// Events:
+//   ("select",  { tabId })  click on a tab pill
+//   ("close",   { tabId })  click on a tab's close button
+//   ("new")                 click on the "+" button
+// ---------------------------------------------------------------------------
+
+interface TabStripItem {
+  id: string;
+  label: string;
+}
+
+export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
+  const props = component.props as {
+    tabs?: { $ref: string } | TabStripItem[];
+    activeId?: StringValue;
+  };
+  const tabs: TabStripItem[] = useMemo(() => {
+    if (!props.tabs) return [];
+    if (Array.isArray(props.tabs)) return props.tabs;
+    const ref = props.tabs as { $ref?: string };
+    if (typeof ref.$ref === "string") {
+      const v = resolvePointer(state, ref.$ref);
+      if (Array.isArray(v)) return v as TabStripItem[];
+    }
+    return [];
+  }, [props.tabs, state]);
+  const activeId = props.activeId ? resolveString(props.activeId, state) : "";
+
+  return (
+    <div className="a2ui-tab-strip" role="tablist">
+      {tabs.map((t) => {
+        const isActive = t.id === activeId;
+        const canClose = t.id !== "default" && tabs.length > 1;
+        return (
+          <div
+            key={t.id}
+            role="tab"
+            aria-selected={isActive}
+            className={
+              isActive ? "a2ui-tab a2ui-tab-active" : "a2ui-tab"
+            }
+            onMouseDown={(e) => {
+              // mousedown not click so focus doesn't shift away from the
+              // chat input first (avoids a stray blur that could submit
+              // a draft). The select handler swaps the active tab.
+              if ((e.target as HTMLElement).closest(".a2ui-tab-close")) return;
+              e.preventDefault();
+              onEvent("select", { tabId: t.id });
+            }}
+          >
+            <span className="a2ui-tab-label">{t.label}</span>
+            {canClose && (
+              <button
+                type="button"
+                className="a2ui-tab-close"
+                aria-label={`Close ${t.label}`}
+                title={`Close ${t.label}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEvent("close", { tabId: t.id });
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="a2ui-tab-new"
+        title="New tab (⌘T)"
+        aria-label="New tab"
+        onClick={() => onEvent("new")}
+      >
+        +
+      </button>
     </div>
   );
 }

@@ -86,12 +86,19 @@ import {
   getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { resolveAethonSystemPrompt } from "./system-prompt";
+
+// Per-turn tabId propagated through the async call chain that runs
+// inside session.prompt(). Concurrent prompts on different tabs each
+// get their own store, so a setState fired from inside one tab's
+// agent code doesn't get attributed to whichever tab last started.
+const tabContext = new AsyncLocalStorage<string>();
 
 function send(obj: Record<string, unknown>) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -408,6 +415,24 @@ async function main() {
   const modelRegistry = ModelRegistry.create(authStorage);
   const settingsManager = SettingsManager.create(process.cwd());
 
+  // Tab whose pi turn is currently running. Set when a chat / handler
+  // prompt is dispatched; cleared on agent_end. Used by _setState so
+  // direct globalThis.aethon.setState calls from the agent or extensions
+  // reacting to agent events get attributed to the right tab even
+  // though the API itself takes no tabId argument.
+  //
+  // Hoisted to the top of main() so _setState's reference doesn't TDZ
+  // when an extension calls aethon.setState during resourceLoader.reload()
+  // — extensions that initialize UI state at load time would otherwise
+  // crash agent startup with a ReferenceError.
+  //
+  // Concurrent prompts across tabs would race this — pi's followUp
+  // queue serializes within a tab, but a handler could fire
+  // ctx.pi.prompt on tab A while a chat is processing on tab B.
+  // For now we track only the most recent prompt's tab; multi-tab
+  // concurrency is an acknowledged sharp edge.
+  let currentAgentTabId: string | undefined;
+
   // Build the Aethon extension API and attach it to globalThis BEFORE
   // createAgentSession runs, because pi loads extensions inside that call.
   // Without this ordering, pi extensions that try to call
@@ -419,6 +444,12 @@ async function main() {
   // preserved on iteration so the sidebar shows them in registration order.
   const extensionThemes = new Map<string, ThemeRecord>();
   let extensionStateTree: Record<string, unknown> = {};
+  // Per-tab mirrored-key writes (canvas / messages / draft / waiting /
+  // queueCount / model). Kept separate from the global extensionStateTree
+  // so a webview reload's `ready` can replay each tab's UI state without
+  // smearing one tab's writes into another. Frontend reads this from
+  // data.extensionTabState on ready and merges per tab record.
+  const perTabExtState = new Map<string, Record<string, unknown>>();
   // Latest extension-supplied layout (set by setLayout, mutated by
   // patchLayout). Retained so a webview reload's `report` → `ready`
   // re-emits it instead of falling back to the boot layout. `undefined`
@@ -494,13 +525,57 @@ async function main() {
       components: Object.fromEntries(extensionComponents),
     });
   }
-  function _setState(path: string, value: unknown): void {
+  function _setState(path: string, value: unknown, sourceTabId?: string): void {
     if (!path || typeof path !== "string") return;
-    extensionStateTree = setAtPointer(extensionStateTree, path, value);
-    send({ type: "state_patch", path, value });
+    // tabId attribution priority:
+    //   1. explicit sourceTabId (handler-scoped ctx.setState)
+    //   2. tabContext.getStore() — per-turn ALS value, propagates through
+    //      the agent's async call chain so concurrent prompts in
+    //      different tabs don't smear into one another.
+    //   3. currentAgentTabId — fallback for sync code paths that
+    //      escape the ALS context (e.g. event listeners attached
+    //      outside the prompt's run scope).
+    //   4. omit tabId — frontend falls back to active. Last resort
+    //      for truly tab-less setStates (clock interval, etc.).
+    const attributedTab =
+      sourceTabId ?? tabContext.getStore() ?? currentAgentTabId;
+    // Per-tab mirrored writes (canvas / messages / draft / waiting /
+    // queueCount / model) DON'T belong in the global extensionStateTree
+    // — that gets replayed wholesale on `ready` and would smear one
+    // tab's state across whichever tab is active after the reload.
+    // Instead route them into perTabExtState so each tab's mirrored
+    // values can be replayed back into its own record on ready.
+    const segs = path.split("/").filter(Boolean);
+    const top = segs[0];
+    const isMirroredPerTab =
+      attributedTab !== undefined &&
+      (top === "messages" || top === "draft" || top === "waiting" ||
+       top === "queueCount" || top === "canvas" || top === "model");
+    if (isMirroredPerTab && attributedTab) {
+      const before = perTabExtState.get(attributedTab) ?? {};
+      perTabExtState.set(attributedTab, setAtPointer(before, path, value));
+    } else {
+      extensionStateTree = setAtPointer(extensionStateTree, path, value);
+    }
+    send({
+      type: "state_patch",
+      path,
+      value,
+      ...(attributedTab ? { tabId: attributedTab } : {}),
+    });
   }
+  // Pi may re-run extension register() per session, and `tabs` create
+  // sessions on demand — so without dedup, every new tab would re-add
+  // every extension handler, multiplying side effects on each click.
+  // Key by (stringified match + handler source) so a logically identical
+  // re-registration is a no-op while truly distinct handlers (different
+  // match or different fn body) still register.
+  const registeredHandlerKeys = new Set<string>();
   function _onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
     if (typeof handler !== "function") return;
+    const key = JSON.stringify(match) + "::" + handler.toString();
+    if (registeredHandlerKeys.has(key)) return;
+    registeredHandlerKeys.add(key);
     a2uiEventHandlers.push({ match, handler });
   }
   function _setLayout(payload: unknown): void {
@@ -592,90 +667,89 @@ async function main() {
   });
   await resourceLoader.reload();
 
-  const { session } = await createAgentSession({
-    authStorage,
-    modelRegistry,
-    settingsManager,
-    sessionManager: SessionManager.inMemory(),
-    resourceLoader,
-  });
+  // ---------------------------------------------------------------------
+  // Multi-tab session model. Each tab owns its own pi AgentSession and the
+  // per-turn state machine that wraps it (in-flight tracking, queue count,
+  // tool args cache for end-state cards). Sessions share authStorage,
+  // modelRegistry, settingsManager, and resourceLoader so they all see the
+  // same models and extension surface — only message history and active
+  // turn are isolated.
+  //
+  // Tabs are created lazily on first inbound message for a tabId. The
+  // frontend always sends tabId; legacy callers without it default to
+  // "default". Closing a tab aborts its in-flight prompt and drops the
+  // session reference; pi reclaims the in-memory history with the GC.
+  // ---------------------------------------------------------------------
+  interface TabRecord {
+    id: string;
+    session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+    toolArgsCache: Map<string, { name: string; summary: string }>;
+    promptInFlight: boolean;
+    agentEndFired: boolean;
+    queuedCount: number;
+  }
+
+  const tabs = new Map<string, TabRecord>();
 
   // Filter the picker to the user's enabledModels patterns from
   // ~/.pi/agent/settings.json. Patterns may include `*` wildcards
   // (e.g., "anthropic/claude-*"). When no patterns are configured,
   // fall back to authed models so the picker is never empty.
-  const all = modelRegistry.getAll();
-  const enabled = settingsManager.getEnabledModels();
-  let pickerModels: Model<Api>[];
-  if (enabled && enabled.length > 0) {
-    const patterns = enabled.map(compilePattern);
-    pickerModels = all.filter((m) => {
-      const key = modelKey(m);
-      return patterns.some((p) => p.test(key));
-    });
-  } else {
-    pickerModels = modelRegistry.getAvailable();
+  // Computed once — the picker is global, not per-tab.
+  function buildPickerModels(currentModel?: Model<Api>): Model<Api>[] {
+    const all = modelRegistry.getAll();
+    const enabled = settingsManager.getEnabledModels();
+    let pickerModels: Model<Api>[];
+    if (enabled && enabled.length > 0) {
+      const patterns = enabled.map(compilePattern);
+      pickerModels = all.filter((m) => patterns.some((p) => p.test(modelKey(m))));
+    } else {
+      pickerModels = modelRegistry.getAvailable();
+    }
+    // Always include the current session model so the active model is
+    // selectable even if its provider isn't authed or matched.
+    const seen = new Set(pickerModels.map(modelKey));
+    if (currentModel && !seen.has(modelKey(currentModel))) {
+      pickerModels.unshift(currentModel);
+    }
+    return pickerModels;
   }
 
-  // Always include the current session model so the active model is
-  // selectable even if its provider isn't authed or matched.
-  const seen = new Set(pickerModels.map(modelKey));
-  if (session.model && !seen.has(modelKey(session.model))) {
-    pickerModels.unshift(session.model);
+  // Cache the picker so emitReady doesn't recompute on every report.
+  // First populated when the default tab is created.
+  let cachedModels: ReturnType<typeof modelDescriptor>[] = [];
+
+  function defaultModelKey(): string {
+    const def = tabs.get("default");
+    return def?.session.model ? modelKey(def.session.model) : "";
   }
-  const models = pickerModels.map(modelDescriptor);
 
   function emitReady() {
-    const currentModelId = session.model ? modelKey(session.model) : "";
     send({
       type: "ready",
-      model: currentModelId,
-      models,
+      model: defaultModelKey(),
+      models: cachedModels,
+      tabs: [...tabs.values()].map((t) => ({
+        id: t.id,
+        model: t.session.model ? modelKey(t.session.model) : "",
+      })),
       extensionComponents: Object.fromEntries(extensionComponents),
       extensionState: extensionStateTree,
+      extensionTabState: Object.fromEntries(perTabExtState),
       extensionLayout,
       extensionLayoutPatches: pendingLayoutPatches,
       extensionThemes: [...extensionThemes.values()],
     });
   }
 
-  // Discover Aethon-only extensions in `~/.aethon/extensions/*.ts` and call
-  // their `register(api)` default export. (Pi extensions reach the same API
-  // via `globalThis.aethon` — set above before createAgentSession.)
-  // Failures in one extension don't block others.
-  await loadAethonExtensions(aethonApi);
-
-  emitReady();
-
-  // Cache tool args from start so we can include them in the end-state card
-  // (tool_execution_end doesn't carry args).
-  const toolArgsCache = new Map<string, { name: string; summary: string }>();
-
-  // Tracks whether a prompt is mid-flight (between `session.prompt()` call
-  // and the agent_end event). Used to reject overlapping `chat` messages so
-  // the frontend doesn't get confused by AgentSession's "already processing"
-  // rejection. `agentEndFired` distinguishes prompts that triggered an agent
-  // run from prompts pi handled without one (e.g. server-side slash commands
-  // that short-circuit before invoking the LLM).
-  let promptInFlight = false;
-  let agentEndFired = false;
-
   // Format and forward bash output to the terminal panel in chunks. Caps a
   // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
-  // can't choke the IPC pipe.
-  //
-  // We deliberately only stream on tool_execution_end, not partial updates.
-  // pi's bash tool exposes `partialResult.text` as a rolling tail (see
-  // pi-coding-agent/.../core/tools/bash.js — "rolling buffer of recent
-  // output for tail truncation"), so accumulating from partials reliably
-  // would require either (a) an upstream cumulative byte counter we don't
-  // have or (b) overlap matching that breaks on identical repeated chunks.
-  // Streaming only the final result avoids gap/duplication tradeoffs at
-  // the cost of not seeing live progress on long-running commands.
+  // can't choke the IPC pipe. Now per-tab — the frontend buffers each tab
+  // independently and only renders the active tab's stream.
   const TERMINAL_MAX_BYTES = 64 * 1024;
   const TERMINAL_CHUNK_BYTES = 8 * 1024;
 
-  function emitBashResult(text: string): void {
+  function emitBashResult(text: string, tabId: string): void {
     if (!text) return;
     let body = text;
     let truncated = false;
@@ -686,6 +760,7 @@ async function main() {
     if (truncated) {
       send({
         type: "terminal_output",
+        tabId,
         content: `\r\n[…output truncated to last ${TERMINAL_MAX_BYTES} bytes]\r\n`,
       });
     }
@@ -693,101 +768,153 @@ async function main() {
     for (let i = 0; i < normalized.length; i += TERMINAL_CHUNK_BYTES) {
       send({
         type: "terminal_output",
+        tabId,
         content: normalized.slice(i, i + TERMINAL_CHUNK_BYTES),
       });
     }
   }
 
-  // Stream text deltas, surface tool calls as A2UI cards, and flush
-  // `response_end` when the agent settles. The frontend appends text deltas
-  // to the trailing chat bubble, replaces tool messages by their stable id
-  // (so "running…" → "done" updates in place), and unsets the waiting flag
-  // on response_end.
-  // Drain count: how many followUp messages we've queued behind the
-  // current turn. Decremented when each subsequent turn starts so the
-  // frontend knows when the queue empties.
-  let queuedCount = 0;
+  // Create (or fetch) the session record for a tabId. Subscribes to its
+  // pi session and tags every per-turn event with tabId so the frontend
+  // routes deltas / tool cards / response_end to the right tab. The first
+  // call also seeds cachedModels — the picker is global but its content
+  // depends on a session having been spun up so we know the current
+  // model defaults.
+  //
+  // initialModel lets the caller create the session with a specific model
+  // already selected, avoiding a tab_open → set_model round-trip race
+  // where a fast first prompt could land before the model switch.
+  async function ensureTab(
+    tabId: string,
+    initialModel?: Model<Api>,
+  ): Promise<TabRecord> {
+    const existing = tabs.get(tabId);
+    if (existing) return existing;
 
-  session.subscribe((event) => {
-    switch (event.type) {
-      case "agent_start": {
-        // Fires per turn — including the next turn pi automatically
-        // starts after draining a followUp message. Re-emit
-        // prompt_started so the frontend keeps Stop visible across
-        // queue boundaries (avoids a brief Send-flash between turns).
-        if (queuedCount > 0) {
-          queuedCount -= 1;
-          send({ type: "prompt_started", source: "queue", queued: queuedCount });
-        }
-        break;
-      }
-      case "message_update": {
-        if (event.assistantMessageEvent.type === "text_delta") {
-          const delta = event.assistantMessageEvent.delta ?? "";
-          if (delta) {
-            // pi assigns each AssistantMessage a unique `timestamp` at message
-            // start; reuse it as a stable per-message id so the frontend can
-            // append later deltas to the same chat bubble after tool calls.
-            const ts =
-              (event.message as { timestamp?: number } | undefined)?.timestamp ?? 0;
-            const messageId = `text-${ts}`;
-            send({ type: "response_delta", messageId, content: delta });
-          }
-        }
-        break;
-      }
-      case "tool_execution_start": {
-        const summary = summarizeToolArgs(event.toolName, event.args);
-        toolArgsCache.set(event.toolCallId, { name: event.toolName, summary });
-        const payload = toolCardPayload({
-          callId: event.toolCallId,
-          toolName: event.toolName,
-          argsSummary: summary,
-          running: true,
-        });
-        send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
-        // Echo the bash command into the visible terminal panel so the user
-        // can follow what the agent is running. The card uses a one-line
-        // summary, but here we want the verbatim multi-line command so
-        // heredocs / inline scripts read accurately in xterm.
-        if (event.toolName === "bash") {
-          const cmd = String(
-            (event.args as { command?: unknown } | undefined)?.command ?? "",
-          );
-          const echoed = cmd.replace(/\r?\n/g, "\r\n");
-          send({
-            type: "terminal_output",
-            content: `\r\n$ ${echoed}\r\n`,
-          });
-        }
-        break;
-      }
-      case "tool_execution_end": {
-        const cached = toolArgsCache.get(event.toolCallId);
-        const payload = toolCardPayload({
-          callId: event.toolCallId,
-          toolName: event.toolName,
-          argsSummary: cached?.summary ?? "",
-          result: event.result,
-          isError: event.isError,
-        });
-        send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
-        if (event.toolName === "bash") {
-          const extracted = extractToolContent(event.result);
-          emitBashResult(extracted.text);
-          send({ type: "terminal_output", content: "\r\n" });
-        }
-        toolArgsCache.delete(event.toolCallId);
-        break;
-      }
-      case "agent_end": {
-        agentEndFired = true;
-        promptInFlight = false;
-        send({ type: "response_end" });
-        break;
-      }
+    const { session } = await createAgentSession({
+      authStorage,
+      modelRegistry,
+      settingsManager,
+      sessionManager: SessionManager.inMemory(),
+      resourceLoader,
+      ...(initialModel ? { model: initialModel } : {}),
+    });
+
+    const rec: TabRecord = {
+      id: tabId,
+      session,
+      toolArgsCache: new Map(),
+      promptInFlight: false,
+      agentEndFired: false,
+      queuedCount: 0,
+    };
+    tabs.set(tabId, rec);
+
+    // First tab: populate the global picker now that we have a model.
+    if (cachedModels.length === 0) {
+      cachedModels = buildPickerModels(session.model).map(modelDescriptor);
     }
-  });
+
+    // Per-tab subscriber. Closes over rec so increments / clears stay
+    // local; closes over tabId so outbound events carry routing.
+    session.subscribe((event) => {
+      switch (event.type) {
+        case "agent_start": {
+          // Each turn (initial or queue-drained) is owned by this tab —
+          // set currentAgentTabId so any setStates the agent triggers
+          // route correctly. Cleared in agent_end below.
+          currentAgentTabId = tabId;
+          if (rec.queuedCount > 0) {
+            rec.queuedCount -= 1;
+            // The previous agent_end cleared promptInFlight, but pi has
+            // already started the queue-drained turn — re-mark in-flight
+            // so a follow-up chat / set_model on this tab queues correctly
+            // instead of being treated as a fresh idle prompt.
+            rec.promptInFlight = true;
+            rec.agentEndFired = false;
+            send({ type: "prompt_started", tabId, source: "queue", queued: rec.queuedCount });
+          }
+          break;
+        }
+        case "message_update": {
+          if (event.assistantMessageEvent.type === "text_delta") {
+            const delta = event.assistantMessageEvent.delta ?? "";
+            if (delta) {
+              const ts = (event.message as { timestamp?: number } | undefined)?.timestamp ?? 0;
+              const messageId = `text-${ts}`;
+              send({ type: "response_delta", tabId, messageId, content: delta });
+            }
+          }
+          break;
+        }
+        case "tool_execution_start": {
+          const summary = summarizeToolArgs(event.toolName, event.args);
+          rec.toolArgsCache.set(event.toolCallId, { name: event.toolName, summary });
+          const payload = toolCardPayload({
+            callId: event.toolCallId,
+            toolName: event.toolName,
+            argsSummary: summary,
+            running: true,
+          });
+          send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
+          if (event.toolName === "bash") {
+            const cmd = String((event.args as { command?: unknown } | undefined)?.command ?? "");
+            const echoed = cmd.replace(/\r?\n/g, "\r\n");
+            send({ type: "terminal_output", tabId, content: `\r\n$ ${echoed}\r\n` });
+          }
+          break;
+        }
+        case "tool_execution_end": {
+          const cached = rec.toolArgsCache.get(event.toolCallId);
+          const payload = toolCardPayload({
+            callId: event.toolCallId,
+            toolName: event.toolName,
+            argsSummary: cached?.summary ?? "",
+            result: event.result,
+            isError: event.isError,
+          });
+          send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
+          if (event.toolName === "bash") {
+            const extracted = extractToolContent(event.result);
+            emitBashResult(extracted.text, tabId);
+            send({ type: "terminal_output", tabId, content: "\r\n" });
+          }
+          rec.toolArgsCache.delete(event.toolCallId);
+          break;
+        }
+        case "agent_end": {
+          rec.agentEndFired = true;
+          rec.promptInFlight = false;
+          if (currentAgentTabId === tabId) currentAgentTabId = undefined;
+          send({ type: "response_end", tabId });
+          break;
+        }
+      }
+    });
+
+    // Tell the frontend a new tab is ready so it can show the model it
+    // defaulted to (relevant for tabs created server-side or via "duplicate").
+    send({
+      type: "tab_ready",
+      tabId,
+      model: session.model ? modelKey(session.model) : "",
+    });
+
+    return rec;
+  }
+
+  // Pre-create the default tab so emitReady has a populated cachedModels
+  // and the frontend can start dispatching to "default" without first
+  // racing an ensureTab call.
+  await ensureTab("default");
+
+  // Discover Aethon-only extensions in `~/.aethon/extensions/*.ts` and call
+  // their `register(api)` default export. (Pi extensions reach the same API
+  // via `globalThis.aethon` — set above before createAgentSession.)
+  // Failures in one extension don't block others.
+  await loadAethonExtensions(aethonApi);
+
+  emitReady();
 
   const rl = createInterface({ input: process.stdin });
 
@@ -799,6 +926,7 @@ async function main() {
       type: string;
       content?: string;
       id?: string;
+      tabId?: string;
       componentType?: string;
       template?: unknown;
       path?: string;
@@ -827,44 +955,54 @@ async function main() {
             send({ type: "error", message: "chat: missing content" });
             break;
           }
+          // tabId routes the prompt to the right session. Frontend always
+          // sends one; legacy callers without it default to "default".
+          const tabId = msg.tabId ?? "default";
+          const tab = await ensureTab(tabId);
           // CRITICAL: do NOT await — `for await (const line of rl)` processes
           // one stdin line at a time, so awaiting here would queue any
           // subsequent "stop" message behind the in-flight prompt and Stop
           // would never reach session.abort() until the prompt finished
-          // naturally. Track in-flight state via promptInFlight; cleared on
-          // agent_end OR in .finally() if pi short-circuited the prompt
-          // without an agent run (e.g. a server-side slash command). The
-          // finally branch also synthesizes a `response_end` so the
-          // frontend's waiting flag clears when no streaming happened.
+          // naturally. Track in-flight state on the tab record.
           //
-          // When a prompt is already running, pass `streamingBehavior:
-          // "followUp"` so pi appends the new message to its internal
-          // queue and processes it after the current turn settles. This
-          // lets the user keep typing without "agent busy" rejections.
-          // We DON'T flip promptInFlight for queued ones — agent_end
-          // fires per turn and pi automatically drains the queue.
-          const queued = promptInFlight;
+          // When a prompt is already running on this tab, pass
+          // `streamingBehavior: "followUp"` so pi appends the new message
+          // to its internal queue and processes it after the current turn
+          // settles. We DON'T flip promptInFlight for queued ones —
+          // agent_end fires per turn and pi automatically drains the queue.
+          const queued = tab.promptInFlight;
           if (!queued) {
-            promptInFlight = true;
-            agentEndFired = false;
+            tab.promptInFlight = true;
+            tab.agentEndFired = false;
+          } else {
+            tab.queuedCount += 1;
           }
-          session
-            .prompt(msg.content, queued ? { streamingBehavior: "followUp" } : undefined)
+          if (!queued) currentAgentTabId = tabId;
+          // tabContext.run binds `tabId` to the async-local store for
+          // the duration of session.prompt's call chain — including any
+          // setStates the agent fires from inside it. Concurrent tabs
+          // each carry their own store so attribution stays clean.
+          tabContext.run(tabId, () =>
+            tab.session.prompt(
+              msg.content,
+              queued ? { streamingBehavior: "followUp" } : undefined,
+            ),
+          )
             .catch((err) => {
               const message = err instanceof Error ? err.message : String(err);
-              send({ type: "error", message: `prompt: ${message}` });
+              send({ type: "error", tabId, message: `prompt: ${message}` });
             })
             .finally(() => {
-              if (!queued && !agentEndFired) {
-                promptInFlight = false;
-                send({ type: "response_end" });
+              if (!queued && !tab.agentEndFired) {
+                tab.promptInFlight = false;
+                send({ type: "response_end", tabId });
+              }
+              if (!queued && currentAgentTabId === tabId) {
+                currentAgentTabId = undefined;
               }
             });
           if (queued) {
-            // Tell the frontend the message was accepted into pi's
-            // followUp queue so it can show a subtle indicator without
-            // re-flipping waiting (which is already true).
-            send({ type: "queued" });
+            send({ type: "queued", tabId });
           }
           break;
         }
@@ -873,13 +1011,20 @@ async function main() {
             send({ type: "error", message: "set_model: missing id" });
             break;
           }
+          // Lazily create the session if the user hits set_model on a brand
+          // new tab before the async tab_open round-trip finishes — the
+          // chat / a2ui_event paths already do this; mirror the behavior
+          // here so fast switches don't fail with "unknown tab".
+          const tabId = msg.tabId ?? "default";
+          const tab = await ensureTab(tabId);
           // Same in-flight gate as `chat`: pi rejects setModel while a run
           // is active, and the resulting `error` would clobber waiting=true
           // and hide the Stop button on the original prompt. Surface as a
           // non-terminal notice instead so the user keeps their stop UI.
-          if (promptInFlight) {
+          if (tab.promptInFlight) {
             send({
               type: "notice",
+              tabId,
               message: "agent busy — stop the current prompt before switching models",
             });
             break;
@@ -888,11 +1033,11 @@ async function main() {
           const id = rest.join("/");
           const next = modelRegistry.find(provider, id);
           if (!next) {
-            send({ type: "error", message: `set_model: unknown model ${msg.id}` });
+            send({ type: "error", tabId, message: `set_model: unknown model ${msg.id}` });
             break;
           }
-          await session.setModel(next);
-          send({ type: "model_changed", model: msg.id });
+          await tab.session.setModel(next);
+          send({ type: "model_changed", tabId, model: msg.id });
           break;
         }
         case "stop": {
@@ -902,10 +1047,75 @@ async function main() {
           // so any in-flight bash subprocess gets SIGKILLed. Don't await —
           // we want to free the message loop immediately so a follow-up
           // chat doesn't queue behind a slow settle.
-          session.abort().catch((err) => {
+          //
+          // Also drop pi's followUp queue and reset the local counter
+          // so the frontend's "waiting while queueCount > 0" gate
+          // doesn't keep the Stop button visible after abort.
+          const tabId = msg.tabId ?? "default";
+          const tab = tabs.get(tabId);
+          if (!tab) break; // nothing to stop on a tab we never spun up
+          if (typeof (tab.session as { clearQueue?: () => unknown }).clearQueue === "function") {
+            try {
+              (tab.session as { clearQueue: () => unknown }).clearQueue();
+            } catch {
+              /* best effort — abort still fires below */
+            }
+          }
+          tab.queuedCount = 0;
+          // Tell the frontend so its tab.queueCount matches. Without
+          // this, response_end's `if (queueCount > 0) keep waiting`
+          // gate would leave the tab stuck on Stop after the abort.
+          send({ type: "queue_reset", tabId });
+          tab.session.abort().catch((err) => {
             const message = err instanceof Error ? err.message : String(err);
-            send({ type: "error", message: `abort: ${message}` });
+            send({ type: "error", tabId, message: `abort: ${message}` });
           });
+          break;
+        }
+        case "tab_open": {
+          // Explicit tab create. Returns immediately if the tab already
+          // exists — useful for the frontend to pre-warm a tab before the
+          // user types into it. Emits `tab_ready` with the new model.
+          //
+          // Optional `model` (provider/id) sets the session's initial
+          // model so a fast first chat doesn't race the inherited
+          // set_model round-trip.
+          const tabId = msg.tabId;
+          if (!tabId || typeof tabId !== "string") {
+            send({ type: "error", message: "tab_open: missing tabId" });
+            break;
+          }
+          const modelId = (msg as { model?: unknown }).model;
+          let initialModel: Model<Api> | undefined;
+          if (typeof modelId === "string" && modelId.length > 0) {
+            const [provider, ...rest] = modelId.split("/");
+            initialModel = modelRegistry.find(provider, rest.join("/")) ?? undefined;
+          }
+          await ensureTab(tabId, initialModel);
+          break;
+        }
+        case "tab_close": {
+          // Tear down a tab's session. Aborts any in-flight prompt first
+          // so kill signals propagate before we drop the reference. The
+          // "default" tab can't be closed — there must always be one.
+          const tabId = msg.tabId;
+          if (!tabId || typeof tabId !== "string") {
+            send({ type: "error", message: "tab_close: missing tabId" });
+            break;
+          }
+          if (tabId === "default") {
+            send({ type: "notice", message: "cannot close the default tab" });
+            break;
+          }
+          const tab = tabs.get(tabId);
+          if (!tab) break;
+          if (tab.promptInFlight) {
+            tab.session.abort().catch(() => {
+              /* fire-and-forget — we're tearing down anyway */
+            });
+          }
+          tabs.delete(tabId);
+          send({ type: "tab_closed", tabId });
           break;
         }
         case "report": {
@@ -920,65 +1130,71 @@ async function main() {
           const descendantId = ev.componentId?.includes("__tpl__")
             ? ev.componentId.split("__tpl__").slice(1).join("__tpl__")
             : undefined;
+          // a2ui events from the active tab; default routes to "default"
+          // for back-compat. Handlers run against this tab's session, so
+          // ctx.pi.prompt() opens a turn on the same tab the user clicked
+          // from — not whichever tab pi was last touched on.
+          const handlerTabId = msg.tabId ?? "default";
+          const handlerTab = await ensureTab(handlerTabId);
           // Build the ctx.pi facade fresh per dispatch so handlers always
-          // see the current session model + last 50 messages. session.state
-          // is mutable, so reading it through a getter keeps the handler's
-          // view consistent with pi without leaking the AgentSession itself.
+          // see the current session model + last 50 messages.
           const piCtx: PiHandlerCtx = {
             async prompt(text: string) {
               if (!text || typeof text !== "string") return;
-              if (promptInFlight) {
+              if (handlerTab.promptInFlight) {
                 send({
                   type: "notice",
+                  tabId: handlerTabId,
                   message: "agent busy — handler prompt rejected",
                 });
                 throw new Error("agent busy — prompt in flight");
               }
-              promptInFlight = true;
-              agentEndFired = false;
+              handlerTab.promptInFlight = true;
+              handlerTab.agentEndFired = false;
+              currentAgentTabId = handlerTabId;
               // Tell the frontend a turn is starting so it can flip
               // waiting=true (Stop button visible, chat input disabled).
-              // Without this, a handler-fired prompt would stream invisibly
-              // and the user couldn't interrupt it.
-              send({ type: "prompt_started", source: "handler" });
-              // Return a real promise so handler authors can await
-              // completion ("ask LLM → render result → setState"). The
-              // promise resolves when pi's session.prompt resolves
-              // (agent_end fires). On error we still re-emit response_end
-              // so the frontend's waiting flag clears, then re-throw
-              // so the handler's await sees the failure.
+              send({ type: "prompt_started", tabId: handlerTabId, source: "handler" });
               try {
-                await session.prompt(text);
+                await tabContext.run(handlerTabId, () =>
+                  handlerTab.session.prompt(text),
+                );
               } catch (err) {
                 const m = err instanceof Error ? err.message : String(err);
-                send({ type: "error", message: `handler prompt: ${m}` });
+                send({ type: "error", tabId: handlerTabId, message: `handler prompt: ${m}` });
                 throw err;
               } finally {
-                if (!agentEndFired) {
-                  promptInFlight = false;
-                  send({ type: "response_end" });
+                if (!handlerTab.agentEndFired) {
+                  handlerTab.promptInFlight = false;
+                  send({ type: "response_end", tabId: handlerTabId });
+                }
+                if (currentAgentTabId === handlerTabId) {
+                  currentAgentTabId = undefined;
                 }
               }
             },
             notify(message: string) {
               if (!message) return;
-              send({ type: "notice", message });
+              send({ type: "notice", tabId: handlerTabId, message });
             },
             get session() {
-              const messages = session.messages ?? [];
+              const messages = handlerTab.session.messages ?? [];
               return {
-                model: session.model ? modelKey(session.model) : "",
+                model: handlerTab.session.model ? modelKey(handlerTab.session.model) : "",
                 messages: messages.slice(-50),
               };
             },
             // Pi's active-turn AbortSignal lives on `session.agent.signal`
             // (verified via @mariozechner/pi-agent-core agent.d.ts:90).
-            // Returns undefined outside a turn — matches pi's own
-            // `ctx.signal` contract for extension handlers.
             get signal() {
-              return session.agent?.signal;
+              return handlerTab.session.agent?.signal;
             },
           };
+          // Tab-scoped setState for handlers: writes carry the originating
+          // tabId so the frontend can route mirrored-key patches back to
+          // the right tab even when the user has since switched.
+          const tabScopedSetState = (path: string, value: unknown) =>
+            _setState(path, value, handlerTabId);
           for (const { match, handler } of a2uiEventHandlers) {
             if (match.templateRootType && match.templateRootType !== ev.templateRootType) continue;
             if (match.componentType && match.componentType !== ev.componentType) continue;
@@ -1006,14 +1222,17 @@ async function main() {
             Promise.resolve()
               .then(() =>
                 handler(ev, {
-                  setState: aethonApi.setState,
+                  setState: tabScopedSetState,
                   registerComponent: aethonApi.registerComponent,
                   pi: piCtx,
                 }),
               )
               .catch((err) => {
                 const message = err instanceof Error ? err.message : String(err);
-                send({ type: "notice", message: `a2ui handler: ${message}` });
+                // Route the notice back to the originating tab so the
+                // error appears in the conversation the user clicked
+                // from, not whichever tab is currently active.
+                send({ type: "notice", tabId: handlerTabId, message: `a2ui handler: ${message}` });
               });
           }
           break;

@@ -5,9 +5,10 @@
       "type": "layout",
       "props": {
         "columns": "240px 1fr",
-        "rows": "auto 1fr auto auto auto",
+        "rows": "auto auto 1fr auto auto auto",
         "areas": [
           "sidebar header",
+          "sidebar tabs",
           "sidebar canvas",
           "sidebar terminal",
           "sidebar chat-input",
@@ -109,6 +110,15 @@
           }
         },
         {
+          "id": "tab-strip",
+          "type": "tab-strip",
+          "props": {
+            "area": "tabs",
+            "tabs": { "$ref": "/tabs" },
+            "activeId": { "$ref": "/activeTabId" }
+          }
+        },
+        {
           "id": "main-canvas",
           "type": "main-canvas",
           "props": {
@@ -125,7 +135,7 @@
             "visible": { "$ref": "/terminal/open" },
             "fontSize": 13,
             "subscribeToBash": true,
-            "onInput": "terminal:input"
+            "readOnly": true
           }
         },
         {
