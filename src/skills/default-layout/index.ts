@@ -14,6 +14,7 @@ import {
   MainCanvas,
   Sidebar,
   StatusBar,
+  TabStrip,
   Terminal,
 } from "./components";
 import layoutPayload from "./layout.a2ui.json";
@@ -26,6 +27,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "chat-history": ChatHistory,
     "chat-input": ChatInput,
     "status-bar": StatusBar,
+    "tab-strip": TabStrip,
     terminal: Terminal,
     "main-canvas": MainCanvas,
   },

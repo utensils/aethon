@@ -103,12 +103,58 @@ export default function App() {
   }
   const registry = registryRef.current;
 
+  // ---------------------------------------------------------------------
+  // Multi-tab model. Each tab owns its own `messages`, `draft`, `waiting`,
+  // `queueCount`, and `canvas`. The active tab's view is mirrored to the
+  // top-level state keys (`/messages`, `/draft`, etc.) so the existing
+  // layout JSON bindings keep working without a per-tab JSON Pointer
+  // rewrite. On tab switch we re-mirror the new active tab's view; on
+  // every per-tab update we write the tab record AND, if it's active,
+  // also write the root mirror.
+  // ---------------------------------------------------------------------
+  interface Tab {
+    id: string;
+    label: string;
+    messages: ChatMessage[];
+    draft: string;
+    waiting: boolean;
+    queueCount: number;
+    canvas: unknown;
+    model: string;
+  }
+  function makeEmptyTab(id: string, label: string): Tab {
+    return {
+      id,
+      label,
+      messages: [],
+      draft: "",
+      waiting: false,
+      queueCount: 0,
+      canvas: null,
+      model: "",
+    };
+  }
+
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
-  const [state, setState] = useState<Record<string, unknown>>(
-    () => ({ ...(BOOT_LAYOUT.state ?? {}), logoUrl }),
-  );
+  // Initial state also seeds one default tab + the active-tab mirror keys.
+  const [state, setState] = useState<Record<string, unknown>>(() => {
+    const tab0 = makeEmptyTab("default", "Tab 1");
+    return {
+      ...(BOOT_LAYOUT.state ?? {}),
+      logoUrl,
+      tabs: [tab0],
+      activeTabId: tab0.id,
+      // Mirror keys point at the active tab's empty view so layout bindings
+      // see well-defined values from boot.
+      messages: tab0.messages,
+      draft: tab0.draft,
+      waiting: tab0.waiting,
+      queueCount: tab0.queueCount,
+      canvas: tab0.canvas,
+    };
+  });
 
   // Active layout payload — replaceable. Skills can swap the chrome wholesale
   // by calling window.aethon.setLayout(payload), or register a new skill via
@@ -304,17 +350,25 @@ export default function App() {
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Prepend restored history but keep messages that landed during
-            // the async read (agent-stderr, an early send, etc.). Dedupe by
-            // id so a re-mount-after-restore doesn't double up.
+            // Restore into the default tab. Prepend before any messages
+            // that landed during the async read window (agent-stderr,
+            // an early send, …) and dedupe by id so a re-mount doesn't
+            // double up. Multi-tab persistence is per-default-tab only
+            // for now; per-tab restore is a follow-up.
             setState((prev) => {
-              const live = (prev.messages as ChatMessage[]) ?? [];
+              const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+              const idx = tabs.findIndex((t) => t.id === "default");
+              if (idx < 0) return prev;
+              const live = tabs[idx].messages;
               const seen = new Set(live.map((m) => m.id));
               const merged = [
                 ...(parsed as ChatMessage[]).filter((m) => !seen.has(m.id)),
                 ...live,
               ];
-              return { ...prev, messages: merged };
+              tabs[idx] = { ...tabs[idx], messages: merged };
+              const result: Record<string, unknown> = { ...prev, tabs };
+              if (prev.activeTabId === "default") result.messages = merged;
+              return result;
             });
           }
         }
@@ -326,17 +380,22 @@ export default function App() {
     })();
   }, []);
 
-  // Debounced write on messages change. Skipped until the initial restore
-  // completes so we don't overwrite the on-disk file with the empty boot state.
+  // Debounced write of the default tab's messages. Skipped until the
+  // initial restore completes so we don't overwrite the on-disk file
+  // with the empty boot state. Other tabs aren't persisted yet — they
+  // exist only for the lifetime of the app session.
   const persistTimerRef = useRef<number | null>(null);
+  const defaultTabMessages = useMemo(() => {
+    const tabs = (state.tabs as Tab[] | undefined) ?? [];
+    return tabs.find((t) => t.id === "default")?.messages ?? [];
+  }, [state.tabs]);
   useEffect(() => {
     if (!restored) return;
-    const messages = (state.messages as ChatMessage[]) ?? [];
     if (persistTimerRef.current !== null) {
       window.clearTimeout(persistTimerRef.current);
     }
     persistTimerRef.current = window.setTimeout(() => {
-      const slim = messages.slice(-MAX_MESSAGES).map(trimMessage);
+      const slim = defaultTabMessages.slice(-MAX_MESSAGES).map(trimMessage);
       writeState(PERSIST_FILE, JSON.stringify(slim)).catch(() => {
         /* surfaced via console.warn in persist.ts */
       });
@@ -346,12 +405,81 @@ export default function App() {
         window.clearTimeout(persistTimerRef.current);
       }
     };
-  }, [state.messages, restored]);
+  }, [defaultTabMessages, restored]);
 
   function clearChat() {
-    setState((prev) => ({ ...prev, messages: [] }));
+    // Clear only the active tab's messages.
+    updateActiveTab((tab) => ({ ...tab, messages: [] }));
     writeState(PERSIST_FILE, "[]").catch(() => {
       /* ignore */
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Tab update helpers. `updateTab` writes into one tab record; if that
+  // tab is currently active, it ALSO updates the root mirror keys so the
+  // layout sees the change. `updateActiveTab` is a thin wrapper that
+  // resolves the active id from the latest state. `mirrorKeys` lists the
+  // tab fields that ride along on the root state.
+  // ---------------------------------------------------------------------
+  const TAB_MIRROR_KEYS: (keyof Tab)[] = [
+    "messages",
+    "draft",
+    "waiting",
+    "queueCount",
+    "canvas",
+    "model",
+  ];
+
+  function updateTab(tabId: string, mutator: (tab: Tab) => Tab) {
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const idx = tabs.findIndex((t) => t.id === tabId);
+      if (idx < 0) return prev;
+      const next = mutator(tabs[idx]);
+      tabs[idx] = next;
+      const result: Record<string, unknown> = { ...prev, tabs };
+      if (prev.activeTabId === tabId) {
+        const nextRec = next as unknown as Record<string, unknown>;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = nextRec[key as string];
+        }
+      }
+      return result;
+    });
+  }
+
+  function updateActiveTab(mutator: (tab: Tab) => Tab) {
+    setState((prev) => {
+      const activeId = prev.activeTabId as string | undefined;
+      if (!activeId) return prev;
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const idx = tabs.findIndex((t) => t.id === activeId);
+      if (idx < 0) return prev;
+      const next = mutator(tabs[idx]);
+      tabs[idx] = next;
+      const result: Record<string, unknown> = { ...prev, tabs };
+      const nextRec = next as unknown as Record<string, unknown>;
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = nextRec[key as string];
+      }
+      return result;
+    });
+  }
+
+  // Switch the active tab. Re-mirrors the new tab's view to the root keys
+  // so layout bindings update without needing a per-key refresh.
+  function setActiveTab(tabId: string) {
+    setState((prev) => {
+      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+      const target = tabs.find((t) => t.id === tabId);
+      if (!target) return prev;
+      const result: Record<string, unknown> = { ...prev, activeTabId: tabId };
+      const targetRec = target as unknown as Record<string, unknown>;
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = targetRec[key as string];
+      }
+      return result;
     });
   }
 
@@ -360,6 +488,65 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // ---------------------------------------------------------------------
+  // Tab actions. Each one updates local state AND tells the bridge so the
+  // pi session map stays in sync. Used by both the keyboard shortcuts
+  // below and the tab-strip UI's click handlers.
+  // ---------------------------------------------------------------------
+  function newTab() {
+    const id = crypto.randomUUID();
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const label = `Tab ${tabs.length + 1}`;
+      const tab = makeEmptyTab(id, label);
+      tabs.push(tab);
+      const result: Record<string, unknown> = { ...prev, tabs, activeTabId: id };
+      const tabRec = tab as unknown as Record<string, unknown>;
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = tabRec[key as string];
+      }
+      return result;
+    });
+    invoke("agent_command", {
+      payload: JSON.stringify({ type: "tab_open", tabId: id }),
+    }).catch((err) => {
+      appendSystem(`Failed to open tab: ${err}`);
+    });
+  }
+
+  function nextTab(direction: 1 | -1) {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    if (tabs.length <= 1) return;
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const idx = tabs.findIndex((t) => t.id === activeId);
+    if (idx < 0) return;
+    const nextIdx = (idx + direction + tabs.length) % tabs.length;
+    setActiveTab(tabs[nextIdx].id);
+  }
+
+  function closeTab(tabId: string) {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    if (tabs.length <= 1) return; // never close the last tab
+    if (tabId === "default") return; // bridge refuses; keep parity
+    setState((prev) => {
+      const list = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
+      let activeTabId = prev.activeTabId as string | undefined;
+      if (activeTabId === tabId) activeTabId = list[list.length - 1].id;
+      const result: Record<string, unknown> = { ...prev, tabs: list, activeTabId };
+      const target = list.find((t) => t.id === activeTabId)!;
+      const targetRec = target as unknown as Record<string, unknown>;
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = targetRec[key as string];
+      }
+      return result;
+    });
+    invoke("agent_command", {
+      payload: JSON.stringify({ type: "tab_close", tabId }),
+    }).catch(() => {
+      /* ignore — UI already closed */
+    });
+  }
+
   // Global keyboard shortcuts. Bound on the document so they fire regardless
   // of focus; preventDefault + stopPropagation when handled so xterm
   // doesn't also receive the keystroke as input data (otherwise pressing
@@ -367,25 +554,56 @@ export default function App() {
   // a backtick into the shell).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Cmd+` (macOS) / Ctrl+` (others) toggles the terminal panel. Mirrors
-      // VS Code / iTerm / most other dev tools' default. The sidebar
-      // "Toggle Terminal" item still works for mouse-only use.
-      // Skip auto-repeat (held key) so a brief hold doesn't fire
-      // twice and immediately re-close the panel after opening.
+      // Skip auto-repeat (held key) so a brief hold doesn't double-fire.
       if (e.repeat) return;
-      if (e.key === "`" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      const mod = e.metaKey || e.ctrlKey;
+      // Cmd+` toggles the terminal panel. Mirrors VS Code / iTerm.
+      if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         setState((prev) => {
           const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
           return { ...prev, terminal: { ...term, open: !term.open } };
         });
+        return;
+      }
+      // Cmd+T → new tab. Pi sessions are independent per tab.
+      if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        newTab();
+        return;
+      }
+      // Cmd+] → next tab; Cmd+[ → previous. Matches macOS browser
+      // conventions (Safari/Chrome use Cmd+Shift+] but Cmd+] alone is
+      // common in IDE tab cycling).
+      if (e.key === "]" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        nextTab(1);
+        return;
+      }
+      if (e.key === "[" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        nextTab(-1);
+        return;
+      }
+      // Cmd+W → close active tab (no-op on the last/default tab).
+      if (e.key.toLowerCase() === "w" && mod && !e.shiftKey && !e.altKey) {
+        const activeId = stateRef.current.activeTabId as string | undefined;
+        if (!activeId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeTab(activeId);
+        return;
       }
     };
     // useCapture=true so we run BEFORE xterm's keydown listener;
     // stopPropagation then keeps the keystroke out of the shell.
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -398,6 +616,14 @@ export default function App() {
         if (skill.layout) setLayout(skill.layout);
       },
       listSkills: () => registry.list().map((s) => s.name),
+      newTab,
+      closeTab,
+      switchTab: setActiveTab,
+      listTabs: () => ((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => ({
+        id: t.id,
+        label: t.label,
+        active: t.id === stateRef.current.activeTabId,
+      })),
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
 
@@ -545,6 +771,18 @@ export default function App() {
             );
           }
           next = deepMergeState(next, extState);
+          // Sync the default tab's model from the bridge's reported model.
+          // Other local tabs keep their previously-known model id; we'll
+          // re-establish their bridge sessions via the post-ready replay
+          // below.
+          {
+            const tabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
+            const dIdx = tabs.findIndex((t) => t.id === "default");
+            if (dIdx >= 0) {
+              tabs[dIdx] = { ...tabs[dIdx], model };
+              next.tabs = tabs;
+            }
+          }
           next = {
             ...next,
             model,
@@ -561,6 +799,19 @@ export default function App() {
           };
           return next;
         });
+        // Re-establish bridge sessions for any non-default local tabs the
+        // user created before the agent reloaded. The bridge starts fresh
+        // each spawn — without this, prompts on those tabs would hit a
+        // tab the bridge has never seen and fail.
+        const localTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        for (const t of localTabs) {
+          if (t.id === "default") continue;
+          invoke("agent_command", {
+            payload: JSON.stringify({ type: "tab_open", tabId: t.id }),
+          }).catch(() => {
+            /* surfaced on next chat send */
+          });
+        }
         break;
       }
       case "extension_components": {
@@ -612,24 +863,61 @@ export default function App() {
         break;
       }
       case "model_changed": {
+        // Per-tab model change. Bridge tags with tabId; default for legacy.
         const model = (data.model as string) || "";
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        updateTab(tabId, (tab) => ({ ...tab, model }));
+        // Sidebar model picker is global — reflects the active tab's model.
+        // (When a non-active tab changes model, we leave the picker alone
+        // so the user's currently visible context isn't surprised by it.)
+        if (stateRef.current.activeTabId === tabId) {
+          setState((prev) => {
+            const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+            const items =
+              (sidebar.models as { id: string; label: string }[] | undefined) ?? [];
+            return {
+              ...prev,
+              status: `switched to ${model}`,
+              sidebar: {
+                ...sidebar,
+                models: items.map((m) => ({
+                  id: m.id,
+                  label: m.label,
+                  active: m.id === model,
+                })),
+              },
+            };
+          });
+        }
+        break;
+      }
+      case "tab_ready": {
+        // Bridge confirms a per-tab pi session is up and tells us its
+        // chosen model. Update the tab record so the sidebar can reflect
+        // it on next switch.
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        const model = (data.model as string) ?? "";
+        updateTab(tabId, (tab) => ({ ...tab, model }));
+        break;
+      }
+      case "tab_closed": {
+        // Bridge confirms a tab session was torn down. We may have already
+        // removed it from local state in the close handler; this is just a
+        // signal in case some other path triggered the close.
+        const tabId = data.tabId as string | undefined;
+        if (!tabId) break;
         setState((prev) => {
-          const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
-          const items =
-            (sidebar.models as { id: string; label: string }[] | undefined) ?? [];
-          return {
-            ...prev,
-            model,
-            status: `switched to ${model}`,
-            sidebar: {
-              ...sidebar,
-              models: items.map((m) => ({
-                id: m.id,
-                label: m.label,
-                active: m.id === model,
-              })),
-            },
-          };
+          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
+          if (tabs.length === 0) return prev; // shouldn't happen — bridge refuses to close default
+          let activeTabId = prev.activeTabId as string | undefined;
+          if (activeTabId === tabId) activeTabId = tabs[tabs.length - 1].id;
+          const result: Record<string, unknown> = { ...prev, tabs, activeTabId };
+          const target = tabs.find((t) => t.id === activeTabId)!;
+          const targetRec = target as unknown as Record<string, unknown>;
+          for (const key of TAB_MIRROR_KEYS) {
+            result[key as string] = targetRec[key as string];
+          }
+          return result;
         });
         break;
       }
@@ -637,58 +925,68 @@ export default function App() {
         const delta = (data.content as string) ?? "";
         if (!delta) break;
         const messageId = (data.messageId as string) || undefined;
-        appendOrAmendAgentText(delta, messageId);
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        appendOrAmendAgentText(delta, messageId, tabId);
         break;
       }
       case "prompt_started": {
         // Bridge tells us a prompt has begun. Sent for handler-driven
         // ctx.pi.prompt AND every queue-drained turn (source: "queue")
         // so Stop stays visible across followUp boundaries instead of
-        // flashing back to Send between turns. The remaining queue
-        // count rides along so the input badge stays accurate.
+        // flashing back to Send between turns. The remaining queue count
+        // rides along so the input badge stays accurate. tabId routes
+        // status to one tab; status bar text only flips for the active.
+        const tabId = (data.tabId as string | undefined) ?? "default";
         const remaining = (data.queued as number | undefined) ?? undefined;
-        setState((prev) => ({
-          ...prev,
+        updateTab(tabId, (tab) => ({
+          ...tab,
           waiting: true,
-          status: "thinking…",
           ...(remaining !== undefined ? { queueCount: remaining } : {}),
         }));
+        if (stateRef.current.activeTabId === tabId) {
+          setState((prev) => ({ ...prev, status: "thinking…" }));
+        }
         break;
       }
       case "queued": {
         // A new chat IPC arrived while a prompt was in flight; pi
-        // accepted it into the followUp queue. Bump the counter so
-        // the chat input shows "+N".
-        setState((prev) => ({
-          ...prev,
-          queueCount: ((prev.queueCount as number) ?? 0) + 1,
-        }));
+        // accepted it into the followUp queue. Bump the per-tab counter.
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        updateTab(tabId, (tab) => ({ ...tab, queueCount: tab.queueCount + 1 }));
         break;
       }
       case "response_end": {
         activeResponseIdRef.current = null;
+        const tabId = (data.tabId as string | undefined) ?? "default";
         // Only clear waiting when the queue is actually empty. If pi has
         // a followUp queued, it will fire agent_start → prompt_started
         // immediately after this and re-flip waiting; clearing here
-        // would cause a Send-flash. We trust the queueCount we last
-        // received from prompt_started/queued — if it's > 0, keep
-        // waiting on. Bridge's queue counter is authoritative.
-        setState((prev) => {
-          const q = (prev.queueCount as number) ?? 0;
-          if (q > 0) return prev;
-          return { ...prev, waiting: false, status: "ready" };
+        // would cause a Send-flash.
+        updateTab(tabId, (tab) => {
+          if (tab.queueCount > 0) return tab;
+          return { ...tab, waiting: false };
         });
+        if (stateRef.current.activeTabId === tabId) {
+          setState((prev) => {
+            const q = (prev.queueCount as number) ?? 0;
+            if (q > 0) return prev;
+            return { ...prev, status: "ready" };
+          });
+        }
         break;
       }
       case "error": {
         const message = (data.message as string) ?? "unknown error";
+        const tabId = (data.tabId as string | undefined) ?? "default";
         activeResponseIdRef.current = null;
-        appendMessage({
-          id: crypto.randomUUID(),
-          role: "agent",
-          text: `Error: ${message}`,
-        });
-        setStatusFlags({ waiting: false, status: "error" });
+        appendMessage(
+          { id: crypto.randomUUID(), role: "agent", text: `Error: ${message}` },
+          tabId,
+        );
+        updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+        if (stateRef.current.activeTabId === tabId) {
+          setStatusFlags({ status: "error" });
+        }
         break;
       }
       case "notice": {
@@ -697,31 +995,42 @@ export default function App() {
         // prompt is in-flight: the user sees the rejection but the Stop
         // button and waiting state for the original prompt persist.
         const message = (data.message as string) ?? "";
+        const tabId = (data.tabId as string | undefined) ?? "default";
         if (message) {
-          appendMessage({
-            id: crypto.randomUUID(),
-            role: "system",
-            text: message,
-          });
+          appendMessage(
+            { id: crypto.randomUUID(), role: "system", text: message },
+            tabId,
+          );
         }
         break;
       }
       // Legacy single-shot response (kept so old bridge builds still render).
       case "response": {
         const content = (data.content as string) ?? "";
+        const tabId = (data.tabId as string | undefined) ?? "default";
         if (content) {
-          appendMessage({ id: crypto.randomUUID(), role: "agent", text: content });
+          appendMessage(
+            { id: crypto.randomUUID(), role: "agent", text: content },
+            tabId,
+          );
         }
-        if (data.done) setStatusFlags({ waiting: false, status: "ready" });
+        if (data.done) {
+          updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+          if (stateRef.current.activeTabId === tabId) setStatusFlags({ status: "ready" });
+        }
         break;
       }
       case "a2ui": {
         const payload = data.payload as A2UIPayload | undefined;
         const id = (data.id as string) || crypto.randomUUID();
+        const tabId = (data.tabId as string | undefined) ?? "default";
         if (payload) {
-          appendMessage({ id, role: "agent", a2ui: payload });
+          appendMessage({ id, role: "agent", a2ui: payload }, tabId);
         }
-        if (data.done) setStatusFlags({ waiting: false, status: "ready" });
+        if (data.done) {
+          updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+          if (stateRef.current.activeTabId === tabId) setStatusFlags({ status: "ready" });
+        }
         break;
       }
       case "terminal_output": {
@@ -744,16 +1053,19 @@ export default function App() {
   // Append a chat message, or replace in place if a message with the same
   // id already exists. This is what lets the bridge stream "running…" tool
   // cards and update them with the final result without duplicating bubbles.
-  function appendMessage(msg: ChatMessage) {
-    setState((prev) => {
-      const messages = [...((prev.messages as ChatMessage[]) ?? [])];
+  // tabId routes to the right tab record; defaults to the active tab so
+  // legacy callers that pre-date the multi-tab refactor stay correct.
+  function appendMessage(msg: ChatMessage, tabId?: string) {
+    const id = tabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
+    updateTab(id, (tab) => {
+      const messages = [...tab.messages];
       const idx = messages.findIndex((m) => m.id === msg.id);
       if (idx >= 0) {
         messages[idx] = msg;
       } else {
         messages.push(msg);
       }
-      return { ...prev, messages };
+      return { ...tab, messages };
     });
   }
 
@@ -763,10 +1075,10 @@ export default function App() {
   // one bubble even after tool cards land between deltas. Without a messageId
   // (legacy bridges), fall back to the previous "is it the last message?"
   // behavior tracked via activeResponseIdRef.
-  function appendOrAmendAgentText(delta: string, messageId?: string) {
-    setState((prev) => {
-      const messages = [...((prev.messages as ChatMessage[]) ?? [])];
-
+  function appendOrAmendAgentText(delta: string, messageId?: string, tabId?: string) {
+    const id = tabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
+    updateTab(id, (tab) => {
+      const messages = [...tab.messages];
       if (messageId) {
         const idx = messages.findIndex((m) => m.id === messageId);
         if (idx >= 0) {
@@ -778,9 +1090,8 @@ export default function App() {
           messages.push({ id: messageId, role: "agent", text: delta });
         }
         activeResponseIdRef.current = messageId;
-        return { ...prev, messages };
+        return { ...tab, messages };
       }
-
       const activeId = activeResponseIdRef.current;
       const last = messages[messages.length - 1];
       if (activeId && last && last.id === activeId && last.role === "agent") {
@@ -789,11 +1100,11 @@ export default function App() {
           text: (last.text ?? "") + delta,
         };
       } else {
-        const id = crypto.randomUUID();
-        activeResponseIdRef.current = id;
-        messages.push({ id, role: "agent", text: delta });
+        const newId = crypto.randomUUID();
+        activeResponseIdRef.current = newId;
+        messages.push({ id: newId, role: "agent", text: delta });
       }
-      return { ...prev, messages };
+      return { ...tab, messages };
     });
   }
 
@@ -875,38 +1186,49 @@ export default function App() {
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
-    appendMessage({ id: crypto.randomUUID(), role: "user", text: sendText });
+    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    appendMessage(
+      { id: crypto.randomUUID(), role: "user", text: sendText },
+      tabId,
+    );
+    updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
     setState((prev) => ({
       ...prev,
-      draft: "",
-      waiting: true,
       status: "thinking…",
       connection: "connected",
     }));
 
     try {
-      await invoke("send_message", { message: sendText });
+      await invoke("send_message", { message: sendText, tabId });
     } catch (err) {
-      appendMessage({
-        id: crypto.randomUUID(),
-        role: "agent",
-        text: `Connection error: ${err}`,
-      });
-      setStatusFlags({ waiting: false, status: "error" });
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          text: `Connection error: ${err}`,
+        },
+        tabId,
+      );
+      updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+      if (stateRef.current.activeTabId === tabId) setStatusFlags({ status: "error" });
     }
   }
 
   async function setModel(id: string) {
+    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
     try {
       await invoke("agent_command", {
-        payload: JSON.stringify({ type: "set_model", id }),
+        payload: JSON.stringify({ type: "set_model", id, tabId }),
       });
     } catch (err) {
-      appendMessage({
-        id: crypto.randomUUID(),
-        role: "agent",
-        text: `Failed to switch model: ${err}`,
-      });
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          text: `Failed to switch model: ${err}`,
+        },
+        tabId,
+      );
     }
   }
 
@@ -926,19 +1248,38 @@ export default function App() {
         return true;
       }
       if (component.id === "chat-input" && eventType === "cancel") {
+        const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
         try {
           await invoke("agent_command", {
-            payload: JSON.stringify({ type: "stop" }),
+            payload: JSON.stringify({ type: "stop", tabId }),
           });
           setStatusFlags({ status: "stopping…" });
         } catch (err) {
-          appendMessage({
-            id: crypto.randomUUID(),
-            role: "agent",
-            text: `Failed to stop: ${err}`,
-          });
+          appendMessage(
+            {
+              id: crypto.randomUUID(),
+              role: "agent",
+              text: `Failed to stop: ${err}`,
+            },
+            tabId,
+          );
         }
         return true;
+      }
+      if (component.id === "tab-strip") {
+        const sel = data as { tabId?: string; action?: string } | undefined;
+        if (eventType === "select" && sel?.tabId) {
+          setActiveTab(sel.tabId);
+          return true;
+        }
+        if (eventType === "close" && sel?.tabId) {
+          closeTab(sel.tabId);
+          return true;
+        }
+        if (eventType === "new") {
+          newTab();
+          return true;
+        }
       }
       if (component.id === "sidebar" && eventType === "select") {
         const selected = data as { sectionId?: string; itemId?: string } | undefined;

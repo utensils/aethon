@@ -332,6 +332,7 @@ fn start_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), Str
 #[tauri::command]
 fn send_message(
     message: String,
+    tab_id: Option<String>,
     state: State<'_, AgentProcess>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -340,7 +341,13 @@ fn send_message(
 
     let child = guard.as_mut().ok_or("agent not running")?;
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-    let payload = serde_json::json!({"type": "chat", "content": message});
+    // tabId routes to a specific pi session; the bridge defaults to
+    // "default" when omitted so legacy single-tab callers keep working.
+    let payload = serde_json::json!({
+        "type": "chat",
+        "content": message,
+        "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
+    });
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
     Ok(())

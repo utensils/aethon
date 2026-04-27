@@ -592,45 +592,72 @@ async function main() {
   });
   await resourceLoader.reload();
 
-  const { session } = await createAgentSession({
-    authStorage,
-    modelRegistry,
-    settingsManager,
-    sessionManager: SessionManager.inMemory(),
-    resourceLoader,
-  });
+  // ---------------------------------------------------------------------
+  // Multi-tab session model. Each tab owns its own pi AgentSession and the
+  // per-turn state machine that wraps it (in-flight tracking, queue count,
+  // tool args cache for end-state cards). Sessions share authStorage,
+  // modelRegistry, settingsManager, and resourceLoader so they all see the
+  // same models and extension surface — only message history and active
+  // turn are isolated.
+  //
+  // Tabs are created lazily on first inbound message for a tabId. The
+  // frontend always sends tabId; legacy callers without it default to
+  // "default". Closing a tab aborts its in-flight prompt and drops the
+  // session reference; pi reclaims the in-memory history with the GC.
+  // ---------------------------------------------------------------------
+  interface TabRecord {
+    id: string;
+    session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+    toolArgsCache: Map<string, { name: string; summary: string }>;
+    promptInFlight: boolean;
+    agentEndFired: boolean;
+    queuedCount: number;
+  }
+
+  const tabs = new Map<string, TabRecord>();
 
   // Filter the picker to the user's enabledModels patterns from
   // ~/.pi/agent/settings.json. Patterns may include `*` wildcards
   // (e.g., "anthropic/claude-*"). When no patterns are configured,
   // fall back to authed models so the picker is never empty.
-  const all = modelRegistry.getAll();
-  const enabled = settingsManager.getEnabledModels();
-  let pickerModels: Model<Api>[];
-  if (enabled && enabled.length > 0) {
-    const patterns = enabled.map(compilePattern);
-    pickerModels = all.filter((m) => {
-      const key = modelKey(m);
-      return patterns.some((p) => p.test(key));
-    });
-  } else {
-    pickerModels = modelRegistry.getAvailable();
+  // Computed once — the picker is global, not per-tab.
+  function buildPickerModels(currentModel?: Model<Api>): Model<Api>[] {
+    const all = modelRegistry.getAll();
+    const enabled = settingsManager.getEnabledModels();
+    let pickerModels: Model<Api>[];
+    if (enabled && enabled.length > 0) {
+      const patterns = enabled.map(compilePattern);
+      pickerModels = all.filter((m) => patterns.some((p) => p.test(modelKey(m))));
+    } else {
+      pickerModels = modelRegistry.getAvailable();
+    }
+    // Always include the current session model so the active model is
+    // selectable even if its provider isn't authed or matched.
+    const seen = new Set(pickerModels.map(modelKey));
+    if (currentModel && !seen.has(modelKey(currentModel))) {
+      pickerModels.unshift(currentModel);
+    }
+    return pickerModels;
   }
 
-  // Always include the current session model so the active model is
-  // selectable even if its provider isn't authed or matched.
-  const seen = new Set(pickerModels.map(modelKey));
-  if (session.model && !seen.has(modelKey(session.model))) {
-    pickerModels.unshift(session.model);
+  // Cache the picker so emitReady doesn't recompute on every report.
+  // First populated when the default tab is created.
+  let cachedModels: ReturnType<typeof modelDescriptor>[] = [];
+
+  function defaultModelKey(): string {
+    const def = tabs.get("default");
+    return def?.session.model ? modelKey(def.session.model) : "";
   }
-  const models = pickerModels.map(modelDescriptor);
 
   function emitReady() {
-    const currentModelId = session.model ? modelKey(session.model) : "";
     send({
       type: "ready",
-      model: currentModelId,
-      models,
+      model: defaultModelKey(),
+      models: cachedModels,
+      tabs: [...tabs.values()].map((t) => ({
+        id: t.id,
+        model: t.session.model ? modelKey(t.session.model) : "",
+      })),
       extensionComponents: Object.fromEntries(extensionComponents),
       extensionState: extensionStateTree,
       extensionLayout,
@@ -639,39 +666,10 @@ async function main() {
     });
   }
 
-  // Discover Aethon-only extensions in `~/.aethon/extensions/*.ts` and call
-  // their `register(api)` default export. (Pi extensions reach the same API
-  // via `globalThis.aethon` — set above before createAgentSession.)
-  // Failures in one extension don't block others.
-  await loadAethonExtensions(aethonApi);
-
-  emitReady();
-
-  // Cache tool args from start so we can include them in the end-state card
-  // (tool_execution_end doesn't carry args).
-  const toolArgsCache = new Map<string, { name: string; summary: string }>();
-
-  // Tracks whether a prompt is mid-flight (between `session.prompt()` call
-  // and the agent_end event). Used to reject overlapping `chat` messages so
-  // the frontend doesn't get confused by AgentSession's "already processing"
-  // rejection. `agentEndFired` distinguishes prompts that triggered an agent
-  // run from prompts pi handled without one (e.g. server-side slash commands
-  // that short-circuit before invoking the LLM).
-  let promptInFlight = false;
-  let agentEndFired = false;
-
   // Format and forward bash output to the terminal panel in chunks. Caps a
   // single emit at TERMINAL_MAX_BYTES (trailing window) so a sudden burst
-  // can't choke the IPC pipe.
-  //
-  // We deliberately only stream on tool_execution_end, not partial updates.
-  // pi's bash tool exposes `partialResult.text` as a rolling tail (see
-  // pi-coding-agent/.../core/tools/bash.js — "rolling buffer of recent
-  // output for tail truncation"), so accumulating from partials reliably
-  // would require either (a) an upstream cumulative byte counter we don't
-  // have or (b) overlap matching that breaks on identical repeated chunks.
-  // Streaming only the final result avoids gap/duplication tradeoffs at
-  // the cost of not seeing live progress on long-running commands.
+  // can't choke the IPC pipe. Terminal output is global (one shared panel
+  // across tabs) so events carry no tabId.
   const TERMINAL_MAX_BYTES = 64 * 1024;
   const TERMINAL_CHUNK_BYTES = 8 * 1024;
 
@@ -698,96 +696,128 @@ async function main() {
     }
   }
 
-  // Stream text deltas, surface tool calls as A2UI cards, and flush
-  // `response_end` when the agent settles. The frontend appends text deltas
-  // to the trailing chat bubble, replaces tool messages by their stable id
-  // (so "running…" → "done" updates in place), and unsets the waiting flag
-  // on response_end.
-  // Drain count: how many followUp messages we've queued behind the
-  // current turn. Decremented when each subsequent turn starts so the
-  // frontend knows when the queue empties.
-  let queuedCount = 0;
+  // Create (or fetch) the session record for a tabId. Subscribes to its
+  // pi session and tags every per-turn event with tabId so the frontend
+  // routes deltas / tool cards / response_end to the right tab. The first
+  // call also seeds cachedModels — the picker is global but its content
+  // depends on a session having been spun up so we know the current
+  // model defaults.
+  async function ensureTab(tabId: string): Promise<TabRecord> {
+    const existing = tabs.get(tabId);
+    if (existing) return existing;
 
-  session.subscribe((event) => {
-    switch (event.type) {
-      case "agent_start": {
-        // Fires per turn — including the next turn pi automatically
-        // starts after draining a followUp message. Re-emit
-        // prompt_started so the frontend keeps Stop visible across
-        // queue boundaries (avoids a brief Send-flash between turns).
-        if (queuedCount > 0) {
-          queuedCount -= 1;
-          send({ type: "prompt_started", source: "queue", queued: queuedCount });
-        }
-        break;
-      }
-      case "message_update": {
-        if (event.assistantMessageEvent.type === "text_delta") {
-          const delta = event.assistantMessageEvent.delta ?? "";
-          if (delta) {
-            // pi assigns each AssistantMessage a unique `timestamp` at message
-            // start; reuse it as a stable per-message id so the frontend can
-            // append later deltas to the same chat bubble after tool calls.
-            const ts =
-              (event.message as { timestamp?: number } | undefined)?.timestamp ?? 0;
-            const messageId = `text-${ts}`;
-            send({ type: "response_delta", messageId, content: delta });
-          }
-        }
-        break;
-      }
-      case "tool_execution_start": {
-        const summary = summarizeToolArgs(event.toolName, event.args);
-        toolArgsCache.set(event.toolCallId, { name: event.toolName, summary });
-        const payload = toolCardPayload({
-          callId: event.toolCallId,
-          toolName: event.toolName,
-          argsSummary: summary,
-          running: true,
-        });
-        send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
-        // Echo the bash command into the visible terminal panel so the user
-        // can follow what the agent is running. The card uses a one-line
-        // summary, but here we want the verbatim multi-line command so
-        // heredocs / inline scripts read accurately in xterm.
-        if (event.toolName === "bash") {
-          const cmd = String(
-            (event.args as { command?: unknown } | undefined)?.command ?? "",
-          );
-          const echoed = cmd.replace(/\r?\n/g, "\r\n");
-          send({
-            type: "terminal_output",
-            content: `\r\n$ ${echoed}\r\n`,
-          });
-        }
-        break;
-      }
-      case "tool_execution_end": {
-        const cached = toolArgsCache.get(event.toolCallId);
-        const payload = toolCardPayload({
-          callId: event.toolCallId,
-          toolName: event.toolName,
-          argsSummary: cached?.summary ?? "",
-          result: event.result,
-          isError: event.isError,
-        });
-        send({ type: "a2ui", id: `tool-${event.toolCallId}`, payload });
-        if (event.toolName === "bash") {
-          const extracted = extractToolContent(event.result);
-          emitBashResult(extracted.text);
-          send({ type: "terminal_output", content: "\r\n" });
-        }
-        toolArgsCache.delete(event.toolCallId);
-        break;
-      }
-      case "agent_end": {
-        agentEndFired = true;
-        promptInFlight = false;
-        send({ type: "response_end" });
-        break;
-      }
+    const { session } = await createAgentSession({
+      authStorage,
+      modelRegistry,
+      settingsManager,
+      sessionManager: SessionManager.inMemory(),
+      resourceLoader,
+    });
+
+    const rec: TabRecord = {
+      id: tabId,
+      session,
+      toolArgsCache: new Map(),
+      promptInFlight: false,
+      agentEndFired: false,
+      queuedCount: 0,
+    };
+    tabs.set(tabId, rec);
+
+    // First tab: populate the global picker now that we have a model.
+    if (cachedModels.length === 0) {
+      cachedModels = buildPickerModels(session.model).map(modelDescriptor);
     }
-  });
+
+    // Per-tab subscriber. Closes over rec so increments / clears stay
+    // local; closes over tabId so outbound events carry routing.
+    session.subscribe((event) => {
+      switch (event.type) {
+        case "agent_start": {
+          if (rec.queuedCount > 0) {
+            rec.queuedCount -= 1;
+            send({ type: "prompt_started", tabId, source: "queue", queued: rec.queuedCount });
+          }
+          break;
+        }
+        case "message_update": {
+          if (event.assistantMessageEvent.type === "text_delta") {
+            const delta = event.assistantMessageEvent.delta ?? "";
+            if (delta) {
+              const ts = (event.message as { timestamp?: number } | undefined)?.timestamp ?? 0;
+              const messageId = `text-${ts}`;
+              send({ type: "response_delta", tabId, messageId, content: delta });
+            }
+          }
+          break;
+        }
+        case "tool_execution_start": {
+          const summary = summarizeToolArgs(event.toolName, event.args);
+          rec.toolArgsCache.set(event.toolCallId, { name: event.toolName, summary });
+          const payload = toolCardPayload({
+            callId: event.toolCallId,
+            toolName: event.toolName,
+            argsSummary: summary,
+            running: true,
+          });
+          send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
+          if (event.toolName === "bash") {
+            const cmd = String((event.args as { command?: unknown } | undefined)?.command ?? "");
+            const echoed = cmd.replace(/\r?\n/g, "\r\n");
+            send({ type: "terminal_output", content: `\r\n$ ${echoed}\r\n` });
+          }
+          break;
+        }
+        case "tool_execution_end": {
+          const cached = rec.toolArgsCache.get(event.toolCallId);
+          const payload = toolCardPayload({
+            callId: event.toolCallId,
+            toolName: event.toolName,
+            argsSummary: cached?.summary ?? "",
+            result: event.result,
+            isError: event.isError,
+          });
+          send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
+          if (event.toolName === "bash") {
+            const extracted = extractToolContent(event.result);
+            emitBashResult(extracted.text);
+            send({ type: "terminal_output", content: "\r\n" });
+          }
+          rec.toolArgsCache.delete(event.toolCallId);
+          break;
+        }
+        case "agent_end": {
+          rec.agentEndFired = true;
+          rec.promptInFlight = false;
+          send({ type: "response_end", tabId });
+          break;
+        }
+      }
+    });
+
+    // Tell the frontend a new tab is ready so it can show the model it
+    // defaulted to (relevant for tabs created server-side or via "duplicate").
+    send({
+      type: "tab_ready",
+      tabId,
+      model: session.model ? modelKey(session.model) : "",
+    });
+
+    return rec;
+  }
+
+  // Pre-create the default tab so emitReady has a populated cachedModels
+  // and the frontend can start dispatching to "default" without first
+  // racing an ensureTab call.
+  await ensureTab("default");
+
+  // Discover Aethon-only extensions in `~/.aethon/extensions/*.ts` and call
+  // their `register(api)` default export. (Pi extensions reach the same API
+  // via `globalThis.aethon` — set above before createAgentSession.)
+  // Failures in one extension don't block others.
+  await loadAethonExtensions(aethonApi);
+
+  emitReady();
 
   const rl = createInterface({ input: process.stdin });
 
@@ -799,6 +829,7 @@ async function main() {
       type: string;
       content?: string;
       id?: string;
+      tabId?: string;
       componentType?: string;
       template?: unknown;
       path?: string;
@@ -827,44 +858,42 @@ async function main() {
             send({ type: "error", message: "chat: missing content" });
             break;
           }
+          // tabId routes the prompt to the right session. Frontend always
+          // sends one; legacy callers without it default to "default".
+          const tabId = msg.tabId ?? "default";
+          const tab = await ensureTab(tabId);
           // CRITICAL: do NOT await — `for await (const line of rl)` processes
           // one stdin line at a time, so awaiting here would queue any
           // subsequent "stop" message behind the in-flight prompt and Stop
           // would never reach session.abort() until the prompt finished
-          // naturally. Track in-flight state via promptInFlight; cleared on
-          // agent_end OR in .finally() if pi short-circuited the prompt
-          // without an agent run (e.g. a server-side slash command). The
-          // finally branch also synthesizes a `response_end` so the
-          // frontend's waiting flag clears when no streaming happened.
+          // naturally. Track in-flight state on the tab record.
           //
-          // When a prompt is already running, pass `streamingBehavior:
-          // "followUp"` so pi appends the new message to its internal
-          // queue and processes it after the current turn settles. This
-          // lets the user keep typing without "agent busy" rejections.
-          // We DON'T flip promptInFlight for queued ones — agent_end
-          // fires per turn and pi automatically drains the queue.
-          const queued = promptInFlight;
+          // When a prompt is already running on this tab, pass
+          // `streamingBehavior: "followUp"` so pi appends the new message
+          // to its internal queue and processes it after the current turn
+          // settles. We DON'T flip promptInFlight for queued ones —
+          // agent_end fires per turn and pi automatically drains the queue.
+          const queued = tab.promptInFlight;
           if (!queued) {
-            promptInFlight = true;
-            agentEndFired = false;
+            tab.promptInFlight = true;
+            tab.agentEndFired = false;
+          } else {
+            tab.queuedCount += 1;
           }
-          session
+          tab.session
             .prompt(msg.content, queued ? { streamingBehavior: "followUp" } : undefined)
             .catch((err) => {
               const message = err instanceof Error ? err.message : String(err);
-              send({ type: "error", message: `prompt: ${message}` });
+              send({ type: "error", tabId, message: `prompt: ${message}` });
             })
             .finally(() => {
-              if (!queued && !agentEndFired) {
-                promptInFlight = false;
-                send({ type: "response_end" });
+              if (!queued && !tab.agentEndFired) {
+                tab.promptInFlight = false;
+                send({ type: "response_end", tabId });
               }
             });
           if (queued) {
-            // Tell the frontend the message was accepted into pi's
-            // followUp queue so it can show a subtle indicator without
-            // re-flipping waiting (which is already true).
-            send({ type: "queued" });
+            send({ type: "queued", tabId });
           }
           break;
         }
@@ -873,13 +902,20 @@ async function main() {
             send({ type: "error", message: "set_model: missing id" });
             break;
           }
+          const tabId = msg.tabId ?? "default";
+          const tab = tabs.get(tabId);
+          if (!tab) {
+            send({ type: "error", tabId, message: `set_model: unknown tab ${tabId}` });
+            break;
+          }
           // Same in-flight gate as `chat`: pi rejects setModel while a run
           // is active, and the resulting `error` would clobber waiting=true
           // and hide the Stop button on the original prompt. Surface as a
           // non-terminal notice instead so the user keeps their stop UI.
-          if (promptInFlight) {
+          if (tab.promptInFlight) {
             send({
               type: "notice",
+              tabId,
               message: "agent busy — stop the current prompt before switching models",
             });
             break;
@@ -888,11 +924,11 @@ async function main() {
           const id = rest.join("/");
           const next = modelRegistry.find(provider, id);
           if (!next) {
-            send({ type: "error", message: `set_model: unknown model ${msg.id}` });
+            send({ type: "error", tabId, message: `set_model: unknown model ${msg.id}` });
             break;
           }
-          await session.setModel(next);
-          send({ type: "model_changed", model: msg.id });
+          await tab.session.setModel(next);
+          send({ type: "model_changed", tabId, model: msg.id });
           break;
         }
         case "stop": {
@@ -902,10 +938,49 @@ async function main() {
           // so any in-flight bash subprocess gets SIGKILLed. Don't await —
           // we want to free the message loop immediately so a follow-up
           // chat doesn't queue behind a slow settle.
-          session.abort().catch((err) => {
+          const tabId = msg.tabId ?? "default";
+          const tab = tabs.get(tabId);
+          if (!tab) break; // nothing to stop on a tab we never spun up
+          tab.session.abort().catch((err) => {
             const message = err instanceof Error ? err.message : String(err);
-            send({ type: "error", message: `abort: ${message}` });
+            send({ type: "error", tabId, message: `abort: ${message}` });
           });
+          break;
+        }
+        case "tab_open": {
+          // Explicit tab create. Returns immediately if the tab already
+          // exists — useful for the frontend to pre-warm a tab before the
+          // user types into it. Emits `tab_ready` with the new model.
+          const tabId = msg.tabId;
+          if (!tabId || typeof tabId !== "string") {
+            send({ type: "error", message: "tab_open: missing tabId" });
+            break;
+          }
+          await ensureTab(tabId);
+          break;
+        }
+        case "tab_close": {
+          // Tear down a tab's session. Aborts any in-flight prompt first
+          // so kill signals propagate before we drop the reference. The
+          // "default" tab can't be closed — there must always be one.
+          const tabId = msg.tabId;
+          if (!tabId || typeof tabId !== "string") {
+            send({ type: "error", message: "tab_close: missing tabId" });
+            break;
+          }
+          if (tabId === "default") {
+            send({ type: "notice", message: "cannot close the default tab" });
+            break;
+          }
+          const tab = tabs.get(tabId);
+          if (!tab) break;
+          if (tab.promptInFlight) {
+            tab.session.abort().catch(() => {
+              /* fire-and-forget — we're tearing down anyway */
+            });
+          }
+          tabs.delete(tabId);
+          send({ type: "tab_closed", tabId });
           break;
         }
         case "report": {
@@ -920,63 +995,58 @@ async function main() {
           const descendantId = ev.componentId?.includes("__tpl__")
             ? ev.componentId.split("__tpl__").slice(1).join("__tpl__")
             : undefined;
+          // a2ui events from the active tab; default routes to "default"
+          // for back-compat. Handlers run against this tab's session, so
+          // ctx.pi.prompt() opens a turn on the same tab the user clicked
+          // from — not whichever tab pi was last touched on.
+          const handlerTabId = msg.tabId ?? "default";
+          const handlerTab = await ensureTab(handlerTabId);
           // Build the ctx.pi facade fresh per dispatch so handlers always
-          // see the current session model + last 50 messages. session.state
-          // is mutable, so reading it through a getter keeps the handler's
-          // view consistent with pi without leaking the AgentSession itself.
+          // see the current session model + last 50 messages.
           const piCtx: PiHandlerCtx = {
             async prompt(text: string) {
               if (!text || typeof text !== "string") return;
-              if (promptInFlight) {
+              if (handlerTab.promptInFlight) {
                 send({
                   type: "notice",
+                  tabId: handlerTabId,
                   message: "agent busy — handler prompt rejected",
                 });
                 throw new Error("agent busy — prompt in flight");
               }
-              promptInFlight = true;
-              agentEndFired = false;
+              handlerTab.promptInFlight = true;
+              handlerTab.agentEndFired = false;
               // Tell the frontend a turn is starting so it can flip
               // waiting=true (Stop button visible, chat input disabled).
-              // Without this, a handler-fired prompt would stream invisibly
-              // and the user couldn't interrupt it.
-              send({ type: "prompt_started", source: "handler" });
-              // Return a real promise so handler authors can await
-              // completion ("ask LLM → render result → setState"). The
-              // promise resolves when pi's session.prompt resolves
-              // (agent_end fires). On error we still re-emit response_end
-              // so the frontend's waiting flag clears, then re-throw
-              // so the handler's await sees the failure.
+              send({ type: "prompt_started", tabId: handlerTabId, source: "handler" });
               try {
-                await session.prompt(text);
+                await handlerTab.session.prompt(text);
               } catch (err) {
                 const m = err instanceof Error ? err.message : String(err);
-                send({ type: "error", message: `handler prompt: ${m}` });
+                send({ type: "error", tabId: handlerTabId, message: `handler prompt: ${m}` });
                 throw err;
               } finally {
-                if (!agentEndFired) {
-                  promptInFlight = false;
-                  send({ type: "response_end" });
+                if (!handlerTab.agentEndFired) {
+                  handlerTab.promptInFlight = false;
+                  send({ type: "response_end", tabId: handlerTabId });
                 }
               }
             },
             notify(message: string) {
               if (!message) return;
-              send({ type: "notice", message });
+              send({ type: "notice", tabId: handlerTabId, message });
             },
             get session() {
-              const messages = session.messages ?? [];
+              const messages = handlerTab.session.messages ?? [];
               return {
-                model: session.model ? modelKey(session.model) : "",
+                model: handlerTab.session.model ? modelKey(handlerTab.session.model) : "",
                 messages: messages.slice(-50),
               };
             },
             // Pi's active-turn AbortSignal lives on `session.agent.signal`
             // (verified via @mariozechner/pi-agent-core agent.d.ts:90).
-            // Returns undefined outside a turn — matches pi's own
-            // `ctx.signal` contract for extension handlers.
             get signal() {
-              return session.agent?.signal;
+              return handlerTab.session.agent?.signal;
             },
           };
           for (const { match, handler } of a2uiEventHandlers) {

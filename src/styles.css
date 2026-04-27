@@ -580,6 +580,93 @@ body {
   text-align: right;
 }
 
+/* ---- Tab strip ---------------------------------------------------------- */
+
+/* Horizontal row of tab pills above the canvas. Each pill has a label and
+   an optional close (×) button; a "+" button at the end opens a new tab.
+   Per-tab pi sessions back the visual separation — switching tabs swaps
+   the active conversation in place. */
+.a2ui-tab-strip {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  min-height: 32px;
+}
+
+.a2ui-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 12px;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  top: 1px; /* sits flush with the tab-strip's bottom border when active */
+}
+
+.a2ui-tab:hover {
+  color: var(--text);
+  background: var(--bg-hover, var(--bg-elevated, var(--bg)));
+}
+
+.a2ui-tab-active {
+  color: var(--text);
+  background: var(--bg);
+  border-bottom: 1px solid var(--bg);
+  box-shadow: 0 -2px 0 0 var(--accent) inset;
+}
+
+.a2ui-tab-label {
+  pointer-events: none;
+}
+
+.a2ui-tab-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  margin-left: 2px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.a2ui-tab-close:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text);
+}
+
+.a2ui-tab-new {
+  background: transparent;
+  border: 1px dashed transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 10px;
+  margin-left: 4px;
+  cursor: pointer;
+  border-radius: 6px;
+  align-self: center;
+}
+
+.a2ui-tab-new:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
 /* ---- Terminal ----------------------------------------------------------- */
 
 /* The terminal cell is auto-rowed in the grid, so it sizes to its content.
