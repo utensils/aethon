@@ -24,6 +24,15 @@ All notable changes to Aethon. Format loosely follows
   the bridge's view of the boot layout when the active layout skill
   changes (skill swap → new boot tree).
 
+### Changed
+
+- **`~/.aethon/state.json` now updates on `onEvent` registration** so
+  the snapshot reflects newly-wired handlers, not just registered
+  components/themes/layouts.
+- **`~/.pi/agent/extensions/` is pre-created on boot** so a first-time
+  pi extension drop fires Create events and hot-reloads without a
+  manual app restart (parity with `~/.aethon/extensions/`).
+
 - **Persistent per-tab pi sessions.** Each tab uses
   `SessionManager.continueRecent($AETHON_SESSIONS_DIR/<tabId>)` instead
   of `inMemory()`, so the model's conversation history survives bun

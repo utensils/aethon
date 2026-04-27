@@ -518,10 +518,14 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         let aethon_ext = h.join(".aethon/extensions");
         let _ = std::fs::create_dir_all(&aethon_ext);
         if aethon_ext.exists() { watch_paths.push(aethon_ext); }
-        // ~/.pi/agent/extensions is pi's territory — only watch if it
-        // already exists. Users on a fresh pi install can `pi install`
-        // (or mkdir) and restart Aethon to start watching.
+        // ~/.pi/agent/extensions is pi's territory but Aethon needs to
+        // watch it so an extension dropped in there hot-reloads without a
+        // manual app restart. Pre-create the directory if missing so the
+        // watcher fires Create events on the first installed extension.
+        // Failure is non-fatal — pi's installer will create it later and
+        // the next app launch will pick it up.
         let pi_ext = h.join(".pi/agent/extensions");
+        let _ = std::fs::create_dir_all(&pi_ext);
         if pi_ext.exists() { watch_paths.push(pi_ext); }
         // ~/.aethon/skills/node_modules holds npm-distributed skill
         // packages (manifest with `aethon` field). Pre-create so a

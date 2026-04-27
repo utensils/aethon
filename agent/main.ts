@@ -906,6 +906,10 @@ async function main() {
     if (registeredHandlerKeys.has(key)) return;
     registeredHandlerKeys.add(key);
     a2uiEventHandlers.push({ match, handler });
+    // Refresh the state file so the snapshot reflects newly-wired handlers
+    // (their match shape, at least). Was previously omitted and the state
+    // file undercounted what the agent could reach via onEvent.
+    scheduleStateFileWrite();
   }
   function _setLayout(payload: unknown): void {
     if (!payload || typeof payload !== "object") return;

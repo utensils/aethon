@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-27 (post-codex audit + getLayout fix).
+Last reviewed: 2026-04-27 (codex round 2 + getLayout fix + onEvent state-file write + pi-extensions dir pre-create).
 
 ---
 
@@ -156,7 +156,7 @@ expand canvas, add panels) because everything is A2UI.
 
 - [x] Skill registry primitive (`SkillRegistry`, exposed via React context)
 - [x] Default-layout shipped as a registered skill (eats its own dog food)
-- [x] Runtime API on `window.aethon` — `setLayout`, `resetLayout`, `registerSkill`, `listSkills`
+- [x] Runtime API on `window.aethon` (frontend-only, in addition to the bridge-side `globalThis.aethon`): `setLayout`, `resetLayout`, `getLayout`, `registerSkill`, `listSkills`, `newTab`, `closeTab(tabId)`, `switchTab(tabId)`, `listTabs`. Used by the aethon-debug skill, the system menu / tray, and any in-webview script. Do not confuse with the bridge-side surface in `agent/main.ts` — that one is for extensions and adds `setState`, `patchLayout`, `registerComponent`, `registerTheme`, `onEvent`, `getRuntimeSnapshot`, etc.
 - [x] Pi extensions reach the Aethon UI surface via `globalThis.aethon` (set before `createAgentSession` so pi's loader sees it). Same `registerComponent` / `setState` / `onEvent` API as Aethon-side extensions, and the global is absent outside Aethon so pi-TUI extensions stay functional. Examples + types under `examples/pi-extensions/`.
 - [x] Extension-registered components are interactive — `aethon.onEvent({templateRootType, componentType, descendantId, eventType}, handler)` runs handlers when an A2UI control inside an extension template fires an event. Handlers can call `setState` / `registerComponent` to drive UI without an LLM round-trip. Renderer threads `templateRootType` through descendant dispatches and the bridge extracts `descendantId` from the host-prefixed componentId. Demo at `examples/pi-extensions/aethon-counter.ts`.
 - [x] Aethon-side extensions via `~/.aethon/extensions/*.{ts,js}` exporting `register(api)` (same API surface as pi-side). `loadAethonExtensions` in the bridge discovers + dynamic-imports them at boot; missing dir is the no-op default. Bridge retains state as a tree and replays on `ready`; frontend hydrates templates into the SkillRegistry and the renderer expands them inline with host-prefixed ids.
@@ -195,13 +195,20 @@ by an extension without touching React source.
 - [ ] **Registerable slash commands** — built-ins (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`) live hardcoded in `src/slashCommands.ts`. Fix: bridge-side `aethon.registerSlashCommand({name, description, handler})`; frontend merges with built-ins for the picker UI; handler is invoked through the existing `onEvent` pipeline so registration deduping + per-tab attribution work the same as today.
 - [ ] **Registerable menu items** — `App.tsx` listens for the `menu` Tauri event and dispatches to a fixed switch. Extensions can't add app-menu / tray-menu entries. Fix: `aethon.registerMenuItem({location: "app"|"tray", label, action, parent?})`; Tauri shell subscribes to bridge-side `menu_items_changed` events and rebuilds the menu via `MenuBuilder`. Default-built-in items seed the registry at boot.
 - [ ] **Compositional sidebar items** — `Sidebar` in `src/skills/default-layout/components.tsx` hard-codes label/swatch/active rendering. Extensions can append `extraSections` but can't ship a custom item renderer (icons, badges, sub-text). Fix: each item may carry `componentType`; if set, the sidebar resolves it through the SkillRegistry and renders that template instead of the default row. Templates can `$ref` into `$item` for per-row data.
-- [ ] **Compositional terminal subscription** — `Terminal` in `default-layout/components.tsx` listens directly for the `aethon:terminal` and `aethon:terminal-replay` window events. Extensions can't redirect terminal output to a different component or substitute their own terminal stream. Fix: route the bash output through state (`/terminal/buffer`) and let any component bind to it; emit a `aethon:terminal-tap` registry event so multiple subscribers can co-exist.
+- [ ] **Compositional terminal subscription** — `Terminal` already accepts an `output` prop and `subscribeToBash` is opt-in (so an extension CAN substitute the whole composite or bind a different state path). The narrower gap: bash output isn't routed through shared layout state — it's window-event driven, single-subscriber, with no supported tap/multi-subscriber API. Fix: also write bash output to `/terminal/buffer` per tab so any A2UI component can `$ref` it, and emit a `aethon:terminal-tap` event so additional subscribers (logging extensions, alternative renderers) can attach without monkey-patching window listeners.
 - [ ] **Pluggable `onEvent` routing** — `App.tsx` has a hardcoded switch for `chat:send`, `sidebar:select`, tab interactions, etc. Extensions can't see the routing table or override an entry. Fix: move the route table into a state-driven registry; expose `aethon.registerEventRoute({eventType, handler})` and `aethon.listEventRoutes()`. Built-ins remain default but become removable.
 - [ ] **Built-in primitives don't fire `click` unless `onClick` is set** — `Button` in `src/components/builtins.tsx:93-96` only calls `onEvent("click", …)` when `props.onClick` is truthy. Bundled docs (`docs/aethon-agent/components.md:64-66`) explicitly say "no built-in onClick prop", so an agent-authored button following the docs is inert. Fix: emit `click` unconditionally for `button`, document the prop's role as a same-tab handler hint (or remove the prop and make all clicks go through `onEvent`).
 - [ ] **Sidebar section items don't match documented `descendantId`** — `Sidebar` in `src/skills/default-layout/components.tsx:160-165` emits ONE event from `componentId: "sidebar"` with `data: {sectionId, itemId}`. The bridge derives `descendantId` only from componentIds containing the `__tpl__` separator (`agent/main.ts:1491-1498`), so the documented example `aethon.onEvent({componentType: "sidebar-item", descendantId: "open-readme"}, …)` (`docs/aethon-agent/api.md:153-156`) never matches. Fix: either (a) emit per-item events with stable child componentIds (`sidebar__tpl__<itemId>`) so the existing match shape works, or (b) re-document handlers as `match: {componentType: "sidebar", eventType: "select"}` and read `event.data.itemId`. Option (a) keeps the docs honest and lets per-item handlers be specific.
 - [ ] **Handler `ctx.pi.prompt` errors emit terminal `error`** — `agent/main.ts:1528-1531` catches a failed `session.prompt(text)` from inside an event handler and sends `type: "error"` before rethrowing. The frontend treats `error` as terminal and clears `waiting`, killing the Stop button for whatever prompt the user actually has running. Fix: send `type: "notice"` instead (or `type: "handler_error"` with the same non-terminal semantics); preserve the rethrow so the calling handler still sees the error.
 - [ ] **`registerComponent` example uses payload-wrapper shape** — `docs/aethon-agent/api.md:63-75` shows templates as `{components: [...]}` but the renderer expansion at `src/components/A2UIRenderer.tsx:238-249` expects a single component with `id/type/children`. Wrapper template has no `id`/`type` so expansion produces an invalid node. Fix: rewrite the doc examples to use the bare component shape; keep wrapper-shape support (auto-unwrap `{components: [single]}`) for backwards compat with the existing `examples/` extensions that use it.
 - [ ] **A2UI primitive coverage missing from M2** — SPEC's "Component registry" section names `select`, `checkbox`, `slider`, `date-picker`, `table`, `list`, `icon`, `form`, `form-field`, `divider`, `heading`, `paragraph` as the standard A2UI set. Renderer (`src/components/A2UIRenderer.tsx:88-99`) currently implements only 7 (`text`, `card`, `button`, `container`, `code`, `image`, `text-input`). M2 doesn't track the gap. Fix: add an M2 line listing the unimplemented primitives so they show up on the backlog instead of being silently overclaimed by the "A2UI v0.9 (full spec)" core decision.
+- [ ] **Multi-tab restore on relaunch (only "default" comes back)** — `agent/main.ts` pre-creates only the `default` tab on bridge boot, and `src/App.tsx` initializes React with one default tab. Per-tab session files at `~/.aethon/sessions/<tabId>/` persist across runs but there is no discovery / reopen path on app relaunch — non-default tabs are silently abandoned. Fix: bridge reads the `~/.aethon/sessions/` directory at boot, sends a `tabs_discovered` message with `[{tabId, lastModified, leafSummary}]`, frontend offers a "Restore previous tabs" prompt or auto-restores the most recently active set per the user's preference.
+- [ ] **Concurrent setState attribution race** — `_setState` falls back to `currentAgentTabId` when `tabContext.getStore()` returns undefined (an extension event listener that escapes ALS, an `setInterval` callback, etc.). Under concurrent prompts on different tabs, this single global can be wrong for the path actually being written. Fix: scope every async entrypoint that touches the bridge through `tabContext.run(tabId, fn)` — including event handlers inside `dispatch_a2ui_event`, timer callbacks set up at register-time (which currently have no tab context), and any future bash-result callback. For setState calls genuinely outside any tab scope, document the fallback as "active tab" rather than "current agent tab."
+- [x] **State file regenerates on `onEvent` registration** — fixed in `agent/main.ts:_onEvent`: `scheduleStateFileWrite` is now called after each handler is registered. Handler list itself is still not in `RuntimeSnapshot` — see next item.
+- [ ] **Registered event handlers are invisible in the runtime snapshot** — `getRuntimeSnapshot()` returns extensions, themes, components, layout, tabs, but not the list of `aethon.onEvent` registrations. Agent can't introspect what's wired. Fix: add `eventHandlers: [{match, sourceId?}]` to the snapshot (without function bodies — just the match shape).
+- [ ] **Hardcoded chat-input chrome** — the composer (`src/skills/default-layout/components.tsx:467-548`) hard-codes textarea behavior, the slash command picker UI, the queue-count badge, and the literal `Stop` / `Send` button labels. Extensions can replace the entire `chat-input` composite but cannot configure the stock composer as A2UI props. Fix: lift labels (`sendLabel`, `stopLabel`, `placeholder`), picker styling, and queue-badge format into `chat-input` props that accept `$ref`s; document the prop schema in `docs/aethon-agent/components.md`.
+- [ ] **Hardcoded chrome strings inside composites** — the default canvas empty state ("Send a message to start a conversation…", `components.tsx:252-257`), the terminal panel header (`Aethon Terminal`, `components.tsx:743-747`), and the xterm boot greeting (`Aethon Terminal\r\n$ `, `components.tsx:665`) are inline React strings. An extension swapping to a different brand/voice can't override them without re-implementing the whole composite. Fix: pass these in as composite props (with sensible defaults) so a `$ref` or inline override works.
+- [ ] **Theme discovery doesn't match SPEC** — `SPEC.md` (extension model section) lists `~/.aethon/themes/` and `.aethon/themes/` as theme discovery paths, but the bridge has no theme-directory loader; themes only land via extension `register(api).registerTheme(…)`. Fix: either (a) implement a theme directory loader that watches `~/.aethon/themes/*.{json,toml}` and registers each as a theme, or (b) update the SPEC discovery section to match reality (extensions only).
 
 #### Layout abstraction gaps
 
@@ -365,7 +372,13 @@ defines:
 Themes are CSS custom properties applied globally. The A2UI renderer reads
 these when rendering components. Themes can be switched at runtime.
 
-Discovery: `~/.aethon/themes/`, `.aethon/themes/`, or via packages.
+Discovery today: themes are registered via the extension API
+(`globalThis.aethon.registerTheme(…)`), either from an Aethon-direct
+extension under `~/.aethon/extensions/`, an npm-distributed skill
+package under `~/.aethon/skills/node_modules/<pkg>`, or a pi extension
+in `~/.pi/agent/extensions/` that uses the global. There is **no
+loose-file theme-directory loader** today; `~/.aethon/themes/` and
+`.aethon/themes/` are not scanned. Tracked as an M5 backlog item.
 
 ---
 
@@ -419,28 +432,31 @@ aethon/
 
 ## Configuration
 
+**Currently parsed schema** (see `src-tauri/src/lib.rs:read_config` and
+`src/config.ts`):
+
 ```toml
 # ~/.aethon/config.toml
 
-[llm]
-provider = "anthropic"          # or "openai", "google", "custom"
-model = "claude-sonnet-4-6"     # default model
-api_key_env = "ANTHROPIC_API_KEY"
-
-[llm.custom]
-base_url = "http://localhost:11434/v1"  # for local models
-
 [ui]
-theme = "aethon-dark"
-font_size = 14
-show_status_bar = true
+theme = "dark"           # "dark" | "light" — extension-registered themes
+                         # are NOT accepted here, they're per-session via
+                         # the sidebar Themes section
+font_size = 14           # parsed but currently unused (tracked under M5)
 
 [agent]
-max_iterations = 50             # 0 = unlimited
+model = "anthropic/claude-sonnet-4-6"   # parsed but currently unused
+                                        # (tracked under M5)
 ```
 
-Until `~/.aethon/config.toml` exists, Aethon reads model + provider config
-from pi's own `~/.pi/agent/settings.json`.
+Pi settings (`~/.pi/agent/settings.json`) drive provider/auth, model
+discovery, and `enabledModels` filtering for the picker. Aethon's
+config layers on top, not a replacement.
+
+**Backlog (M5)**: wire `[ui] font_size` into a CSS variable / class;
+honor `[agent] model` as the picker default when no per-session model
+is saved; consider adding `[updater]` (endpoint, channel) and `[shell]`
+(login-PATH override) sections as the corresponding code paths grow.
 
 ---
 
