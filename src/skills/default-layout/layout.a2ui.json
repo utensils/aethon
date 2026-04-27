@@ -85,10 +85,7 @@
               {
                 "id": "themes",
                 "title": "Themes",
-                "items": [
-                  { "id": "dark", "label": "Dark" },
-                  { "id": "light", "label": "Light" }
-                ]
+                "items": { "$ref": "/sidebar/themes" }
               },
               {
                 "id": "history",
@@ -155,7 +152,11 @@
     "sidebar": {
       "history": [],
       "models": [],
-      "extraSections": []
+      "extraSections": [],
+      "themes": [
+        { "id": "dark", "label": "Dark" },
+        { "id": "light", "label": "Light" }
+      ]
     },
     "terminal": {
       "open": false

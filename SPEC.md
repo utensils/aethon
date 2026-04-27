@@ -160,7 +160,8 @@ expand canvas, add panels) because everything is A2UI.
 - [x] Pi extensions reach the Aethon UI surface via `globalThis.aethon` (set before `createAgentSession` so pi's loader sees it). Same `registerComponent` / `setState` / `onEvent` API as Aethon-side extensions, and the global is absent outside Aethon so pi-TUI extensions stay functional. Examples + types under `examples/pi-extensions/`.
 - [x] Extension-registered components are interactive — `aethon.onEvent({templateRootType, componentType, descendantId, eventType}, handler)` runs handlers when an A2UI control inside an extension template fires an event. Handlers can call `setState` / `registerComponent` to drive UI without an LLM round-trip. Renderer threads `templateRootType` through descendant dispatches and the bridge extracts `descendantId` from the host-prefixed componentId. Demo at `examples/pi-extensions/aethon-counter.ts`.
 - [~] Aethon-side extensions also work via `~/.aethon/extensions/*.{ts,js}` exporting `register(api)` (same API surface). Bridge retains state as a tree and replays on `ready`; frontend hydrates templates into the SkillRegistry and the renderer expands them inline with host-prefixed ids.
-- [x] Extensions can mutate the entire UI: `aethon.setLayout(payload)` replaces the active layout wholesale, `aethon.patchLayout(path, value)` JSON-Pointer patches it (array-preserving), `aethon.registerSidebarSection({id,title,items})` is a convenience wrapper that appends into the sidebar's `extraSections`. Bridge retains both the layout and pending pre-setLayout patches for ready/report replay. Frontend treats layout state as boot defaults so live runtime fields (model, status, messages, draft) survive reload. Demo at `examples/pi-extensions/aethon-sidebar-panel.ts`. `registerTheme` and a deeper pi-extension ctx integration (so handlers can also call into pi's session/tools) are still follow-ups.
+- [x] Extensions can mutate the entire UI: `aethon.setLayout(payload)` replaces the active layout wholesale, `aethon.patchLayout(path, value)` JSON-Pointer patches it (array-preserving), `aethon.registerSidebarSection({id,title,items})` is a convenience wrapper that appends into the sidebar's `extraSections`. Bridge retains both the layout and pending pre-setLayout patches for ready/report replay. Frontend treats layout state as boot defaults so live runtime fields (model, status, messages, draft) survive reload. Demo at `examples/pi-extensions/aethon-sidebar-panel.ts`. A deeper pi-extension ctx integration (so handlers can also call into pi's session/tools) is still a follow-up.
+- [x] Extensions can register color themes: `aethon.registerTheme({id, label?, vars})` ships a CSS custom-property map (`--bg`, `--text`, `--accent`, …). Bridge sanitizes the id/keys, retains the theme map, emits `extension_themes` deltas, and includes the snapshot in `ready` for reload-replay. Frontend hydrates each theme into a `<style>` tag built via CSSOM `setProperty` so malformed values can't escape the declaration; stale tags are dropped when the list shrinks. Built-in `dark`/`light` ids are reserved. Themes appear in the sidebar Themes section alongside built-ins and persist to `~/.aethon/theme`. Demo at `examples/pi-extensions/aethon-theme.ts` (Solarized Dark + Synthwave).
 - [ ] Skill manifest with A2UI component declarations (read from `package.json#aethon`)
 - [ ] Extension hot-reload
 - [ ] Discovery from `~/.aethon/extensions/` and `.aethon/extensions/`
@@ -251,13 +252,26 @@ Aethon extends pi's existing extension system with UI capabilities.
 - `on('tool_call', ...)` — Event hooks
 - `ctx.ui.confirm()`, `ctx.ui.select()` — User prompts
 
-### Aethon extensions (new — not yet implemented)
+### Aethon extensions (current API surface)
 
-- `registerA2UIComponent(type, ReactComponent)` — Register custom component types
-- `registerPanel(id, a2uiSchema)` — Register persistent UI panels
-- `registerTheme(name, themeConfig)` — Register custom themes
-- `on('a2ui:interaction', ...)` — Hook into UI interaction events
-- `ctx.canvas.emit(a2uiPayload)` — Programmatically push UI updates
+Pi extensions reach the Aethon UI via `globalThis.aethon` — see
+`examples/pi-extensions/aethon-types.d.ts` for full ambient types.
+Aethon-only extensions live in `~/.aethon/extensions/*.{ts,js}` and
+receive the same surface as the first arg to their `register(api)`.
+
+- `registerComponent(type, template)` — Register an A2UI subtree as a custom component type
+- `setState(jsonPointer, value)` — Mutate live layout state at a path
+- `onEvent(match, handler)` — Route component events to extension handlers (no LLM round-trip)
+- `setLayout(payload)` — Replace the active layout wholesale
+- `patchLayout(jsonPointer, value)` — JSON-Pointer patch the active layout (array-preserving)
+- `registerSidebarSection({id, title, items})` — Convenience wrapper for `/sidebar/extraSections`
+- `registerTheme({id, label?, vars})` — Register a color scheme (CSS custom properties)
+
+### Still on the backlog
+
+- React-component skills (currently only A2UI templates can be registered live)
+- Programmatic canvas push API (`ctx.canvas.emit(...)`)
+- Discovery from `package.json#aethon` for npm/git-installed extensions
 
 ### Discovery
 
