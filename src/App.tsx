@@ -1208,6 +1208,15 @@ export default function App() {
         updateTab(tabId, (tab) => ({ ...tab, queueCount: tab.queueCount + 1 }));
         break;
       }
+      case "queue_reset": {
+        // Bridge dropped this tab's pi follow-up queue (typically on
+        // Stop). Mirror by zeroing the local queueCount so the next
+        // response_end clears `waiting` instead of staying stuck on
+        // the "queue > 0 keeps Stop" gate.
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        updateTab(tabId, (tab) => ({ ...tab, queueCount: 0 }));
+        break;
+      }
       case "response_end": {
         activeResponseIdRef.current = null;
         const tabId = (data.tabId as string | undefined) ?? "default";

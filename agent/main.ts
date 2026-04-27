@@ -1062,6 +1062,10 @@ async function main() {
             }
           }
           tab.queuedCount = 0;
+          // Tell the frontend so its tab.queueCount matches. Without
+          // this, response_end's `if (queueCount > 0) keep waiting`
+          // gate would leave the tab stuck on Stop after the abort.
+          send({ type: "queue_reset", tabId });
           tab.session.abort().catch((err) => {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "error", tabId, message: `abort: ${message}` });
