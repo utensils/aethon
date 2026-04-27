@@ -162,14 +162,8 @@
               }
               {
                 category = "build";
-                name = "build-agent";
-                help = "Compile agent/main.ts → src-tauri/binaries/aethon-agent-<triple>";
-                command = "scripts/build-agent.sh \"$@\"";
-              }
-              {
-                category = "build";
                 name = "build-app";
-                help = "Build release app bundle (.app / .deb / .msi); compiles the agent first";
+                help = "Build release app bundle (.app / .deb / .msi); src-tauri/build.rs compiles the agent sidecar automatically";
                 command = "cargo tauri build \"$@\"";
               }
               {
