@@ -613,6 +613,33 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     Some(AgentWatcher { _watcher: watcher })
 }
 
+/// True when the updater plugin has a usable pubkey configured.
+/// Reads tauri.conf.json (the source of truth at runtime via
+/// generate_context!) by parsing the embedded JSON. Returns false on
+/// missing-or-empty so dev builds can boot without bogus keys and the
+/// frontend can surface a clear "updater not configured" message.
+fn updater_pubkey_configured() -> bool {
+    static CONF: &str = include_str!("../tauri.conf.json");
+    let v: serde_json::Value = match serde_json::from_str(CONF) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let pubkey = v
+        .get("plugins")
+        .and_then(|p| p.get("updater"))
+        .and_then(|u| u.get("pubkey"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    !pubkey.trim().is_empty()
+}
+
+/// Tauri command the frontend uses to know whether to show the
+/// "Check for Updates" UI as enabled or as a "not configured" hint.
+#[tauri::command]
+fn updater_available() -> bool {
+    cfg!(not(any(target_os = "android", target_os = "ios"))) && updater_pubkey_configured()
+}
+
 /// Build and attach the native app menu. The frontend listens for a
 /// `menu` Tauri event whose payload is the activated item id; both
 /// menu clicks and the existing keyboard shortcuts converge on the
@@ -807,9 +834,22 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 pub fn run() {
     let mut builder = tauri::Builder::default();
     builder = builder.plugin(tauri_plugin_process::init());
+    // Gate the updater plugin on a configured pubkey. Without one,
+    // signature verification can't decode anything and every update
+    // would fail post-download — so we just don't register the plugin
+    // and the frontend's Check-for-Updates menu reports it cleanly.
+    // tauri.conf.json's plugins.updater.pubkey is the source of truth;
+    // env override exists for CI / local sigs.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        if updater_pubkey_configured() {
+            builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        } else {
+            eprintln!(
+                "[updater] skipping plugin registration — no pubkey set in tauri.conf.json. \
+                See RELEASING.md to generate signing keys."
+            );
+        }
     }
     let builder = builder
         .manage(AgentProcess(Mutex::new(None)))
@@ -821,6 +861,7 @@ pub fn run() {
             read_state,
             write_state,
             read_config,
+            updater_available,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]

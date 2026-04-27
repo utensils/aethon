@@ -1454,9 +1454,22 @@ export default function App() {
   // system messages so the user sees what's happening; failures bubble
   // up to the menu handler's catch and become a system error bubble.
   //
-  // Updater is dev-only inert (no .sig files in dev), so check() returns
-  // null and we just tell the user "you're on the latest" — no error.
+  // The Rust shell only registers the updater plugin when a pubkey is
+  // configured; if not, `updater_available` returns false and we tell
+  // the user clearly instead of throwing on the first invoke.
   async function checkForUpdates() {
+    let available = false;
+    try {
+      available = await invoke<boolean>("updater_available");
+    } catch {
+      /* assume unavailable */
+    }
+    if (!available) {
+      appendSystem(
+        "Updater isn't configured for this build. See RELEASING.md to set up signing keys.",
+      );
+      return;
+    }
     appendSystem("Checking for updates…");
     let update: Awaited<ReturnType<typeof checkUpdate>>;
     try {
