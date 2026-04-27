@@ -95,6 +95,60 @@ interface ModelDescriptor {
   provider: string;
 }
 
+// Normalize a keyboard event to the same canonical combo string the bridge
+// stores (lowercased, sorted modifiers, "+"-joined). Returns null when no
+// printable key was involved (modifier keys alone don't match a combo).
+//
+//   Cmd+Shift+P   →  "meta+shift+p"
+//   Ctrl+]        →  "ctrl+]"
+//   Alt+M         →  "alt+m"
+function canonicalCombo(e: KeyboardEvent): string | null {
+  const k = e.key;
+  if (!k || k.length === 0) return null;
+  // Skip modifier-only events (pressing just Shift/Cmd/etc.)
+  if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return null;
+  const parts: string[] = [];
+  if (e.metaKey) parts.push("meta");
+  if (e.ctrlKey) parts.push("ctrl");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  parts.push(k.toLowerCase());
+  return parts.join("+");
+}
+
+// Bridge accepts a wide variety of human-readable combo formats
+// ("Cmd+Shift+P", "ctrl+]", "Meta+M") and we normalize on the frontend
+// for matching. Keep the modifier order stable so equivalent combos
+// hash to the same canonical form.
+function normalizeRegisteredCombo(combo: string): string {
+  const parts = combo
+    .split("+")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+  // Aliases: cmd → meta, command → meta, control → ctrl, option → alt.
+  const aliased = parts.map((p) =>
+    p === "cmd" || p === "command"
+      ? "meta"
+      : p === "control"
+        ? "ctrl"
+        : p === "option"
+          ? "alt"
+          : p,
+  );
+  const mods = new Set<string>();
+  let key = "";
+  for (const p of aliased) {
+    if (p === "meta" || p === "ctrl" || p === "alt" || p === "shift") {
+      mods.add(p);
+    } else {
+      key = p;
+    }
+  }
+  // Stable ordering matches canonicalCombo above (meta/ctrl/alt/shift).
+  const ordered = ["meta", "ctrl", "alt", "shift"].filter((m) => mods.has(m));
+  return [...ordered, key].filter(Boolean).join("+");
+}
+
 export default function App() {
   // The registry is created once and shared across the app via context.
   // Skills register their components/layouts here; the renderer resolves
@@ -746,6 +800,32 @@ export default function App() {
         closeTab(activeId);
         return;
       }
+      // Extension-registered keybindings — built-ins above win on a
+      // collision, by ordering. Look up the canonical combo and dispatch
+      // through the existing a2ui_event route as
+      // {componentType: "keybinding", componentId: "keybinding__tpl__<combo>",
+      //  data: {action, combo}} so a paired aethon.onEvent matcher fires.
+      const combo = canonicalCombo(e);
+      if (combo) {
+        const binding = extensionKeybindingsRef.current.get(combo);
+        if (binding) {
+          e.preventDefault();
+          e.stopPropagation();
+          invoke("dispatch_a2ui_event", {
+            event: JSON.stringify({
+              componentId: `keybinding__tpl__${combo}`,
+              componentType: "keybinding",
+              templateRootType: "keybinding",
+              eventType: "invoke",
+              data: { combo, action: binding.action },
+            }),
+            tabId: stateRef.current.activeTabId,
+          }).catch(() => {
+            /* ignore — bridge gone or webview reload mid-flight */
+          });
+          return;
+        }
+      }
     };
     // useCapture=true so we run BEFORE xterm's keydown listener;
     // stopPropagation then keeps the keystroke out of the shell.
@@ -1005,6 +1085,9 @@ export default function App() {
         const extSlash = (data.extensionSlashCommands as
           | { name: string; description: string; usage?: string }[]
           | undefined) ?? [];
+        const extKeys = (data.extensionKeybindings as
+          | { combo: string; action: string; description?: string }[]
+          | undefined) ?? [];
         // Hydrate extension themes BEFORE the layout state merge below so
         // /sidebar/themes carries the full list (built-ins + extension)
         // when the merge runs. hydrateThemes also injects the CSS so a
@@ -1017,6 +1100,7 @@ export default function App() {
         // catalog (built-ins + extensions), updates the picker state ref,
         // and bumps /slashCommands so the picker re-resolves via $ref.
         hydrateSlashCommands(extSlash);
+        hydrateKeybindings(extKeys);
         // Restore any extension-supplied layout, then replay queued
         // patches. Falls back to the boot layout when none is reported
         // so a removed/disabled extension stops bleeding stale chrome
@@ -1202,6 +1286,14 @@ export default function App() {
           | { name: string; description: string; usage?: string }[]
           | undefined) ?? [];
         hydrateSlashCommands(list);
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "extension_keybindings": {
+        const list = (data.bindings as
+          | { combo: string; action: string; description?: string }[]
+          | undefined) ?? [];
+        hydrateKeybindings(list);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -1585,6 +1677,15 @@ export default function App() {
     setState((prev) => ({ ...prev, ...flags }));
   }
 
+  // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
+  // by the keydown handler; written by hydrateKeybindings on
+  // `extension_keybindings` deltas. Built-ins (Cmd+T / Cmd+] / Cmd+[ /
+  // Cmd+W / Cmd+`) check first so collisions silently favor built-ins —
+  // documented as known precedence in the SPEC.
+  const extensionKeybindingsRef = useRef<
+    Map<string, { combo: string; action: string; description?: string }>
+  >(new Map());
+
   // Built once — handlers close over App-scope helpers via the ctx passed at
   // dispatch time, so the registry itself doesn't need state in scope.
   const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
@@ -1608,6 +1709,22 @@ export default function App() {
       })),
     }));
   }, []);
+
+  // Hydrate the extension-registered keybindings map from a bridge
+  // delta (or replayed `ready`). Combos arrive in any human-readable
+  // form ("Cmd+Shift+P", "ctrl+]") and are normalized for keydown
+  // matching via canonicalCombo / normalizeRegisteredCombo.
+  function hydrateKeybindings(
+    list: { combo: string; action: string; description?: string }[],
+  ) {
+    const next = new Map<string, { combo: string; action: string; description?: string }>();
+    for (const b of list) {
+      const canonical = normalizeRegisteredCombo(b.combo);
+      if (!canonical) continue;
+      next.set(canonical, b);
+    }
+    extensionKeybindingsRef.current = next;
+  }
 
   // Merge extension-registered slash commands with the built-ins.
   // Extension commands dispatch through the existing onEvent pipeline

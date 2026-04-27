@@ -48,6 +48,11 @@ export interface RuntimeSnapshot {
   // skills) are NOT included here — they're in the frontend's static
   // catalog; this is the extension delta only.
   slashCommands: { name: string; description: string; usage?: string }[];
+  // Extension-registered keyboard shortcuts (combo + action + optional
+  // description). Built-ins (Cmd+T / Cmd+] / Cmd+[ / Cmd+W / Cmd+`) are
+  // NOT included here — they're hardcoded in the frontend; this is the
+  // extension delta only.
+  keybindings: { combo: string; action: string; description?: string }[];
   // Frontend-mirrored UI state slices (sidebar.models, sidebar.themes,
   // connection, status, tabs, draft, messagesCount). Populated from the
   // `frontend_state_patch` channel — what's actually visible on screen.
@@ -309,6 +314,15 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     for (const c of snapshot.slashCommands) {
       const usage = c.usage ? ` ${c.usage}` : "";
       lines.push(`- \`/${c.name}${usage}\` — ${c.description || "(no description)"}`);
+    }
+  }
+
+  if (snapshot.keybindings.length > 0) {
+    lines.push("");
+    lines.push("Extension-registered keybindings (built-ins like Cmd+T / Cmd+] / Cmd+W not shown):");
+    for (const k of snapshot.keybindings) {
+      const desc = k.description ? ` — ${k.description}` : "";
+      lines.push(`- \`${k.combo}\` → action \`${k.action}\`${desc}`);
     }
   }
 

@@ -153,6 +153,36 @@ The picker shows extension commands alongside the built-ins; users get
 the same `↑/↓/Tab/Enter` UX. Re-registering with the same `name`
 overwrites the previous metadata.
 
+### `registerKeybinding({ combo, action?, description? })` / `unregisterKeybinding(combo)`
+
+Add an extension-supplied keyboard shortcut. `combo` is a "+"-joined
+human-readable token using `Cmd` / `Meta` / `Ctrl` / `Alt` / `Option` /
+`Shift` modifiers ("Cmd+Shift+P", "Ctrl+]", "Alt+M") — the frontend
+normalizes to a canonical form for matching. `action` is an opaque
+string the handler can branch on (defaults to the combo).
+
+Built-ins (`Cmd+T` / `Cmd+]` / `Cmd+[` / `Cmd+W` / `Cmd+\``) win on a
+collision — extensions can ADD shortcuts but cannot override built-ins
+(yet).
+
+```ts
+globalThis.aethon.registerKeybinding({
+  combo: "Cmd+Shift+L",
+  action: "summarize-log",
+  description: "Summarize the current bash output",
+});
+globalThis.aethon.onEvent(
+  { componentType: "keybinding", descendantId: "meta+shift+l" },
+  async (_event, ctx) => {
+    await ctx.pi.prompt("Summarize the recent bash output in 3 bullets.");
+  },
+);
+```
+
+The `descendantId` matches the canonical combo (lowercased modifiers in
+`meta/ctrl/alt/shift` order, then key). To remove a binding:
+`globalThis.aethon.unregisterKeybinding("Cmd+Shift+L")`.
+
 ### `registerTheme({ id, label?, vars })`
 
 Register a CSS color scheme. `id` must match `/^[A-Za-z][\w-]*$/` and may

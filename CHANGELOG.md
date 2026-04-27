@@ -8,6 +8,18 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Registerable keyboard shortcuts.** New
+  `aethon.registerKeybinding({combo, action?, description?})` and
+  `aethon.unregisterKeybinding(combo)`. Combos accept any human-readable
+  form (`Cmd+Shift+P`, `Ctrl+]`, `Alt+M`, `Meta+M`); frontend normalizes
+  to a canonical lowercased "+"-joined key (`meta+shift+p`) for matching.
+  Pair with `aethon.onEvent({componentType: "keybinding", descendantId:
+  "<canonical-combo>"}, handler)` to wire the action — the dispatched
+  event carries `data.action` and `data.combo`. Built-ins (Cmd+T /
+  Cmd+] / Cmd+[ / Cmd+W / Cmd+\`) win on collision; extensions can ADD
+  shortcuts but cannot override built-ins yet. Replayed on `ready` so
+  reload restores the bindings; surfaced in
+  `RuntimeSnapshot.keybindings` and the system-prompt runtime section.
 - **Registerable slash commands.** New
   `aethon.registerSlashCommand({name, description, usage?})` records
   command metadata; pair with `aethon.onEvent({componentType:

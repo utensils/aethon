@@ -72,6 +72,13 @@
  *      // dispatch through the existing a2ui_event route as
  *      // {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
  *      //  data: {args}} so a paired aethon.onEvent matcher fires the handler.
+ *   { "type": "extension_keybindings", "mutationId"?: "...", "bindings": [{combo, action, description?}, ...] }
+ *      // Emitted after each registerKeybinding / unregisterKeybinding
+ *      // call. Frontend matches keydown events against the canonicalized
+ *      // combo and dispatches via a2ui_event as {componentType: "keybinding",
+ *      // componentId: "keybinding__tpl__<combo>", data: {action, combo}}
+ *      // so aethon.onEvent({componentType: "keybinding", descendantId})
+ *      // fires the handler.
  *   { "type": "notice", "message": "..." }
  *      // Non-terminal informational message. The frontend renders it as a
  *      // system chat bubble WITHOUT touching the waiting/status flags, so
@@ -761,6 +768,17 @@ async function main() {
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
 
+  // Keybindings registered by extensions. Combo is a "+"-joined token
+  // ("Cmd+Shift+P", "Ctrl+]", "Alt+M") — frontend normalizes to a canonical
+  // form for keydown matching. Action is an opaque string the handler
+  // can branch on; defaults to the combo. Same dispatch shape as slash
+  // commands: paired with aethon.onEvent({componentType: "keybinding",
+  // descendantId: "<combo>"}, handler) for the actual behavior.
+  const extensionKeybindings = new Map<
+    string,
+    { combo: string; action: string; description?: string }
+  >();
+
   // Slash commands registered by extensions. Surfaced to the frontend
   // so the chat-input picker shows them alongside the built-ins; clicks
   // dispatch through the existing `a2ui_event` route as
@@ -906,6 +924,7 @@ async function main() {
         ...(match.eventType ? { eventType: match.eventType } : {}),
       })),
       slashCommands: [...extensionSlashCommands.values()],
+      keybindings: [...extensionKeybindings.values()],
       uiState: Object.fromEntries(frontendState),
       layoutStructure: summarizeLayoutStructure(),
     };
@@ -1195,6 +1214,50 @@ async function main() {
   // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
   // from the full list and appends id/label entries to /sidebar/themes
   // alongside the built-in dark/light items.
+  function _registerKeybinding(
+    binding: unknown,
+  ): Promise<MutationResult> {
+    if (!binding || typeof binding !== "object") {
+      return Promise.resolve({ ok: false, error: "binding requires { combo }" });
+    }
+    const obj = binding as {
+      combo?: unknown;
+      action?: unknown;
+      description?: unknown;
+    };
+    const combo = typeof obj.combo === "string" ? obj.combo.trim() : "";
+    if (!combo) {
+      const errorMsg = "registerKeybinding: combo required (e.g. \"Cmd+Shift+P\")";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const action = typeof obj.action === "string" && obj.action ? obj.action : combo;
+    const description = typeof obj.description === "string" ? obj.description : undefined;
+    extensionKeybindings.set(combo, {
+      combo,
+      action,
+      ...(description ? { description } : {}),
+    });
+    const list = [...extensionKeybindings.values()];
+    const { id, promise } = trackMutation();
+    send({ type: "extension_keybindings", mutationId: id, bindings: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
+  function _unregisterKeybinding(combo: unknown): Promise<MutationResult> {
+    if (typeof combo !== "string" || !combo.trim()) {
+      return Promise.resolve({ ok: false, error: "combo required" });
+    }
+    const had = extensionKeybindings.delete(combo.trim());
+    if (!had) {
+      return Promise.resolve({ ok: false, error: "no such combo" });
+    }
+    const list = [...extensionKeybindings.values()];
+    const { id, promise } = trackMutation();
+    send({ type: "extension_keybindings", mutationId: id, bindings: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
   function _registerSlashCommand(
     cmd: unknown,
   ): Promise<MutationResult> {
@@ -1316,6 +1379,8 @@ async function main() {
     registerSidebarSection: _registerSidebarSection,
     registerTheme: _registerTheme,
     registerSlashCommand: _registerSlashCommand,
+    registerKeybinding: _registerKeybinding,
+    unregisterKeybinding: _unregisterKeybinding,
     listExtensions: _listExtensions,
     listComponents: _listComponents,
     listThemes: _listThemes,
@@ -1415,6 +1480,7 @@ async function main() {
       extensionLayoutPatches: pendingLayoutPatches,
       extensionThemes: [...extensionThemes.values()],
       extensionSlashCommands: [...extensionSlashCommands.values()],
+      extensionKeybindings: [...extensionKeybindings.values()],
     });
   }
 
