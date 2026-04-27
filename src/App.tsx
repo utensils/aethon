@@ -396,23 +396,19 @@ export default function App() {
               })),
             },
           };
-          // Fold the extension state tree into app state via a recursive
-          // deep merge. Plain objects recurse; primitives and arrays
-          // replace. Without the recursion, an extension setting a
-          // descendant of an app-owned key (e.g. /sidebar/foo) would
-          // wipe the rest of the parent on hydration.
-          next = deepMergeState(next, extState);
-          // Also fold any extension-layout `state` so the replay path
-          // matches the live `layout_set` path (which spreads payload.state
-          // into app state). Without this, $refs in the extension layout
-          // resolve to undefined on reload until the extension's next
-          // state push.
+          // Order matters and must match the live ordering: layout state
+          // is the "boot defaults" (first-set), then extension setState
+          // patches win for any overlapping keys (last-set). Apply layout
+          // state FIRST, then the patch tree on top — otherwise reload
+          // would resurrect stale layout-state defaults over fresh
+          // extension-pushed values.
           if (extLayout && extLayout.state) {
             next = deepMergeState(
               next,
               extLayout.state as Record<string, unknown>,
             );
           }
+          next = deepMergeState(next, extState);
           return next;
         });
         break;
