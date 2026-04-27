@@ -310,6 +310,32 @@ async function main() {
   const modelRegistry = ModelRegistry.create(authStorage);
   const settingsManager = SettingsManager.create(process.cwd());
 
+  // Build the Aethon extension API and attach it to globalThis BEFORE
+  // createAgentSession runs, because pi loads extensions inside that call.
+  // Without this ordering, pi extensions that try to call
+  // `globalThis.aethon.registerComponent(...)` see `undefined` and silently
+  // no-op. The state maps below close over the same references the rest of
+  // the bridge uses, so the extension API stays in sync with the registry.
+  const extensionComponents = new Map<string, unknown>();
+  let extensionStateTree: Record<string, unknown> = {};
+  const aethonApi = {
+    registerComponent(componentType: string, template: unknown): void {
+      if (!componentType || typeof componentType !== "string") return;
+      extensionComponents.set(componentType, template);
+      send({
+        type: "extension_components",
+        components: Object.fromEntries(extensionComponents),
+      });
+    },
+    setState(path: string, value: unknown): void {
+      if (!path || typeof path !== "string") return;
+      extensionStateTree = setAtPointer(extensionStateTree, path, value);
+      send({ type: "state_patch", path, value });
+    },
+  };
+  type AethonApi = typeof aethonApi;
+  (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
+
   const { session } = await createAgentSession({
     authStorage,
     modelRegistry,
@@ -342,20 +368,6 @@ async function main() {
   }
   const models = pickerModels.map(modelDescriptor);
 
-  // Aethon-specific extension UI registry. Pi extensions can register A2UI
-  // component templates and push state via the `aethon` API exposed below.
-  // Templates are plain A2UI subtrees keyed by component type; the frontend
-  // wraps each as a synthetic React component in the SkillRegistry so that
-  // `{type: "<componentType>"}` in any A2UI tree expands the template inline.
-  const extensionComponents = new Map<string, unknown>();
-  // Hydrated tree of the current extension state. Each `setState(path, v)`
-  // is applied into this tree via JSON Pointer; on `ready` we emit the
-  // tree as a single snapshot the frontend folds into its layout state.
-  // We use a tree (not an ordered list of (path,value) pairs) because
-  // overlapping writes to ancestor and descendant paths would otherwise
-  // resurrect stale descendants when the snapshot is replayed.
-  let extensionStateTree: Record<string, unknown> = {};
-
   function emitReady() {
     const currentModelId = session.model ? modelKey(session.model) : "";
     send({
@@ -367,35 +379,10 @@ async function main() {
     });
   }
 
-  // Aethon-side extension API. Loaded extensions get an instance via the
-  // `aethon` namespace (see loadAethonExtensions below). All registrations
-  // also work via stdin commands so external tools / debug skills can drive
-  // the same surface.
-  const aethonApi = {
-    registerComponent(componentType: string, template: unknown): void {
-      if (!componentType || typeof componentType !== "string") return;
-      extensionComponents.set(componentType, template);
-      send({
-        type: "extension_components",
-        components: Object.fromEntries(extensionComponents),
-      });
-    },
-    setState(path: string, value: unknown): void {
-      if (!path || typeof path !== "string") return;
-      // Apply into the in-memory tree so a webview reload's `report` →
-      // `ready` can hydrate the same state. Storing as a tree (not an
-      // ordered list of patches) avoids resurrecting overwritten
-      // descendants when the snapshot is replayed.
-      extensionStateTree = setAtPointer(extensionStateTree, path, value);
-      send({ type: "state_patch", path, value });
-    },
-  };
-  type AethonApi = typeof aethonApi;
-
-  // Discover Aethon extensions in `~/.aethon/extensions/*.ts` and call their
-  // `register(api)` default export. Failures in one extension don't block
-  // others — log and continue so a broken extension can't take the agent
-  // down at boot.
+  // Discover Aethon-only extensions in `~/.aethon/extensions/*.ts` and call
+  // their `register(api)` default export. (Pi extensions reach the same API
+  // via `globalThis.aethon` — set above before createAgentSession.)
+  // Failures in one extension don't block others.
   await loadAethonExtensions(aethonApi);
 
   emitReady();
