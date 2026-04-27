@@ -435,7 +435,13 @@ export default function App() {
         if (!next || typeof next !== "object" || !Array.isArray(next.components)) break;
         setLayout(next);
         if (next.state) {
-          setState((prev) => ({ ...prev, ...(next.state as Record<string, unknown>) }));
+          // Layout state contributes BOOT DEFAULTS — only fills keys
+          // that aren't already set in live state. Existing runtime
+          // fields (status, model, connection, sidebar.models, …) win.
+          // Achieved by deep-merging with prev as the override layer.
+          setState((prev) =>
+            deepMergeState(next.state as Record<string, unknown>, prev),
+          );
         }
         break;
       }
