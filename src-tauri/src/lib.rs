@@ -644,11 +644,14 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
             .accelerator("CmdOrCtrl+.")
             .build(app)?;
+    let check_updates =
+        MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
 
     // App submenu (macOS-only first slot — Linux/Windows put these in File).
     #[cfg(target_os = "macos")]
     let app_menu = SubmenuBuilder::new(app, "Aethon")
         .item(&PredefinedMenuItem::about(app, Some("About Aethon"), None)?)
+        .item(&check_updates)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
         .separator()
@@ -802,7 +805,13 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    builder = builder.plugin(tauri_plugin_process::init());
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    let builder = builder
         .manage(AgentProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             start_agent,

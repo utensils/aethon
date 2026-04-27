@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import A2UIRenderer from "./components/A2UIRenderer";
 import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
@@ -834,6 +836,12 @@ export default function App() {
           }).catch(() => { /* surfaced by chat */ });
           break;
         }
+        case "check_updates": {
+          checkForUpdates().catch((err) => {
+            appendSystem(`Update check failed: ${err}`);
+          });
+          break;
+        }
       }
     });
 
@@ -1438,6 +1446,51 @@ export default function App() {
 
   function appendSystem(text: string) {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });
+  }
+
+  // Manual "Check for Updates" — wired from the Aethon menu and the
+  // tray menu. Walks tauri-plugin-updater's check → download → install
+  // pipeline and relaunches when done. Posts non-terminal status as
+  // system messages so the user sees what's happening; failures bubble
+  // up to the menu handler's catch and become a system error bubble.
+  //
+  // Updater is dev-only inert (no .sig files in dev), so check() returns
+  // null and we just tell the user "you're on the latest" — no error.
+  async function checkForUpdates() {
+    appendSystem("Checking for updates…");
+    let update: Awaited<ReturnType<typeof checkUpdate>>;
+    try {
+      update = await checkUpdate();
+    } catch (err) {
+      appendSystem(`Update check failed: ${err}`);
+      return;
+    }
+    if (!update) {
+      appendSystem("Aethon is up to date.");
+      return;
+    }
+    appendSystem(`Update available: ${update.version}. Downloading…`);
+    try {
+      let total = 0;
+      let downloaded = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          if (total > 0) {
+            const pct = Math.round((downloaded / total) * 100);
+            // Periodic-ish progress: every 10% so the chat doesn't drown.
+            if (pct % 10 === 0) appendSystem(`Update download: ${pct}%`);
+          }
+        } else if (event.event === "Finished") {
+          appendSystem("Update downloaded. Restarting…");
+        }
+      });
+      await relaunch();
+    } catch (err) {
+      appendSystem(`Update install failed: ${err}`);
+    }
   }
 
   // Build the dispatch context fresh per invocation so handlers see latest

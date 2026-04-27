@@ -48,6 +48,15 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/utensils/aethon/releases/latest/download/latest.json"
+      ],
+      "pubkey": ""
     }
   }
 }

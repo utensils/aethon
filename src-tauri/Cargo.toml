@@ -26,6 +26,10 @@ notify = "8"
 uuid = { version = "1.23.1", features = ["v4"] }
 tokio = { version = "1.52.1", features = ["net", "io-util", "time", "sync"] }
 toml = { version = "0.8", features = ["parse"] }
+tauri-plugin-process = "2.3.1"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2.10.1"
