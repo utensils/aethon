@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Default capability set for Aethon",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "updater:default",
+    "process:default"
+  ]
 }

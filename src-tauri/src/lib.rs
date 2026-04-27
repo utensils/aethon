@@ -474,10 +474,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
 
     // Compose the watch list. Each path is included only if it exists
     // — missing extension dirs are normal for fresh installs.
-    let home = match app.path().home_dir() {
-        Ok(h) => Some(h),
-        Err(_) => None,
-    };
+    let home = app.path().home_dir().ok();
     let mut watch_paths: Vec<PathBuf> = Vec::new();
     if let Some(h) = home {
         // ~/.aethon/extensions belongs to us — create it on boot so a
@@ -613,6 +610,33 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     Some(AgentWatcher { _watcher: watcher })
 }
 
+/// True when the updater plugin has a usable pubkey configured.
+/// Reads tauri.conf.json (the source of truth at runtime via
+/// generate_context!) by parsing the embedded JSON. Returns false on
+/// missing-or-empty so dev builds can boot without bogus keys and the
+/// frontend can surface a clear "updater not configured" message.
+fn updater_pubkey_configured() -> bool {
+    static CONF: &str = include_str!("../tauri.conf.json");
+    let v: serde_json::Value = match serde_json::from_str(CONF) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let pubkey = v
+        .get("plugins")
+        .and_then(|p| p.get("updater"))
+        .and_then(|u| u.get("pubkey"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    !pubkey.trim().is_empty()
+}
+
+/// Tauri command the frontend uses to know whether to show the
+/// "Check for Updates" UI as enabled or as a "not configured" hint.
+#[tauri::command]
+fn updater_available() -> bool {
+    cfg!(not(any(target_os = "android", target_os = "ios"))) && updater_pubkey_configured()
+}
+
 /// Build and attach the native app menu. The frontend listens for a
 /// `menu` Tauri event whose payload is the activated item id; both
 /// menu clicks and the existing keyboard shortcuts converge on the
@@ -644,11 +668,14 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
             .accelerator("CmdOrCtrl+.")
             .build(app)?;
+    let check_updates =
+        MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
 
     // App submenu (macOS-only first slot — Linux/Windows put these in File).
     #[cfg(target_os = "macos")]
     let app_menu = SubmenuBuilder::new(app, "Aethon")
         .item(&PredefinedMenuItem::about(app, Some("About Aethon"), None)?)
+        .item(&check_updates)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
         .separator()
@@ -679,10 +706,22 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
+    // On macOS the App submenu owns "Check for Updates…" (HIG-standard
+    // location). Non-macOS desktops put it in View since they have no
+    // App submenu and stuffing it into File would clash with tab items.
+    #[cfg(target_os = "macos")]
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
         .item(&clear_chat)
         .item(&stop_prompt)
+        .build()?;
+    #[cfg(not(target_os = "macos"))]
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&toggle_terminal)
+        .item(&clear_chat)
+        .item(&stop_prompt)
+        .separator()
+        .item(&check_updates)
         .build()?;
 
     let tabs_menu = SubmenuBuilder::new(app, "Tabs")
@@ -802,7 +841,26 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    builder = builder.plugin(tauri_plugin_process::init());
+    // Gate the updater plugin on a configured pubkey. Without one,
+    // signature verification can't decode anything and every update
+    // would fail post-download — so we just don't register the plugin
+    // and the frontend's Check-for-Updates menu reports it cleanly.
+    // tauri.conf.json's plugins.updater.pubkey is the source of truth;
+    // env override exists for CI / local sigs.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        if updater_pubkey_configured() {
+            builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        } else {
+            eprintln!(
+                "[updater] skipping plugin registration — no pubkey set in tauri.conf.json. \
+                See RELEASING.md to generate signing keys."
+            );
+        }
+    }
+    let builder = builder
         .manage(AgentProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             start_agent,
@@ -812,6 +870,7 @@ pub fn run() {
             read_state,
             write_state,
             read_config,
+            updater_available,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
