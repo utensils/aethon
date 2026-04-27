@@ -408,6 +408,24 @@ async function main() {
   const modelRegistry = ModelRegistry.create(authStorage);
   const settingsManager = SettingsManager.create(process.cwd());
 
+  // Tab whose pi turn is currently running. Set when a chat / handler
+  // prompt is dispatched; cleared on agent_end. Used by _setState so
+  // direct globalThis.aethon.setState calls from the agent or extensions
+  // reacting to agent events get attributed to the right tab even
+  // though the API itself takes no tabId argument.
+  //
+  // Hoisted to the top of main() so _setState's reference doesn't TDZ
+  // when an extension calls aethon.setState during resourceLoader.reload()
+  // — extensions that initialize UI state at load time would otherwise
+  // crash agent startup with a ReferenceError.
+  //
+  // Concurrent prompts across tabs would race this — pi's followUp
+  // queue serializes within a tab, but a handler could fire
+  // ctx.pi.prompt on tab A while a chat is processing on tab B.
+  // For now we track only the most recent prompt's tab; multi-tab
+  // concurrency is an acknowledged sharp edge.
+  let currentAgentTabId: string | undefined;
+
   // Build the Aethon extension API and attach it to globalThis BEFORE
   // createAgentSession runs, because pi loads extensions inside that call.
   // Without this ordering, pi extensions that try to call
@@ -644,19 +662,6 @@ async function main() {
   }
 
   const tabs = new Map<string, TabRecord>();
-
-  // Tab whose pi turn is currently running. Set when a chat / handler
-  // prompt is dispatched; cleared on agent_end. Used by _setState so
-  // direct globalThis.aethon.setState calls from the agent or extensions
-  // reacting to agent events get attributed to the right tab even
-  // though the API itself takes no tabId argument.
-  //
-  // Concurrent prompts across tabs would race this — pi's followUp
-  // queue serializes within a tab, but a handler could fire
-  // ctx.pi.prompt on tab A while a chat is processing on tab B.
-  // For now we track only the most recent prompt's tab; multi-tab
-  // concurrency is an acknowledged sharp edge.
-  let currentAgentTabId: string | undefined;
 
   // Filter the picker to the user's enabledModels patterns from
   // ~/.pi/agent/settings.json. Patterns may include `*` wildcards
