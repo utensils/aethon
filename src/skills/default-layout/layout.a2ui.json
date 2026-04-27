@@ -28,12 +28,33 @@
           },
           "children": [
             {
-              "id": "header-title",
-              "type": "text",
+              "id": "header-brand",
+              "type": "container",
               "props": {
-                "content": "Aethon",
-                "variant": "large"
-              }
+                "direction": "row",
+                "align": "center",
+                "gap": 10,
+                "className": "app-header-brand"
+              },
+              "children": [
+                {
+                  "id": "header-logo",
+                  "type": "image",
+                  "props": {
+                    "src": { "$ref": "/logoUrl" },
+                    "alt": "Aethon",
+                    "className": "app-header-logo"
+                  }
+                },
+                {
+                  "id": "header-title",
+                  "type": "text",
+                  "props": {
+                    "content": "Aethon",
+                    "variant": "large"
+                  }
+                }
+              ]
             },
             {
               "id": "header-status",
