@@ -892,9 +892,18 @@ export default function App() {
               next.tabs = tabs;
             }
           }
+          // The model + sidebar mirror tracks the ACTIVE tab, not the
+          // default — so a `ready` arriving while a non-default tab is
+          // active doesn't clobber the visible selection. Look up the
+          // active tab's model in the just-updated tabs array; fall
+          // back to data.model on first boot when no tab record exists.
+          const activeId = (next.activeTabId as string | undefined) ?? "default";
+          const tabsList = (next.tabs as Tab[] | undefined) ?? [];
+          const activeModel =
+            tabsList.find((t) => t.id === activeId)?.model || model;
           next = {
             ...next,
-            model,
+            model: activeModel,
             status: "ready",
             connection: "connected",
             sidebar: {
@@ -902,7 +911,7 @@ export default function App() {
               models: models.map((m) => ({
                 id: m.id,
                 label: m.label,
-                active: m.id === model,
+                active: m.id === activeModel,
               })),
             },
           };
