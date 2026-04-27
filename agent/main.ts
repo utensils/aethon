@@ -714,7 +714,14 @@ async function main() {
   // call also seeds cachedModels — the picker is global but its content
   // depends on a session having been spun up so we know the current
   // model defaults.
-  async function ensureTab(tabId: string): Promise<TabRecord> {
+  //
+  // initialModel lets the caller create the session with a specific model
+  // already selected, avoiding a tab_open → set_model round-trip race
+  // where a fast first prompt could land before the model switch.
+  async function ensureTab(
+    tabId: string,
+    initialModel?: Model<Api>,
+  ): Promise<TabRecord> {
     const existing = tabs.get(tabId);
     if (existing) return existing;
 
@@ -724,6 +731,7 @@ async function main() {
       settingsManager,
       sessionManager: SessionManager.inMemory(),
       resourceLoader,
+      ...(initialModel ? { model: initialModel } : {}),
     });
 
     const rec: TabRecord = {
@@ -963,12 +971,22 @@ async function main() {
           // Explicit tab create. Returns immediately if the tab already
           // exists — useful for the frontend to pre-warm a tab before the
           // user types into it. Emits `tab_ready` with the new model.
+          //
+          // Optional `model` (provider/id) sets the session's initial
+          // model so a fast first chat doesn't race the inherited
+          // set_model round-trip.
           const tabId = msg.tabId;
           if (!tabId || typeof tabId !== "string") {
             send({ type: "error", message: "tab_open: missing tabId" });
             break;
           }
-          await ensureTab(tabId);
+          const modelId = (msg as { model?: unknown }).model;
+          let initialModel: Model<Api> | undefined;
+          if (typeof modelId === "string" && modelId.length > 0) {
+            const [provider, ...rest] = modelId.split("/");
+            initialModel = modelRegistry.find(provider, rest.join("/")) ?? undefined;
+          }
+          await ensureTab(tabId, initialModel);
           break;
         }
         case "tab_close": {

@@ -574,21 +574,20 @@ export default function App() {
       );
       return result;
     });
+    // Pass `model` with tab_open so the bridge spins up the pi session
+    // with the inherited model from the start. Without this, a fast
+    // first prompt can land before a follow-up set_model finishes —
+    // the prompt would run on pi's default and lock the tab there
+    // (set_model is rejected while a prompt is in flight).
     invoke("agent_command", {
-      payload: JSON.stringify({ type: "tab_open", tabId: id }),
-    })
-      .then(() => {
-        // Sync the bridge session's model to the inherited one so chat
-        // turns on this tab use the same model as the parent. tab_open
-        // creates the session with pi's default; this overrides it.
-        if (!inheritedModel) return;
-        return invoke("agent_command", {
-          payload: JSON.stringify({ type: "set_model", id: inheritedModel, tabId: id }),
-        });
-      })
-      .catch((err) => {
-        appendSystem(`Failed to open tab: ${err}`);
-      });
+      payload: JSON.stringify({
+        type: "tab_open",
+        tabId: id,
+        ...(inheritedModel ? { model: inheritedModel } : {}),
+      }),
+    }).catch((err) => {
+      appendSystem(`Failed to open tab: ${err}`);
+    });
   }
 
   function nextTab(direction: 1 | -1) {
@@ -899,22 +898,17 @@ export default function App() {
         const localTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
         for (const t of localTabs) {
           if (t.id === "default") continue;
+          // Pass `model` so the new bridge session boots with the same
+          // model the user previously selected — no race window.
           invoke("agent_command", {
-            payload: JSON.stringify({ type: "tab_open", tabId: t.id }),
-          })
-            .then(() => {
-              if (!t.model) return;
-              return invoke("agent_command", {
-                payload: JSON.stringify({
-                  type: "set_model",
-                  id: t.model,
-                  tabId: t.id,
-                }),
-              });
-            })
-            .catch(() => {
-              /* surfaced on next chat send */
-            });
+            payload: JSON.stringify({
+              type: "tab_open",
+              tabId: t.id,
+              ...(t.model ? { model: t.model } : {}),
+            }),
+          }).catch(() => {
+            /* surfaced on next chat send */
+          });
         }
         break;
       }
