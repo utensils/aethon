@@ -186,7 +186,16 @@ expand canvas, add panels) because everything is A2UI.
 - [~] Bash tool output streams into the terminal panel via the `aethon:terminal` window event (default-layout terminal opts in via `subscribeToBash`). End-only streaming for now: pi's bash tool exposes partial output as a rolling tail buffer, so reliable interim streaming needs a real test rig before re-enabling.
 - [x] In-memory session per app launch (`SessionManager.inMemory()`)
 - [x] `aethon-debug` skill — TCP eval server (`127.0.0.1:19433` in dev) + slash command for driving the running app from Claude (eval, send, set-model, screenshot, wait, status). Mirrors Claudette's `claudette-debug` pattern.
-- [ ] Multiple canvases / tabs (one pi session per tab)
+- [x] Multi-tab — per-tab pi sessions (`Map<TabId, AgentSession>` sharing
+      one auth/registry/resourceLoader), per-tab message history, draft,
+      canvas, queue counter, terminal buffer, and model. AsyncLocalStorage
+      carries the active turn's tabId through the agent's async chain so
+      `globalThis.aethon.setState` calls route to the right tab even under
+      concurrent prompts. Tab strip in the layout, Cmd+T new,
+      Cmd+] / Cmd+[ next/prev, Cmd+W close. New tabs inherit the active
+      tab's model; bridge `tab_open` accepts a `model` so the pi session
+      boots with it (no race window). Per-tab terminal buffer with
+      replay on switch via `aethon:terminal-replay`.
 - [x] Persistent state — chat history (`~/.aethon/messages.json`, capped at 200 messages / 8KB per text field, image data URLs stripped before persist) and theme (`~/.aethon/theme`) persist to disk via Tauri commands `read_state` / `write_state`. Cross-platform via Tauri's `home_dir()`. Legacy localStorage values migrate on first read; legacy entries are removed only after a confirmed disk write.
 - [x] Client-side slash commands (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`). Unknown commands fall through to the agent so pi-side handling and prompt templates aren't blocked. `//foo` escapes to send a literal `/foo`.
 - [x] Slash command picker UI — autocomplete dropdown above the chat input when the draft starts with `/`. Prefix-filters; ↑/↓/Tab/Enter navigate+insert; Esc dismisses; click inserts. Portalled to `document.body` so the layout cell's `overflow:hidden` doesn't clip it. Bound via the `commands` prop on `chat-input` (inline array or `$ref`).
