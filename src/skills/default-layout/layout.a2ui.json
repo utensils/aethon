@@ -125,7 +125,7 @@
             "visible": { "$ref": "/terminal/open" },
             "fontSize": 13,
             "subscribeToBash": true,
-            "onInput": "terminal:input"
+            "readOnly": true
           }
         },
         {

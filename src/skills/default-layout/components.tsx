@@ -588,6 +588,13 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     // stream (`aethon:terminal` window event). Off by default so skills can
     // mount independent terminals without receiving the agent's bash chatter.
     subscribeToBash?: BooleanValue;
+    // Display-only mode: hides the cursor and ignores keystrokes entirely.
+    // Aethon ships no PTY backend, so the default terminal panel is a
+    // window onto the agent's bash output, not an interactive shell —
+    // accepting keystrokes that lead nowhere just confuses users into
+    // thinking the panel is broken. Skills with their own input pipeline
+    // can opt out by leaving readOnly unset.
+    readOnly?: BooleanValue;
   };
 
   const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
@@ -595,6 +602,9 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   const rows = props.rows ? resolveNumber(props.rows, state) : undefined;
   const subscribeToBash = props.subscribeToBash
     ? resolveBoolean(props.subscribeToBash, state)
+    : false;
+  const readOnly = props.readOnly
+    ? resolveBoolean(props.readOnly, state)
     : false;
   // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
   // to drive the terminal via state — the diff effect below handles it the
@@ -619,9 +629,17 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       theme: {
         background: "#0e0e10",
         foreground: "#e8e8ec",
-        cursor: "#7c8cff",
+        // Make the cursor invisible in read-only mode by drawing it the same
+        // color as the background — xterm.js doesn't expose a cursor.hide flag.
+        cursor: readOnly ? "#0e0e10" : "#7c8cff",
       },
-      cursorBlink: true,
+      cursorBlink: !readOnly,
+      // disableStdin tells xterm to ignore keystrokes entirely. Without this
+      // a focused terminal still calls onData for each keystroke (which we
+      // currently dispatch as an a2ui_event with no handler), and any
+      // unrelated re-render on the same tick can collapse the panel via
+      // the layout's `visible` binding.
+      disableStdin: readOnly,
       allowProposedApi: true,
     });
     termRef.current = term;
@@ -644,7 +662,10 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     fit.fit();
     term.write("aethon terminal — xterm.js + WebGL\r\n$ ");
 
-    if (props.onInput) {
+    // onInput wires xterm's keystroke stream to an A2UI event so a future
+    // skill with a real PTY backend can plug in. Skip it in read-only mode
+    // to keep the terminal display-only.
+    if (props.onInput && !readOnly) {
       term.onData((data) => onEvent("input", { data }));
     }
 
