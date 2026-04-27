@@ -8,6 +8,18 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Extension lifecycle feedback.** Bridge now emits a generic
+  `extension_lifecycle` event for every extension load (`{name, source,
+  status: "loaded"|"failed"|"skipped", error?, path}`) from
+  `loadAethonExtensions` and `loadAethonSkillManifests`. The frontend
+  dispatches a cancellable `aethon:extension-lifecycle` CustomEvent on
+  `window`, then (if not preventDefault'd) appends a system-notice chat
+  bubble — so the user gets confirmation even when the agent's chat
+  reply was eaten by a hot-reload respawn it triggered itself. Channel
+  is decoupled: any layout / extension can listen on the window event
+  and call `e.preventDefault()` to swap the default chat bubble for a
+  toast / sidebar pulse / status pill / etc., no source patches needed.
+
 - **Layout-slot contract.** `src/skills/default-layout/slots.json` now
   declares the canonical slot catalogue any layout can adhere to:
   `header`, `sidebar`, `tabs`, `canvas` (required), `terminal`,

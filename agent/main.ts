@@ -540,6 +540,14 @@ async function loadAethonSkillManifests(
     const entry = c.manifest.aethon?.entry;
     if (typeof entry !== "string" || entry.length === 0) {
       console.error(`[aethon-skill] ${c.name}: aethon.entry not set, skipping`);
+      send({
+        type: "extension_lifecycle",
+        name: c.name,
+        source: "skill-package",
+        status: "skipped",
+        error: "aethon.entry not set",
+        path: c.dir,
+      });
       continue;
     }
     const filePath = join(c.dir, entry);
@@ -548,13 +556,37 @@ async function loadAethonSkillManifests(
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
         console.error(`[aethon-skill] ${c.name}: no register() export, skipping`);
+        send({
+          type: "extension_lifecycle",
+          name: c.name,
+          source: "skill-package",
+          status: "skipped",
+          error: "no register() export",
+          path: filePath,
+        });
         continue;
       }
       await register(api);
       registry.set(c.name, "skill-package");
       console.error(`[aethon-skill] loaded ${c.name} from ${entry}`);
+      send({
+        type: "extension_lifecycle",
+        name: c.name,
+        source: "skill-package",
+        status: "loaded",
+        path: filePath,
+      });
     } catch (err) {
-      console.error(`[aethon-skill] ${c.name}: ${(err as Error).message}`);
+      const message = (err as Error).message;
+      console.error(`[aethon-skill] ${c.name}: ${message}`);
+      send({
+        type: "extension_lifecycle",
+        name: c.name,
+        source: "skill-package",
+        status: "failed",
+        error: message,
+        path: filePath,
+      });
     }
   }
 }
@@ -718,21 +750,47 @@ async function loadAethonExtensions(
   for (const name of entries) {
     if (!/\.(ts|js|mjs)$/.test(name)) continue;
     const file = join(dir, name);
+    const displayName = name.replace(/\.(ts|js|mjs)$/, "");
     try {
       const mod: AethonExtensionModule = await import(pathToFileURL(file).href);
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
         console.error(`[aethon-ext] ${name}: no register() export, skipping`);
+        // Lifecycle event — abstract feedback channel. Default-layout
+        // surfaces this as a chat-side system notice; other layouts /
+        // extensions can listen on `aethon:extension-lifecycle` and
+        // render however they want (toast, sidebar pulse, etc.).
+        send({
+          type: "extension_lifecycle",
+          name: displayName,
+          source: "directory",
+          status: "skipped",
+          error: "no register() export",
+          path: file,
+        });
         continue;
       }
       await register(api);
-      // Display name is the file's basename without extension so the
-      // runtime snapshot reads cleanly ("model-picker" not "model-picker.ts").
-      const displayName = name.replace(/\.(ts|js|mjs)$/, "");
       registry.set(displayName, "directory");
       console.error(`[aethon-ext] loaded ${name}`);
+      send({
+        type: "extension_lifecycle",
+        name: displayName,
+        source: "directory",
+        status: "loaded",
+        path: file,
+      });
     } catch (err) {
-      console.error(`[aethon-ext] ${name}: ${(err as Error).message}`);
+      const message = (err as Error).message;
+      console.error(`[aethon-ext] ${name}: ${message}`);
+      send({
+        type: "extension_lifecycle",
+        name: displayName,
+        source: "directory",
+        status: "failed",
+        error: message,
+        path: file,
+      });
     }
   }
 }
