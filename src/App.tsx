@@ -370,9 +370,10 @@ export default function App() {
           | undefined) ?? {};
         const extLayout = data.extensionLayout as A2UIPayload | undefined;
         registry.setTemplates(extComponents);
-        // Restore any extension-supplied layout so a webview reload
-        // doesn't drop back to the boot layout. The layout's own
-        // `state` hydrates below alongside extensionState — same
+        // Restore any extension-supplied layout. Falls back to the boot
+        // layout when none is reported so a removed/disabled extension
+        // stops bleeding stale chrome across agent reloads. The layout's
+        // own `state` hydrates below alongside extensionState — same
         // semantics as the live `layout_set` path so replay matches.
         if (
           extLayout &&
@@ -380,6 +381,8 @@ export default function App() {
           Array.isArray(extLayout.components)
         ) {
           setLayout(extLayout);
+        } else {
+          setLayout(BOOT_LAYOUT);
         }
         setState((prev) => {
           // Three-layer hydration in priority order (lowest → highest):
