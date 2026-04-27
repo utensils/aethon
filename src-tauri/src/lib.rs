@@ -665,9 +665,11 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        // Template image renders as a monochrome glyph that adapts to
-        // the user's menu-bar appearance on macOS. No-op elsewhere.
-        .icon_as_template(cfg!(target_os = "macos"))
+        // Show Aethon's full-color logo in the tray rather than a
+        // monochrome template. The brand mark (cream Æ + orange π) is
+        // recognizable at status-bar size; template rendering would
+        // strip the orange and lose the identity.
+        .icon_as_template(false)
         // macOS HIG: left-click activates, right-click shows the menu.
         // On Linux/Windows the menu opens on left-click by default,
         // which matches their conventions — leave as the platform default.
