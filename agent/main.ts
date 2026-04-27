@@ -86,12 +86,19 @@ import {
   getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { resolveAethonSystemPrompt } from "./system-prompt";
+
+// Per-turn tabId propagated through the async call chain that runs
+// inside session.prompt(). Concurrent prompts on different tabs each
+// get their own store, so a setState fired from inside one tab's
+// agent code doesn't get attributed to whichever tab last started.
+const tabContext = new AsyncLocalStorage<string>();
 
 function send(obj: Record<string, unknown>) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -516,14 +523,16 @@ async function main() {
     if (!path || typeof path !== "string") return;
     // tabId attribution priority:
     //   1. explicit sourceTabId (handler-scoped ctx.setState)
-    //   2. currentAgentTabId — set while a tab's pi.prompt is in flight,
-    //      so direct globalThis.aethon.setState calls from the agent /
-    //      from extensions reacting to agent events route to the tab
-    //      whose turn is running.
-    //   3. omit tabId — frontend falls back to active. Last resort for
-    //      truly tab-less setStates (e.g. a clock interval fired with
-    //      no agent turn).
-    const attributedTab = sourceTabId ?? currentAgentTabId;
+    //   2. tabContext.getStore() — per-turn ALS value, propagates through
+    //      the agent's async call chain so concurrent prompts in
+    //      different tabs don't smear into one another.
+    //   3. currentAgentTabId — fallback for sync code paths that
+    //      escape the ALS context (e.g. event listeners attached
+    //      outside the prompt's run scope).
+    //   4. omit tabId — frontend falls back to active. Last resort
+    //      for truly tab-less setStates (clock interval, etc.).
+    const attributedTab =
+      sourceTabId ?? tabContext.getStore() ?? currentAgentTabId;
     // Per-tab mirrored writes (canvas / messages / draft / waiting /
     // queueCount / model) DON'T belong in the global extensionStateTree
     // — that gets replayed wholesale on `ready` and would smear one
@@ -959,8 +968,16 @@ async function main() {
             tab.queuedCount += 1;
           }
           if (!queued) currentAgentTabId = tabId;
-          tab.session
-            .prompt(msg.content, queued ? { streamingBehavior: "followUp" } : undefined)
+          // tabContext.run binds `tabId` to the async-local store for
+          // the duration of session.prompt's call chain — including any
+          // setStates the agent fires from inside it. Concurrent tabs
+          // each carry their own store so attribution stays clean.
+          tabContext.run(tabId, () =>
+            tab.session.prompt(
+              msg.content,
+              queued ? { streamingBehavior: "followUp" } : undefined,
+            ),
+          )
             .catch((err) => {
               const message = err instanceof Error ? err.message : String(err);
               send({ type: "error", tabId, message: `prompt: ${message}` });
@@ -1113,7 +1130,9 @@ async function main() {
               // waiting=true (Stop button visible, chat input disabled).
               send({ type: "prompt_started", tabId: handlerTabId, source: "handler" });
               try {
-                await handlerTab.session.prompt(text);
+                await tabContext.run(handlerTabId, () =>
+                  handlerTab.session.prompt(text),
+                );
               } catch (err) {
                 const m = err instanceof Error ? err.message : String(err);
                 send({ type: "error", tabId: handlerTabId, message: `handler prompt: ${m}` });
