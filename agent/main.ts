@@ -914,7 +914,7 @@ async function main() {
                   type: "notice",
                   message: "agent busy — handler prompt rejected",
                 });
-                return;
+                throw new Error("agent busy — prompt in flight");
               }
               promptInFlight = true;
               agentEndFired = false;
@@ -923,21 +923,24 @@ async function main() {
               // Without this, a handler-fired prompt would stream invisibly
               // and the user couldn't interrupt it.
               send({ type: "prompt_started", source: "handler" });
-              // Same fire-and-forget shape as the `chat` IPC path so the
-              // frontend's response_delta / response_end flow handles
-              // streaming identically.
-              session
-                .prompt(text)
-                .catch((err) => {
-                  const m = err instanceof Error ? err.message : String(err);
-                  send({ type: "error", message: `handler prompt: ${m}` });
-                })
-                .finally(() => {
-                  if (!agentEndFired) {
-                    promptInFlight = false;
-                    send({ type: "response_end" });
-                  }
-                });
+              // Return a real promise so handler authors can await
+              // completion ("ask LLM → render result → setState"). The
+              // promise resolves when pi's session.prompt resolves
+              // (agent_end fires). On error we still re-emit response_end
+              // so the frontend's waiting flag clears, then re-throw
+              // so the handler's await sees the failure.
+              try {
+                await session.prompt(text);
+              } catch (err) {
+                const m = err instanceof Error ? err.message : String(err);
+                send({ type: "error", message: `handler prompt: ${m}` });
+                throw err;
+              } finally {
+                if (!agentEndFired) {
+                  promptInFlight = false;
+                  send({ type: "response_end" });
+                }
+              }
             },
             notify(message: string) {
               if (!message) return;
