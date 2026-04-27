@@ -172,7 +172,7 @@ expand canvas, add panels) because everything is A2UI.
 - [ ] Auto-updater
 - [ ] System tray integration
 - [ ] Native menus
-- [ ] Cross-platform release builds (macOS, Linux, Windows)
+- [~] Cross-platform release builds — `cargo tauri build` produces a self-contained `Aethon.app` + DMG (macOS aarch64 verified). The `aethon-agent` sidecar is compiled by `src-tauri/build.rs` via `bun build --compile`, bundled via Tauri's `externalBin`, and spawned in release with `PI_PACKAGE_DIR` pointing to a shipped `pi/package.json` resource. mtime-gated so incremental builds no-op when sources haven't changed; cross-target builds honor `cargo --target` / `CARGO_BUILD_TARGET` / `TAURI_ENV_TARGET_TRIPLE`. Linux/Windows triples covered by the build script but not yet test-bundled.
 - [ ] Nix flake overlay for distribution
 - [ ] First public release
 
