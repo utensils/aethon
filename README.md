@@ -1,10 +1,13 @@
 <p align="center">
-  <img src="src-tauri/icons/icon.svg" alt="Aethon logo — a Greek alpha rising over a sun disc" width="160" height="160" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/aethon-hero-light.svg">
+    <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero-dark.svg" width="760">
+  </picture>
 </p>
 
 # Aethon
 
-> Pi with a face. A native desktop shell where the agent decides what you see.
+> Pi with a face.
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
