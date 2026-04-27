@@ -4,16 +4,9 @@
       "id": "root-layout",
       "type": "layout",
       "props": {
-        "columns": "240px 1fr",
+        "columns": { "$ref": "/layout/columns" },
         "rows": "auto auto 1fr auto auto auto",
-        "areas": [
-          "sidebar header",
-          "sidebar tabs",
-          "sidebar canvas",
-          "sidebar terminal",
-          "sidebar chat-input",
-          "status status"
-        ]
+        "areas": { "$ref": "/layout/areas" }
       },
       "children": [
         {
@@ -73,6 +66,7 @@
           "type": "sidebar",
           "props": {
             "area": "sidebar",
+            "visible": { "$ref": "/layout/sidebarVisible" },
             "title": "Aethon",
             "sections": [
               {
@@ -196,6 +190,18 @@
     "empty": false,
     "hasTabs": true,
     "recentSessions": [],
+    "layout": {
+      "sidebarVisible": true,
+      "columns": "240px 1fr",
+      "areas": [
+        "sidebar header",
+        "sidebar tabs",
+        "sidebar canvas",
+        "sidebar terminal",
+        "sidebar chat-input",
+        "status status"
+      ]
+    },
     "sidebar": {
       "history": [],
       "models": [],

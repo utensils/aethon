@@ -1328,6 +1328,7 @@ async function main() {
     // a hardcoded list to stay independent of frontend imports.
     const BUILTIN_SLASH_NAMES = new Set([
       "clear", "help", "theme", "model", "reset", "terminal", "skills",
+      "sidebar", "layout",
     ]);
     if (!/^[A-Za-z][\w-]*$/.test(name)) {
       const errorMsg = "registerSlashCommand: name must match /^[A-Za-z][\\w-]*$/";

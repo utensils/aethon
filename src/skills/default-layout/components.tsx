@@ -49,14 +49,28 @@ export function Layout({
   const props = component.props as {
     columns?: StringValue;
     rows?: StringValue;
-    areas?: string[];
+    // Inline array OR $ref to a state-bound array. Bound form lets the
+    // grid template-areas swap reactively when the user toggles a layout
+    // option (e.g. show/hide the sidebar) without requiring a full
+    // setLayout replacement.
+    areas?: string[] | { $ref: string };
     gap?: NumberValue;
   };
 
   const columns = props.columns ? resolveString(props.columns, state) : "1fr";
   const rows = props.rows ? resolveString(props.rows, state) : "1fr";
   const gap = props.gap ? resolveNumber(props.gap, state) : 0;
-  const areas = props.areas ? props.areas.map((row) => `"${row}"`).join(" ") : undefined;
+  const resolvedAreas = (() => {
+    const a = props.areas;
+    if (!a) return undefined;
+    if (Array.isArray(a)) return a;
+    if (typeof a === "object" && "$ref" in a) {
+      const v = resolvePointer(state, a.$ref);
+      return Array.isArray(v) ? (v as string[]) : undefined;
+    }
+    return undefined;
+  })();
+  const areas = resolvedAreas ? resolvedAreas.map((row) => `"${row}"`).join(" ") : undefined;
 
   const style: CSSProperties = {
     display: "grid",

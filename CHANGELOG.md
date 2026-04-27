@@ -8,6 +8,20 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Layout catalogue.** `default-layout` skill now ships three built-in
+  layouts:
+  - `default` — sidebar / header / canvas / terminal / chat / status
+  - `single-pane` — no sidebar, header + canvas + chat across full width
+  - `focus-mode` — just canvas + chat + status bar
+  New `window.aethon.listLayouts()`, `window.aethon.activateLayout(id)`,
+  and `window.aethon.registerLayout({id, name, payload})` form the
+  catalogue API. New `/layout <id>` slash command swaps to a registered
+  layout (`/layout` with no args lists available ids).
+- **Sidebar opt-in via `/layout/sidebarVisible`.** The default layout
+  binds the sidebar's `visible` flag plus `/layout/columns` and
+  `/layout/areas` to state so the grid template-areas adapts when the
+  sidebar hides — no dead 240px column. New `/sidebar` slash command +
+  `toggleSidebar` slash context method flip all three keys atomically.
 - **Multi-tab restore via empty-state recent sessions.** Bridge walks
   `~/.aethon/sessions/` at boot, returns `[{tabId, lastModifiedMs}]`
   sorted by last-modified, ships as `discoveredTabs` in the `ready`

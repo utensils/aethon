@@ -19,6 +19,8 @@ import {
   Terminal,
 } from "./components";
 import layoutPayload from "./layout.a2ui.json";
+import singlePanePayload from "./single-pane.a2ui.json";
+import focusModePayload from "./focus-mode.a2ui.json";
 
 export const defaultLayoutSkill: A2UISkill = {
   name: "default-layout",
@@ -35,3 +37,34 @@ export const defaultLayoutSkill: A2UISkill = {
   },
   layout: layoutPayload as A2UIPayload,
 };
+
+// Built-in layout catalogue. Each entry is a complete A2UI payload the
+// user can swap to via `aethon.activateLayout(id)` or `/layout <id>`.
+// Extensions can append more via `aethon.registerLayout({id, name, payload})`.
+export interface LayoutCatalogueEntry {
+  id: string;
+  name: string;
+  description?: string;
+  payload: A2UIPayload;
+}
+
+export const builtinLayouts: LayoutCatalogueEntry[] = [
+  {
+    id: "default",
+    name: "Default",
+    description: "Sidebar, header, canvas, terminal, chat input, status bar.",
+    payload: layoutPayload as A2UIPayload,
+  },
+  {
+    id: "single-pane",
+    name: "Single Pane",
+    description: "No sidebar — header + canvas + chat input across full width.",
+    payload: singlePanePayload as A2UIPayload,
+  },
+  {
+    id: "focus-mode",
+    name: "Focus Mode",
+    description: "Just canvas + chat input + status bar. No sidebar, header, or tabs.",
+    payload: focusModePayload as A2UIPayload,
+  },
+];

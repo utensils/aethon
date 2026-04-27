@@ -19,6 +19,14 @@ export interface SlashCommandContext {
   listSkills: () => string[];
   listModels: () => { id: string; label: string; active?: boolean }[];
   toggleTerminal: () => void;
+  // Show / hide / toggle the sidebar. State changes propagate via the
+  // /layout/sidebarVisible / /layout/columns / /layout/areas $refs the
+  // default layout binds to.
+  toggleSidebar: () => void;
+  // Swap to a registered layout by id. Returns true on success. Use
+  // listLayouts() to discover available ids.
+  activateLayout: (id: string) => boolean;
+  listLayouts: () => { id: string; name: string; description?: string }[];
 }
 
 export interface SlashCommand {
@@ -102,6 +110,41 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       name: "terminal",
       description: "Toggle the terminal panel",
       run: (_args, ctx) => ctx.toggleTerminal(),
+    },
+    {
+      name: "sidebar",
+      description: "Toggle the sidebar",
+      run: (_args, ctx) => ctx.toggleSidebar(),
+    },
+    {
+      name: "layout",
+      description: "Switch layout by id, or list available layouts",
+      usage: "[id]",
+      run: (args, ctx) => {
+        const v = args.trim();
+        const layouts = ctx.listLayouts();
+        if (!v) {
+          const list = layouts
+            .map((l) => `- \`${l.id}\` — ${l.name}${l.description ? ` (${l.description})` : ""}`)
+            .join("\n");
+          ctx.appendSystem(
+            layouts.length > 0
+              ? `Available layouts:\n${list}`
+              : "No layouts registered.",
+          );
+          return;
+        }
+        const ok = ctx.activateLayout(v);
+        if (ok) {
+          ctx.appendSystem(`Layout switched to \`${v}\`.`);
+        } else {
+          ctx.appendSystem(
+            `Unknown layout: \`${v}\`. Try one of: ${
+              layouts.map((l) => l.id).join(", ") || "(none)"
+            }`,
+          );
+        }
+      },
     },
     {
       name: "skills",

@@ -6,7 +6,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer from "./components/A2UIRenderer";
 import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
-import { defaultLayoutSkill } from "./skills/default-layout";
+import { builtinLayouts, defaultLayoutSkill } from "./skills/default-layout";
+import type { LayoutCatalogueEntry } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { setPointer } from "./utils/jsonPointer";
@@ -881,6 +882,29 @@ export default function App() {
         label: t.label,
         active: t.id === stateRef.current.activeTabId,
       })),
+      // Layout catalogue. Lets the user / agent swap between named
+      // layouts (default, single-pane, focus-mode) without having to
+      // ship a full setLayout payload. Extensions append more via
+      // registerLayout. Activation goes through setLayout so all the
+      // existing state-merge / layout-bound-state semantics apply.
+      listLayouts: (): LayoutCatalogueEntry[] =>
+        layoutCatalogueRef.current.slice(),
+      activateLayout: (id: string): boolean => {
+        const entry = layoutCatalogueRef.current.find((l) => l.id === id);
+        if (!entry) return false;
+        setLayout(entry.payload);
+        return true;
+      },
+      registerLayout: (entry: LayoutCatalogueEntry): boolean => {
+        if (!entry || typeof entry.id !== "string" || !entry.payload) return false;
+        const idx = layoutCatalogueRef.current.findIndex((l) => l.id === entry.id);
+        if (idx >= 0) {
+          layoutCatalogueRef.current[idx] = entry;
+        } else {
+          layoutCatalogueRef.current.push(entry);
+        }
+        return true;
+      },
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
 
@@ -1727,6 +1751,11 @@ export default function App() {
     setState((prev) => ({ ...prev, ...flags }));
   }
 
+  // Layout catalogue — built-in entries plus anything an extension or
+  // skill has registered via window.aethon.registerLayout. Backed by a
+  // ref so the API surface above can mutate it without re-rendering.
+  const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
+
   // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
   // by the keydown handler; written by hydrateKeybindings on
   // `extension_keybindings` deltas. Built-ins (Cmd+T / Cmd+] / Cmd+[ /
@@ -1903,6 +1932,43 @@ export default function App() {
           const term = (prev.terminal as { open?: boolean }) ?? {};
           return { ...prev, terminal: { ...term, open: !term.open } };
         }),
+      toggleSidebar: () =>
+        setState((prev) => {
+          // Flip /layout/sidebarVisible AND swap /layout/columns +
+          // /layout/areas atomically so the grid template adapts on
+          // the same frame the sidebar cell hides. Without the
+          // template swap the hidden sidebar would still reserve its
+          // 240px column.
+          const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+          const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
+          const columns = visible ? "240px 1fr" : "1fr";
+          const areas = visible
+            ? [
+                "sidebar header",
+                "sidebar tabs",
+                "sidebar canvas",
+                "sidebar terminal",
+                "sidebar chat-input",
+                "status status",
+              ]
+            : ["header", "tabs", "canvas", "terminal", "chat-input", "status"];
+          return {
+            ...prev,
+            layout: { ...layout, sidebarVisible: visible, columns, areas },
+          };
+        }),
+      activateLayout: (id: string) => {
+        const entry = layoutCatalogueRef.current.find((l) => l.id === id);
+        if (!entry) return false;
+        setLayout(entry.payload);
+        return true;
+      },
+      listLayouts: () =>
+        layoutCatalogueRef.current.map((l) => ({
+          id: l.id,
+          name: l.name,
+          description: l.description,
+        })),
     };
   }
 

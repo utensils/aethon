@@ -1,0 +1,101 @@
+{
+  "components": [
+    {
+      "id": "root-layout",
+      "type": "layout",
+      "props": {
+        "columns": "1fr",
+        "rows": "auto auto 1fr auto auto",
+        "areas": [
+          "header",
+          "tabs",
+          "canvas",
+          "chat-input",
+          "status"
+        ]
+      },
+      "children": [
+        {
+          "id": "header",
+          "type": "container",
+          "props": {
+            "area": "header",
+            "direction": "row",
+            "align": "center",
+            "justify": "space-between",
+            "padding": 12,
+            "className": "app-header"
+          },
+          "children": [
+            {
+              "id": "header-title",
+              "type": "text",
+              "props": { "content": "Aethon — single pane", "variant": "large" }
+            },
+            {
+              "id": "header-status",
+              "type": "text",
+              "props": {
+                "content": { "$ref": "/status" },
+                "variant": "small",
+                "color": "var(--text-dim)"
+              }
+            }
+          ]
+        },
+        {
+          "id": "tab-strip",
+          "type": "tab-strip",
+          "props": {
+            "area": "tabs",
+            "tabs": { "$ref": "/tabs" },
+            "activeId": { "$ref": "/activeTabId" }
+          }
+        },
+        {
+          "id": "main-canvas",
+          "type": "main-canvas",
+          "props": {
+            "area": "canvas",
+            "slot": "/canvas",
+            "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "chat-input",
+          "type": "chat-input",
+          "props": {
+            "area": "chat-input",
+            "value": { "$ref": "/draft" },
+            "placeholder": "Message Aethon…",
+            "disabled": { "$ref": "/waiting" },
+            "queueCount": { "$ref": "/queueCount" },
+            "commands": { "$ref": "/slashCommands" },
+            "onSubmit": "chat:send"
+          }
+        },
+        {
+          "id": "status-bar",
+          "type": "status-bar",
+          "props": {
+            "area": "status",
+            "left": { "$ref": "/status" },
+            "center": { "$ref": "/connection" },
+            "right": { "$ref": "/model" }
+          }
+        }
+      ]
+    }
+  ],
+  "state": {
+    "status": "ready",
+    "connection": "connected",
+    "model": "—",
+    "draft": "",
+    "waiting": false,
+    "queueCount": 0,
+    "messages": [],
+    "canvas": null,
+    "slashCommands": []
+  }
+}
