@@ -288,6 +288,10 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   const props = component.props as {
     value?: StringValue;
     placeholder?: StringValue;
+    /** Controls the Send ↔ Stop button swap AND whether submits are
+     *  queued (true while a prompt is in flight). The textarea itself
+     *  is always editable — pi's followUp queue handles overlapping
+     *  prompts so users can keep typing during long turns. */
     disabled?: BooleanValue;
     onSubmit?: string;
     onChange?: string;
@@ -295,13 +299,19 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     // starts with `/`. Resolved as raw value (not via resolveString) so
     // the array shape comes through intact when bound by $ref.
     commands?: SlashCommandHint[] | { $ref: string };
+    /** Count of queued (followUp) messages waiting behind the current
+     *  prompt. Renders as a subtle badge so the user knows their
+     *  Enter-press landed even though the agent is still working on
+     *  the previous one. */
+    queueCount?: NumberValue;
   };
 
   const value = props.value ? resolveString(props.value, state) : "";
   const placeholder = props.placeholder
     ? resolveString(props.placeholder, state)
     : "";
-  const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const busy = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const queueCount = props.queueCount ? resolveNumber(props.queueCount, state) : 0;
 
   // Resolve the commands list. Supports inline arrays or $ref-bound state.
   const commandsRaw = props.commands;
@@ -328,14 +338,13 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   // Slash autocomplete: show when the input begins with `/` (but not `//`,
   // which is the literal-slash escape) and matches at least one command.
   const slashMatch = useMemo(() => {
-    if (disabled) return null;
     if (dismissedDraft !== null && value === dismissedDraft) return null;
     const m = value.match(/^\/([A-Za-z][\w-]*)?$/);
     if (!m) return null;
     const prefix = (m[1] ?? "").toLowerCase();
     const matches = commands.filter((c) => c.name.toLowerCase().startsWith(prefix));
     return matches.length > 0 ? { prefix, matches } : null;
-  }, [value, commands, disabled, dismissedDraft]);
+  }, [value, commands, dismissedDraft]);
 
   const [highlightIdx, setHighlightIdx] = useState(0);
   // Reset highlight when the visible list changes so the cursor stays inside
@@ -423,7 +432,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         const exact = list.find(
           (c) => v === `/${c.name}` || v.startsWith(`/${c.name} `),
         );
-        if (exact && v.trim().length > 0 && !disabled) {
+        if (exact && v.trim().length > 0) {
           onEvent("submit", { value: v });
           return;
         }
@@ -434,14 +443,17 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const v = (e.target as HTMLTextAreaElement).value;
-      if (v.trim().length > 0 && !disabled) {
+      if (v.trim().length > 0) {
+        // Always submit — the bridge uses pi's followUp queue when an
+        // earlier prompt is still in flight, so the user can keep
+        // typing without "agent busy" rejections.
         onEvent("submit", { value: v });
       }
     }
   };
 
   const handleClick = () => {
-    if (value.trim().length > 0 && !disabled) {
+    if (value.trim().length > 0) {
       onEvent("submit", { value });
     }
   };
@@ -499,15 +511,26 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         rows={2}
         placeholder={placeholder}
         value={value}
-        disabled={disabled}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
       />
-      {disabled ? (
+      {/* Queue badge — visible when the user has stacked messages behind
+          an in-flight prompt. Sits between the textarea and the action
+          button so it's near the input but doesn't compete with Stop. */}
+      {queueCount > 0 && (
+        <span
+          className="a2ui-chat-input-queue"
+          title={`${queueCount} message${queueCount === 1 ? "" : "s"} queued behind the current prompt`}
+        >
+          +{queueCount}
+        </span>
+      )}
+      {busy ? (
         <button
           type="button"
           className="a2ui-chat-input-send a2ui-chat-input-stop"
           onClick={handleStop}
+          title="Stop the current prompt"
         >
           Stop
         </button>

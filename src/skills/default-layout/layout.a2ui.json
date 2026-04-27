@@ -145,6 +145,7 @@
             "value": { "$ref": "/draft" },
             "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
             "disabled": { "$ref": "/waiting" },
+            "queueCount": { "$ref": "/queueCount" },
             "commands": { "$ref": "/slashCommands" },
             "onSubmit": "chat:send"
           }
@@ -168,6 +169,7 @@
     "model": "—",
     "draft": "",
     "waiting": false,
+    "queueCount": 0,
     "messages": [],
     "canvas": null,
     "sidebar": {
