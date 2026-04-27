@@ -498,6 +498,21 @@ export default function App() {
     return { ...(sidebar ?? {}), models: items };
   }
 
+  // Tell the shared xterm panel to clear and replay a tab's terminal
+  // buffer. Used by every code path that changes the active tab — switch,
+  // close, or the bridge's tab_closed forwarding — so the panel never
+  // shows stale content from a tab that's no longer visible.
+  function dispatchTerminalReplay(buffer: string) {
+    // Microtask so xterm's mount-once useEffect has resolved before we
+    // try to write to it (matters on the very first tab switch after
+    // boot when the layout is rendering for the first time).
+    Promise.resolve().then(() => {
+      window.dispatchEvent(
+        new CustomEvent("aethon:terminal-replay", { detail: buffer }),
+      );
+    });
+  }
+
   // Switch the active tab. Re-mirrors the new tab's view to the root keys
   // so layout bindings update without needing a per-key refresh. Also
   // dispatches a replay event so the shared xterm panel clears and
@@ -521,14 +536,7 @@ export default function App() {
       );
       return result;
     });
-    // Microtask so xterm's mount-once useEffect has resolved before we
-    // try to write to it (matters on the very first tab switch after
-    // boot when the layout is rendering for the first time).
-    Promise.resolve().then(() => {
-      window.dispatchEvent(
-        new CustomEvent("aethon:terminal-replay", { detail: nextBuffer }),
-      );
-    });
+    dispatchTerminalReplay(nextBuffer);
   }
 
   // Latest state, kept in a ref so the aethon-debug skill can read it via
@@ -597,12 +605,18 @@ export default function App() {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     if (tabs.length <= 1) return; // never close the last tab
     if (tabId === "default") return; // bridge refuses; keep parity
+    let nextBuffer = "";
+    let switched = false;
     setState((prev) => {
       const list = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
       let activeTabId = prev.activeTabId as string | undefined;
-      if (activeTabId === tabId) activeTabId = list[list.length - 1].id;
+      if (activeTabId === tabId) {
+        activeTabId = list[list.length - 1].id;
+        switched = true;
+      }
       const result: Record<string, unknown> = { ...prev, tabs: list, activeTabId };
       const target = list.find((t) => t.id === activeTabId)!;
+      nextBuffer = target.terminalBuffer ?? "";
       const targetRec = target as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = targetRec[key as string];
@@ -613,6 +627,10 @@ export default function App() {
       );
       return result;
     });
+    // If the closed tab was the active one, the visible terminal was
+    // showing its buffer — replay the new active tab's buffer so the
+    // shared xterm doesn't keep displaying the dead tab's output.
+    if (switched) dispatchTerminalReplay(nextBuffer);
     invoke("agent_command", {
       payload: JSON.stringify({ type: "tab_close", tabId }),
     }).catch(() => {
@@ -875,15 +893,28 @@ export default function App() {
         // Re-establish bridge sessions for any non-default local tabs the
         // user created before the agent reloaded. The bridge starts fresh
         // each spawn — without this, prompts on those tabs would hit a
-        // tab the bridge has never seen and fail.
+        // tab the bridge has never seen and fail. After the session is
+        // open, also restore the tab's previously-selected model so the
+        // user doesn't silently send the next prompt to pi's default.
         const localTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
         for (const t of localTabs) {
           if (t.id === "default") continue;
           invoke("agent_command", {
             payload: JSON.stringify({ type: "tab_open", tabId: t.id }),
-          }).catch(() => {
-            /* surfaced on next chat send */
-          });
+          })
+            .then(() => {
+              if (!t.model) return;
+              return invoke("agent_command", {
+                payload: JSON.stringify({
+                  type: "set_model",
+                  id: t.model,
+                  tabId: t.id,
+                }),
+              });
+            })
+            .catch(() => {
+              /* surfaced on next chat send */
+            });
         }
         break;
       }
@@ -898,23 +929,26 @@ export default function App() {
         break;
       }
       case "state_patch": {
-        // An extension pushed a state mutation. Apply the JSON Pointer
-        // path as an immutable update so bound components re-render.
+        // An extension pushed a state mutation. Two cases:
+        //
+        //   1. Path is a per-tab mirrored key (messages / draft / waiting
+        //      / queueCount / canvas / model):
+        //      - With data.tabId: route ONLY to that tab. updateTab will
+        //        also write to root if it happens to be the active tab.
+        //        Don't pre-mirror to root — that would briefly clobber
+        //        the active tab's view with a background tab's state.
+        //      - Without data.tabId: global setState with no tab context
+        //        (clock interval, polling extension). Apply to the active
+        //        tab so the layout sees it and a switch-back re-mirrors.
+        //   2. Path is global (anything else, e.g. /sidebar/...,
+        //      /counter/value, /custom): write directly to root state.
+        //      No tab-scoping needed — these aren't mirrored.
         const path = data.path as string | undefined;
         if (!path) break;
-        setState((prev) => setPointer(prev, path, data.value));
-        // If the path is one of the per-tab mirrored keys, route the
-        // patch into a tab record so it survives switches:
-        //   - `data.tabId` set: the bridge is telling us this came from
-        //     a handler bound to a specific tab — write to that tab even
-        //     if the user has since switched away. This is the common
-        //     case for handler-fired ctx.setState.
-        //   - missing: a global extension setState (e.g. clock interval)
-        //     with no tab context — fall back to the active tab so the
-        //     patch lands somewhere that re-mirrors on switch.
         const segs = path.split("/").filter(Boolean);
         const top = segs[0] as keyof Tab | undefined;
-        if (top && TAB_MIRROR_KEYS.includes(top)) {
+        const isMirrored = top !== undefined && TAB_MIRROR_KEYS.includes(top);
+        if (isMirrored) {
           const writeIntoTab = (tab: Tab): Tab => {
             const tabRec = { ...tab } as unknown as Record<string, unknown>;
             if (segs.length === 1) {
@@ -936,6 +970,8 @@ export default function App() {
           } else {
             updateActiveTab(writeIntoTab);
           }
+        } else {
+          setState((prev) => setPointer(prev, path, data.value));
         }
         break;
       }
@@ -1024,13 +1060,19 @@ export default function App() {
         // signal in case some other path triggered the close.
         const tabId = data.tabId as string | undefined;
         if (!tabId) break;
+        let nextBuffer = "";
+        let switched = false;
         setState((prev) => {
           const tabs = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
           if (tabs.length === 0) return prev; // shouldn't happen — bridge refuses to close default
           let activeTabId = prev.activeTabId as string | undefined;
-          if (activeTabId === tabId) activeTabId = tabs[tabs.length - 1].id;
+          if (activeTabId === tabId) {
+            activeTabId = tabs[tabs.length - 1].id;
+            switched = true;
+          }
           const result: Record<string, unknown> = { ...prev, tabs, activeTabId };
           const target = tabs.find((t) => t.id === activeTabId)!;
+          nextBuffer = target.terminalBuffer ?? "";
           const targetRec = target as unknown as Record<string, unknown>;
           for (const key of TAB_MIRROR_KEYS) {
             result[key as string] = targetRec[key as string];
@@ -1041,6 +1083,7 @@ export default function App() {
           );
           return result;
         });
+        if (switched) dispatchTerminalReplay(nextBuffer);
         break;
       }
       case "response_delta": {
