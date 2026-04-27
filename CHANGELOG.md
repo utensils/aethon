@@ -8,6 +8,12 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Config file dead options wired up.** `~/.aethon/config.toml` `[ui]
+  font_size` now writes the `--app-font-size` CSS custom property
+  (clamped 10–24 px) consumed by `body { font-size: var(--app-font-size,
+  14px); }`. `[agent] model` seeds the picker default when no per-session
+  model is saved (bridge's session model still wins on `ready`
+  hydration).
 - **Pluggable `onEvent` routing — intercept built-in handlers.**
   New `aethon.registerEventRoute({componentId?, eventType?})` and
   `aethon.unregisterEventRoute(...)`. When the renderer fires an event

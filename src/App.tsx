@@ -368,6 +368,32 @@ export default function App() {
               ? "light"
               : "dark";
       document.documentElement.dataset.theme = initial;
+      // Apply [ui] font_size as a CSS custom property — components that
+      // care can read it via var(--app-font-size, 14px). Clamped to a
+      // sensible range so a malformed config can't make the UI
+      // unreadable. Skipped when null so the stylesheet's default wins.
+      const size = config.ui.fontSize;
+      if (typeof size === "number" && Number.isFinite(size)) {
+        const clamped = Math.max(10, Math.min(24, Math.round(size)));
+        document.documentElement.style.setProperty(
+          "--app-font-size",
+          `${clamped}px`,
+        );
+      }
+      // [agent] model: when set, seed the picker default for this
+      // session. Only applied if no per-session model has been saved
+      // and the bridge hasn't already locked one in. The bridge's
+      // ensureTab() reads the global picker default at session-create
+      // time, so writing /model here makes the next set_model dispatch
+      // pick it up.
+      if (config.agent.model) {
+        setState((prev) => ({
+          ...prev,
+          // Use as the initial display value; the actual session model
+          // is still authoritative and wins on `ready` hydration.
+          model: (prev.model as string | undefined) || config.agent.model!,
+        }));
+      }
     })();
   }, []);
 

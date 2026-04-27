@@ -64,7 +64,10 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  /* `~/.aethon/config.toml` `[ui] font_size` writes to --app-font-size
+     in App.tsx; the fallback keeps existing builds rendering the
+     default 14px when the user hasn't set the option. */
+  font-size: var(--app-font-size, 14px);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
