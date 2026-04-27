@@ -446,6 +446,13 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // (or mkdir) and restart Aethon to start watching.
         let pi_ext = h.join(".pi/agent/extensions");
         if pi_ext.exists() { watch_paths.push(pi_ext); }
+        // ~/.aethon/skills/node_modules holds npm-distributed skill
+        // packages (manifest with `aethon` field). Pre-create so a
+        // first `npm install --prefix ~/.aethon/skills <pkg>` triggers
+        // a reload without needing to restart the app.
+        let skills_modules = h.join(".aethon/skills/node_modules");
+        let _ = std::fs::create_dir_all(&skills_modules);
+        if skills_modules.exists() { watch_paths.push(skills_modules); }
     }
     // Bridge source dir is dev-only — release ships a compiled sidecar
     // and editing the source has no effect on the running binary.

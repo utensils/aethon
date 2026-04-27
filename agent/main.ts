@@ -377,6 +377,90 @@ interface AethonExtensionModule {
   default?: { register?: (api: AethonExtensionApi) => void | Promise<void> };
 }
 
+// Discover and load Aethon-shipped npm packages from ~/.aethon/skills/.
+// Each install root (Aethon walks ~/.aethon/skills/node_modules and
+// ~/.aethon/skills/node_modules/@scope/*) is a normal npm package whose
+// package.json declares an `aethon` field with at least an `entry`
+// pointing at the module to import. The module exports `register(api)`
+// (named or default), called with the same Aethon API surface as
+// directory-based extensions. Layout: same JSON shape, but resolvable
+// via `bun install` / `npm install` inside the skills dir, so users
+// can `npm install --prefix ~/.aethon/skills <pkg>` and Aethon picks
+// it up on next reload.
+//
+// Manifest example:
+//   {
+//     "name": "@example/aethon-pretty-themes",
+//     "aethon": { "entry": "./dist/index.js" }
+//   }
+async function loadAethonSkillManifests(api: AethonExtensionApi): Promise<void> {
+  const skillsRoot = join(homedir(), ".aethon", "skills", "node_modules");
+  // Each candidate is { displayName, packageDir, manifest }
+  type Candidate = {
+    name: string;
+    dir: string;
+    manifest: { name?: string; aethon?: { entry?: string } };
+  };
+  const candidates: Candidate[] = [];
+
+  async function readManifest(packageDir: string): Promise<Candidate | null> {
+    try {
+      const pkgPath = join(packageDir, "package.json");
+      const text = await Bun.file(pkgPath).text();
+      const manifest = JSON.parse(text) as Candidate["manifest"];
+      if (!manifest.aethon) return null;
+      return { name: manifest.name ?? packageDir, dir: packageDir, manifest };
+    } catch {
+      return null;
+    }
+  }
+
+  let entries: string[];
+  try {
+    entries = await readdir(skillsRoot);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[aethon-skill] readdir ${skillsRoot}: ${(err as Error).message}`);
+    }
+    return;
+  }
+  for (const entry of entries) {
+    const entryPath = join(skillsRoot, entry);
+    if (entry.startsWith("@")) {
+      // Scoped namespace — recurse one level.
+      let scoped: string[];
+      try { scoped = await readdir(entryPath); } catch { continue; }
+      for (const sub of scoped) {
+        const c = await readManifest(join(entryPath, sub));
+        if (c) candidates.push(c);
+      }
+    } else {
+      const c = await readManifest(entryPath);
+      if (c) candidates.push(c);
+    }
+  }
+  for (const c of candidates) {
+    const entry = c.manifest.aethon?.entry;
+    if (typeof entry !== "string" || entry.length === 0) {
+      console.error(`[aethon-skill] ${c.name}: aethon.entry not set, skipping`);
+      continue;
+    }
+    const filePath = join(c.dir, entry);
+    try {
+      const mod: AethonExtensionModule = await import(pathToFileURL(filePath).href);
+      const register = mod.register ?? mod.default?.register;
+      if (typeof register !== "function") {
+        console.error(`[aethon-skill] ${c.name}: no register() export, skipping`);
+        continue;
+      }
+      await register(api);
+      console.error(`[aethon-skill] loaded ${c.name} from ${entry}`);
+    } catch (err) {
+      console.error(`[aethon-skill] ${c.name}: ${(err as Error).message}`);
+    }
+  }
+}
+
 // Discover and load Aethon extensions from ~/.aethon/extensions/*.{ts,js}.
 // Each extension exports `register(api)` (named or as default.register).
 // Bun executes .ts directly so authors don't need a build step.
@@ -913,6 +997,11 @@ async function main() {
   // via `globalThis.aethon` — set above before createAgentSession.)
   // Failures in one extension don't block others.
   await loadAethonExtensions(aethonApi);
+  // Discover npm-distributed skill packages (manifest with `aethon` field
+  // in package.json) under ~/.aethon/skills/node_modules/. This lets users
+  // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
+  // skills that bundle layouts, components, and themes.
+  await loadAethonSkillManifests(aethonApi);
 
   emitReady();
 
