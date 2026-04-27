@@ -263,11 +263,17 @@ fn ensure_agent_spawned(
     let mut command = if cfg!(debug_assertions) {
         let root = project_root();
         let docs_dir = root.join("docs").join("aethon-agent");
+        let boot_layout_file = root
+            .join("src")
+            .join("skills")
+            .join("default-layout")
+            .join("layout.a2ui.json");
         let mut c = Command::new("bun");
         c.current_dir(&root).arg("run").arg("agent/main.ts");
         c.env("AETHON_RELEASE_MODE", "0");
         c.env("AETHON_PROJECT_ROOT", &root);
         c.env("AETHON_DOCS_DIR", &docs_dir);
+        c.env("AETHON_BOOT_LAYOUT_FILE", &boot_layout_file);
         c
     } else {
         let bin = find_sidecar_binary()?;
@@ -281,10 +287,15 @@ fn ensure_agent_spawned(
             .map_err(|e| format!("resource_dir: {e}"))?;
         let pi_dir = resource_dir.join("pi");
         let docs_dir = resource_dir.join("docs").join("aethon-agent");
+        let boot_layout_file = resource_dir
+            .join("skills")
+            .join("default-layout")
+            .join("layout.a2ui.json");
         let mut c = Command::new(&bin);
         c.env("PI_PACKAGE_DIR", &pi_dir);
         c.env("AETHON_RELEASE_MODE", "1");
         c.env("AETHON_DOCS_DIR", &docs_dir);
+        c.env("AETHON_BOOT_LAYOUT_FILE", &boot_layout_file);
         // Bundled .app launches inherit launchd's minimal PATH on macOS, so
         // pi's `npm root -g` (run when resolving user packages from
         // ~/.pi/agent/settings.json) fails with ENOENT. Source the user's

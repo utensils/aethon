@@ -8,6 +8,22 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **`getLayout()` returns the active rendered layout.** Bridge now
+  preloads the canonical boot layout synchronously from
+  `$AETHON_BOOT_LAYOUT_FILE` (set by the Tauri shell, pointing at the
+  default-layout JSON in dev or the bundled resource in release) BEFORE
+  any extension's `register(api)` runs. `_getLayout()` returns
+  `extensionLayout ?? (bootLayout + pendingLayoutPatches folded)` so
+  extensions inspecting at register-time see the real tree, not `null`.
+  Closes the release-mode bug where `right-sidebar-model-picker` bailed
+  out on its first line because `api.getLayout()` returned null. Boot
+  layout is now also a Tauri bundle resource so release builds get it.
+- **`AETHON_BOOT_LAYOUT_FILE` env var** added to the bridge contract
+  alongside `AETHON_DOCS_DIR` etc.
+- **`boot_layout` inbound bridge message** lets the frontend refresh
+  the bridge's view of the boot layout when the active layout skill
+  changes (skill swap → new boot tree).
+
 - **Persistent per-tab pi sessions.** Each tab uses
   `SessionManager.continueRecent($AETHON_SESSIONS_DIR/<tabId>)` instead
   of `inMemory()`, so the model's conversation history survives bun

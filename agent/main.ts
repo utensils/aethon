@@ -88,7 +88,7 @@ import {
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -111,6 +111,7 @@ const SESSIONS_DIR =
 const DOCS_DIR = process.env.AETHON_DOCS_DIR;
 const PROJECT_ROOT = process.env.AETHON_PROJECT_ROOT;
 const RELEASE_MODE = process.env.AETHON_RELEASE_MODE === "1";
+const BOOT_LAYOUT_FILE = process.env.AETHON_BOOT_LAYOUT_FILE;
 
 // Source attribution for the loaded-extension list. "directory" =
 // ~/.aethon/extensions/*.{ts,js,mjs}, "skill-package" = npm-style
@@ -644,6 +645,34 @@ async function main() {
   // received them. Cleared whenever setLayout is called (the new layout
   // replaces everything those patches were targeting).
   let pendingLayoutPatches: { path: string; value: unknown }[] = [];
+  // Canonical boot layout shipped by the active default-layout skill.
+  // Loaded SYNCHRONOUSLY from $AETHON_BOOT_LAYOUT_FILE before any
+  // extension runs, so `_getLayout()` returns a meaningful tree at
+  // register-time. The frontend can also push a `boot_layout` message
+  // later (e.g. when the user activates a different layout skill) to
+  // refresh this — see the `boot_layout` inbound handler.
+  //
+  // Without this preload, getLayout() returned `null` during register()
+  // and any extension that read the current tree to compute a patch
+  // bailed out before doing any work — the exact failure mode the user
+  // hit with right-sidebar-model-picker in release mode.
+  let bootLayout: unknown = undefined;
+  if (BOOT_LAYOUT_FILE) {
+    try {
+      const text = readFileSync(BOOT_LAYOUT_FILE, "utf8");
+      bootLayout = JSON.parse(text);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        console.error(
+          `[aethon-boot] read ${BOOT_LAYOUT_FILE}: ${(err as Error).message}`,
+        );
+      }
+      // ENOENT is fine outside Tauri-spawned dev; getLayout() falls
+      // back to null and the system prompt still tells the agent to
+      // call patchLayout against known default-layout paths.
+    }
+  }
 
   // Loaded extension registry. Populated by loadAethonExtensions and
   // loadAethonSkillManifests at startup. Used by getRuntimeSnapshot and
@@ -656,14 +685,33 @@ async function main() {
   // snapshot. The full layout is available via getLayout(); this is a
   // human-readable hint suitable for the system prompt and state file.
   function summarizeLayout(): string {
-    const layout = (extensionLayout ?? null) as { components?: unknown[] } | null;
-    if (!layout?.components || layout.components.length === 0) {
-      // No extension has overridden the default — describe it via patches.
+    // Source: extensionLayout if set (full replacement), otherwise the
+    // boot layout with all pendingLayoutPatches folded in. That way the
+    // summary reflects what's actually rendered, not a stale snapshot.
+    let layout: unknown;
+    let prefix: string;
+    if (extensionLayout) {
+      layout = extensionLayout;
+      prefix = "extension layout (setLayout)";
+    } else if (bootLayout) {
+      let tree = bootLayout;
+      for (const { path, value } of pendingLayoutPatches) {
+        tree = patchLayoutTree(tree, path, value);
+      }
+      layout = tree;
+      prefix =
+        pendingLayoutPatches.length > 0
+          ? `default-layout (boot tree + ${pendingLayoutPatches.length} patch(es))`
+          : "default-layout (boot tree)";
+    } else {
+      // No layout known — bridge spawned without a boot file and no
+      // extension has shipped one yet.
       return pendingLayoutPatches.length > 0
-        ? `default-layout (with ${pendingLayoutPatches.length} runtime patch(es))`
-        : "default-layout (boot tree, sidebar=left)";
+        ? `unknown layout (${pendingLayoutPatches.length} pending patch(es))`
+        : "unknown layout (no boot tree)";
     }
-    const root = layout.components[0] as
+    const typed = layout as { components?: unknown[] } | null;
+    const root = typed?.components?.[0] as
       | { type?: string; props?: { columns?: string; areas?: string[] } }
       | undefined;
     const cols = root?.props?.columns ?? "?";
@@ -675,7 +723,7 @@ async function main() {
       if (firstRow[firstRow.length - 1] === "sidebar") return "right";
       return "custom";
     })();
-    return `extension layout (root=${root?.type ?? "?"}, columns="${cols}", sidebar=${sidebarSide})`;
+    return `${prefix} — root=${root?.type ?? "?"}, columns="${cols}", sidebar=${sidebarSide}`;
   }
 
   // Build the live runtime snapshot. Cheap; safe to call from the
@@ -939,7 +987,23 @@ async function main() {
     return [...extensionThemes.values()];
   }
   function _getLayout(): unknown {
-    return extensionLayout ?? null;
+    // Return the active rendered tree:
+    //   1. extensionLayout if any extension has called setLayout — that's
+    //      the live tree and supersedes everything else.
+    //   2. otherwise the boot layout with all pendingLayoutPatches folded
+    //      in, so an extension inspecting after some patchLayout calls
+    //      sees the actual current state, not the pristine boot tree.
+    //   3. if the frontend hasn't sent the boot layout yet (very early
+    //      startup or a frontend that doesn't speak the protocol), fall
+    //      back to null so callers can guard.
+    if (extensionLayout) return extensionLayout;
+    if (!bootLayout) return null;
+    if (pendingLayoutPatches.length === 0) return bootLayout;
+    let tree = bootLayout;
+    for (const { path, value } of pendingLayoutPatches) {
+      tree = patchLayoutTree(tree, path, value);
+    }
+    return tree;
   }
   function _getRuntimeSnapshot(): RuntimeSnapshot {
     return getRuntimeSnapshot();
@@ -1648,6 +1712,20 @@ async function main() {
             break;
           }
           aethonApi.registerTheme(msg.theme);
+          break;
+        }
+        case "boot_layout": {
+          // Frontend tells the bridge what layout it actually booted with so
+          // _getLayout() can return a meaningful tree to extensions inspecting
+          // at register-time. Without this, getLayout() returned `null` and
+          // extensions that read the current tree to compute a patch silently
+          // bailed before doing any work. Sent once on connect and again when
+          // the active default-layout skill changes (skill swap → new boot tree).
+          if (!msg.payload || typeof msg.payload !== "object") {
+            send({ type: "error", message: "boot_layout: missing or invalid payload" });
+            break;
+          }
+          bootLayout = msg.payload;
           break;
         }
         default: {

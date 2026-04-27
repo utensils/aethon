@@ -755,6 +755,14 @@ export default function App() {
     (async () => {
       try {
         await invoke("start_agent");
+        // Tell the bridge what layout we actually booted with so extensions
+        // calling api.getLayout() at register-time see a meaningful tree
+        // instead of null. The bridge stores it as `bootLayout` and
+        // _getLayout() folds it with any pending patches. Sent before
+        // `report` so the snapshot the bridge ships back includes it.
+        await invoke("agent_command", {
+          payload: JSON.stringify({ type: "boot_layout", payload: BOOT_LAYOUT }),
+        });
         // Request a fresh `ready` event in case the agent process was already
         // running before this React tree mounted (e.g. after a webview
         // hot-reload). Newly-spawned agents emit ready unconditionally, so
