@@ -8,6 +8,39 @@ import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { setPointer } from "./utils/jsonPointer";
 
+// Immutable JSON Pointer write that preserves arrays. The generic
+// setPointer in utils/jsonPointer turns `{...arr}` into a plain object,
+// which breaks the renderer when a layout's `components`/`children`
+// arrays get traversed. This walker spreads with `[...arr]` for arrays
+// so the layout shape is preserved end-to-end.
+function decodeToken(t: string): string {
+  return t.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+function layoutPatch<T>(payload: T, pointer: string, value: unknown): T {
+  if (!pointer || pointer === "" || pointer === "/") return payload;
+  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  const tokens = path.split("/").map(decodeToken);
+  const cloneNode = (node: unknown): unknown => {
+    if (Array.isArray(node)) return [...node];
+    if (node && typeof node === "object") return { ...(node as Record<string, unknown>) };
+    return {};
+  };
+  const root = cloneNode(payload) as Record<string, unknown> | unknown[];
+  let cursor: Record<string, unknown> | unknown[] = root;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const key = tokens[i];
+    const idx = Array.isArray(cursor) ? Number(key) : key;
+    const existing = (cursor as Record<string | number, unknown>)[idx as never];
+    const child = cloneNode(existing);
+    (cursor as Record<string | number, unknown>)[idx as never] = child;
+    cursor = child as Record<string, unknown> | unknown[];
+  }
+  const lastKey = tokens[tokens.length - 1];
+  const lastIdx = Array.isArray(cursor) ? Number(lastKey) : lastKey;
+  (cursor as Record<string | number, unknown>)[lastIdx as never] = value;
+  return root as T;
+}
+
 // Recursive structural merge. Plain objects recurse; arrays and primitives
 // replace. Used when folding the bridge's extension state snapshot into
 // app state so an extension's nested key doesn't wipe siblings.
@@ -388,19 +421,14 @@ export default function App() {
       }
       case "layout_patch": {
         // Extension mutated a path inside the active layout (e.g. add a
-        // sidebar section, swap a child). Immutable JSON Pointer write.
+        // sidebar section, swap a child). Immutable patch that preserves
+        // arrays — the generic setPointer collapses arrays into plain
+        // objects on traversal because it spreads with `{...existing}`,
+        // which would crash the renderer on `components.map()`. Walk
+        // manually here so arrays stay arrays.
         const path = data.path as string | undefined;
         if (!path) break;
-        setLayout((prev) => {
-          // setPointer expects Record; layouts have a `components` array
-          // at the top, treat as a record for navigation.
-          const next = setPointer(
-            prev as unknown as Record<string, unknown>,
-            path,
-            data.value,
-          );
-          return next as unknown as A2UIPayload;
-        });
+        setLayout((prev) => layoutPatch(prev, path, data.value));
         break;
       }
       case "model_changed": {

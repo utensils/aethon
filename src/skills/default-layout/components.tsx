@@ -113,9 +113,11 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
   const title = props.title ? resolveString(props.title, state) : "";
 
   const resolveItems = (
-    items: SidebarSection["items"],
+    items: SidebarSection["items"] | undefined,
   ): { id: string; label: string; active?: boolean }[] => {
+    if (!items) return [];
     if (Array.isArray(items)) return items;
+    if (typeof items !== "object" || !("$ref" in items)) return [];
     const resolved = resolvePointer(state, items.$ref);
     return Array.isArray(resolved)
       ? (resolved as { id: string; label: string; active?: boolean }[])
