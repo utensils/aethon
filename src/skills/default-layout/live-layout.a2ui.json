@@ -75,24 +75,12 @@
               }
             },
             {
-              "id": "live-layout-pill",
-              "type": "container",
+              "id": "live-pill",
+              "type": "layout-change-pill",
               "props": {
-                "direction": "row",
-                "align": "center",
-                "gap": 8,
-                "className": "ae-header-spacer-flex"
-              },
-              "children": [
-                {
-                  "id": "live-pill",
-                  "type": "text",
-                  "props": {
-                    "content": { "$ref": "/livePill/text" },
-                    "className": "ae-live-layout-pill"
-                  }
-                }
-              ]
+                "label": { "$ref": "/livePill/text" },
+                "visible": { "$ref": "/livePill/visible" }
+              }
             }
           ]
         },
@@ -108,7 +96,7 @@
         },
         {
           "id": "layout-toast",
-          "type": "layout-toast",
+          "type": "layout-diff-toast",
           "props": {
             "area": "canvas",
             "visible": { "$ref": "/livePill/toastVisible" },
@@ -200,6 +188,7 @@
       "title": "aethon.setLayout(splitViewLayout)",
       "diff": "+ inspector pane · areas → \"sidebar header inspector / sidebar canvas inspector / status status status\"",
       "when": "just now",
+      "visible": true,
       "toastVisible": false
     },
     "inspector": {
@@ -223,7 +212,9 @@
       ],
       "tabsAsItems": [],
       "themes": [
-        { "id": "signature", "label": "Æther — signature" }
+        { "id": "ember", "label": "Ember — warm dark", "active": true },
+        { "id": "paper", "label": "Paper — cream light" },
+        { "id": "aether", "label": "Æther — signature" }
       ]
     },
     "terminal": {

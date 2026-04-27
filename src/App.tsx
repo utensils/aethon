@@ -262,11 +262,12 @@ export default function App() {
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
 
-  // Themes — built-in `dark`/`light` plus extension-registered ones. Persisted
-  // to `~/.aethon/theme` so the choice survives reloads.
-  // Resolution priority: per-session disk file → config.toml `[ui] theme`
-  // → OS `prefers-color-scheme` → dark. Migrates the legacy
-  // `aethon-theme` localStorage entry on first read.
+  // Themes — three built-in palettes (ember/paper/aether) plus
+  // extension-registered ones. Persisted to `~/.aethon/theme` so the choice
+  // survives reloads. Resolution priority: per-session disk file →
+  // config.toml `[ui] theme` → OS `prefers-color-scheme` (light → paper,
+  // dark → ember) → ember. Migrates the legacy `aethon-theme` localStorage
+  // entry on first read; the previous `signature` id maps to `aether`.
   //
   // Extension themes are kept in a ref (not React state) so injectThemeStyle
   // can apply CSS imperatively without re-rendering and `setTheme` can look
@@ -282,7 +283,9 @@ export default function App() {
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
-    { id: "signature", label: "Æther — signature" },
+    { id: "ember", label: "Ember — warm dark" },
+    { id: "paper", label: "Paper — cream light" },
+    { id: "aether", label: "Æther — signature" },
   ];
 
   // Inject (or replace) the <style> element holding an extension theme's
@@ -363,12 +366,21 @@ export default function App() {
         getConfig(),
       ]);
       const trimmed = saved.trim();
+      // Map the legacy `signature` id (one-theme era) to `aether` so a
+      // pre-rename persisted choice keeps the same visual palette.
+      const normalize = (id: string) => (id === "signature" ? "aether" : id);
+      const prefersLight =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-color-scheme: light)").matches;
       const initial =
         trimmed.length > 0
-          ? trimmed
+          ? normalize(trimmed)
           : config.ui.theme
-            ? config.ui.theme
-            : "signature";
+            ? normalize(config.ui.theme)
+            : prefersLight
+              ? "paper"
+              : "ember";
       document.documentElement.dataset.theme = initial;
       // Apply [ui] font_size as a CSS custom property — components that
       // care can read it via var(--app-font-size, 14px). Clamped to a

@@ -19,12 +19,14 @@ import {
   Terminal,
 } from "./components";
 import {
+  AeMark,
   AgentStatusPill,
   CanvasOrnament,
   CommandBar,
   EditorialHeader,
   EditorialSpine,
   InspectorPane,
+  LayoutChangePill,
   LayoutToast,
   VerticalTabRail,
 } from "./variation-components";
@@ -61,13 +63,25 @@ export const defaultLayoutSkill: A2UISkill = {
     // Layout-variation chrome — used by editorial / command-deck / live-layout.
     // Registered alongside the standard composites so any layout payload can
     // mix and match them.
+    //
+    // Canonical names match the design handoff
+    // (`aethon-handoff/handoff/component-contracts.md`); legacy aliases
+    // (`agent-status-pill`, `editorial-spine`, `canvas-ornament`,
+    // `layout-toast`) stay registered so existing layout payloads continue
+    // to render after the rename.
+    "agent-pulse": AgentStatusPill,
     "agent-status-pill": AgentStatusPill,
+    "brand-spine": EditorialSpine,
     "editorial-spine": EditorialSpine,
     "editorial-header": EditorialHeader,
+    "ae-ornament": CanvasOrnament,
     "canvas-ornament": CanvasOrnament,
+    "ae-mark": AeMark,
     "command-bar": CommandBar,
     "vertical-tab-rail": VerticalTabRail,
     "inspector-pane": InspectorPane,
+    "layout-change-pill": LayoutChangePill,
+    "layout-diff-toast": LayoutToast,
     "layout-toast": LayoutToast,
   },
   layout: workstationPayload,

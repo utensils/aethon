@@ -4,11 +4,67 @@
   color: var(--text);
 }
 
-/* Æther signature theme — the only theme. Deep ink-blue base, cream
-   Bodoni text (#fef3e2), brass-orange accent (#ff6a18). The brand's
-   signature look. The App attribute-sets `data-theme="signature"` on
-   <html> so future palette extensions still hang off the same hook. */
+/* Three ship-ready palettes — `ember` (warm dark, default), `paper` (cream
+   light), and `aether` (deep ink-blue, the signature). Tokens come from
+   `aethon-handoff/handoff/design-tokens.json`. The App attribute-sets
+   `data-theme="ember|paper|aether"` on <html> and extensions can register
+   additional palettes via `aethon.registerTheme`. */
+
+/* Ember — warm near-black, cream Bodoni text, brass orange accent.
+   `:root` aliases ember so the app boots in ember even before
+   data-theme is set. */
 :root,
+:root[data-theme="ember"] {
+  color-scheme: dark;
+  --bg: #161618;
+  --bg-elev: #1f1f23;
+  --bg-input: #25252a;
+  --border: #2e2e34;
+  --text: #fef3e2;
+  --text-dim: #9c9a92;
+  --accent: #ff6a18;
+  --accent-soft: rgba(255, 106, 24, 0.18);
+  --accent-hover-tint: rgba(255, 106, 24, 0.08);
+  --accent-active-tint: rgba(255, 106, 24, 0.16);
+  --btn-text: #1f1f23;
+  --user-bubble: #2a2620;
+  --agent-bubble: #1f1f23;
+  --scrollbar-thumb: #2e2e34;
+  --scrollbar-thumb-hover: #3a3a40;
+  --success: #19c332;
+  --warn: #febc2e;
+  --error: #ff5d5d;
+}
+
+/* Paper — cream paper, ink type, brass accent darkened from #ff6a18
+   to #d4530c so the accent passes 4.5:1 against the cream background. */
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #fef3e2;
+  --bg-elev: #fffaee;
+  --bg-input: #f5e8d0;
+  --border: #e3d8be;
+  --text: #1f1f23;
+  --text-dim: #6a6356;
+  --accent: #d4530c;
+  --accent-soft: rgba(212, 83, 12, 0.16);
+  --accent-hover-tint: rgba(212, 83, 12, 0.06);
+  --accent-active-tint: rgba(212, 83, 12, 0.12);
+  --btn-text: #fef3e2;
+  --user-bubble: #fbe5c4;
+  --agent-bubble: #fffaee;
+  --scrollbar-thumb: #d8cdb3;
+  --scrollbar-thumb-hover: #b8ad94;
+  --success: #1a8a2a;
+  --warn: #c98a00;
+  --error: #c4322a;
+}
+
+/* Æther — deep ink-blue base, brighter brass accent, the signature
+   theme. `signature` is kept as a back-compat alias so any persisted
+   `~/.aethon/theme` from the previous build still resolves to this
+   palette without forcing the user to re-pick a theme. */
+:root[data-theme="aether"],
 :root[data-theme="signature"] {
   color-scheme: dark;
   --bg: #0e1118;
@@ -17,15 +73,41 @@
   --border: #262b3a;
   --text: #fef3e2;
   --text-dim: #8b91a8;
-  --accent: #ff6a18;
-  --accent-soft: rgba(255, 106, 24, 0.20);
-  --accent-hover-tint: rgba(255, 106, 24, 0.10);
-  --accent-active-tint: rgba(255, 106, 24, 0.18);
+  --accent: #ff8a3d;
+  --accent-soft: rgba(255, 138, 61, 0.18);
+  --accent-hover-tint: rgba(255, 138, 61, 0.08);
+  --accent-active-tint: rgba(255, 138, 61, 0.16);
   --btn-text: #0e1118;
   --user-bubble: #1f2436;
   --agent-bubble: #161a24;
   --scrollbar-thumb: #262b3a;
-  --scrollbar-thumb-hover: #353b52;
+  --scrollbar-thumb-hover: #323849;
+  --success: #3ad36f;
+  --warn: #ffc94e;
+  --error: #ff7777;
+}
+
+/* Motion timing tokens + reduced-motion + focus-ring tokens — applied
+   across every palette so a single declaration controls every component. */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-slow: 240ms;
+  --focus-ring: 0 0 0 3px var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 60ms;
+  }
+  .a2ui-terminal,
+  .ae-live-layout-pill,
+  .ae-agent-pill-dot,
+  .app-header-pill[data-state="thinking"]::before {
+    animation: none !important;
+  }
 }
 
 * {

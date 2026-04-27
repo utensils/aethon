@@ -9,9 +9,10 @@
 export interface SlashCommandContext {
   appendSystem: (text: string) => void;
   clearChat: () => void;
-  // Switch the active theme by id. The built-in `signature` palette is
-  // always available; extension-registered themes appear here too once
-  // they've been hydrated from the bridge's `extension_themes` event.
+  // Switch the active theme by id. The three built-in palettes
+  // (`ember`, `paper`, `aether`) are always available; extension-registered
+  // themes appear here too once they've been hydrated from the bridge's
+  // `extension_themes` event.
   setTheme: (id: string) => void;
   listThemes: () => { id: string; label: string }[];
   setModel: (id: string) => Promise<void>;

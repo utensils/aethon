@@ -210,7 +210,9 @@
       "models": [],
       "extraSections": [],
       "themes": [
-        { "id": "signature", "label": "Æther — signature" }
+        { "id": "ember", "label": "Ember — warm dark", "active": true },
+        { "id": "paper", "label": "Paper — cream light" },
+        { "id": "aether", "label": "Æther — signature" }
       ]
     },
     "terminal": {

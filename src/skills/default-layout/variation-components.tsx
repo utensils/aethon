@@ -4,6 +4,15 @@
  * sidebar/tab-strip/status-bar/chat-input live in components.tsx and are
  * shared across variations; this file holds the pieces that only one or two
  * layouts use, so the workstation default doesn't pull them in.
+ *
+ * Component naming follows the design handoff
+ * (`aethon-handoff/handoff/component-contracts.md`): the canonical types
+ * are `agent-pulse`, `brand-spine`, `editorial-header`, `command-bar`,
+ * `vertical-tab-rail`, `inspector-pane`, `layout-change-pill`,
+ * `layout-diff-toast`, `ae-mark`, `ae-ornament`. The legacy aliases
+ * (`agent-status-pill`, `editorial-spine`, `canvas-ornament`,
+ * `layout-toast`) stay registered so older layout JSONs keep rendering
+ * after the rename.
  */
 
 import { useMemo } from "react";
@@ -367,6 +376,91 @@ export function InspectorPane({ component, state }: BuiltinComponentProps) {
         )}
       </div>
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AeMark — primitive Æ + π monogram. Used by every layout to render the
+// Aethon brand mark inline (sidebar headers, brand spine, tab-rail title).
+// Pure SVG; sizes via the `size` prop, otherwise inherits 28px. The dark
+// tile + accent dot are tied to CSS custom properties so the palette
+// drives colors automatically.
+// ---------------------------------------------------------------------------
+
+export function AeMark({ component, state }: BuiltinComponentProps) {
+  const props = component.props as {
+    size?: number;
+    radius?: number;
+  };
+  const size = typeof props.size === "number" ? props.size : 28;
+  const radius = typeof props.radius === "number" ? props.radius : 6;
+  void state;
+  return (
+    <svg
+      className="ae-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 320 320"
+      role="img"
+      aria-label="Aethon"
+      style={{ display: "block", borderRadius: radius, flexShrink: 0 }}
+    >
+      <title>Aethon</title>
+      <rect width="320" height="320" rx="60" fill="var(--bg-elev, #1f1f23)" />
+      <text
+        x="152"
+        y="160"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", "Bodoni 72", Didot, Georgia, serif'
+        fontSize="236"
+        fontWeight={700}
+        fill="var(--text, #fef3e2)"
+      >
+        Æ
+      </text>
+      <circle cx="248" cy="82" r="38" fill="var(--accent, #ff6a18)" opacity="0.85" />
+      <text
+        x="248"
+        y="86"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", Didot, Georgia, serif'
+        fontSize="44"
+        fontWeight={700}
+        fontStyle="italic"
+        fill="var(--text, #fef3e2)"
+      >
+        π
+      </text>
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LayoutChangePill — live indicator that pulses in the header when the
+// agent rewrites the active layout. Auto-pulses via CSS keyframe; visibility
+// driven by /layoutChange/visible. Used by Live Layout.
+// ---------------------------------------------------------------------------
+
+export function LayoutChangePill({ component, state }: BuiltinComponentProps) {
+  const props = component.props as {
+    visible?: BooleanValue;
+    label?: StringValue;
+  };
+  const visible = props.visible === undefined ? true : resolveBoolean(props.visible, state);
+  if (!visible) return null;
+  const label = props.label
+    ? resolveString(props.label, state)
+    : "agent rewrote layout";
+  return (
+    <span
+      className="ae-live-layout-pill"
+      role="status"
+      aria-live="polite"
+    >
+      {label}
+    </span>
   );
 }
 
