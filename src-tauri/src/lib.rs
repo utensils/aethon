@@ -465,9 +465,14 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         return None;
     }
 
-    let last_fire = Arc::new(AtomicU64::new(0));
+    // Trailing-edge debounce: each event bumps the "latest event"
+    // timestamp; a worker thread spawned per-event sleeps the debounce
+    // window and only fires the kill if no newer event has landed.
+    // This matters for npm install bursts where the first file write
+    // would otherwise trigger a reload mid-install.
+    let latest_event = Arc::new(AtomicU64::new(0));
     let app_clone = app.clone();
-    let last_fire_clone = last_fire.clone();
+    let latest_event_clone = latest_event.clone();
 
     let mut watcher = match notify::recommended_watcher(
         move |res: notify::Result<notify::Event>| {
@@ -515,31 +520,50 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
                 return;
             }
 
-            // Debounce — editors fire several events per save (1.5s window).
+            // Trailing-edge debounce: bump the latest-event timestamp,
+            // spawn a thread that sleeps the debounce window, then
+            // only fires if THIS event is still the latest. Bursts
+            // (e.g. npm install writing 50 files) collapse into a
+            // single fire after they settle.
+            //
+            // node_modules events get a longer settle window because
+            // npm install can produce IO bursts spaced out beyond the
+            // editor-save scale. Edits in agent/ or extension dirs
+            // use a tighter window so the dev cycle stays snappy.
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            let last = last_fire_clone.load(Ordering::Relaxed);
-            if now.saturating_sub(last) < 1500 {
-                return;
-            }
-            last_fire_clone.store(now, Ordering::Relaxed);
-
-            // Kill the current child; the next inbound message will respawn.
-            let state: State<'_, AgentProcess> = app_clone.state();
-            if let Ok(mut guard) = state.0.lock()
-                && let Some(mut child) = guard.take()
-            {
-                let pid = child.id();
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = app_clone.emit("agent-reloaded", "");
-                eprintln!(
-                    "[agent-watch] killed pid={pid}; will respawn on next request (paths={:?})",
-                    event.paths
-                );
-            }
+            latest_event_clone.store(now, Ordering::Relaxed);
+            let in_node_modules = event.paths.iter().any(|p| {
+                p.components()
+                    .any(|c| matches!(c.as_os_str().to_str(), Some("node_modules")))
+            });
+            let settle_ms: u64 = if in_node_modules { 3000 } else { 1000 };
+            let app_for_thread = app_clone.clone();
+            let latest_for_thread = latest_event_clone.clone();
+            let event_paths = event.paths.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(settle_ms));
+                let observed = latest_for_thread.load(Ordering::Relaxed);
+                if observed != now {
+                    // A newer event landed during our sleep — that
+                    // thread will handle the fire; bail.
+                    return;
+                }
+                let state: State<'_, AgentProcess> = app_for_thread.state();
+                if let Ok(mut guard) = state.0.lock()
+                    && let Some(mut child) = guard.take()
+                {
+                    let pid = child.id();
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = app_for_thread.emit("agent-reloaded", "");
+                    eprintln!(
+                        "[agent-watch] killed pid={pid} after {settle_ms}ms settle; will respawn on next request (paths={event_paths:?})",
+                    );
+                }
+            });
         },
     ) {
         Ok(w) => w,
