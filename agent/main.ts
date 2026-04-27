@@ -797,6 +797,12 @@ async function main() {
           currentAgentTabId = tabId;
           if (rec.queuedCount > 0) {
             rec.queuedCount -= 1;
+            // The previous agent_end cleared promptInFlight, but pi has
+            // already started the queue-drained turn — re-mark in-flight
+            // so a follow-up chat / set_model on this tab queues correctly
+            // instead of being treated as a fresh idle prompt.
+            rec.promptInFlight = true;
+            rec.agentEndFired = false;
             send({ type: "prompt_started", tabId, source: "queue", queued: rec.queuedCount });
           }
           break;

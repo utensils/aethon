@@ -549,6 +549,11 @@ export default function App() {
   // pi session map stays in sync. Used by both the keyboard shortcuts
   // below and the tab-strip UI's click handlers.
   // ---------------------------------------------------------------------
+  // Per-tab promise that resolves once the bridge has accepted tab_open.
+  // sendChat awaits this before invoking send_message so the bridge can't
+  // race-create the tab via the chat path with the wrong model.
+  const pendingTabOpens = useRef(new Map<string, Promise<void>>());
+
   function newTab() {
     const id = crypto.randomUUID();
     // Inherit the previously-active tab's model so the picker stays
@@ -583,15 +588,25 @@ export default function App() {
     // shared xterm so it doesn't keep showing the previous tab's
     // scrollback until the next switch / output event.
     dispatchTerminalReplay("");
-    invoke("agent_command", {
+    const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
         tabId: id,
         ...(inheritedModel ? { model: inheritedModel } : {}),
       }),
-    }).catch((err) => {
-      appendSystem(`Failed to open tab: ${err}`);
-    });
+    }) as Promise<void>;
+    // Track until done so a fast first chat on the new tab can wait
+    // for the bridge to register the tab + initial model before send.
+    // Otherwise send_message would race tab_open and the bridge would
+    // lazily create the tab session with pi's default model.
+    pendingTabOpens.current.set(id, opening);
+    opening
+      .catch((err) => {
+        appendSystem(`Failed to open tab: ${err}`);
+      })
+      .finally(() => {
+        pendingTabOpens.current.delete(id);
+      });
   }
 
   function nextTab(direction: 1 | -1) {
@@ -1378,6 +1393,14 @@ export default function App() {
       connection: "connected",
     }));
 
+    // Wait for any pending tab_open on this tab to land first so the
+    // bridge has the right initial model before the chat creates the
+    // session lazily. swallow any open errors — sendChat surfaces its
+    // own error path below.
+    const pending = pendingTabOpens.current.get(tabId);
+    if (pending) {
+      try { await pending; } catch { /* ignore */ }
+    }
     try {
       await invoke("send_message", { message: sendText, tabId });
     } catch (err) {
