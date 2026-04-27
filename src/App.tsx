@@ -371,8 +371,9 @@ export default function App() {
         const extLayout = data.extensionLayout as A2UIPayload | undefined;
         registry.setTemplates(extComponents);
         // Restore any extension-supplied layout so a webview reload
-        // doesn't drop back to the boot layout. Boot state stays handled
-        // separately; the layout's own initial state hydrates below.
+        // doesn't drop back to the boot layout. The layout's own
+        // `state` hydrates below alongside extensionState — same
+        // semantics as the live `layout_set` path so replay matches.
         if (
           extLayout &&
           typeof extLayout === "object" &&
@@ -401,6 +402,17 @@ export default function App() {
           // descendant of an app-owned key (e.g. /sidebar/foo) would
           // wipe the rest of the parent on hydration.
           next = deepMergeState(next, extState);
+          // Also fold any extension-layout `state` so the replay path
+          // matches the live `layout_set` path (which spreads payload.state
+          // into app state). Without this, $refs in the extension layout
+          // resolve to undefined on reload until the extension's next
+          // state push.
+          if (extLayout && extLayout.state) {
+            next = deepMergeState(
+              next,
+              extLayout.state as Record<string, unknown>,
+            );
+          }
           return next;
         });
         break;
