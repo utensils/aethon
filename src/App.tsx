@@ -1557,6 +1557,12 @@ export default function App() {
           }
         } else {
           setState((prev) => setPointer(prev, path, data.value));
+          // Track this path as extension-owned so the next `ready` knows
+          // to prune it if the extension that wrote it is gone. Without
+          // this, paths written via setState AFTER the last ready would
+          // never appear in lastExtensionStateKeysRef and would survive
+          // an extension uninstall as stale UI. (Codex review.)
+          lastExtensionStateKeysRef.current.add(path);
         }
         ackMutation(data.mutationId, true);
         break;
