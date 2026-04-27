@@ -805,10 +805,43 @@ export default function App() {
       console.warn("[agent stderr]", text);
     });
 
+    // Native menu activations land here. The Rust shell emits the
+    // menu item id; we route the same way the keyboard shortcuts do
+    // so menu and Cmd+T / Cmd+] / etc. always do the same thing.
+    const unlistenMenu = listen<string>("menu", (event) => {
+      const id = event.payload;
+      switch (id) {
+        case "new_tab": newTab(); break;
+        case "close_tab": {
+          const activeId = stateRef.current.activeTabId as string | undefined;
+          if (activeId) closeTab(activeId);
+          break;
+        }
+        case "next_tab": nextTab(1); break;
+        case "prev_tab": nextTab(-1); break;
+        case "toggle_terminal": {
+          setState((prev) => {
+            const term = (prev.terminal as { open?: boolean }) ?? {};
+            return { ...prev, terminal: { ...term, open: !term.open } };
+          });
+          break;
+        }
+        case "clear_chat": clearChat(); break;
+        case "stop_prompt": {
+          const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+          invoke("agent_command", {
+            payload: JSON.stringify({ type: "stop", tabId }),
+          }).catch(() => { /* surfaced by chat */ });
+          break;
+        }
+      }
+    });
+
     return () => {
       unlistenResponse.then((fn) => fn());
       unlistenReload.then((fn) => fn());
       unlistenStderr.then((fn) => fn());
+      unlistenMenu.then((fn) => fn());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -520,6 +520,114 @@ fn start_agent_watcher(_app: AppHandle) -> Option<AgentWatcher> {
     None
 }
 
+/// Build and attach the native app menu. The frontend listens for a
+/// `menu` Tauri event whose payload is the activated item id; both
+/// menu clicks and the existing keyboard shortcuts converge on the
+/// same React-side dispatcher. Predefined NS items (Quit, Hide, Cut,
+/// Copy, Paste, Minimize, ...) get native behavior automatically.
+fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+    use tauri::Emitter;
+
+    let new_tab = MenuItemBuilder::with_id("new_tab", "New Tab")
+        .accelerator("CmdOrCtrl+T")
+        .build(app)?;
+    let close_tab = MenuItemBuilder::with_id("close_tab", "Close Tab")
+        .accelerator("CmdOrCtrl+W")
+        .build(app)?;
+    let next_tab = MenuItemBuilder::with_id("next_tab", "Next Tab")
+        .accelerator("CmdOrCtrl+]")
+        .build(app)?;
+    let prev_tab = MenuItemBuilder::with_id("prev_tab", "Previous Tab")
+        .accelerator("CmdOrCtrl+[")
+        .build(app)?;
+    let toggle_terminal =
+        MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
+            .accelerator("CmdOrCtrl+`")
+            .build(app)?;
+    let clear_chat =
+        MenuItemBuilder::with_id("clear_chat", "Clear Chat").build(app)?;
+    let stop_prompt =
+        MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
+            .accelerator("CmdOrCtrl+.")
+            .build(app)?;
+
+    // App submenu (macOS-only first slot — Linux/Windows put these in File).
+    #[cfg(target_os = "macos")]
+    let app_menu = SubmenuBuilder::new(app, "Aethon")
+        .item(&PredefinedMenuItem::about(app, Some("About Aethon"), None)?)
+        .separator()
+        .item(&PredefinedMenuItem::services(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::hide(app, None)?)
+        .item(&PredefinedMenuItem::hide_others(app, None)?)
+        .item(&PredefinedMenuItem::show_all(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::quit(app, None)?)
+        .build()?;
+
+    // Cmd+W is reserved for `close_tab` (browser/IDE convention).
+    // Tauri's PredefinedMenuItem::close_window also binds Cmd+W on
+    // macOS, so we omit it here — the user closes the window via the
+    // red traffic light or Cmd+Q. Adding both would let macOS route
+    // Cmd+W to whichever menu item it picks first.
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&new_tab)
+        .item(&close_tab)
+        .build()?;
+
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .item(&PredefinedMenuItem::undo(app, None)?)
+        .item(&PredefinedMenuItem::redo(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .build()?;
+
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&toggle_terminal)
+        .item(&clear_chat)
+        .item(&stop_prompt)
+        .build()?;
+
+    let tabs_menu = SubmenuBuilder::new(app, "Tabs")
+        .item(&new_tab)
+        .item(&close_tab)
+        .separator()
+        .item(&next_tab)
+        .item(&prev_tab)
+        .build()?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .item(&PredefinedMenuItem::maximize(app, None)?)
+        .item(&PredefinedMenuItem::fullscreen(app, None)?)
+        .build()?;
+
+    #[cfg(target_os = "macos")]
+    let menu = MenuBuilder::new(app)
+        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu])
+        .build()?;
+    #[cfg(not(target_os = "macos"))]
+    let menu = MenuBuilder::new(app)
+        .items(&[&file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu])
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    app.on_menu_event(|app, event| {
+        let id = event.id().0.as_str();
+        // Forward as a Tauri event so the React side's centralized
+        // dispatcher (mirror of the Cmd+T / Cmd+] / Cmd+W keydown
+        // handlers) fires the same code path.
+        let _ = app.emit("menu", id);
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -545,6 +653,15 @@ pub fn run() {
             }
             #[cfg(debug_assertions)]
             debug::start_debug_server(app.handle().clone());
+
+            // Native menu — replaces Tauri's auto-generated default. Each
+            // app-specific item emits a `menu` Tauri event whose payload
+            // is the item id; the frontend's listener fans out to the
+            // existing Cmd+T / Cmd+] / etc. handlers so the menu and
+            // keyboard shortcuts always do the same thing. Predefined
+            // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
+            // get native NS actions for free, no event handler needed.
+            install_app_menu(app.handle())?;
             Ok(())
         })
         .run(tauri::generate_context!())
