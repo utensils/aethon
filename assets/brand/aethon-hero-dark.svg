@@ -12,7 +12,6 @@
     </symbol>
   </defs>
 
-  <rect width="760" height="116" rx="12" fill="#1f1f23"/>
   <use href="#ae-cream" x="290" y="-2" width="60" height="68"/>
   <text x="350" y="53" font-size="68" fill="#fef3e2"
         font-family='"Bodoni 72", Didot, "Playfair Display", Georgia, "Times New Roman", serif'
