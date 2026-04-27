@@ -1172,6 +1172,9 @@ export default function App() {
               parent?: string;
             }[]
           | undefined) ?? [];
+        const extEventRoutes = (data.extensionEventRoutes as
+          | { componentId?: string; eventType?: string }[]
+          | undefined) ?? [];
         const discTabs = (data.discoveredTabs as
           | { tabId: string; lastModified: number }[]
           | undefined) ?? [];
@@ -1188,6 +1191,7 @@ export default function App() {
         // and bumps /slashCommands so the picker re-resolves via $ref.
         hydrateSlashCommands(extSlash);
         hydrateKeybindings(extKeys);
+        hydrateEventRoutes(extEventRoutes);
         // Push the persisted menu list into Tauri so the native menu
         // is correct on first paint after webview reload. Errors are
         // logged but non-fatal — the menu falls back to built-ins-only.
@@ -1409,6 +1413,14 @@ export default function App() {
           | { combo: string; action: string; description?: string }[]
           | undefined) ?? [];
         hydrateKeybindings(list);
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "extension_event_routes": {
+        const list = (data.routes as
+          | { componentId?: string; eventType?: string }[]
+          | undefined) ?? [];
+        hydrateEventRoutes(list);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -1858,6 +1870,18 @@ export default function App() {
   // ref so the API surface above can mutate it without re-rendering.
   const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
 
+  // Extension event-route intercepts. When a route matches an outbound
+  // event from the renderer, App's onEvent handler returns false so the
+  // event bypasses the built-in switch and goes through the standard
+  // a2ui_event channel — letting a paired aethon.onEvent handler on the
+  // bridge intercept chat submits / sidebar clicks / etc. without a
+  // React-side fork. Wildcard form: { eventType: "submit" } intercepts
+  // submits from any component; { componentId: "sidebar" } intercepts
+  // every sidebar event.
+  const extensionEventRoutesRef = useRef<
+    { componentId?: string; eventType?: string }[]
+  >([]);
+
   // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
   // by the keydown handler; written by hydrateKeybindings on
   // `extension_keybindings` deltas. Built-ins (Cmd+T / Cmd+] / Cmd+[ /
@@ -1890,6 +1914,15 @@ export default function App() {
       })),
     }));
   }, []);
+
+  // Hydrate the extension event-route intercepts. The list is wholesale
+  // — every delta from the bridge replaces the prior set. Stored in a
+  // ref since the matching loop in onEvent reads it on every event.
+  function hydrateEventRoutes(
+    routes: { componentId?: string; eventType?: string }[],
+  ) {
+    extensionEventRoutesRef.current = routes;
+  }
 
   // Hydrate the extension-registered keybindings map from a bridge
   // delta (or replayed `ready`). Combos arrive in any human-readable
@@ -2169,6 +2202,39 @@ export default function App() {
   // hands off control.
   const onEvent = useMemo(
     () => async (component: { id: string }, eventType: string, data?: unknown) => {
+      // Extensions can register event-route intercepts via
+      // aethon.registerEventRoute. When an event matches a registered
+      // route, we return false here so the renderer falls through to
+      // the default dispatch (a2ui_event → bridge), letting the
+      // extension's aethon.onEvent({componentType, descendantId})
+      // handler run instead of the built-in switch below. Wildcards:
+      // a route with only `componentId` matches any eventType for
+      // that component; only `eventType` matches every component.
+      const routes = extensionEventRoutesRef.current;
+      if (routes.length > 0) {
+        const matched = routes.some((r) => {
+          const cidOk = !r.componentId || r.componentId === component.id;
+          const evtOk = !r.eventType || r.eventType === eventType;
+          return cidOk && evtOk;
+        });
+        if (matched) {
+          // Suppress optimistic UI: the renderer always applies an
+          // optimistic update for change/submit on $ref-bound inputs
+          // before this callback runs, but for an intercepted submit
+          // we still want the bridge to get the event so a paired
+          // handler on the bridge can decide what to do (e.g. preprocess
+          // the prompt before sendChat).
+          // Returning false lets the renderer's invoke('dispatch_a2ui_event')
+          // fire normally. `data` (which carries `value` for submits)
+          // rides along intact.
+          // Suppress sendChat side effect for chat-input submits — the
+          // bridge handler is now the source of truth for that event.
+          // For other intercepted events (sidebar select, tab close)
+          // returning false here is sufficient.
+          // (We don't filter by component.id; the test above did that.)
+          return false;
+        }
+      }
       if (component.id === "chat-input" && eventType === "submit") {
         const value = (data as { value?: string } | undefined)?.value ?? "";
         await sendChat(value);

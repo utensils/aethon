@@ -8,6 +8,26 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Pluggable `onEvent` routing — intercept built-in handlers.**
+  New `aethon.registerEventRoute({componentId?, eventType?})` and
+  `aethon.unregisterEventRoute(...)`. When the renderer fires an event
+  matching a registered route, App's onEvent callback skips the built-in
+  switch (chat-input submit, sidebar select, tab actions, etc.) and
+  forwards the event through `a2ui_event` so a paired
+  `aethon.onEvent({componentType, descendantId})` handler can intercept.
+  Wildcard form: omit `componentId` (matches any component for that
+  eventType) or `eventType` (matches all events from a component).
+  `aethon.listEventRoutes()` returns the registered intercepts.
+  Replayed on `ready`. Surfaced in `RuntimeSnapshot.eventRoutes`.
+- **Registerable menu items.** New `aethon.registerMenuItem({label,
+  action, location?, id?, parent?})` and `unregisterMenuItem(id)`.
+  Bridge ships `extension_menu_items` events; the frontend forwards to
+  a `set_extension_menu_items` Tauri command which rebuilds the native
+  App menu (extension entries appear under an "Extensions" submenu)
+  AND the tray menu. Click events emit `menu` events with id
+  `ext:<action>` which the frontend dispatcher routes via `a2ui_event`
+  so a paired `aethon.onEvent({componentType: "menu-item",
+  descendantId: "<action>"})` matcher fires. Replayed on `ready`.
 - **Vite-style port auto-increment for `dev`.** New `scripts/dev.sh`
   wrapper finds a free Vite port (starting 1420) and a free debug
   port (starting 19433), writes them to `~/.aethon/dev-info.json`,

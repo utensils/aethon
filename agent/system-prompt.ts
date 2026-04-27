@@ -63,6 +63,12 @@ export interface RuntimeSnapshot {
     location: "app" | "tray";
     parent?: string;
   }[];
+  // Extension-registered event routes — match shapes used to intercept
+  // events the App.tsx built-in dispatcher would otherwise consume
+  // (e.g. chat-input submits, sidebar clicks). When the renderer fires
+  // a matching event, it skips the built-in switch and forwards to
+  // the bridge as a normal a2ui_event.
+  eventRoutes: { componentId?: string; eventType?: string }[];
   // Frontend-mirrored UI state slices (sidebar.models, sidebar.themes,
   // connection, status, tabs, draft, messagesCount). Populated from the
   // `frontend_state_patch` channel — what's actually visible on screen.
@@ -351,6 +357,18 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     for (const m of snapshot.menuItems) {
       const parent = m.parent ? ` under \`${m.parent}\`` : "";
       lines.push(`- [${m.location}] \`${m.label}\` → action \`${m.action}\`${parent}`);
+    }
+  }
+
+  if (snapshot.eventRoutes.length > 0) {
+    lines.push("");
+    lines.push(
+      "Extension-intercepted event routes (these bypass App.tsx built-in handlers):",
+    );
+    for (const r of snapshot.eventRoutes) {
+      lines.push(
+        `- componentId=\`${r.componentId ?? "*"}\` eventType=\`${r.eventType ?? "*"}\``,
+      );
     }
   }
 

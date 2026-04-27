@@ -72,6 +72,13 @@
  *      // dispatch through the existing a2ui_event route as
  *      // {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
  *      //  data: {args}} so a paired aethon.onEvent matcher fires the handler.
+ *   { "type": "extension_event_routes", "mutationId"?: "...", "routes": [{componentId?, eventType?}, ...] }
+ *      // Emitted after each registerEventRoute / unregisterEventRoute
+ *      // call. Frontend stores the list and matches outbound renderer
+ *      // events against it before running the built-in dispatcher.
+ *      // Matching events skip the built-in switch and forward to the
+ *      // bridge as a2ui_event so a paired aethon.onEvent handler
+ *      // intercepts.
  *   { "type": "extension_menu_items", "mutationId"?: "...", "items": [{id, label, action, location, parent?}, ...] }
  *      // Emitted after each registerMenuItem / unregisterMenuItem call.
  *      // Frontend forwards to the `set_extension_menu_items` Tauri
@@ -831,6 +838,19 @@ async function main() {
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
 
+  // Event routes registered by extensions. Keyed by
+  // `<componentId>:<eventType>` (where empty fields match everything).
+  // When the frontend's renderer fires an event that matches one of
+  // these routes, it skips the built-in dispatcher and forwards the
+  // event to the bridge as a normal `a2ui_event`, so a paired
+  // `aethon.onEvent({componentType, descendantId})` handler runs
+  // instead of the hardcoded App.tsx switch. Lets extensions intercept
+  // chat-input submits, sidebar clicks, etc. without forking React.
+  const extensionEventRoutes = new Map<
+    string,
+    { componentId?: string; eventType?: string }
+  >();
+
   // Menu items registered by extensions. Surfaced to the frontend as
   // an `extension_menu_items` event; the React side invokes a Tauri
   // command that rebuilds the native menu (App menu and / or tray) so
@@ -1008,6 +1028,7 @@ async function main() {
       slashCommands: [...extensionSlashCommands.values()],
       keybindings: [...extensionKeybindings.values()],
       menuItems: [...extensionMenuItems.values()],
+      eventRoutes: [...extensionEventRoutes.values()],
       uiState: Object.fromEntries(frontendState),
       layoutStructure: summarizeLayoutStructure(),
     };
@@ -1301,6 +1322,58 @@ async function main() {
   // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
   // from the full list and appends id/label entries to /sidebar/themes
   // alongside the built-in dark/light items.
+  function _registerEventRoute(
+    route: unknown,
+  ): Promise<MutationResult> {
+    if (!route || typeof route !== "object") {
+      return Promise.resolve({ ok: false, error: "route required" });
+    }
+    const obj = route as { componentId?: unknown; eventType?: unknown };
+    const componentId =
+      typeof obj.componentId === "string" && obj.componentId.trim()
+        ? obj.componentId.trim()
+        : undefined;
+    const eventType =
+      typeof obj.eventType === "string" && obj.eventType.trim()
+        ? obj.eventType.trim()
+        : undefined;
+    if (!componentId && !eventType) {
+      const errorMsg = "registerEventRoute: at least one of componentId / eventType required";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const key = `${componentId ?? "*"}:${eventType ?? "*"}`;
+    extensionEventRoutes.set(key, {
+      ...(componentId ? { componentId } : {}),
+      ...(eventType ? { eventType } : {}),
+    });
+    const list = [...extensionEventRoutes.values()];
+    const { id, promise } = trackMutation();
+    send({ type: "extension_event_routes", mutationId: id, routes: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
+  function _unregisterEventRoute(route: unknown): Promise<MutationResult> {
+    if (!route || typeof route !== "object") {
+      return Promise.resolve({ ok: false, error: "route required" });
+    }
+    const obj = route as { componentId?: unknown; eventType?: unknown };
+    const componentId =
+      typeof obj.componentId === "string" ? obj.componentId : undefined;
+    const eventType =
+      typeof obj.eventType === "string" ? obj.eventType : undefined;
+    const key = `${componentId ?? "*"}:${eventType ?? "*"}`;
+    const had = extensionEventRoutes.delete(key);
+    if (!had) return Promise.resolve({ ok: false, error: "no such route" });
+    const list = [...extensionEventRoutes.values()];
+    const { id, promise } = trackMutation();
+    send({ type: "extension_event_routes", mutationId: id, routes: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
+  function _listEventRoutes() {
+    return [...extensionEventRoutes.values()];
+  }
   function _registerMenuItem(
     item: unknown,
   ): Promise<MutationResult> {
@@ -1523,6 +1596,9 @@ async function main() {
     unregisterKeybinding: _unregisterKeybinding,
     registerMenuItem: _registerMenuItem,
     unregisterMenuItem: _unregisterMenuItem,
+    registerEventRoute: _registerEventRoute,
+    unregisterEventRoute: _unregisterEventRoute,
+    listEventRoutes: _listEventRoutes,
     listExtensions: _listExtensions,
     listComponents: _listComponents,
     listThemes: _listThemes,
@@ -1629,6 +1705,7 @@ async function main() {
       extensionSlashCommands: [...extensionSlashCommands.values()],
       extensionKeybindings: [...extensionKeybindings.values()],
       extensionMenuItems: [...extensionMenuItems.values()],
+      extensionEventRoutes: [...extensionEventRoutes.values()],
       discoveredTabs,
     });
   }

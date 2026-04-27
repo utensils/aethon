@@ -153,6 +153,36 @@ The picker shows extension commands alongside the built-ins; users get
 the same `↑/↓/Tab/Enter` UX. Re-registering with the same `name`
 overwrites the previous metadata.
 
+### `registerEventRoute({ componentId?, eventType? })` / `unregisterEventRoute({ componentId?, eventType? })` / `listEventRoutes()`
+
+Intercept events the App's built-in dispatcher would normally handle
+(`chat-input:submit`, `sidebar:select`, `tab-strip:close`, etc.). When
+an event matches a registered route the renderer skips the built-in
+switch and forwards the event through `a2ui_event` to a paired
+`aethon.onEvent({componentType, descendantId})` handler. Wildcards:
+omit `componentId` to match any component for that event type; omit
+`eventType` to match all events from a component.
+
+```ts
+// Pre-process every chat submit before the agent sees it.
+globalThis.aethon.registerEventRoute({
+  componentId: "chat-input",
+  eventType: "submit",
+});
+globalThis.aethon.onEvent(
+  { componentType: "chat-input", eventType: "submit" },
+  async (event, ctx) => {
+    const value = (event.data as { value?: string } | undefined)?.value ?? "";
+    const enriched = `[${new Date().toISOString()}] ${value}`;
+    await ctx.pi.prompt(enriched);
+  },
+);
+```
+
+`listEventRoutes()` returns the full set of registered intercepts
+(extensions only — built-ins are baked into App.tsx and remain the
+default for unmatched events).
+
 ### `registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)`
 
 Add an entry to the native macOS menu bar (or system tray) that the
