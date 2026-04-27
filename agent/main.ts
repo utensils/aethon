@@ -979,16 +979,24 @@ async function main() {
             // than `error` so they don't clobber the frontend's waiting
             // flag — a handler-side failure must not hide the Stop
             // button for whatever prompt the user actually has running.
-            Promise.resolve(
-              handler(ev, {
-                setState: aethonApi.setState,
-                registerComponent: aethonApi.registerComponent,
-                pi: piCtx,
-              }),
-            ).catch((err) => {
-              const message = err instanceof Error ? err.message : String(err);
-              send({ type: "notice", message: `a2ui handler: ${message}` });
-            });
+            // Wrap the handler call inside the .then() callback so a
+            // synchronous throw is caught by .catch() too — calling
+            // handler(...) directly inside Promise.resolve(...) lets a
+            // sync throw escape to the outer message-loop catch, which
+            // would emit type:"error" and clear the frontend's waiting
+            // state.
+            Promise.resolve()
+              .then(() =>
+                handler(ev, {
+                  setState: aethonApi.setState,
+                  registerComponent: aethonApi.registerComponent,
+                  pi: piCtx,
+                }),
+              )
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                send({ type: "notice", message: `a2ui handler: ${message}` });
+              });
           }
           break;
         }
