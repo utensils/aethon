@@ -1,0 +1,11 @@
+{
+  "name": "@example/aethon-skill-demo",
+  "version": "0.1.0",
+  "description": "Example npm-distributed Aethon skill — registered via the `aethon` manifest field.",
+  "type": "module",
+  "main": "src/index.ts",
+  "aethon": {
+    "entry": "src/index.ts"
+  },
+  "license": "MIT"
+}

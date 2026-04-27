@@ -420,12 +420,57 @@ struct AgentWatcher {
     _watcher: notify::RecommendedWatcher,
 }
 
+struct DebounceMsg {
+    settle_ms: u64,
+    paths: Vec<PathBuf>,
+}
+
+/// Single-thread debounce worker — collapses bursts of file events
+/// into one agent kill after the channel goes quiet for `settle_ms`.
+/// Each new message resets the timeout; the largest settle requested
+/// across the burst wins (so a node_modules event that arrives during
+/// an extension burst doesn't get prematurely fired).
+fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandle) {
+    use std::sync::mpsc::RecvTimeoutError;
+
+    loop {
+        // Block until we have at least one event to act on.
+        let first = match rx.recv() {
+            Ok(m) => m,
+            Err(_) => return, // sender dropped — watcher gone
+        };
+        let mut settle = first.settle_ms;
+        let mut last_paths = first.paths;
+        // Drain further events until the channel is quiet for `settle` ms.
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_millis(settle)) {
+                Ok(next) => {
+                    settle = settle.max(next.settle_ms);
+                    last_paths = next.paths;
+                }
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        }
+        // Quiet — fire the kill once.
+        let state: State<'_, AgentProcess> = app.state();
+        if let Ok(mut guard) = state.0.lock()
+            && let Some(mut child) = guard.take()
+        {
+            let pid = child.id();
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = app.emit("agent-reloaded", "");
+            eprintln!(
+                "[agent-watch] killed pid={pid} after {settle}ms settle; will respawn on next request (last paths={last_paths:?})",
+            );
+        }
+    }
+}
+
 fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     use notify::event::{DataChange, ModifyKind};
     use notify::{EventKind, RecursiveMode, Watcher};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     // Compose the watch list. Each path is included only if it exists
     // — missing extension dirs are normal for fresh installs.
@@ -446,6 +491,13 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // (or mkdir) and restart Aethon to start watching.
         let pi_ext = h.join(".pi/agent/extensions");
         if pi_ext.exists() { watch_paths.push(pi_ext); }
+        // ~/.aethon/skills/node_modules holds npm-distributed skill
+        // packages (manifest with `aethon` field). Pre-create so a
+        // first `npm install --prefix ~/.aethon/skills <pkg>` triggers
+        // a reload without needing to restart the app.
+        let skills_modules = h.join(".aethon/skills/node_modules");
+        let _ = std::fs::create_dir_all(&skills_modules);
+        if skills_modules.exists() { watch_paths.push(skills_modules); }
     }
     // Bridge source dir is dev-only — release ships a compiled sidecar
     // and editing the source has no effect on the running binary.
@@ -458,9 +510,16 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         return None;
     }
 
-    let last_fire = Arc::new(AtomicU64::new(0));
+    // Trailing-edge debounce backed by a single worker thread (NOT
+    // one thread per event). The watcher posts each qualifying event
+    // through a channel; the worker's `recv_timeout` resets on each
+    // arrival and only fires the kill when the channel goes quiet for
+    // the configured settle window. npm install bursts produce
+    // thousands of events; spawning a thread per event would exhaust
+    // OS resources on the very scenario this is supposed to handle.
     let app_clone = app.clone();
-    let last_fire_clone = last_fire.clone();
+    let (debounce_tx, debounce_rx) = std::sync::mpsc::channel::<DebounceMsg>();
+    std::thread::spawn(move || run_debounce_worker(debounce_rx, app_clone.clone()));
 
     let mut watcher = match notify::recommended_watcher(
         move |res: notify::Result<notify::Event>| {
@@ -508,31 +567,19 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
                 return;
             }
 
-            // Debounce — editors fire several events per save (1.5s window).
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let last = last_fire_clone.load(Ordering::Relaxed);
-            if now.saturating_sub(last) < 1500 {
-                return;
-            }
-            last_fire_clone.store(now, Ordering::Relaxed);
-
-            // Kill the current child; the next inbound message will respawn.
-            let state: State<'_, AgentProcess> = app_clone.state();
-            if let Ok(mut guard) = state.0.lock()
-                && let Some(mut child) = guard.take()
-            {
-                let pid = child.id();
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = app_clone.emit("agent-reloaded", "");
-                eprintln!(
-                    "[agent-watch] killed pid={pid}; will respawn on next request (paths={:?})",
-                    event.paths
-                );
-            }
+            // node_modules events get a longer settle window because
+            // npm install can produce IO bursts spaced out beyond the
+            // editor-save scale. Edits in agent/ or extension dirs
+            // use a tighter window so the dev cycle stays snappy.
+            let in_node_modules = event.paths.iter().any(|p| {
+                p.components()
+                    .any(|c| matches!(c.as_os_str().to_str(), Some("node_modules")))
+            });
+            let settle_ms: u64 = if in_node_modules { 3000 } else { 1000 };
+            let _ = debounce_tx.send(DebounceMsg {
+                settle_ms,
+                paths: event.paths.clone(),
+            });
         },
     ) {
         Ok(w) => w,
