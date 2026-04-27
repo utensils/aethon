@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-27 (M5 progress — phase 1 quick wins, mutation feedback channel, frontend-state mirror, empty-state composite, for-each primitive, chrome props, theme directory, layout-structure snapshot).
+Last reviewed: 2026-04-27 (M5 progress — phase 1 quick wins, mutation feedback channel, frontend-state mirror, empty-state composite, for-each primitive, chrome props, theme directory, layout-structure snapshot, registerable slash commands + keybindings, compositional sidebar items, A2UI primitive expansion, multi-tab restore via empty-state, layout catalogue + sidebar opt-in).
 
 ---
 
