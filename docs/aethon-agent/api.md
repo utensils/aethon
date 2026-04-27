@@ -153,6 +153,32 @@ The picker shows extension commands alongside the built-ins; users get
 the same `↑/↓/Tab/Enter` UX. Re-registering with the same `name`
 overwrites the previous metadata.
 
+### `registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)`
+
+Add an entry to the native macOS menu bar (or system tray) that the
+user can click. `location` is `"app"` (App menu — appears under an
+"Extensions" submenu) or `"tray"` (status-bar tray menu); defaults to
+`"app"`. `id` defaults to `action`.
+
+```ts
+globalThis.aethon.registerMenuItem({
+  label: "Summarize commits",
+  action: "summarize-commits",
+  location: "app",
+});
+globalThis.aethon.onEvent(
+  { componentType: "menu-item", descendantId: "summarize-commits" },
+  async (_event, ctx) => {
+    await ctx.pi.prompt("Summarize the last 5 commits in 3 bullets.");
+  },
+);
+```
+
+The Rust shell rebuilds the native menu on every register / unregister
+call, so updates appear immediately. Click events flow through the
+same `a2ui_event` route as buttons / sidebar items, so per-tab
+attribution and handler dedup work identically.
+
 ### `registerKeybinding({ combo, action?, description? })` / `unregisterKeybinding(combo)`
 
 Add an extension-supplied keyboard shortcut. `combo` is a "+"-joined

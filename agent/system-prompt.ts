@@ -53,6 +53,16 @@ export interface RuntimeSnapshot {
   // NOT included here — they're hardcoded in the frontend; this is the
   // extension delta only.
   keybindings: { combo: string; action: string; description?: string }[];
+  // Extension-registered menu items (id + label + action + location +
+  // optional parent submenu name). location is "app" or "tray". Built-in
+  // items are NOT listed.
+  menuItems: {
+    id: string;
+    label: string;
+    action: string;
+    location: "app" | "tray";
+    parent?: string;
+  }[];
   // Frontend-mirrored UI state slices (sidebar.models, sidebar.themes,
   // connection, status, tabs, draft, messagesCount). Populated from the
   // `frontend_state_patch` channel — what's actually visible on screen.
@@ -332,6 +342,15 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     for (const k of snapshot.keybindings) {
       const desc = k.description ? ` — ${k.description}` : "";
       lines.push(`- \`${k.combo}\` → action \`${k.action}\`${desc}`);
+    }
+  }
+
+  if (snapshot.menuItems.length > 0) {
+    lines.push("");
+    lines.push("Extension-registered menu items:");
+    for (const m of snapshot.menuItems) {
+      const parent = m.parent ? ` under \`${m.parent}\`` : "";
+      lines.push(`- [${m.location}] \`${m.label}\` → action \`${m.action}\`${parent}`);
     }
   }
 

@@ -1043,6 +1043,28 @@ export default function App() {
     // so menu and Cmd+T / Cmd+] / etc. always do the same thing.
     const unlistenMenu = listen<string>("menu", (event) => {
       const id = event.payload;
+      // Extension menu items use the `ext:<action>` prefix so they don't
+      // collide with built-in ids. Route them through the existing
+      // a2ui_event channel as {componentType:"menu-item",
+      // componentId:"menu-item__tpl__<action>", data:{action}} so a
+      // paired aethon.onEvent({componentType:"menu-item",
+      // descendantId:"<action>"}, handler) fires.
+      if (id.startsWith("ext:")) {
+        const action = id.slice(4);
+        invoke("dispatch_a2ui_event", {
+          event: JSON.stringify({
+            componentId: `menu-item__tpl__${action}`,
+            componentType: "menu-item",
+            templateRootType: "menu-item",
+            eventType: "invoke",
+            data: { action },
+          }),
+          tabId: stateRef.current.activeTabId,
+        }).catch(() => {
+          /* bridge gone or webview reload mid-flight */
+        });
+        return;
+      }
       switch (id) {
         case "new_tab": newTab(); break;
         case "close_tab": {
@@ -1141,6 +1163,15 @@ export default function App() {
         const extKeys = (data.extensionKeybindings as
           | { combo: string; action: string; description?: string }[]
           | undefined) ?? [];
+        const extMenu = (data.extensionMenuItems as
+          | {
+              id: string;
+              label: string;
+              action: string;
+              location: "app" | "tray";
+              parent?: string;
+            }[]
+          | undefined) ?? [];
         const discTabs = (data.discoveredTabs as
           | { tabId: string; lastModified: number }[]
           | undefined) ?? [];
@@ -1157,6 +1188,16 @@ export default function App() {
         // and bumps /slashCommands so the picker re-resolves via $ref.
         hydrateSlashCommands(extSlash);
         hydrateKeybindings(extKeys);
+        // Push the persisted menu list into Tauri so the native menu
+        // is correct on first paint after webview reload. Errors are
+        // logged but non-fatal — the menu falls back to built-ins-only.
+        if (extMenu.length > 0) {
+          invoke("set_extension_menu_items", { items: extMenu }).catch(
+            (err: unknown) => {
+              console.warn("[menu] set_extension_menu_items failed:", err);
+            },
+          );
+        }
         // Surface discovered persistent sessions in the empty-state's
         // recent-sessions list. Filter out tabIds we already have local
         // records for so the same session isn't listed twice (open AND
@@ -1369,6 +1410,31 @@ export default function App() {
           | undefined) ?? [];
         hydrateKeybindings(list);
         ackMutation(data.mutationId, true);
+        break;
+      }
+      case "extension_menu_items": {
+        const list = (data.items as
+          | {
+              id: string;
+              label: string;
+              action: string;
+              location: "app" | "tray";
+              parent?: string;
+            }[]
+          | undefined) ?? [];
+        // Forward to Tauri so the native menu rebuilds. Ack on success
+        // (rebuild) or failure (rare — usually means a malformed item
+        // slipped through validation).
+        invoke("set_extension_menu_items", { items: list })
+          .then(() => ackMutation(data.mutationId, true))
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            ackMutation(
+              data.mutationId,
+              false,
+              `frontend_rejected: set_extension_menu_items ${message}`,
+            );
+          });
         break;
       }
       case "state_patch": {

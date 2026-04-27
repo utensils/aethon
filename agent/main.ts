@@ -72,6 +72,14 @@
  *      // dispatch through the existing a2ui_event route as
  *      // {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
  *      //  data: {args}} so a paired aethon.onEvent matcher fires the handler.
+ *   { "type": "extension_menu_items", "mutationId"?: "...", "items": [{id, label, action, location, parent?}, ...] }
+ *      // Emitted after each registerMenuItem / unregisterMenuItem call.
+ *      // Frontend forwards to the `set_extension_menu_items` Tauri
+ *      // command which rebuilds the native app + tray menus. Clicks
+ *      // emit `menu` events with id `ext:<action>` which the frontend
+ *      // dispatcher routes via a2ui_event so a paired
+ *      // aethon.onEvent({componentType:"menu-item", descendantId:"<action>"})
+ *      // handler fires.
  *   { "type": "extension_keybindings", "mutationId"?: "...", "bindings": [{combo, action, description?}, ...] }
  *      // Emitted after each registerKeybinding / unregisterKeybinding
  *      // call. Frontend matches keydown events against the canonicalized
@@ -823,6 +831,25 @@ async function main() {
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
 
+  // Menu items registered by extensions. Surfaced to the frontend as
+  // an `extension_menu_items` event; the React side invokes a Tauri
+  // command that rebuilds the native menu (App menu and / or tray) so
+  // extension entries appear next to the built-ins. Clicks emit the
+  // standard `menu` Tauri event with the prefixed id `ext:<action>`,
+  // which the React menu dispatcher routes via `a2ui_event` so a paired
+  // `aethon.onEvent({componentType: "menu-item", descendantId: <action>})`
+  // matcher fires the handler.
+  const extensionMenuItems = new Map<
+    string,
+    {
+      id: string;
+      label: string;
+      action: string;
+      location: "app" | "tray";
+      parent?: string;
+    }
+  >();
+
   // Keybindings registered by extensions. Combo is a "+"-joined token
   // ("Cmd+Shift+P", "Ctrl+]", "Alt+M") — frontend normalizes to a canonical
   // form for keydown matching. Action is an opaque string the handler
@@ -980,6 +1007,7 @@ async function main() {
       })),
       slashCommands: [...extensionSlashCommands.values()],
       keybindings: [...extensionKeybindings.values()],
+      menuItems: [...extensionMenuItems.values()],
       uiState: Object.fromEntries(frontendState),
       layoutStructure: summarizeLayoutStructure(),
     };
@@ -1273,6 +1301,58 @@ async function main() {
   // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
   // from the full list and appends id/label entries to /sidebar/themes
   // alongside the built-in dark/light items.
+  function _registerMenuItem(
+    item: unknown,
+  ): Promise<MutationResult> {
+    if (!item || typeof item !== "object") {
+      return Promise.resolve({ ok: false, error: "menu item required" });
+    }
+    const obj = item as {
+      id?: unknown;
+      label?: unknown;
+      action?: unknown;
+      location?: unknown;
+      parent?: unknown;
+    };
+    const label = typeof obj.label === "string" ? obj.label.trim() : "";
+    const action = typeof obj.action === "string" ? obj.action.trim() : "";
+    if (!label || !action) {
+      const errorMsg = "registerMenuItem: { label, action } required";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    // id defaults to action — callers can override to ship multiple
+    // menu items pointing at the same action (e.g. "Run linter" in the
+    // app menu AND the tray).
+    const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim() : action;
+    const location: "app" | "tray" =
+      obj.location === "tray" ? "tray" : "app";
+    const parent = typeof obj.parent === "string" ? obj.parent : undefined;
+    extensionMenuItems.set(id, {
+      id,
+      label,
+      action,
+      location,
+      ...(parent ? { parent } : {}),
+    });
+    const list = [...extensionMenuItems.values()];
+    const { id: mid, promise } = trackMutation();
+    send({ type: "extension_menu_items", mutationId: mid, items: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
+  function _unregisterMenuItem(id: unknown): Promise<MutationResult> {
+    if (typeof id !== "string" || !id.trim()) {
+      return Promise.resolve({ ok: false, error: "id required" });
+    }
+    const had = extensionMenuItems.delete(id.trim());
+    if (!had) return Promise.resolve({ ok: false, error: "no such id" });
+    const list = [...extensionMenuItems.values()];
+    const { id: mid, promise } = trackMutation();
+    send({ type: "extension_menu_items", mutationId: mid, items: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
   function _registerKeybinding(
     binding: unknown,
   ): Promise<MutationResult> {
@@ -1441,6 +1521,8 @@ async function main() {
     registerSlashCommand: _registerSlashCommand,
     registerKeybinding: _registerKeybinding,
     unregisterKeybinding: _unregisterKeybinding,
+    registerMenuItem: _registerMenuItem,
+    unregisterMenuItem: _unregisterMenuItem,
     listExtensions: _listExtensions,
     listComponents: _listComponents,
     listThemes: _listThemes,
@@ -1546,6 +1628,7 @@ async function main() {
       extensionThemes: [...extensionThemes.values()],
       extensionSlashCommands: [...extensionSlashCommands.values()],
       extensionKeybindings: [...extensionKeybindings.values()],
+      extensionMenuItems: [...extensionMenuItems.values()],
       discoveredTabs,
     });
   }

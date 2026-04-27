@@ -6,6 +6,24 @@ use std::sync::{Mutex, OnceLock};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// Extension-registered menu item. Mirrors the shape the bridge ships
+/// in `extension_menu_items` events so deserialization is direct.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtensionMenuItem {
+    pub id: String,
+    pub label: String,
+    pub action: String,
+    pub location: String, // "app" | "tray"
+    pub parent: Option<String>,
+}
+
+/// App-state container for extension menu items. The bridge can register
+/// items at any time; the frontend forwards each delta into
+/// `set_extension_menu_items`, which persists the latest list here and
+/// rebuilds the native menu.
+#[derive(Default)]
+pub struct ExtensionMenuStore(pub Mutex<Vec<ExtensionMenuItem>>);
+
 /// Resolve `<home>/.aethon/<name>` after rejecting path-traversal segments.
 /// The parent directory is created on demand. Uses Tauri's cross-platform
 /// `home_dir()` so Windows (USERPROFILE), macOS, and Linux all resolve
@@ -683,12 +701,44 @@ fn updater_available() -> bool {
     cfg!(not(any(target_os = "android", target_os = "ios"))) && updater_pubkey_configured()
 }
 
+/// Replace the persisted set of extension-registered menu items and
+/// rebuild both the App menu and the tray menu so the new entries
+/// appear. Idempotent — the frontend re-invokes this on every
+/// `extension_menu_items` event from the bridge, including the empty
+/// list case (extensions all unregistered).
+#[tauri::command]
+fn set_extension_menu_items(
+    items: Vec<ExtensionMenuItem>,
+    app: AppHandle,
+    store: State<'_, ExtensionMenuStore>,
+) -> Result<(), String> {
+    {
+        let mut guard = store.0.lock().map_err(|e| format!("lock: {e}"))?;
+        *guard = items.clone();
+    }
+    install_app_menu(&app, &items)
+        .map_err(|e| format!("install_app_menu: {e}"))?;
+    install_tray(&app, &items)
+        .map_err(|e| format!("install_tray: {e}"))?;
+    Ok(())
+}
+
 /// Build and attach the native app menu. The frontend listens for a
 /// `menu` Tauri event whose payload is the activated item id; both
 /// menu clicks and the existing keyboard shortcuts converge on the
 /// same React-side dispatcher. Predefined NS items (Quit, Hide, Cut,
 /// Copy, Paste, Minimize, ...) get native behavior automatically.
-fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// `extension_items` carries any `aethon.registerMenuItem` entries from
+/// extensions tagged `location: "app"`. They appear under an
+/// "Extensions" submenu and emit `menu` events with id `ext:<action>`
+/// so the frontend dispatcher can route them via `a2ui_event` to a
+/// paired `aethon.onEvent({componentType:"menu-item", descendantId})`
+/// matcher.
+fn install_app_menu(
+    app: &AppHandle,
+    extension_items: &[ExtensionMenuItem],
+) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
     use tauri::Emitter;
 
@@ -793,14 +843,46 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .item(&issues_item)
         .build()?;
 
+    // Build the extension submenu. Each extension item id is prefixed
+    // with `ext:` so the React-side menu dispatcher can route it to
+    // a2ui_event without colliding with built-in ids. Items with
+    // `location: "tray"` are deferred to the tray builder below.
+    let app_extension_items: Vec<&ExtensionMenuItem> = extension_items
+        .iter()
+        .filter(|i| i.location == "app")
+        .collect();
+    let extensions_submenu = if !app_extension_items.is_empty() {
+        let mut b = SubmenuBuilder::new(app, "Extensions");
+        for item in &app_extension_items {
+            let id = format!("ext:{}", item.action);
+            let mb = MenuItemBuilder::with_id(&id, &item.label).build(app)?;
+            b = b.item(&mb);
+        }
+        Some(b.build()?)
+    } else {
+        None
+    };
+
     #[cfg(target_os = "macos")]
-    let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu, &help_menu])
-        .build()?;
+    let menu = {
+        let mut b = MenuBuilder::new(app).items(&[
+            &app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu,
+        ]);
+        if let Some(ref s) = extensions_submenu {
+            b = b.item(s);
+        }
+        b.items(&[&window_menu, &help_menu]).build()?
+    };
     #[cfg(not(target_os = "macos"))]
-    let menu = MenuBuilder::new(app)
-        .items(&[&file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu, &help_menu])
-        .build()?;
+    let menu = {
+        let mut b = MenuBuilder::new(app).items(&[
+            &file_menu, &edit_menu, &view_menu, &tabs_menu,
+        ]);
+        if let Some(ref s) = extensions_submenu {
+            b = b.item(s);
+        }
+        b.items(&[&window_menu, &help_menu]).build()?
+    };
 
     app.set_menu(menu)?;
 
@@ -820,7 +902,14 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 /// Aethon (Cmd+H) can re-summon it without going through the dock.
 /// Reuses the bundled app icon as the tray glyph; macOS gets the
 /// template-image treatment so it adapts to dark/light menu bars.
-fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// `extension_items` carries any `aethon.registerMenuItem` entries
+/// from extensions tagged `location: "tray"`. They appear after the
+/// built-in items and dispatch `menu` events with id `ext:<action>`.
+fn install_tray(
+    app: &AppHandle,
+    extension_items: &[ExtensionMenuItem],
+) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     use tauri::Manager;
@@ -843,7 +932,26 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let new_tab_item =
         MenuItem::with_id(app, "tray:new_tab", "New Tab", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray:quit", "Quit Aethon", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &new_tab_item, &quit_item])?;
+    // Extension-supplied tray items (location: "tray") appear after the
+    // built-ins. Each id is prefixed `ext:` so the click handler below
+    // can route them through Tauri's `menu` event with the existing
+    // dispatcher pattern.
+    let mut extension_menu_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
+    for item in extension_items.iter().filter(|i| i.location == "tray") {
+        let id = format!("ext:{}", item.action);
+        let mi = MenuItem::with_id(app, &id, &item.label, true, None::<&str>)?;
+        extension_menu_items.push(mi);
+    }
+    // Build the menu's item slice. Mix built-ins with extension entries.
+    let mut item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+        &show_item,
+        &new_tab_item,
+        &quit_item,
+    ];
+    for ext in &extension_menu_items {
+        item_refs.push(ext);
+    }
+    let menu = Menu::with_items(app, &item_refs)?;
 
     let icon = app
         .default_window_icon()
@@ -863,7 +971,8 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .show_menu_on_left_click(!cfg!(target_os = "macos"))
         .menu(&menu)
         .on_menu_event(|app, event| {
-            match event.id().as_ref() {
+            let id = event.id().as_ref();
+            match id {
                 "tray:show" => focus_main(app),
                 "tray:new_tab" => {
                     // Forward as a "menu" event so the React side's
@@ -874,6 +983,13 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = tauri::Emitter::emit(app, "menu", "new_tab");
                 }
                 "tray:quit" => app.exit(0),
+                other if other.starts_with("ext:") => {
+                    // Extension item — bring window forward so the
+                    // handler's UI changes are visible, then forward
+                    // through the same `menu` event the app menu uses.
+                    focus_main(app);
+                    let _ = tauri::Emitter::emit(app, "menu", other);
+                }
                 _ => {}
             }
         })
@@ -927,6 +1043,7 @@ pub fn run() {
             write_state,
             read_config,
             updater_available,
+            set_extension_menu_items,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
@@ -948,8 +1065,13 @@ pub fn run() {
             // keyboard shortcuts always do the same thing. Predefined
             // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
             // get native NS actions for free, no event handler needed.
-            install_app_menu(app.handle())?;
-            install_tray(app.handle())?;
+            install_app_menu(app.handle(), &[])?;
+            install_tray(app.handle(), &[])?;
+            // Initialize the extension menu store empty; the bridge
+            // ships items via `extension_menu_items` events that the
+            // frontend forwards to `set_extension_menu_items`, which
+            // re-runs both installers with the persisted list.
+            app.manage(ExtensionMenuStore::default());
             Ok(())
         })
         .run(tauri::generate_context!())
