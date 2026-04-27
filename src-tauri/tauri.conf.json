@@ -26,6 +26,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "James Brink",
+    "homepage": "https://github.com/utensils/aethon",
+    "copyright": "Copyright © 2026 James Brink. MIT License.",
+    "category": "DeveloperTool",
+    "shortDescription": "pi with a face — agent-driven desktop shell.",
+    "longDescription": "Aethon wraps the pi-coding-agent in a Tauri 2 desktop workspace where the agent renders its UI as A2UI components. The agent can mutate the layout in real time — registering sidebar sections, themes, and interactive panels via globalThis.aethon — making the entire window an extension surface, not just the chat.",
     "externalBin": [
       "binaries/aethon-agent"
     ],
@@ -39,6 +45,9 @@
       "icons/icon.icns",
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
   }
 }
