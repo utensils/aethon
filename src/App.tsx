@@ -116,10 +116,77 @@ export default function App() {
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
 
-  // Theme — persisted to `~/.aethon/theme` so the choice survives reloads.
+  // Themes — built-in `dark`/`light` plus extension-registered ones. Persisted
+  // to `~/.aethon/theme` so the choice survives reloads.
   // Resolution priority: per-session disk file → config.toml `[ui] theme`
   // → OS `prefers-color-scheme` → dark. Migrates the legacy
   // `aethon-theme` localStorage entry on first read.
+  //
+  // Extension themes are kept in a ref (not React state) so injectThemeStyle
+  // can apply CSS imperatively without re-rendering and `setTheme` can look
+  // up an id without a stale closure. The sidebar items list lives in
+  // `/sidebar/themes` (see hydrateThemes below) so the existing $ref-bound
+  // sidebar item path picks them up.
+  interface ExtensionTheme {
+    id: string;
+    label: string;
+    vars: Record<string, string>;
+  }
+  const themesRef = useRef<Map<string, ExtensionTheme>>(new Map());
+  // Built-in themes always available. CSS for these lives in styles.css —
+  // we don't inject a <style> tag for them.
+  const BUILTIN_THEMES: { id: string; label: string }[] = [
+    { id: "dark", label: "Dark" },
+    { id: "light", label: "Light" },
+  ];
+
+  // Inject (or replace) the <style> element holding an extension theme's
+  // CSS custom properties. Keyed by id so re-registering replaces the
+  // previous rule rather than stacking.
+  function injectThemeStyle(theme: ExtensionTheme) {
+    const styleId = `aethon-theme-${theme.id}`;
+    let el = document.getElementById(styleId) as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement("style");
+      el.id = styleId;
+      document.head.appendChild(el);
+    }
+    const body = Object.entries(theme.vars)
+      .map(([k, v]) => `  ${k}: ${v};`)
+      .join("\n");
+    // CSS.escape is widely supported in webviews (Chromium 46+, WebKit 10+).
+    // Falls back to a conservative regex strip if the runtime doesn't ship it.
+    const safe = (window.CSS && window.CSS.escape)
+      ? window.CSS.escape(theme.id)
+      : theme.id.replace(/[^A-Za-z0-9_-]/g, "");
+    el.textContent =
+      `:root[data-theme="${safe}"] {\n  color-scheme: dark;\n${body}\n}`;
+  }
+
+  // Apply a fresh themes list — replace the registry, inject CSS for each,
+  // and mirror id/label pairs to /sidebar/themes so the sidebar updates.
+  function hydrateThemes(list: ExtensionTheme[]) {
+    themesRef.current = new Map(list.map((t) => [t.id, t]));
+    for (const t of list) injectThemeStyle(t);
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+      return {
+        ...prev,
+        sidebar: {
+          ...sidebar,
+          themes: [...BUILTIN_THEMES, ...list.map((t) => ({ id: t.id, label: t.label }))],
+        },
+      };
+    });
+  }
+
+  function listThemes(): { id: string; label: string }[] {
+    return [
+      ...BUILTIN_THEMES,
+      ...[...themesRef.current.values()].map((t) => ({ id: t.id, label: t.label })),
+    ];
+  }
+
   useEffect(() => {
     (async () => {
       const [saved, config] = await Promise.all([
@@ -128,7 +195,7 @@ export default function App() {
       ]);
       const trimmed = saved.trim();
       const initial =
-        trimmed === "light" || trimmed === "dark"
+        trimmed.length > 0
           ? trimmed
           : config.ui.theme
             ? config.ui.theme
@@ -139,9 +206,9 @@ export default function App() {
     })();
   }, []);
 
-  function setTheme(theme: "dark" | "light") {
-    document.documentElement.dataset.theme = theme;
-    writeState("theme", theme).catch(() => {
+  function setTheme(id: string) {
+    document.documentElement.dataset.theme = id;
+    writeState("theme", id).catch(() => {
       /* ignore */
     });
   }
@@ -372,6 +439,12 @@ export default function App() {
         const extPatches = (data.extensionLayoutPatches as
           | { path: string; value: unknown }[]
           | undefined) ?? [];
+        const extThemes = (data.extensionThemes as ExtensionTheme[] | undefined) ?? [];
+        // Hydrate extension themes BEFORE the layout state merge below so
+        // /sidebar/themes carries the full list (built-ins + extension)
+        // when the merge runs. hydrateThemes also injects the CSS so a
+        // saved choice has the rule available before data-theme is read.
+        hydrateThemes(extThemes);
         registry.setTemplates(extComponents);
         // Restore any extension-supplied layout, then replay queued
         // patches. Falls back to the boot layout when none is reported
@@ -436,6 +509,11 @@ export default function App() {
       case "extension_components": {
         const components = (data.components as Record<string, unknown>) ?? {};
         registry.setTemplates(components);
+        break;
+      }
+      case "extension_themes": {
+        const themes = (data.themes as ExtensionTheme[] | undefined) ?? [];
+        hydrateThemes(themes);
         break;
       }
       case "state_patch": {
@@ -663,6 +741,7 @@ export default function App() {
       appendSystem,
       clearChat,
       setTheme,
+      listThemes,
       setModel,
       resetLayout: () => setLayout(BOOT_LAYOUT),
       listSkills: () => registry.list().map((s) => s.name),
@@ -786,10 +865,10 @@ export default function App() {
           await setModel(selected.itemId);
           return true;
         }
-        if (
-          selected?.sectionId === "themes" &&
-          (selected.itemId === "dark" || selected.itemId === "light")
-        ) {
+        if (selected?.sectionId === "themes" && selected.itemId) {
+          // Accept any registered theme id (built-ins + extension themes).
+          // The CSS for built-ins lives in styles.css; extension themes
+          // had their <style> tag injected on hydrateThemes().
           setTheme(selected.itemId);
           return true;
         }

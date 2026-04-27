@@ -91,6 +91,21 @@ declare global {
           title: string;
           items?: { id: string; label: string; active?: boolean }[];
         }): void;
+
+        /**
+         * Register (or replace by id) a color scheme. `vars` is a map of
+         * CSS custom properties — keys must start with `--`, e.g.
+         * `{ "--bg": "#001122", "--text": "#fff", "--accent": "#9af" }`.
+         * The frontend injects `:root[data-theme="<id>"] { ... }` into a
+         * <style> element keyed by id and adds the theme to the sidebar
+         * Themes section. Switching themes goes through the same
+         * `select` event the built-in dark/light items already use.
+         */
+        registerTheme(theme: {
+          id: string;
+          label?: string;
+          vars: Record<string, string>;
+        }): void;
       }
     | undefined;
 }

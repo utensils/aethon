@@ -9,7 +9,11 @@
 export interface SlashCommandContext {
   appendSystem: (text: string) => void;
   clearChat: () => void;
-  setTheme: (theme: "dark" | "light") => void;
+  // Switch the active theme by id. "dark"/"light" are always available;
+  // extension-registered themes appear here too once they've been
+  // hydrated from the bridge's `extension_themes` event.
+  setTheme: (id: string) => void;
+  listThemes: () => { id: string; label: string }[];
   setModel: (id: string) => Promise<void>;
   resetLayout: () => void;
   listSkills: () => string[];
@@ -42,16 +46,31 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     },
     {
       name: "theme",
-      description: "Switch theme (dark | light)",
-      usage: "<dark|light>",
+      description: "Switch theme by id, or list available themes",
+      usage: "[id]",
       run: (args, ctx) => {
-        const v = args.trim().toLowerCase();
-        if (v === "dark" || v === "light") {
-          ctx.setTheme(v);
-          ctx.appendSystem(`Theme set to ${v}.`);
-        } else {
-          ctx.appendSystem("Usage: `/theme dark` or `/theme light`.");
+        const v = args.trim();
+        const themes = ctx.listThemes();
+        if (!v) {
+          const list = themes.map((t) => `- ${t.id} — ${t.label}`).join("\n");
+          ctx.appendSystem(
+            themes.length > 0
+              ? `Available themes:\n${list}`
+              : "No themes registered.",
+          );
+          return;
         }
+        const match = themes.find((t) => t.id === v);
+        if (!match) {
+          ctx.appendSystem(
+            `Unknown theme: \`${v}\`. Try one of: ${
+              themes.map((t) => t.id).join(", ") || "(none)"
+            }`,
+          );
+          return;
+        }
+        ctx.setTheme(match.id);
+        ctx.appendSystem(`Theme set to ${match.label}.`);
       },
     },
     {

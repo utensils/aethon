@@ -26,15 +26,21 @@
  *   { "type": "patch_layout", "path": "/components/0/children/2", "value": {...} }
  *      // Apply a JSON Pointer mutation to the active layout tree without
  *      // shipping a full replacement. Reaches the frontend as `layout_patch`.
+ *   { "type": "register_theme", "theme": { id, label, vars } }
+ *      // Register a color scheme. `vars` is a map of CSS custom properties
+ *      // (keys must start with `--`); the frontend injects them into a
+ *      // `:root[data-theme="<id>"]` rule and adds the theme to the sidebar.
  *
  * Outbound (bridge → stdout):
  *   { "type": "ready", "model": "<id>", "models": [{id,label,available}, ...],
  *     "extensionComponents": {<componentType>: <template>, ...},
- *     "extensionState": {<jsonPointer>: <value>, ...} }
+ *     "extensionState": {<jsonPointer>: <value>, ...},
+ *     "extensionThemes": [{id, label, vars}, ...] }
  *      // Snapshot of currently-registered extension templates AND the
  *      // most recent value at every path an extension pushed via setState,
  *      // sent on every ready emission so a webview reload picks them up
- *      // without losing state.
+ *      // without losing state. extensionThemes ships the full theme list
+ *      // so the frontend can rebuild its <style> tags + sidebar items.
  *   { "type": "extension_components", "components": {<componentType>: <template>, ...} }
  *      // Emitted after each registration delta; frontend hydrates templates
  *      // into the SkillRegistry.
@@ -45,6 +51,9 @@
  *      // Replace the active A2UI layout. Frontend calls window.aethon.setLayout.
  *   { "type": "layout_patch", "path": "/foo", "value": <any> }
  *      // Patch a path inside the active layout payload via JSON Pointer.
+ *   { "type": "extension_themes", "themes": [{id, label, vars}, ...] }
+ *      // Emitted after each registerTheme call. The frontend rebuilds its
+ *      // theme registry from the full list (no incremental delta).
  *   { "type": "notice", "message": "..." }
  *      // Non-terminal informational message. The frontend renders it as a
  *      // system chat bubble WITHOUT touching the waiting/status flags, so
@@ -310,6 +319,36 @@ function toolCardPayload(opts: {
 interface AethonExtensionApi {
   registerComponent(componentType: string, template: unknown): void;
   setState(path: string, value: unknown): void;
+  registerTheme?: (theme: unknown) => void;
+}
+
+interface ThemeRecord {
+  id: string;
+  label: string;
+  vars: Record<string, string>;
+}
+
+// Sanitize CSS custom property names (must start with `--`) and values
+// (drop `<` to block trivially nested </style> injection — anything more
+// elaborate would still need to land inside an attribute or url() context
+// we don't construct). Returns null if the theme is too malformed to use.
+function normalizeTheme(input: unknown): ThemeRecord | null {
+  if (!input || typeof input !== "object") return null;
+  const t = input as { id?: unknown; label?: unknown; vars?: unknown };
+  const id = typeof t.id === "string" ? t.id.trim() : "";
+  if (!/^[A-Za-z][\w-]*$/.test(id)) return null;
+  const label = typeof t.label === "string" && t.label.trim().length > 0
+    ? t.label.trim()
+    : id;
+  const vars: Record<string, string> = {};
+  if (t.vars && typeof t.vars === "object") {
+    for (const [k, v] of Object.entries(t.vars as Record<string, unknown>)) {
+      if (!/^--[A-Za-z0-9_-]+$/.test(k)) continue;
+      if (typeof v !== "string") continue;
+      vars[k] = v.replace(/[<>]/g, "");
+    }
+  }
+  return { id, label, vars };
 }
 
 interface AethonExtensionModule {
@@ -362,6 +401,9 @@ async function main() {
   // no-op. The state maps below close over the same references the rest of
   // the bridge uses, so the extension API stays in sync with the registry.
   const extensionComponents = new Map<string, unknown>();
+  // Themes registered by extensions, keyed by id. Insertion order is
+  // preserved on iteration so the sidebar shows them in registration order.
+  const extensionThemes = new Map<string, ThemeRecord>();
   let extensionStateTree: Record<string, unknown> = {};
   // Latest extension-supplied layout (set by setLayout, mutated by
   // patchLayout). Retained so a webview reload's `report` → `ready`
@@ -453,6 +495,24 @@ async function main() {
       : [...existing, section];
     _setState("/sidebar/extraSections", next);
   }
+  // Register a color scheme. Extension-side, the contract is "give me an
+  // id, a label, and a CSS-variable map" — the bridge sanitizes it (see
+  // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
+  // from the full list and appends id/label entries to /sidebar/themes
+  // alongside the built-in dark/light items.
+  function _registerTheme(theme: unknown): void {
+    const normalized = normalizeTheme(theme);
+    if (!normalized) {
+      send({
+        type: "error",
+        message: "registerTheme: theme requires {id, label?, vars}",
+      });
+      return;
+    }
+    extensionThemes.set(normalized.id, normalized);
+    const list = [...extensionThemes.values()];
+    send({ type: "extension_themes", themes: list });
+  }
 
   const aethonApi = {
     registerComponent: _registerComponent,
@@ -461,6 +521,7 @@ async function main() {
     setLayout: _setLayout,
     patchLayout: _patchLayout,
     registerSidebarSection: _registerSidebarSection,
+    registerTheme: _registerTheme,
   };
   type AethonApi = typeof aethonApi;
   (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
@@ -507,6 +568,7 @@ async function main() {
       extensionState: extensionStateTree,
       extensionLayout,
       extensionLayoutPatches: pendingLayoutPatches,
+      extensionThemes: [...extensionThemes.values()],
     });
   }
 
@@ -659,6 +721,7 @@ async function main() {
       path?: string;
       value?: unknown;
       payload?: unknown;
+      theme?: unknown;
       event?: {
         componentId?: string;
         componentType?: string;
@@ -826,6 +889,14 @@ async function main() {
             break;
           }
           aethonApi.patchLayout(msg.path, msg.value);
+          break;
+        }
+        case "register_theme": {
+          if (!msg.theme) {
+            send({ type: "error", message: "register_theme: missing theme" });
+            break;
+          }
+          aethonApi.registerTheme(msg.theme);
           break;
         }
         default: {
