@@ -13,11 +13,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Resolve the Rust triple — match what Tauri's bundler uses. Falls back to
-# uname-derived guesses when rustc isn't on PATH (CI without a Rust install).
-if command -v rustc >/dev/null 2>&1; then
+# Resolve the Rust triple — match what Tauri's bundler uses. Priority:
+#   1. --target argument passed in (e.g. `build-agent.sh --target=...`)
+#   2. CARGO_BUILD_TARGET / TAURI_ENV_TARGET_TRIPLE env vars (set by
+#      `cargo tauri build --target <X>` and during cross-compile CI)
+#   3. `rustc -vV` host triple (default for native builds)
+#   4. uname-derived guess (CI without a Rust install)
+TRIPLE=""
+for arg in "$@"; do
+  case "$arg" in
+    --target=*) TRIPLE="${arg#--target=}" ;;
+  esac
+done
+if [ -z "$TRIPLE" ] && [ -n "${CARGO_BUILD_TARGET:-}" ]; then
+  TRIPLE="$CARGO_BUILD_TARGET"
+fi
+if [ -z "$TRIPLE" ] && [ -n "${TAURI_ENV_TARGET_TRIPLE:-}" ]; then
+  TRIPLE="$TAURI_ENV_TARGET_TRIPLE"
+fi
+if [ -z "$TRIPLE" ] && command -v rustc >/dev/null 2>&1; then
   TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-else
+fi
+if [ -z "$TRIPLE" ]; then
   case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)   TRIPLE="aarch64-apple-darwin" ;;
     Darwin-x86_64)  TRIPLE="x86_64-apple-darwin" ;;
@@ -40,7 +57,13 @@ case "$TRIPLE" in
 esac
 
 OUT_DIR="src-tauri/binaries"
-OUT_NAME="aethon-agent-$TRIPLE"
+# Tauri's externalBin on Windows looks for `aethon-agent-<triple>.exe`;
+# on every other target it's the bare name. Match that convention so
+# the bundler picks the file up automatically.
+case "$TRIPLE" in
+  *-windows-*) OUT_NAME="aethon-agent-$TRIPLE.exe" ;;
+  *)           OUT_NAME="aethon-agent-$TRIPLE" ;;
+esac
 mkdir -p "$OUT_DIR"
 
 echo "Compiling agent/main.ts → $OUT_DIR/$OUT_NAME (target=$BUN_TARGET)"

@@ -155,12 +155,15 @@ fn find_sidecar_binary() -> Result<PathBuf, String> {
     let triple = env!("AETHON_TARGET_TRIPLE");
     // Tauri's externalBin strips the triple suffix before placing the file
     // alongside the main exe (so users see `aethon-agent`, not the full
-    // triple name). Both paths are checked: stripped first, then the
-    // raw triple-suffixed name for the case where the script ran but
-    // bundling didn't.
+    // triple name). On Windows both the stripped and triple-suffixed
+    // names get a `.exe` extension. Check the stripped variant first
+    // (the one the bundler actually produces), then the raw triple
+    // form as a fallback for builds where the script ran but bundling
+    // didn't (e.g. running the dev exe straight out of target/release).
+    let ext = std::env::consts::EXE_SUFFIX; // "" on unix, ".exe" on windows
     let candidates = [
-        exe_dir.join("aethon-agent"),
-        exe_dir.join(format!("aethon-agent-{triple}")),
+        exe_dir.join(format!("aethon-agent{ext}")),
+        exe_dir.join(format!("aethon-agent-{triple}{ext}")),
     ];
     for path in &candidates {
         if path.exists() {
