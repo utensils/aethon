@@ -738,13 +738,22 @@ fn install_app_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .item(&PredefinedMenuItem::fullscreen(app, None)?)
         .build()?;
 
+    let docs_item =
+        MenuItemBuilder::with_id("help_docs", "Aethon Documentation").build(app)?;
+    let issues_item =
+        MenuItemBuilder::with_id("help_issues", "Report an Issue…").build(app)?;
+    let help_menu = SubmenuBuilder::new(app, "Help")
+        .item(&docs_item)
+        .item(&issues_item)
+        .build()?;
+
     #[cfg(target_os = "macos")]
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu])
+        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu, &help_menu])
         .build()?;
     #[cfg(not(target_os = "macos"))]
     let menu = MenuBuilder::new(app)
-        .items(&[&file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu])
+        .items(&[&file_menu, &edit_menu, &view_menu, &tabs_menu, &window_menu, &help_menu])
         .build()?;
 
     app.set_menu(menu)?;
@@ -843,6 +852,7 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 pub fn run() {
     let mut builder = tauri::Builder::default();
     builder = builder.plugin(tauri_plugin_process::init());
+    builder = builder.plugin(tauri_plugin_opener::init());
     // Gate the updater plugin on a configured pubkey. Without one,
     // signature verification can't decode anything and every update
     // would fail post-download — so we just don't register the plugin
