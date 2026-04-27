@@ -117,6 +117,42 @@ globalThis.aethon.registerSidebarSection({
 
 Wire clicks via `onEvent` (see below).
 
+### `registerSlashCommand({ name, description, usage? })`
+
+Add a slash command to the chat-input picker. `name` must match
+`/^[A-Za-z][\w-]*$/` and may not collide with built-ins (`clear`, `help`,
+`theme`, `model`, `reset`, `terminal`, `skills`).
+
+```ts
+globalThis.aethon.registerSlashCommand({
+  name: "tldr",
+  description: "Summarize the current conversation in 3 bullets",
+  usage: "[topic?]",
+});
+```
+
+Wire the handler through `aethon.onEvent` with `{componentType: "slash-command",
+descendantId: "<name>"}`. The dispatched event carries `data.args` (the text
+after the command name):
+
+```ts
+globalThis.aethon.onEvent(
+  { componentType: "slash-command", descendantId: "tldr" },
+  async (event, ctx) => {
+    const focus = (event.data as { args?: string } | undefined)?.args ?? "";
+    await ctx.pi.prompt(
+      focus
+        ? `Summarize the conversation focused on ${focus} in 3 bullets.`
+        : `Summarize the conversation in 3 bullets.`,
+    );
+  },
+);
+```
+
+The picker shows extension commands alongside the built-ins; users get
+the same `↑/↓/Tab/Enter` UX. Re-registering with the same `name`
+overwrites the previous metadata.
+
 ### `registerTheme({ id, label?, vars })`
 
 Register a CSS color scheme. `id` must match `/^[A-Za-z][\w-]*$/` and may

@@ -1002,12 +1002,21 @@ export default function App() {
           | { path: string; value: unknown }[]
           | undefined) ?? [];
         const extThemes = (data.extensionThemes as ExtensionTheme[] | undefined) ?? [];
+        const extSlash = (data.extensionSlashCommands as
+          | { name: string; description: string; usage?: string }[]
+          | undefined) ?? [];
         // Hydrate extension themes BEFORE the layout state merge below so
         // /sidebar/themes carries the full list (built-ins + extension)
         // when the merge runs. hydrateThemes also injects the CSS so a
         // saved choice has the rule available before data-theme is read.
         hydrateThemes(extThemes);
         registry.setTemplates(extComponents);
+        // Restore extension-registered slash commands so the picker shows
+        // them on first paint (no need to wait for an extension_slash_commands
+        // delta after reload). hydrateSlashCommands rewrites the merged
+        // catalog (built-ins + extensions), updates the picker state ref,
+        // and bumps /slashCommands so the picker re-resolves via $ref.
+        hydrateSlashCommands(extSlash);
         // Restore any extension-supplied layout, then replay queued
         // patches. Falls back to the boot layout when none is reported
         // so a removed/disabled extension stops bleeding stale chrome
@@ -1185,6 +1194,14 @@ export default function App() {
       case "extension_themes": {
         const themes = (data.themes as ExtensionTheme[] | undefined) ?? [];
         hydrateThemes(themes);
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "extension_slash_commands": {
+        const list = (data.commands as
+          | { name: string; description: string; usage?: string }[]
+          | undefined) ?? [];
+        hydrateSlashCommands(list);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -1571,11 +1588,16 @@ export default function App() {
   // Built once — handlers close over App-scope helpers via the ctx passed at
   // dispatch time, so the registry itself doesn't need state in scope.
   const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
+  // Set of names registered via extension delta. Used to reset to
+  // built-ins when an `extension_slash_commands` event arrives with a
+  // smaller list (extension uninstall / hot-reload drop). Without this
+  // we'd never garbage-collect names removed from the bridge's map.
+  const extensionSlashNamesRef = useRef<Set<string>>(new Set());
 
   // Surface the slash command list into layout state so the chat-input
   // autocomplete can resolve it via `$ref:/slashCommands`. Done once on
-  // mount because the registry is static for now (skill-registered
-  // commands will arrive in a later phase and trigger an update then).
+  // mount; subsequent updates flow through hydrateSlashCommands when
+  // extensions register / unregister commands via the bridge.
   useEffect(() => {
     setState((prev) => ({
       ...prev,
@@ -1586,6 +1608,51 @@ export default function App() {
       })),
     }));
   }, []);
+
+  // Merge extension-registered slash commands with the built-ins.
+  // Extension commands dispatch through the existing onEvent pipeline
+  // as {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
+  // data: {args}} so a paired bridge-side aethon.onEvent matcher fires
+  // the handler with no bespoke dispatch path.
+  function hydrateSlashCommands(
+    list: { name: string; description: string; usage?: string }[],
+  ) {
+    const builtins = buildBuiltinSlashCommands();
+    const builtinNames = new Set(builtins.map((c) => c.name));
+    const dispatched: SlashCommand[] = list
+      .filter((c) => !builtinNames.has(c.name)) // bridge already rejects collisions; defense-in-depth
+      .map((c) => ({
+        name: c.name,
+        description: c.description,
+        usage: c.usage,
+        run: async (args: string) => {
+          // Wrap the agent dispatch so the chat-side path stays uniform.
+          // No local state mutation — the handler may call setState/
+          // pi.prompt/etc through the bridge's ctx.
+          await invoke("dispatch_a2ui_event", {
+            event: JSON.stringify({
+              componentId: `slash-command__tpl__${c.name}`,
+              componentType: "slash-command",
+              templateRootType: "slash-command",
+              eventType: "invoke",
+              data: { args },
+            }),
+            tabId: stateRef.current.activeTabId,
+          });
+        },
+      }));
+    extensionSlashNamesRef.current = new Set(dispatched.map((c) => c.name));
+    slashCommandsRef.current = [...builtins, ...dispatched];
+    // Refresh the layout's bound /slashCommands so the picker re-resolves.
+    setState((prev) => ({
+      ...prev,
+      slashCommands: slashCommandsRef.current.map((c) => ({
+        name: c.name,
+        description: c.description,
+        usage: c.usage,
+      })),
+    }));
+  }
 
   function appendSystem(text: string) {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });

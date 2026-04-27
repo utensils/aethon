@@ -66,6 +66,12 @@
  *   { "type": "extension_themes", "mutationId"?: "...", "themes": [{id, label, vars}, ...] }
  *      // Emitted after each registerTheme call. The frontend rebuilds its
  *      // theme registry from the full list (no incremental delta).
+ *   { "type": "extension_slash_commands", "mutationId"?: "...", "commands": [{name, description, usage?}, ...] }
+ *      // Emitted after each registerSlashCommand call. Frontend merges
+ *      // with built-ins for the slash-command picker. Invocations
+ *      // dispatch through the existing a2ui_event route as
+ *      // {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
+ *      //  data: {args}} so a paired aethon.onEvent matcher fires the handler.
  *   { "type": "notice", "message": "..." }
  *      // Non-terminal informational message. The frontend renders it as a
  *      // system chat bubble WITHOUT touching the waiting/status flags, so
@@ -755,6 +761,18 @@ async function main() {
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
 
+  // Slash commands registered by extensions. Surfaced to the frontend
+  // so the chat-input picker shows them alongside the built-ins; clicks
+  // dispatch through the existing `a2ui_event` route as
+  // {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
+  //  data: {args}} so a paired `aethon.onEvent({componentType: "slash-command",
+  //  descendantId: "<name>"}, handler)` matcher fires the handler with no
+  // bespoke dispatch path.
+  const extensionSlashCommands = new Map<
+    string,
+    { name: string; description: string; usage?: string }
+  >();
+
   // Bridge-readable mirror of frontend-populated state slices. The
   // frontend pushes `frontend_state_patch { path, value }` whenever an
   // allowlisted slice changes (models, themes, connection, status, tabs,
@@ -887,6 +905,7 @@ async function main() {
         ...(match.descendantId ? { descendantId: match.descendantId } : {}),
         ...(match.eventType ? { eventType: match.eventType } : {}),
       })),
+      slashCommands: [...extensionSlashCommands.values()],
       uiState: Object.fromEntries(frontendState),
       layoutStructure: summarizeLayoutStructure(),
     };
@@ -1176,6 +1195,47 @@ async function main() {
   // normalizeTheme) and emits a delta. The frontend rebuilds <style> tags
   // from the full list and appends id/label entries to /sidebar/themes
   // alongside the built-in dark/light items.
+  function _registerSlashCommand(
+    cmd: unknown,
+  ): Promise<MutationResult> {
+    if (!cmd || typeof cmd !== "object") {
+      return Promise.resolve({ ok: false, error: "command requires { name }" });
+    }
+    const obj = cmd as { name?: unknown; description?: unknown; usage?: unknown };
+    const name = typeof obj.name === "string" ? obj.name.trim() : "";
+    // Names are constrained to a slug so they parse as one slash-command
+    // token (matches src/slashCommands.ts:parseSlashCommand). Reject
+    // collisions with built-ins so an extension can't accidentally
+    // shadow /clear, /help, etc. — built-in names checked here against
+    // a hardcoded list to stay independent of frontend imports.
+    const BUILTIN_SLASH_NAMES = new Set([
+      "clear", "help", "theme", "model", "reset", "terminal", "skills",
+    ]);
+    if (!/^[A-Za-z][\w-]*$/.test(name)) {
+      const errorMsg = "registerSlashCommand: name must match /^[A-Za-z][\\w-]*$/";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    if (BUILTIN_SLASH_NAMES.has(name)) {
+      const errorMsg = `registerSlashCommand: "${name}" collides with a built-in command`;
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const description =
+      typeof obj.description === "string" ? obj.description : "";
+    const usage = typeof obj.usage === "string" ? obj.usage : undefined;
+    extensionSlashCommands.set(name, {
+      name,
+      description,
+      ...(usage ? { usage } : {}),
+    });
+    const list = [...extensionSlashCommands.values()];
+    const { id, promise } = trackMutation();
+    send({ type: "extension_slash_commands", mutationId: id, commands: list });
+    scheduleStateFileWrite();
+    return promise;
+  }
+
   function _registerTheme(theme: unknown): Promise<MutationResult> {
     const normalized = normalizeTheme(theme);
     if (!normalized) {
@@ -1255,6 +1315,7 @@ async function main() {
     patchLayout: _patchLayout,
     registerSidebarSection: _registerSidebarSection,
     registerTheme: _registerTheme,
+    registerSlashCommand: _registerSlashCommand,
     listExtensions: _listExtensions,
     listComponents: _listComponents,
     listThemes: _listThemes,
@@ -1353,6 +1414,7 @@ async function main() {
       extensionLayout,
       extensionLayoutPatches: pendingLayoutPatches,
       extensionThemes: [...extensionThemes.values()],
+      extensionSlashCommands: [...extensionSlashCommands.values()],
     });
   }
 

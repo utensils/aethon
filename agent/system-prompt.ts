@@ -42,6 +42,12 @@ export interface RuntimeSnapshot {
     descendantId?: string;
     eventType?: string;
   }[];
+  // Extension-registered slash commands (name + description + optional
+  // usage). Lets the agent answer "what slash commands are wired?"
+  // without scraping. Built-ins (clear/help/theme/model/reset/terminal/
+  // skills) are NOT included here — they're in the frontend's static
+  // catalog; this is the extension delta only.
+  slashCommands: { name: string; description: string; usage?: string }[];
   // Frontend-mirrored UI state slices (sidebar.models, sidebar.themes,
   // connection, status, tabs, draft, messagesCount). Populated from the
   // `frontend_state_patch` channel — what's actually visible on screen.
@@ -295,6 +301,15 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
         .map((c) => `\`${c}\``)
         .join(", ")}.`,
     );
+  }
+
+  if (snapshot.slashCommands.length > 0) {
+    lines.push("");
+    lines.push("Extension-registered slash commands:");
+    for (const c of snapshot.slashCommands) {
+      const usage = c.usage ? ` ${c.usage}` : "";
+      lines.push(`- \`/${c.name}${usage}\` — ${c.description || "(no description)"}`);
+    }
   }
 
   if (snapshot.eventHandlers.length > 0) {

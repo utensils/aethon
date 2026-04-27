@@ -8,6 +8,18 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Registerable slash commands.** New
+  `aethon.registerSlashCommand({name, description, usage?})` records
+  command metadata; pair with `aethon.onEvent({componentType:
+  "slash-command", descendantId: "<name>"}, handler)` to wire the
+  action (handler receives `event.data.args`). Names must match
+  `/^[A-Za-z][\w-]*$/` and may not collide with built-ins
+  (`clear`, `help`, `theme`, `model`, `reset`, `terminal`, `skills`).
+  Frontend merges extension commands with built-ins for the chat-input
+  picker; invocations dispatch through the existing `a2ui_event` route
+  so per-tab attribution + handler dedup work uniformly. Replayed on
+  `ready` so reload restores the picker. Surfaced in
+  `RuntimeSnapshot.slashCommands` and the system-prompt runtime section.
 - **Loose-file theme directory.** `~/.aethon/themes/*.json` files are now
   loaded at boot via the same `normalizeTheme` validation path as
   extension-supplied themes. Each file is `{ id, label?, vars: { "--bg":
