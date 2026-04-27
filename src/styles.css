@@ -209,6 +209,21 @@ body {
   height: 44px;
 }
 
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-header-logo {
+  width: 28px;
+  height: 28px;
+  display: block;
+  border-radius: 6px;
+  /* The mark already has its own dark tile background, so the radius
+     just clips the outer rounded corners cleanly against the header. */
+}
+
 /* ---- Main canvas / chat history ----------------------------------------- */
 
 .a2ui-canvas {

@@ -7,6 +7,10 @@ import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { setPointer } from "./utils/jsonPointer";
+// Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
+// the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
+// instead of hardcoding a path that might 404 in a production bundle.
+import logoUrl from "./assets/aethon-logo.svg?url";
 
 // Immutable JSON Pointer write that preserves arrays. The generic
 // setPointer in utils/jsonPointer turns `{...arr}` into a plain object,
@@ -100,9 +104,10 @@ export default function App() {
   const registry = registryRef.current;
 
   // The layout's state IS the app state. Single source of truth, addressed by
-  // JSON Pointer from the layout payload.
+  // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
+  // can $ref it without the layout JSON having to know the hashed asset path.
   const [state, setState] = useState<Record<string, unknown>>(
-    () => ({ ...(BOOT_LAYOUT.state ?? {}) }),
+    () => ({ ...(BOOT_LAYOUT.state ?? {}), logoUrl }),
   );
 
   // Active layout payload — replaceable. Skills can swap the chrome wholesale
@@ -605,6 +610,15 @@ export default function App() {
         if (!delta) break;
         const messageId = (data.messageId as string) || undefined;
         appendOrAmendAgentText(delta, messageId);
+        break;
+      }
+      case "prompt_started": {
+        // Bridge tells us a prompt has begun. Sent by the handler-driven
+        // ctx.pi.prompt path so the chat input flips to Stop and the
+        // user can cancel a turn they didn't type. The user-typed
+        // chat path sets waiting locally before invoking send_message,
+        // so this re-flip is harmless when it arrives.
+        setStatusFlags({ waiting: true, status: "thinking…" });
         break;
       }
       case "response_end": {

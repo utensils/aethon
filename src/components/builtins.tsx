@@ -203,32 +203,45 @@ export function Code({ component, state }: ComponentProps) {
 }
 
 // Image component — renders a data URL or remote URL with a max-width cap.
-// Used by tool result cards (e.g. read tool returning an image).
+// Used by tool result cards (e.g. read tool returning an image) AND by
+// chrome (header logo), so the className prop opts out of the default
+// figure-style framing when the consumer wants raw, unbordered icon-style
+// rendering.
 export function Image({ component, state }: ComponentProps) {
   const props = component.props as {
     src: StringValue;
     alt?: StringValue;
     maxWidth?: NumberValue;
     caption?: StringValue;
+    className?: string;
   };
 
   const src = resolveString(props.src, state);
   const alt = props.alt ? resolveString(props.alt, state) : "";
   const maxWidth = props.maxWidth ? resolveNumber(props.maxWidth, state) : 480;
   const caption = props.caption ? resolveString(props.caption, state) : undefined;
+  const className = props.className;
 
-  const style: CSSProperties = {
-    display: "block",
-    maxWidth: `${maxWidth}px`,
-    width: "100%",
-    height: "auto",
-    borderRadius: "6px",
-    border: "1px solid var(--border)",
-  };
+  // When a className is provided, defer all styling to CSS so the consumer
+  // can size + crop without fighting the default figure styles. Without
+  // className, keep the full-width framed look the chat tool cards use.
+  const imgStyle: CSSProperties = className
+    ? { display: "block" }
+    : {
+        display: "block",
+        maxWidth: `${maxWidth}px`,
+        width: "100%",
+        height: "auto",
+        borderRadius: "6px",
+        border: "1px solid var(--border)",
+      };
 
   return (
-    <figure className="a2ui-image" style={{ margin: 0 }}>
-      {src && <img src={src} alt={alt} style={style} />}
+    <figure
+      className={className ? `a2ui-image ${className}` : "a2ui-image"}
+      style={{ margin: 0 }}
+    >
+      {src && <img src={src} alt={alt} className={className} style={imgStyle} />}
       {caption && (
         <figcaption
           style={{

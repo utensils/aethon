@@ -448,9 +448,39 @@ async function main() {
     eventType?: string;
     data?: unknown;
   }
+  // ctx.pi is a thin facade over pi-coding-agent's AgentSession scoped to
+  // what makes sense for an A2UI event handler. Following pi's convention,
+  // it's typed and intentionally narrow — handlers shouldn't need pi's
+  // full ExtensionContext and shouldn't be able to mutate pi's session
+  // state directly. Adding methods here is a deliberate choice: they
+  // become the contract for every UI handler in the ecosystem.
+  interface PiHandlerCtx {
+    /** Fire an LLM turn from the handler. The chat input UI updates the
+     *  same way it would for a user-typed message. Use this to wire
+     *  buttons / sidebar items to agent actions ("summarize git log",
+     *  "explain this file"). Rejects if a prompt is already in flight. */
+    prompt(text: string): Promise<void>;
+    /** Push a system message into the chat history. Non-terminal — does
+     *  not toggle waiting/Stop. Use for handler progress notes. */
+    notify(message: string): void;
+    /** Read-only session info: current model id and last 50 messages. */
+    readonly session: {
+      readonly model: string;
+      readonly messages: ReadonlyArray<unknown>;
+    };
+    /** AbortSignal that fires when the user presses Stop or a new chat
+     *  comes in. Pass to fetch / spawn / model calls so handler work
+     *  cancels with the rest of the turn. Undefined when the handler
+     *  fires outside an agent turn (most sidebar clicks). */
+    readonly signal: AbortSignal | undefined;
+  }
   type A2UIEventHandler = (
     event: A2UIEventInfo,
-    ctx: { setState: AethonApi["setState"]; registerComponent: AethonApi["registerComponent"] },
+    ctx: {
+      setState: AethonApi["setState"];
+      registerComponent: AethonApi["registerComponent"];
+      pi: PiHandlerCtx;
+    },
   ) => void | Promise<void>;
   const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
 
@@ -872,20 +902,101 @@ async function main() {
           const descendantId = ev.componentId?.includes("__tpl__")
             ? ev.componentId.split("__tpl__").slice(1).join("__tpl__")
             : undefined;
+          // Build the ctx.pi facade fresh per dispatch so handlers always
+          // see the current session model + last 50 messages. session.state
+          // is mutable, so reading it through a getter keeps the handler's
+          // view consistent with pi without leaking the AgentSession itself.
+          const piCtx: PiHandlerCtx = {
+            async prompt(text: string) {
+              if (!text || typeof text !== "string") return;
+              if (promptInFlight) {
+                send({
+                  type: "notice",
+                  message: "agent busy — handler prompt rejected",
+                });
+                throw new Error("agent busy — prompt in flight");
+              }
+              promptInFlight = true;
+              agentEndFired = false;
+              // Tell the frontend a turn is starting so it can flip
+              // waiting=true (Stop button visible, chat input disabled).
+              // Without this, a handler-fired prompt would stream invisibly
+              // and the user couldn't interrupt it.
+              send({ type: "prompt_started", source: "handler" });
+              // Return a real promise so handler authors can await
+              // completion ("ask LLM → render result → setState"). The
+              // promise resolves when pi's session.prompt resolves
+              // (agent_end fires). On error we still re-emit response_end
+              // so the frontend's waiting flag clears, then re-throw
+              // so the handler's await sees the failure.
+              try {
+                await session.prompt(text);
+              } catch (err) {
+                const m = err instanceof Error ? err.message : String(err);
+                send({ type: "error", message: `handler prompt: ${m}` });
+                throw err;
+              } finally {
+                if (!agentEndFired) {
+                  promptInFlight = false;
+                  send({ type: "response_end" });
+                }
+              }
+            },
+            notify(message: string) {
+              if (!message) return;
+              send({ type: "notice", message });
+            },
+            get session() {
+              const messages = session.messages ?? [];
+              return {
+                model: session.model ? modelKey(session.model) : "",
+                messages: messages.slice(-50),
+              };
+            },
+            // Pi's active-turn AbortSignal lives on `session.agent.signal`
+            // (verified via @mariozechner/pi-agent-core agent.d.ts:90).
+            // Returns undefined outside a turn — matches pi's own
+            // `ctx.signal` contract for extension handlers.
+            get signal() {
+              return session.agent?.signal;
+            },
+          };
           for (const { match, handler } of a2uiEventHandlers) {
             if (match.templateRootType && match.templateRootType !== ev.templateRootType) continue;
             if (match.componentType && match.componentType !== ev.componentType) continue;
             if (match.eventType && match.eventType !== ev.eventType) continue;
             if (match.descendantId && match.descendantId !== descendantId) continue;
-            try {
-              await handler(ev, {
-                setState: aethonApi.setState,
-                registerComponent: aethonApi.registerComponent,
+            // Fire-and-forget the handler: do NOT await it inside the
+            // stdin loop. If a handler awaits `ctx.pi.prompt(...)` (the
+            // documented pattern for chaining "prompt → render result"),
+            // awaiting here would keep the bridge pinned in this case
+            // until the agent turn settles — meaning a follow-up Stop
+            // command would queue behind it and never reach
+            // session.abort(). Handlers that need sequential work
+            // chain promises themselves; the bridge must stay pumpable.
+            //
+            // Errors surface as `notice` (a system chat bubble) rather
+            // than `error` so they don't clobber the frontend's waiting
+            // flag — a handler-side failure must not hide the Stop
+            // button for whatever prompt the user actually has running.
+            // Wrap the handler call inside the .then() callback so a
+            // synchronous throw is caught by .catch() too — calling
+            // handler(...) directly inside Promise.resolve(...) lets a
+            // sync throw escape to the outer message-loop catch, which
+            // would emit type:"error" and clear the frontend's waiting
+            // state.
+            Promise.resolve()
+              .then(() =>
+                handler(ev, {
+                  setState: aethonApi.setState,
+                  registerComponent: aethonApi.registerComponent,
+                  pi: piCtx,
+                }),
+              )
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                send({ type: "notice", message: `a2ui handler: ${message}` });
               });
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              send({ type: "error", message: `a2ui handler: ${message}` });
-            }
           }
           break;
         }
