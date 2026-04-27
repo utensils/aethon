@@ -141,12 +141,21 @@ Introspection (read-only):
 
 Built-in primitives the renderer always understands:
 - \`text\` — \`{ content, variant?: "body"|"small"|"large", color? }\`
+- \`heading\` — \`{ content, level?: 1..6 }\`
+- \`paragraph\` — \`{ content }\`
 - \`card\` — \`{ title?, description?, padding? }\` + children
 - \`button\` — \`{ label, variant?: "primary"|"secondary"|"ghost", disabled? }\`
 - \`container\` — \`{ direction: "row"|"column", gap?, padding?, align?, justify? }\` + children
+- \`divider\` — \`{ orientation?: "horizontal"|"vertical" }\`
 - \`code\` — \`{ content, language?, showLineNumbers? }\`
 - \`image\` — \`{ src, alt?, caption? }\`
 - \`text-input\` — \`{ value?, placeholder?, disabled?, onChange?, onSubmit? }\`
+- \`checkbox\` — \`{ value?, label?, disabled? }\` (fires "change" with \`{value: boolean}\`)
+- \`select\` — \`{ value?, options: [{value, label?}, ...] | $ref, placeholder? }\`
+- \`slider\` — \`{ value?, min?, max?, step?, showValue? }\` (fires "change" with \`{value: number}\`)
+- \`list\` — \`{ items: $ref|inline, ordered? }\` + per-item children template (\`/$item\` in scope)
+- \`table\` — \`{ rows: $ref|inline, columns: [{header?, field?, cell?}, ...] }\` (\`/$row\` in scope)
+- \`for-each\` — \`{ items: $ref|inline, key? }\` + children template (\`/$item\`, \`/$index\`, \`/$parent\` in scope)
 
 Skill-provided composites (extension-overridable): \`layout\`, \`sidebar\`,
 \`tab-strip\`, \`chat-history\`, \`chat-input\`, \`status-bar\`, \`terminal\`,

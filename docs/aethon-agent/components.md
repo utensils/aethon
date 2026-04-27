@@ -136,6 +136,107 @@ Each iteration's child ids get suffixed with `__$idx<n>` so React keys
 stay stable across N expansions. Re-renders automatically when the
 bound array mutates.
 
+### `heading`
+
+```ts
+{ content: StringValue, level?: 1 | 2 | 3 | 4 | 5 | 6 }
+```
+
+`level` defaults to 2.
+
+### `paragraph`
+
+```ts
+{ content: StringValue }
+```
+
+### `divider`
+
+```ts
+{ orientation?: "horizontal" | "vertical" }
+```
+
+### `checkbox`
+
+```ts
+{ value?: BooleanValue, label?: StringValue, disabled?: BooleanValue }
+```
+
+Fires `change` with `{ value: boolean }`.
+
+### `select`
+
+```ts
+{
+  value?: StringValue,
+  options: { value: string, label? }[] | { $ref: string },
+  disabled?: BooleanValue,
+  placeholder?: StringValue,
+}
+```
+
+Fires `change` with `{ value: string }`.
+
+### `slider`
+
+```ts
+{
+  value?: NumberValue,
+  min?: NumberValue,    // default 0
+  max?: NumberValue,    // default 100
+  step?: NumberValue,   // default 1
+  disabled?: BooleanValue,
+  showValue?: BooleanValue,
+}
+```
+
+Fires `change` with `{ value: number }`.
+
+### `list`
+
+```ts
+{
+  items: { $ref: string } | unknown[],
+  ordered?: BooleanValue,
+}
+```
+
+Renders an array as `<ul>` (or `<ol>` when `ordered` is truthy). The
+component's `children` are templates expanded per item with the same
+`/$item` / `/$index` / `/$parent` scope keys as `for-each`.
+
+```json
+{ "type": "list", "props": { "items": { "$ref": "/files" } },
+  "children": [
+    { "id": "row", "type": "container", "props": { "direction": "row", "gap": 6 },
+      "children": [
+        { "id": "name", "type": "text",
+          "props": { "content": { "$ref": "/$item/name" } } },
+        { "id": "size", "type": "text",
+          "props": { "content": { "$ref": "/$item/size" }, "variant": "small" } }
+      ] }
+  ] }
+```
+
+### `table`
+
+```ts
+{
+  rows: { $ref: string } | unknown[],
+  columns: {
+    header?: string,
+    field?: string,         // key into the row object
+    width?: string,         // CSS width
+    cell?: ComponentTree,   // optional template — sees /$row in scope
+  }[],
+}
+```
+
+Without `cell`, each cell prints `row[field]` as plain text. With `cell`,
+the column's template renders inside the cell with `/$row` (the row
+object), `/$index` (row position), and `/$parent` (surrounding state)
+available to nested `$ref`s.
+
 ### `text-input`
 
 ```ts

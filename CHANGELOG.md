@@ -8,6 +8,15 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **A2UI primitives expanded.** New built-in components the renderer
+  always understands: `heading` (level 1-6), `paragraph`, `divider`
+  (horizontal/vertical), `checkbox`, `select` (`options` accepts
+  inline arrays or `$ref`), `slider` (numeric range), `list`
+  (ordered/unordered, per-item template with `/$item` scope), `table`
+  (header + columns with optional per-cell templates seeing `/$row`).
+  Brings the renderer to 15 standard primitives. Bundled docs
+  (`components.md`) ship the schemas; system prompt's primitive list
+  updated.
 - **Compositional sidebar items.** Each `SidebarItem` can carry
   `componentType`. When set, the sidebar resolves it through the
   SkillRegistry and renders the registered template per row with

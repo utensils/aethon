@@ -12,7 +12,23 @@ import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, resolvePointer, setPointer } from "../utils/jsonPointer";
 import { useSkillRegistry } from "../skills/registry";
-import { Button, Card, Code, Container, Image, Text, TextInput } from "./builtins";
+import {
+  Button,
+  Card,
+  Checkbox,
+  Code,
+  Container,
+  Divider,
+  Heading,
+  Image,
+  List,
+  Paragraph,
+  Select,
+  Slider,
+  Table,
+  Text,
+  TextInput,
+} from "./builtins";
 
 export type A2UIEventHandler = (
   component: A2UIComponent,
@@ -119,12 +135,20 @@ const PRIMITIVE_REGISTRY: Record<
   React.ComponentType<BuiltinComponentProps>
 > = {
   text: Text,
+  heading: Heading,
+  paragraph: Paragraph,
   card: Card,
   button: Button,
   container: Container,
+  divider: Divider,
   code: Code,
   image: Image,
   "text-input": TextInput,
+  select: Select,
+  checkbox: Checkbox,
+  slider: Slider,
+  list: List,
+  table: Table,
 };
 
 export default function A2UIRenderer({
