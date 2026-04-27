@@ -496,7 +496,6 @@ async function main() {
   }
   function _setState(path: string, value: unknown, sourceTabId?: string): void {
     if (!path || typeof path !== "string") return;
-    extensionStateTree = setAtPointer(extensionStateTree, path, value);
     // tabId attribution priority:
     //   1. explicit sourceTabId (handler-scoped ctx.setState)
     //   2. currentAgentTabId — set while a tab's pi.prompt is in flight,
@@ -507,6 +506,21 @@ async function main() {
     //      truly tab-less setStates (e.g. a clock interval fired with
     //      no agent turn).
     const attributedTab = sourceTabId ?? currentAgentTabId;
+    // Per-tab mirrored writes (canvas / messages / draft / waiting /
+    // queueCount / model) DON'T belong in the global extensionStateTree
+    // — that gets replayed wholesale on `ready` and would smear one
+    // tab's state across whichever tab is active after the reload.
+    // Keep them off the global tree; the frontend stores them on the
+    // tab record (which survives reload via React state).
+    const segs = path.split("/").filter(Boolean);
+    const top = segs[0];
+    const isMirroredPerTab =
+      attributedTab !== undefined &&
+      (top === "messages" || top === "draft" || top === "waiting" ||
+       top === "queueCount" || top === "canvas" || top === "model");
+    if (!isMirroredPerTab) {
+      extensionStateTree = setAtPointer(extensionStateTree, path, value);
+    }
     send({
       type: "state_patch",
       path,

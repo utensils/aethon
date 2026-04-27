@@ -579,6 +579,10 @@ export default function App() {
     // first prompt can land before a follow-up set_model finishes —
     // the prompt would run on pi's default and lock the tab there
     // (set_model is rejected while a prompt is in flight).
+    // The new tab starts with an empty terminal buffer — clear the
+    // shared xterm so it doesn't keep showing the previous tab's
+    // scrollback until the next switch / output event.
+    dispatchTerminalReplay("");
     invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
