@@ -60,7 +60,13 @@ function applyOptimisticUpdate(
 export interface BuiltinComponentProps {
   component: A2UIComponent;
   state: Record<string, unknown>;
-  onEvent: (eventType: string, data?: unknown) => void;
+  // descendantId lets composites that render their own per-row controls
+  // (sidebar items, list rows) emit an event tagged with a stable child
+  // id so extension `onEvent({componentType:"sidebar-item", descendantId})`
+  // matchers can target a specific row. The renderer rewrites the
+  // outbound componentId to `<componentId>__tpl__<descendantId>` so the
+  // bridge's existing __tpl__ separator parsing produces that descendantId.
+  onEvent: (eventType: string, data?: unknown, descendantId?: string) => void;
   renderChildren?: () => React.ReactNode;
   renderChild?: (child: A2UIComponent) => React.ReactNode;
   // Tab the component lives on. Components that nest their own
@@ -194,6 +200,7 @@ export default function A2UIRenderer({
     eventType: string,
     data?: unknown,
     templateRootType?: string,
+    descendantId?: string,
   ) => {
     updateState((prev) => applyOptimisticUpdate(prev, component, eventType, data));
 
@@ -202,10 +209,18 @@ export default function A2UIRenderer({
       if (handled) return;
     }
 
+    // When a composite emits a per-row event with descendantId, rewrite
+    // the outbound componentId to include the standard __tpl__ separator
+    // so the bridge's a2ui_event parser pulls it into match.descendantId
+    // exactly as it does for template-expanded children.
+    const outboundComponentId = descendantId
+      ? `${component.id}__tpl__${descendantId}`
+      : component.id;
+
     try {
       await invoke("dispatch_a2ui_event", {
         event: JSON.stringify({
-          componentId: component.id,
+          componentId: outboundComponentId,
           // Carry the rendered component's type so extension a2ui_event
           // handlers can match on it without parsing the id. For template-
           // expanded children, this is the inner type (e.g. "button").
@@ -267,8 +282,8 @@ export default function A2UIRenderer({
         key={component.id}
         component={component}
         state={state}
-        onEvent={(eventType, data) =>
-          handleEvent(component, eventType, data, templateRootType)
+        onEvent={(eventType, data, descendantId) =>
+          handleEvent(component, eventType, data, templateRootType, descendantId)
         }
         renderChildren={renderChildren}
         renderChild={renderChild}

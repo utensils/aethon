@@ -158,10 +158,15 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
                           : "a2ui-sidebar-item"
                       }
                       onClick={() =>
-                        onEvent("select", {
-                          sectionId: section.id,
-                          itemId: item.id,
-                        })
+                        // descendantId carries item.id so onEvent matchers
+                        // like {componentType:"sidebar", descendantId:"open-readme"}
+                        // resolve as documented. data.{sectionId,itemId}
+                        // remain available for handlers that prefer payload.
+                        onEvent(
+                          "select",
+                          { sectionId: section.id, itemId: item.id },
+                          item.id,
+                        )
                       }
                     >
                       {item.label}

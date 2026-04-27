@@ -8,6 +8,47 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **`eventHandlers` in `RuntimeSnapshot` and `~/.aethon/state.json`.**
+  Match-shape only (templateRootType / componentType / descendantId /
+  eventType) — no function bodies, so the snapshot stays small and
+  serializable. Surfaced in the system prompt's runtime section so the
+  agent can answer "what onEvent handlers are wired?" without invoking
+  JS or scraping the registry.
+- **`BuiltinComponentProps.onEvent` 3rd-arg `descendantId`.** Composites
+  that render their own per-row controls (sidebar items, list rows) can
+  emit events tagged with a stable child id. The renderer rewrites the
+  outbound componentId to `<host>__tpl__<descendantId>` so the bridge's
+  existing `__tpl__` parser populates `match.descendantId` exactly as it
+  does for template-expanded children. Fixes the documented sidebar
+  matcher recipe (`{componentType:"sidebar", descendantId:"open-readme"}`)
+  that previously never matched.
+- **System-prompt section: "A2UI templates do not iterate arrays."**
+  Until the `for-each` primitive lands, the prompt explicitly tells the
+  agent that dynamic lists require regenerating the subtree on each
+  mutation via `patchLayout`, with a worked example. Saves a debugging
+  round-trip when the agent tries to bind a `$ref` to an array of
+  children.
+
+### Changed
+
+- **`button` fires `click` unconditionally** (no longer gated on the
+  `props.onClick` flag, which has been removed from the schema). Disabled
+  buttons remain inert. Agent-authored buttons that follow the bundled
+  docs now actually emit events on click.
+- **Handler `ctx.pi.prompt` errors emit `notice`, not `error`.** Sending
+  `error` from a failed handler-prompt was clearing the frontend's
+  `waiting` flag and hiding the Stop button on whatever turn the user
+  actually had running. Notice is non-terminal so the surrounding turn's
+  UI stays intact; the error still rethrows so the calling handler sees
+  it.
+- **`registerComponent` accepts both bare and wrapper template shapes.**
+  Bridge auto-unwraps `{components:[<single component>]}` to the single
+  component the renderer expects. Docs (`api.md`) updated to show the
+  bare-component form as canonical; wrapper form remains for back-compat
+  with existing extensions.
+
+### Added
+
 - **`getLayout()` returns the active rendered layout.** Bridge now
   preloads the canonical boot layout synchronously from
   `$AETHON_BOOT_LAYOUT_FILE` (set by the Tauri shell, pointing at the

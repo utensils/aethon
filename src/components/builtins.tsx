@@ -83,7 +83,6 @@ export function Button({ component, state, onEvent }: ComponentProps) {
     label: StringValue;
     variant?: "primary" | "secondary" | "ghost";
     disabled?: BooleanValue;
-    onClick?: string;
   };
 
   const label = resolveString(props.label, state);
@@ -91,9 +90,8 @@ export function Button({ component, state, onEvent }: ComponentProps) {
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
 
   const handleClick = () => {
-    if (props.onClick) {
-      onEvent("click", {});
-    }
+    if (disabled) return;
+    onEvent("click", {});
   };
 
   const style: CSSProperties = {

@@ -754,6 +754,14 @@ async function main() {
         model: t.session.model ? modelKey(t.session.model) : "",
         messageCount: t.session.messages?.length ?? 0,
       })),
+      // Match-shape only — function bodies are intentionally not exposed.
+      // Lets the agent see what's wired without scraping the registry.
+      eventHandlers: a2uiEventHandlers.map(({ match }) => ({
+        ...(match.templateRootType ? { templateRootType: match.templateRootType } : {}),
+        ...(match.componentType ? { componentType: match.componentType } : {}),
+        ...(match.descendantId ? { descendantId: match.descendantId } : {}),
+        ...(match.eventType ? { eventType: match.eventType } : {}),
+      })),
     };
   }
 
@@ -847,7 +855,23 @@ async function main() {
   // ambiguity (extensions sometimes destructure: `const { setState } = aethon`).
   function _registerComponent(componentType: string, template: unknown): void {
     if (!componentType || typeof componentType !== "string") return;
-    extensionComponents.set(componentType, template);
+    // Accept both shapes:
+    //   - bare component:    { id, type, props?, children? }
+    //   - payload wrapper:   { components: [<single component>] }
+    // The renderer expects the bare shape. Wrapper-shape templates from
+    // existing extensions / older docs are auto-unwrapped here so they
+    // continue to work while new templates can use the simpler form.
+    let normalized = template;
+    if (
+      template &&
+      typeof template === "object" &&
+      !("type" in (template as object)) &&
+      Array.isArray((template as { components?: unknown }).components)
+    ) {
+      const wrapped = (template as { components: unknown[] }).components;
+      if (wrapped.length === 1) normalized = wrapped[0];
+    }
+    extensionComponents.set(componentType, normalized);
     send({
       type: "extension_components",
       components: Object.fromEntries(extensionComponents),
@@ -1595,7 +1619,12 @@ async function main() {
                 );
               } catch (err) {
                 const m = err instanceof Error ? err.message : String(err);
-                send({ type: "error", tabId: handlerTabId, message: `handler prompt: ${m}` });
+                // notice (non-terminal) — must NOT clear the frontend's
+                // waiting flag. The handler's own prompt finished/failed,
+                // but the surrounding turn (whatever the user actually
+                // started) may still be in flight. Sending `error` here
+                // would hide the Stop button on that running prompt.
+                send({ type: "notice", tabId: handlerTabId, message: `handler prompt: ${m}` });
                 throw err;
               } finally {
                 if (!handlerTab.agentEndFired) {

@@ -33,6 +33,15 @@ export interface RuntimeSnapshot {
   components: string[];
   layoutSummary: string;
   tabs: { id: string; model: string; messageCount: number }[];
+  // Active aethon.onEvent registrations (match shape only — handler bodies
+  // are intentionally omitted so the snapshot stays small + serializable).
+  // Lets the agent answer "what handlers are wired?" without invoking JS.
+  eventHandlers: {
+    templateRootType?: string;
+    componentType?: string;
+    descendantId?: string;
+    eventType?: string;
+  }[];
 }
 
 // The static base prompt — describes the API surface and renderer
@@ -152,6 +161,33 @@ they specifically need pi-level hooks. Don't touch the Aethon source.
 See \`$AETHON_DOCS_DIR/extensions.md\` for examples and the
 \`register(api)\` contract.
 
+## A2UI templates do not iterate arrays
+
+A2UI templates are static trees — there is no \`for-each\` primitive yet.
+If the data you want to render is an N-element array (model picker filter
+results, a log tail, search hits), you cannot bind \`{$ref: "/some/array"}\`
+to children and have the renderer fan out one child per element.
+
+The supported pattern today: regenerate the subtree on each mutation via
+\`patchLayout\` or \`setState\`, building the array of components on the
+agent / extension side. Example:
+
+\`\`\`ts
+function renderRows(items) {
+  return items.map((it, i) => ({
+    id: \`row-\${i}\`, type: "container",
+    children: [{ id: \`row-\${i}-label\`, type: "text",
+      props: { content: it.label } }],
+  }));
+}
+globalThis.aethon.patchLayout("/components/0/children/0/children", renderRows(items));
+\`\`\`
+
+Composite components like \`sidebar\` accept their items as a \`$ref\` and
+expand them internally — that is NOT a generic primitive, it's per-composite
+behavior. Custom-components registered via \`registerComponent\` do not get
+array iteration.
+
 ## What you should NOT do
 
 - **Don't restart the agent for UI changes** — mutate \`globalThis.aethon\`
@@ -210,6 +246,19 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
         .map((c) => `\`${c}\``)
         .join(", ")}.`,
     );
+  }
+
+  if (snapshot.eventHandlers.length > 0) {
+    lines.push("");
+    lines.push("Active onEvent handlers (match-shape only):");
+    for (const h of snapshot.eventHandlers) {
+      const parts: string[] = [];
+      if (h.templateRootType) parts.push(`templateRootType=${h.templateRootType}`);
+      if (h.componentType) parts.push(`componentType=${h.componentType}`);
+      if (h.descendantId) parts.push(`descendantId=${h.descendantId}`);
+      if (h.eventType) parts.push(`eventType=${h.eventType}`);
+      lines.push(`- ${parts.length ? parts.join(", ") : "(matches everything)"}`);
+    }
   }
 
   lines.push("");

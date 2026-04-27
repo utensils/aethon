@@ -56,24 +56,27 @@ globalThis.aethon.patchLayout("/components/0/props/areas", [
 
 ### `registerComponent(type, template)`
 
-Define a new A2UI component type. The template is a sub-tree the renderer
-expands wherever `{type:"<type>"}` appears.
+Define a new A2UI component type. The template is a single A2UI component
+node (`{ id, type, props?, children? }`) that the renderer expands wherever
+`{type:"<type>"}` appears.
 
 ```ts
 globalThis.aethon.registerComponent("model-chip", {
-  components: [{
-    id: "chip",
-    type: "container",
-    props: { direction: "row", gap: 6, padding: 6, className: "chip" },
-    children: [
-      { id: "chip-label", type: "text",
-        props: { content: "Model:", variant: "small" } },
-      { id: "chip-value", type: "text",
-        props: { content: { "$ref": "/model" }, variant: "small" } },
-    ],
-  }],
+  id: "chip",
+  type: "container",
+  props: { direction: "row", gap: 6, padding: 6, className: "chip" },
+  children: [
+    { id: "chip-label", type: "text",
+      props: { content: "Model:", variant: "small" } },
+    { id: "chip-value", type: "text",
+      props: { content: { "$ref": "/model" }, variant: "small" } },
+  ],
 });
 ```
+
+The legacy payload-wrapper shape `{ components: [<single component>] }`
+is also accepted (auto-unwrapped) for backward compatibility, but the
+bare-component form is preferred.
 
 ### `registerSidebarSection({ id, title, items })`
 
