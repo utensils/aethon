@@ -639,6 +639,12 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager;
 
     fn focus_main(app: &AppHandle) {
+        // Cmd+H on macOS hides the app at the application level —
+        // WebviewWindow::show() doesn't unhide that. AppHandle::show()
+        // does. Call it first; on other platforms it's effectively a
+        // no-op since GUI apps can't be hidden the same way.
+        #[cfg(target_os = "macos")]
+        let _ = app.show();
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.unminimize();
             let _ = w.show();
