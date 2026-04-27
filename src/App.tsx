@@ -398,6 +398,13 @@ export default function App() {
           //      restored history when ready replays after a reload)
           //   2. extension setState patches (last-write-wins overrides)
           //   3. ready-owned runtime fields (model picker, status, etc.)
+          //
+          // Known limitation: keys an extension wrote earlier in the
+          // session via setState are NOT cleared when that extension
+          // stops reporting them (e.g. uninstalled mid-session). They
+          // survive in `prev` and re-appear here. Reset Aethon to clear
+          // — fix would require the bridge tracking extension-owned
+          // keys explicitly. Acceptable for the current scope.
           let next: Record<string, unknown> = { ...prev };
           if (extLayout && extLayout.state) {
             // Defaults semantics: deep-merge layout into a fresh object
