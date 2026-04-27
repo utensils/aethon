@@ -318,6 +318,30 @@ async function main() {
   // the bridge uses, so the extension API stays in sync with the registry.
   const extensionComponents = new Map<string, unknown>();
   let extensionStateTree: Record<string, unknown> = {};
+
+  // Handlers registered by extensions for a2ui_event messages from the
+  // frontend. Each entry's `match` predicates filter which events the
+  // handler runs on; a missing predicate matches any. Handlers can call
+  // ctx.setState/registerComponent in response to drive UI updates.
+  interface A2UIEventMatch {
+    templateRootType?: string;
+    componentType?: string;
+    descendantId?: string;
+    eventType?: string;
+  }
+  interface A2UIEventInfo {
+    componentId?: string;
+    componentType?: string;
+    templateRootType?: string;
+    eventType?: string;
+    data?: unknown;
+  }
+  type A2UIEventHandler = (
+    event: A2UIEventInfo,
+    ctx: { setState: AethonApi["setState"]; registerComponent: AethonApi["registerComponent"] },
+  ) => void | Promise<void>;
+  const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
+
   const aethonApi = {
     registerComponent(componentType: string, template: unknown): void {
       if (!componentType || typeof componentType !== "string") return;
@@ -331,6 +355,10 @@ async function main() {
       if (!path || typeof path !== "string") return;
       extensionStateTree = setAtPointer(extensionStateTree, path, value);
       send({ type: "state_patch", path, value });
+    },
+    onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
+      if (typeof handler !== "function") return;
+      a2uiEventHandlers.push({ match, handler });
     },
   };
   type AethonApi = typeof aethonApi;
@@ -527,6 +555,13 @@ async function main() {
       template?: unknown;
       path?: string;
       value?: unknown;
+      event?: {
+        componentId?: string;
+        componentType?: string;
+        templateRootType?: string;
+        eventType?: string;
+        data?: unknown;
+      };
     };
     try {
       msg = JSON.parse(trimmed);
@@ -626,8 +661,28 @@ async function main() {
           break;
         }
         case "a2ui_event": {
-          // Reserved for skill/tool routing — accept silently for now so the
-          // frontend's optimistic dispatch doesn't error.
+          const ev = msg.event ?? {};
+          // descendantId is the part of componentId after the template
+          // expansion marker `__tpl__` — extracted here so handlers can
+          // match on a logical descendant id without parsing themselves.
+          const descendantId = ev.componentId?.includes("__tpl__")
+            ? ev.componentId.split("__tpl__").slice(1).join("__tpl__")
+            : undefined;
+          for (const { match, handler } of a2uiEventHandlers) {
+            if (match.templateRootType && match.templateRootType !== ev.templateRootType) continue;
+            if (match.componentType && match.componentType !== ev.componentType) continue;
+            if (match.eventType && match.eventType !== ev.eventType) continue;
+            if (match.descendantId && match.descendantId !== descendantId) continue;
+            try {
+              await handler(ev, {
+                setState: aethonApi.setState,
+                registerComponent: aethonApi.registerComponent,
+              });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              send({ type: "error", message: `a2ui handler: ${message}` });
+            }
+          }
           break;
         }
         case "register_component": {

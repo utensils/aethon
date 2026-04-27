@@ -183,6 +183,7 @@ export default function A2UIRenderer({
     component: A2UIComponent,
     eventType: string,
     data?: unknown,
+    templateRootType?: string,
   ) => {
     updateState((prev) => applyOptimisticUpdate(prev, component, eventType, data));
 
@@ -195,6 +196,14 @@ export default function A2UIRenderer({
       await invoke("dispatch_a2ui_event", {
         event: JSON.stringify({
           componentId: component.id,
+          // Carry the rendered component's type so extension a2ui_event
+          // handlers can match on it without parsing the id. For template-
+          // expanded children, this is the inner type (e.g. "button").
+          componentType: component.type,
+          // When the event fires inside an expanded template, also include
+          // the template's outer type ("clock-card") so handlers can match
+          // by host without enumerating descendant types.
+          templateRootType,
           eventType,
           data,
         }),
@@ -204,7 +213,10 @@ export default function A2UIRenderer({
     }
   };
 
-  const renderComponent = (component: A2UIComponent): React.ReactNode => {
+  const renderComponent = (
+    component: A2UIComponent,
+    templateRootType?: string,
+  ): React.ReactNode => {
     const Component =
       PRIMITIVE_REGISTRY[component.type] ?? registry.resolve(component.type);
 
@@ -220,7 +232,10 @@ export default function A2UIRenderer({
         // componentIds (events from interactive children would otherwise
         // be ambiguous between instances).
         const expanded = rewriteTemplateIds(tpl, `${component.id}__tpl`);
-        return renderComponent(expanded);
+        // Track the host template type so descendants' events carry it —
+        // extension handlers register by template type to filter events
+        // from their own template instances.
+        return renderComponent(expanded, component.type);
       }
       console.warn(`Unknown A2UI component type: ${component.type}`);
       return null;
@@ -229,18 +244,21 @@ export default function A2UIRenderer({
     const renderChildren = component.children
       ? () =>
           component.children!.map((child) => (
-            <div key={child.id}>{renderComponent(child)}</div>
+            <div key={child.id}>{renderComponent(child, templateRootType)}</div>
           ))
       : undefined;
 
-    const renderChild = (child: A2UIComponent) => renderComponent(child);
+    const renderChild = (child: A2UIComponent) =>
+      renderComponent(child, templateRootType);
 
     return (
       <Component
         key={component.id}
         component={component}
         state={state}
-        onEvent={(eventType, data) => handleEvent(component, eventType, data)}
+        onEvent={(eventType, data) =>
+          handleEvent(component, eventType, data, templateRootType)
+        }
         renderChildren={renderChildren}
         renderChild={renderChild}
       />

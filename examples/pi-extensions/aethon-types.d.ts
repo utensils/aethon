@@ -9,6 +9,32 @@
  * is `undefined` — guard with `if (globalThis.aethon)` or `?.`.
  */
 
+interface AethonEventInfo {
+  componentId?: string;
+  /** Type of the rendered component the event came from (e.g. "button"). */
+  componentType?: string;
+  /** Type of the host template if the event fired inside an expanded template. */
+  templateRootType?: string;
+  eventType?: string;
+  data?: unknown;
+}
+
+interface AethonEventMatch {
+  /** Match events from inside a template expansion of this type. */
+  templateRootType?: string;
+  /** Match the rendered component's own type. */
+  componentType?: string;
+  /** Match the descendant id (the part of componentId after `__tpl__`). */
+  descendantId?: string;
+  /** Match the event name (e.g. "click", "submit", "change"). */
+  eventType?: string;
+}
+
+interface AethonEventCtx {
+  setState(path: string, value: unknown): void;
+  registerComponent(componentType: string, template: unknown): void;
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var aethon:
@@ -28,6 +54,18 @@ declare global {
          * reload restores the latest values.
          */
         setState(path: string, value: unknown): void;
+
+        /**
+         * Register a handler for events dispatched from A2UI components.
+         * `match` filters by templateRootType / componentType / descendantId
+         * / eventType — undefined fields match anything. Handlers can call
+         * ctx.setState / ctx.registerComponent in response to drive UI
+         * updates without a chat round-trip.
+         */
+        onEvent(
+          match: AethonEventMatch,
+          handler: (event: AethonEventInfo, ctx: AethonEventCtx) => void | Promise<void>,
+        ): void;
       }
     | undefined;
 }
