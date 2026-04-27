@@ -368,7 +368,18 @@ export default function App() {
         const extState = (data.extensionState as
           | Record<string, unknown>
           | undefined) ?? {};
+        const extLayout = data.extensionLayout as A2UIPayload | undefined;
         registry.setTemplates(extComponents);
+        // Restore any extension-supplied layout so a webview reload
+        // doesn't drop back to the boot layout. Boot state stays handled
+        // separately; the layout's own initial state hydrates below.
+        if (
+          extLayout &&
+          typeof extLayout === "object" &&
+          Array.isArray(extLayout.components)
+        ) {
+          setLayout(extLayout);
+        }
         setState((prev) => {
           let next: Record<string, unknown> = {
             ...prev,

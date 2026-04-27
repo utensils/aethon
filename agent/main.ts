@@ -121,6 +121,40 @@ function setAtPointer(
   return next;
 }
 
+// Layout-aware patch that preserves arrays (mirror of the frontend's
+// layoutPatch). Used to fold patch_layout calls into the retained
+// layout so ready/report replay matches the live frontend state.
+function patchLayoutTree(
+  payload: unknown,
+  pointer: string,
+  value: unknown,
+): unknown {
+  if (!pointer || pointer === "" || pointer === "/") return payload;
+  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  const tokens = path.split("/").map(decodePointerToken);
+  const cloneNode = (node: unknown): Record<string, unknown> | unknown[] => {
+    if (Array.isArray(node)) return [...node];
+    if (node && typeof node === "object") {
+      return { ...(node as Record<string, unknown>) };
+    }
+    return {};
+  };
+  const root = cloneNode(payload);
+  let cursor: Record<string, unknown> | unknown[] = root;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const key = tokens[i];
+    const idx = Array.isArray(cursor) ? Number(key) : key;
+    const existing = (cursor as Record<string | number, unknown>)[idx as never];
+    const child = cloneNode(existing);
+    (cursor as Record<string | number, unknown>)[idx as never] = child;
+    cursor = child;
+  }
+  const lastKey = tokens[tokens.length - 1];
+  const lastIdx = Array.isArray(cursor) ? Number(lastKey) : lastKey;
+  (cursor as Record<string | number, unknown>)[lastIdx as never] = value;
+  return root;
+}
+
 function modelDescriptor(m: Model<Api>) {
   return {
     id: modelKey(m),
@@ -329,6 +363,11 @@ async function main() {
   // the bridge uses, so the extension API stays in sync with the registry.
   const extensionComponents = new Map<string, unknown>();
   let extensionStateTree: Record<string, unknown> = {};
+  // Latest extension-supplied layout (set by setLayout, mutated by
+  // patchLayout). Retained so a webview reload's `report` → `ready`
+  // re-emits it instead of falling back to the boot layout. `undefined`
+  // means no extension has overridden the default layout.
+  let extensionLayout: unknown = undefined;
 
   // Handlers registered by extensions for a2ui_event messages from the
   // frontend. Each entry's `match` predicates filter which events the
@@ -374,10 +413,20 @@ async function main() {
   }
   function _setLayout(payload: unknown): void {
     if (!payload || typeof payload !== "object") return;
+    extensionLayout = payload;
     send({ type: "layout_set", payload });
   }
   function _patchLayout(path: string, value: unknown): void {
     if (!path || typeof path !== "string") return;
+    // Apply into the retained layout so reload-replay matches the live
+    // frontend state. If no setLayout has been called yet, the patch
+    // can't apply (we don't have the boot layout in the bridge); the
+    // event still goes out so the active mounted frontend handles it,
+    // and the next remount falls back to the boot layout — same trade
+    // pi extensions accept when patching their host's settings.
+    if (extensionLayout) {
+      extensionLayout = patchLayoutTree(extensionLayout, path, value);
+    }
     send({ type: "layout_patch", path, value });
   }
   function _registerSidebarSection(section: {
@@ -447,6 +496,7 @@ async function main() {
       models,
       extensionComponents: Object.fromEntries(extensionComponents),
       extensionState: extensionStateTree,
+      extensionLayout,
     });
   }
 
