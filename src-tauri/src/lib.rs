@@ -474,10 +474,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
 
     // Compose the watch list. Each path is included only if it exists
     // — missing extension dirs are normal for fresh installs.
-    let home = match app.path().home_dir() {
-        Ok(h) => Some(h),
-        Err(_) => None,
-    };
+    let home = app.path().home_dir().ok();
     let mut watch_paths: Vec<PathBuf> = Vec::new();
     if let Some(h) = home {
         // ~/.aethon/extensions belongs to us — create it on boot so a
