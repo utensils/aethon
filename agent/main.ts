@@ -703,8 +703,24 @@ async function main() {
   // to the trailing chat bubble, replaces tool messages by their stable id
   // (so "running…" → "done" updates in place), and unsets the waiting flag
   // on response_end.
+  // Drain count: how many followUp messages we've queued behind the
+  // current turn. Decremented when each subsequent turn starts so the
+  // frontend knows when the queue empties.
+  let queuedCount = 0;
+
   session.subscribe((event) => {
     switch (event.type) {
+      case "agent_start": {
+        // Fires per turn — including the next turn pi automatically
+        // starts after draining a followUp message. Re-emit
+        // prompt_started so the frontend keeps Stop visible across
+        // queue boundaries (avoids a brief Send-flash between turns).
+        if (queuedCount > 0) {
+          queuedCount -= 1;
+          send({ type: "prompt_started", source: "queue", queued: queuedCount });
+        }
+        break;
+      }
       case "message_update": {
         if (event.assistantMessageEvent.type === "text_delta") {
           const delta = event.assistantMessageEvent.delta ?? "";
@@ -811,43 +827,45 @@ async function main() {
             send({ type: "error", message: "chat: missing content" });
             break;
           }
-          // Gate concurrent chats: pi's session.prompt() rejects with
-          // "Agent is already processing" if called while a previous run
-          // is still streaming. The UI's chat-input is disabled while
-          // waiting, but a stray IPC could still arrive — bounce it
-          // explicitly so the frontend doesn't mistake the rejection for
-          // a real response_end.
-          if (promptInFlight) {
-            // `error` would flip the frontend's waiting=false, taking the
-            // Stop button down even though the first prompt is still
-            // running. `notice` is a non-terminal system message instead.
-            send({ type: "notice", message: "agent busy — send /stop first" });
-            break;
-          }
           // CRITICAL: do NOT await — `for await (const line of rl)` processes
           // one stdin line at a time, so awaiting here would queue any
           // subsequent "stop" message behind the in-flight prompt and Stop
           // would never reach session.abort() until the prompt finished
-          // naturally. Track in-flight state via promptInFlight so we can
-          // reject overlapping chats above; cleared on agent_end OR in
-          // .finally() if pi short-circuited the prompt without an agent
-          // run (e.g. a server-side slash command). The finally branch
-          // also synthesizes a `response_end` so the frontend's waiting
-          // flag clears when no streaming happened.
-          promptInFlight = true;
-          agentEndFired = false;
+          // naturally. Track in-flight state via promptInFlight; cleared on
+          // agent_end OR in .finally() if pi short-circuited the prompt
+          // without an agent run (e.g. a server-side slash command). The
+          // finally branch also synthesizes a `response_end` so the
+          // frontend's waiting flag clears when no streaming happened.
+          //
+          // When a prompt is already running, pass `streamingBehavior:
+          // "followUp"` so pi appends the new message to its internal
+          // queue and processes it after the current turn settles. This
+          // lets the user keep typing without "agent busy" rejections.
+          // We DON'T flip promptInFlight for queued ones — agent_end
+          // fires per turn and pi automatically drains the queue.
+          const queued = promptInFlight;
+          if (!queued) {
+            promptInFlight = true;
+            agentEndFired = false;
+          }
           session
-            .prompt(msg.content)
+            .prompt(msg.content, queued ? { streamingBehavior: "followUp" } : undefined)
             .catch((err) => {
               const message = err instanceof Error ? err.message : String(err);
               send({ type: "error", message: `prompt: ${message}` });
             })
             .finally(() => {
-              if (!agentEndFired) {
+              if (!queued && !agentEndFired) {
                 promptInFlight = false;
                 send({ type: "response_end" });
               }
             });
+          if (queued) {
+            // Tell the frontend the message was accepted into pi's
+            // followUp queue so it can show a subtle indicator without
+            // re-flipping waiting (which is already true).
+            send({ type: "queued" });
+          }
           break;
         }
         case "set_model": {

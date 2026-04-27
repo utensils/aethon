@@ -4,44 +4,50 @@
   color: var(--text);
 }
 
-/* Default to dark; the App attribute-sets `data-theme` on the html element. */
+/* Default dark theme — palette mirrors the brand mark
+   (assets/brand/aethon-logo.svg): warm near-black tile #1f1f23,
+   cream Bodoni text #fef3e2, muted orange accent #ff6a18. The
+   App attribute-sets `data-theme` on <html> so theme switching
+   stays an attribute swap. */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0e0e10;
-  --bg-elev: #16161a;
-  --bg-input: #1c1c21;
-  --border: #2a2a30;
-  --text: #e8e8ec;
-  --text-dim: #9a9aa3;
-  --accent: #7c8cff;
-  --accent-soft: rgba(124, 140, 255, 0.18);
-  --accent-hover-tint: rgba(124, 140, 255, 0.08);
-  --accent-active-tint: rgba(124, 140, 255, 0.16);
-  --btn-text: #0e0e10;
-  --user-bubble: #2a2f4a;
-  --agent-bubble: #1c1c21;
-  --scrollbar-thumb: #2a2a30;
-  --scrollbar-thumb-hover: #3a3a44;
+  --bg: #161618;
+  --bg-elev: #1f1f23;
+  --bg-input: #25252a;
+  --border: #2e2e34;
+  --text: #fef3e2;
+  --text-dim: #9c9a92;
+  --accent: #ff6a18;
+  --accent-soft: rgba(255, 106, 24, 0.18);
+  --accent-hover-tint: rgba(255, 106, 24, 0.08);
+  --accent-active-tint: rgba(255, 106, 24, 0.16);
+  --btn-text: #1f1f23;
+  --user-bubble: #2a2620;
+  --agent-bubble: #1f1f23;
+  --scrollbar-thumb: #2e2e34;
+  --scrollbar-thumb-hover: #3a3a40;
 }
 
+/* Light theme — cream paper background, deep ink text, same orange
+   accent so brand identity carries across themes. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #fbfaf6;
-  --bg-elev: #ffffff;
-  --bg-input: #f3f1ec;
-  --border: #e3e1da;
-  --text: #1a1a20;
-  --text-dim: #6a6a72;
-  --accent: #6066ee;
-  --accent-soft: rgba(96, 102, 238, 0.18);
-  --accent-hover-tint: rgba(96, 102, 238, 0.08);
-  --accent-active-tint: rgba(96, 102, 238, 0.16);
-  --btn-text: #ffffff;
-  --user-bubble: #e2e7ff;
-  --agent-bubble: #f3f1ec;
-  --scrollbar-thumb: #d0cec6;
-  --scrollbar-thumb-hover: #b0aea4;
+  --bg: #fef3e2;
+  --bg-elev: #fffaee;
+  --bg-input: #f5e8d0;
+  --border: #e3d8be;
+  --text: #1f1f23;
+  --text-dim: #6a6356;
+  --accent: #ff6a18;
+  --accent-soft: rgba(255, 106, 24, 0.18);
+  --accent-hover-tint: rgba(255, 106, 24, 0.08);
+  --accent-active-tint: rgba(255, 106, 24, 0.16);
+  --btn-text: #fef3e2;
+  --user-bubble: #fbe5c4;
+  --agent-bubble: #fffaee;
+  --scrollbar-thumb: #d8cdb3;
+  --scrollbar-thumb-hover: #b8ad94;
 }
 
 * {
@@ -131,7 +137,18 @@ body {
 }
 
 .a2ui-sidebar-title {
-  padding: 14px 16px;
+  /* Match the header bar's height + bottom border so the sidebar title
+     and the app header align on a single horizontal baseline. The
+     header's `.app-header` is 44px with `border-bottom: 1px solid` —
+     mirror both here so the row of "Aethon" labels lines up exactly.
+     `min-height` (not `height`) + `flex-shrink: 0` because the
+     sidebar is a flex column and would otherwise collapse this row
+     to its content height. */
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  flex-shrink: 0;
+  padding: 0 16px;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -518,6 +535,22 @@ body {
 
 .a2ui-chat-input-stop:hover {
   background: var(--accent-soft);
+}
+
+/* Queue badge — sits between the textarea and Stop, shows "+N" when
+   the user has stacked messages behind an in-flight prompt via pi's
+   followUp. Subdued so it informs without competing with the action
+   buttons. */
+.a2ui-chat-input-queue {
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 /* ---- Status bar --------------------------------------------------------- */

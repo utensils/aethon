@@ -360,6 +360,26 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Global keyboard shortcuts. Bound on the document so they fire regardless
+  // of focus; preventDefault when handled so the browser's own bindings
+  // (e.g. cmd+` cycling windows in WebKit) don't double-fire.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Cmd+` (macOS) / Ctrl+` (others) toggles the terminal panel. Mirrors
+      // VS Code / iTerm / most other dev tools' default. The sidebar
+      // "Toggle Terminal" item still works for mouse-only use.
+      if (e.key === "`" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setState((prev) => {
+          const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
+          return { ...prev, terminal: { ...term, open: !term.open } };
+        });
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     const api = {
       setLayout,
@@ -613,17 +633,43 @@ export default function App() {
         break;
       }
       case "prompt_started": {
-        // Bridge tells us a prompt has begun. Sent by the handler-driven
-        // ctx.pi.prompt path so the chat input flips to Stop and the
-        // user can cancel a turn they didn't type. The user-typed
-        // chat path sets waiting locally before invoking send_message,
-        // so this re-flip is harmless when it arrives.
-        setStatusFlags({ waiting: true, status: "thinking…" });
+        // Bridge tells us a prompt has begun. Sent for handler-driven
+        // ctx.pi.prompt AND every queue-drained turn (source: "queue")
+        // so Stop stays visible across followUp boundaries instead of
+        // flashing back to Send between turns. The remaining queue
+        // count rides along so the input badge stays accurate.
+        const remaining = (data.queued as number | undefined) ?? undefined;
+        setState((prev) => ({
+          ...prev,
+          waiting: true,
+          status: "thinking…",
+          ...(remaining !== undefined ? { queueCount: remaining } : {}),
+        }));
+        break;
+      }
+      case "queued": {
+        // A new chat IPC arrived while a prompt was in flight; pi
+        // accepted it into the followUp queue. Bump the counter so
+        // the chat input shows "+N".
+        setState((prev) => ({
+          ...prev,
+          queueCount: ((prev.queueCount as number) ?? 0) + 1,
+        }));
         break;
       }
       case "response_end": {
         activeResponseIdRef.current = null;
-        setStatusFlags({ waiting: false, status: "ready" });
+        // Only clear waiting when the queue is actually empty. If pi has
+        // a followUp queued, it will fire agent_start → prompt_started
+        // immediately after this and re-flip waiting; clearing here
+        // would cause a Send-flash. We trust the queueCount we last
+        // received from prompt_started/queued — if it's > 0, keep
+        // waiting on. Bridge's queue counter is authoritative.
+        setState((prev) => {
+          const q = (prev.queueCount as number) ?? 0;
+          if (q > 0) return prev;
+          return { ...prev, waiting: false, status: "ready" };
+        });
         break;
       }
       case "error": {
