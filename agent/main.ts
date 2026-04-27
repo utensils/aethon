@@ -328,10 +328,12 @@ interface ThemeRecord {
   vars: Record<string, string>;
 }
 
-// Sanitize CSS custom property names (must start with `--`) and values
-// (drop `<` to block trivially nested </style> injection — anything more
-// elaborate would still need to land inside an attribute or url() context
-// we don't construct). Returns null if the theme is too malformed to use.
+// Validate theme metadata. The id is constrained to a slug so it's safe
+// to embed in a CSS selector and a <style> element id; the variable
+// names must look like CSS custom properties (`--*`). Variable values
+// are passed through as-is — the frontend writes them via CSSOM
+// `setProperty`, which silently rejects anything that would escape
+// the declaration. Returns null when the input is too malformed to use.
 function normalizeTheme(input: unknown): ThemeRecord | null {
   if (!input || typeof input !== "object") return null;
   const t = input as { id?: unknown; label?: unknown; vars?: unknown };
@@ -345,7 +347,7 @@ function normalizeTheme(input: unknown): ThemeRecord | null {
     for (const [k, v] of Object.entries(t.vars as Record<string, unknown>)) {
       if (!/^--[A-Za-z0-9_-]+$/.test(k)) continue;
       if (typeof v !== "string") continue;
-      vars[k] = v.replace(/[<>]/g, "");
+      vars[k] = v;
     }
   }
   return { id, label, vars };

@@ -142,7 +142,11 @@ export default function App() {
 
   // Inject (or replace) the <style> element holding an extension theme's
   // CSS custom properties. Keyed by id so re-registering replaces the
-  // previous rule rather than stacking.
+  // previous rule rather than stacking. Values are written via CSSOM
+  // `setProperty` (not string interpolation) so a malformed value
+  // containing `;` or `}` can't escape the declaration and inject
+  // arbitrary rules — the parser silently rejects invalid values
+  // instead of letting them leak into the stylesheet.
   function injectThemeStyle(theme: ExtensionTheme) {
     const styleId = `aethon-theme-${theme.id}`;
     let el = document.getElementById(styleId) as HTMLStyleElement | null;
@@ -151,22 +155,42 @@ export default function App() {
       el.id = styleId;
       document.head.appendChild(el);
     }
-    const body = Object.entries(theme.vars)
-      .map(([k, v]) => `  ${k}: ${v};`)
-      .join("\n");
-    // CSS.escape is widely supported in webviews (Chromium 46+, WebKit 10+).
-    // Falls back to a conservative regex strip if the runtime doesn't ship it.
+    // Quote-escape the id for use inside a CSS selector. CSS.escape is
+    // widely supported in webviews (Chromium 46+, WebKit 10+); the
+    // fallback strips to a slug-safe set when the runtime lacks it.
     const safe = (window.CSS && window.CSS.escape)
       ? window.CSS.escape(theme.id)
       : theme.id.replace(/[^A-Za-z0-9_-]/g, "");
-    el.textContent =
-      `:root[data-theme="${safe}"] {\n  color-scheme: dark;\n${body}\n}`;
+    const sheet = el.sheet;
+    if (!sheet) {
+      // Stylesheet not attached yet (extremely rare — happens if the
+      // <style> is detached). Fall back to attribute writes; the next
+      // hydrate will succeed once the sheet is available.
+      el.textContent = "";
+      return;
+    }
+    // Replace any prior rules so re-registering with fewer vars drops
+    // the obsolete declarations.
+    while (sheet.cssRules.length > 0) sheet.deleteRule(0);
+    sheet.insertRule(`:root[data-theme="${safe}"] {}`);
+    const rule = sheet.cssRules[0] as CSSStyleRule;
+    rule.style.setProperty("color-scheme", "dark");
+    for (const [k, v] of Object.entries(theme.vars)) {
+      // setProperty silently no-ops on invalid values — can't break out.
+      rule.style.setProperty(k, v);
+    }
   }
 
   // Apply a fresh themes list — replace the registry, inject CSS for each,
   // and mirror id/label pairs to /sidebar/themes so the sidebar updates.
+  // Style tags whose ids no longer appear in the list are removed first so
+  // a deleted/disabled extension stops bleeding stale CSS into the page.
   function hydrateThemes(list: ExtensionTheme[]) {
     themesRef.current = new Map(list.map((t) => [t.id, t]));
+    const keep = new Set(list.map((t) => `aethon-theme-${t.id}`));
+    for (const el of document.querySelectorAll('style[id^="aethon-theme-"]')) {
+      if (!keep.has(el.id)) el.remove();
+    }
     for (const t of list) injectThemeStyle(t);
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
