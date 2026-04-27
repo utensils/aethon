@@ -85,6 +85,18 @@ export interface RuntimeSnapshot {
     areas?: string[];
     children: { id: string; type: string; area?: string }[];
   } | null;
+  // Canonical layout-slot catalogue (loaded from the bundled slots.json).
+  // Names + descriptions + which composite typically fills each slot —
+  // the contract any layout that wants to host the standard composites
+  // must honor. Null if the bridge couldn't read the catalogue (running
+  // outside the Tauri shell with no AETHON_LAYOUT_SLOTS_FILE env var).
+  layoutSlots: {
+    version: number;
+    slots: Record<
+      string,
+      { description: string; defaultComposite: string; required: boolean }
+    >;
+  } | null;
 }
 
 // The static base prompt — describes the API surface and renderer
@@ -418,6 +430,21 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
           .join(", ") || "(none)"
       }.`,
     );
+  }
+  if (snapshot.layoutSlots) {
+    // One-liner — the full catalogue lives in the bundled
+    // skills/default-layout/slots.json (and in components.md). Here we
+    // just surface the slot names so the agent knows what semantic
+    // areas the standard composites slot into. `area: "<name>"` on a
+    // child is the contract.
+    const slotNames = Object.keys(snapshot.layoutSlots.slots);
+    if (slotNames.length > 0) {
+      lines.push(
+        `Layout slots (canonical area names): ${slotNames
+          .map((n) => `\`${n}\``)
+          .join(", ")}. See bundled \`components.md\` for the full contract.`,
+      );
+    }
   }
 
   if (snapshot.tabs.length > 0) {

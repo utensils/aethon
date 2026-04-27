@@ -1,0 +1,47 @@
+{
+  "$schema": "https://aethon.utensils.dev/layout-slots/v1.json",
+  "version": 1,
+  "description": "Canonical slot names for Aethon layouts. A composite that carries `slot: \"<name>\"` lands in the grid cell whose area matches the slot name (or, if the layout supplies a `slotMap` prop, the area the map points the slot to). Layouts that want to host the standard composites must use these slot names.",
+  "slots": {
+    "header": {
+      "description": "Top chrome bar — typically hosts brand mark, status, navigation.",
+      "defaultComposite": "container",
+      "required": false
+    },
+    "sidebar": {
+      "description": "Left navigation panel with skills/models/themes/history. Typically toggleable via /sidebar.",
+      "defaultComposite": "sidebar",
+      "required": false
+    },
+    "tabs": {
+      "description": "Horizontal tab strip for switching between agent sessions.",
+      "defaultComposite": "tab-strip",
+      "required": false
+    },
+    "canvas": {
+      "description": "Main content area — renders chat history, agent-emitted A2UI, and tool cards. Shared with `empty-state` slot.",
+      "defaultComposite": "main-canvas",
+      "required": true
+    },
+    "terminal": {
+      "description": "Optional terminal panel for bash output. Toggleable via /terminal.",
+      "defaultComposite": "terminal",
+      "required": false
+    },
+    "composer": {
+      "description": "User input area — chat input box with send/stop button.",
+      "defaultComposite": "chat-input",
+      "required": true
+    },
+    "status": {
+      "description": "Bottom status bar — typically left/center/right text segments.",
+      "defaultComposite": "status-bar",
+      "required": false
+    },
+    "empty-state": {
+      "description": "Composite shown when no tabs are open. Conventionally lives in the same grid area as `canvas`, toggled via `/empty` and `/hasTabs`.",
+      "defaultComposite": "empty-state",
+      "required": false
+    }
+  }
+}

@@ -22,6 +22,19 @@ import layoutPayload from "./layout.a2ui.json";
 import singlePanePayload from "./single-pane.a2ui.json";
 import focusModePayload from "./focus-mode.a2ui.json";
 
+export {
+  layoutSlots,
+  SLOT_NAMES,
+  REQUIRED_SLOT_NAMES,
+  isKnownSlot,
+  inspectLayoutSlotCoverage,
+} from "./slots";
+export type {
+  LayoutSlotDefinition,
+  LayoutSlotCatalogue,
+  SlotCoverageReport,
+} from "./slots";
+
 export const defaultLayoutSkill: A2UISkill = {
   name: "default-layout",
   components: {

@@ -6,8 +6,13 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer from "./components/A2UIRenderer";
 import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
-import { builtinLayouts, defaultLayoutSkill } from "./skills/default-layout";
-import type { LayoutCatalogueEntry } from "./skills/default-layout";
+import {
+  builtinLayouts,
+  defaultLayoutSkill,
+  inspectLayoutSlotCoverage,
+  layoutSlots,
+} from "./skills/default-layout";
+import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { setPointer } from "./utils/jsonPointer";
@@ -931,6 +936,15 @@ export default function App() {
         }
         return true;
       },
+      // Layout-slot catalogue. The contract (canonical slot names + which
+      // composite typically fills each) is `src/skills/default-layout/slots.json`.
+      // A composite uses `area: "<slot>"` to declare placement; an alternative
+      // layout that wants to host the standard composites needs to either
+      // call its grid areas by these names, or provide a `slotMap` prop on
+      // its root <layout>.
+      layoutSlots,
+      inspectLayoutSlotCoverage: (payload?: A2UIPayload): SlotCoverageReport =>
+        inspectLayoutSlotCoverage(payload ?? layout),
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
 
@@ -2109,10 +2123,10 @@ export default function App() {
                 "sidebar tabs",
                 "sidebar canvas",
                 "sidebar terminal",
-                "sidebar chat-input",
+                "sidebar composer",
                 "status status",
               ]
-            : ["header", "tabs", "canvas", "terminal", "chat-input", "status"];
+            : ["header", "tabs", "canvas", "terminal", "composer", "status"];
           return {
             ...prev,
             layout: { ...layout, sidebarVisible: visible, columns, areas },

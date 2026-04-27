@@ -55,6 +55,11 @@ export function Layout({
     // setLayout replacement.
     areas?: string[] | { $ref: string };
     gap?: NumberValue;
+    // Optional slot → grid-area remap. By default a child's `slot` prop
+    // resolves to a grid area of the same name; this map lets a layout
+    // host the standard composites under non-canonical area names. See
+    // `./slots.json` for the canonical slot list.
+    slotMap?: Record<string, string>;
   };
 
   const columns = props.columns ? resolveString(props.columns, state) : "1fr";
@@ -71,6 +76,7 @@ export function Layout({
     return undefined;
   })();
   const areas = resolvedAreas ? resolvedAreas.map((row) => `"${row}"`).join(" ") : undefined;
+  const slotMap = props.slotMap ?? {};
 
   const style: CSSProperties = {
     display: "grid",
@@ -89,7 +95,13 @@ export function Layout({
         const childProps = child.props as
           | { area?: string; visible?: BooleanValue }
           | undefined;
-        const area = childProps?.area;
+        // The child's `area` prop doubles as the slot name. By default the
+        // slot name IS the CSS grid area; an optional slotMap on the root
+        // layout lets a non-canonical layout host the standard composites
+        // under a different grid area name (e.g. slotMap.composer = "bottom").
+        // See `./slots.json` for the canonical slot list.
+        const slotName = childProps?.area;
+        const area = slotName ? (slotMap[slotName] ?? slotName) : undefined;
         const visible =
           childProps?.visible === undefined
             ? true

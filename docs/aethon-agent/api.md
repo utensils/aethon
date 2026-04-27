@@ -64,14 +64,15 @@ globalThis.aethon.setLayout({
 Patch a node inside the active layout (array-preserving JSON Pointer).
 
 ```ts
-// Move sidebar from left to right
+// Move sidebar from left to right (uses canonical slot names — see
+// docs/aethon-agent/components.md "Layout-slot contract")
 globalThis.aethon.patchLayout("/components/0/props/columns", "1fr 240px");
 globalThis.aethon.patchLayout("/components/0/props/areas", [
   "header sidebar",
   "tabs sidebar",
   "canvas sidebar",
   "terminal sidebar",
-  "chat-input sidebar",
+  "composer sidebar",
   "status status",
 ]);
 ```

@@ -286,12 +286,18 @@ fn ensure_agent_spawned(
             .join("skills")
             .join("default-layout")
             .join("layout.a2ui.json");
+        let layout_slots_file = root
+            .join("src")
+            .join("skills")
+            .join("default-layout")
+            .join("slots.json");
         let mut c = Command::new("bun");
         c.current_dir(&root).arg("run").arg("agent/main.ts");
         c.env("AETHON_RELEASE_MODE", "0");
         c.env("AETHON_PROJECT_ROOT", &root);
         c.env("AETHON_DOCS_DIR", &docs_dir);
         c.env("AETHON_BOOT_LAYOUT_FILE", &boot_layout_file);
+        c.env("AETHON_LAYOUT_SLOTS_FILE", &layout_slots_file);
         c
     } else {
         let bin = find_sidecar_binary()?;
@@ -309,11 +315,16 @@ fn ensure_agent_spawned(
             .join("skills")
             .join("default-layout")
             .join("layout.a2ui.json");
+        let layout_slots_file = resource_dir
+            .join("skills")
+            .join("default-layout")
+            .join("slots.json");
         let mut c = Command::new(&bin);
         c.env("PI_PACKAGE_DIR", &pi_dir);
         c.env("AETHON_RELEASE_MODE", "1");
         c.env("AETHON_DOCS_DIR", &docs_dir);
         c.env("AETHON_BOOT_LAYOUT_FILE", &boot_layout_file);
+        c.env("AETHON_LAYOUT_SLOTS_FILE", &layout_slots_file);
         // Bundled .app launches inherit launchd's minimal PATH on macOS, so
         // pi's `npm root -g` (run when resolving user packages from
         // ~/.pi/agent/settings.json) fails with ENOENT. Source the user's

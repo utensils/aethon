@@ -152,6 +152,7 @@ const DOCS_DIR = process.env.AETHON_DOCS_DIR;
 const PROJECT_ROOT = process.env.AETHON_PROJECT_ROOT;
 const RELEASE_MODE = process.env.AETHON_RELEASE_MODE === "1";
 const BOOT_LAYOUT_FILE = process.env.AETHON_BOOT_LAYOUT_FILE;
+const LAYOUT_SLOTS_FILE = process.env.AETHON_LAYOUT_SLOTS_FILE;
 
 // Source attribution for the loaded-extension list. "directory" =
 // ~/.aethon/extensions/*.{ts,js,mjs}, "skill-package" = npm-style
@@ -831,6 +832,34 @@ async function main() {
     }
   }
 
+  // Layout-slot catalogue. Same pattern as the boot layout: shipped as a
+  // bundled resource, read SYNCHRONOUSLY at boot so getLayoutSlots() and
+  // the runtime-snapshot section have the contract available before any
+  // extension calls register*. Falls back to undefined when the env var
+  // isn't set (running outside the Tauri shell, e.g. raw `bun run`).
+  interface LayoutSlotsCatalogue {
+    version: number;
+    description: string;
+    slots: Record<
+      string,
+      { description: string; defaultComposite: string; required: boolean }
+    >;
+  }
+  let layoutSlotsCatalogue: LayoutSlotsCatalogue | undefined;
+  if (LAYOUT_SLOTS_FILE) {
+    try {
+      const text = readFileSync(LAYOUT_SLOTS_FILE, "utf8");
+      layoutSlotsCatalogue = JSON.parse(text);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        console.error(
+          `[aethon-slots] read ${LAYOUT_SLOTS_FILE}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
   // Loaded extension registry. Populated by loadAethonExtensions and
   // loadAethonSkillManifests at startup. Used by getRuntimeSnapshot and
   // the listExtensions introspection method so the agent (and any user
@@ -1031,6 +1060,12 @@ async function main() {
       eventRoutes: [...extensionEventRoutes.values()],
       uiState: Object.fromEntries(frontendState),
       layoutStructure: summarizeLayoutStructure(),
+      layoutSlots: layoutSlotsCatalogue
+        ? {
+            version: layoutSlotsCatalogue.version,
+            slots: layoutSlotsCatalogue.slots,
+          }
+        : null,
     };
   }
 
@@ -1582,6 +1617,14 @@ async function main() {
   function _getRuntimeSnapshot(): RuntimeSnapshot {
     return getRuntimeSnapshot();
   }
+  // Layout-slot contract introspection. Returns the canonical slot
+  // catalogue shipped by the active default-layout skill (loaded from
+  // $AETHON_LAYOUT_SLOTS_FILE at boot). Extensions writing alternative
+  // layouts can read this to discover what slot names the standard
+  // composites expect, instead of guessing from the layout JSON.
+  function _getLayoutSlots(): LayoutSlotsCatalogue | null {
+    return layoutSlotsCatalogue ?? null;
+  }
 
   const aethonApi = {
     registerComponent: _registerComponent,
@@ -1603,6 +1646,7 @@ async function main() {
     listComponents: _listComponents,
     listThemes: _listThemes,
     getLayout: _getLayout,
+    getLayoutSlots: _getLayoutSlots,
     getFrontendState: _getFrontendState,
     getRuntimeSnapshot: _getRuntimeSnapshot,
   };

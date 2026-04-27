@@ -10,7 +10,7 @@
           "header",
           "tabs",
           "canvas",
-          "chat-input",
+          "composer",
           "status"
         ]
       },
@@ -65,7 +65,7 @@
           "id": "chat-input",
           "type": "chat-input",
           "props": {
-            "area": "chat-input",
+            "area": "composer",
             "value": { "$ref": "/draft" },
             "placeholder": "Message Aethon…",
             "disabled": { "$ref": "/waiting" },

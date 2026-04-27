@@ -8,6 +8,26 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Layout-slot contract.** `src/skills/default-layout/slots.json` now
+  declares the canonical slot catalogue any layout can adhere to:
+  `header`, `sidebar`, `tabs`, `canvas` (required), `terminal`,
+  `composer` (required), `status`, `empty-state`. Each entry carries a
+  description, a `defaultComposite` type, and a `required` flag.
+  Composites slot via their existing `area` prop; the `Layout` component
+  honors an optional `slotMap` on the root `<layout>` so a non-canonical
+  layout can still host the standard composites (e.g. `slotMap:
+  { composer: "bottom-bar" }`). All three built-in layouts (default,
+  single-pane, focus-mode) updated to use the canonical slot names —
+  `chat-input` area was renamed to `composer`. Catalogue exposed on
+  `window.aethon.layoutSlots` (with `inspectLayoutSlotCoverage(payload?)`
+  helper for tooling) and on the bridge as
+  `globalThis.aethon.getLayoutSlots()`. Bridge reads it synchronously at
+  boot from `$AETHON_LAYOUT_SLOTS_FILE` (set by the Tauri shell, bundled
+  as a release resource) and surfaces it in `RuntimeSnapshot.layoutSlots`
+  so the system prompt prints the canonical slot list. Documented under
+  "Layout-slot contract" in `docs/aethon-agent/components.md` with a
+  `slotMap` example.
+
 - **Config file dead options wired up.** `~/.aethon/config.toml` `[ui]
   font_size` now writes the `--app-font-size` CSS custom property
   (clamped 10–24 px) consumed by `body { font-size: var(--app-font-size,

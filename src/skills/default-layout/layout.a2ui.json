@@ -127,7 +127,7 @@
           "id": "empty-state",
           "type": "empty-state",
           "props": {
-            "area": "canvas",
+            "area": "empty-state",
             "visible": { "$ref": "/empty" },
             "title": "Welcome to Aethon",
             "subtitle": "All tabs are closed. Open a new one to start a conversation.",
@@ -155,7 +155,7 @@
           "id": "chat-input",
           "type": "chat-input",
           "props": {
-            "area": "chat-input",
+            "area": "composer",
             "visible": { "$ref": "/hasTabs" },
             "value": { "$ref": "/draft" },
             "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
@@ -198,7 +198,7 @@
         "sidebar tabs",
         "sidebar canvas",
         "sidebar terminal",
-        "sidebar chat-input",
+        "sidebar composer",
         "status status"
       ]
     },

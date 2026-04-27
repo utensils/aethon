@@ -264,11 +264,83 @@ need exact prop shapes; bundled docs are reference, not source).
 ### `layout`
 
 ```ts
-{ columns: string, rows: string, areas: string[] }
+{
+  columns: string,
+  rows: string,
+  areas: string[],
+  // Optional remap from semantic slot name → CSS grid-area name.
+  // Lets a layout that uses non-canonical area names still host the
+  // standard composites. See "Layout-slot contract" below.
+  slotMap?: Record<string, string>,
+}
 ```
 
 CSS Grid. `areas` is the same as `grid-template-areas` (one string per
 row, names separated by spaces). Children should set `area: "<name>"`.
+
+#### Layout-slot contract
+
+Composites declare placement via their `area` prop. The Layout component
+treats that string as a **slot name**: by default the slot name IS the
+CSS grid area, but a layout's optional `slotMap` lets a non-canonical
+layout host the standard composites under a different area.
+
+The canonical slot catalogue ships at `skills/default-layout/slots.json`
+and is also surfaced by `globalThis.aethon.getLayoutSlots()` and
+`window.aethon.layoutSlots` (browser side):
+
+| Slot          | Required | Default composite | Purpose                                                                |
+| ------------- | -------- | ----------------- | ---------------------------------------------------------------------- |
+| `header`      | no       | `container`       | Top chrome — brand mark, status, navigation                            |
+| `sidebar`     | no       | `sidebar`         | Left navigation panel; toggleable via `/sidebar`                       |
+| `tabs`        | no       | `tab-strip`       | Horizontal tab strip                                                   |
+| `canvas`      | **yes**  | `main-canvas`     | Main content area — chat history, agent A2UI, tool cards               |
+| `terminal`    | no       | `terminal`        | Optional terminal panel; toggleable via `/terminal`                    |
+| `composer`    | **yes**  | `chat-input`      | User input area                                                        |
+| `status`      | no       | `status-bar`      | Bottom status bar                                                      |
+| `empty-state` | no       | `empty-state`     | Welcome screen when no tabs are open; conventionally shares `canvas`   |
+
+**Authoring an alternative layout.** Two paths:
+
+1. **Match the contract** — name your grid areas after the canonical
+   slots. The standard composites slot in unchanged.
+2. **Use `slotMap`** — keep your custom area names; declare the remap
+   on the root `<layout>`:
+
+   ```json
+   {
+     "type": "layout",
+     "props": {
+       "columns": "1fr",
+       "rows": "1fr auto auto",
+       "areas": ["main", "footer", "footer-info"],
+       "slotMap": {
+         "canvas": "main",
+         "composer": "footer",
+         "status": "footer-info"
+       }
+     },
+     "children": [
+       { "id": "canvas", "type": "main-canvas",
+         "props": { "area": "canvas", "slot": "/canvas",
+                    "messages": { "$ref": "/messages" } } },
+       { "id": "input", "type": "chat-input",
+         "props": { "area": "composer", "value": { "$ref": "/draft" },
+                    "disabled": { "$ref": "/waiting" },
+                    "onSubmit": "chat:send" } },
+       { "id": "status-bar", "type": "status-bar",
+         "props": { "area": "status",
+                    "left": { "$ref": "/status" } } }
+     ]
+   }
+   ```
+
+   The composites still ship `area: "<canonical-slot>"`; the layout
+   forwards them to its custom CSS area names via `slotMap`.
+
+Slots marked **required** must be filled for the layout to be considered
+a complete workspace. `inspectLayoutSlotCoverage(payload)` (exposed on
+`window.aethon`) reports which slots are filled/missing/unknown.
 
 ### `sidebar` — compositional items
 
