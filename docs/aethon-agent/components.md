@@ -397,6 +397,19 @@ Streams pi's bash output per tab. The buffer is per-tab; switching tabs
 replays the active tab's last 256 KiB. Override `headerLabel` /
 `bootGreeting` to brand the panel without forking the composite.
 
+The bash stream lands in three places, so an extension can subscribe
+without monkey-patching the composite:
+
+1. **`/terminal/buffer/<tabId>`** state path — A2UI components can
+   `$ref` it directly (e.g. `{ "$ref": "/terminal/buffer/default" }`).
+   Capped at 256 KiB per tab.
+2. **`aethon:terminal-tap`** window event — fires for every chunk
+   regardless of active tab. `detail = {tabId, content}`. Multiple
+   listeners attach freely.
+3. **`aethon:terminal`** window event — fires only for the active tab.
+   The default xterm composite consumes this; alternative renderers
+   should prefer the tap event.
+
 ### `main-canvas`
 
 ```ts

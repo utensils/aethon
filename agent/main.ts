@@ -1161,13 +1161,17 @@ async function main() {
     // tabId attribution priority:
     //   1. explicit sourceTabId (handler-scoped ctx.setState)
     //   2. tabContext.getStore() — per-turn ALS value, propagates through
-    //      the agent's async call chain so concurrent prompts in
-    //      different tabs don't smear into one another.
-    //   3. currentAgentTabId — fallback for sync code paths that
-    //      escape the ALS context (e.g. event listeners attached
-    //      outside the prompt's run scope).
-    //   4. omit tabId — frontend falls back to active. Last resort
-    //      for truly tab-less setStates (clock interval, etc.).
+    //      the agent's async call chain. Both pi prompts AND a2ui_event
+    //      handler dispatches now run inside tabContext.run(...), so any
+    //      microtask/promise continuation a handler kicks off keeps the
+    //      tab attribution. setIntervals registered at module-load time
+    //      have NO ALS context — those fall through to (3)/(4).
+    //   3. currentAgentTabId — last-known active prompt's tab. Best-effort
+    //      for sync code paths that genuinely escape the ALS context.
+    //      Documented as "active tab" rather than authoritative; under
+    //      concurrent prompts on different tabs this can be wrong.
+    //   4. omit tabId — frontend falls back to active. Last resort for
+    //      truly tab-less setStates (clock interval registered at boot).
     const attributedTab =
       sourceTabId ?? tabContext.getStore() ?? currentAgentTabId;
     // Per-tab mirrored writes (canvas / messages / draft / waiting /
@@ -2123,13 +2127,21 @@ async function main() {
             // sync throw escape to the outer message-loop catch, which
             // would emit type:"error" and clear the frontend's waiting
             // state.
+            // Wrap the handler in tabContext.run so any setState the
+            // handler fires (or any async chain it kicks off — fetch
+            // callbacks, setTimeout, microtask continuations) inherits
+            // handlerTabId via AsyncLocalStorage. Without this wrap,
+            // _setState would fall back to currentAgentTabId, which is
+            // wrong under concurrent prompts on different tabs.
             Promise.resolve()
               .then(() =>
-                handler(ev, {
-                  setState: tabScopedSetState,
-                  registerComponent: aethonApi.registerComponent,
-                  pi: piCtx,
-                }),
+                tabContext.run(handlerTabId, () =>
+                  handler(ev, {
+                    setState: tabScopedSetState,
+                    registerComponent: aethonApi.registerComponent,
+                    pi: piCtx,
+                  }),
+                ),
               )
               .catch((err) => {
                 const message = err instanceof Error ? err.message : String(err);

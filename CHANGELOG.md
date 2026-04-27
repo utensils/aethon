@@ -8,6 +8,33 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Vite-style port auto-increment for `dev`.** New `scripts/dev.sh`
+  wrapper finds a free Vite port (starting 1420) and a free debug
+  port (starting 19433), writes them to `~/.aethon/dev-info.json`,
+  exports `VITE_PORT` + `AETHON_DEBUG_PORT`, and overrides Tauri's
+  `devUrl` via `$TAURI_CONFIG`. The `flake.nix` `dev` command now
+  exec's the wrapper. The aethon-debug skill reads `dev-info.json` so
+  it follows the chosen ports automatically. A leaked 1420 from a
+  prior run no longer breaks the next session.
+- **Compositional terminal subscription.** Bash output now lands in
+  three places: `/terminal/buffer/<tabId>` state path (bindable via
+  `$ref`), the existing `aethon:terminal` window event (active tab,
+  feeds xterm), and the new `aethon:terminal-tap` window event
+  (every tab, multi-subscriber, `detail = {tabId, content}`).
+  Logging extensions / alternative renderers no longer have to
+  monkey-patch a single-subscriber listener.
+
+### Fixed
+
+- **Handler setState attribution under concurrent prompts.**
+  `dispatch_a2ui_event` now wraps handler dispatch in
+  `tabContext.run(handlerTabId, …)` so any setState a handler fires
+  (or any microtask continuation it kicks off) inherits the
+  originating tab via AsyncLocalStorage — even when another tab's
+  prompt is concurrently in flight.
+
+### Added
+
 - **Layout catalogue.** `default-layout` skill now ships three built-in
   layouts:
   - `default` — sidebar / header / canvas / terminal / chat / status
