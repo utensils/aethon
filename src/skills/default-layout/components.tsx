@@ -104,25 +104,43 @@ export function Sidebar({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
     title?: StringValue;
     sections?: SidebarSection[];
+    // Optional list of extra sections appended after the inline `sections`.
+    // Bound via $ref so extensions can push into a state path and have
+    // their sections appear without modifying the layout payload.
+    extraSections?: SidebarSection[] | { $ref: string };
   };
 
   const title = props.title ? resolveString(props.title, state) : "";
 
   const resolveItems = (
-    items: SidebarSection["items"],
+    items: SidebarSection["items"] | undefined,
   ): { id: string; label: string; active?: boolean }[] => {
+    if (!items) return [];
     if (Array.isArray(items)) return items;
+    if (typeof items !== "object" || !("$ref" in items)) return [];
     const resolved = resolvePointer(state, items.$ref);
     return Array.isArray(resolved)
       ? (resolved as { id: string; label: string; active?: boolean }[])
       : [];
   };
 
+  // Resolve the extra-sections list (inline array or $ref). Both lists
+  // share the same SidebarSection shape so they render with the same
+  // section/item path.
+  const extraSections: SidebarSection[] = (() => {
+    const raw = props.extraSections;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    const resolved = resolvePointer(state, raw.$ref);
+    return Array.isArray(resolved) ? (resolved as SidebarSection[]) : [];
+  })();
+  const allSections = [...(props.sections ?? []), ...extraSections];
+
   return (
     <aside className="a2ui-sidebar">
       {title && <div className="a2ui-sidebar-title">{title}</div>}
       <div className="a2ui-sidebar-sections">
-        {props.sections?.map((section) => {
+        {allSections.map((section) => {
           const items = resolveItems(section.items);
           return (
             <div key={section.id} className="a2ui-sidebar-section">

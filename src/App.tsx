@@ -8,6 +8,39 @@ import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { setPointer } from "./utils/jsonPointer";
 
+// Immutable JSON Pointer write that preserves arrays. The generic
+// setPointer in utils/jsonPointer turns `{...arr}` into a plain object,
+// which breaks the renderer when a layout's `components`/`children`
+// arrays get traversed. This walker spreads with `[...arr]` for arrays
+// so the layout shape is preserved end-to-end.
+function decodeToken(t: string): string {
+  return t.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+function layoutPatch<T>(payload: T, pointer: string, value: unknown): T {
+  if (!pointer || pointer === "" || pointer === "/") return payload;
+  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  const tokens = path.split("/").map(decodeToken);
+  const cloneNode = (node: unknown): unknown => {
+    if (Array.isArray(node)) return [...node];
+    if (node && typeof node === "object") return { ...(node as Record<string, unknown>) };
+    return {};
+  };
+  const root = cloneNode(payload) as Record<string, unknown> | unknown[];
+  let cursor: Record<string, unknown> | unknown[] = root;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const key = tokens[i];
+    const idx = Array.isArray(cursor) ? Number(key) : key;
+    const existing = (cursor as Record<string | number, unknown>)[idx as never];
+    const child = cloneNode(existing);
+    (cursor as Record<string | number, unknown>)[idx as never] = child;
+    cursor = child as Record<string, unknown> | unknown[];
+  }
+  const lastKey = tokens[tokens.length - 1];
+  const lastIdx = Array.isArray(cursor) ? Number(lastKey) : lastKey;
+  (cursor as Record<string | number, unknown>)[lastIdx as never] = value;
+  return root as T;
+}
+
 // Recursive structural merge. Plain objects recurse; arrays and primitives
 // replace. Used when folding the bridge's extension state snapshot into
 // app state so an extension's nested key doesn't wipe siblings.
@@ -335,15 +368,60 @@ export default function App() {
         const extState = (data.extensionState as
           | Record<string, unknown>
           | undefined) ?? {};
+        const extLayout = data.extensionLayout as A2UIPayload | undefined;
+        const extPatches = (data.extensionLayoutPatches as
+          | { path: string; value: unknown }[]
+          | undefined) ?? [];
         registry.setTemplates(extComponents);
+        // Restore any extension-supplied layout, then replay queued
+        // patches. Falls back to the boot layout when none is reported
+        // so a removed/disabled extension stops bleeding stale chrome
+        // across agent reloads. The layout's own `state` hydrates below
+        // alongside extensionState — same semantics as the live
+        // `layout_set` path so replay matches.
+        const baseLayout: A2UIPayload =
+          extLayout &&
+          typeof extLayout === "object" &&
+          Array.isArray(extLayout.components)
+            ? extLayout
+            : BOOT_LAYOUT;
+        const patchedLayout = extPatches.reduce<A2UIPayload>(
+          (acc, p) => layoutPatch(acc, p.path, p.value),
+          baseLayout,
+        );
+        setLayout(patchedLayout);
         setState((prev) => {
-          let next: Record<string, unknown> = {
-            ...prev,
+          // Three-layer hydration in priority order (lowest → highest):
+          //   1. extension layout state — TREATED AS BOOT DEFAULTS
+          //      (only fills keys not already set; existing live state
+          //      like `messages` / `canvas` wins to avoid wiping
+          //      restored history when ready replays after a reload)
+          //   2. extension setState patches (last-write-wins overrides)
+          //   3. ready-owned runtime fields (model picker, status, etc.)
+          //
+          // Known limitation: keys an extension wrote earlier in the
+          // session via setState are NOT cleared when that extension
+          // stops reporting them (e.g. uninstalled mid-session). They
+          // survive in `prev` and re-appear here. Reset Aethon to clear
+          // — fix would require the bridge tracking extension-owned
+          // keys explicitly. Acceptable for the current scope.
+          let next: Record<string, unknown> = { ...prev };
+          if (extLayout && extLayout.state) {
+            // Defaults semantics: deep-merge layout into a fresh object
+            // and let prev win for any overlapping keys.
+            next = deepMergeState(
+              extLayout.state as Record<string, unknown>,
+              next,
+            );
+          }
+          next = deepMergeState(next, extState);
+          next = {
+            ...next,
             model,
             status: "ready",
             connection: "connected",
             sidebar: {
-              ...((prev.sidebar as Record<string, unknown>) ?? {}),
+              ...((next.sidebar as Record<string, unknown>) ?? {}),
               models: models.map((m) => ({
                 id: m.id,
                 label: m.label,
@@ -351,12 +429,6 @@ export default function App() {
               })),
             },
           };
-          // Fold the extension state tree into app state via a recursive
-          // deep merge. Plain objects recurse; primitives and arrays
-          // replace. Without the recursion, an extension setting a
-          // descendant of an app-owned key (e.g. /sidebar/foo) would
-          // wipe the rest of the parent on hydration.
-          next = deepMergeState(next, extState);
           return next;
         });
         break;
@@ -372,6 +444,36 @@ export default function App() {
         const path = data.path as string | undefined;
         if (!path) break;
         setState((prev) => setPointer(prev, path, data.value));
+        break;
+      }
+      case "layout_set": {
+        // Extension swapped the active layout wholesale. Goes through
+        // the same path window.aethon.setLayout uses so the new payload
+        // hydrates state and renders identically to a default-layout boot.
+        const next = data.payload as A2UIPayload | undefined;
+        if (!next || typeof next !== "object" || !Array.isArray(next.components)) break;
+        setLayout(next);
+        if (next.state) {
+          // Layout state contributes BOOT DEFAULTS — only fills keys
+          // that aren't already set in live state. Existing runtime
+          // fields (status, model, connection, sidebar.models, …) win.
+          // Achieved by deep-merging with prev as the override layer.
+          setState((prev) =>
+            deepMergeState(next.state as Record<string, unknown>, prev),
+          );
+        }
+        break;
+      }
+      case "layout_patch": {
+        // Extension mutated a path inside the active layout (e.g. add a
+        // sidebar section, swap a child). Immutable patch that preserves
+        // arrays — the generic setPointer collapses arrays into plain
+        // objects on traversal because it spreads with `{...existing}`,
+        // which would crash the renderer on `components.map()`. Walk
+        // manually here so arrays stay arrays.
+        const path = data.path as string | undefined;
+        if (!path) break;
+        setLayout((prev) => layoutPatch(prev, path, data.value));
         break;
       }
       case "model_changed": {

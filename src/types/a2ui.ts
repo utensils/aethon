@@ -122,6 +122,9 @@ export interface SidebarComponent extends A2UIComponent {
   props: {
     title?: StringValue;
     sections?: SidebarSection[];
+    // Appended after `sections`. Inline array or `$ref` so extensions can
+    // push panels into a state-bound list without modifying the layout.
+    extraSections?: SidebarSection[] | { $ref: string };
   };
 }
 

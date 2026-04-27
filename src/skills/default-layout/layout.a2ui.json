@@ -95,7 +95,8 @@
                 "title": "Chat History",
                 "items": { "$ref": "/sidebar/history" }
               }
-            ]
+            ],
+            "extraSections": { "$ref": "/sidebar/extraSections" }
           }
         },
         {
@@ -153,7 +154,8 @@
     "canvas": null,
     "sidebar": {
       "history": [],
-      "models": []
+      "models": [],
+      "extraSections": []
     },
     "terminal": {
       "open": false
