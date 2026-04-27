@@ -966,16 +966,29 @@ async function main() {
             if (match.componentType && match.componentType !== ev.componentType) continue;
             if (match.eventType && match.eventType !== ev.eventType) continue;
             if (match.descendantId && match.descendantId !== descendantId) continue;
-            try {
-              await handler(ev, {
+            // Fire-and-forget the handler: do NOT await it inside the
+            // stdin loop. If a handler awaits `ctx.pi.prompt(...)` (the
+            // documented pattern for chaining "prompt → render result"),
+            // awaiting here would keep the bridge pinned in this case
+            // until the agent turn settles — meaning a follow-up Stop
+            // command would queue behind it and never reach
+            // session.abort(). Handlers that need sequential work
+            // chain promises themselves; the bridge must stay pumpable.
+            //
+            // Errors surface as `notice` (a system chat bubble) rather
+            // than `error` so they don't clobber the frontend's waiting
+            // flag — a handler-side failure must not hide the Stop
+            // button for whatever prompt the user actually has running.
+            Promise.resolve(
+              handler(ev, {
                 setState: aethonApi.setState,
                 registerComponent: aethonApi.registerComponent,
                 pi: piCtx,
-              });
-            } catch (err) {
+              }),
+            ).catch((err) => {
               const message = err instanceof Error ? err.message : String(err);
-              send({ type: "error", message: `a2ui handler: ${message}` });
-            }
+              send({ type: "notice", message: `a2ui handler: ${message}` });
+            });
           }
           break;
         }
