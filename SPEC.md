@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-27 (M5 progress — phase 1 quick wins, mutation feedback channel, frontend-state mirror, empty-state composite, for-each primitive, chrome props, theme directory, layout-structure snapshot, registerable slash commands + keybindings, compositional sidebar items, A2UI primitive expansion, multi-tab restore via empty-state, layout catalogue + sidebar opt-in).
+Last reviewed: 2026-04-27 (M5 essentially complete — only the layout-slot schema refactor + release work remain). Items shipped this pass include mutation feedback, frontend-state mirror, empty-state composite, for-each, chrome props, theme directory, layout structure snapshot, registerable slash commands + keybindings + menu items + event routes, compositional sidebar items + terminal subscription, primitive expansion (heading/paragraph/divider/checkbox/select/slider/list/table), multi-tab restore via empty-state, layout catalogue + sidebar opt-in, dev-port auto-increment, handler attribution race, config dead options.
 
 ---
 
