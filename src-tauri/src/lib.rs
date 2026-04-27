@@ -534,6 +534,13 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         let skills_modules = h.join(".aethon/skills/node_modules");
         let _ = std::fs::create_dir_all(&skills_modules);
         if skills_modules.exists() { watch_paths.push(skills_modules); }
+        // ~/.aethon/themes holds loose-file JSON themes (no extension /
+        // skill packaging required). Pre-create so the first theme drop
+        // fires Create events and triggers an agent respawn that picks it
+        // up via loadAethonThemeDirectory.
+        let themes_dir = h.join(".aethon/themes");
+        let _ = std::fs::create_dir_all(&themes_dir);
+        if themes_dir.exists() { watch_paths.push(themes_dir); }
     }
     // Bridge source dir is dev-only — release ships a compiled sidecar
     // and editing the source has no effect on the running binary.

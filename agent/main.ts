@@ -577,6 +577,42 @@ async function discoverPiAethonExtensions(
   }
 }
 
+// Discover and load loose-file themes from ~/.aethon/themes/*.json.
+// Each file is a JSON object matching the registerTheme contract:
+//   { id: string, label?: string, vars: { "--bg": "...", "--text": "...", ... } }
+// Validated through the bridge's existing normalizeTheme so reserved ids
+// (dark/light) and malformed CSS variable names are rejected the same way
+// as extension-registered themes. Failures per file are logged and the
+// loader continues — one bad theme doesn't poison the directory.
+async function loadAethonThemeDirectory(
+  api: { registerTheme: (theme: unknown) => unknown },
+): Promise<void> {
+  const dir = join(USER_DIR, "themes");
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[aethon-themes] readdir ${dir}: ${(err as Error).message}`);
+    }
+    return;
+  }
+  for (const name of entries) {
+    if (!name.endsWith(".json")) continue;
+    const file = join(dir, name);
+    try {
+      const text = await Bun.file(file).text();
+      const parsed = JSON.parse(text) as unknown;
+      // registerTheme handles validation internally — invalid input emits
+      // a notice and resolves with {ok:false}.
+      api.registerTheme(parsed);
+      console.error(`[aethon-themes] loaded ${name}`);
+    } catch (err) {
+      console.error(`[aethon-themes] ${name}: ${(err as Error).message}`);
+    }
+  }
+}
+
 // Discover and load Aethon extensions from ~/.aethon/extensions/*.{ts,js}.
 // Each extension exports `register(api)` (named or as default.register).
 // Bun executes .ts directly so authors don't need a build step.
@@ -774,6 +810,47 @@ async function main() {
     return `${prefix} — root=${root?.type ?? "?"}, columns="${cols}", sidebar=${sidebarSide}`;
   }
 
+  // Structural decomposition of the active layout: root id/type, grid
+  // template, and a flat child list (id/type/area). Stripped of state /
+  // props / nested children so the snapshot stays small. Null when no
+  // tree is known yet.
+  function summarizeLayoutStructure(): RuntimeSnapshot["layoutStructure"] {
+    let layout: unknown;
+    if (extensionLayout) {
+      layout = extensionLayout;
+    } else if (bootLayout) {
+      let tree = bootLayout;
+      for (const { path, value } of pendingLayoutPatches) {
+        tree = patchLayoutTree(tree, path, value);
+      }
+      layout = tree;
+    } else {
+      return null;
+    }
+    const typed = layout as { components?: unknown[] } | null;
+    const root = typed?.components?.[0] as
+      | {
+          id?: string;
+          type?: string;
+          props?: { columns?: string; rows?: string; areas?: string[] };
+          children?: { id?: string; type?: string; props?: { area?: string } }[];
+        }
+      | undefined;
+    if (!root) return null;
+    return {
+      rootId: root.id ?? "",
+      rootType: root.type ?? "",
+      ...(root.props?.columns ? { columns: root.props.columns } : {}),
+      ...(root.props?.rows ? { rows: root.props.rows } : {}),
+      ...(root.props?.areas ? { areas: root.props.areas } : {}),
+      children: (root.children ?? []).map((c) => ({
+        id: c.id ?? "",
+        type: c.type ?? "",
+        ...(c.props?.area ? { area: c.props.area } : {}),
+      })),
+    };
+  }
+
   // Build the live runtime snapshot. Cheap; safe to call from the
   // appendSystemPromptOverride callback on every resourceLoader.reload.
   // Tab data is read from the live `tabs` Map declared further down,
@@ -811,6 +888,7 @@ async function main() {
         ...(match.eventType ? { eventType: match.eventType } : {}),
       })),
       uiState: Object.fromEntries(frontendState),
+      layoutStructure: summarizeLayoutStructure(),
     };
   }
 
@@ -1483,6 +1561,11 @@ async function main() {
   // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
   // skills that bundle layouts, components, and themes.
   await loadAethonSkillManifests(aethonApi, loadedExtensions);
+  // Loose-file themes — JSON in ~/.aethon/themes/*.json registered via the
+  // same normalizeTheme path as extension-supplied ones. Lets non-coders
+  // share themes without packaging an extension. Hot-reloaded by the same
+  // file watcher (~/.aethon/) that picks up extension changes.
+  await loadAethonThemeDirectory(aethonApi);
   // Discover pi extensions in ~/.pi/agent/extensions/ that touch
   // globalThis.aethon. Pi loads them itself; we just record their
   // existence so the runtime snapshot covers all UI-driving extensions

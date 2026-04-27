@@ -208,11 +208,23 @@ button clicks inside tool cards stay scoped to the right tab.
 ### `chat-input`
 
 ```ts
-{ value?: { "$ref": "/draft" }, placeholder?, disabled?, queueCount? }
+{
+  value?: StringValue,            // typically { "$ref": "/draft" }
+  placeholder?: StringValue,
+  disabled?: BooleanValue,        // controls Send ↔ Stop swap
+  queueCount?: NumberValue,
+  commands?: SlashCommandHint[] | { $ref: string },
+  sendLabel?: StringValue,        // default: "Send"
+  stopLabel?: StringValue,        // default: "Stop"
+  stopTitle?: StringValue,        // default: "Stop the current prompt"
+  queueBadgeFormat?: StringValue, // default: "+{n}" — `{n}` = queueCount
+}
 ```
 
 Fires `submit` with the drafted text. Frontend short-circuits to
-`send_message` so the agent receives the chat directly.
+`send_message` so the agent receives the chat directly. Override the
+button labels / queue badge to match a different brand voice without
+re-implementing the composer.
 
 ### `status-bar`
 
@@ -225,21 +237,40 @@ Use `globalThis.aethon.setState("/status", "...")` to update.
 ### `terminal`
 
 ```ts
-{ open: boolean, area?: string, readOnly?: boolean }
+{
+  open: boolean,
+  area?: string,
+  readOnly?: boolean,
+  fontSize?: NumberValue,
+  cols?: NumberValue,
+  rows?: NumberValue,
+  output?: StringValue,           // bind a $ref to drive xterm directly
+  subscribeToBash?: BooleanValue, // opt in to the agent's bash stream
+  headerLabel?: StringValue,      // default: "Aethon Terminal"
+  bootGreeting?: StringValue,     // default: "Aethon Terminal\r\n$ "
+}
 ```
 
 Streams pi's bash output per tab. The buffer is per-tab; switching tabs
-replays the active tab's last 256 KiB.
+replays the active tab's last 256 KiB. Override `headerLabel` /
+`bootGreeting` to brand the panel without forking the composite.
 
 ### `main-canvas`
 
 ```ts
-{ area?: string, components?: ComponentTree[] }
+{
+  area?: string,
+  slot?: string,                    // pointer to live A2UI subtree
+  messages?: { $ref: string },      // chat history binding
+  emptyHint?: StringValue,          // shown when no messages + no live subtree
+  components?: ComponentTree[],
+}
 ```
 
 The default chat canvas. Most extensions don't need to touch this — to
 add ad-hoc UI, return a per-message A2UI payload from the agent or set
-state on a bound `$ref`.
+state on a bound `$ref`. Override `emptyHint` to show a different
+welcome line when the canvas is empty.
 
 ### `empty-state`
 

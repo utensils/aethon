@@ -259,6 +259,10 @@ One-call summary suitable for chat output:
   components: {...},
   themes: [...],
   layoutSummary: string,          // e.g. "default-layout (sidebar=left)"
+  layoutStructure: {              // root + children for quick introspection
+    rootId, rootType, columns?, rows?, areas?,
+    children: [{ id, type, area? }],
+  } | null,
   tabs: [{ id, model, messageCount }],
   eventHandlers: [...],           // match shape only (no fn bodies)
   uiState: {                      // frontend-mirrored slices

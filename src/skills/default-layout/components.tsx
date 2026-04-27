@@ -236,6 +236,10 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
     slot?: string;
     messages?: { $ref: string };
+    /** Text shown when the canvas has no messages and no live subtree.
+     *  Lifted out of inline JSX so brand/voice can be overridden via $ref
+     *  without forking the composite. */
+    emptyHint?: StringValue;
   };
 
   const messages = props.messages
@@ -248,6 +252,10 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
       ? (live as { components: A2UIComponent[] })
       : null;
 
+  const emptyHint = props.emptyHint
+    ? resolveString(props.emptyHint, state)
+    : "The agent's canvas is empty. Send a message to populate it.";
+
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = listRef.current;
@@ -257,9 +265,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
   return (
     <main className="a2ui-canvas" ref={listRef}>
       {messages.length === 0 && !liveSubtree && (
-        <div className="a2ui-canvas-empty">
-          The agent's canvas is empty. Send a message to populate it.
-        </div>
+        <div className="a2ui-canvas-empty">{emptyHint}</div>
       )}
       {messages.map((m) => (
         <div key={m.id} className={`a2ui-canvas-message ${m.role}`}>
@@ -311,6 +317,16 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
      *  Enter-press landed even though the agent is still working on
      *  the previous one. */
     queueCount?: NumberValue;
+    /** Label on the primary (idle-state) button. Default "Send". */
+    sendLabel?: StringValue;
+    /** Label on the abort (busy-state) button. Default "Stop". */
+    stopLabel?: StringValue;
+    /** Tooltip on the abort button. Default "Stop the current prompt". */
+    stopTitle?: StringValue;
+    /** Format string for the queue badge. Use `{n}` placeholder; default
+     *  "+{n}". A custom value like "queue: {n}" lets a different brand
+     *  voice show through without forking the composite. */
+    queueBadgeFormat?: StringValue;
   };
 
   const value = props.value ? resolveString(props.value, state) : "";
@@ -319,6 +335,14 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     : "";
   const busy = props.disabled ? resolveBoolean(props.disabled, state) : false;
   const queueCount = props.queueCount ? resolveNumber(props.queueCount, state) : 0;
+  const sendLabel = props.sendLabel ? resolveString(props.sendLabel, state) : "Send";
+  const stopLabel = props.stopLabel ? resolveString(props.stopLabel, state) : "Stop";
+  const stopTitle = props.stopTitle
+    ? resolveString(props.stopTitle, state)
+    : "Stop the current prompt";
+  const queueBadgeFormat = props.queueBadgeFormat
+    ? resolveString(props.queueBadgeFormat, state)
+    : "+{n}";
 
   // Resolve the commands list. Supports inline arrays or $ref-bound state.
   const commandsRaw = props.commands;
@@ -529,7 +553,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           className="a2ui-chat-input-queue"
           title={`${queueCount} message${queueCount === 1 ? "" : "s"} queued behind the current prompt`}
         >
-          +{queueCount}
+          {queueBadgeFormat.replace("{n}", String(queueCount))}
         </span>
       )}
       {busy ? (
@@ -537,9 +561,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           type="button"
           className="a2ui-chat-input-send a2ui-chat-input-stop"
           onClick={handleStop}
-          title="Stop the current prompt"
+          title={stopTitle}
         >
-          Stop
+          {stopLabel}
         </button>
       ) : (
         <button
@@ -548,7 +572,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           onClick={handleClick}
           disabled={value.trim().length === 0}
         >
-          Send
+          {sendLabel}
         </button>
       )}
     </div>
@@ -675,6 +699,12 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     // thinking the panel is broken. Skills with their own input pipeline
     // can opt out by leaving readOnly unset.
     readOnly?: BooleanValue;
+    /** Header label shown above the xterm canvas. Lifted out of inline
+     *  JSX so brand/voice can be overridden via $ref. */
+    headerLabel?: StringValue;
+    /** Boot greeting written into the buffer on mount and on tab replay.
+     *  Default reads "Aethon Terminal\r\n$ ". Use "" to skip the prompt. */
+    bootGreeting?: StringValue;
   };
 
   const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
@@ -686,6 +716,18 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   const readOnly = props.readOnly
     ? resolveBoolean(props.readOnly, state)
     : false;
+  const headerLabel = props.headerLabel
+    ? resolveString(props.headerLabel, state)
+    : "Aethon Terminal";
+  const bootGreeting = props.bootGreeting
+    ? resolveString(props.bootGreeting, state)
+    : "Aethon Terminal\r\n$ ";
+  // Stash boot greeting in a ref so the mount-once effect (which doesn't
+  // depend on `bootGreeting`) writes the right initial buffer even if the
+  // prop changes later. Replay also reads from this ref so a $ref-driven
+  // greeting stays current across tab switches.
+  const bootGreetingRef = useRef(bootGreeting);
+  bootGreetingRef.current = bootGreeting;
   // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
   // to drive the terminal via state — the diff effect below handles it the
   // same way it used to. The default layout no longer uses this; bash output
@@ -740,7 +782,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     }
 
     fit.fit();
-    term.write("Aethon Terminal\r\n$ ");
+    term.write(bootGreetingRef.current);
 
     // onInput wires xterm's keystroke stream to an A2UI event so a future
     // skill with a real PTY backend can plug in. Skip it in read-only mode
@@ -768,7 +810,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
         // Clear restores the prompt-style header line plus the buffered
         // contents for the now-active tab. Empty buffer = fresh prompt.
         term.clear();
-        term.write("Aethon Terminal\r\n$ ");
+        term.write(bootGreetingRef.current);
         if (typeof detail === "string" && detail.length > 0) {
           term.write(detail);
         }
@@ -821,7 +863,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   return (
     <div className="a2ui-terminal">
       <div className="a2ui-terminal-header">
-        <span>Aethon Terminal</span>
+        <span>{headerLabel}</span>
       </div>
       <div ref={containerRef} className="a2ui-terminal-mount" />
     </div>

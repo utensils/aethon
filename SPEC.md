@@ -182,7 +182,7 @@ by an extension without touching React source.
 - [x] **`getLayout()` returns the active rendered layout** — bridge now preloads the canonical boot layout SYNCHRONOUSLY from `$AETHON_BOOT_LAYOUT_FILE` (set by the Tauri shell, pointing at `src/skills/default-layout/layout.a2ui.json` in dev or the bundled resource in release) BEFORE any extension's `register(api)` runs. `_getLayout()` returns `extensionLayout ?? (bootLayout + pendingLayoutPatches folded)`, and a `boot_layout` inbound message lets the frontend refresh the value when the active layout skill changes. Verified end-to-end: `right-sidebar-model-picker` extension's prior bailout (`if (!layout) return`) now succeeds and applies its 5 patches; layoutSummary correctly reports `sidebar=right` after register-time. Bundled boot layout added to `tauri.conf.json` `bundle.resources` so release builds get it too.
 - [x] **Bridge-readable frontend state** — frontend pushes `frontend_state_patch { path, value }` whenever an allowlisted slice changes (`/sidebar/models`, `/sidebar/themes`, `/connection`, `/status`, `/tabs`, `/draft`, `/messagesCount`). Bridge stores in `frontendState` Map; `aethon.getFrontendState(path?)` returns the live value; `getRuntimeSnapshot().uiState` includes the full mirror so the system prompt's runtime section + `~/.aethon/state.json` reflect what's actually on screen. Diff-on-frontend keeps the IPC chatter low (one patch per slice per change). Best-effort mirror, no ack.
 - [x] **Mutation feedback channel** — every mutating outbound message (`state_patch`, `layout_set`, `layout_patch`, `extension_components`, `extension_themes`) carries a `mutationId`. Frontend acks via `mutation_ack { mutationId, success, error? }`. Bridge resolves a per-mutation Promise so the API now returns `Promise<{ok: boolean, error?: string}>`. Sync use is unchanged (Promises just GC if not awaited). Pre-frontend-ready calls resolve immediately with `{ok: true}` (covered by retained-state replay). 5-second timeout guards stuck Promises. `registerTheme` validation failures emit a `notice` (not `error`) so they don't clobber waiting state, and the Promise carries the same detail.
-- [ ] **Boot-layout snapshot in the runtime snapshot** — once the bridge knows the boot layout (above), include a structural summary in `getRuntimeSnapshot()` (root component IDs, grid columns/rows/areas, child types) so the agent doesn't have to call `getLayout()` for basic introspection.
+- [x] **Boot-layout structural snapshot in `RuntimeSnapshot`** — `RuntimeSnapshot.layoutStructure` ships `{rootId, rootType, columns?, rows?, areas?, children: [{id, type, area?}]}` extracted from the active layout (extension-set or boot+patches). Agent answers "what's in the layout?" without paying for the full `getLayout()` round-trip; the system prompt's runtime section emits a one-liner showing the root's children + areas.
 
 #### A2UI primitive gaps
 
@@ -206,9 +206,9 @@ by an extension without touching React source.
 - [ ] **Concurrent setState attribution race** — `_setState` falls back to `currentAgentTabId` when `tabContext.getStore()` returns undefined (an extension event listener that escapes ALS, an `setInterval` callback, etc.). Under concurrent prompts on different tabs, this single global can be wrong for the path actually being written. Fix: scope every async entrypoint that touches the bridge through `tabContext.run(tabId, fn)` — including event handlers inside `dispatch_a2ui_event`, timer callbacks set up at register-time (which currently have no tab context), and any future bash-result callback. For setState calls genuinely outside any tab scope, document the fallback as "active tab" rather than "current agent tab."
 - [x] **State file regenerates on `onEvent` registration** — fixed in `agent/main.ts:_onEvent`: `scheduleStateFileWrite` is now called after each handler is registered.
 - [x] **Registered event handlers in runtime snapshot** — `RuntimeSnapshot.eventHandlers` ships the match shape only (templateRootType / componentType / descendantId / eventType), no function bodies. Surfaced in the live `~/.aethon/state.json` and the system-prompt runtime section so the agent can answer "what handlers are wired?" without invoking JS.
-- [ ] **Hardcoded chat-input chrome** — the composer (`src/skills/default-layout/components.tsx:467-548`) hard-codes textarea behavior, the slash command picker UI, the queue-count badge, and the literal `Stop` / `Send` button labels. Extensions can replace the entire `chat-input` composite but cannot configure the stock composer as A2UI props. Fix: lift labels (`sendLabel`, `stopLabel`, `placeholder`), picker styling, and queue-badge format into `chat-input` props that accept `$ref`s; document the prop schema in `docs/aethon-agent/components.md`.
-- [ ] **Hardcoded chrome strings inside composites** — the default canvas empty state ("Send a message to start a conversation…", `components.tsx:252-257`), the terminal panel header (`Aethon Terminal`, `components.tsx:743-747`), and the xterm boot greeting (`Aethon Terminal\r\n$ `, `components.tsx:665`) are inline React strings. An extension swapping to a different brand/voice can't override them without re-implementing the whole composite. Fix: pass these in as composite props (with sensible defaults) so a `$ref` or inline override works.
-- [ ] **Theme discovery doesn't match SPEC** — `SPEC.md` (extension model section) lists `~/.aethon/themes/` and `.aethon/themes/` as theme discovery paths, but the bridge has no theme-directory loader; themes only land via extension `register(api).registerTheme(…)`. Fix: either (a) implement a theme directory loader that watches `~/.aethon/themes/*.{json,toml}` and registers each as a theme, or (b) update the SPEC discovery section to match reality (extensions only).
+- [x] **Hardcoded chat-input chrome lifted to props** — `chat-input` now accepts `sendLabel`, `stopLabel`, `stopTitle`, and `queueBadgeFormat` (with `{n}` placeholder for the queue count). All accept `$ref`s. Defaults preserve existing UX. Documented in `docs/aethon-agent/components.md`.
+- [x] **Hardcoded chrome strings lifted to composite props** — `main-canvas` accepts `emptyHint`; `terminal` accepts `headerLabel` and `bootGreeting` (re-applied on tab-switch replay too). Extensions overriding brand/voice no longer need to fork the composite.
+- [x] **Theme discovery: loose-file loader implemented.** Bridge now loads `~/.aethon/themes/*.json` at boot via `loadAethonThemeDirectory`; each file goes through the same `normalizeTheme` validation as extension-supplied themes. Watcher pre-creates the directory and watches it for hot-reload. SPEC's Themes section updated with the four discovery sources. Lowest-friction path for non-coder users to ship a theme.
 
 #### Layout abstraction gaps
 
@@ -372,13 +372,23 @@ defines:
 Themes are CSS custom properties applied globally. The A2UI renderer reads
 these when rendering components. Themes can be switched at runtime.
 
-Discovery today: themes are registered via the extension API
-(`globalThis.aethon.registerTheme(…)`), either from an Aethon-direct
-extension under `~/.aethon/extensions/`, an npm-distributed skill
-package under `~/.aethon/skills/node_modules/<pkg>`, or a pi extension
-in `~/.pi/agent/extensions/` that uses the global. There is **no
-loose-file theme-directory loader** today; `~/.aethon/themes/` and
-`.aethon/themes/` are not scanned. Tracked as an M5 backlog item.
+Discovery: themes can come from any of these sources, all registered
+through the same `normalizeTheme` validation path so reserved built-ins
+(`dark`/`light`) and malformed CSS variable names are rejected uniformly:
+
+1. **`~/.aethon/themes/*.json`** — loose-file JSON themes loaded by the
+   bridge at boot. Each file is `{ id, label?, vars: { "--bg": "...", ... } }`.
+   Pre-created on first launch and watched for hot reload — drop a JSON
+   file and it appears in the sidebar Themes section without restarting.
+2. **Aethon extensions** under `~/.aethon/extensions/*.{ts,js,mjs}` calling
+   `globalThis.aethon.registerTheme(…)`.
+3. **npm-distributed skill packages** under `~/.aethon/skills/node_modules/<pkg>`
+   (manifest `aethon.entry`) calling the same registration.
+4. **pi extensions** under `~/.pi/agent/extensions/*` that touch
+   `globalThis.aethon.registerTheme(…)`.
+
+Loose-file themes are the lowest-friction option for end users — no code
+required.
 
 ---
 

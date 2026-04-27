@@ -8,6 +8,32 @@ All notable changes to Aethon. Format loosely follows
 
 ### Added
 
+- **Loose-file theme directory.** `~/.aethon/themes/*.json` files are now
+  loaded at boot via the same `normalizeTheme` validation path as
+  extension-supplied themes. Each file is `{ id, label?, vars: { "--bg":
+  "...", ... } }`. Watcher pre-creates the directory and watches it for
+  hot reload — drop a JSON file and it appears in the sidebar Themes
+  section without restarting. Lowest-friction way for end users to ship
+  a theme.
+- **`RuntimeSnapshot.layoutStructure`.** Structural summary of the active
+  layout — root id/type, grid columns/rows/areas, flat child list with
+  ids/types/areas. Saves the agent a `getLayout()` round-trip for basic
+  introspection. Rendered as a one-liner in the system-prompt runtime
+  section.
+
+### Changed
+
+- **`chat-input` chrome lifted to props.** New `sendLabel`, `stopLabel`,
+  `stopTitle`, `queueBadgeFormat` (with `{n}` placeholder for queue
+  count). All accept `$ref`s. Defaults preserve existing UX.
+- **`main-canvas` empty hint lifted to `emptyHint` prop** (StringValue).
+- **`terminal` chrome lifted to props.** New `headerLabel` (default
+  "Aethon Terminal") and `bootGreeting` (default "Aethon Terminal\r\n$ ",
+  re-applied on tab-switch replay). Extensions changing brand voice no
+  longer need to fork the composite.
+
+### Added
+
 - **`for-each` template primitive.** Renders one copy of `children` per
   element of `props.items` (resolved through `$ref` against the surrounding
   state). Optional `props.key` selects a field on each item to use as

@@ -46,6 +46,18 @@ export interface RuntimeSnapshot {
   // connection, status, tabs, draft, messagesCount). Populated from the
   // `frontend_state_patch` channel — what's actually visible on screen.
   uiState: Record<string, unknown>;
+  // Structural summary of the active layout — root component IDs, grid
+  // template metadata, child types/areas. Lets the agent answer "what's
+  // in the layout?" without paying the full getLayout() round-trip.
+  // Null when the bridge has no boot tree yet.
+  layoutStructure: {
+    rootId: string;
+    rootType: string;
+    columns?: string;
+    rows?: string;
+    areas?: string[];
+    children: { id: string; type: string; area?: string }[];
+  } | null;
 }
 
 // The static base prompt — describes the API surface and renderer
@@ -318,6 +330,20 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
 
   lines.push("");
   lines.push(`Active layout: ${snapshot.layoutSummary}.`);
+  if (snapshot.layoutStructure) {
+    const ls = snapshot.layoutStructure;
+    lines.push(
+      `Root \`${ls.rootId}\` (\`${ls.rootType}\`) — children: ${
+        ls.children
+          .map((c) =>
+            c.area
+              ? `\`${c.id}\`(\`${c.type}\` @ ${c.area})`
+              : `\`${c.id}\`(\`${c.type}\`)`,
+          )
+          .join(", ") || "(none)"
+      }.`,
+    );
+  }
 
   if (snapshot.tabs.length > 0) {
     lines.push("");
