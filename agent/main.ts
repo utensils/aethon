@@ -78,6 +78,7 @@
 
 import {
   AuthStorage,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
   SettingsManager,
@@ -89,6 +90,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { resolveAethonSystemPrompt } from "./system-prompt";
 
 function send(obj: Record<string, unknown>) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -542,11 +544,26 @@ async function main() {
   type AethonApi = typeof aethonApi;
   (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
 
+  // Inject Aethon-awareness into pi's system prompt so the model knows it
+  // has a GUI and can mutate `globalThis.aethon` directly. Goes through the
+  // resource loader's appendSystemPrompt option so it survives every
+  // resourceLoader.reload() inside the session.
+  const cwd = process.cwd();
+  const agentDir = join(homedir(), ".pi", "agent");
+  const resourceLoader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    appendSystemPrompt: resolveAethonSystemPrompt(),
+  });
+  await resourceLoader.reload();
+
   const { session } = await createAgentSession({
     authStorage,
     modelRegistry,
     settingsManager,
     sessionManager: SessionManager.inMemory(),
+    resourceLoader,
   });
 
   // Filter the picker to the user's enabledModels patterns from
