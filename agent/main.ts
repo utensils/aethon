@@ -494,10 +494,20 @@ async function main() {
       components: Object.fromEntries(extensionComponents),
     });
   }
-  function _setState(path: string, value: unknown): void {
+  function _setState(path: string, value: unknown, sourceTabId?: string): void {
     if (!path || typeof path !== "string") return;
     extensionStateTree = setAtPointer(extensionStateTree, path, value);
-    send({ type: "state_patch", path, value });
+    // sourceTabId is set when an a2ui handler called ctx.setState — the
+    // patch belongs to the tab the click came from, not whatever tab is
+    // active when this fires (handler may run async). Without it the
+    // frontend would apply mirrored-key patches to the wrong tab if the
+    // user switched mid-handler.
+    send({
+      type: "state_patch",
+      path,
+      value,
+      ...(sourceTabId ? { tabId: sourceTabId } : {}),
+    });
   }
   function _onEvent(match: A2UIEventMatch, handler: A2UIEventHandler): void {
     if (typeof handler !== "function") return;
@@ -1049,6 +1059,11 @@ async function main() {
               return handlerTab.session.agent?.signal;
             },
           };
+          // Tab-scoped setState for handlers: writes carry the originating
+          // tabId so the frontend can route mirrored-key patches back to
+          // the right tab even when the user has since switched.
+          const tabScopedSetState = (path: string, value: unknown) =>
+            _setState(path, value, handlerTabId);
           for (const { match, handler } of a2uiEventHandlers) {
             if (match.templateRootType && match.templateRootType !== ev.templateRootType) continue;
             if (match.componentType && match.componentType !== ev.componentType) continue;
@@ -1076,7 +1091,7 @@ async function main() {
             Promise.resolve()
               .then(() =>
                 handler(ev, {
-                  setState: aethonApi.setState,
+                  setState: tabScopedSetState,
                   registerComponent: aethonApi.registerComponent,
                   pi: piCtx,
                 }),

@@ -865,19 +865,20 @@ export default function App() {
         const path = data.path as string | undefined;
         if (!path) break;
         setState((prev) => setPointer(prev, path, data.value));
-        // If the path is one of the per-tab mirrored keys, also write
-        // into the active tab record. Otherwise the next tab switch
-        // would re-mirror the stale tab value over this update — an
-        // extension's setState('/canvas', x) would render once and
-        // disappear the moment the user changed tabs.
+        // If the path is one of the per-tab mirrored keys, route the
+        // patch into a tab record so it survives switches:
+        //   - `data.tabId` set: the bridge is telling us this came from
+        //     a handler bound to a specific tab — write to that tab even
+        //     if the user has since switched away. This is the common
+        //     case for handler-fired ctx.setState.
+        //   - missing: a global extension setState (e.g. clock interval)
+        //     with no tab context — fall back to the active tab so the
+        //     patch lands somewhere that re-mirrors on switch.
         const segs = path.split("/").filter(Boolean);
         const top = segs[0] as keyof Tab | undefined;
         if (top && TAB_MIRROR_KEYS.includes(top)) {
-          updateActiveTab((tab) => {
+          const writeIntoTab = (tab: Tab): Tab => {
             const tabRec = { ...tab } as unknown as Record<string, unknown>;
-            // Whole-key replace vs nested patch: if the path is just `/canvas`
-            // overwrite directly; for `/canvas/foo` use setPointer on the
-            // tab field so nested updates merge cleanly.
             if (segs.length === 1) {
               tabRec[top as string] = data.value;
             } else {
@@ -890,7 +891,13 @@ export default function App() {
               tabRec[top as string] = nested;
             }
             return tabRec as unknown as Tab;
-          });
+          };
+          const sourceTabId = data.tabId as string | undefined;
+          if (sourceTabId) {
+            updateTab(sourceTabId, writeIntoTab);
+          } else {
+            updateActiveTab(writeIntoTab);
+          }
         }
         break;
       }
@@ -1249,8 +1256,17 @@ export default function App() {
     if (parsed) {
       const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
       if (cmd) {
-        appendMessage({ id: crypto.randomUUID(), role: "user", text: trimmed });
-        setState((prev) => ({ ...prev, draft: "" }));
+        const slashTabId =
+          (stateRef.current.activeTabId as string | undefined) ?? "default";
+        appendMessage(
+          { id: crypto.randomUUID(), role: "user", text: trimmed },
+          slashTabId,
+        );
+        // Clear via updateActiveTab — without this, the active tab's
+        // draft still holds the slash text and any subsequent mirror
+        // (clearChat, theme switch, …) writes it back into root.draft,
+        // making the input "stick".
+        updateActiveTab((tab) => ({ ...tab, draft: "" }));
         try {
           await cmd.run(parsed.args, slashContext());
         } catch (err) {
