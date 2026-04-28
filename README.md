@@ -45,7 +45,7 @@ The name comes from Greek mythology: *Αἴθων*, one of the horses that pulle
 - 🎨 Themes registered live via `aethon.registerTheme({ id, vars })` or dropped as `~/.aethon/themes/*.json`.
 - 🧩 Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer.
 - 🪜 Layout slot contract — alternative layouts host the standard composites by adhering to canonical area names (`canvas`, `composer`, `sidebar`, `tabs`, `terminal`, `status`, `header`, `empty-state`) or by declaring a `slotMap` remap.
-- 📐 Three built-in layouts (`default`, `single-pane`, `focus-mode`) — swap with `/layout <id>`.
+- 📐 Four built-in layouts (`workstation`, `editorial`, `command-deck`, `live-layout`) on the Æther signature palette — swap with `/layout <id>`. Extensions register additional palettes via `aethon.registerTheme`.
 
 **Extensibility**
 

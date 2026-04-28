@@ -5,7 +5,7 @@
       "type": "layout",
       "props": {
         "columns": { "$ref": "/layout/columns" },
-        "rows": "auto auto 1fr auto auto auto",
+        "rows": "38px 1fr auto auto auto",
         "areas": { "$ref": "/layout/areas" }
       },
       "children": [
@@ -16,47 +16,27 @@
             "area": "header",
             "direction": "row",
             "align": "center",
-            "justify": "space-between",
-            "padding": 12,
-            "className": "app-header"
+            "gap": 12,
+            "padding": 0,
+            "className": "app-header ae-tight"
           },
           "children": [
             {
-              "id": "header-brand",
-              "type": "container",
+              "id": "header-tabs",
+              "type": "tab-strip",
               "props": {
-                "direction": "row",
-                "align": "center",
-                "gap": 10,
-                "className": "app-header-brand"
-              },
-              "children": [
-                {
-                  "id": "header-logo",
-                  "type": "image",
-                  "props": {
-                    "src": { "$ref": "/logoUrl" },
-                    "alt": "Aethon",
-                    "className": "app-header-logo"
-                  }
-                },
-                {
-                  "id": "header-title",
-                  "type": "text",
-                  "props": {
-                    "content": "Aethon",
-                    "variant": "large"
-                  }
-                }
-              ]
+                "visible": { "$ref": "/hasTabs" },
+                "tabs": { "$ref": "/tabs" },
+                "activeId": { "$ref": "/activeTabId" },
+                "inHeader": true
+              }
             },
             {
-              "id": "header-status",
-              "type": "text",
+              "id": "header-pill",
+              "type": "agent-pulse",
               "props": {
-                "content": { "$ref": "/status" },
-                "variant": "small",
-                "color": "var(--text-dim)"
+                "label": { "$ref": "/agentStatus/label" },
+                "state": { "$ref": "/agentStatus/state" }
               }
             }
           ]
@@ -67,50 +47,47 @@
           "props": {
             "area": "sidebar",
             "visible": { "$ref": "/layout/sidebarVisible" },
-            "title": "Aethon",
+            "title": "aethon",
+            "version": "v0.3",
+            "brandMark": true,
             "sections": [
               {
                 "id": "skills",
-                "title": "Skills",
+                "title": "skills",
                 "items": [
-                  { "id": "skill-layout", "label": "default-layout" }
+                  { "id": "skill-layout", "label": "default-layout", "hint": "core", "active": true }
                 ]
               },
               {
                 "id": "panels",
-                "title": "Panels",
+                "title": "panels",
                 "items": [
-                  { "id": "toggle-terminal", "label": "Toggle Terminal" },
-                  { "id": "clear-chat", "label": "Clear Chat" }
+                  { "id": "toggle-terminal", "label": "Toggle Terminal", "hint": "⌘`" },
+                  { "id": "clear-chat", "label": "Clear Chat", "hint": "⌘K" }
                 ]
               },
               {
                 "id": "models",
-                "title": "Models",
+                "title": "models",
+                "monoItems": true,
+                "searchable": true,
+                "groupByPrefix": true,
+                "searchPlaceholder": "filter models — sonnet, gpt, qwen…",
                 "items": { "$ref": "/sidebar/models" }
               },
               {
                 "id": "themes",
-                "title": "Themes",
+                "title": "themes",
+                "monoItems": true,
                 "items": { "$ref": "/sidebar/themes" }
               },
               {
                 "id": "history",
-                "title": "Chat History",
+                "title": "chat history",
                 "items": { "$ref": "/sidebar/history" }
               }
             ],
             "extraSections": { "$ref": "/sidebar/extraSections" }
-          }
-        },
-        {
-          "id": "tab-strip",
-          "type": "tab-strip",
-          "props": {
-            "area": "tabs",
-            "visible": { "$ref": "/hasTabs" },
-            "tabs": { "$ref": "/tabs" },
-            "activeId": { "$ref": "/activeTabId" }
           }
         },
         {
@@ -190,12 +167,15 @@
     "empty": false,
     "hasTabs": true,
     "recentSessions": [],
+    "agentStatus": {
+      "label": "agent live",
+      "state": "live"
+    },
     "layout": {
       "sidebarVisible": true,
-      "columns": "240px 1fr",
+      "columns": "220px 1fr",
       "areas": [
         "sidebar header",
-        "sidebar tabs",
         "sidebar canvas",
         "sidebar terminal",
         "sidebar composer",
@@ -207,8 +187,9 @@
       "models": [],
       "extraSections": [],
       "themes": [
-        { "id": "dark", "label": "Dark" },
-        { "id": "light", "label": "Light" }
+        { "id": "ember", "label": "Ember — warm dark", "active": true },
+        { "id": "paper", "label": "Paper — cream light" },
+        { "id": "aether", "label": "Æther — signature" }
       ]
     },
     "terminal": {

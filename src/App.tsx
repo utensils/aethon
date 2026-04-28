@@ -5,7 +5,8 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer from "./components/A2UIRenderer";
-import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
+import { SkillRegistry } from "./skills/SkillRegistry";
+import { SkillRegistryProvider } from "./skills/registry";
 import {
   builtinLayouts,
   defaultLayoutSkill,
@@ -177,6 +178,46 @@ function normalizeRegisteredCombo(combo: string): string {
   return [...ordered, key].filter(Boolean).join("+");
 }
 
+// Replace `image` component data URLs with a placeholder so persisted history
+// doesn't blow past the localStorage quota. The in-memory message keeps the
+// full data URL — only the persisted copy is slimmed.
+function stripImageDataUrls(component: unknown): unknown {
+  if (!component || typeof component !== "object") return component;
+  const c = component as {
+    type?: string;
+    props?: Record<string, unknown>;
+    children?: unknown[];
+  };
+  let next = c;
+  if (
+    c.type === "image" &&
+    typeof c.props?.src === "string" &&
+    c.props.src.startsWith("data:")
+  ) {
+    next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
+  }
+  if (Array.isArray(c.children) && c.children.length > 0) {
+    next = { ...next, children: c.children.map(stripImageDataUrls) };
+  }
+  return next;
+}
+
+const MAX_TEXT_BYTES = 8 * 1024;
+
+function trimMessage(m: ChatMessage): ChatMessage {
+  let out = m;
+  if (m.text && m.text.length > MAX_TEXT_BYTES) {
+    out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
+  }
+  if (m.a2ui && Array.isArray(m.a2ui.components)) {
+    out = {
+      ...out,
+      a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
+    };
+  }
+  return out;
+}
+
 export default function App() {
   // The registry is created once and shared across the app via context.
   // Skills register their components/layouts here; the renderer resolves
@@ -262,11 +303,12 @@ export default function App() {
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
 
-  // Themes — built-in `dark`/`light` plus extension-registered ones. Persisted
-  // to `~/.aethon/theme` so the choice survives reloads.
-  // Resolution priority: per-session disk file → config.toml `[ui] theme`
-  // → OS `prefers-color-scheme` → dark. Migrates the legacy
-  // `aethon-theme` localStorage entry on first read.
+  // Themes — three built-in palettes (ember/paper/aether) plus
+  // extension-registered ones. Persisted to `~/.aethon/theme` so the choice
+  // survives reloads. Resolution priority: per-session disk file →
+  // config.toml `[ui] theme` → OS `prefers-color-scheme` (light → paper,
+  // dark → ember) → ember. Migrates the legacy `aethon-theme` localStorage
+  // entry on first read; the previous `signature` id maps to `aether`.
   //
   // Extension themes are kept in a ref (not React state) so injectThemeStyle
   // can apply CSS imperatively without re-rendering and `setTheme` can look
@@ -282,8 +324,9 @@ export default function App() {
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
-    { id: "dark", label: "Dark" },
-    { id: "light", label: "Light" },
+    { id: "ember", label: "Ember — warm dark" },
+    { id: "paper", label: "Paper — cream light" },
+    { id: "aether", label: "Æther — signature" },
   ];
 
   // Inject (or replace) the <style> element holding an extension theme's
@@ -364,14 +407,32 @@ export default function App() {
         getConfig(),
       ]);
       const trimmed = saved.trim();
+      // Migrate legacy theme ids:
+      //   - `signature` (one-theme era) → `aether`
+      //   - `dark` (pre-palette-rename) → `ember`
+      //   - `light` (pre-palette-rename) → `paper`
+      // Without this, a saved id from an older build resolves to a
+      // `data-theme="dark"` selector that no stylesheet defines, so the
+      // app falls back to base ember tokens regardless of the user's
+      // actual choice.
+      const LEGACY_THEME_MAP: Record<string, string> = {
+        signature: "aether",
+        dark: "ember",
+        light: "paper",
+      };
+      const normalize = (id: string) => LEGACY_THEME_MAP[id] ?? id;
+      const prefersLight =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-color-scheme: light)").matches;
       const initial =
         trimmed.length > 0
-          ? trimmed
+          ? normalize(trimmed)
           : config.ui.theme
-            ? config.ui.theme
-            : window.matchMedia?.("(prefers-color-scheme: light)").matches
-              ? "light"
-              : "dark";
+            ? normalize(config.ui.theme)
+            : prefersLight
+              ? "paper"
+              : "ember";
       document.documentElement.dataset.theme = initial;
       // Apply [ui] font_size as a CSS custom property — components that
       // care can read it via var(--app-font-size, 14px). Clamped to a
@@ -415,45 +476,6 @@ export default function App() {
   const PERSIST_FILE = "messages.json";
   const LEGACY_LS_KEY = "aethon-messages";
   const MAX_MESSAGES = 200;
-  const MAX_TEXT_BYTES = 8 * 1024;
-
-  // Replace `image` component data URLs with a placeholder so persisted history
-  // doesn't blow past the localStorage quota. The in-memory message keeps the
-  // full data URL — only the persisted copy is slimmed.
-  function stripImageDataUrls(component: unknown): unknown {
-    if (!component || typeof component !== "object") return component;
-    const c = component as {
-      type?: string;
-      props?: Record<string, unknown>;
-      children?: unknown[];
-    };
-    let next = c;
-    if (
-      c.type === "image" &&
-      typeof c.props?.src === "string" &&
-      (c.props.src).startsWith("data:")
-    ) {
-      next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
-    }
-    if (Array.isArray(c.children) && c.children.length > 0) {
-      next = { ...next, children: c.children.map(stripImageDataUrls) };
-    }
-    return next;
-  }
-
-  function trimMessage(m: ChatMessage): ChatMessage {
-    let out = m;
-    if (m.text && m.text.length > MAX_TEXT_BYTES) {
-      out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
-    }
-    if (m.a2ui && Array.isArray(m.a2ui.components)) {
-      out = {
-        ...out,
-        a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
-      };
-    }
-    return out;
-  }
 
   // Restore on mount. First read disk; if empty, migrate any legacy
   // localStorage value the first build wrote. Tracked as state (not a ref)
@@ -918,18 +940,14 @@ export default function App() {
         active: t.id === stateRef.current.activeTabId,
       })),
       // Layout catalogue. Lets the user / agent swap between named
-      // layouts (default, single-pane, focus-mode) without having to
-      // ship a full setLayout payload. Extensions append more via
+      // layouts (workstation, editorial, command-deck, live-layout)
+      // without having to ship a full setLayout payload. Extensions
+      // append more via
       // registerLayout. Activation goes through setLayout so all the
       // existing state-merge / layout-bound-state semantics apply.
       listLayouts: (): LayoutCatalogueEntry[] =>
         layoutCatalogueRef.current.slice(),
-      activateLayout: (id: string): boolean => {
-        const entry = layoutCatalogueRef.current.find((l) => l.id === id);
-        if (!entry) return false;
-        setLayout(entry.payload);
-        return true;
-      },
+      activateLayout: activateLayoutById,
       registerLayout: (entry: LayoutCatalogueEntry): boolean => {
         if (!entry || typeof entry.id !== "string" || !entry.payload) return false;
         const idx = layoutCatalogueRef.current.findIndex((l) => l.id === entry.id);
@@ -938,6 +956,15 @@ export default function App() {
         } else {
           layoutCatalogueRef.current.push(entry);
         }
+        // Mirror into state so /layout's argSource picker re-resolves.
+        setState((prev) => ({
+          ...prev,
+          layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+            id: l.id,
+            label: l.name,
+            description: l.description,
+          })),
+        }));
         return true;
       },
       // Layout-slot catalogue. The contract (canonical slot names + which
@@ -962,6 +989,12 @@ export default function App() {
       win.__AETHON_REGISTRY__ = registry;
       win.__AETHON_SET_STATE__ = setState;
     }
+    // The api closures intentionally read live state via stateRef /
+    // setState callbacks, so a stale reference inside `api` doesn't
+    // produce stale data. Adding the function deps would re-build this
+    // effect every render and churn `window.aethon` for no behavioral
+    // gain.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, registry]);
 
   // Mirror an allowlisted set of frontend state slices back to the bridge
@@ -1981,6 +2014,34 @@ export default function App() {
   // ref so the API surface above can mutate it without re-rendering.
   const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
 
+  // Layout activation helper — single path used by both
+  // window.aethon.activateLayout and the /layout slash command. Seeds
+  // the layout's state defaults for keys absent from current app state
+  // (live state wins on collisions) and rebuilds /sidebar/layouts from
+  // the catalogue + current active id so layout JSONs don't have to
+  // ship a hardcoded `active: true` flag.
+  function activateLayoutById(id: string): boolean {
+    const entry = layoutCatalogueRef.current.find((l) => l.id === id);
+    if (!entry) return false;
+    setLayout(entry.payload);
+    const seeds = entry.payload.state ?? {};
+    const catalogueItems = layoutCatalogueRef.current.map((l) => ({
+      id: l.id,
+      label: l.id,
+      active: l.id === id,
+    }));
+    setState((prev) => {
+      const seeded =
+        seeds && Object.keys(seeds).length > 0
+          ? deepMergeState(seeds, prev)
+          : { ...prev };
+      const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
+      seeded.sidebar = { ...sidebar, layouts: catalogueItems };
+      return seeded;
+    });
+    return true;
+  }
+
   // Extension event-route intercepts. When a route matches an outbound
   // event from the renderer, App's onEvent handler returns false so the
   // event bypasses the built-in switch and goes through the standard
@@ -2030,6 +2091,15 @@ export default function App() {
         name: c.name,
         description: c.description,
         usage: c.usage,
+        argSource: c.argSource,
+      })),
+      // Surface the layout catalogue so the slash-arg picker can resolve
+      // /layoutCatalogue when the user types `/layout `. Kept in sync
+      // with layoutCatalogueRef in registerLayout / activateLayout.
+      layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+        id: l.id,
+        label: l.name,
+        description: l.description,
       })),
     }));
   }, []);
@@ -2100,6 +2170,7 @@ export default function App() {
         name: c.name,
         description: c.description,
         usage: c.usage,
+        argSource: c.argSource,
       })),
     }));
   }
@@ -2192,31 +2263,28 @@ export default function App() {
           // /layout/areas atomically so the grid template adapts on
           // the same frame the sidebar cell hides. Without the
           // template swap the hidden sidebar would still reserve its
-          // 240px column.
+          // 220px column. Workstation hoists tabs into the header
+          // (5 rows total); other layouts (editorial / command-deck /
+          // live-layout) own their own area templates and don't bind
+          // /layout/areas, so this toggle stays workstation-shaped.
           const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
           const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
-          const columns = visible ? "240px 1fr" : "1fr";
+          const columns = visible ? "220px 1fr" : "1fr";
           const areas = visible
             ? [
                 "sidebar header",
-                "sidebar tabs",
                 "sidebar canvas",
                 "sidebar terminal",
                 "sidebar composer",
                 "status status",
               ]
-            : ["header", "tabs", "canvas", "terminal", "composer", "status"];
+            : ["header", "canvas", "terminal", "composer", "status"];
           return {
             ...prev,
             layout: { ...layout, sidebarVisible: visible, columns, areas },
           };
         }),
-      activateLayout: (id: string) => {
-        const entry = layoutCatalogueRef.current.find((l) => l.id === id);
-        if (!entry) return false;
-        setLayout(entry.payload);
-        return true;
-      },
+      activateLayout: activateLayoutById,
       listLayouts: () =>
         layoutCatalogueRef.current.map((l) => ({
           id: l.id,
@@ -2320,7 +2388,7 @@ export default function App() {
   // (Tauri IPC for chat send, model picker) — this is where the renderer
   // hands off control.
   const onEvent = useMemo(
-    () => async (component: { id: string }, eventType: string, data?: unknown) => {
+    () => async (component: { id: string; type?: string }, eventType: string, data?: unknown) => {
       // Extensions can register event-route intercepts via
       // aethon.registerEventRoute. When an event matches a registered
       // route, we return false here so the renderer falls through to
@@ -2387,7 +2455,17 @@ export default function App() {
         }
         return true;
       }
-      if (component.id === "tab-strip") {
+      // Tab events route by component *type* — id may vary across layouts
+      // (workstation hoists the strip into the header as `header-tabs`,
+      // editorial uses `editorial-header`, command-deck uses
+      // `vertical-tab-rail`). Matching by type keeps the contract layout-
+      // agnostic so a new layout's tabs work without touching App.tsx.
+      const tabType = component.type;
+      const isTabSurface =
+        tabType === "tab-strip" ||
+        tabType === "editorial-header" ||
+        tabType === "vertical-tab-rail";
+      if (isTabSurface) {
         const sel = data as { tabId?: string; action?: string } | undefined;
         if (eventType === "select" && sel?.tabId) {
           setActiveTab(sel.tabId);
@@ -2449,6 +2527,12 @@ export default function App() {
       }
       return false;
     },
+    // The closures inside this onEvent dispatch (newTab, closeTab,
+    // sendChat, etc.) read live state via stateRef / setState callbacks.
+    // Adding them as deps would force the memo to re-build every render
+    // — losing any consumer-side memoization keyed on its identity —
+    // without changing observed behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 

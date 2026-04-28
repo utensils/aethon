@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
+import { HighlightedCode } from "../../components/HighlightedCode";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -34,6 +35,116 @@ import {
 import { resolvePointer } from "../../utils/jsonPointer";
 import A2UIRenderer from "../../components/A2UIRenderer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+
+// Adapter: react-markdown invokes `code` for both inline AND fenced code
+// blocks. We split on whether the parent is `<pre>` (fenced) and route
+// the fenced case through Prism + the palette-driven theme. Inline code
+// stays as a styled `<code>` so we don't tokenize prose like
+// `someFunc()`.
+//
+// react-markdown wraps fenced blocks in `<pre><code>...</code></pre>`,
+// so we ALSO override `pre`: when its only child is the highlighted-code
+// adapter (a fenced block we produced), we render the child directly so
+// the output isn't `<pre><pre>...</pre></pre>` (invalid + double-padded).
+function isHighlightedFenceChild(node: React.ReactNode): boolean {
+  if (!node || typeof node !== "object") return false;
+  const el = node as React.ReactElement<{ "data-highlighted-fence"?: boolean }>;
+  return el.props?.["data-highlighted-fence"] === true;
+}
+
+const MARKDOWN_COMPONENTS = {
+  pre({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) {
+    if (isHighlightedFenceChild(children)) {
+      return <>{children}</>;
+    }
+    return <pre {...rest}>{children}</pre>;
+  },
+  code({
+    inline,
+    className,
+    children,
+    node,
+    ...rest
+  }: {
+    inline?: boolean;
+    className?: string;
+    children?: React.ReactNode;
+    node?: { tagName?: string };
+  } & React.HTMLAttributes<HTMLElement>) {
+    void node;
+    const text = String(children ?? "").replace(/\n$/, "");
+    const langMatch = /language-([\w+-]+)/.exec(className ?? "");
+    if (inline || !langMatch) {
+      return <code className={className} {...rest}>{children}</code>;
+    }
+    return (
+      <HighlightedFence code={text} language={langMatch[1]} />
+    );
+  },
+};
+
+// Wrapper that tags the rendered element with a data attribute so the
+// `pre` override above can detect "this is our fenced output" and
+// unwrap the outer markdown `<pre>`.
+function HighlightedFence({
+  code,
+  language,
+}: {
+  code: string;
+  language: string;
+}) {
+  return (
+    <span data-highlighted-fence style={{ display: "block" }}>
+      <HighlightedCode code={code} language={language} />
+    </span>
+  );
+}
+
+// Inline Æπ monogram — used by Sidebar / TabRail / etc. without going
+// through the A2UI registry (so brand-chrome inside a composite doesn't
+// require a payload to declare an `ae-mark` child).
+function AeMarkInline({ size = 20, radius = 4 }: { size?: number; radius?: number }) {
+  return (
+    <svg
+      className="ae-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 320 320"
+      role="img"
+      aria-label="Aethon"
+      style={{ display: "block", borderRadius: radius, flexShrink: 0 }}
+    >
+      <title>Aethon</title>
+      <rect width="320" height="320" rx="60" fill="var(--bg-elev, #1f1f23)" />
+      <text
+        x="152"
+        y="160"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", "Bodoni 72", Didot, Georgia, serif'
+        fontSize="236"
+        fontWeight={700}
+        fill="var(--text, #fef3e2)"
+      >
+        Æ
+      </text>
+      <circle cx="248" cy="82" r="38" fill="var(--accent, #ff6a18)" opacity="0.85" />
+      <text
+        x="248"
+        y="86"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", Didot, Georgia, serif'
+        fontSize="44"
+        fontWeight={700}
+        fontStyle="italic"
+        fill="var(--text, #fef3e2)"
+      >
+        π
+      </text>
+    </svg>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Layout — CSS Grid container with template-areas. Children opt into a region
@@ -127,6 +238,227 @@ export function Layout({
 // or bound to state via a $ref.
 // ---------------------------------------------------------------------------
 
+// Extracts the leading "provider" segment from an item id like
+// `claude-sonnet-4-5` → "claude" or `gpt-5-pro` → "gpt". Falls back to
+// label-derived prefix; returns "other" when there's nothing useful.
+function providerOf(item: SidebarItem): string {
+  const id = item.id ?? "";
+  const dash = id.indexOf("-");
+  const slash = id.indexOf("/");
+  if (slash > 0) return id.slice(0, slash).toLowerCase();
+  if (dash > 0) return id.slice(0, dash).toLowerCase();
+  if (id) return id.toLowerCase();
+  return "other";
+}
+
+// Filter helper used by the searchable sidebar section. Matches against
+// the item id AND label so a user can find `claude-sonnet-4-5` by typing
+// "sonnet". Empty query returns the full list unchanged.
+function filterItems(items: SidebarItem[], query: string): SidebarItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((it) => {
+    const id = (it.id ?? "").toLowerCase();
+    const label = (it.label ?? "").toLowerCase();
+    return id.includes(q) || label.includes(q);
+  });
+}
+
+// Section render helper — extracted so the Sidebar component below can
+// fold both "regular" and "searchable" sections through one path.
+interface ItemRowProps {
+  item: SidebarItem;
+  monoItems: boolean;
+  sectionId: string;
+  componentId: string;
+  onEvent: BuiltinComponentProps["onEvent"];
+  renderChildWithState: BuiltinComponentProps["renderChildWithState"];
+  state: BuiltinComponentProps["state"];
+  index: number;
+}
+function ItemRow({
+  item,
+  monoItems,
+  sectionId,
+  componentId,
+  onEvent,
+  renderChildWithState,
+  state,
+  index,
+}: ItemRowProps) {
+  if (item.componentType && renderChildWithState) {
+    const synthetic: A2UIComponent = {
+      id: `${componentId}__sec_${sectionId}__item_${item.id}`,
+      type: item.componentType,
+    };
+    return (
+      <li
+        className="a2ui-sidebar-item a2ui-sidebar-item-custom"
+        onClick={() =>
+          onEvent("select", { sectionId, itemId: item.id }, item.id)
+        }
+      >
+        {renderChildWithState(synthetic, {
+          $item: item,
+          $index: index,
+          $parent: state,
+        })}
+      </li>
+    );
+  }
+  const hint = (item as { hint?: string }).hint;
+  return (
+    <li
+      className={[
+        "a2ui-sidebar-item",
+        item.active ? "a2ui-sidebar-item-active" : "",
+        monoItems ? "a2ui-sidebar-item-mono" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
+    >
+      <span className="a2ui-sidebar-item-label">{item.label}</span>
+      {hint && <span className="a2ui-sidebar-item-hint">{hint}</span>}
+    </li>
+  );
+}
+
+interface SidebarSectionExt extends SidebarSection {
+  /** When true, render items in mono (used for model ids, layout names). */
+  monoItems?: boolean;
+  /** When true, surface a small filter input above the items so a long
+   *  list (models, themes, layouts) becomes navigable without an
+   *  external picker. */
+  searchable?: boolean;
+  /** When true, group items by their leading id segment (e.g. `claude-`,
+   *  `gpt-`, `qwen-`). Auto-renders a small subhead per group. Combines
+   *  cleanly with `searchable`: filter first, then group. */
+  groupByPrefix?: boolean;
+  /** Placeholder for the filter input. */
+  searchPlaceholder?: string;
+}
+
+interface SearchableSidebarSectionProps {
+  section: SidebarSectionExt;
+  items: SidebarItem[];
+  componentId: string;
+  state: BuiltinComponentProps["state"];
+  onEvent: BuiltinComponentProps["onEvent"];
+  renderChildWithState: BuiltinComponentProps["renderChildWithState"];
+}
+function SearchableSidebarSection({
+  section,
+  items,
+  componentId,
+  state,
+  onEvent,
+  renderChildWithState,
+}: SearchableSidebarSectionProps) {
+  const monoItems = section.monoItems === true;
+  const grouped = section.groupByPrefix === true;
+  const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // Always surface the active item even when filtering — losing the
+  // currently-selected model out of view feels like a bug. Active item
+  // jumps to the top of the visible list when it would otherwise be
+  // filtered out.
+  const visible = useMemo(() => {
+    const filtered = filterItems(items, query);
+    const active = items.find((it) => it.active);
+    return active && !filtered.some((it) => it.id === active.id) && query.trim()
+      ? [active, ...filtered]
+      : filtered;
+  }, [items, query]);
+
+  const groups = useMemo(() => {
+    if (!grouped) return null;
+    const map = new Map<string, SidebarItem[]>();
+    for (const it of visible) {
+      const k = providerOf(it);
+      const list = map.get(k) ?? [];
+      list.push(it);
+      map.set(k, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [grouped, visible]);
+
+  const toggleGroup = (key: string) =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  return (
+    <div className="a2ui-sidebar-section">
+      <div className="a2ui-sidebar-section-title">{section.title}</div>
+      <input
+        type="text"
+        className="a2ui-sidebar-search"
+        placeholder={section.searchPlaceholder ?? `filter ${section.title.toLowerCase()}…`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        spellCheck={false}
+        autoComplete="off"
+      />
+      {visible.length === 0 ? (
+        <div className="a2ui-sidebar-empty">no matches</div>
+      ) : groups ? (
+        <div className="a2ui-sidebar-groups">
+          {groups.map(([key, gItems]) => {
+            const isCollapsed = collapsed[key] === true;
+            return (
+              <div key={key} className="a2ui-sidebar-group">
+                <button
+                  type="button"
+                  className="a2ui-sidebar-group-title"
+                  onClick={() => toggleGroup(key)}
+                  aria-expanded={!isCollapsed}
+                >
+                  <span className="a2ui-sidebar-group-caret">{isCollapsed ? "▸" : "▾"}</span>
+                  <span className="a2ui-sidebar-group-name">{key}</span>
+                  <span className="a2ui-sidebar-group-count">{gItems.length}</span>
+                </button>
+                {!isCollapsed && (
+                  <ul className="a2ui-sidebar-list">
+                    {gItems.map((item, idx) => (
+                      <ItemRow
+                        key={item.id}
+                        item={item}
+                        index={idx}
+                        monoItems={monoItems}
+                        sectionId={section.id}
+                        componentId={componentId}
+                        onEvent={onEvent}
+                        renderChildWithState={renderChildWithState}
+                        state={state}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <ul className="a2ui-sidebar-list">
+          {visible.map((item, idx) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              index={idx}
+              monoItems={monoItems}
+              sectionId={section.id}
+              componentId={componentId}
+              onEvent={onEvent}
+              renderChildWithState={renderChildWithState}
+              state={state}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({
   component,
   state,
@@ -135,7 +467,12 @@ export function Sidebar({
 }: BuiltinComponentProps) {
   const props = component.props as {
     title?: StringValue;
-    sections?: SidebarSection[];
+    /** Optional version chip rendered right-aligned in the title row
+     *  (e.g. "v0.3"). Mono, dim. Mirrors the design's brand-mark row. */
+    version?: StringValue;
+    /** When true, render an inline AeMark monogram before the title. */
+    brandMark?: BooleanValue;
+    sections?: SidebarSectionExt[];
     // Optional list of extra sections appended after the inline `sections`.
     // Bound via $ref so extensions can push into a state path and have
     // their sections appear without modifying the layout payload.
@@ -143,6 +480,10 @@ export function Sidebar({
   };
 
   const title = props.title ? resolveString(props.title, state) : "";
+  const version = props.version ? resolveString(props.version, state) : "";
+  const showBrand = props.brandMark
+    ? resolveBoolean(props.brandMark, state)
+    : !!title;
 
   const resolveItems = (
     items: SidebarSection["items"] | undefined,
@@ -164,14 +505,39 @@ export function Sidebar({
     const resolved = resolvePointer(state, raw.$ref);
     return Array.isArray(resolved) ? (resolved as SidebarSection[]) : [];
   })();
-  const allSections = [...(props.sections ?? []), ...extraSections];
+  const allSections: SidebarSectionExt[] = [
+    ...(props.sections ?? []),
+    ...(extraSections as SidebarSectionExt[]),
+  ];
 
   return (
     <aside className="a2ui-sidebar">
-      {title && <div className="a2ui-sidebar-title">{title}</div>}
+      {(title || version) && (
+        <div className="a2ui-sidebar-title">
+          {showBrand && <AeMarkInline size={20} radius={4} />}
+          {title && <span>{title}</span>}
+          {version && (
+            <span className="a2ui-sidebar-title-version">{version}</span>
+          )}
+        </div>
+      )}
       <div className="a2ui-sidebar-sections">
         {allSections.map((section) => {
           const items = resolveItems(section.items);
+          const monoItems = section.monoItems === true;
+          if (section.searchable === true || section.groupByPrefix === true) {
+            return (
+              <SearchableSidebarSection
+                key={section.id}
+                section={section}
+                items={items}
+                componentId={component.id}
+                state={state}
+                onEvent={onEvent}
+                renderChildWithState={renderChildWithState}
+              />
+            );
+          }
           return (
             <div key={section.id} className="a2ui-sidebar-section">
               <div className="a2ui-sidebar-section-title">{section.title}</div>
@@ -179,62 +545,19 @@ export function Sidebar({
                 <div className="a2ui-sidebar-empty">empty</div>
               ) : (
                 <ul className="a2ui-sidebar-list">
-                  {items.map((item, idx) => {
-                    // When an item carries `componentType`, render the
-                    // skill-registered template per row with $item /
-                    // $index in scope (same convention as the for-each
-                    // primitive). Falls back to the default label row
-                    // when no componentType is set or the renderer is
-                    // missing the scoped helper.
-                    if (item.componentType && renderChildWithState) {
-                      const synthetic: A2UIComponent = {
-                        id: `${component.id}__sec_${section.id}__item_${item.id}`,
-                        type: item.componentType,
-                      };
-                      return (
-                        <li
-                          key={item.id}
-                          className="a2ui-sidebar-item a2ui-sidebar-item-custom"
-                          onClick={() =>
-                            onEvent(
-                              "select",
-                              { sectionId: section.id, itemId: item.id },
-                              item.id,
-                            )
-                          }
-                        >
-                          {renderChildWithState(synthetic, {
-                            $item: item,
-                            $index: idx,
-                            $parent: state,
-                          })}
-                        </li>
-                      );
-                    }
-                    return (
-                      <li
-                        key={item.id}
-                        className={
-                          item.active
-                            ? "a2ui-sidebar-item a2ui-sidebar-item-active"
-                            : "a2ui-sidebar-item"
-                        }
-                        onClick={() =>
-                          // descendantId carries item.id so onEvent matchers
-                          // like {componentType:"sidebar", descendantId:"open-readme"}
-                          // resolve as documented. data.{sectionId,itemId}
-                          // remain available for handlers that prefer payload.
-                          onEvent(
-                            "select",
-                            { sectionId: section.id, itemId: item.id },
-                            item.id,
-                          )
-                        }
-                      >
-                        {item.label}
-                      </li>
-                    );
-                  })}
+                  {items.map((item, idx) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      index={idx}
+                      monoItems={monoItems}
+                      sectionId={section.id}
+                      componentId={component.id}
+                      onEvent={onEvent}
+                      renderChildWithState={renderChildWithState}
+                      state={state}
+                    />
+                  ))}
                 </ul>
               )}
             </div>
@@ -277,7 +600,7 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
             <span className="a2ui-chat-role">{m.role}</span>
             {m.text && (
               <div className="a2ui-chat-text a2ui-markdown">
-                <ReactMarkdown>{m.text}</ReactMarkdown>
+                <ReactMarkdown components={MARKDOWN_COMPONENTS}>{m.text}</ReactMarkdown>
               </div>
             )}
             {/* tabId forwards so clicks inside the embedded card route
@@ -358,6 +681,50 @@ interface SlashCommandHint {
   name: string;
   description?: string;
   usage?: string;
+  /** JSON Pointer into App state. When set, the picker fetches the array
+   *  at this path the moment the user types `/<name> ` and surfaces the
+   *  entries as completions. Each entry can be a `{value,label}`,
+   *  `{id,label}`, or a plain string — the picker normalizes all three. */
+  argSource?: string;
+}
+
+interface SlashArgChoice {
+  value: string;
+  label?: string;
+  description?: string;
+  hint?: string;
+}
+
+// Normalize the arg-source array into a uniform `{value,label,description,hint}`
+// shape. Accepts the most common input forms (slash-arg objects, sidebar
+// items, plain strings) so a layout JSON can point at any list it already
+// owns without reshaping the data.
+function normalizeArgChoices(raw: unknown): SlashArgChoice[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SlashArgChoice[] = [];
+  for (const r of raw) {
+    if (typeof r === "string") {
+      out.push({ value: r });
+      continue;
+    }
+    if (!r || typeof r !== "object") continue;
+    const obj = r as Record<string, unknown>;
+    const value =
+      typeof obj.value === "string"
+        ? obj.value
+        : typeof obj.id === "string"
+          ? obj.id
+          : "";
+    if (!value) continue;
+    out.push({
+      value,
+      label: typeof obj.label === "string" ? obj.label : undefined,
+      description:
+        typeof obj.description === "string" ? obj.description : undefined,
+      hint: typeof obj.hint === "string" ? obj.hint : undefined,
+    });
+  }
+  return out;
 }
 
 export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) {
@@ -421,31 +788,81 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
 
   // Tracks the draft value the user pressed Escape on. While the live value
   // matches that snapshot, the picker stays dismissed so Escape doesn't
-  // require clearing the input. Editing the draft (any change) re-opens.
+  // require clearing the input. Editing the draft (any change) re-opens
+  // — implemented by clearing the snapshot in an effect when value moves
+  // away from it. We can't derive this during render: the snapshot must
+  // *not* re-suppress the picker when the user backspaces back to the
+  // same value, so we need a one-shot reset that fires on every value
+  // change. The React 19 lint rule flags setState-in-effect, but here
+  // it's the cleanest expression of the semantic.
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
   useEffect(() => {
     if (dismissedDraft !== null && value !== dismissedDraft) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDismissedDraft(null);
     }
   }, [value, dismissedDraft]);
 
-  // Slash autocomplete: show when the input begins with `/` (but not `//`,
-  // which is the literal-slash escape) and matches at least one command.
-  const slashMatch = useMemo(() => {
+  // Slash autocomplete operates in two modes:
+  //   1. command-mode  — `/foo` (no space yet)        → suggest matching commands
+  //   2. arg-mode      — `/<cmd> <prefix>` (one space) → suggest values from the
+  //                                                       command's argSource state path
+  // Both use the same picker UI; each match shape is normalized to a
+  // common interface so the renderer below doesn't branch.
+  type CommandMatch = { kind: "command"; cmd: SlashCommandHint };
+  type ArgMatch = { kind: "arg"; cmd: SlashCommandHint; choice: SlashArgChoice };
+  type PickerMatch = CommandMatch | ArgMatch;
+
+  const slashMatch = useMemo((): {
+    mode: "command" | "arg";
+    prefix: string;
+    matches: PickerMatch[];
+    cmd?: SlashCommandHint;
+  } | null => {
     if (dismissedDraft !== null && value === dismissedDraft) return null;
-    const m = value.match(/^\/([A-Za-z][\w-]*)?$/);
-    if (!m) return null;
-    const prefix = (m[1] ?? "").toLowerCase();
-    const matches = commands.filter((c) => c.name.toLowerCase().startsWith(prefix));
-    return matches.length > 0 ? { prefix, matches } : null;
-  }, [value, commands, dismissedDraft]);
+    // Command mode: just the slash + an optional partial name, no space.
+    const cmdM = value.match(/^\/([A-Za-z][\w-]*)?$/);
+    if (cmdM) {
+      const prefix = (cmdM[1] ?? "").toLowerCase();
+      const matches: PickerMatch[] = commands
+        .filter((c) => c.name.toLowerCase().startsWith(prefix))
+        .map((cmd) => ({ kind: "command", cmd }));
+      return matches.length > 0 ? { mode: "command", prefix, matches } : null;
+    }
+    // Arg mode: `/<cmd> <prefix>` — exactly one space between the
+    // command name and the (optionally empty) argument prefix. We
+    // intentionally don't support multi-arg commands yet; the spec for
+    // those should land alongside the first command that needs it.
+    const argM = value.match(/^\/([A-Za-z][\w-]*) ([^\n]*)$/);
+    if (argM) {
+      const cmdName = argM[1].toLowerCase();
+      const argPrefix = argM[2].toLowerCase();
+      const cmd = commands.find((c) => c.name.toLowerCase() === cmdName);
+      if (!cmd || !cmd.argSource) return null;
+      const raw = resolvePointer(state, cmd.argSource);
+      const choices = normalizeArgChoices(raw).filter((ch) => {
+        const haystack = `${ch.value} ${ch.label ?? ""}`.toLowerCase();
+        return haystack.includes(argPrefix);
+      });
+      const matches: PickerMatch[] = choices.map((choice) => ({
+        kind: "arg",
+        cmd,
+        choice,
+      }));
+      return matches.length > 0
+        ? { mode: "arg", prefix: argPrefix, matches, cmd }
+        : null;
+    }
+    return null;
+  }, [value, commands, state, dismissedDraft]);
 
   const [highlightIdx, setHighlightIdx] = useState(0);
   // Reset highlight when the visible list changes so the cursor stays inside
   // bounds and on the first suggestion for a new prefix.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHighlightIdx(0);
-  }, [slashMatch?.matches.length, slashMatch?.prefix]);
+  }, [slashMatch?.matches.length, slashMatch?.prefix, slashMatch?.mode]);
 
   // The slash menu is portalled to document.body so it can't be clipped by
   // ancestor `overflow: hidden` (the default-layout grid cell uses that to
@@ -480,8 +897,12 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     };
   }, [slashMatch]);
 
-  const insertCommand = (cmd: SlashCommandHint) => {
-    const text = `/${cmd.name} `;
+  // Insert the highlighted picker entry — for command-mode that completes
+  // to `/<name> ` (cursor primed for an arg); for arg-mode it completes
+  // to `/<name> <value>` ready to submit.
+  const insertMatch = (m: PickerMatch) => {
+    const text =
+      m.kind === "command" ? `/${m.cmd.name} ` : `/${m.cmd.name} ${m.choice.value}`;
     onEvent("change", { value: text });
   };
 
@@ -504,7 +925,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        insertCommand(list[highlightIdx] ?? list[0]);
+        insertMatch(list[highlightIdx] ?? list[0]);
         return;
       }
       if (e.key === "Escape") {
@@ -516,21 +937,30 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         return;
       }
       // Enter behavior with the picker open:
-      //   - If the draft already matches a command exactly (`/help`,
-      //     `/clear`), submit it. Otherwise the user would have to press
-      //     Enter twice — once to "insert" the same text, once to submit.
-      //   - Else insert the highlighted suggestion to complete the prefix.
+      //   - command-mode: complete to `/<name> ` (or submit if the draft
+      //     already matches a command exactly so the user doesn't have
+      //     to press Enter twice).
+      //   - arg-mode: insert + submit on the same Enter — the user has
+      //     already named the command and chosen a value, so there's
+      //     nothing left to do.
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         const v = (e.target as HTMLTextAreaElement).value;
-        const exact = list.find(
-          (c) => v === `/${c.name}` || v.startsWith(`/${c.name} `),
+        if (slashMatch.mode === "arg") {
+          const choice = (list[highlightIdx] ?? list[0]) as ArgMatch;
+          const submitText = `/${choice.cmd.name} ${choice.choice.value}`;
+          onEvent("change", { value: submitText });
+          onEvent("submit", { value: submitText });
+          return;
+        }
+        const exact = (list as CommandMatch[]).find(
+          (c) => v === `/${c.cmd.name}` || v.startsWith(`/${c.cmd.name} `),
         );
         if (exact && v.trim().length > 0) {
           onEvent("submit", { value: v });
           return;
         }
-        insertCommand(list[highlightIdx] ?? list[0]);
+        insertMatch(list[highlightIdx] ?? list[0]);
         return;
       }
     }
@@ -570,33 +1000,65 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
               width: `${menuAnchor.width}px`,
             }}
           >
-            {slashMatch.matches.map((c, i) => (
-              <div
-                key={c.name}
-                role="option"
-                aria-selected={i === highlightIdx}
-                className={
-                  i === highlightIdx
-                    ? "a2ui-slash-item a2ui-slash-item-active"
-                    : "a2ui-slash-item"
-                }
-                onMouseDown={(e) => {
-                  // mousedown (not click) so the textarea doesn't lose focus
-                  // before the insertion fires.
-                  e.preventDefault();
-                  insertCommand(c);
-                }}
-                onMouseEnter={() => setHighlightIdx(i)}
-              >
-                <span className="a2ui-slash-item-name">/{c.name}</span>
-                {c.usage && (
-                  <span className="a2ui-slash-item-usage"> {c.usage}</span>
-                )}
-                {c.description && (
-                  <span className="a2ui-slash-item-desc"> — {c.description}</span>
-                )}
+            {slashMatch.mode === "arg" && slashMatch.cmd && (
+              <div className="a2ui-slash-arg-header">
+                <span className="a2ui-slash-arg-cmd">/{slashMatch.cmd.name}</span>
+                <span className="a2ui-slash-arg-hint">
+                  {slashMatch.cmd.description ?? "select an option"}
+                </span>
               </div>
-            ))}
+            )}
+            {slashMatch.matches.map((m, i) => {
+              const key =
+                m.kind === "command" ? m.cmd.name : `${m.cmd.name}::${m.choice.value}`;
+              return (
+                <div
+                  key={key}
+                  role="option"
+                  aria-selected={i === highlightIdx}
+                  className={
+                    i === highlightIdx
+                      ? "a2ui-slash-item a2ui-slash-item-active"
+                      : "a2ui-slash-item"
+                  }
+                  onMouseDown={(e) => {
+                    // mousedown (not click) so the textarea doesn't lose focus
+                    // before the insertion fires.
+                    e.preventDefault();
+                    if (m.kind === "arg") {
+                      const submitText = `/${m.cmd.name} ${m.choice.value}`;
+                      onEvent("change", { value: submitText });
+                      onEvent("submit", { value: submitText });
+                    } else {
+                      insertMatch(m);
+                    }
+                  }}
+                  onMouseEnter={() => setHighlightIdx(i)}
+                >
+                  {m.kind === "command" ? (
+                    <>
+                      <span className="a2ui-slash-item-name">/{m.cmd.name}</span>
+                      {m.cmd.usage && (
+                        <span className="a2ui-slash-item-usage"> {m.cmd.usage}</span>
+                      )}
+                      {m.cmd.description && (
+                        <span className="a2ui-slash-item-desc"> — {m.cmd.description}</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="a2ui-slash-item-name">{m.choice.value}</span>
+                      {m.choice.label && m.choice.label !== m.choice.value && (
+                        <span className="a2ui-slash-item-desc"> — {m.choice.label}</span>
+                      )}
+                      {m.choice.description && (
+                        <span className="a2ui-slash-item-desc"> — {m.choice.description}</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>,
           document.body,
         )}
@@ -801,9 +1263,13 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   // Stash boot greeting in a ref so the mount-once effect (which doesn't
   // depend on `bootGreeting`) writes the right initial buffer even if the
   // prop changes later. Replay also reads from this ref so a $ref-driven
-  // greeting stays current across tab switches.
+  // greeting stays current across tab switches. Update happens inside an
+  // effect so React's strict-mode warning about ref-mutation-during-render
+  // stays clean.
   const bootGreetingRef = useRef(bootGreeting);
-  bootGreetingRef.current = bootGreeting;
+  useEffect(() => {
+    bootGreetingRef.current = bootGreeting;
+  }, [bootGreeting]);
   // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
   // to drive the terminal via state — the diff effect below handles it the
   // same way it used to. The default layout no longer uses this; bash output

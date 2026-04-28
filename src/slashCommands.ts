@@ -9,9 +9,10 @@
 export interface SlashCommandContext {
   appendSystem: (text: string) => void;
   clearChat: () => void;
-  // Switch the active theme by id. "dark"/"light" are always available;
-  // extension-registered themes appear here too once they've been
-  // hydrated from the bridge's `extension_themes` event.
+  // Switch the active theme by id. The three built-in palettes
+  // (`ember`, `paper`, `aether`) are always available; extension-registered
+  // themes appear here too once they've been hydrated from the bridge's
+  // `extension_themes` event.
   setTheme: (id: string) => void;
   listThemes: () => { id: string; label: string }[];
   setModel: (id: string) => Promise<void>;
@@ -29,10 +30,27 @@ export interface SlashCommandContext {
   listLayouts: () => { id: string; name: string; description?: string }[];
 }
 
+/** A single completion option for a slash command's argument. The picker
+ *  shows `label` (or `value`) and inserts `value` into the composer. */
+export interface SlashArgOption {
+  value: string;
+  label?: string;
+  description?: string;
+}
+
 export interface SlashCommand {
   name: string;
   description: string;
   usage?: string;
+  /** JSON Pointer into App state. When set, typing `/<name> <prefix>`
+   *  surfaces the array at this path as completions. The shape is
+   *  `SlashArgOption[]` OR a sidebar-item style array (any object with
+   *  `id` + optional `label` is converted on the fly). Built-in
+   *  `/theme` points at `/sidebar/themes`; `/layout` points at
+   *  `/layoutCatalogue`. Extensions register their own pointer — this
+   *  is the same `$ref` mechanism the rest of the app uses for state
+   *  binding, so completion data can live anywhere in the tree. */
+  argSource?: string;
   run: (args: string, ctx: SlashCommandContext) => Promise<void> | void;
 }
 
@@ -56,6 +74,7 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       name: "theme",
       description: "Switch theme by id, or list available themes",
       usage: "[id]",
+      argSource: "/sidebar/themes",
       run: (args, ctx) => {
         const v = args.trim();
         const themes = ctx.listThemes();
@@ -85,6 +104,7 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       name: "model",
       description: "Switch active model by id",
       usage: "[provider/model-id]",
+      argSource: "/sidebar/models",
       run: async (args, ctx) => {
         const id = args.trim();
         if (!id) {
@@ -120,6 +140,7 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       name: "layout",
       description: "Switch layout by id, or list available layouts",
       usage: "[id]",
+      argSource: "/layoutCatalogue",
       run: (args, ctx) => {
         const v = args.trim();
         const layouts = ctx.listLayouts();

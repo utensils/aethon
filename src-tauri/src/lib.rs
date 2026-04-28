@@ -267,7 +267,7 @@ fn ensure_agent_spawned(
             .join("src")
             .join("skills")
             .join("default-layout")
-            .join("layout.a2ui.json");
+            .join("workstation.a2ui.json");
         let layout_slots_file = root
             .join("src")
             .join("skills")
@@ -296,7 +296,7 @@ fn ensure_agent_spawned(
         let boot_layout_file = resource_dir
             .join("skills")
             .join("default-layout")
-            .join("layout.a2ui.json");
+            .join("workstation.a2ui.json");
         let layout_slots_file = resource_dir
             .join("skills")
             .join("default-layout")

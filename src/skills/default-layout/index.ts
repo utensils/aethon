@@ -18,9 +18,22 @@ import {
   TabStrip,
   Terminal,
 } from "./components";
-import layoutPayload from "./layout.a2ui.json";
-import singlePanePayload from "./single-pane.a2ui.json";
-import focusModePayload from "./focus-mode.a2ui.json";
+import {
+  AeMark,
+  AgentStatusPill,
+  CanvasOrnament,
+  CommandBar,
+  EditorialHeader,
+  EditorialSpine,
+  InspectorPane,
+  LayoutChangePill,
+  LayoutToast,
+  VerticalTabRail,
+} from "./variation-components";
+import workstationPayload from "./workstation.a2ui.json";
+import editorialPayload from "./editorial.a2ui.json";
+import commandDeckPayload from "./command-deck.a2ui.json";
+import liveLayoutPayload from "./live-layout.a2ui.json";
 
 export {
   layoutSlots,
@@ -47,8 +60,31 @@ export const defaultLayoutSkill: A2UISkill = {
     terminal: Terminal,
     "main-canvas": MainCanvas,
     "empty-state": EmptyState,
+    // Layout-variation chrome — used by editorial / command-deck / live-layout.
+    // Registered alongside the standard composites so any layout payload can
+    // mix and match them.
+    //
+    // Canonical names match the design handoff
+    // (`aethon-handoff/handoff/component-contracts.md`); legacy aliases
+    // (`agent-status-pill`, `editorial-spine`, `canvas-ornament`,
+    // `layout-toast`) stay registered so existing layout payloads continue
+    // to render after the rename.
+    "agent-pulse": AgentStatusPill,
+    "agent-status-pill": AgentStatusPill,
+    "brand-spine": EditorialSpine,
+    "editorial-spine": EditorialSpine,
+    "editorial-header": EditorialHeader,
+    "ae-ornament": CanvasOrnament,
+    "canvas-ornament": CanvasOrnament,
+    "ae-mark": AeMark,
+    "command-bar": CommandBar,
+    "vertical-tab-rail": VerticalTabRail,
+    "inspector-pane": InspectorPane,
+    "layout-change-pill": LayoutChangePill,
+    "layout-diff-toast": LayoutToast,
+    "layout-toast": LayoutToast,
   },
-  layout: layoutPayload,
+  layout: workstationPayload,
 };
 
 // Built-in layout catalogue. Each entry is a complete A2UI payload the
@@ -63,21 +99,31 @@ export interface LayoutCatalogueEntry {
 
 export const builtinLayouts: LayoutCatalogueEntry[] = [
   {
-    id: "default",
-    name: "Default",
-    description: "Sidebar, header, canvas, terminal, chat input, status bar.",
-    payload: layoutPayload,
+    id: "workstation",
+    name: "Workstation",
+    description:
+      "Tightened IDE-density default — sidebar, header pill, chrome tabs, terminal, composer, status bar.",
+    payload: workstationPayload,
   },
   {
-    id: "single-pane",
-    name: "Single Pane",
-    description: "No sidebar — header + canvas + chat input across full width.",
-    payload: singlePanePayload,
+    id: "editorial",
+    name: "Editorial",
+    description:
+      "Brand-forward — vertical Æπ spine, Bodoni header with italic π, chapter-style tabs.",
+    payload: editorialPayload,
   },
   {
-    id: "focus-mode",
-    name: "Focus Mode",
-    description: "Just canvas + chat input + status bar. No sidebar, header, or tabs.",
-    payload: focusModePayload,
+    id: "command-deck",
+    name: "Command Deck",
+    description:
+      "Vertical session rail + persistent ⌘P command bar in the header. Best for many concurrent sessions.",
+    payload: commandDeckPayload,
+  },
+  {
+    id: "live-layout",
+    name: "Live Layout",
+    description:
+      "Showcases the agent rearranging its own UI — sidebar + canvas + inspector pane + setLayout toast.",
+    payload: liveLayoutPayload,
   },
 ];
