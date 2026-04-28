@@ -1362,7 +1362,7 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
     secondaryButtonLabel?: StringValue;
     tips?: StringValue[];
     recentSessions?:
-      | { id: string; label: string; lastModified?: string }[]
+      | { id: string; label: string; lastModified?: string; cwd?: string }[]
       | { $ref: string };
     /** Recent projects list — shown alongside recent sessions so the
      *  user can hop between project directories without going through
@@ -1398,7 +1398,7 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
     if (Array.isArray(recentSessionsRaw)) return recentSessionsRaw;
     const resolved = resolvePointer(state, recentSessionsRaw.$ref);
     return Array.isArray(resolved)
-      ? (resolved as { id: string; label: string; lastModified?: string }[])
+      ? (resolved as { id: string; label: string; lastModified?: string; cwd?: string }[])
       : [];
   })();
   const recentProjectsRaw = props.recentProjects;
@@ -1489,7 +1489,11 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
                     // descendantId carries the session id so an extension's
                     // onEvent({componentType:"empty-state", descendantId:"…"})
                     // matcher can target a specific session row.
-                    onEvent("restore-session", { sessionId: s.id, label: s.label }, s.id)
+                    onEvent(
+                      "restore-session",
+                      { sessionId: s.id, label: s.label, cwd: s.cwd },
+                      s.id,
+                    )
                   }
                 >
                   <span className="a2ui-empty-state-recent-label">{s.label}</span>

@@ -151,6 +151,13 @@ interface RecentSessionItem {
   id: string;
   label: string;
   lastModified?: string;
+  cwd?: string;
+}
+
+interface DiscoveredSession {
+  tabId: string;
+  lastModified: number;
+  cwd?: string;
 }
 
 interface SidebarHistoryItem {
@@ -277,6 +284,42 @@ function trimMessage(m: ChatMessage): ChatMessage {
   return out;
 }
 
+function coerceChatMessages(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) return [];
+  const messages: ChatMessage[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const role =
+      record.role === "user" ||
+      record.role === "agent" ||
+      record.role === "system"
+        ? record.role
+        : null;
+    if (!role) continue;
+    const text = typeof record.text === "string" ? record.text : undefined;
+    const a2ui =
+      record.a2ui &&
+      typeof record.a2ui === "object" &&
+      Array.isArray((record.a2ui as { components?: unknown }).components)
+        ? (record.a2ui as A2UIPayload)
+        : undefined;
+    if (!text && !a2ui) continue;
+    messages.push(
+      trimMessage({
+        id:
+          typeof record.id === "string" && record.id.length > 0
+            ? record.id
+            : crypto.randomUUID(),
+        role,
+        ...(text ? { text } : {}),
+        ...(a2ui ? { a2ui } : {}),
+      }),
+    );
+  }
+  return messages;
+}
+
 export default function App() {
   // The registry is created once and shared across the app via context.
   // Skills register their components/layouts here; the renderer resolves
@@ -375,6 +418,50 @@ export default function App() {
       }));
     return [...openHistory, ...restoredHistory].slice(0, 16);
   }, []);
+
+  function normalizeSessionPath(path: string | undefined): string {
+    return (path ?? "").replace(/[/\\]+$/, "");
+  }
+
+  function scopedDiscoveredSessions(
+    discovered: DiscoveredSession[],
+  ): DiscoveredSession[] {
+    const active = activeProject(projectsRef.current);
+    if (!active) return discovered;
+    const activePath = normalizeSessionPath(active.path);
+    return discovered.filter((session) => normalizeSessionPath(session.cwd) === activePath);
+  }
+
+  function knownTabIds(extraTabs: { id: string }[] = []): Set<string> {
+    return new Set(
+      (((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id))
+        .concat(extraTabs.map((t) => t.id))
+        .concat(["default"]),
+    );
+  }
+
+  function recentSessionItems(
+    discovered: DiscoveredSession[],
+    openIds: Set<string>,
+  ): RecentSessionItem[] {
+    return discovered
+      .filter((d) => !openIds.has(d.tabId))
+      .slice(0, 8)
+      .map((d) => ({
+        id: d.tabId,
+        label: `Session ${d.tabId.slice(0, 8)}`,
+        lastModified: formatRelativeTime(d.lastModified),
+        ...(d.cwd ? { cwd: d.cwd } : {}),
+      }));
+  }
+
+  function syncRecentSessionsToState() {
+    const sessions = recentSessionItems(
+      scopedDiscoveredSessions(allDiscoveredSessionsRef.current),
+      knownTabIds(),
+    );
+    setState((prev) => ({ ...prev, recentSessions: sessions }));
+  }
   // Per-tab terminal buffer cap. Bash output bursts can be huge; without
   // a ceiling the buffer would grow forever and slow tab switches as the
   // replay payload grows.
@@ -420,6 +507,8 @@ export default function App() {
   // `[ui] restore_tabs = true` so repeated ready/report events don't
   // duplicate tabs.
   const autoRestoredSessionIdsRef = useRef(new Set<string>());
+  const allDiscoveredSessionsRef = useRef<DiscoveredSession[]>([]);
+  const projectsLoadedRef = useRef(false);
 
   // Themes — three built-in palettes (ember/paper/aether) plus
   // extension-registered ones. Persisted to `~/.aethon/theme` so the choice
@@ -948,7 +1037,7 @@ export default function App() {
   function newTab(
     restoreId?: string,
     restoreLabel?: string,
-    options?: { restoredSession?: boolean },
+    options?: { restoredSession?: boolean; cwd?: string },
   ) {
     // restoreId lets the caller open a tab with a specific tabId so the
     // bridge's SessionManager.continueRecent picks up the persisted
@@ -969,16 +1058,8 @@ export default function App() {
       // sequential "Tab N" naming the empty-tab path has used.
       const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
       const projectId = projectsRef.current.activeId;
-      const messages: ChatMessage[] = options?.restoredSession
-        ? [{
-            id: crypto.randomUUID(),
-            role: "system",
-            text: "Restored session context. Continue the conversation to pick up where it left off.",
-          }]
-        : [];
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
-        messages,
         model: inheritedModel,
       };
       tabs.push(tab);
@@ -1015,13 +1096,14 @@ export default function App() {
     // session. Tabs created before a project is picked use the bridge's
     // default cwd (the spawn directory). Existing tabs keep their original
     // cwd — switching project doesn't retroactively rebase live sessions.
-    const inheritedCwd = activeProject(projectsRef.current)?.path;
+    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
         tabId: id,
         ...(inheritedModel ? { model: inheritedModel } : {}),
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+        ...(options?.restoredSession ? { restoreHistory: true } : {}),
       }),
     });
     // Track until done so a fast first chat on the new tab can wait
@@ -1039,7 +1121,7 @@ export default function App() {
   }
 
   function autoRestoreDiscoveredSessions(
-    discovered: { tabId: string; lastModified: number }[],
+    discovered: DiscoveredSession[],
     knownIds: Set<string>,
   ) {
     if (discovered.length === 0) return;
@@ -1058,7 +1140,10 @@ export default function App() {
         // Open oldest first so the most recent session ends up active.
         for (const session of [...toRestore].reverse()) {
           autoRestoredSessionIdsRef.current.add(session.tabId);
-          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`);
+          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`, {
+            restoredSession: true,
+            ...(session.cwd ? { cwd: session.cwd } : {}),
+          });
         }
         pushNotification({
           id: "ae-auto-restore-tabs",
@@ -1643,9 +1728,8 @@ export default function App() {
         const extEventRoutingMode =
           data.extensionEventRoutingMode === "extension" ? "extension" : "builtin";
         const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
-        const discTabs = (data.discoveredTabs as
-          | { tabId: string; lastModified: number }[]
-          | undefined) ?? [];
+        const discTabs = (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
+        allDiscoveredSessionsRef.current = discTabs;
         // Hydrate extension themes BEFORE the layout state merge below so
         // /sidebar/themes carries the full list (built-ins + extension)
         // when the merge runs. hydrateThemes also injects the CSS so a
@@ -1675,20 +1759,12 @@ export default function App() {
         // records for so the same session isn't listed twice (open AND
         // restorable). Format the lastModified into a "10m ago"-style
         // label for the row's right-hand meta.
-        const knownIds = new Set(
-          (((data.tabs as { id: string }[] | undefined) ?? []).map((t) => t.id))
-            .concat(((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id))
-            .concat(["default"]),
-        );
-        const recentSessions = discTabs
-          .filter((d) => !knownIds.has(d.tabId))
-          .slice(0, 8)
-          .map((d) => ({
-            id: d.tabId,
-            label: `Session ${d.tabId.slice(0, 8)}`,
-            lastModified: formatRelativeTime(d.lastModified),
-          }));
-        autoRestoreDiscoveredSessions(discTabs, knownIds);
+        const knownIds = knownTabIds((data.tabs as { id: string }[] | undefined) ?? []);
+        const scopedDiscTabs = scopedDiscoveredSessions(discTabs);
+        const recentSessions = recentSessionItems(scopedDiscTabs, knownIds);
+        if (projectsLoadedRef.current) {
+          autoRestoreDiscoveredSessions(scopedDiscTabs, knownIds);
+        }
         // Restore any extension-supplied layout, then replay queued
         // patches. Falls back to the boot layout when none is reported
         // so a removed/disabled extension stops bleeding stale chrome
@@ -2089,6 +2165,13 @@ export default function App() {
         }
         break;
       }
+      case "session_history": {
+        const tabId = (data.tabId as string | undefined) ?? "default";
+        const messages = coerceChatMessages(data.messages);
+        updateTab(tabId, (tab) => ({ ...tab, messages }));
+        syncRecentSessionsToState();
+        break;
+      }
       case "tab_closed": {
         // Bridge confirms a tab session was torn down. We may have already
         // removed it from local state in the close handler; this is just a
@@ -2486,6 +2569,9 @@ export default function App() {
     const active = activeProject(ps);
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      const tabIds = new Set(
+        (((prev.tabs as Tab[] | undefined) ?? []).map((t) => t.id)).concat(["default"]),
+      );
       return {
         ...prev,
         projects: ps.projects,
@@ -2507,6 +2593,10 @@ export default function App() {
             git: gitStatusRef.current.get(p.path),
           })),
         },
+        recentSessions: recentSessionItems(
+          scopedDiscoveredSessions(allDiscoveredSessionsRef.current),
+          tabIds,
+        ),
       };
     });
   }
@@ -2599,6 +2689,7 @@ export default function App() {
     (async () => {
       const ps = await loadProjects();
       projectsRef.current = ps;
+      projectsLoadedRef.current = true;
       syncProjectsToState();
       // Kick a git status fetch for every loaded project so badges
       // appear on the first paint instead of waiting for the 30s tick.
@@ -2622,6 +2713,9 @@ export default function App() {
           return { ...prev, tabs };
         });
       }
+      const scoped = scopedDiscoveredSessions(allDiscoveredSessionsRef.current);
+      autoRestoreDiscoveredSessions(scoped, knownTabIds());
+      syncRecentSessionsToState();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2649,6 +2743,7 @@ export default function App() {
     // state composite will render so the caller can decide whether to
     // auto-create a fresh tab.
     switchProjectBucket(fromKey, projectBucketKey(id));
+    syncRecentSessionsToState();
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, path);
@@ -2727,6 +2822,7 @@ export default function App() {
     };
     persistProjects();
     switchProjectBucket(fromKey, toKey);
+    syncRecentSessionsToState();
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, target.path);
@@ -2738,6 +2834,7 @@ export default function App() {
     projectsRef.current = { ...projectsRef.current, activeId: null };
     persistProjects();
     switchProjectBucket(fromKey, NO_PROJECT_KEY);
+    syncRecentSessionsToState();
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, null);
@@ -2756,12 +2853,14 @@ export default function App() {
 
     if (wasActive) {
       switchProjectBucket(fromKey, NO_PROJECT_KEY);
+      syncRecentSessionsToState();
       const tabId =
         (stateRef.current.activeTabId as string | undefined) ?? "default";
       announceProjectToBridge(tabId, null);
       tabBucketsRef.current.delete(removedKey);
     } else {
       tabBucketsRef.current.delete(removedKey);
+      syncRecentSessionsToState();
     }
 
     return true;
@@ -2802,7 +2901,6 @@ export default function App() {
   // exists to avoid.
   useEffect(() => {
     const list = summarizeLayoutComponents(layout);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
       return { ...prev, sidebar: { ...sidebar, components: list } };
@@ -3103,7 +3201,10 @@ export default function App() {
         setActiveTab(p.tabId);
         return;
       case "session":
-        newTab(p.sessionId, p.label);
+        newTab(p.sessionId, p.label, {
+          restoredSession: true,
+          ...(p.cwd ? { cwd: p.cwd } : {}),
+        });
         return;
       case "project":
         setActiveProjectById(p.projectId);
@@ -3576,7 +3677,7 @@ export default function App() {
         }
         if (eventType === "restore-session") {
           const sel = data as
-            | { sessionId?: string; label?: string }
+            | { sessionId?: string; label?: string; cwd?: string }
             | undefined;
           if (sel?.sessionId) {
             // Re-open the persisted session by reusing the same tabId.
@@ -3584,6 +3685,7 @@ export default function App() {
             // existing JSONL files so the LLM history is restored too.
             newTab(sel.sessionId, sel.label ?? "Restored Session", {
               restoredSession: true,
+              ...(sel.cwd ? { cwd: sel.cwd } : {}),
             });
           } else {
             newTab();
@@ -3688,6 +3790,7 @@ export default function App() {
             const item = recentSessions.find((s) => s.id === sessionId);
             newTab(sessionId, item?.label ?? `Session ${sessionId.slice(0, 8)}`, {
               restoredSession: true,
+              ...(item?.cwd ? { cwd: item.cwd } : {}),
             });
             return true;
           }

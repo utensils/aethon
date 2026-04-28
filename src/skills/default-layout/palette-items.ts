@@ -30,7 +30,7 @@ export const SECTION_LABEL: Record<PaletteSection, string> = {
 
 export type PalettePayload =
   | { kind: "tab"; tabId: string }
-  | { kind: "session"; sessionId: string; label: string }
+  | { kind: "session"; sessionId: string; label: string; cwd?: string }
   | { kind: "project"; projectId: string }
   | { kind: "open-project"; }
   | { kind: "slash"; name: string; args?: string }
@@ -76,7 +76,7 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
 export interface SelectInput {
   tabs?: { id: string; label: string }[];
   activeTabId?: string;
-  recentSessions?: { id: string; label: string; lastModified?: string }[];
+  recentSessions?: { id: string; label: string; lastModified?: string; cwd?: string }[];
   sidebar?: {
     projects?: {
       id: string;
@@ -119,7 +119,12 @@ export function selectPaletteItems(
         label: s.label,
         hint: s.lastModified,
         section: "sessions",
-        payload: { kind: "session", sessionId: s.id, label: s.label },
+        payload: {
+          kind: "session",
+          sessionId: s.id,
+          label: s.label,
+          ...(s.cwd ? { cwd: s.cwd } : {}),
+        },
       });
     }
   };

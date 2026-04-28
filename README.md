@@ -20,7 +20,7 @@
   <img alt="Platforms: macOS | Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey">
 </p>
 
-> ⚠️ **Early development — not ready for production use.** The API and protocol surface are still settling; expect breaking changes between commits.
+> **Early development — not ready for production use.** The API and protocol surface are still settling; expect breaking changes between commits.
 
 Aethon embeds the [pi coding agent][pi] inside a Tauri 2 desktop shell and renders its output as live, interactive UI via the [A2UI][a2ui] protocol. The interface is not a fixed IDE layout — it's a **canvas the agent populates dynamically**. Skills bring their own components, themes control the look, the agent decides the layout.
 
@@ -35,23 +35,23 @@ The name comes from Greek mythology: *Αἴθων*, one of the horses that pulle
 
 **Workspace**
 
-- 🪟 Multi-tab agent sessions — each tab owns its own pi conversation, model, draft, and terminal buffer (`⌘T` new, `⌘]` / `⌘[` next/prev, `⌘W` close).
-- 🍎 Native macOS menu + system tray — built-ins (Quit, Hide, Cut/Copy/Paste, Minimize) for free, plus app-specific items (New Tab, Toggle Terminal, Stop Prompt, Check for Updates) that route through the same dispatcher as the keyboard shortcuts.
-- 🖥️ Live terminal panel (`⌘\``) — xterm.js with the WebGL renderer. Streams the agent's bash output per tab.
-- 💾 Persistent state — chat history, tabs, and themes survive relaunch under `~/.aethon/`. Pi LLM context persists per tab via pi's session manager.
+- Multi-tab agent sessions — each tab owns its own pi conversation, model, draft, and terminal buffer (`⌘T` new, `⌘]` / `⌘[` next/prev, `⌘W` close).
+- Native macOS menu + system tray — built-ins (Quit, Hide, Cut/Copy/Paste, Minimize) for free, plus app-specific items (New Tab, Toggle Terminal, Stop Prompt, Check for Updates) that route through the same dispatcher as the keyboard shortcuts.
+- Live terminal panel (`⌘\``) — xterm.js with the WebGL renderer. Streams the agent's bash output per tab.
+- Persistent state — chat history, tabs, and themes survive relaunch under `~/.aethon/`. Pi LLM context persists per tab via pi's session manager.
 
 **Agent-controlled UI**
 
-- 🎨 Themes registered live via `aethon.registerTheme({ id, vars })` or dropped as `~/.aethon/themes/*.json`.
-- 🧩 Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer.
-- 🪜 Layout slot contract — alternative layouts host the standard composites by adhering to canonical area names (`canvas`, `composer`, `sidebar`, `tabs`, `terminal`, `status`, `header`, `empty-state`) or by declaring a `slotMap` remap.
-- 📐 Four built-in layouts (`workstation`, `editorial`, `command-deck`, `live-layout`) on the Æther signature palette — swap with `/layout <id>`. Extensions register additional palettes via `aethon.registerTheme`.
+- Themes registered live via `aethon.registerTheme({ id, vars })` or dropped as `~/.aethon/themes/*.json`.
+- Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer.
+- Layout slot contract — alternative layouts host the standard composites by adhering to canonical area names (`canvas`, `composer`, `sidebar`, `tabs`, `terminal`, `status`, `header`, `empty-state`) or by declaring a `slotMap` remap.
+- Four built-in layouts (`workstation`, `editorial`, `command-deck`, `live-layout`) on the Æther signature palette — swap with `/layout <id>`. Extensions register additional palettes via `aethon.registerTheme`.
 
 **Extensibility**
 
-- 🧠 Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed skill (manifest via `package.json#aethon`).
-- ⌨️ Slash commands, keybindings, menu items, and event interceptors — all registerable from extensions, all reported back in the runtime snapshot so the agent knows what's wired.
-- 🔁 Generic `extension_lifecycle` event channel — extensions get visible chat-side feedback when they load / fail / reload, and other layouts can intercept the window event to substitute a toast / sidebar pulse / status pill.
+- Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed skill (manifest via `package.json#aethon`).
+- Slash commands, keybindings, menu items, and event interceptors — all registerable from extensions, all reported back in the runtime snapshot so the agent knows what's wired.
+- Generic `extension_lifecycle` event channel — extensions get visible chat-side feedback when they load / fail / reload, and other layouts can intercept the window event to substitute a toast / sidebar pulse / status pill.
 
 **Slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`, `/sidebar`, `/layout`. Unknown commands fall through to pi.
 

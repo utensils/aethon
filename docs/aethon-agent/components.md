@@ -590,7 +590,7 @@ table rows, and list items keep the subtree renderable.
   subtitle?: StringValue,          // default: "All tabs are closed. …"
   primaryButtonLabel?: StringValue, // default: "New Tab"
   tips?: StringValue[],
-  recentSessions?: { id, label, lastModified? }[],
+  recentSessions?: { id, label, lastModified?, cwd? }[],
 }
 ```
 
@@ -599,8 +599,10 @@ state flags `/empty` (true → show empty-state) and `/hasTabs` (false →
 hide canvas/composer/tab-strip). The default layout already binds them
 both. Emits `new-tab` on the primary button click and
 `restore-session` on a recent-session row click (descendantId =
-session id). Replace it by re-registering the `empty-state` component
-type from an extension if you want a different welcome surface.
+session id; data includes `{sessionId, label, cwd?}` so restore keeps
+the session scoped to its original project). Replace it by
+re-registering the `empty-state` component type from an extension if
+you want a different welcome surface.
 
 ### `command-palette` and `notification-stack`
 
