@@ -6,6 +6,16 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-28
+
+### Changed
+
+- Promoted the first public release line from the placeholder `0.1.0`
+  tag to `0.2.0`.
+- Release CI now publishes signed macOS updater artifacts, Linux `.deb`
+  and `.rpm` installers, and the Rust crate to crates.io. The workflow
+  yanks placeholder crate version `0.1.0` after `0.2.0` publishes.
+
 ## [0.1.0] - 2026-04-28
 
 ### Added
@@ -458,5 +468,6 @@ All notable changes to Aethon. Format loosely follows
   "Terminal" + "xterm.js · WebGL" badge).
 - **`SPEC.md` checklist** reconciled with what's actually shipped.
 
-[Unreleased]: https://github.com/utensils/aethon/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/utensils/aethon/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/utensils/aethon/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/utensils/aethon/releases/tag/v0.1.0
