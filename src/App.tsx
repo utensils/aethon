@@ -115,6 +115,31 @@ import {
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
 
+const ZOOM_MIN = 0.7;
+const ZOOM_MAX = 1.6;
+
+function writeUiViewportVars(scale: number) {
+  const root = document.documentElement;
+  root.style.setProperty("--app-viewport-width", `${window.innerWidth / scale}px`);
+  root.style.setProperty("--app-viewport-height", `${window.innerHeight / scale}px`);
+}
+
+function applyUiScale(scale: number) {
+  const root = document.documentElement;
+  root.style.setProperty("--app-ui-scale", String(scale));
+  writeUiViewportVars(scale);
+  root.style.zoom = String(scale);
+}
+
+function readZoom(): number {
+  const cur = parseFloat(
+    document.documentElement.style.getPropertyValue("--app-ui-scale") ||
+      document.documentElement.style.zoom ||
+      "1",
+  );
+  return Number.isFinite(cur) ? cur : 1;
+}
+
 interface ModelDescriptor {
   id: string;
   label: string;
@@ -547,27 +572,6 @@ export default function App() {
   // their dimensions back down. Without that compensation, 100vw/100vh
   // elements become wider/taller than the visible window at >100%.
   // ---------------------------------------------------------------------
-  const ZOOM_MIN = 0.7;
-  const ZOOM_MAX = 1.6;
-  function writeUiViewportVars(scale: number) {
-    const root = document.documentElement;
-    root.style.setProperty("--app-viewport-width", `${window.innerWidth / scale}px`);
-    root.style.setProperty("--app-viewport-height", `${window.innerHeight / scale}px`);
-  }
-  function applyUiScale(scale: number) {
-    const root = document.documentElement;
-    root.style.setProperty("--app-ui-scale", String(scale));
-    writeUiViewportVars(scale);
-    root.style.zoom = String(scale);
-  }
-  function readZoom(): number {
-    const cur = parseFloat(
-      document.documentElement.style.getPropertyValue("--app-ui-scale") ||
-        document.documentElement.style.zoom ||
-        "1",
-    );
-    return Number.isFinite(cur) ? cur : 1;
-  }
   function applyZoom(next: number) {
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
     const rounded = Math.round(clamped * 100) / 100;
@@ -594,8 +598,6 @@ export default function App() {
     onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-    // apply/read helpers only touch document-level CSS vars.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function setTheme(id: string) {
@@ -706,6 +708,32 @@ export default function App() {
       writeState(PERSIST_FILE, "[]").catch(() => {
         /* ignore */
       });
+    }
+  }
+
+  function toggleTerminal() {
+    setState((prev) => {
+      const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
+      return { ...prev, terminal: { ...term, open: !term.open } };
+    });
+  }
+
+  async function stopPrompt() {
+    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    try {
+      await invoke("agent_command", {
+        payload: JSON.stringify({ type: "stop", tabId }),
+      });
+      setStatusFlags({ status: "stopping…" });
+    } catch (err) {
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          text: `Failed to stop: ${err}`,
+        },
+        tabId,
+      );
     }
   }
 
@@ -1004,10 +1032,23 @@ export default function App() {
       if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        setState((prev) => {
-          const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
-          return { ...prev, terminal: { ...term, open: !term.open } };
-        });
+        toggleTerminal();
+        return;
+      }
+      // Cmd+K → clear active chat. This is advertised in the Workstation
+      // panels section and mirrors the View > Clear Chat menu item.
+      if (e.key.toLowerCase() === "k" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearChat();
+        return;
+      }
+      // Cmd+. → stop the current prompt. Mirrors the native menu
+      // accelerator and the busy composer Stop button.
+      if (e.key === "." && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void stopPrompt();
         return;
       }
       // Cmd+T → new tab. Pi sessions are independent per tab.
@@ -1373,21 +1414,9 @@ export default function App() {
         }
         case "next_tab": nextTab(1); break;
         case "prev_tab": nextTab(-1); break;
-        case "toggle_terminal": {
-          setState((prev) => {
-            const term = (prev.terminal as { open?: boolean }) ?? {};
-            return { ...prev, terminal: { ...term, open: !term.open } };
-          });
-          break;
-        }
+        case "toggle_terminal": toggleTerminal(); break;
         case "clear_chat": clearChat(); break;
-        case "stop_prompt": {
-          const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
-          invoke("agent_command", {
-            payload: JSON.stringify({ type: "stop", tabId }),
-          }).catch(() => { /* surfaced by chat */ });
-          break;
-        }
+        case "stop_prompt": void stopPrompt(); break;
         case "check_updates": {
           checkForUpdates().catch((err) => {
             appendSystem(`Update check failed: ${err}`);
@@ -2974,12 +3003,10 @@ export default function App() {
           if (id) closeTab(id);
         } else if (p.action === "builtin:meta+]") nextTab(1);
         else if (p.action === "builtin:meta+[") nextTab(-1);
-        else if (p.action === "builtin:meta+`") {
-          setState((prev) => {
-            const term = (prev.terminal as { open?: boolean }) ?? {};
-            return { ...prev, terminal: { ...term, open: !term.open } };
-          });
-        } else if (p.action === "builtin:meta+p") openPalette("switcher");
+        else if (p.action === "builtin:meta+`") toggleTerminal();
+        else if (p.action === "builtin:meta+k") clearChat();
+        else if (p.action === "builtin:meta+.") void stopPrompt();
+        else if (p.action === "builtin:meta+p") openPalette("switcher");
         else if (p.action === "builtin:meta+shift+p") openPalette("commands");
         return;
     }
@@ -3332,22 +3359,7 @@ export default function App() {
         return true;
       }
       if (component.id === "chat-input" && eventType === "cancel") {
-        const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
-        try {
-          await invoke("agent_command", {
-            payload: JSON.stringify({ type: "stop", tabId }),
-          });
-          setStatusFlags({ status: "stopping…" });
-        } catch (err) {
-          appendMessage(
-            {
-              id: crypto.randomUUID(),
-              role: "agent",
-              text: `Failed to stop: ${err}`,
-            },
-            tabId,
-          );
-        }
+        await stopPrompt();
         return true;
       }
       // Tab events route by component *type* — id may vary across layouts
@@ -3473,10 +3485,7 @@ export default function App() {
       if (isSectionedSelect) {
         const selected = data as { sectionId?: string; itemId?: string } | undefined;
         if (selected?.itemId === "toggle-terminal") {
-          setState((prev) => {
-            const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
-            return { ...prev, terminal: { ...term, open: !term.open } };
-          });
+          toggleTerminal();
           return true;
         }
         if (selected?.itemId === "clear-chat") {

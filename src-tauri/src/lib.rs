@@ -883,7 +883,9 @@ fn install_app_menu(
             .accelerator("CmdOrCtrl+`")
             .build(app)?;
     let clear_chat =
-        MenuItemBuilder::with_id("clear_chat", "Clear Chat").build(app)?;
+        MenuItemBuilder::with_id("clear_chat", "Clear Chat")
+            .accelerator("CmdOrCtrl+K")
+            .build(app)?;
     let stop_prompt =
         MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
             .accelerator("CmdOrCtrl+.")

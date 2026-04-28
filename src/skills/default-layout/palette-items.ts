@@ -65,6 +65,8 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+]", description: "Next tab" },
   { combo: "meta+[", description: "Previous tab" },
   { combo: "meta+`", description: "Toggle terminal" },
+  { combo: "meta+k", description: "Clear chat" },
+  { combo: "meta+.", description: "Stop current prompt" },
 ];
 
 export interface SelectInput {

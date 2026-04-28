@@ -1534,8 +1534,9 @@ async function main() {
   // App.tsx normalizeRegisteredCombo.
   const RESERVED_COMBOS = new Set([
     "meta+t", "meta+w", "meta+]", "meta+[",
-    "meta+`",
+    "meta+`", "meta+k", "meta+.",
     "meta+p", "meta+shift+p",
+    "meta+=", "meta+-", "meta+0",
   ]);
   function canonicalizeCombo(input: string): string {
     const parts = input.split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
@@ -1619,7 +1620,7 @@ async function main() {
     // a hardcoded list to stay independent of frontend imports.
     const BUILTIN_SLASH_NAMES = new Set([
       "clear", "help", "theme", "model", "reset", "terminal", "skills",
-      "sidebar", "layout",
+      "sidebar", "layout", "project",
     ]);
     if (!/^[A-Za-z][\w-]*$/.test(name)) {
       const errorMsg = "registerSlashCommand: name must match /^[A-Za-z][\\w-]*$/";

@@ -78,6 +78,8 @@ describe("selectPaletteItems", () => {
     const keys = items.filter((i) => i.section === "keybindings");
     expect(keys[0].id.startsWith("keybind:builtin:")).toBe(true);
     expect(keys.some((k) => k.id === "keybind:ext:ctrl+g")).toBe(true);
+    expect(keys.some((k) => k.id === "keybind:builtin:meta+k")).toBe(true);
+    expect(keys.some((k) => k.id === "keybind:builtin:meta+.")).toBe(true);
     // Built-in count matches the catalogue.
     const builtinCount = keys.filter((k) =>
       k.id.startsWith("keybind:builtin:"),
