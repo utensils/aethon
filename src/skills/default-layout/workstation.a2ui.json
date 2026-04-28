@@ -6,7 +6,8 @@
       "props": {
         "columns": { "$ref": "/layout/columns" },
         "rows": "38px minmax(0,1fr) auto auto auto",
-        "areas": { "$ref": "/layout/areas" }
+        "areas": { "$ref": "/layout/areas" },
+        "slotMap": { "empty-state": "canvas" }
       },
       "children": [
         {
