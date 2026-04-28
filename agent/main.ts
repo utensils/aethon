@@ -1527,17 +1527,6 @@ async function main() {
     scheduleStateFileWrite();
     return promise;
   }
-  // Reserved combos — built-in keybindings on the frontend (App.tsx)
-  // own these and check first, so an extension that registered them
-  // would never fire. Reject explicitly so the failure is visible.
-  // Combos here are the canonical lowercase form produced by
-  // App.tsx normalizeRegisteredCombo.
-  const RESERVED_COMBOS = new Set([
-    "meta+t", "meta+w", "meta+]", "meta+[",
-    "meta+`", "meta+k", "meta+.",
-    "meta+p", "meta+shift+p",
-    "meta+=", "meta+-", "meta+0",
-  ]);
   function canonicalizeCombo(input: string): string {
     const parts = input.split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
     const aliased = parts.map((p) =>
@@ -1573,15 +1562,15 @@ async function main() {
       return Promise.resolve({ ok: false, error: errorMsg });
     }
     const canonical = canonicalizeCombo(combo);
-    if (RESERVED_COMBOS.has(canonical)) {
-      const errorMsg = `registerKeybinding: "${combo}" is a reserved built-in shortcut`;
+    if (!canonical) {
+      const errorMsg = "registerKeybinding: combo must include a key";
       send({ type: "notice", message: errorMsg });
       return Promise.resolve({ ok: false, error: errorMsg });
     }
-    const action = typeof obj.action === "string" && obj.action ? obj.action : combo;
+    const action = typeof obj.action === "string" && obj.action ? obj.action : canonical;
     const description = typeof obj.description === "string" ? obj.description : undefined;
-    extensionKeybindings.set(combo, {
-      combo,
+    extensionKeybindings.set(canonical, {
+      combo: canonical,
       action,
       ...(description ? { description } : {}),
     });
@@ -1595,7 +1584,7 @@ async function main() {
     if (typeof combo !== "string" || !combo.trim()) {
       return Promise.resolve({ ok: false, error: "combo required" });
     }
-    const had = extensionKeybindings.delete(combo.trim());
+    const had = extensionKeybindings.delete(canonicalizeCombo(combo));
     if (!had) {
       return Promise.resolve({ ok: false, error: "no such combo" });
     }
