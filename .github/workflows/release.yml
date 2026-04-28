@@ -9,6 +9,17 @@ on:
       tag:
         description: "Release tag to publish, for example v0.1.0"
         required: true
+      platform:
+        description: "Optional single platform to build for manual release backfills."
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos-aarch64
+          - macos-x86_64
+          - linux-x86_64
+          - windows-x86_64
 
 permissions:
   contents: write
@@ -44,6 +55,14 @@ jobs:
               --config '{"bundle":{"createUpdaterArtifacts":false}}'
             unsignedArgs: --bundles deb,rpm
             includeUpdaterJson: false
+          - label: windows-x86_64
+            platform: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            signedArgs: >-
+              --bundles nsis
+              --config '{"bundle":{"createUpdaterArtifacts":false}}'
+            unsignedArgs: --bundles nsis
+            includeUpdaterJson: false
     runs-on: ${{ matrix.platform }}
     env:
       CARGO_TERM_COLOR: always
@@ -52,16 +71,18 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       HAS_UPDATER_SECRETS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        if: env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Install Linux build deps
-        if: runner.os == 'Linux'
+        if: (env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label) && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
@@ -79,21 +100,24 @@ jobs:
             wget
 
       - name: Setup Bun
+        if: env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.x
 
       - name: Install Rust toolchain
+        if: env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.92.0"
           targets: ${{ matrix.rust-target }}
 
       - name: Install dependencies
+        if: env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label
         run: bun install --frozen-lockfile
 
       - name: Build signed updater release
-        if: env.HAS_UPDATER_SECRETS == 'true'
+        if: (env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label) && env.HAS_UPDATER_SECRETS == 'true'
         uses: tauri-apps/tauri-action@v0
         with:
           tagName: ${{ env.RELEASE_TAG }}
@@ -106,7 +130,7 @@ jobs:
           args: ${{ matrix.signedArgs }}
 
       - name: Build installer release
-        if: env.HAS_UPDATER_SECRETS != 'true'
+        if: (env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label) && env.HAS_UPDATER_SECRETS != 'true'
         uses: tauri-apps/tauri-action@v0
         with:
           tagName: ${{ env.RELEASE_TAG }}
