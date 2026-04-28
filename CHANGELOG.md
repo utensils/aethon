@@ -13,8 +13,9 @@ All notable changes to Aethon. Format loosely follows
 - Promoted the first public release line from the placeholder `0.1.0`
   tag to `0.2.0`.
 - Release CI now publishes signed macOS updater artifacts, Linux `.deb`
-  and `.rpm` installers, and the Rust crate to crates.io. The workflow
-  yanks placeholder crate version `0.1.0` after `0.2.0` publishes.
+  and `.rpm` installers, Windows x64 NSIS setup executables, and the Rust
+  crate to crates.io. The workflow yanks placeholder crate version `0.1.0`
+  after `0.2.0` publishes.
 
 ## [0.1.0] - 2026-04-28
 
