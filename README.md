@@ -74,6 +74,20 @@ Bring your own LLM key — pi reads `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / equ
 [nix]: https://nixos.org/download
 [direnv]: https://direnv.net
 
+### Nix package
+
+The flake also exposes a distribution package and overlay:
+
+```bash
+nix build .#aethon
+nix run .#aethon
+```
+
+Downstream flakes can consume `overlays.default`, which provides `pkgs.aethon`.
+The package follows nixpkgs' Tauri pattern (`cargo-tauri.hook` +
+`fetchNpmDeps`) and uses `package-lock.json` as the reproducible npm dependency
+input for Nix builds.
+
 ### Devshell commands
 
 | Command     | What it does                                                       |
@@ -109,7 +123,7 @@ Bring your own LLM key — pi reads `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / equ
 │  │             React Frontend (Vite)                    │  │
 │  │  ┌─────────────────────┐  ┌──────────────────────┐  │  │
 │  │  │  A2UI Renderer       │  │  default-layout     │  │  │
-│  │  │  (15 primitives +    │  │  (sidebar, canvas,  │  │  │
+│  │  │  (20 primitives +    │  │  (sidebar, canvas,  │  │  │
 │  │  │  scoped templates)   │  │  terminal, ...)     │  │  │
 │  │  └─────────────────────┘  └──────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -135,7 +149,8 @@ aethon/
 ├── agent/               # Pi agent bridge (run as a bun subprocess)
 ├── docs/aethon-agent/   # Bundled reference docs the agent reads
 ├── examples/            # Pi extensions + skill packages (reference)
-├── flake.nix            # Nix dev environment
+├── flake.nix            # Nix dev environment, package, and overlay
+├── package-lock.json    # npm dependency snapshot for reproducible Nix builds
 └── package.json         # Frontend deps + tauri CLI
 ```
 

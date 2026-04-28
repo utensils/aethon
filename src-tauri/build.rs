@@ -80,7 +80,11 @@ fn ensure_sidecar(project_root: &Path, triple: &str) -> Result<(), String> {
         "x86_64-pc-windows-msvc" => "bun-windows-x64",
         other => return Err(format!("no bun target mapping for triple {other}")),
     };
-    let suffix = if triple.contains("windows") { ".exe" } else { "" };
+    let suffix = if triple.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let out_dir = project_root.join("src-tauri").join("binaries");
     std::fs::create_dir_all(&out_dir)
         .map_err(|e| format!("create_dir_all {}: {e}", out_dir.display()))?;
@@ -94,8 +98,7 @@ fn ensure_sidecar(project_root: &Path, triple: &str) -> Result<(), String> {
     // change, our own rerun-if-changed entries trigger and the mtime
     // check correctly forces a rebuild.
     let needs_build = !out_path.exists()
-        || newer_than(project_root, &out_path)
-            .map_err(|e| format!("source mtime check: {e}"))?;
+        || newer_than(project_root, &out_path).map_err(|e| format!("source mtime check: {e}"))?;
     if needs_build {
         println!(
             "cargo:warning=building aethon-agent sidecar → {} (target={bun_target})",
