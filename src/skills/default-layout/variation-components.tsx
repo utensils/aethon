@@ -738,6 +738,7 @@ function DropdownPickerCore({
     top: number;
     left: number;
     right: number;
+    width: number;
   } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -762,10 +763,16 @@ function DropdownPickerCore({
       const scale = readUiScale();
       const viewportWidth = window.innerWidth / scale;
       const viewportHeight = window.innerHeight / scale;
+      const triggerWidth = r.width / scale;
+      const panelWidth = Math.min(
+        Math.max(triggerWidth, 240),
+        Math.max(240, viewportWidth - 16),
+      );
       setCoords({
         top: Math.min(r.bottom / scale + 6, Math.max(8, viewportHeight - 8)),
         left: Math.max(8, Math.min(r.left / scale, Math.max(8, viewportWidth - 8))),
-        right: Math.max(8, (window.innerWidth - r.right) / scale),
+        right: Math.max(8, viewportWidth - r.right / scale),
+        width: panelWidth,
       });
     }
     setOpen(true);
@@ -827,6 +834,7 @@ function DropdownPickerCore({
           role="listbox"
           style={{
             top: coords.top,
+            width: coords.width,
             ...(align === "right"
               ? { right: coords.right }
               : { left: coords.left }),
