@@ -530,9 +530,13 @@ Use `globalThis.aethon.setState("/status", "...")` to update.
 }
 ```
 
-Streams pi's bash output per tab. The buffer is per-tab; switching tabs
-replays the active tab's last 256 KiB. Override `headerLabel` /
-`bootGreeting` to brand the panel without forking the composite.
+Streams pi's bash output per tab. The bridge emits the command echo when
+the bash tool starts, then diffs pi's rolling `tool_execution_update`
+snapshots so stdout/stderr appear while the command is still running
+without replaying duplicate text on completion. The buffer is per-tab;
+switching tabs replays the active tab's last 256 KiB. Override
+`headerLabel` / `bootGreeting` to brand the panel without forking the
+composite.
 
 The bash stream lands in three places, so an extension can subscribe
 without monkey-patching the composite:

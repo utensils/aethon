@@ -26,7 +26,7 @@ export default defineConfig({
     // jsdom is reserved for the renderer when we add component tests;
     // current suite is utility code only so node is faster.
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "agent/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
