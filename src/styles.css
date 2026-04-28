@@ -588,8 +588,11 @@ body {
   color: var(--accent, #ff6a18);
 }
 .a2ui-dropdown-panel {
-  position: absolute;
-  top: calc(100% + 6px);
+  /* Fixed positioning so the panel escapes .a2ui-layout-cell's
+     overflow:hidden clip. Coordinates come from the trigger's
+     getBoundingClientRect (set inline by DropdownPickerCore on open),
+     so this base rule only carries appearance + sizing. */
+  position: fixed;
   z-index: 999;
   min-width: 240px;
   max-width: 360px;
@@ -602,12 +605,6 @@ body {
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.74rem;
-}
-.a2ui-dropdown-panel[data-align="right"] {
-  right: 0;
-}
-.a2ui-dropdown-panel[data-align="left"] {
-  left: 0;
 }
 .a2ui-dropdown-section + .a2ui-dropdown-section {
   margin-top: 6px;

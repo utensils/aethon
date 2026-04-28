@@ -726,7 +726,14 @@ function DropdownPickerCore({
 }: DropdownPickerCoreProps) {
   const [open, setOpen] = useState(false);
   const [queries, setQueries] = useState<Record<string, string>>({});
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    right: number;
+  } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   // Single close path so the search box always resets when the panel
@@ -735,22 +742,45 @@ function DropdownPickerCore({
   const close = () => {
     setOpen(false);
     setQueries({});
+    setCoords(null);
+  };
+
+  // The chrome controls live inside .a2ui-layout-cell, which clips
+  // overflow. To escape that we render the panel with position:fixed
+  // and compute coords from the trigger's bounding rect on each open.
+  const openPanel = () => {
+    const r = triggerRef.current?.getBoundingClientRect();
+    if (r) {
+      setCoords({
+        top: r.bottom + 6,
+        left: r.left,
+        right: window.innerWidth - r.right,
+      });
+    }
+    setOpen(true);
   };
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target as Node)) close();
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
+    const onResize = () => close();
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onResize, true);
     return () => {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onResize, true);
     };
   }, [open]);
 
@@ -768,9 +798,10 @@ function DropdownPickerCore({
       data-open={open ? "true" : "false"}
     >
       <button
+        ref={triggerRef}
         type="button"
         className="a2ui-dropdown-trigger"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : openPanel())}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -779,11 +810,18 @@ function DropdownPickerCore({
           ▾
         </span>
       </button>
-      {open && (
+      {open && coords && (
         <div
+          ref={panelRef}
           className="a2ui-dropdown-panel"
           data-align={align}
           role="listbox"
+          style={{
+            top: coords.top,
+            ...(align === "right"
+              ? { right: coords.right }
+              : { left: coords.left }),
+          }}
         >
           {sections.map((section, sIdx) => {
             const q = (queries[section.id] ?? "").trim().toLowerCase();
