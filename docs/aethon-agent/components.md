@@ -564,6 +564,19 @@ add ad-hoc UI, return a per-message A2UI payload from the agent or set
 state on a bound `$ref`. Override `emptyHint` to show a different
 welcome line when the canvas is empty.
 
+For progressive UI, seed the canvas slot with an A2UI payload and patch
+nested paths as work completes:
+
+```ts
+api.setState("/canvas", {
+  components: [{ id: "progress", type: "card", props: { title: "Starting" } }],
+});
+api.setState("/canvas/components/0/props/title", "Indexing files");
+```
+
+State patches preserve arrays, so paths through `components`, `children`,
+table rows, and list items keep the subtree renderable.
+
 ### `empty-state`
 
 ```ts

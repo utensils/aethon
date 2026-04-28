@@ -155,7 +155,7 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 - [x] Tool execution surfaced as A2UI cards (read/bash/edit/write/grep/find/ls events → visible UI). Cards are emitted with a stable `tool-<callId>` message id, so the "running…" state updates in place to the final result instead of duplicating bubbles.
 - [x] Image content from tool results renders in the card via the `image` primitive (data URLs, capped at 4 per result). Persisted history strips the base64 to avoid blowing the localStorage quota.
 - [x] Streaming text bubbles survive intervening tool cards — bridge stamps each text delta with a stable `messageId` (pi `AssistantMessage.timestamp`) so post-tool deltas land in the original bubble instead of a new one
-- [~] Streaming progressive component renders — text deltas amend by messageId; tool cards replace by id; full mid-stream A2UI subtree mutation via state $refs is not yet wired
+- [x] Streaming progressive component renders — text deltas amend by stable messageId, tool cards replace by stable id, and state-driven live A2UI subtrees can be seeded at `/canvas` then patched mid-turn through array-preserving JSON Pointer writes (e.g. `/canvas/components/0/props/title`) without corrupting `components` / `children` arrays.
 
 ### M3 — Extension & Skill System
 
