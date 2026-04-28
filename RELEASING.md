@@ -54,7 +54,9 @@ If `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are
 configured, the workflow keeps `bundle.createUpdaterArtifacts = true`, signs
 the updater bundles, and uploads `latest.json`. If the secrets are absent, it
 still publishes installable app bundles but disables updater artifacts for
-that run so the public release can proceed without invalid signatures.
+that run so the public release can proceed without invalid signatures. In the
+unsigned Linux path, CI publishes `.deb` and `.rpm` packages and skips AppImage
+packaging; AppImage is reserved for signed updater builds.
 
 Manual fallback (single-platform):
 
