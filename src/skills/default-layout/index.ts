@@ -21,6 +21,7 @@ import {
 import {
   AeMark,
   AgentStatusPill,
+  AppearanceMenu,
   CanvasOrnament,
   CommandBar,
   EditorialHeader,
@@ -28,6 +29,7 @@ import {
   InspectorPane,
   LayoutChangePill,
   LayoutToast,
+  ModelPicker,
   VerticalTabRail,
 } from "./variation-components";
 import workstationPayload from "./workstation.a2ui.json";
@@ -83,6 +85,8 @@ export const defaultLayoutSkill: A2UISkill = {
     "layout-change-pill": LayoutChangePill,
     "layout-diff-toast": LayoutToast,
     "layout-toast": LayoutToast,
+    "model-picker": ModelPicker,
+    "appearance-menu": AppearanceMenu,
   },
   layout: workstationPayload,
 };
@@ -102,8 +106,15 @@ export const builtinLayouts: LayoutCatalogueEntry[] = [
     id: "workstation",
     name: "Workstation",
     description:
-      "Tightened IDE-density default — sidebar, header pill, chrome tabs, terminal, composer, status bar.",
+      "Default — IDE-density sidebar, header pill, chrome tabs, terminal, composer, status bar.",
     payload: workstationPayload,
+  },
+  {
+    id: "live-layout",
+    name: "Live Layout",
+    description:
+      "Sidebar + canvas + inspector pane. Showcases the agent rearranging its own UI with a setLayout toast.",
+    payload: liveLayoutPayload,
   },
   {
     id: "editorial",
@@ -118,12 +129,5 @@ export const builtinLayouts: LayoutCatalogueEntry[] = [
     description:
       "Vertical session rail + persistent ⌘P command bar in the header. Best for many concurrent sessions.",
     payload: commandDeckPayload,
-  },
-  {
-    id: "live-layout",
-    name: "Live Layout",
-    description:
-      "Showcases the agent rearranging its own UI — sidebar + canvas + inspector pane + setLayout toast.",
-    payload: liveLayoutPayload,
   },
 ];

@@ -57,6 +57,21 @@
                 "label": { "$ref": "/agentStatus/label" },
                 "state": { "$ref": "/agentStatus/state" }
               }
+            },
+            {
+              "id": "header-spacer",
+              "type": "container",
+              "props": { "direction": "row", "className": "ae-header-spacer" }
+            },
+            {
+              "id": "model-picker",
+              "type": "model-picker",
+              "props": {}
+            },
+            {
+              "id": "appearance-menu",
+              "type": "appearance-menu",
+              "props": {}
             }
           ]
         },

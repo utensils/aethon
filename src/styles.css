@@ -529,6 +529,180 @@ body {
   50% { opacity: 0.35; }
 }
 
+/* Header spacer — flex grow filler so chrome controls (model picker,
+   appearance menu) right-align even when the rest of the row is short. */
+.ae-header-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---- Dropdown picker (model-picker / appearance-menu) ------------------ */
+
+.a2ui-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.a2ui-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 0.74rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--bg-elev, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  max-width: 22ch;
+  overflow: hidden;
+}
+.a2ui-dropdown-trigger:hover {
+  border-color: var(--accent, #ff6a18);
+  color: var(--text);
+}
+.a2ui-dropdown-trigger:focus-visible {
+  outline: 2px solid var(--accent, #ff6a18);
+  outline-offset: 1px;
+}
+.a2ui-dropdown[data-open="true"] .a2ui-dropdown-trigger {
+  border-color: var(--accent, #ff6a18);
+  background: var(--bg-elev-2, rgba(255, 255, 255, 0.05));
+}
+.a2ui-dropdown-trigger-label {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.a2ui-dropdown-trigger-chevron {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  transition: transform 120ms ease;
+}
+.a2ui-dropdown[data-open="true"] .a2ui-dropdown-trigger-chevron {
+  transform: rotate(180deg);
+  color: var(--accent, #ff6a18);
+}
+.a2ui-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 999;
+  min-width: 240px;
+  max-width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--bg-elev, #1f1f23);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+}
+.a2ui-dropdown-panel[data-align="right"] {
+  right: 0;
+}
+.a2ui-dropdown-panel[data-align="left"] {
+  left: 0;
+}
+.a2ui-dropdown-section + .a2ui-dropdown-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+}
+.a2ui-dropdown-section-title {
+  padding: 4px 8px;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.a2ui-dropdown-search {
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  font-size: 0.74rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 5px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+.a2ui-dropdown-search:focus {
+  border-color: var(--accent, #ff6a18);
+}
+.a2ui-dropdown-search::placeholder {
+  color: var(--text-dim);
+}
+.a2ui-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.a2ui-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 100ms ease, color 100ms ease;
+}
+.a2ui-dropdown-item:hover {
+  background: var(--accent-soft, rgba(255, 106, 24, 0.1));
+}
+.a2ui-dropdown-item-active {
+  background: var(--accent-soft, rgba(255, 106, 24, 0.15));
+  color: var(--accent, #ff6a18);
+}
+.a2ui-dropdown-item-active::after {
+  content: "●";
+  color: var(--accent, #ff6a18);
+  font-size: 0.6rem;
+  margin-left: 6px;
+}
+.a2ui-dropdown-item-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.a2ui-dropdown-item-hint {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.a2ui-dropdown-empty {
+  padding: 8px;
+  color: var(--text-dim);
+  font-style: italic;
+  text-align: center;
+}
+
+/* Editorial header row container — wraps the editorial-header composite
+   and any chrome controls (model picker, appearance menu) so they sit
+   on the same row inline with the title. */
+.ae-editorial-header-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 18px;
+  gap: 12px;
+}
+.ae-editorial-header-row .ae-editorial-header {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* ---- Main canvas / chat history ----------------------------------------- */
 
 .a2ui-canvas {

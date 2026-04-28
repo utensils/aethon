@@ -27,14 +27,42 @@
         },
         {
           "id": "header",
-          "type": "editorial-header",
+          "type": "container",
           "props": {
             "area": "header",
-            "title": "Æthon π",
-            "subtitle": { "$ref": "/sessionLabel" },
-            "tabs": { "$ref": "/tabs" },
-            "activeId": { "$ref": "/activeTabId" }
-          }
+            "direction": "row",
+            "align": "center",
+            "gap": 12,
+            "padding": 0,
+            "className": "ae-editorial-header-row"
+          },
+          "children": [
+            {
+              "id": "editorial-header-inner",
+              "type": "editorial-header",
+              "props": {
+                "title": "Æthon π",
+                "subtitle": { "$ref": "/sessionLabel" },
+                "tabs": { "$ref": "/tabs" },
+                "activeId": { "$ref": "/activeTabId" }
+              }
+            },
+            {
+              "id": "header-spacer",
+              "type": "container",
+              "props": { "direction": "row", "className": "ae-header-spacer" }
+            },
+            {
+              "id": "model-picker",
+              "type": "model-picker",
+              "props": {}
+            },
+            {
+              "id": "appearance-menu",
+              "type": "appearance-menu",
+              "props": {}
+            }
+          ]
         },
         {
           "id": "main-canvas",

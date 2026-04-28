@@ -87,6 +87,21 @@
                 "label": { "$ref": "/livePill/text" },
                 "visible": { "$ref": "/livePill/visible" }
               }
+            },
+            {
+              "id": "header-spacer",
+              "type": "container",
+              "props": { "direction": "row", "className": "ae-header-spacer" }
+            },
+            {
+              "id": "model-picker",
+              "type": "model-picker",
+              "props": {}
+            },
+            {
+              "id": "appearance-menu",
+              "type": "appearance-menu",
+              "props": {}
             }
           ]
         },
@@ -215,10 +230,10 @@
       "components": [],
       "extraSections": [],
       "layouts": [
-        { "id": "workstation", "label": "workstation", "active": true },
+        { "id": "workstation", "label": "workstation" },
+        { "id": "live-layout", "label": "live-layout", "active": true },
         { "id": "editorial", "label": "editorial" },
-        { "id": "command-deck", "label": "command-deck" },
-        { "id": "live-layout", "label": "live-layout" }
+        { "id": "command-deck", "label": "command-deck" }
       ],
       "tabsAsItems": [],
       "themes": [

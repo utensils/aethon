@@ -261,8 +261,23 @@ export default function App() {
     // tab switches so the panel can replay it when the user comes back.
     // Capped client-side too (TERMINAL_REPLAY_MAX) to bound memory.
     terminalBuffer: string;
+    // Project this tab belongs to. `null` means the no-project bucket
+    // (tabs created before any project was picked, or after
+    // clearActiveProject). Tabs are isolated per project — switching
+    // projects swaps `state.tabs` for the target project's bucket and
+    // hides everyone else.
+    projectId: string | null;
   }
-  function makeEmptyTab(id: string, label: string): Tab {
+  // Sentinel key for the "no project" bucket. Project ids are UUIDs so
+  // a literal can't collide.
+  const NO_PROJECT_KEY = "__no_project__";
+  const projectBucketKey = (id: string | null | undefined) =>
+    id ?? NO_PROJECT_KEY;
+  function makeEmptyTab(
+    id: string,
+    label: string,
+    projectId: string | null = null,
+  ): Tab {
     return {
       id,
       label,
@@ -273,6 +288,7 @@ export default function App() {
       canvas: null,
       model: "",
       terminalBuffer: "",
+      projectId,
     };
   }
   // Per-tab terminal buffer cap. Bash output bursts can be huge; without
@@ -392,11 +408,17 @@ export default function App() {
     for (const t of list) injectThemeStyle(t);
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+      const currentTheme =
+        document.documentElement.dataset.theme || BUILTIN_THEMES[0]?.id;
+      const themes = [
+        ...BUILTIN_THEMES,
+        ...list.map((t) => ({ id: t.id, label: t.label })),
+      ].map((t) => ({ ...t, active: t.id === currentTheme }));
       return {
         ...prev,
         sidebar: {
           ...sidebar,
-          themes: [...BUILTIN_THEMES, ...list.map((t) => ({ id: t.id, label: t.label }))],
+          themes,
         },
       };
     });
@@ -476,6 +498,15 @@ export default function App() {
     document.documentElement.dataset.theme = id;
     writeState("theme", id).catch(() => {
       /* ignore */
+    });
+    // Update /sidebar/themes' active flag so the appearance pulldown +
+    // sidebar themes section both reflect the new selection without a
+    // separate hydrate pass.
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      const themes = ((sidebar.themes as { id: string; label: string }[] | undefined) ?? [])
+        .map((t) => ({ ...t, active: t.id === id }));
+      return { ...prev, sidebar: { ...sidebar, themes } };
     });
   }
 
@@ -719,7 +750,11 @@ export default function App() {
       // user sees a meaningful name; otherwise fall back to the
       // sequential "Tab N" naming the empty-tab path has used.
       const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      const tab: Tab = { ...makeEmptyTab(id, label), model: inheritedModel };
+      const projectId = projectsRef.current.activeId;
+      const tab: Tab = {
+        ...makeEmptyTab(id, label, projectId),
+        model: inheritedModel,
+      };
       tabs.push(tab);
       const result: Record<string, unknown> = {
         ...prev,
@@ -1418,7 +1453,10 @@ export default function App() {
                 continue;
               }
               const label = `Tab ${localTabs.length + 1}`;
-              localTabs.push({ ...makeEmptyTab(bt.id, label), model: bt.model });
+              localTabs.push({
+                ...makeEmptyTab(bt.id, label, projectsRef.current.activeId),
+                model: bt.model,
+              });
             }
             // Apply the bridge's per-tab replay over each tab record.
             // prev wins for keys the React side already restored (e.g.
@@ -2056,6 +2094,16 @@ export default function App() {
   // switching project doesn't retroactively change live sessions.
   const projectsRef = useRef<ProjectsState>(emptyProjectsState());
 
+  // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
+  // switches active project, we snapshot the current state.tabs +
+  // activeTabId into the OLD bucket and load the NEW bucket into state
+  // — that's how tabs become per-project visible without us having to
+  // filter on every render. New tabs get the active projectId baked in
+  // (see newTab) so the bucket they end up in matches their tag.
+  const tabBucketsRef = useRef<
+    Map<string, { tabs: Tab[]; activeTabId: string | undefined }>
+  >(new Map());
+
   // Mirror the projects state into app state so layouts can $ref it.
   // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
   // `/sessionLabel` (used by editorial header subtitle) and
@@ -2125,7 +2173,19 @@ export default function App() {
       const active = activeProject(ps);
       const tabId =
         (stateRef.current.activeTabId as string | undefined) ?? "default";
-      if (active) announceProjectToBridge(tabId, active.path);
+      if (active) {
+        announceProjectToBridge(tabId, active.path);
+        // Retag any pre-load tabs (default boot tab + bridge replays) so
+        // they live in the active project's bucket from now on. Without
+        // this they'd stay in NO_PROJECT_KEY and silently disappear the
+        // first time the user switches projects.
+        setState((prev) => {
+          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) =>
+            t.projectId == null ? { ...t, projectId: active.id } : t,
+          );
+          return { ...prev, tabs };
+        });
+      }
     })();
   }, []);
 
@@ -2136,6 +2196,7 @@ export default function App() {
   }
 
   function openProjectByPath(path: string, label?: string): string {
+    const fromKey = projectBucketKey(projectsRef.current.activeId);
     const { state: nextProjects, id } = upsertProject(
       projectsRef.current,
       path,
@@ -2143,21 +2204,81 @@ export default function App() {
     );
     projectsRef.current = nextProjects;
     persistProjects();
-    // Active tab inherits the new project as its cwd for any future
-    // tab_open replays / resumes. The current bridge session was
-    // created with whatever cwd the tab originally opened against —
-    // pi sessions store file paths that resolved against the OLD
-    // cwd, so we don't yank it out from under them.
+    // Switch to the project's tab bucket BEFORE notifying the bridge.
+    // If this is a brand-new project, the bucket is empty — the empty
+    // state composite will render so the caller can decide whether to
+    // auto-create a fresh tab.
+    switchProjectBucket(fromKey, projectBucketKey(id));
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, path);
     return id;
   }
 
+  // Snapshot current state.tabs + activeTabId into the OLD project's
+  // bucket, then load the NEW project's bucket back into state. The
+  // active tab's view (messages / draft / canvas / model) is mirrored
+  // to the root keys so the layout sees the new project's view
+  // immediately. If the new project has no bucket yet, we leave tabs
+  // empty + flip /empty so the empty-state composite renders — the
+  // caller (newTab/openProjectByPath) decides whether to seed a tab.
+  function switchProjectBucket(
+    fromKey: string,
+    toKey: string,
+  ) {
+    if (fromKey === toKey) return;
+    let nextTerminalBuffer = "";
+    setState((prev) => {
+      // Save current bucket.
+      const currentTabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const currentActive = prev.activeTabId as string | undefined;
+      tabBucketsRef.current.set(fromKey, {
+        tabs: currentTabs,
+        activeTabId: currentActive,
+      });
+      // Load target bucket (or empty).
+      const next = tabBucketsRef.current.get(toKey) ?? {
+        tabs: [],
+        activeTabId: undefined,
+      };
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs: next.tabs,
+        activeTabId: next.activeTabId,
+      };
+      const activeTab = next.tabs.find((t) => t.id === next.activeTabId);
+      if (activeTab) {
+        const rec = activeTab as unknown as Record<string, unknown>;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = rec[key as string];
+        }
+        result.empty = false;
+        result.hasTabs = true;
+        result.sidebar = recomputeModelPicker(
+          prev.sidebar as Record<string, unknown> | undefined,
+          activeTab.model,
+        );
+        nextTerminalBuffer = activeTab.terminalBuffer ?? "";
+      } else {
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = undefined;
+        }
+        result.empty = true;
+        result.hasTabs = next.tabs.length > 0;
+        nextTerminalBuffer = "";
+      }
+      return result;
+    });
+    // Replay the new active tab's terminal buffer (or clear if none).
+    dispatchTerminalReplay(nextTerminalBuffer);
+  }
+
   function setActiveProjectById(id: string): boolean {
     const ps = projectsRef.current;
     const target = ps.projects.find((p) => p.id === id);
     if (!target) return false;
+    const fromKey = projectBucketKey(ps.activeId);
+    const toKey = projectBucketKey(id);
     projectsRef.current = {
       projects: ps.projects.map((p) =>
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
@@ -2165,6 +2286,7 @@ export default function App() {
       activeId: id,
     };
     persistProjects();
+    switchProjectBucket(fromKey, toKey);
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, target.path);
@@ -2172,8 +2294,10 @@ export default function App() {
   }
 
   function clearActiveProject() {
+    const fromKey = projectBucketKey(projectsRef.current.activeId);
     projectsRef.current = { ...projectsRef.current, activeId: null };
     persistProjects();
+    switchProjectBucket(fromKey, NO_PROJECT_KEY);
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, null);
@@ -2292,23 +2416,40 @@ export default function App() {
   // mount; subsequent updates flow through hydrateSlashCommands when
   // extensions register / unregister commands via the bridge.
   useEffect(() => {
-    setState((prev) => ({
-      ...prev,
-      slashCommands: slashCommandsRef.current.map((c) => ({
-        name: c.name,
-        description: c.description,
-        usage: c.usage,
-        argSource: c.argSource,
-      })),
-      // Surface the layout catalogue so the slash-arg picker can resolve
-      // /layoutCatalogue when the user types `/layout `. Kept in sync
-      // with layoutCatalogueRef in registerLayout / activateLayout.
-      layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+    setState((prev) => {
+      // Seed /sidebar/layouts from the live catalogue so the appearance
+      // pulldown + sidebar layout section both reflect the current
+      // active layout, regardless of what the boot JSON happened to
+      // ship. activateLayoutById keeps this in sync afterwards.
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      const activeLayoutId = (() => {
+        const list = (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
+        return list.find((l) => l.active)?.id ?? layoutCatalogueRef.current[0]?.id;
+      })();
+      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
         id: l.id,
-        label: l.name,
-        description: l.description,
-      })),
-    }));
+        label: l.id,
+        active: l.id === activeLayoutId,
+      }));
+      return {
+        ...prev,
+        slashCommands: slashCommandsRef.current.map((c) => ({
+          name: c.name,
+          description: c.description,
+          usage: c.usage,
+          argSource: c.argSource,
+        })),
+        // Surface the layout catalogue so the slash-arg picker can resolve
+        // /layoutCatalogue when the user types `/layout `. Kept in sync
+        // with layoutCatalogueRef in registerLayout / activateLayout.
+        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+          id: l.id,
+          label: l.name,
+          description: l.description,
+        })),
+        sidebar: { ...sidebar, layouts: catalogueItems },
+      };
+    });
   }, []);
 
   // Hydrate the extension event-route intercepts. The list is wholesale
@@ -2729,7 +2870,13 @@ export default function App() {
             | undefined;
           if (sel?.projectId) {
             setActiveProjectById(sel.projectId);
-            newTab();
+            // Only seed a fresh tab when the project's bucket is empty.
+            // If the user already has tabs in this project, the bucket
+            // load above restored them — popping a new tab on top would
+            // be jarring.
+            const tabsAfter =
+              (stateRef.current.tabs as Tab[] | undefined) ?? [];
+            if (tabsAfter.length === 0) newTab();
           }
           return true;
         }
@@ -2748,7 +2895,16 @@ export default function App() {
           return true;
         }
       }
-      if (component.id === "sidebar" && eventType === "select") {
+      // Sidebar select + dropdown chrome pickers (model-picker /
+      // appearance-menu) all use the same `{sectionId, itemId}` event
+      // shape. Route by section so a chrome dropdown and a sidebar row
+      // converge on the same backing action.
+      const isSectionedSelect =
+        eventType === "select" &&
+        (component.id === "sidebar" ||
+          component.id === "model-picker" ||
+          component.id === "appearance-menu");
+      if (isSectionedSelect) {
         const selected = data as { sectionId?: string; itemId?: string } | undefined;
         if (selected?.itemId === "toggle-terminal") {
           setState((prev) => {
@@ -2770,6 +2926,10 @@ export default function App() {
           // The CSS for built-ins lives in styles.css; extension themes
           // had their <style> tag injected on hydrateThemes().
           setTheme(selected.itemId);
+          return true;
+        }
+        if (selected?.sectionId === "layouts" && selected.itemId) {
+          activateLayoutById(selected.itemId);
           return true;
         }
         if (selected?.sectionId === "projects" && selected.itemId) {
