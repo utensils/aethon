@@ -54,7 +54,6 @@ export interface ButtonComponent extends A2UIComponent {
     label: StringValue;
     variant?: "primary" | "secondary" | "ghost";
     disabled?: BooleanValue;
-    onClick?: string; // Event handler reference
   };
 }
 
@@ -87,7 +86,57 @@ export interface TextInputComponent extends A2UIComponent {
     disabled?: BooleanValue;
     onChange?: string; // Event handler reference
     onSubmit?: string;
+    name?: StringValue;
+    required?: BooleanValue;
+    autocomplete?: StringValue;
   };
+}
+
+export interface DatePickerComponent extends A2UIComponent {
+  type: "date-picker";
+  props: {
+    value?: StringValue;
+    min?: StringValue;
+    max?: StringValue;
+    placeholder?: StringValue;
+    disabled?: BooleanValue;
+    required?: BooleanValue;
+    name?: StringValue;
+  };
+}
+
+export interface IconComponent extends A2UIComponent {
+  type: "icon";
+  props: {
+    name?: StringValue;
+    symbol?: StringValue;
+    label?: StringValue;
+    size?: NumberValue;
+    color?: StringValue;
+    decorative?: BooleanValue;
+  };
+}
+
+export interface FormFieldComponent extends A2UIComponent {
+  type: "form-field";
+  props: {
+    label?: StringValue;
+    description?: StringValue;
+    error?: StringValue;
+    required?: BooleanValue;
+  };
+  children?: A2UIComponent[];
+}
+
+export interface FormComponent extends A2UIComponent {
+  type: "form";
+  props: {
+    submitLabel?: StringValue;
+    disabled?: BooleanValue;
+    gap?: NumberValue;
+    direction?: "row" | "column";
+  };
+  children?: A2UIComponent[];
 }
 
 // Layout primitive — CSS Grid with template-areas. Children opt into a region
@@ -217,6 +266,10 @@ export type ButtonProps = ButtonComponent["props"];
 export type ContainerProps = ContainerComponent["props"];
 export type CodeProps = CodeComponent["props"];
 export type TextInputProps = TextInputComponent["props"];
+export type DatePickerProps = DatePickerComponent["props"];
+export type IconProps = IconComponent["props"];
+export type FormFieldProps = FormFieldComponent["props"];
+export type FormProps = FormComponent["props"];
 export type LayoutProps = LayoutComponent["props"];
 export type SidebarProps = SidebarComponent["props"];
 export type ChatHistoryProps = ChatHistoryComponent["props"];

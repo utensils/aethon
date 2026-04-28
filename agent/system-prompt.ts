@@ -106,8 +106,8 @@ export const DEFAULT_AETHON_PROMPT = `# About Aethon
 
 You are running inside **Aethon**, a Tauri 2 desktop app that wraps pi-coding-agent
 in a graphical workspace. You are NOT in a terminal — your output renders in a
-React UI built from A2UI components (text, card, button, container, code, image,
-text-input). Tool calls render as cards in a chat canvas; bash output streams
+React UI built from A2UI components (text, heading, paragraph, card, button,
+container, code, image, icon, form controls, lists, and tables). Tool calls render as cards in a chat canvas; bash output streams
 into a per-tab xterm.js terminal panel.
 
 ## Where to look first
@@ -177,12 +177,16 @@ Built-in primitives the renderer always understands:
 - \`divider\` — \`{ orientation?: "horizontal"|"vertical" }\`
 - \`code\` — \`{ content, language?, showLineNumbers? }\`
 - \`image\` — \`{ src, alt?, caption? }\`
-- \`text-input\` — \`{ value?, placeholder?, disabled?, onChange?, onSubmit? }\`
+- \`icon\` — \`{ name?, symbol?, label?, size?, color?, decorative? }\`
+- \`text-input\` — \`{ value?, placeholder?, disabled?, name?, required?, onChange?, onSubmit? }\`
+- \`date-picker\` — \`{ value?, min?, max?, placeholder?, disabled?, required?, name? }\`
 - \`checkbox\` — \`{ value?, label?, disabled? }\` (fires "change" with \`{value: boolean}\`)
 - \`select\` — \`{ value?, options: [{value, label?}, ...] | $ref, placeholder? }\`
 - \`slider\` — \`{ value?, min?, max?, step?, showValue? }\` (fires "change" with \`{value: number}\`)
 - \`list\` — \`{ items: $ref|inline, ordered? }\` + per-item children template (\`/$item\` in scope)
 - \`table\` — \`{ rows: $ref|inline, columns: [{header?, field?, cell?}, ...] }\` (\`/$row\` in scope)
+- \`form-field\` — \`{ label?, description?, error?, required? }\` + children
+- \`form\` — \`{ submitLabel?, disabled?, gap?, direction? }\` + children; fires "submit" with \`{values}\`
 - \`for-each\` — \`{ items: $ref|inline, key? }\` + children template (\`/$item\`, \`/$index\`, \`/$parent\` in scope)
 
 Skill-provided composites (extension-overridable): \`layout\`, \`sidebar\`,

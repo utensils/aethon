@@ -13,7 +13,7 @@ since the API has been revised since model training.
 | File | Purpose |
 |------|---------|
 | `api.md` | `globalThis.aethon` runtime API: `setState`, `setLayout`, `patchLayout`, `registerComponent`, `registerSidebarSection`, `registerTheme`, `onEvent`, plus the introspection helpers (`listExtensions`, `listComponents`, `listThemes`, `getLayout`, `getRuntimeSnapshot`). |
-| `components.md` | A2UI primitive components (`text`, `card`, `button`, `container`, `code`, `image`, `text-input`) and skill-provided composites (`layout`, `sidebar`, `tab-strip`, `chat-history`, `chat-input`, `status-bar`, `terminal`, `main-canvas`). Includes prop schemas and the `$ref` JSON-Pointer data-binding contract. |
+| `components.md` | A2UI primitive components (`text`, `heading`, `paragraph`, `card`, `button`, `container`, `divider`, `code`, `image`, `icon`, `text-input`, `date-picker`, `checkbox`, `select`, `slider`, `list`, `table`, `form`, `form-field`) and skill-provided composites (`layout`, `sidebar`, `tab-strip`, `chat-history`, `chat-input`, `status-bar`, `terminal`, `main-canvas`). Includes prop schemas and the `$ref` JSON-Pointer data-binding contract. |
 | `extensions.md` | Authoring extensions: directory layout under `~/.aethon/extensions/`, npm-distributed skill packages under `~/.aethon/skills/node_modules/`, and 6 worked examples (theme, sidebar section, live data via `setState`, event handler that runs an LLM turn, layout patch, custom A2UI component). |
 
 ## Quick reference
