@@ -42,6 +42,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       CARGO_TERM_COLOR: always
+      APPIMAGE_EXTRACT_AND_RUN: 1
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       HAS_UPDATER_SECRETS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -62,6 +63,7 @@ jobs:
             curl \
             file \
             libayatana-appindicator3-dev \
+            libfuse2t64 \
             librsvg2-dev \
             libsoup-3.0-dev \
             libssl-dev \
