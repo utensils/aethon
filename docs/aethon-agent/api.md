@@ -163,7 +163,7 @@ The picker shows extension commands alongside the built-ins; users get
 the same `↑/↓/Tab/Enter` UX. Re-registering with the same `name`
 overwrites the previous metadata.
 
-### `registerEventRoute({ componentId?, eventType? })` / `unregisterEventRoute({ componentId?, eventType? })` / `listEventRoutes()`
+### `registerEventRoute({ componentId?, eventType? })` / `unregisterEventRoute({ componentId?, eventType? })` / `listEventRoutes()` / `setEventRoutingMode(mode)`
 
 Intercept events the App's built-in dispatcher would normally handle
 (`chat-input:submit`, `sidebar:select`, `tab-strip:close`, etc.). When
@@ -172,6 +172,11 @@ switch and forwards the event through `a2ui_event` to a paired
 `aethon.onEvent({componentType, descendantId})` handler. Wildcards:
 omit `componentId` to match any component for that event type; omit
 `eventType` to match all events from a component.
+
+For full route-table replacement, call
+`globalThis.aethon.setEventRoutingMode("extension")`. In that mode every
+layout event bypasses the App switch and is forwarded to the bridge as
+`a2ui_event`; call `setEventRoutingMode("builtin")` to restore built-ins.
 
 ```ts
 // Pre-process every chat submit before the agent sees it.

@@ -136,6 +136,16 @@ declare global {
           label?: string;
           vars: Record<string, string>;
         }): void;
+
+        /**
+         * In "builtin" mode, App.tsx handles events not intercepted by
+         * registerEventRoute. In "extension" mode, every layout event
+         * bypasses built-ins and is forwarded to aethon.onEvent handlers.
+         */
+        setEventRoutingMode(mode: "builtin" | "extension"): Promise<{
+          ok: boolean;
+          error?: string;
+        }>;
       }
     | undefined;
 }

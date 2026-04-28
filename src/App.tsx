@@ -1541,6 +1541,8 @@ export default function App() {
         const extEventRoutes = (data.extensionEventRoutes as
           | { componentId?: string; eventType?: string }[]
           | undefined) ?? [];
+        const extEventRoutingMode =
+          data.extensionEventRoutingMode === "extension" ? "extension" : "builtin";
         const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
         const discTabs = (data.discoveredTabs as
           | { tabId: string; lastModified: number }[]
@@ -1558,7 +1560,7 @@ export default function App() {
         // and bumps /slashCommands so the picker re-resolves via $ref.
         hydrateSlashCommands(extSlash);
         hydrateKeybindings(extKeys);
-        hydrateEventRoutes(extEventRoutes);
+        hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
         // Push the persisted menu list into Tauri so the native menu
         // is correct on first paint after webview reload. Errors are
         // logged but non-fatal — the menu falls back to built-ins-only.
@@ -1814,7 +1816,8 @@ export default function App() {
         const list = (data.routes as
           | { componentId?: string; eventType?: string }[]
           | undefined) ?? [];
-        hydrateEventRoutes(list);
+        const mode = data.mode === "extension" ? "extension" : "builtin";
+        hydrateEventRoutes(list, mode);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -2748,6 +2751,7 @@ export default function App() {
   const extensionEventRoutesRef = useRef<
     { componentId?: string; eventType?: string }[]
   >([]);
+  const extensionEventRoutingModeRef = useRef<"builtin" | "extension">("builtin");
 
   // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
   // by the keydown handler; written by hydrateKeybindings on
@@ -2821,8 +2825,10 @@ export default function App() {
   // ref since the matching loop in onEvent reads it on every event.
   function hydrateEventRoutes(
     routes: { componentId?: string; eventType?: string }[],
+    mode: "builtin" | "extension" = extensionEventRoutingModeRef.current,
   ) {
     extensionEventRoutesRef.current = routes;
+    extensionEventRoutingModeRef.current = mode;
   }
 
   // Hydrate the extension-registered keybindings map from a bridge
@@ -3290,6 +3296,9 @@ export default function App() {
       // handler run instead of the built-in switch below. Wildcards:
       // a route with only `componentId` matches any eventType for
       // that component; only `eventType` matches every component.
+      if (extensionEventRoutingModeRef.current === "extension") {
+        return false;
+      }
       const routes = extensionEventRoutesRef.current;
       if (routes.length > 0) {
         const matched = routes.some((r) => {

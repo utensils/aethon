@@ -79,6 +79,8 @@
  *      // Matching events skip the built-in switch and forward to the
  *      // bridge as a2ui_event so a paired aethon.onEvent handler
  *      // intercepts.
+ *      // When "mode" is "extension", every layout event bypasses the
+ *      // built-in dispatcher so extensions can replace the route table.
  *   { "type": "extension_menu_items", "mutationId"?: "...", "items": [{id, label, action, location, parent?}, ...] }
  *      // Emitted after each registerMenuItem / unregisterMenuItem call.
  *      // Frontend forwards to the `set_extension_menu_items` Tauri
@@ -944,6 +946,7 @@ async function main() {
     string,
     { componentId?: string; eventType?: string }
   >();
+  let eventRoutingMode: "builtin" | "extension" = "builtin";
 
   // Menu items registered by extensions. Surfaced to the frontend as
   // an `extension_menu_items` event; the React side invokes a Tauri
@@ -1123,6 +1126,7 @@ async function main() {
       keybindings: [...extensionKeybindings.values()],
       menuItems: [...extensionMenuItems.values()],
       eventRoutes: [...extensionEventRoutes.values()],
+      eventRoutingMode,
       uiState: Object.fromEntries(frontendState),
       layoutStructure: summarizeLayoutStructure(),
       layoutSlots: layoutSlotsCatalogue
@@ -1450,7 +1454,12 @@ async function main() {
     });
     const list = [...extensionEventRoutes.values()];
     const { id, promise } = trackMutation();
-    send({ type: "extension_event_routes", mutationId: id, routes: list });
+    send({
+      type: "extension_event_routes",
+      mutationId: id,
+      routes: list,
+      mode: eventRoutingMode,
+    });
     scheduleStateFileWrite();
     return promise;
   }
@@ -1468,7 +1477,29 @@ async function main() {
     if (!had) return Promise.resolve({ ok: false, error: "no such route" });
     const list = [...extensionEventRoutes.values()];
     const { id, promise } = trackMutation();
-    send({ type: "extension_event_routes", mutationId: id, routes: list });
+    send({
+      type: "extension_event_routes",
+      mutationId: id,
+      routes: list,
+      mode: eventRoutingMode,
+    });
+    scheduleStateFileWrite();
+    return promise;
+  }
+  function _setEventRoutingMode(mode: unknown): Promise<MutationResult> {
+    if (mode !== "builtin" && mode !== "extension") {
+      const errorMsg = "setEventRoutingMode: mode must be 'builtin' or 'extension'";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    eventRoutingMode = mode;
+    const { id, promise } = trackMutation();
+    send({
+      type: "extension_event_routes",
+      mutationId: id,
+      routes: [...extensionEventRoutes.values()],
+      mode: eventRoutingMode,
+    });
     scheduleStateFileWrite();
     return promise;
   }
@@ -1812,6 +1843,7 @@ async function main() {
     registerEventRoute: _registerEventRoute,
     unregisterEventRoute: _unregisterEventRoute,
     listEventRoutes: _listEventRoutes,
+    setEventRoutingMode: _setEventRoutingMode,
     listExtensions: _listExtensions,
     listComponents: _listComponents,
     listThemes: _listThemes,
@@ -1926,6 +1958,7 @@ async function main() {
       extensionKeybindings: [...extensionKeybindings.values()],
       extensionMenuItems: [...extensionMenuItems.values()],
       extensionEventRoutes: [...extensionEventRoutes.values()],
+      extensionEventRoutingMode: eventRoutingMode,
       discoveredTabs,
     });
   }

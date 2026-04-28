@@ -69,6 +69,7 @@ export interface RuntimeSnapshot {
   // a matching event, it skips the built-in switch and forwards to
   // the bridge as a normal a2ui_event.
   eventRoutes: { componentId?: string; eventType?: string }[];
+  eventRoutingMode: "builtin" | "extension";
   // Frontend-mirrored UI state slices (sidebar.models, sidebar.themes,
   // connection, status, tabs, draft, messagesCount). Populated from the
   // `frontend_state_patch` channel — what's actually visible on screen.
@@ -379,16 +380,17 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     }
   }
 
-  if (snapshot.eventRoutes.length > 0) {
+  if (snapshot.eventRoutes.length > 0 || snapshot.eventRoutingMode !== "builtin") {
     lines.push("");
     lines.push(
-      "Extension-intercepted event routes (these bypass App.tsx built-in handlers):",
+      `Extension event routing mode: ${snapshot.eventRoutingMode}. Intercept routes:`,
     );
     for (const r of snapshot.eventRoutes) {
       lines.push(
         `- componentId=\`${r.componentId ?? "*"}\` eventType=\`${r.eventType ?? "*"}\``,
       );
     }
+    if (snapshot.eventRoutes.length === 0) lines.push("- (none)");
   }
 
   if (snapshot.eventHandlers.length > 0) {
