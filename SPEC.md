@@ -146,7 +146,7 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 ### M2 — A2UI Renderer
 
 - [x] A2UI React renderer with built-in component set
-  - Primitives: `text`, `heading`, `paragraph`, `code`, `card`, `container`, `divider`, `button`, `text-input`, `select`, `checkbox`, `slider`, `table`, `list`, `image`
+  - Primitives: `text`, `heading`, `paragraph`, `code`, `card`, `container`, `divider`, `button`, `text-input`, `date-picker`, `select`, `checkbox`, `slider`, `table`, `list`, `image`, `icon`, `form`, `form-field`
   - Skill components (default-layout): `layout`, `sidebar`, `chat-history`, `chat-input`, `status-bar`, `tab-strip`, `terminal`, `main-canvas`, `empty-state`, `command-palette`, `notification-stack`, plus layout-variation composites (`command-bar`, `vertical-tab-rail`, `inspector-pane`, `model-picker`, `appearance-menu`, etc.)
 - [x] Data binding via JSON Pointer (`{"$ref": "/path"}`) — `DynamicString`/`Number`/`Boolean`
 - [x] Event dispatch (button clicks, form submissions → agent via Tauri IPC)
@@ -206,7 +206,7 @@ by an extension without touching React source.
 - [x] **Sidebar emits per-item `descendantId`** — `BuiltinComponentProps.onEvent` now accepts an optional 3rd argument; when supplied the renderer rewrites the outbound componentId to `<host>__tpl__<descendantId>`, so the bridge's existing `__tpl__` parser pulls it into `match.descendantId`. The documented `aethon.onEvent({componentType:"sidebar", descendantId:"open-readme"}, …)` recipe now matches.
 - [x] **Handler `ctx.pi.prompt` errors emit `notice` (non-terminal)** — `handler prompt: …` now sends `type:"notice"` so the frontend's Stop button stays visible for the surrounding turn. The error still rethrows so the calling handler can see it.
 - [x] **`registerComponent` accepts both bare and wrapper shapes** — bridge auto-unwraps `{components:[<single component>]}` to the single component for renderer expansion. Docs (`docs/aethon-agent/api.md:57-78`) updated to show the bare-component form as canonical.
-- [~] **A2UI primitive coverage** — added `heading`, `paragraph`, `divider`, `checkbox`, `select`, `slider`, `list`, `table` (with optional `cell` templates and `/$row` scope). 15 of the SPEC's enumerated primitives now ship. Still missing: `date-picker`, `icon`, `form`, `form-field` — tracked separately. `list` and `table` use the same scoped-render mechanism as `for-each` so per-row templates can `$ref` into iteration locals.
+- [x] **A2UI primitive coverage** — the full SPEC-enumerated primitive set now ships: `text`, `heading`, `paragraph`, `code`, `card`, `container`, `divider`, `button`, `text-input`, `date-picker`, `select`, `checkbox`, `slider`, `table`, `list`, `image`, `icon`, `form`, and `form-field`. `list` and `table` use the same scoped-render mechanism as `for-each`; `form` serializes named child controls into `{values}`; input-like controls optimistically update `$ref`-bound `value` props.
 - [~] **Multi-tab restore on relaunch — discovery + opt-in restore via empty-state.** Bridge's `discoverPersistedTabs()` walks `~/.aethon/sessions/` at boot, returns `[{tabId, lastModifiedMs}]` sorted descending. Shipped in `ready` as `discoveredTabs`. Frontend hydrates them into `/recentSessions` (filtered to drop tabIds already open) and the empty-state composite renders them as a clickable "Recent sessions" list (relative-time labels). Clicking a row calls `newTab(sessionId, label)` reusing the same `tabId` so `SessionManager.continueRecent` resumes the LLM history. **Auto-restore** (open all previous tabs on launch without user click) is a follow-up — current model surfaces sessions but only opens on demand.
 - [x] **Concurrent setState attribution race fixed for handler-driven writes.** `dispatch_a2ui_event` handler dispatch now wraps the handler in `tabContext.run(handlerTabId, …)` so any setState (including microtask/promise chains the handler kicks off) inherits the originating tab via AsyncLocalStorage. Pi prompts already had this. setIntervals registered at module-load time still have no ALS context — those fall back to `currentAgentTabId` (best-effort active-tab attribution; documented in the priority-list comment).
 - [x] **State file regenerates on `onEvent` registration** — fixed in `agent/main.ts:_onEvent`: `scheduleStateFileWrite` is now called after each handler is registered.
@@ -226,7 +226,7 @@ by an extension without touching React source.
 
 - [x] **System prompt covers `for-each` iteration** — replaces the prior "no array iteration" warning. Documents `{$item, $index, $parent}` scope keys with a worked example.
 - [x] **System prompt covers the mutation feedback contract** — `agent/system-prompt.ts` now ships a "Knowing whether a mutation succeeded" section explaining the Promise return, the failure modes (`timeout`, `frontend_rejected: …`, validation), and the pre-connect immediate-resolve behavior. Bundled `docs/aethon-agent/api.md` carries the same contract at the head of the Mutation section.
-- [x] **`docs/aethon-agent/{api,components,extensions}.md` updated.** Each shipped M5 item updated the bundled docs alongside the code change — `registerSlashCommand`, `registerKeybinding`, `registerMenuItem`, `registerEventRoute`, `getFrontendState`, `getRuntimeSnapshot.layoutStructure`, `for-each`, `empty-state`, and the new primitives (`heading`, `paragraph`, `divider`, `checkbox`, `select`, `slider`, `list`, `table`). Composites' new prop schemas (`emptyHint`, `headerLabel`, `bootGreeting`, `sendLabel`, `stopLabel`, `queueBadgeFormat`) are documented too.
+- [x] **`docs/aethon-agent/{api,components,extensions}.md` updated.** Each shipped M5 item updated the bundled docs alongside the code change — `registerSlashCommand`, `registerKeybinding`, `registerMenuItem`, `registerEventRoute`, `getFrontendState`, `getRuntimeSnapshot.layoutStructure`, `for-each`, `empty-state`, and the full primitive set (`heading`, `paragraph`, `divider`, `checkbox`, `select`, `slider`, `list`, `table`, `date-picker`, `icon`, `form`, `form-field`). Composites' new prop schemas (`emptyHint`, `headerLabel`, `bootGreeting`, `sendLabel`, `stopLabel`, `queueBadgeFormat`) are documented too.
 
 ### M4 — Polish & Distribution
 
@@ -266,7 +266,7 @@ by an extension without touching React source.
 - [x] Window opens maximized via `tauri.conf.json` `app.windows[0].maximized: true` (existing center/width/height stay as the unmaximized fallback).
 - [x] **Extension lifecycle feedback channel.** Bridge emits `extension_lifecycle { name, source, status: "loaded"|"failed"|"skipped", error?, path }` for every load attempt from `loadAethonExtensions` and `loadAethonSkillManifests`. Frontend dispatches a cancellable `aethon:extension-lifecycle` window CustomEvent, then (default) appends a system-notice chat bubble. Layouts and extensions can listen on the window event and call `e.preventDefault()` to substitute alternative UX (toast, sidebar pulse, status pill) — the channel is decoupled from chat-history rendering by design.
 - [x] **Extension-deletion UI cleanup.** Bridge tracks `extensionStateKeys: Set<string>` of every JSON Pointer path written via extension `setState` and reports the list in `ready`. Frontend keeps a ref of the previous ready's set; on each new ready, paths in (previous − new) are deleted from live state via `deletePointer`. So when an extension is uninstalled (file deleted), the watcher respawns the bridge → new ready has a smaller key set → leftover sidebar sections / canvas cards / state slices vanish without a page reload.
-- [x] **Test coverage + linting.** `cargo test --lib` covers `helpers::{validate_state_name, parse_config_toml, clamp_font_size}` (14 tests). `bun run test` / `bunx vitest run` covers `utils/jsonPointer`, `utils/dataBinding`, `slashCommands`, project storage, palette item selection, and the slot catalogue / inspector (74 tests). `bunx eslint .` enforces 0 errors with type-aware rules + react-hooks plugin (warnings tracked: `react-hooks/set-state-in-effect`, `react-hooks/refs` in `App.tsx` / `ChatInput`). All wired into the `check` devshell command as a single CI gate.
+- [x] **Test coverage + linting.** `cargo test --lib` covers `helpers::{validate_state_name, parse_config_toml, clamp_font_size}` (14 tests). `bun run test` / `bunx vitest run` covers `utils/jsonPointer`, `utils/dataBinding`, `slashCommands`, project storage, palette item selection, primitive rendering, and the slot catalogue / inspector (77 tests). `bunx eslint .` enforces 0 errors with type-aware rules + react-hooks plugin (warnings tracked: `react-hooks/set-state-in-effect`, `react-hooks/refs` in `App.tsx` / `ChatInput`). All wired into the `check` devshell command as a single CI gate.
 
 ---
 
@@ -277,10 +277,11 @@ by an extension without touching React source.
 **Built-in (primitives)** — Hardcoded in `src/components/A2UIRenderer.tsx`'s
 `PRIMITIVE_REGISTRY`. Cannot be overridden by skills. The current shipped set
 is `text`, `heading`, `paragraph`, `code`, `card`, `container`, `divider`,
-`button`, `text-input`, `select`, `checkbox`, `slider`, `table`, `list`, and
-`image`. `list` and `table` support scoped child templates via `/$item`,
-`/$index`, `/$parent`, `/$row`, `/$column`, and `/$cell`. Still missing from
-the larger A2UI standard set: `date-picker`, `icon`, `form`, and `form-field`.
+`button`, `text-input`, `date-picker`, `select`, `checkbox`, `slider`,
+`table`, `list`, `image`, `icon`, `form`, and `form-field`. `list` and
+`table` support scoped child templates via `/$item`, `/$index`, `/$parent`,
+`/$row`, `/$column`, and `/$cell`; `form` emits named child control values on
+submit.
 
 **Skill components** — Registered via `SkillRegistry.register(skill)`. A
 skill declares its custom component types in its manifest:

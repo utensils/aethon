@@ -29,10 +29,11 @@ reference and the renderer reads it from the layout state object.
 The path is RFC 6901 (`/foo/bar/0`). On the source side, write with
 `globalThis.aethon.setState("/status", "ready")`.
 
-`text-input` has special bidirectional binding: when its `value` is a
-`$ref` and the user types, the renderer optimistically writes the new
-value back to the same path. This is how `chat-input` keeps `/draft` in
-sync without a round-trip.
+Input-like primitives (`text-input`, `date-picker`, `checkbox`, `select`,
+`slider`) have bidirectional binding: when `value` is a `$ref` and the user
+changes the control, the renderer optimistically writes the new value back to
+the same path. This is how `chat-input` keeps `/draft` in sync without a
+round-trip.
 
 ## Primitives
 
@@ -98,6 +99,22 @@ formatting in body text — use Markdown in `text` content instead.
 
 `src` accepts `data:` URLs (used for tool result images), file:// URLs in
 dev, and http(s) URLs. Tool images cap at 4 per result.
+
+### `icon`
+
+```ts
+{
+  name?: StringValue,       // built-in glyph name: check, warning, search, terminal, ...
+  symbol?: StringValue,     // explicit glyph override
+  label?: StringValue,      // accessible label when not decorative
+  size?: NumberValue,       // px, default 16
+  color?: StringValue,      // CSS color, default currentColor
+  decorative?: BooleanValue // default true when label/name is empty
+}
+```
+
+The built-in icon primitive is dependency-free and renders a stable glyph
+map. Register a richer extension component if you need a full icon pack.
 
 ### `for-each`
 
@@ -192,6 +209,22 @@ Fires `change` with `{ value: string }`.
 
 Fires `change` with `{ value: number }`.
 
+### `date-picker`
+
+```ts
+{
+  value?: StringValue,       // "YYYY-MM-DD"
+  min?: StringValue,
+  max?: StringValue,
+  placeholder?: StringValue,
+  disabled?: BooleanValue,
+  required?: BooleanValue,
+  name?: StringValue,        // included in parent form submit values
+}
+```
+
+Fires `change` with `{ value: string }`.
+
 ### `list`
 
 ```ts
@@ -237,6 +270,36 @@ the column's template renders inside the cell with `/$row` (the row
 object), `/$index` (row position), and `/$parent` (surrounding state)
 available to nested `$ref`s.
 
+### `form-field`
+
+```ts
+{
+  label?: StringValue,
+  description?: StringValue,
+  error?: StringValue,
+  required?: BooleanValue,
+}
+```
+
+Wraps child controls with a label, help text, and error text. Use it inside
+`form` or regular containers.
+
+### `form`
+
+```ts
+{
+  submitLabel?: StringValue,        // optional built-in submit button
+  disabled?: BooleanValue,
+  gap?: NumberValue,                // default 10
+  direction?: "row" | "column",     // default column
+}
+```
+
+Renders children inside a native form and fires `submit` with
+`{ values: Record<string, unknown> }`. Child controls with a `name` prop are
+serialized through native `FormData`; unchecked named checkboxes are included
+as `false`.
+
 ### `text-input`
 
 ```ts
@@ -244,16 +307,18 @@ available to nested `$ref`s.
   value?: string | { "$ref": string },
   placeholder?: string,
   disabled?: boolean,
-  multiline?: boolean,
-  rows?: number,
-  submitOnEnter?: boolean,
+  name?: string,
+  required?: boolean,
+  autocomplete?: string,
+  onChange?: string,
+  onSubmit?: string,
 }
 ```
 
-Fires `change` (per keystroke) and `submit` (Enter without shift, or
-explicit submit). When `value` is a `$ref`, the renderer optimistically
-writes incoming `change` events back to that path before forwarding to
-the handler.
+Fires `change` per keystroke. When `onSubmit` is present, Enter also fires
+`submit` with `{ value }`. When `value` is a `$ref`, the renderer
+optimistically writes incoming `change` events back to that path before
+forwarding to the handler.
 
 ## Skill-Provided Composites (`default-layout`)
 

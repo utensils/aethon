@@ -24,6 +24,71 @@ interface ComponentProps {
   renderChildren?: () => React.ReactNode;
 }
 
+const ICON_GLYPHS: Record<string, string> = {
+  add: "+",
+  plus: "+",
+  remove: "-",
+  minus: "-",
+  close: "x",
+  x: "x",
+  check: "✓",
+  success: "✓",
+  warning: "!",
+  error: "!",
+  info: "i",
+  search: "⌕",
+  command: "⌘",
+  terminal: "▣",
+  settings: "⚙",
+  file: "□",
+  folder: "▣",
+  "chevron-left": "‹",
+  "chevron-right": "›",
+  "chevron-up": "⌃",
+  "chevron-down": "⌄",
+  "arrow-left": "←",
+  "arrow-right": "→",
+  "arrow-up": "↑",
+  "arrow-down": "↓",
+  spark: "✦",
+  star: "★",
+};
+
+function resolvedName(
+  value: StringValue | undefined,
+  state: Record<string, unknown>,
+): string | undefined {
+  if (!value) return undefined;
+  const resolved = resolveString(value, state).trim();
+  return resolved || undefined;
+}
+
+function formValues(form: HTMLFormElement): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  const data = new FormData(form);
+  for (const [name, value] of data.entries()) {
+    const normalized = value instanceof File ? value.name : value;
+    const existing = values[name];
+    if (existing === undefined) {
+      values[name] = normalized;
+    } else if (Array.isArray(existing)) {
+      existing.push(normalized);
+    } else {
+      values[name] = [existing, normalized];
+    }
+  }
+
+  // FormData omits unchecked checkboxes and reports checked boxes as "on".
+  // Normalize named checkboxes to stable booleans.
+  for (const el of Array.from(form.elements)) {
+    if (!(el instanceof HTMLInputElement)) continue;
+    if (el.type !== "checkbox" || !el.name) continue;
+    values[el.name] = el.checked;
+  }
+
+  return values;
+}
+
 // Text component
 export function Text({ component, state }: ComponentProps) {
   const props = component.props as {
@@ -308,10 +373,14 @@ export function Checkbox({ component, state, onEvent }: ComponentProps) {
     value?: BooleanValue;
     label?: StringValue;
     disabled?: BooleanValue;
+    name?: StringValue;
+    required?: BooleanValue;
   };
   const checked = props.value ? resolveBoolean(props.value, state) : false;
   const label = props.label ? resolveString(props.label, state) : "";
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const required = props.required ? resolveBoolean(props.required, state) : false;
+  const name = resolvedName(props.name, state);
   return (
     <label
       style={{
@@ -325,7 +394,9 @@ export function Checkbox({ component, state, onEvent }: ComponentProps) {
       <input
         type="checkbox"
         checked={checked}
+        name={name}
         disabled={disabled}
+        required={required}
         onChange={(e) => onEvent("change", { value: e.target.checked })}
       />
       {label && <span>{label}</span>}
@@ -340,9 +411,13 @@ export function Select({ component, state, onEvent }: ComponentProps) {
     options: { value: string; label?: string }[] | { $ref: string };
     disabled?: BooleanValue;
     placeholder?: StringValue;
+    name?: StringValue;
+    required?: BooleanValue;
   };
   const value = props.value ? resolveString(props.value, state) : "";
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const required = props.required ? resolveBoolean(props.required, state) : false;
+  const name = resolvedName(props.name, state);
   const placeholder = props.placeholder
     ? resolveString(props.placeholder, state)
     : "";
@@ -369,6 +444,8 @@ export function Select({ component, state, onEvent }: ComponentProps) {
     <select
       style={style}
       value={value}
+      name={name}
+      required={required}
       disabled={disabled}
       onChange={(e) => onEvent("change", { value: e.target.value })}
     >
@@ -395,6 +472,7 @@ export function Slider({ component, state, onEvent }: ComponentProps) {
     step?: NumberValue;
     disabled?: BooleanValue;
     showValue?: BooleanValue;
+    name?: StringValue;
   };
   const value = props.value ? resolveNumber(props.value, state) : 0;
   const min = props.min ? resolveNumber(props.min, state) : 0;
@@ -404,11 +482,13 @@ export function Slider({ component, state, onEvent }: ComponentProps) {
   const showValue = props.showValue
     ? resolveBoolean(props.showValue, state)
     : false;
+  const name = resolvedName(props.name, state);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
       <input
         type="range"
         value={value}
+        name={name}
         min={min}
         max={max}
         step={step}
@@ -573,6 +653,9 @@ export function TextInput({ component, state, onEvent }: ComponentProps) {
     disabled?: BooleanValue;
     onChange?: string;
     onSubmit?: string;
+    name?: StringValue;
+    required?: BooleanValue;
+    autocomplete?: StringValue;
   };
 
   const value = props.value ? resolveString(props.value, state) : "";
@@ -580,6 +663,11 @@ export function TextInput({ component, state, onEvent }: ComponentProps) {
     ? resolveString(props.placeholder, state)
     : "";
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const required = props.required ? resolveBoolean(props.required, state) : false;
+  const name = resolvedName(props.name, state);
+  const autoComplete = props.autocomplete
+    ? resolveString(props.autocomplete, state)
+    : undefined;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onEvent("change", { value: e.target.value });
@@ -608,11 +696,230 @@ export function TextInput({ component, state, onEvent }: ComponentProps) {
       type="text"
       className="a2ui-text-input"
       value={value}
+      name={name}
       placeholder={placeholder}
       disabled={disabled}
+      required={required}
+      autoComplete={autoComplete}
       onChange={handleChange}
       onKeyDown={handleKeyDown}
       style={style}
     />
+  );
+}
+
+// DatePicker primitive — native date input. Fires `change` with
+// `{ value: "YYYY-MM-DD" }` and participates in form serialization when
+// `name` is supplied.
+export function DatePicker({ component, state, onEvent }: ComponentProps) {
+  const props = component.props as {
+    value?: StringValue;
+    min?: StringValue;
+    max?: StringValue;
+    placeholder?: StringValue;
+    disabled?: BooleanValue;
+    required?: BooleanValue;
+    name?: StringValue;
+  };
+  const value = props.value ? resolveString(props.value, state) : "";
+  const min = props.min ? resolveString(props.min, state) : undefined;
+  const max = props.max ? resolveString(props.max, state) : undefined;
+  const placeholder = props.placeholder
+    ? resolveString(props.placeholder, state)
+    : undefined;
+  const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const required = props.required ? resolveBoolean(props.required, state) : false;
+  const name = resolvedName(props.name, state);
+  const style: CSSProperties = {
+    background: "var(--bg-input)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    borderRadius: 6,
+    padding: "7px 10px",
+    fontSize: "0.875rem",
+    minWidth: 0,
+    maxWidth: "100%",
+    colorScheme: "inherit",
+  };
+  return (
+    <input
+      type="date"
+      className="a2ui-date-picker"
+      value={value}
+      min={min}
+      max={max}
+      name={name}
+      placeholder={placeholder}
+      disabled={disabled}
+      required={required}
+      onChange={(e) => onEvent("change", { value: e.target.value })}
+      style={style}
+    />
+  );
+}
+
+// Icon primitive — lightweight built-in glyph map. Extensions that need a
+// full icon pack can register a richer component; this keeps the standard
+// primitive dependency-free and stable in release builds.
+export function Icon({ component, state }: ComponentProps) {
+  const props = component.props as {
+    name?: StringValue;
+    symbol?: StringValue;
+    label?: StringValue;
+    size?: NumberValue;
+    color?: StringValue;
+    decorative?: BooleanValue;
+  };
+  const name = props.name ? resolveString(props.name, state).trim() : "";
+  const symbol = props.symbol ? resolveString(props.symbol, state) : "";
+  const label = props.label ? resolveString(props.label, state) : name;
+  const size = props.size ? resolveNumber(props.size, state) : 16;
+  const color = props.color ? resolveString(props.color, state) : "currentColor";
+  const decorative = props.decorative
+    ? resolveBoolean(props.decorative, state)
+    : !label;
+  const glyph =
+    symbol ||
+    ICON_GLYPHS[name.toLowerCase()] ||
+    (name ? name.slice(0, 1).toUpperCase() : "•");
+  return (
+    <span
+      className="a2ui-icon"
+      aria-hidden={decorative ? true : undefined}
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : label}
+      title={decorative ? undefined : label}
+      style={{
+        display: "inline-grid",
+        placeItems: "center",
+        width: `${size}px`,
+        height: `${size}px`,
+        minWidth: `${size}px`,
+        color,
+        fontSize: `${size}px`,
+        lineHeight: 1,
+        fontWeight: 700,
+        fontFamily: "var(--font-ui)",
+      }}
+    >
+      {glyph}
+    </span>
+  );
+}
+
+// FormField primitive — label / help / error wrapper for controls.
+export function FormField({ component, state, renderChildren }: ComponentProps) {
+  const props = component.props as {
+    label?: StringValue;
+    description?: StringValue;
+    error?: StringValue;
+    required?: BooleanValue;
+  };
+  const label = props.label ? resolveString(props.label, state) : undefined;
+  const description = props.description
+    ? resolveString(props.description, state)
+    : undefined;
+  const error = props.error ? resolveString(props.error, state) : undefined;
+  const required = props.required ? resolveBoolean(props.required, state) : false;
+  return (
+    <label
+      className="a2ui-form-field"
+      style={{
+        display: "grid",
+        gap: 6,
+        minWidth: 0,
+        color: "var(--text)",
+      }}
+    >
+      {label && (
+        <span style={{ fontSize: "0.8125rem", fontWeight: 650 }}>
+          {label}
+          {required && <span style={{ color: "var(--accent)" }}> *</span>}
+        </span>
+      )}
+      {renderChildren && renderChildren()}
+      {description && !error && (
+        <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+          {description}
+        </span>
+      )}
+      {error && (
+        <span style={{ fontSize: "0.75rem", color: "var(--error)" }}>
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
+
+// Form primitive — groups child controls and fires `submit` with
+// `{ values: Record<string, unknown> }`. Named child inputs participate
+// automatically through native FormData.
+export function Form({ component, state, onEvent, renderChildren }: ComponentProps) {
+  const props = component.props as {
+    submitLabel?: StringValue;
+    disabled?: BooleanValue;
+    gap?: NumberValue;
+    direction?: "row" | "column";
+  };
+  const submitLabel = props.submitLabel
+    ? resolveString(props.submitLabel, state)
+    : undefined;
+  const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const gap = props.gap ? resolveNumber(props.gap, state) : 10;
+  const direction = props.direction || "column";
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (disabled) return;
+    onEvent("submit", { values: formValues(e.currentTarget) });
+  };
+  return (
+    <form
+      className="a2ui-form"
+      onSubmit={handleSubmit}
+      style={{
+        display: "flex",
+        flexDirection: direction,
+        gap: `${gap}px`,
+        alignItems: direction === "row" ? "center" : "stretch",
+        minWidth: 0,
+        maxWidth: "100%",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <fieldset
+        disabled={disabled}
+        style={{
+          display: "contents",
+          border: 0,
+          padding: 0,
+          margin: 0,
+          minInlineSize: 0,
+        }}
+      >
+        {renderChildren && renderChildren()}
+        {submitLabel && (
+          <button
+            type="submit"
+            style={{
+              background: "var(--accent)",
+              color: "var(--btn-text)",
+              border: "none",
+              borderRadius: 6,
+              padding: "8px 14px",
+              fontSize: "0.875rem",
+              fontWeight: 650,
+              cursor: disabled ? "not-allowed" : "pointer",
+              maxWidth: "100%",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {submitLabel}
+          </button>
+        )}
+      </fieldset>
+    </form>
   );
 }
