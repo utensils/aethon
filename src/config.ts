@@ -5,8 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface AethonConfig {
   ui: {
-    /** Theme id from `[ui] theme = "..."`. Built-in is `signature`;
-     *  extensions can register additional ids via `aethon.registerTheme`. */
+    /** Theme id from `[ui] theme = "..."`. Built-ins are
+     *  `ember`, `paper`, and `aether`; legacy `signature` maps to
+     *  `aether`. Extensions can register additional ids via
+     *  `aethon.registerTheme`. */
     theme: string | null;
     fontSize: number | null;
   };

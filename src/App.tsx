@@ -13,6 +13,16 @@ import {
   inspectLayoutSlotCoverage,
   layoutSlots,
 } from "./skills/default-layout";
+import { CommandPalette } from "./skills/default-layout/command-palette";
+import type {
+  PaletteItem,
+  PaletteMode,
+} from "./skills/default-layout/palette-items";
+import { NotificationStack } from "./skills/default-layout/notifications";
+import type {
+  NotificationEntry,
+  NotificationKind,
+} from "./skills/default-layout/notifications";
 import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
@@ -104,6 +114,31 @@ import {
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
+
+const ZOOM_MIN = 0.7;
+const ZOOM_MAX = 1.6;
+
+function writeUiViewportVars(scale: number) {
+  const root = document.documentElement;
+  root.style.setProperty("--app-viewport-width", `${window.innerWidth / scale}px`);
+  root.style.setProperty("--app-viewport-height", `${window.innerHeight / scale}px`);
+}
+
+function applyUiScale(scale: number) {
+  const root = document.documentElement;
+  root.style.setProperty("--app-ui-scale", String(scale));
+  writeUiViewportVars(scale);
+  root.style.zoom = String(scale);
+}
+
+function readZoom(): number {
+  const cur = parseFloat(
+    document.documentElement.style.getPropertyValue("--app-ui-scale") ||
+      document.documentElement.style.zoom ||
+      "1",
+  );
+  return Number.isFinite(cur) ? cur : 1;
+}
 
 interface ModelDescriptor {
   id: string;
@@ -261,8 +296,23 @@ export default function App() {
     // tab switches so the panel can replay it when the user comes back.
     // Capped client-side too (TERMINAL_REPLAY_MAX) to bound memory.
     terminalBuffer: string;
+    // Project this tab belongs to. `null` means the no-project bucket
+    // (tabs created before any project was picked, or after
+    // clearActiveProject). Tabs are isolated per project — switching
+    // projects swaps `state.tabs` for the target project's bucket and
+    // hides everyone else.
+    projectId: string | null;
   }
-  function makeEmptyTab(id: string, label: string): Tab {
+  // Sentinel key for the "no project" bucket. Project ids are UUIDs so
+  // a literal can't collide.
+  const NO_PROJECT_KEY = "__no_project__";
+  const projectBucketKey = (id: string | null | undefined) =>
+    id ?? NO_PROJECT_KEY;
+  function makeEmptyTab(
+    id: string,
+    label: string,
+    projectId: string | null = null,
+  ): Tab {
     return {
       id,
       label,
@@ -273,6 +323,7 @@ export default function App() {
       canvas: null,
       model: "",
       terminalBuffer: "",
+      projectId,
     };
   }
   // Per-tab terminal buffer cap. Bash output bursts can be huge; without
@@ -298,6 +349,11 @@ export default function App() {
       waiting: tab0.waiting,
       queueCount: tab0.queueCount,
       canvas: tab0.canvas,
+      // Layout-agnostic UI surfaces — the palette + notification stack
+      // both render at App root so they overlay every layout. State
+      // shapes are documented on the components themselves.
+      palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
+      notifications: [],
     };
   });
 
@@ -392,11 +448,17 @@ export default function App() {
     for (const t of list) injectThemeStyle(t);
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+      const currentTheme =
+        document.documentElement.dataset.theme || BUILTIN_THEMES[0]?.id;
+      const themes = [
+        ...BUILTIN_THEMES,
+        ...list.map((t) => ({ id: t.id, label: t.label })),
+      ].map((t) => ({ ...t, active: t.id === currentTheme }));
       return {
         ...prev,
         sidebar: {
           ...sidebar,
-          themes: [...BUILTIN_THEMES, ...list.map((t) => ({ id: t.id, label: t.label }))],
+          themes,
         },
       };
     });
@@ -469,13 +531,88 @@ export default function App() {
           model: (prev.model) || config.agent.model!,
         }));
       }
+      // Restore saved UI zoom (Cmd+/-). Stored as a string number on
+      // disk; clamp to a sensible range so a stale value can't make
+      // the UI unusable. applyUiScale writes both CSS zoom and the
+      // --app-ui-scale token that viewport-sized containers use to
+      // compensate, so zooming does not push chrome outside the window.
+      const savedZoom = (
+        await readStateWithLocalStorageFallback("ui_zoom", "")
+      ).trim();
+      const z = parseFloat(savedZoom);
+      if (Number.isFinite(z) && z >= 0.7 && z <= 1.6) {
+        applyUiScale(z);
+      }
+      // Restore saved sidebar width: patch the leading column token in
+      // /layout/columns so the boot layout opens at the user's last
+      // chosen width. Bail on missing/invalid values — the layout's
+      // own seed wins by default.
+      const savedWidth = (
+        await readStateWithLocalStorageFallback("sidebar_width", "")
+      ).trim();
+      const px = parseInt(savedWidth, 10);
+      if (Number.isFinite(px) && px >= 180 && px <= 540) {
+        setState((prev) => {
+          const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+          const current = (layout.columns as string | undefined) ?? "";
+          if (!current) return prev;
+          const tokens = current.trim().split(/\s+/);
+          if (!tokens[0]?.endsWith("px")) return prev;
+          tokens[0] = `${px}px`;
+          return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
+        });
+      }
     })();
+  }, []);
+
+  // ---------------------------------------------------------------------
+  // UI zoom — Cmd+/- / Cmd+0 to scale the entire chrome the way browsers
+  // and editors do. CSS zoom scales text + spacing together, while the
+  // --app-ui-scale token lets viewport-bound shells and portals divide
+  // their dimensions back down. Without that compensation, 100vw/100vh
+  // elements become wider/taller than the visible window at >100%.
+  // ---------------------------------------------------------------------
+  function applyZoom(next: number) {
+    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+    const rounded = Math.round(clamped * 100) / 100;
+    applyUiScale(rounded);
+    writeState("ui_zoom", String(rounded)).catch(() => {
+      /* best-effort */
+    });
+    pushNotification({
+      id: "ae-zoom",
+      title: `Zoom ${Math.round(rounded * 100)}%`,
+      kind: "info",
+      durationMs: 1200,
+    });
+  }
+  function adjustZoom(delta: number) {
+    applyZoom(readZoom() + delta);
+  }
+  function resetZoom() {
+    applyZoom(1);
+  }
+
+  useEffect(() => {
+    const onResize = () => writeUiViewportVars(readZoom());
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   function setTheme(id: string) {
     document.documentElement.dataset.theme = id;
     writeState("theme", id).catch(() => {
       /* ignore */
+    });
+    // Update /sidebar/themes' active flag so the appearance pulldown +
+    // sidebar themes section both reflect the new selection without a
+    // separate hydrate pass.
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      const themes = ((sidebar.themes as { id: string; label: string }[] | undefined) ?? [])
+        .map((t) => ({ ...t, active: t.id === id }));
+      return { ...prev, sidebar: { ...sidebar, themes } };
     });
   }
 
@@ -571,6 +708,32 @@ export default function App() {
       writeState(PERSIST_FILE, "[]").catch(() => {
         /* ignore */
       });
+    }
+  }
+
+  function toggleTerminal() {
+    setState((prev) => {
+      const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
+      return { ...prev, terminal: { ...term, open: !term.open } };
+    });
+  }
+
+  async function stopPrompt() {
+    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    try {
+      await invoke("agent_command", {
+        payload: JSON.stringify({ type: "stop", tabId }),
+      });
+      setStatusFlags({ status: "stopping…" });
+    } catch (err) {
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          text: `Failed to stop: ${err}`,
+        },
+        tabId,
+      );
     }
   }
 
@@ -719,7 +882,11 @@ export default function App() {
       // user sees a meaningful name; otherwise fall back to the
       // sequential "Tab N" naming the empty-tab path has used.
       const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      const tab: Tab = { ...makeEmptyTab(id, label), model: inheritedModel };
+      const projectId = projectsRef.current.activeId;
+      const tab: Tab = {
+        ...makeEmptyTab(id, label, projectId),
+        model: inheritedModel,
+      };
       tabs.push(tab);
       const result: Record<string, unknown> = {
         ...prev,
@@ -865,10 +1032,23 @@ export default function App() {
       if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        setState((prev) => {
-          const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
-          return { ...prev, terminal: { ...term, open: !term.open } };
-        });
+        toggleTerminal();
+        return;
+      }
+      // Cmd+K → clear active chat. This is advertised in the Workstation
+      // panels section and mirrors the View > Clear Chat menu item.
+      if (e.key.toLowerCase() === "k" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearChat();
+        return;
+      }
+      // Cmd+. → stop the current prompt. Mirrors the native menu
+      // accelerator and the busy composer Stop button.
+      if (e.key === "." && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void stopPrompt();
         return;
       }
       // Cmd+T → new tab. Pi sessions are independent per tab.
@@ -900,6 +1080,60 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         closeTab(activeId);
+        return;
+      }
+      // Cmd+Shift+P → command palette in "commands" mode (run an action,
+      // slash command, layout, theme, …). Checked before plain Cmd+P so
+      // shift takes precedence — otherwise the lowercase key match would
+      // route both to the switcher.
+      if (e.key.toLowerCase() === "p" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPalette("commands");
+        return;
+      }
+      // Cmd+P → command palette in "switcher" mode (jump to a tab,
+      // session, project, …). Mirrors VS Code's quick-open intuition
+      // but extended with the rest of Aethon's surfaces.
+      if (e.key.toLowerCase() === "p" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPalette("switcher");
+        return;
+      }
+      // Esc closes the palette when it's open. Stays a no-op otherwise
+      // so component-level Esc (chat-input cancel, etc.) keeps working.
+      if (e.key === "Escape") {
+        const palette = stateRef.current.palette as
+          | { open?: boolean }
+          | undefined;
+        if (palette?.open) {
+          e.preventDefault();
+          e.stopPropagation();
+          closePalette();
+          return;
+        }
+      }
+      // Cmd+= / Cmd++ zoom in. macOS reports `=` for the unshifted key
+      // and `+` for shift+=. Match both so users with either layout get
+      // the same behavior (Chrome, VS Code, Slack all do this). Cmd+-
+      // zooms out; Cmd+0 resets. Step is 10% per press.
+      if (mod && !e.altKey && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        e.stopPropagation();
+        adjustZoom(0.1);
+        return;
+      }
+      if (mod && !e.altKey && !e.shiftKey && e.key === "-") {
+        e.preventDefault();
+        e.stopPropagation();
+        adjustZoom(-0.1);
+        return;
+      }
+      if (mod && !e.altKey && !e.shiftKey && e.key === "0") {
+        e.preventDefault();
+        e.stopPropagation();
+        resetZoom();
         return;
       }
       // Extension-registered keybindings — built-ins above win on a
@@ -1180,21 +1414,9 @@ export default function App() {
         }
         case "next_tab": nextTab(1); break;
         case "prev_tab": nextTab(-1); break;
-        case "toggle_terminal": {
-          setState((prev) => {
-            const term = (prev.terminal as { open?: boolean }) ?? {};
-            return { ...prev, terminal: { ...term, open: !term.open } };
-          });
-          break;
-        }
+        case "toggle_terminal": toggleTerminal(); break;
         case "clear_chat": clearChat(); break;
-        case "stop_prompt": {
-          const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
-          invoke("agent_command", {
-            payload: JSON.stringify({ type: "stop", tabId }),
-          }).catch(() => { /* surfaced by chat */ });
-          break;
-        }
+        case "stop_prompt": void stopPrompt(); break;
         case "check_updates": {
           checkForUpdates().catch((err) => {
             appendSystem(`Update check failed: ${err}`);
@@ -1418,7 +1640,10 @@ export default function App() {
                 continue;
               }
               const label = `Tab ${localTabs.length + 1}`;
-              localTabs.push({ ...makeEmptyTab(bt.id, label), model: bt.model });
+              localTabs.push({
+                ...makeEmptyTab(bt.id, label, projectsRef.current.activeId),
+                model: bt.model,
+              });
             }
             // Apply the bridge's per-tab replay over each tab record.
             // prev wins for keys the React side already restored (e.g.
@@ -1836,6 +2061,8 @@ export default function App() {
         // waiting/status. Used e.g. when a second chat IPC arrives while a
         // prompt is in-flight: the user sees the rejection but the Stop
         // button and waiting state for the original prompt persist.
+        // Also surface as a warning toast so a notice that arrives
+        // while the user isn't looking at chat doesn't get missed.
         const message = (data.message as string) ?? "";
         const tabId = (data.tabId as string | undefined) ?? "default";
         if (message) {
@@ -1843,7 +2070,33 @@ export default function App() {
             { id: crypto.randomUUID(), role: "system", text: message },
             tabId,
           );
+          pushNotification({ title: message, kind: "warning" });
         }
+        break;
+      }
+      case "notification": {
+        // Agent-pushed notification. Bridge supplies a stable id (so
+        // dismiss can reference it from agent code), title, optional
+        // message + kind + actions + durationMs. Auto-expiry runs on
+        // the frontend timer; the bridge doesn't track lifecycle.
+        const n = (data.notification as Partial<NotificationEntry> | undefined) ?? {};
+        if (typeof n.title === "string" && n.title) {
+          pushNotification({
+            ...(typeof n.id === "string" ? { id: n.id } : {}),
+            title: n.title,
+            ...(typeof n.message === "string" ? { message: n.message } : {}),
+            ...(n.kind ? { kind: n.kind } : {}),
+            ...(n.durationMs !== undefined ? { durationMs: n.durationMs } : {}),
+            ...(Array.isArray(n.actions) ? { actions: n.actions } : {}),
+          });
+        }
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "notification_dismiss": {
+        const id = data.id as string | undefined;
+        if (id) dismissNotification(id);
+        ackMutation(data.mutationId, true);
         break;
       }
       case "extension_lifecycle": {
@@ -2056,11 +2309,36 @@ export default function App() {
   // switching project doesn't retroactively change live sessions.
   const projectsRef = useRef<ProjectsState>(emptyProjectsState());
 
+  // Cached git status keyed by absolute project path. Populated by the
+  // poller below (refreshGitStatusFor) and read by syncProjectsToState
+  // when mirroring projects into /sidebar/projects. Kept in a ref so
+  // a status update can re-trigger sync without re-scheduling all the
+  // other project work.
+  interface GitStatus {
+    branch?: string;
+    dirty?: boolean;
+    ahead?: number;
+    behind?: number;
+  }
+  const gitStatusRef = useRef<Map<string, GitStatus>>(new Map());
+
+  // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
+  // switches active project, we snapshot the current state.tabs +
+  // activeTabId into the OLD bucket and load the NEW bucket into state
+  // — that's how tabs become per-project visible without us having to
+  // filter on every render. New tabs get the active projectId baked in
+  // (see newTab) so the bucket they end up in matches their tag.
+  const tabBucketsRef = useRef<
+    Map<string, { tabs: Tab[]; activeTabId: string | undefined }>
+  >(new Map());
+
   // Mirror the projects state into app state so layouts can $ref it.
   // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
   // `/sessionLabel` (used by editorial header subtitle) and
   // `/sidebar/projects` (sidebar item array). Called on every mutation
-  // so a single helper keeps the shape consistent.
+  // so a single helper keeps the shape consistent. Carries the cached
+  // git status from gitStatusRef so a sync triggered for non-git
+  // reasons (lastUsed bump, label change) doesn't drop the badges.
   function syncProjectsToState() {
     const ps = projectsRef.current;
     const active = activeProject(ps);
@@ -2078,9 +2356,13 @@ export default function App() {
           ...sidebar,
           projects: ps.projects.map((p) => ({
             id: p.id,
+            // Basename is what we surface; the absolute path lives
+            // behind the row's native tooltip (title attribute) so
+            // the row label stays compact even with deep paths.
             label: p.label,
-            hint: p.path,
+            tooltip: p.path,
             active: p.id === ps.activeId,
+            git: gitStatusRef.current.get(p.path),
           })),
         },
       };
@@ -2111,6 +2393,63 @@ export default function App() {
     });
   }
 
+  // Refresh the cached git status for one project path. Best-effort —
+  // a missing `git` binary or a non-repo path resolves to an empty
+  // entry and is treated as "no badge". Runs through the Tauri command
+  // (gated by debug-or-release; both expose `git_status`).
+  async function refreshGitStatusFor(path: string) {
+    try {
+      const status = await invoke<GitStatus | null>("git_status", { path });
+      if (status) {
+        gitStatusRef.current.set(path, status);
+      } else {
+        gitStatusRef.current.delete(path);
+      }
+      syncProjectsToState();
+    } catch {
+      // Tauri command threw — ignore so a transient git failure
+      // doesn't blank the chip on subsequent successful polls.
+    }
+  }
+  // Refresh every known project. Sequenced (not parallel) so a user with
+  // a long projects list doesn't fork N git processes at once. Cheap
+  // even at the upper bound (MAX_PROJECTS=16 in projects.ts).
+  async function refreshAllGitStatus() {
+    const list = projectsRef.current.projects.slice();
+    for (const p of list) {
+      await refreshGitStatusFor(p.path);
+    }
+  }
+
+  // Periodic + focus-driven git poller. Initial pass right after
+  // projects load; then every 30s, plus an immediate pass when the
+  // window regains focus (user came back from terminal / browser and
+  // likely committed something). Uses a guard ref so two overlapping
+  // refreshes never run.
+  const gitPollingRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || gitPollingRef.current) return;
+      gitPollingRef.current = true;
+      try {
+        await refreshAllGitStatus();
+      } finally {
+        gitPollingRef.current = false;
+      }
+    };
+    void tick();
+    const onFocus = () => void tick();
+    window.addEventListener("focus", onFocus);
+    const interval = window.setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load projects once at boot. Done in its own effect so a slow disk
   // doesn't push out the agent-start path. Mirrors into state on resolve
   // so the sidebar populates without a re-render trigger.
@@ -2119,14 +2458,30 @@ export default function App() {
       const ps = await loadProjects();
       projectsRef.current = ps;
       syncProjectsToState();
+      // Kick a git status fetch for every loaded project so badges
+      // appear on the first paint instead of waiting for the 30s tick.
+      void refreshAllGitStatus();
       // Tell the bridge about the active project so the default tab's
       // session opens with the right cwd. ensureTab() in the bridge
       // checks the per-tab cwd record before SessionManager.continueRecent.
       const active = activeProject(ps);
       const tabId =
         (stateRef.current.activeTabId as string | undefined) ?? "default";
-      if (active) announceProjectToBridge(tabId, active.path);
+      if (active) {
+        announceProjectToBridge(tabId, active.path);
+        // Retag any pre-load tabs (default boot tab + bridge replays) so
+        // they live in the active project's bucket from now on. Without
+        // this they'd stay in NO_PROJECT_KEY and silently disappear the
+        // first time the user switches projects.
+        setState((prev) => {
+          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) =>
+            t.projectId == null ? { ...t, projectId: active.id } : t,
+          );
+          return { ...prev, tabs };
+        });
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function openProjectFromPicker(): Promise<string | null> {
@@ -2136,6 +2491,7 @@ export default function App() {
   }
 
   function openProjectByPath(path: string, label?: string): string {
+    const fromKey = projectBucketKey(projectsRef.current.activeId);
     const { state: nextProjects, id } = upsertProject(
       projectsRef.current,
       path,
@@ -2143,21 +2499,84 @@ export default function App() {
     );
     projectsRef.current = nextProjects;
     persistProjects();
-    // Active tab inherits the new project as its cwd for any future
-    // tab_open replays / resumes. The current bridge session was
-    // created with whatever cwd the tab originally opened against —
-    // pi sessions store file paths that resolved against the OLD
-    // cwd, so we don't yank it out from under them.
+    // Fetch git status for the (possibly new) project so the chip
+    // appears on the same render that adds the row, not 30s later.
+    void refreshGitStatusFor(path);
+    // Switch to the project's tab bucket BEFORE notifying the bridge.
+    // If this is a brand-new project, the bucket is empty — the empty
+    // state composite will render so the caller can decide whether to
+    // auto-create a fresh tab.
+    switchProjectBucket(fromKey, projectBucketKey(id));
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, path);
     return id;
   }
 
+  // Snapshot current state.tabs + activeTabId into the OLD project's
+  // bucket, then load the NEW project's bucket back into state. The
+  // active tab's view (messages / draft / canvas / model) is mirrored
+  // to the root keys so the layout sees the new project's view
+  // immediately. If the new project has no bucket yet, we leave tabs
+  // empty + flip /empty so the empty-state composite renders — the
+  // caller (newTab/openProjectByPath) decides whether to seed a tab.
+  function switchProjectBucket(
+    fromKey: string,
+    toKey: string,
+  ) {
+    if (fromKey === toKey) return;
+    let nextTerminalBuffer = "";
+    setState((prev) => {
+      // Save current bucket.
+      const currentTabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const currentActive = prev.activeTabId as string | undefined;
+      tabBucketsRef.current.set(fromKey, {
+        tabs: currentTabs,
+        activeTabId: currentActive,
+      });
+      // Load target bucket (or empty).
+      const next = tabBucketsRef.current.get(toKey) ?? {
+        tabs: [],
+        activeTabId: undefined,
+      };
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs: next.tabs,
+        activeTabId: next.activeTabId,
+      };
+      const activeTab = next.tabs.find((t) => t.id === next.activeTabId);
+      if (activeTab) {
+        const rec = activeTab as unknown as Record<string, unknown>;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = rec[key as string];
+        }
+        result.empty = false;
+        result.hasTabs = true;
+        result.sidebar = recomputeModelPicker(
+          prev.sidebar as Record<string, unknown> | undefined,
+          activeTab.model,
+        );
+        nextTerminalBuffer = activeTab.terminalBuffer ?? "";
+      } else {
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = undefined;
+        }
+        result.empty = true;
+        result.hasTabs = next.tabs.length > 0;
+        nextTerminalBuffer = "";
+      }
+      return result;
+    });
+    // Replay the new active tab's terminal buffer (or clear if none).
+    dispatchTerminalReplay(nextTerminalBuffer);
+  }
+
   function setActiveProjectById(id: string): boolean {
     const ps = projectsRef.current;
     const target = ps.projects.find((p) => p.id === id);
     if (!target) return false;
+    const fromKey = projectBucketKey(ps.activeId);
+    const toKey = projectBucketKey(id);
     projectsRef.current = {
       projects: ps.projects.map((p) =>
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
@@ -2165,6 +2584,7 @@ export default function App() {
       activeId: id,
     };
     persistProjects();
+    switchProjectBucket(fromKey, toKey);
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, target.path);
@@ -2172,8 +2592,10 @@ export default function App() {
   }
 
   function clearActiveProject() {
+    const fromKey = projectBucketKey(projectsRef.current.activeId);
     projectsRef.current = { ...projectsRef.current, activeId: null };
     persistProjects();
+    switchProjectBucket(fromKey, NO_PROJECT_KEY);
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, null);
@@ -2242,6 +2664,32 @@ export default function App() {
         seeds && Object.keys(seeds).length > 0
           ? deepMergeState(seeds, prev)
           : { ...prev };
+      // The new layout's `columns` seed is authoritative — different
+      // layouts have different grid SHAPES (workstation: 2 cols,
+      // live-layout: 3 cols). deepMergeState keeps prev's columns,
+      // which would mean a 2-col grid carrying the inspector pane has
+      // nowhere to render. So force-take the seed's columns, then
+      // patch the leading sidebar token with the user's persisted
+      // width so cross-layout resizing feels continuous.
+      const seedLayout =
+        (seeds.layout as Record<string, unknown> | undefined) ?? {};
+      const prevLayout =
+        (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const seedCols = (seedLayout.columns as string | undefined) ?? "";
+      const prevCols = (prevLayout.columns as string | undefined) ?? "";
+      let nextCols = seedCols;
+      if (seedCols && prevCols) {
+        const seedTokens = seedCols.trim().split(/\s+/);
+        const prevTokens = prevCols.trim().split(/\s+/);
+        if (seedTokens.length > 0 && prevTokens[0]?.endsWith("px")) {
+          seedTokens[0] = prevTokens[0];
+          nextCols = seedTokens.join(" ");
+        }
+      }
+      const seededLayout = (seeded.layout as Record<string, unknown> | undefined) ?? {};
+      seeded.layout = nextCols
+        ? { ...seededLayout, columns: nextCols }
+        : seededLayout;
       const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
       seeded.sidebar = { ...sidebar, layouts: catalogueItems };
       return seeded;
@@ -2292,23 +2740,40 @@ export default function App() {
   // mount; subsequent updates flow through hydrateSlashCommands when
   // extensions register / unregister commands via the bridge.
   useEffect(() => {
-    setState((prev) => ({
-      ...prev,
-      slashCommands: slashCommandsRef.current.map((c) => ({
-        name: c.name,
-        description: c.description,
-        usage: c.usage,
-        argSource: c.argSource,
-      })),
-      // Surface the layout catalogue so the slash-arg picker can resolve
-      // /layoutCatalogue when the user types `/layout `. Kept in sync
-      // with layoutCatalogueRef in registerLayout / activateLayout.
-      layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+    setState((prev) => {
+      // Seed /sidebar/layouts from the live catalogue so the appearance
+      // pulldown + sidebar layout section both reflect the current
+      // active layout, regardless of what the boot JSON happened to
+      // ship. activateLayoutById keeps this in sync afterwards.
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      const activeLayoutId = (() => {
+        const list = (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
+        return list.find((l) => l.active)?.id ?? layoutCatalogueRef.current[0]?.id;
+      })();
+      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
         id: l.id,
-        label: l.name,
-        description: l.description,
-      })),
-    }));
+        label: l.id,
+        active: l.id === activeLayoutId,
+      }));
+      return {
+        ...prev,
+        slashCommands: slashCommandsRef.current.map((c) => ({
+          name: c.name,
+          description: c.description,
+          usage: c.usage,
+          argSource: c.argSource,
+        })),
+        // Surface the layout catalogue so the slash-arg picker can resolve
+        // /layoutCatalogue when the user types `/layout `. Kept in sync
+        // with layoutCatalogueRef in registerLayout / activateLayout.
+        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+          id: l.id,
+          label: l.name,
+          description: l.description,
+        })),
+        sidebar: { ...sidebar, layouts: catalogueItems },
+      };
+    });
   }, []);
 
   // Hydrate the extension event-route intercepts. The list is wholesale
@@ -2386,6 +2851,167 @@ export default function App() {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });
   }
 
+  // ---------------------------------------------------------------------
+  // Notifications — toast stack rendered at App root. Used for mutation
+  // feedback (theme set, layout switched) and agent-pushed `notice`s.
+  // Stays out of chat history so the conversation surface isn't cluttered
+  // with UI bookkeeping.
+  // ---------------------------------------------------------------------
+  function pushNotification(input: {
+    id?: string;
+    title: string;
+    message?: string;
+    kind?: NotificationKind;
+    durationMs?: number | null;
+    actions?: { label: string; action: string }[];
+  }): string {
+    const id = input.id ?? crypto.randomUUID();
+    const entry: NotificationEntry = {
+      id,
+      title: input.title,
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
+      // Default to a 4 s auto-dismiss for transient feedback. Pass
+      // `null` to make a notification sticky (warnings with actions
+      // typically want this).
+      durationMs:
+        input.durationMs === null
+          ? null
+          : (input.durationMs ?? 4000),
+      ...(input.actions && input.actions.length > 0
+        ? { actions: input.actions }
+        : {}),
+      createdAt: Date.now(),
+    };
+    setState((prev) => {
+      const list = (prev.notifications as NotificationEntry[] | undefined) ?? [];
+      // Dedup by id — if a notification with the same id is already
+      // visible, replace it. Lets repeated triggers (rapid ⌘+/-,
+      // burst mutation feedback) refresh the toast in place rather
+      // than stack 5 copies.
+      const without = list.filter((n) => n.id !== entry.id);
+      // Cap the visible stack so a runaway extension can't spam toasts
+      // off-screen. Newest wins; the oldest beyond the cap is dropped.
+      const MAX_VISIBLE = 6;
+      const next = [...without, entry];
+      const trimmed = next.length > MAX_VISIBLE ? next.slice(-MAX_VISIBLE) : next;
+      return { ...prev, notifications: trimmed };
+    });
+    return id;
+  }
+  function dismissNotification(id: string) {
+    setState((prev) => {
+      const list = (prev.notifications as NotificationEntry[] | undefined) ?? [];
+      return { ...prev, notifications: list.filter((n) => n.id !== id) };
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Command palette helpers — open/close/run. The palette renders at App
+  // root over every layout. Items are derived in the component itself
+  // (selectPaletteItems) from existing state slices, so opening with a
+  // mode is enough — no items list to populate here.
+  // ---------------------------------------------------------------------
+  function openPalette(mode: PaletteMode) {
+    setState((prev) => ({
+      ...prev,
+      palette: { ...(prev.palette ?? {}), open: true, mode, query: "", selectedIndex: 0 },
+    }));
+  }
+  function closePalette() {
+    setState((prev) => ({
+      ...prev,
+      palette: { ...(prev.palette ?? {}), open: false, query: "", selectedIndex: 0 },
+    }));
+  }
+  // Route a palette selection to the right handler. The palette emits
+  // serializable payloads only; we resolve them against App helpers
+  // here so the component stays a pure renderer.
+  async function runPaletteItem(item: PaletteItem) {
+    const p = item.payload;
+    switch (p.kind) {
+      case "tab":
+        setActiveTab(p.tabId);
+        return;
+      case "session":
+        newTab(p.sessionId, p.label);
+        return;
+      case "project":
+        setActiveProjectById(p.projectId);
+        return;
+      case "open-project":
+        openProjectFromPicker();
+        return;
+      case "slash": {
+        // Reuse the same path the chat composer takes. Wraps the slash
+        // run with the live ctx so handlers see fresh state. Failures
+        // surface as a toast so the user sees what went wrong without
+        // a chat-history breadcrumb.
+        const cmd = slashCommandsRef.current.find((c) => c.name === p.name);
+        if (!cmd) {
+          pushNotification({
+            title: `Unknown command /${p.name}`,
+            kind: "error",
+          });
+          return;
+        }
+        try {
+          await cmd.run(p.args ?? "", slashContext());
+        } catch (err) {
+          pushNotification({
+            title: `/${p.name} failed`,
+            message: String(err),
+            kind: "error",
+          });
+        }
+        return;
+      }
+      case "keybinding": {
+        // Same dispatch shape the global keydown handler uses. Lets a
+        // paired aethon.onEvent matcher fire as if the user had hit
+        // the key.
+        invoke("dispatch_a2ui_event", {
+          event: JSON.stringify({
+            componentId: `keybinding__tpl__${p.combo}`,
+            componentType: "keybinding",
+            templateRootType: "keybinding",
+            eventType: "invoke",
+            data: { combo: p.combo, action: p.action },
+          }),
+          tabId: stateRef.current.activeTabId,
+        }).catch(() => {
+          /* ignore — bridge gone */
+        });
+        return;
+      }
+      case "layout":
+        activateLayoutById(p.layoutId);
+        return;
+      case "theme":
+        setTheme(p.themeId);
+        return;
+      case "model":
+        await setModel(p.modelId);
+        return;
+      case "action":
+        // Built-in action strings from BUILTIN_KEYBINDINGS — fire the
+        // same path the keydown clauses do so palette-triggered actions
+        // are indistinguishable from key-triggered ones.
+        if (p.action === "builtin:meta+t") newTab();
+        else if (p.action === "builtin:meta+w") {
+          const id = stateRef.current.activeTabId as string | undefined;
+          if (id) closeTab(id);
+        } else if (p.action === "builtin:meta+]") nextTab(1);
+        else if (p.action === "builtin:meta+[") nextTab(-1);
+        else if (p.action === "builtin:meta+`") toggleTerminal();
+        else if (p.action === "builtin:meta+k") clearChat();
+        else if (p.action === "builtin:meta+.") void stopPrompt();
+        else if (p.action === "builtin:meta+p") openPalette("switcher");
+        else if (p.action === "builtin:meta+shift+p") openPalette("commands");
+        return;
+    }
+  }
+
   // Manual "Check for Updates" — wired from the Aethon menu and the
   // tray menu. Walks tauri-plugin-updater's check → download → install
   // pipeline and relaunches when done. Posts non-terminal status as
@@ -2449,6 +3075,9 @@ export default function App() {
   function slashContext(): SlashCommandContext {
     return {
       appendSystem,
+      notify: (input) => {
+        pushNotification(input);
+      },
       clearChat,
       setTheme,
       listThemes,
@@ -2476,7 +3105,7 @@ export default function App() {
           // /layout/areas, so this toggle stays workstation-shaped.
           const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
           const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
-          const columns = visible ? "220px 1fr" : "1fr";
+          const columns = visible ? "220px minmax(0,1fr)" : "minmax(0,1fr)";
           const areas = visible
             ? [
                 "sidebar header",
@@ -2643,6 +3272,78 @@ export default function App() {
           return false;
         }
       }
+      // Command palette events. Palette renders at App root; events
+      // route here directly (it never goes through the dispatch_a2ui
+      // bridge because there's no agent counterpart to invoke).
+      if (component.id === "command-palette") {
+        if (eventType === "close") {
+          closePalette();
+          return true;
+        }
+        if (eventType === "query") {
+          const value = (data as { value?: string } | undefined)?.value ?? "";
+          setState((prev) => ({
+            ...prev,
+            palette: { ...(prev.palette ?? {}), query: value, selectedIndex: 0 },
+          }));
+          return true;
+        }
+        if (eventType === "navigate") {
+          const idx = (data as { index?: number } | undefined)?.index ?? 0;
+          setState((prev) => ({
+            ...prev,
+            palette: { ...(prev.palette ?? {}), selectedIndex: idx },
+          }));
+          return true;
+        }
+        if (eventType === "select") {
+          const item = (data as { item?: PaletteItem } | undefined)?.item;
+          if (item) {
+            // Close FIRST so a slow handler doesn't leave the palette
+            // open over the result. Then run async.
+            closePalette();
+            void runPaletteItem(item);
+          }
+          return true;
+        }
+      }
+      // Notification stack events.
+      if (component.id === "notification-stack") {
+        const id = (data as { id?: string } | undefined)?.id;
+        if ((eventType === "dismiss" || eventType === "expire") && id) {
+          dismissNotification(id);
+          return true;
+        }
+        if (eventType === "action" && id) {
+          const action = (data as { action?: string } | undefined)?.action;
+          // Forward action strings as their own a2ui_event so paired
+          // aethon.onEvent matchers fire. Built-in actions are handled
+          // by the agent / extensions; nothing to short-circuit here.
+          if (action) {
+            invoke("dispatch_a2ui_event", {
+              event: JSON.stringify({
+                componentId: `notification__tpl__${id}`,
+                componentType: "notification",
+                templateRootType: "notification",
+                eventType: "invoke",
+                data: { id, action },
+              }),
+              tabId: stateRef.current.activeTabId,
+            }).catch(() => {
+              /* ignore — bridge gone */
+            });
+          }
+          dismissNotification(id);
+          return true;
+        }
+      }
+      // The header command-bar (used by command-deck layout) fires
+      // `invoke` on click/tap. Open the palette in switcher mode so
+      // the chrome affordance is now actually wired up.
+      if (component.id === "command-bar" && eventType === "invoke") {
+        openPalette("switcher");
+        return true;
+      }
       if (component.id === "chat-input" && eventType === "submit") {
         const value = (data as { value?: string } | undefined)?.value ?? "";
         await sendChat(value);
@@ -2658,22 +3359,7 @@ export default function App() {
         return true;
       }
       if (component.id === "chat-input" && eventType === "cancel") {
-        const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
-        try {
-          await invoke("agent_command", {
-            payload: JSON.stringify({ type: "stop", tabId }),
-          });
-          setStatusFlags({ status: "stopping…" });
-        } catch (err) {
-          appendMessage(
-            {
-              id: crypto.randomUUID(),
-              role: "agent",
-              text: `Failed to stop: ${err}`,
-            },
-            tabId,
-          );
-        }
+        await stopPrompt();
         return true;
       }
       // Tab events route by component *type* — id may vary across layouts
@@ -2729,7 +3415,13 @@ export default function App() {
             | undefined;
           if (sel?.projectId) {
             setActiveProjectById(sel.projectId);
-            newTab();
+            // Only seed a fresh tab when the project's bucket is empty.
+            // If the user already has tabs in this project, the bucket
+            // load above restored them — popping a new tab on top would
+            // be jarring.
+            const tabsAfter =
+              (stateRef.current.tabs as Tab[] | undefined) ?? [];
+            if (tabsAfter.length === 0) newTab();
           }
           return true;
         }
@@ -2748,13 +3440,52 @@ export default function App() {
           return true;
         }
       }
-      if (component.id === "sidebar" && eventType === "select") {
+      if (component.id === "sidebar" && eventType === "resize") {
+        const next = (data as { width?: number } | undefined)?.width;
+        if (typeof next === "number") {
+          // Patch the leading width token in /layout/columns. Layouts
+          // shape their grid columns as either "${SIDEBAR}px minmax(0,1fr)"
+          // or "${SIDEBAR}px minmax(0,1fr) ${INSPECTOR}px" — replace just the first
+          // token so non-sidebar columns survive the rewrite.
+          setState((prev) => {
+            const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+            const current =
+              (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
+            const tokens = current.trim().split(/\s+/);
+            tokens[0] = `${next}px`;
+            return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
+          });
+        }
+        return true;
+      }
+      if (component.id === "sidebar" && eventType === "resize-end") {
+        // Persist the final width so the next boot opens at the same
+        // size. Read from state.layout.columns (the in-flight value the
+        // resize listener just wrote) so a single source of truth wins.
+        const layout = (stateRef.current.layout as Record<string, unknown> | undefined) ?? {};
+        const cols = (layout.columns as string | undefined) ?? "";
+        const lead = cols.trim().split(/\s+/)[0] ?? "";
+        const px = parseInt(lead, 10);
+        if (Number.isFinite(px) && px > 0) {
+          writeState("sidebar_width", String(px)).catch(() => {
+            /* ignore — best-effort */
+          });
+        }
+        return true;
+      }
+      // Sidebar select + dropdown chrome pickers (model-picker /
+      // appearance-menu) all use the same `{sectionId, itemId}` event
+      // shape. Route by section so a chrome dropdown and a sidebar row
+      // converge on the same backing action.
+      const isSectionedSelect =
+        eventType === "select" &&
+        (component.id === "sidebar" ||
+          component.id === "model-picker" ||
+          component.id === "appearance-menu");
+      if (isSectionedSelect) {
         const selected = data as { sectionId?: string; itemId?: string } | undefined;
         if (selected?.itemId === "toggle-terminal") {
-          setState((prev) => {
-            const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
-            return { ...prev, terminal: { ...term, open: !term.open } };
-          });
+          toggleTerminal();
           return true;
         }
         if (selected?.itemId === "clear-chat") {
@@ -2770,6 +3501,10 @@ export default function App() {
           // The CSS for built-ins lives in styles.css; extension themes
           // had their <style> tag injected on hydrateThemes().
           setTheme(selected.itemId);
+          return true;
+        }
+        if (selected?.sectionId === "layouts" && selected.itemId) {
+          activateLayoutById(selected.itemId);
           return true;
         }
         if (selected?.sectionId === "projects" && selected.itemId) {
@@ -2795,6 +3530,19 @@ export default function App() {
     [],
   );
 
+  // Synthetic A2UIComponent for App-root chrome (palette / notification
+  // stack). The palette + stack expect BuiltinComponentProps so we can
+  // also embed them inside layout JSON if a skill chooses to — at root
+  // we hand-feed the same shape.
+  const paletteComponent = useMemo(
+    () => ({ id: "command-palette", type: "command-palette", props: {} }),
+    [],
+  );
+  const notificationComponent = useMemo(
+    () => ({ id: "notification-stack", type: "notification-stack", props: {} }),
+    [],
+  );
+
   return (
     <SkillRegistryProvider registry={registry}>
       <div className="app">
@@ -2804,6 +3552,20 @@ export default function App() {
           onStateChange={setState}
           onEvent={onEvent}
           tabId={state.activeTabId as string | undefined}
+        />
+        <NotificationStack
+          component={notificationComponent}
+          state={state}
+          onEvent={(eventType, data) =>
+            onEvent(notificationComponent, eventType, data)
+          }
+        />
+        <CommandPalette
+          component={paletteComponent}
+          state={state}
+          onEvent={(eventType, data) =>
+            onEvent(paletteComponent, eventType, data)
+          }
         />
       </div>
     </SkillRegistryProvider>

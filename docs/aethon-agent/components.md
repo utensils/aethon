@@ -520,6 +520,27 @@ both. Emits `new-tab` on the primary button click and
 session id). Replace it by re-registering the `empty-state` component
 type from an extension if you want a different welcome surface.
 
+### `command-palette` and `notification-stack`
+
+Both render at App root, **not** inside layout JSON. The default
+implementations are state-driven — `/palette` carries
+`{open, mode, query, selectedIndex}`, `/notifications` is the toast
+list. Extensions can:
+
+- Drive them programmatically (e.g. `aethon.setState("/palette/open", true)`,
+  or call `aethon.notify(...)` to push a toast).
+- Replace the visuals by re-registering `command-palette` /
+  `notification-stack` via `aethon.registerComponent`. App.tsx renders
+  the registered builtin, so the override picks up automatically.
+
+Items shown in the palette are derived from existing state — tabs,
+`/recentSessions`, `/sidebar/projects`, `/slashCommands`, the
+extension keybinding map, `/layoutCatalogue`, `/sidebar/themes`,
+`/sidebar/models`. Register a slash command (`registerSlashCommand`)
+or a keybinding (`registerKeybinding`) and it appears in the palette
+automatically. Mode prefixes inside the palette: `>` forces commands,
+`@` tabs, `?` keybindings.
+
 ## Layout Payload Shape
 
 The whole UI is one tree. The default layout (boot payload) lives at

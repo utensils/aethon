@@ -5,7 +5,7 @@
       "type": "layout",
       "props": {
         "columns": { "$ref": "/layout/columns" },
-        "rows": "38px 1fr auto auto auto",
+        "rows": "38px minmax(0,1fr) auto auto auto",
         "areas": { "$ref": "/layout/areas" }
       },
       "children": [
@@ -38,6 +38,21 @@
                 "label": { "$ref": "/agentStatus/label" },
                 "state": { "$ref": "/agentStatus/state" }
               }
+            },
+            {
+              "id": "header-spacer",
+              "type": "container",
+              "props": { "direction": "row", "className": "ae-header-spacer" }
+            },
+            {
+              "id": "model-picker",
+              "type": "model-picker",
+              "props": {}
+            },
+            {
+              "id": "appearance-menu",
+              "type": "appearance-menu",
+              "props": {}
             }
           ]
         },
@@ -73,15 +88,6 @@
                   { "id": "toggle-terminal", "label": "Toggle Terminal", "hint": "⌘`" },
                   { "id": "clear-chat", "label": "Clear Chat", "hint": "⌘K" }
                 ]
-              },
-              {
-                "id": "models",
-                "title": "models",
-                "monoItems": true,
-                "searchable": true,
-                "groupByPrefix": true,
-                "searchPlaceholder": "filter models — sonnet, gpt, qwen…",
-                "items": { "$ref": "/sidebar/models" }
               },
               {
                 "id": "themes",
@@ -184,7 +190,7 @@
     },
     "layout": {
       "sidebarVisible": true,
-      "columns": "220px 1fr",
+      "columns": "220px minmax(0,1fr)",
       "areas": [
         "sidebar header",
         "sidebar canvas",

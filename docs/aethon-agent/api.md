@@ -218,9 +218,18 @@ human-readable token using `Cmd` / `Meta` / `Ctrl` / `Alt` / `Option` /
 normalizes to a canonical form for matching. `action` is an opaque
 string the handler can branch on (defaults to the combo).
 
-Built-ins (`Cmd+T` / `Cmd+]` / `Cmd+[` / `Cmd+W` / `Cmd+\``) win on a
-collision — extensions can ADD shortcuts but cannot override built-ins
-(yet).
+Built-ins are reserved — `registerKeybinding` rejects them with an
+error. The current set:
+
+| Combo            | Built-in action                       |
+| ---------------- | ------------------------------------- |
+| `Cmd+P`          | Open command palette (switcher mode)  |
+| `Cmd+Shift+P`    | Open command palette (commands mode)  |
+| `Cmd+T`          | New tab                               |
+| `Cmd+W`          | Close active tab                      |
+| `Cmd+]`          | Next tab                              |
+| `Cmd+[`          | Previous tab                          |
+| `Cmd+\``         | Toggle terminal                       |
 
 ```ts
 globalThis.aethon.registerKeybinding({
@@ -260,6 +269,55 @@ globalThis.aethon.registerTheme({
 ```
 
 The theme appears in the sidebar's Themes section automatically.
+
+### `notify({ title, message?, kind?, durationMs?, actions?, id? })` / `dismissNotification(id)`
+
+Push a toast notification onto the App-root notification stack. Toasts
+are layout-agnostic and overlay every layout so feedback remains
+visible regardless of which chrome the user has active.
+
+| Field         | Type                                                | Default       |
+| ------------- | --------------------------------------------------- | ------------- |
+| `title`       | string (required)                                   | —             |
+| `message`     | string                                              | —             |
+| `kind`        | `"info" \| "success" \| "warning" \| "error"`       | `"info"`      |
+| `durationMs`  | number, or `null` for sticky                        | `4000`        |
+| `actions`     | `{ label: string, action: string }[]`               | `[]`          |
+| `id`          | string — pre-assign so you can dismiss later        | auto-uuid     |
+
+```ts
+// Transient success toast.
+globalThis.aethon.notify({
+  title: "Linted clean",
+  kind: "success",
+});
+
+// Sticky toast with an action — fires `a2ui_event` with
+// componentType: "notification", data: { id, action: "undo" } on click.
+const id = "extension:tidy-up";
+await globalThis.aethon.notify({
+  id,
+  title: "Tidied 12 files",
+  kind: "info",
+  durationMs: null,
+  actions: [{ label: "Undo", action: "undo" }],
+});
+globalThis.aethon.onEvent(
+  { componentType: "notification", eventType: "invoke" },
+  (event) => {
+    const data = event.data as { id?: string; action?: string };
+    if (data.action === "undo") { /* … */ }
+  },
+);
+
+// Dismiss programmatically when work completes.
+await globalThis.aethon.dismissNotification(id);
+```
+
+Use toasts for transient mutation feedback ("Theme set", "Layout
+switched", "Update available"). Don't use them for chat content — push
+into the conversation via `ctx.pi.notify(...)` if a message belongs in
+history.
 
 ## Event Handling
 

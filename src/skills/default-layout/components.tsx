@@ -100,6 +100,14 @@ function HighlightedFence({
   );
 }
 
+function readUiScale(): number {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--app-ui-scale")
+    .trim();
+  const scale = parseFloat(raw || "1");
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 // Inline Æπ monogram — used by Sidebar / TabRail / etc. without going
 // through the A2UI registry (so brand-chrome inside a composite doesn't
 // require a payload to declare an `ae-mark` child).
@@ -173,8 +181,10 @@ export function Layout({
     slotMap?: Record<string, string>;
   };
 
-  const columns = props.columns ? resolveString(props.columns, state) : "1fr";
-  const rows = props.rows ? resolveString(props.rows, state) : "1fr";
+  const columns = props.columns
+    ? resolveString(props.columns, state)
+    : "minmax(0,1fr)";
+  const rows = props.rows ? resolveString(props.rows, state) : "minmax(0,1fr)";
   const gap = props.gap ? resolveNumber(props.gap, state) : 0;
   const resolvedAreas = (() => {
     const a = props.areas;
@@ -307,6 +317,20 @@ function ItemRow({
     );
   }
   const hint = (item as { hint?: string }).hint;
+  // Native tooltip — full path / long form. Layouts can set this on
+  // any sidebar item; the projects section uses it for the absolute
+  // path so the row label stays compact (basename only).
+  const tooltip = (item as { tooltip?: string }).tooltip;
+  // Per-item git badge — { branch?, dirty?, ahead?, behind? }.
+  // Drives a small chip + dirty dot before the hint.
+  const git = (item as {
+    git?: {
+      branch?: string;
+      dirty?: boolean;
+      ahead?: number;
+      behind?: number;
+    };
+  }).git;
   return (
     <li
       className={[
@@ -316,9 +340,22 @@ function ItemRow({
       ]
         .filter(Boolean)
         .join(" ")}
+      title={tooltip}
       onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
     >
+      {git?.dirty ? (
+        <span
+          className="a2ui-sidebar-item-git-dot"
+          aria-hidden="true"
+          title="Uncommitted changes"
+        />
+      ) : null}
       <span className="a2ui-sidebar-item-label">{item.label}</span>
+      {git?.branch ? (
+        <span className="a2ui-sidebar-item-git-branch" title={`branch: ${git.branch}`}>
+          {git.branch}
+        </span>
+      ) : null}
       {hint && <span className="a2ui-sidebar-item-hint">{hint}</span>}
     </li>
   );
@@ -481,6 +518,38 @@ export function Sidebar({
     // Bound via $ref so extensions can push into a state path and have
     // their sections appear without modifying the layout payload.
     extraSections?: SidebarSection[] | { $ref: string };
+    /** When false, hide the right-edge drag handle. Default true. */
+    resizable?: BooleanValue;
+  };
+  const resizable =
+    props.resizable === undefined ? true : resolveBoolean(props.resizable, state);
+
+  const asideRef = useRef<HTMLElement | null>(null);
+  // Drag handle. On mousedown we capture the pointer and start emitting
+  // `resize` events with the new pixel width. App listens for those and
+  // patches the active layout's grid columns. Cleanup on mouseup.
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const aside = asideRef.current;
+    if (!aside) return;
+    const startX = e.clientX;
+    const startWidth = aside.getBoundingClientRect().width;
+    const MIN = 180;
+    const MAX = 540;
+    document.body.classList.add("ae-resizing-sidebar");
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const next = Math.max(MIN, Math.min(MAX, Math.round(startWidth + dx)));
+      onEvent("resize", { width: next });
+    };
+    const onUp = () => {
+      document.body.classList.remove("ae-resizing-sidebar");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      onEvent("resize-end");
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   };
 
   const title = props.title ? resolveString(props.title, state) : "";
@@ -515,7 +584,7 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="a2ui-sidebar">
+    <aside ref={asideRef} className="a2ui-sidebar">
       {(title || version) && (
         <div className="a2ui-sidebar-title">
           {showBrand && <AeMarkInline size={20} radius={4} />}
@@ -584,6 +653,15 @@ export function Sidebar({
           );
         })}
       </div>
+      {resizable && (
+        <div
+          className="a2ui-sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={onResizeStart}
+        />
+      )}
     </aside>
   );
 }
@@ -902,10 +980,16 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     }
     const update = () => {
       const r = inputContainerRef.current!.getBoundingClientRect();
+      const scale = readUiScale();
+      const viewportWidth = window.innerWidth / scale;
+      const viewportHeight = window.innerHeight / scale;
+      const left = Math.max(8, Math.min(r.left / scale + 16, viewportWidth - 128));
+      const availableWidth = Math.max(0, viewportWidth - left - 8);
+      const preferredWidth = Math.max(160, r.width / scale - 32);
       setMenuAnchor({
-        left: r.left + 16,
-        bottom: window.innerHeight - r.top + 4,
-        width: r.width - 32,
+        left,
+        bottom: Math.max(8, viewportHeight - r.top / scale + 4),
+        width: Math.min(preferredWidth, availableWidth || preferredWidth),
       });
     };
     update();
@@ -1117,7 +1201,21 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           onClick={handleClick}
           disabled={value.trim().length === 0}
         >
-          {sendLabel}
+          <svg
+            className="a2ui-chat-input-send-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2 8l11-5-4 11-2-5-5-1z" />
+          </svg>
+          <span>{sendLabel}</span>
         </button>
       )}
     </div>
@@ -1534,6 +1632,13 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
 interface TabStripItem {
   id: string;
   label: string;
+  /** True when an LLM turn is in flight on this tab. Drives the
+   *  dirty-style dot prefix so the user sees which tabs are working
+   *  even when they're not focused. */
+  waiting?: boolean;
+  /** Pending follow-up count behind the active prompt. Adds a small
+   *  numeric chip after the label when > 0. */
+  queueCount?: number;
 }
 
 export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
@@ -1578,7 +1683,22 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
               onEvent("select", { tabId: t.id });
             }}
           >
+            {t.waiting ? (
+              <span
+                className="a2ui-tab-busy-dot"
+                aria-hidden="true"
+                title="Working…"
+              />
+            ) : null}
             <span className="a2ui-tab-label">{t.label}</span>
+            {typeof t.queueCount === "number" && t.queueCount > 0 ? (
+              <span
+                className="a2ui-tab-queue"
+                title={`${t.queueCount} queued`}
+              >
+                +{t.queueCount}
+              </span>
+            ) : null}
             {canClose && (
               <button
                 type="button"

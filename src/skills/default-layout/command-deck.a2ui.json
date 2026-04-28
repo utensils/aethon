@@ -4,8 +4,8 @@
       "id": "root-layout",
       "type": "layout",
       "props": {
-        "columns": "220px 1fr",
-        "rows": "46px 1fr auto auto auto",
+        "columns": { "$ref": "/layout/columns" },
+        "rows": "46px minmax(0,1fr) auto auto auto",
         "areas": [
           "sidebar header",
           "sidebar canvas",
@@ -57,6 +57,21 @@
                 "label": { "$ref": "/agentStatus/label" },
                 "state": { "$ref": "/agentStatus/state" }
               }
+            },
+            {
+              "id": "header-spacer",
+              "type": "container",
+              "props": { "direction": "row", "className": "ae-header-spacer" }
+            },
+            {
+              "id": "model-picker",
+              "type": "model-picker",
+              "props": {}
+            },
+            {
+              "id": "appearance-menu",
+              "type": "appearance-menu",
+              "props": {}
             }
           ]
         },
@@ -138,7 +153,8 @@
       "state": "live"
     },
     "layout": {
-      "sidebarVisible": true
+      "sidebarVisible": true,
+      "columns": "220px minmax(0,1fr)"
     },
     "sidebar": {
       "history": [],
