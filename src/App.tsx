@@ -407,9 +407,20 @@ export default function App() {
         getConfig(),
       ]);
       const trimmed = saved.trim();
-      // Map the legacy `signature` id (one-theme era) to `aether` so a
-      // pre-rename persisted choice keeps the same visual palette.
-      const normalize = (id: string) => (id === "signature" ? "aether" : id);
+      // Migrate legacy theme ids:
+      //   - `signature` (one-theme era) → `aether`
+      //   - `dark` (pre-palette-rename) → `ember`
+      //   - `light` (pre-palette-rename) → `paper`
+      // Without this, a saved id from an older build resolves to a
+      // `data-theme="dark"` selector that no stylesheet defines, so the
+      // app falls back to base ember tokens regardless of the user's
+      // actual choice.
+      const LEGACY_THEME_MAP: Record<string, string> = {
+        signature: "aether",
+        dark: "ember",
+        light: "paper",
+      };
+      const normalize = (id: string) => LEGACY_THEME_MAP[id] ?? id;
       const prefersLight =
         typeof window !== "undefined" &&
         typeof window.matchMedia === "function" &&
@@ -936,37 +947,7 @@ export default function App() {
       // existing state-merge / layout-bound-state semantics apply.
       listLayouts: (): LayoutCatalogueEntry[] =>
         layoutCatalogueRef.current.slice(),
-      activateLayout: (id: string): boolean => {
-        const entry = layoutCatalogueRef.current.find((l) => l.id === id);
-        if (!entry) return false;
-        setLayout(entry.payload);
-        // Seed any state keys the new layout declares that are absent from
-        // current app state. Layout switching is non-destructive — live
-        // user state (messages, canvas, draft, models) wins over the new
-        // layout's seeds, but novel keys (e.g. live-layout's
-        // /sidebar/layouts list, /inspector/* slots) get backfilled so
-        // $ref bindings in the new payload resolve immediately.
-        const seeds = entry.payload.state ?? {};
-        // Always rebuild sidebar.layouts from the catalogue with the
-        // *current* active id, regardless of what each layout JSON
-        // declared. The catalogue is the single source of truth; layout
-        // JSONs that ship a hardcoded `active` flag would otherwise lie.
-        const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-          id: l.id,
-          label: l.id,
-          active: l.id === id,
-        }));
-        setState((prev) => {
-          const seeded =
-            seeds && Object.keys(seeds).length > 0
-              ? deepMergeState(seeds, prev)
-              : { ...prev };
-          const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
-          seeded.sidebar = { ...sidebar, layouts: catalogueItems };
-          return seeded;
-        });
-        return true;
-      },
+      activateLayout: activateLayoutById,
       registerLayout: (entry: LayoutCatalogueEntry): boolean => {
         if (!entry || typeof entry.id !== "string" || !entry.payload) return false;
         const idx = layoutCatalogueRef.current.findIndex((l) => l.id === entry.id);
@@ -2033,6 +2014,34 @@ export default function App() {
   // ref so the API surface above can mutate it without re-rendering.
   const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
 
+  // Layout activation helper — single path used by both
+  // window.aethon.activateLayout and the /layout slash command. Seeds
+  // the layout's state defaults for keys absent from current app state
+  // (live state wins on collisions) and rebuilds /sidebar/layouts from
+  // the catalogue + current active id so layout JSONs don't have to
+  // ship a hardcoded `active: true` flag.
+  function activateLayoutById(id: string): boolean {
+    const entry = layoutCatalogueRef.current.find((l) => l.id === id);
+    if (!entry) return false;
+    setLayout(entry.payload);
+    const seeds = entry.payload.state ?? {};
+    const catalogueItems = layoutCatalogueRef.current.map((l) => ({
+      id: l.id,
+      label: l.id,
+      active: l.id === id,
+    }));
+    setState((prev) => {
+      const seeded =
+        seeds && Object.keys(seeds).length > 0
+          ? deepMergeState(seeds, prev)
+          : { ...prev };
+      const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
+      seeded.sidebar = { ...sidebar, layouts: catalogueItems };
+      return seeded;
+    });
+    return true;
+  }
+
   // Extension event-route intercepts. When a route matches an outbound
   // event from the renderer, App's onEvent handler returns false so the
   // event bypasses the built-in switch and goes through the standard
@@ -2254,31 +2263,28 @@ export default function App() {
           // /layout/areas atomically so the grid template adapts on
           // the same frame the sidebar cell hides. Without the
           // template swap the hidden sidebar would still reserve its
-          // 240px column.
+          // 220px column. Workstation hoists tabs into the header
+          // (5 rows total); other layouts (editorial / command-deck /
+          // live-layout) own their own area templates and don't bind
+          // /layout/areas, so this toggle stays workstation-shaped.
           const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
           const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
-          const columns = visible ? "240px 1fr" : "1fr";
+          const columns = visible ? "220px 1fr" : "1fr";
           const areas = visible
             ? [
                 "sidebar header",
-                "sidebar tabs",
                 "sidebar canvas",
                 "sidebar terminal",
                 "sidebar composer",
                 "status status",
               ]
-            : ["header", "tabs", "canvas", "terminal", "composer", "status"];
+            : ["header", "canvas", "terminal", "composer", "status"];
           return {
             ...prev,
             layout: { ...layout, sidebarVisible: visible, columns, areas },
           };
         }),
-      activateLayout: (id: string) => {
-        const entry = layoutCatalogueRef.current.find((l) => l.id === id);
-        if (!entry) return false;
-        setLayout(entry.payload);
-        return true;
-      },
+      activateLayout: activateLayoutById,
       listLayouts: () =>
         layoutCatalogueRef.current.map((l) => ({
           id: l.id,
@@ -2382,7 +2388,7 @@ export default function App() {
   // (Tauri IPC for chat send, model picker) — this is where the renderer
   // hands off control.
   const onEvent = useMemo(
-    () => async (component: { id: string }, eventType: string, data?: unknown) => {
+    () => async (component: { id: string; type?: string }, eventType: string, data?: unknown) => {
       // Extensions can register event-route intercepts via
       // aethon.registerEventRoute. When an event matches a registered
       // route, we return false here so the renderer falls through to
@@ -2449,7 +2455,17 @@ export default function App() {
         }
         return true;
       }
-      if (component.id === "tab-strip") {
+      // Tab events route by component *type* — id may vary across layouts
+      // (workstation hoists the strip into the header as `header-tabs`,
+      // editorial uses `editorial-header`, command-deck uses
+      // `vertical-tab-rail`). Matching by type keeps the contract layout-
+      // agnostic so a new layout's tabs work without touching App.tsx.
+      const tabType = component.type;
+      const isTabSurface =
+        tabType === "tab-strip" ||
+        tabType === "editorial-header" ||
+        tabType === "vertical-tab-rail";
+      if (isTabSurface) {
         const sel = data as { tabId?: string; action?: string } | undefined;
         if (eventType === "select" && sel?.tabId) {
           setActiveTab(sel.tabId);

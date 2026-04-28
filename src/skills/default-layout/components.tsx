@@ -37,10 +37,28 @@ import A2UIRenderer from "../../components/A2UIRenderer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 
 // Adapter: react-markdown invokes `code` for both inline AND fenced code
-// blocks. We split on whether the parent is `<pre>` (fenced) and route the
-// fenced case through Prism + the palette-driven theme. Inline code stays
-// as a styled `<code>` so we don't tokenize prose like `someFunc()`.
+// blocks. We split on whether the parent is `<pre>` (fenced) and route
+// the fenced case through Prism + the palette-driven theme. Inline code
+// stays as a styled `<code>` so we don't tokenize prose like
+// `someFunc()`.
+//
+// react-markdown wraps fenced blocks in `<pre><code>...</code></pre>`,
+// so we ALSO override `pre`: when its only child is the highlighted-code
+// adapter (a fenced block we produced), we render the child directly so
+// the output isn't `<pre><pre>...</pre></pre>` (invalid + double-padded).
+function isHighlightedFenceChild(node: React.ReactNode): boolean {
+  if (!node || typeof node !== "object") return false;
+  const el = node as React.ReactElement<{ "data-highlighted-fence"?: boolean }>;
+  return el.props?.["data-highlighted-fence"] === true;
+}
+
 const MARKDOWN_COMPONENTS = {
+  pre({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) {
+    if (isHighlightedFenceChild(children)) {
+      return <>{children}</>;
+    }
+    return <pre {...rest}>{children}</pre>;
+  },
   code({
     inline,
     className,
@@ -59,9 +77,28 @@ const MARKDOWN_COMPONENTS = {
     if (inline || !langMatch) {
       return <code className={className} {...rest}>{children}</code>;
     }
-    return <HighlightedCode code={text} language={langMatch[1]} />;
+    return (
+      <HighlightedFence code={text} language={langMatch[1]} />
+    );
   },
 };
+
+// Wrapper that tags the rendered element with a data attribute so the
+// `pre` override above can detect "this is our fenced output" and
+// unwrap the outer markdown `<pre>`.
+function HighlightedFence({
+  code,
+  language,
+}: {
+  code: string;
+  language: string;
+}) {
+  return (
+    <span data-highlighted-fence style={{ display: "block" }}>
+      <HighlightedCode code={code} language={language} />
+    </span>
+  );
+}
 
 // Inline Æπ monogram — used by Sidebar / TabRail / etc. without going
 // through the A2UI registry (so brand-chrome inside a composite doesn't
