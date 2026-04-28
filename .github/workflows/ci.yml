@@ -27,7 +27,7 @@ jobs:
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -51,7 +51,7 @@ jobs:
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         # Pinned to match rust-toolchain.toml — bumping that file
         # automatically flows here too.
