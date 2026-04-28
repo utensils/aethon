@@ -72,7 +72,14 @@ export interface SelectInput {
   activeTabId?: string;
   recentSessions?: { id: string; label: string; lastModified?: string }[];
   sidebar?: {
-    projects?: { id: string; label: string; hint?: string; active?: boolean }[];
+    projects?: {
+      id: string;
+      label: string;
+      hint?: string;
+      tooltip?: string;
+      active?: boolean;
+      git?: { branch?: string; dirty?: boolean };
+    }[];
     themes?: { id: string; label: string; active?: boolean }[];
     layouts?: { id: string; label: string; active?: boolean }[];
     models?: { id: string; label: string; active?: boolean }[];
@@ -120,10 +127,18 @@ export function selectPaletteItems(
     });
     for (const p of state.sidebar?.projects ?? []) {
       if (p.id === "open-project") continue;
+      // Hint priority: tooltip (full path) → git branch → "active".
+      // The path is what users actually need to disambiguate; the
+      // branch helps when a user has the same dir cloned twice in
+      // sibling worktrees.
+      const branchTag = p.git?.branch
+        ? `${p.git.branch}${p.git.dirty ? "•" : ""}`
+        : undefined;
+      const hint = p.tooltip ?? branchTag ?? p.hint ?? (p.active ? "active" : undefined);
       items.push({
         id: `project:${p.id}`,
         label: p.label,
-        hint: p.hint ?? (p.active ? "active" : undefined),
+        hint,
         section: "projects",
         payload: { kind: "project", projectId: p.id },
       });

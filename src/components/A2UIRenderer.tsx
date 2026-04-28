@@ -7,7 +7,7 @@
  * bindings without prop-drilling.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, resolvePointer, setPointer } from "../utils/jsonPointer";
@@ -384,7 +384,9 @@ export default function A2UIRenderer({
     const renderChildren = component.children
       ? () =>
           component.children!.map((child) => (
-            <div key={child.id}>{renderComponent(child, templateRootType, scopedState)}</div>
+            <Fragment key={child.id}>
+              {renderComponent(child, templateRootType, scopedState)}
+            </Fragment>
           ))
       : undefined;
 

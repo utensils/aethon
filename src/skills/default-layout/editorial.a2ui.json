@@ -4,8 +4,8 @@
       "id": "root-layout",
       "type": "layout",
       "props": {
-        "columns": "54px 1fr",
-        "rows": "52px 1fr auto auto auto",
+        "columns": "54px minmax(0,1fr)",
+        "rows": "52px minmax(0,1fr) auto auto auto",
         "areas": [
           "spine header",
           "spine canvas",

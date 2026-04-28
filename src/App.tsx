@@ -506,6 +506,18 @@ export default function App() {
           model: (prev.model) || config.agent.model!,
         }));
       }
+      // Restore saved UI zoom (Cmd+/-). Stored as a string number on
+      // disk; clamp to a sensible range so a stale value can't make
+      // the UI unusable. applyUiScale writes both CSS zoom and the
+      // --app-ui-scale token that viewport-sized containers use to
+      // compensate, so zooming does not push chrome outside the window.
+      const savedZoom = (
+        await readStateWithLocalStorageFallback("ui_zoom", "")
+      ).trim();
+      const z = parseFloat(savedZoom);
+      if (Number.isFinite(z) && z >= 0.7 && z <= 1.6) {
+        applyUiScale(z);
+      }
       // Restore saved sidebar width: patch the leading column token in
       // /layout/columns so the boot layout opens at the user's last
       // chosen width. Bail on missing/invalid values — the layout's
@@ -520,11 +532,70 @@ export default function App() {
           const current = (layout.columns as string | undefined) ?? "";
           if (!current) return prev;
           const tokens = current.trim().split(/\s+/);
+          if (!tokens[0]?.endsWith("px")) return prev;
           tokens[0] = `${px}px`;
           return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
         });
       }
     })();
+  }, []);
+
+  // ---------------------------------------------------------------------
+  // UI zoom — Cmd+/- / Cmd+0 to scale the entire chrome the way browsers
+  // and editors do. CSS zoom scales text + spacing together, while the
+  // --app-ui-scale token lets viewport-bound shells and portals divide
+  // their dimensions back down. Without that compensation, 100vw/100vh
+  // elements become wider/taller than the visible window at >100%.
+  // ---------------------------------------------------------------------
+  const ZOOM_MIN = 0.7;
+  const ZOOM_MAX = 1.6;
+  function writeUiViewportVars(scale: number) {
+    const root = document.documentElement;
+    root.style.setProperty("--app-viewport-width", `${window.innerWidth / scale}px`);
+    root.style.setProperty("--app-viewport-height", `${window.innerHeight / scale}px`);
+  }
+  function applyUiScale(scale: number) {
+    const root = document.documentElement;
+    root.style.setProperty("--app-ui-scale", String(scale));
+    writeUiViewportVars(scale);
+    root.style.zoom = String(scale);
+  }
+  function readZoom(): number {
+    const cur = parseFloat(
+      document.documentElement.style.getPropertyValue("--app-ui-scale") ||
+        document.documentElement.style.zoom ||
+        "1",
+    );
+    return Number.isFinite(cur) ? cur : 1;
+  }
+  function applyZoom(next: number) {
+    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+    const rounded = Math.round(clamped * 100) / 100;
+    applyUiScale(rounded);
+    writeState("ui_zoom", String(rounded)).catch(() => {
+      /* best-effort */
+    });
+    pushNotification({
+      id: "ae-zoom",
+      title: `Zoom ${Math.round(rounded * 100)}%`,
+      kind: "info",
+      durationMs: 1200,
+    });
+  }
+  function adjustZoom(delta: number) {
+    applyZoom(readZoom() + delta);
+  }
+  function resetZoom() {
+    applyZoom(1);
+  }
+
+  useEffect(() => {
+    const onResize = () => writeUiViewportVars(readZoom());
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // apply/read helpers only touch document-level CSS vars.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function setTheme(id: string) {
@@ -1001,6 +1072,28 @@ export default function App() {
           closePalette();
           return;
         }
+      }
+      // Cmd+= / Cmd++ zoom in. macOS reports `=` for the unshifted key
+      // and `+` for shift+=. Match both so users with either layout get
+      // the same behavior (Chrome, VS Code, Slack all do this). Cmd+-
+      // zooms out; Cmd+0 resets. Step is 10% per press.
+      if (mod && !e.altKey && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        e.stopPropagation();
+        adjustZoom(0.1);
+        return;
+      }
+      if (mod && !e.altKey && !e.shiftKey && e.key === "-") {
+        e.preventDefault();
+        e.stopPropagation();
+        adjustZoom(-0.1);
+        return;
+      }
+      if (mod && !e.altKey && !e.shiftKey && e.key === "0") {
+        e.preventDefault();
+        e.stopPropagation();
+        resetZoom();
+        return;
       }
       // Extension-registered keybindings — built-ins above win on a
       // collision, by ordering. Look up the canonical combo and dispatch
@@ -2187,6 +2280,19 @@ export default function App() {
   // switching project doesn't retroactively change live sessions.
   const projectsRef = useRef<ProjectsState>(emptyProjectsState());
 
+  // Cached git status keyed by absolute project path. Populated by the
+  // poller below (refreshGitStatusFor) and read by syncProjectsToState
+  // when mirroring projects into /sidebar/projects. Kept in a ref so
+  // a status update can re-trigger sync without re-scheduling all the
+  // other project work.
+  interface GitStatus {
+    branch?: string;
+    dirty?: boolean;
+    ahead?: number;
+    behind?: number;
+  }
+  const gitStatusRef = useRef<Map<string, GitStatus>>(new Map());
+
   // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
   // switches active project, we snapshot the current state.tabs +
   // activeTabId into the OLD bucket and load the NEW bucket into state
@@ -2201,7 +2307,9 @@ export default function App() {
   // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
   // `/sessionLabel` (used by editorial header subtitle) and
   // `/sidebar/projects` (sidebar item array). Called on every mutation
-  // so a single helper keeps the shape consistent.
+  // so a single helper keeps the shape consistent. Carries the cached
+  // git status from gitStatusRef so a sync triggered for non-git
+  // reasons (lastUsed bump, label change) doesn't drop the badges.
   function syncProjectsToState() {
     const ps = projectsRef.current;
     const active = activeProject(ps);
@@ -2219,9 +2327,13 @@ export default function App() {
           ...sidebar,
           projects: ps.projects.map((p) => ({
             id: p.id,
+            // Basename is what we surface; the absolute path lives
+            // behind the row's native tooltip (title attribute) so
+            // the row label stays compact even with deep paths.
             label: p.label,
-            hint: p.path,
+            tooltip: p.path,
             active: p.id === ps.activeId,
+            git: gitStatusRef.current.get(p.path),
           })),
         },
       };
@@ -2252,6 +2364,63 @@ export default function App() {
     });
   }
 
+  // Refresh the cached git status for one project path. Best-effort —
+  // a missing `git` binary or a non-repo path resolves to an empty
+  // entry and is treated as "no badge". Runs through the Tauri command
+  // (gated by debug-or-release; both expose `git_status`).
+  async function refreshGitStatusFor(path: string) {
+    try {
+      const status = await invoke<GitStatus | null>("git_status", { path });
+      if (status) {
+        gitStatusRef.current.set(path, status);
+      } else {
+        gitStatusRef.current.delete(path);
+      }
+      syncProjectsToState();
+    } catch {
+      // Tauri command threw — ignore so a transient git failure
+      // doesn't blank the chip on subsequent successful polls.
+    }
+  }
+  // Refresh every known project. Sequenced (not parallel) so a user with
+  // a long projects list doesn't fork N git processes at once. Cheap
+  // even at the upper bound (MAX_PROJECTS=16 in projects.ts).
+  async function refreshAllGitStatus() {
+    const list = projectsRef.current.projects.slice();
+    for (const p of list) {
+      await refreshGitStatusFor(p.path);
+    }
+  }
+
+  // Periodic + focus-driven git poller. Initial pass right after
+  // projects load; then every 30s, plus an immediate pass when the
+  // window regains focus (user came back from terminal / browser and
+  // likely committed something). Uses a guard ref so two overlapping
+  // refreshes never run.
+  const gitPollingRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || gitPollingRef.current) return;
+      gitPollingRef.current = true;
+      try {
+        await refreshAllGitStatus();
+      } finally {
+        gitPollingRef.current = false;
+      }
+    };
+    void tick();
+    const onFocus = () => void tick();
+    window.addEventListener("focus", onFocus);
+    const interval = window.setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load projects once at boot. Done in its own effect so a slow disk
   // doesn't push out the agent-start path. Mirrors into state on resolve
   // so the sidebar populates without a re-render trigger.
@@ -2260,6 +2429,9 @@ export default function App() {
       const ps = await loadProjects();
       projectsRef.current = ps;
       syncProjectsToState();
+      // Kick a git status fetch for every loaded project so badges
+      // appear on the first paint instead of waiting for the 30s tick.
+      void refreshAllGitStatus();
       // Tell the bridge about the active project so the default tab's
       // session opens with the right cwd. ensureTab() in the bridge
       // checks the per-tab cwd record before SessionManager.continueRecent.
@@ -2280,6 +2452,7 @@ export default function App() {
         });
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function openProjectFromPicker(): Promise<string | null> {
@@ -2297,6 +2470,9 @@ export default function App() {
     );
     projectsRef.current = nextProjects;
     persistProjects();
+    // Fetch git status for the (possibly new) project so the chip
+    // appears on the same render that adds the row, not 30s later.
+    void refreshGitStatusFor(path);
     // Switch to the project's tab bucket BEFORE notifying the bridge.
     // If this is a brand-new project, the bucket is empty — the empty
     // state composite will render so the caller can decide whether to
@@ -2680,10 +2856,15 @@ export default function App() {
     };
     setState((prev) => {
       const list = (prev.notifications as NotificationEntry[] | undefined) ?? [];
+      // Dedup by id — if a notification with the same id is already
+      // visible, replace it. Lets repeated triggers (rapid ⌘+/-,
+      // burst mutation feedback) refresh the toast in place rather
+      // than stack 5 copies.
+      const without = list.filter((n) => n.id !== entry.id);
       // Cap the visible stack so a runaway extension can't spam toasts
       // off-screen. Newest wins; the oldest beyond the cap is dropped.
       const MAX_VISIBLE = 6;
-      const next = [...list, entry];
+      const next = [...without, entry];
       const trimmed = next.length > MAX_VISIBLE ? next.slice(-MAX_VISIBLE) : next;
       return { ...prev, notifications: trimmed };
     });
@@ -2897,7 +3078,7 @@ export default function App() {
           // /layout/areas, so this toggle stays workstation-shaped.
           const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
           const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
-          const columns = visible ? "220px 1fr" : "1fr";
+          const columns = visible ? "220px minmax(0,1fr)" : "minmax(0,1fr)";
           const areas = visible
             ? [
                 "sidebar header",
@@ -3251,12 +3432,13 @@ export default function App() {
         const next = (data as { width?: number } | undefined)?.width;
         if (typeof next === "number") {
           // Patch the leading width token in /layout/columns. Layouts
-          // shape their grid columns as either "${SIDEBAR}px 1fr" or
-          // "${SIDEBAR}px 1fr ${INSPECTOR}px" — replace just the first
+          // shape their grid columns as either "${SIDEBAR}px minmax(0,1fr)"
+          // or "${SIDEBAR}px minmax(0,1fr) ${INSPECTOR}px" — replace just the first
           // token so non-sidebar columns survive the rewrite.
           setState((prev) => {
             const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
-            const current = (layout.columns as string | undefined) ?? "220px 1fr";
+            const current =
+              (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
             const tokens = current.trim().split(/\s+/);
             tokens[0] = `${next}px`;
             return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };

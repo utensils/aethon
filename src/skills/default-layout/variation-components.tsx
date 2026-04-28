@@ -27,6 +27,14 @@ import {
 import { resolvePointer } from "../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 
+function readUiScale(): number {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--app-ui-scale")
+    .trim();
+  const scale = parseFloat(raw || "1");
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 // ---------------------------------------------------------------------------
 // AgentStatusPill — small "agent live"/"agent thinking" indicator. Used in
 // the Workstation header (right side) and the Live-Layout header.
@@ -751,10 +759,13 @@ function DropdownPickerCore({
   const openPanel = () => {
     const r = triggerRef.current?.getBoundingClientRect();
     if (r) {
+      const scale = readUiScale();
+      const viewportWidth = window.innerWidth / scale;
+      const viewportHeight = window.innerHeight / scale;
       setCoords({
-        top: r.bottom + 6,
-        left: r.left,
-        right: window.innerWidth - r.right,
+        top: Math.min(r.bottom / scale + 6, Math.max(8, viewportHeight - 8)),
+        left: Math.max(8, Math.min(r.left / scale, Math.max(8, viewportWidth - 8))),
+        right: Math.max(8, (window.innerWidth - r.right) / scale),
       });
     }
     setOpen(true);

@@ -5,7 +5,7 @@
       "type": "layout",
       "props": {
         "columns": { "$ref": "/layout/columns" },
-        "rows": "44px 1fr auto auto auto",
+        "rows": "44px minmax(0,1fr) auto auto auto",
         "areas": [
           "sidebar header inspector",
           "sidebar canvas inspector",
@@ -146,7 +146,7 @@
             "area": "inspector",
             "title": "Inspector",
             "badge": "live",
-            "layoutSummary": "{\n  \"rows\": \"44px 1fr 22px\",\n  \"cols\": \"244 1fr 280\",\n  \"areas\": [\n    \"sidebar  header  inspector\",\n    \"sidebar  canvas  inspector\",\n    \"status   status  status\"\n  ]\n}",
+            "layoutSummary": "{\n  \"rows\": \"44px minmax(0,1fr) 22px\",\n  \"cols\": \"244 minmax(0,1fr) 280\",\n  \"areas\": [\n    \"sidebar  header  inspector\",\n    \"sidebar  canvas  inspector\",\n    \"status   status  status\"\n  ]\n}",
             "stateRows": [
               { "label": "messages", "value": { "$ref": "/inspector/messageCount" } },
               { "label": "tab", "value": { "$ref": "/activeTabId" } },
@@ -222,7 +222,7 @@
     "project": null,
     "layout": {
       "sidebarVisible": true,
-      "columns": "244px 1fr 280px"
+      "columns": "244px minmax(0,1fr) 280px"
     },
     "sidebar": {
       "history": [],

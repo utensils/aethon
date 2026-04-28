@@ -64,6 +64,8 @@ export function Card({ component, state, renderChildren }: ComponentProps) {
     border: "1px solid var(--border)",
     borderRadius: "8px",
     padding: `${padding}px`,
+    minWidth: 0,
+    maxWidth: "100%",
   };
 
   return (
@@ -117,6 +119,10 @@ export function Button({ component, state, onEvent }: ComponentProps) {
     fontWeight: 600,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.4 : 1,
+    maxWidth: "100%",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   };
 
   return (
@@ -156,6 +162,8 @@ export function Container({ component, state, renderChildren }: ComponentProps) 
     alignItems: align,
     justifyContent: justify,
     width: "100%",
+    minWidth: 0,
+    minHeight: 0,
   };
 
   const cls = props.className
@@ -224,7 +232,7 @@ export function Image({ component, state }: ComponentProps) {
     ? { display: "block" }
     : {
         display: "block",
-        maxWidth: `${maxWidth}px`,
+        maxWidth: `min(${maxWidth}px, 100%)`,
         width: "100%",
         height: "auto",
         borderRadius: "6px",
@@ -500,6 +508,7 @@ export function Table({
     width: "100%",
     borderCollapse: "collapse",
     fontSize: "0.9rem",
+    minWidth: 0,
   };
   const cellStyle: CSSProperties = {
     padding: "6px 10px",
@@ -515,42 +524,44 @@ export function Table({
     letterSpacing: "0.04em",
   };
   return (
-    <table style={tableStyle}>
-      <thead>
-        <tr>
-          {cols.map((c, i) => (
-            <th key={i} style={{ ...headerStyle, width: c.width }}>
-              {c.header ?? c.field ?? ""}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {list.map((row, ri) => (
-          <tr key={ri}>
-            {cols.map((c, ci) => {
-              const cellOverlay = { $row: row, $index: ri, $parent: state };
-              if (c.cell && renderChildWithState) {
+    <div style={{ maxWidth: "100%", overflowX: "auto" }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            {cols.map((c, i) => (
+              <th key={i} style={{ ...headerStyle, width: c.width }}>
+                {c.header ?? c.field ?? ""}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((row, ri) => (
+            <tr key={ri}>
+              {cols.map((c, ci) => {
+                const cellOverlay = { $row: row, $index: ri, $parent: state };
+                if (c.cell && renderChildWithState) {
+                  return (
+                    <td key={ci} style={cellStyle}>
+                      {renderChildWithState(c.cell, cellOverlay)}
+                    </td>
+                  );
+                }
+                const v =
+                  c.field && row && typeof row === "object"
+                    ? (row as Record<string, unknown>)[c.field]
+                    : "";
                 return (
                   <td key={ci} style={cellStyle}>
-                    {renderChildWithState(c.cell, cellOverlay)}
+                    {String(v ?? "")}
                   </td>
                 );
-              }
-              const v =
-                c.field && row && typeof row === "object"
-                  ? (row as Record<string, unknown>)[c.field]
-                  : "";
-              return (
-                <td key={ci} style={cellStyle}>
-                  {String(v ?? "")}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -589,6 +600,7 @@ export function TextInput({ component, state, onEvent }: ComponentProps) {
     fontSize: "0.875rem",
     outline: "none",
     width: "100%",
+    minWidth: 0,
   };
 
   return (

@@ -5,7 +5,7 @@
       "type": "layout",
       "props": {
         "columns": { "$ref": "/layout/columns" },
-        "rows": "38px 1fr auto auto auto",
+        "rows": "38px minmax(0,1fr) auto auto auto",
         "areas": { "$ref": "/layout/areas" }
       },
       "children": [
@@ -190,7 +190,7 @@
     },
     "layout": {
       "sidebarVisible": true,
-      "columns": "220px 1fr",
+      "columns": "220px minmax(0,1fr)",
       "areas": [
         "sidebar header",
         "sidebar canvas",
