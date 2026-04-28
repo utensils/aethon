@@ -35,7 +35,7 @@ jobs:
             args: --target x86_64-apple-darwin
             unsignedArgs: ""
           - label: linux-x86_64
-            platform: ubuntu-24.04
+            platform: ubuntu-22.04
             rust-target: x86_64-unknown-linux-gnu
             args: ""
             unsignedArgs: --bundles deb,rpm
@@ -43,6 +43,7 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       APPIMAGE_EXTRACT_AND_RUN: 1
+      NO_STRIP: 1
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       HAS_UPDATER_SECRETS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -63,7 +64,7 @@ jobs:
             curl \
             file \
             libayatana-appindicator3-dev \
-            libfuse2t64 \
+            libfuse2 \
             librsvg2-dev \
             libsoup-3.0-dev \
             libssl-dev \
