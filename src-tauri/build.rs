@@ -41,9 +41,13 @@ fn newer_recursive(path: &Path, target_mtime: SystemTime) -> std::io::Result<boo
 fn main() {
     let triple = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
     println!("cargo:rustc-env=AETHON_TARGET_TRIPLE={triple}");
+    println!("cargo:rustc-check-cfg=cfg(desktop)");
+    println!("cargo:rustc-check-cfg=cfg(mobile)");
 
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let project_root = Path::new(&manifest_dir).parent().unwrap().to_path_buf();
+    let has_repo_sidecar_inputs =
+        project_root.join("agent").exists() && project_root.join("package.json").exists();
 
     // Cargo only re-invokes build.rs when one of these paths changes.
     // Track agent source + build inputs, NOT the generated sidecar — listing
@@ -54,15 +58,21 @@ fn main() {
     println!("cargo:rerun-if-changed=../bun.lock");
     println!("cargo:rerun-if-changed=build.rs");
 
-    if let Err(msg) = ensure_sidecar(&project_root, &triple) {
-        // Hard-fail so a stale sidecar from a previous successful build
-        // can't ship in a release while the current agent source has
-        // compile errors. tauri_build::build() runs after this, but
-        // panicking here aborts the build script before it can.
-        panic!("aethon-agent sidecar build failed: {msg}");
+    if has_repo_sidecar_inputs {
+        if let Err(msg) = ensure_sidecar(&project_root, &triple) {
+            // Hard-fail so a stale sidecar from a previous successful build
+            // can't ship in a release while the current agent source has
+            // compile errors. tauri_build::build() runs after this, but
+            // panicking here aborts the build script before it can.
+            panic!("aethon-agent sidecar build failed: {msg}");
+        }
+        tauri_build::build();
+    } else {
+        println!(
+            "cargo:warning=skipping aethon-agent sidecar build; repository-level agent inputs are absent"
+        );
+        println!("cargo:warning=skipping tauri bundle metadata generation for crate packaging");
     }
-
-    tauri_build::build();
 }
 
 /// Compile `agent/main.ts` into a self-contained `bun build --compile`
