@@ -132,9 +132,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { mkdirSync, readFileSync } from "node:fs";
 import { readdir, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { findProjectExtensionDirs } from "./project-extensions";
 import {
   resolveAethonSystemPrompt,
   type RuntimeSnapshot,
@@ -161,12 +162,17 @@ const BOOT_LAYOUT_FILE = process.env.AETHON_BOOT_LAYOUT_FILE;
 const LAYOUT_SLOTS_FILE = process.env.AETHON_LAYOUT_SLOTS_FILE;
 
 // Source attribution for the loaded-extension list. "directory" =
-// ~/.aethon/extensions/*.{ts,js,mjs}, "skill-package" = npm-style
-// install under ~/.aethon/skills/node_modules/, "pi-extension" =
-// discovered in ~/.pi/agent/extensions/ and observed to touch
-// `globalThis.aethon`. Used to surface this in the state file and
+// ~/.aethon/extensions/*.{ts,js,mjs}, "project-directory" =
+// <project>/.aethon/extensions/*.{ts,js,mjs}, "skill-package" =
+// npm-style install under ~/.aethon/skills/node_modules/, and
+// "pi-extension" = discovered in ~/.pi/agent/extensions/ and observed to
+// touch `globalThis.aethon`. Used to surface this in the state file and
 // the runtime snapshot.
-type ExtensionSource = "directory" | "skill-package" | "pi-extension";
+type ExtensionSource =
+  | "directory"
+  | "project-directory"
+  | "skill-package"
+  | "pi-extension";
 
 // Per-turn tabId propagated through the async call chain that runs
 // inside session.prompt(). Concurrent prompts on different tabs each
@@ -623,6 +629,7 @@ async function discoverPiAethonExtensions(
     }
     return;
   }
+  entries.sort();
   for (const name of entries) {
     if (!/\.(ts|js|mjs)$/.test(name)) continue;
     const file = join(dir, name);
@@ -735,33 +742,54 @@ async function loadAethonThemeDirectory(
   }
 }
 
-// Discover and load Aethon extensions from ~/.aethon/extensions/*.{ts,js}.
-// Each extension exports `register(api)` (named or as default.register).
-// Bun executes .ts directly so authors don't need a build step.
-async function loadAethonExtensions(
+function projectExtensionDisplayName(
+  projectRoot: string,
+  extensionDir: string,
+  fileName: string,
+): string {
+  const extensionBase = fileName.replace(/\.(ts|js|mjs)$/, "");
+  const scopeDir = dirname(dirname(extensionDir));
+  const rootName = basename(projectRoot) || "project";
+  const scope = relative(projectRoot, scopeDir).replace(/\\/g, "/");
+  return scope && !scope.startsWith("..")
+    ? `${rootName}/${scope}:${extensionBase}`
+    : `${rootName}:${extensionBase}`;
+}
+
+async function loadAethonExtensionDirectory(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
+  options: {
+    dir: string;
+    source: Extract<ExtensionSource, "directory" | "project-directory">;
+    logPrefix: string;
+    displayName?: (fileName: string) => string;
+    loadedFiles?: Set<string>;
+  },
 ): Promise<void> {
-  const dir = join(USER_DIR, "extensions");
   let entries: string[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(options.dir);
   } catch (err) {
     // Missing dir is the common case — extensions are optional.
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-ext] readdir ${dir}: ${(err as Error).message}`);
+      console.error(
+        `[${options.logPrefix}] readdir ${options.dir}: ${(err as Error).message}`,
+      );
     }
     return;
   }
   for (const name of entries) {
     if (!/\.(ts|js|mjs)$/.test(name)) continue;
-    const file = join(dir, name);
-    const displayName = name.replace(/\.(ts|js|mjs)$/, "");
+    const file = join(options.dir, name);
+    if (options.loadedFiles?.has(file)) continue;
+    const displayName =
+      options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, "");
     try {
       const mod: AethonExtensionModule = await import(pathToFileURL(file).href);
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
-        console.error(`[aethon-ext] ${name}: no register() export, skipping`);
+        console.error(`[${options.logPrefix}] ${name}: no register() export, skipping`);
         // Lifecycle event — abstract feedback channel. Default-layout
         // surfaces this as a chat-side system notice; other layouts /
         // extensions can listen on `aethon:extension-lifecycle` and
@@ -769,7 +797,7 @@ async function loadAethonExtensions(
         send({
           type: "extension_lifecycle",
           name: displayName,
-          source: "directory",
+          source: options.source,
           status: "skipped",
           error: "no register() export",
           path: file,
@@ -777,28 +805,63 @@ async function loadAethonExtensions(
         continue;
       }
       await register(api);
-      registry.set(displayName, "directory");
-      console.error(`[aethon-ext] loaded ${name}`);
+      options.loadedFiles?.add(file);
+      registry.set(displayName, options.source);
+      console.error(`[${options.logPrefix}] loaded ${name}`);
       send({
         type: "extension_lifecycle",
         name: displayName,
-        source: "directory",
+        source: options.source,
         status: "loaded",
         path: file,
       });
     } catch (err) {
       const message = (err as Error).message;
-      console.error(`[aethon-ext] ${name}: ${message}`);
+      console.error(`[${options.logPrefix}] ${name}: ${message}`);
       send({
         type: "extension_lifecycle",
         name: displayName,
-        source: "directory",
+        source: options.source,
         status: "failed",
         error: message,
         path: file,
       });
     }
   }
+}
+
+// Discover and load Aethon extensions from ~/.aethon/extensions/*.{ts,js}.
+// Each extension exports `register(api)` (named or as default.register).
+// Bun executes .ts directly so authors don't need a build step.
+async function loadAethonExtensions(
+  api: AethonExtensionApi,
+  registry: Map<string, ExtensionSource>,
+): Promise<void> {
+  await loadAethonExtensionDirectory(api, registry, {
+    dir: join(USER_DIR, "extensions"),
+    source: "directory",
+    logPrefix: "aethon-ext",
+  });
+}
+
+async function loadProjectAethonExtensions(
+  cwd: string,
+  api: AethonExtensionApi,
+  registry: Map<string, ExtensionSource>,
+  loadedFiles: Set<string>,
+): Promise<number> {
+  const dirs = await findProjectExtensionDirs(cwd);
+  const before = loadedFiles.size;
+  for (const { projectRoot, extensionDir } of dirs) {
+    await loadAethonExtensionDirectory(api, registry, {
+      dir: extensionDir,
+      source: "project-directory",
+      logPrefix: "aethon-project-ext",
+      loadedFiles,
+      displayName: (name) => projectExtensionDisplayName(projectRoot, extensionDir, name),
+    });
+  }
+  return loadedFiles.size - before;
 }
 
 async function main() {
@@ -941,6 +1004,10 @@ async function main() {
   // querying the state file) can see what's actually been loaded —
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
+  // Project-local extension discovery can run on startup, tab_open, and
+  // set_project. Track absolute files so switching back to the same project
+  // doesn't duplicate event handlers or repeated UI mutations.
+  const loadedProjectExtensionFiles = new Set<string>();
 
   // Event routes registered by extensions. Keyed by
   // `<componentId>:<eventType>` (where empty fields match everything).
@@ -2217,6 +2284,16 @@ async function main() {
   // first turn (the exact failure the user reported). Failures in one
   // extension don't block others.
   await loadAethonExtensions(aethonApi, loadedExtensions);
+  // Project-local Aethon extensions mirror pi's project-local extension
+  // pattern. At startup this covers the bridge cwd; later tab_open /
+  // set_project messages load extensions for user-selected project cwd values
+  // before new sessions are created.
+  await loadProjectAethonExtensions(
+    process.cwd(),
+    aethonApi,
+    loadedExtensions,
+    loadedProjectExtensionFiles,
+  );
   // Discover npm-distributed skill packages (manifest with `aethon` field
   // in package.json) under ~/.aethon/skills/node_modules/. This lets users
   // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
@@ -2444,6 +2521,19 @@ async function main() {
             typeof cwdField === "string" && cwdField.length > 0
               ? cwdField
               : undefined;
+          if (cwdOverride) {
+            const loaded = await loadProjectAethonExtensions(
+              cwdOverride,
+              aethonApi,
+              loadedExtensions,
+              loadedProjectExtensionFiles,
+            );
+            if (loaded > 0) {
+              await resourceLoader.reload();
+              scheduleStateFileWrite();
+              emitReady();
+            }
+          }
           await ensureTab(tabId, initialModel, cwdOverride);
           break;
         }
@@ -2465,6 +2555,17 @@ async function main() {
             tabProjectCwds.delete(tabId);
           } else if (typeof cwd === "string" && cwd.length > 0) {
             tabProjectCwds.set(tabId, cwd);
+            const loaded = await loadProjectAethonExtensions(
+              cwd,
+              aethonApi,
+              loadedExtensions,
+              loadedProjectExtensionFiles,
+            );
+            if (loaded > 0) {
+              await resourceLoader.reload();
+              scheduleStateFileWrite();
+              emitReady();
+            }
           } else {
             send({ type: "error", message: "set_project: cwd must be string|null" });
             break;

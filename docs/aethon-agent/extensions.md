@@ -1,10 +1,13 @@
 # Aethon Extensions
 
-Aethon supports two distribution channels for user-shipped UI code:
+Aethon supports three distribution channels for user-shipped UI code:
 
 1. **Loose files** in `~/.aethon/extensions/*.{ts,js,mjs}` — fast, single-
    file extensions. Bun executes `.ts` directly so no build step.
-2. **npm-distributed skill packages** in
+2. **Project-local loose files** in
+   `<project>/.aethon/extensions/*.{ts,js,mjs}` — repository-scoped UI
+   extensions discovered from the selected cwd up to the nearest git root.
+3. **npm-distributed skill packages** in
    `~/.aethon/skills/node_modules/<pkg>/` — for extensions with
    dependencies, multi-file source, or for sharing via npm.
 
@@ -44,7 +47,29 @@ export function register(api: AethonApi) { /* … */ }
 
 Drop the file in `~/.aethon/extensions/` and reload (`/reset` in chat,
 or just send a new message — the bridge picks up changes via the
-filesystem watcher in dev; restart the app in release).
+filesystem watcher).
+
+## Project-Local Extension
+
+Use project-local extensions when the UI belongs to a repository:
+
+```ts
+// <repo>/.aethon/extensions/repo-tools.ts
+export function register(api) {
+  api.registerSidebarSection({
+    id: "repo-tools",
+    title: "Repo tools",
+    items: [{ id: "explain-architecture", label: "Explain architecture" }],
+  });
+}
+```
+
+When a tab opens with a project cwd, Aethon walks from that cwd up to the
+nearest git root and loads each existing `.aethon/extensions` directory,
+root-first. Nested directories can intentionally override parent-level
+components, themes, layouts, or handlers. Project extensions are loaded once
+per bridge process and appear in `listExtensions()` with source
+`"project-directory"`.
 
 ## npm-Distributed Skill
 
@@ -71,7 +96,8 @@ Install with:
 npm install --prefix ~/.aethon/skills @vendor/aethon-pretty-themes
 ```
 
-Then restart the app. The bridge walks `~/.aethon/skills/node_modules/`
+Then restart the app or trigger an agent reload. The bridge walks
+`~/.aethon/skills/node_modules/`
 (including `@scope` namespaces), finds packages with an `aethon` field,
 imports `aethon.entry`, and calls `register(api)`.
 

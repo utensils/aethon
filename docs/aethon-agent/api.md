@@ -402,7 +402,13 @@ or before mutating something you didn't register yourself.
 ### `listExtensions()`
 
 ```ts
-[{ name: "model-picker", source: "directory" | "skill-package" }, …]
+[
+  {
+    name: "model-picker",
+    source: "directory" | "project-directory" | "skill-package" | "pi-extension",
+  },
+  …
+]
 ```
 
 ### `listComponents()`
