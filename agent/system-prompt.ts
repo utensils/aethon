@@ -28,7 +28,10 @@ export interface RuntimeSnapshot {
   projectRoot: string | undefined;
   userDir: string;
   stateFile: string;
-  extensions: { name: string; source: "directory" | "skill-package" }[];
+  extensions: {
+    name: string;
+    source: "directory" | "project-directory" | "skill-package" | "pi-extension";
+  }[];
   themes: { id: string; label: string }[];
   components: string[];
   layoutSummary: string;
@@ -212,16 +215,19 @@ clicks. The handler can run pi tools via \`ctx.pi.prompt(...)\`.
 
 ## Where to put new extensions
 
-Three places can register Aethon UI via \`globalThis.aethon\`:
+Four places can register Aethon UI via \`globalThis.aethon\`:
 
 1. **\`$AETHON_USER_DIR/extensions/<name>.ts\`** — single-file Aethon
-   extensions, hot reloaded by the bridge in dev. Bun runs \`.ts\`
+   extensions, hot reloaded by the bridge. Bun runs \`.ts\`
    directly (no build step). This is the **default** when the user
    asks for "an extension that …".
-2. **\`$AETHON_USER_DIR/skills/node_modules/<pkg>/\`** — npm-distributed
+2. **\`<project>/.aethon/extensions/<name>.ts\`** — project-local Aethon
+   extensions discovered from the selected cwd up to its nearest git root.
+   Use this when the UI should travel with a repository.
+3. **\`$AETHON_USER_DIR/skills/node_modules/<pkg>/\`** — npm-distributed
    Aethon skill packages with an \`aethon\` field in package.json.
    Install with \`npm install --prefix $AETHON_USER_DIR/skills <pkg>\`.
-3. **\`~/.pi/agent/extensions/<name>.ts\`** (or \`.pi/extensions/\`) —
+4. **\`~/.pi/agent/extensions/<name>.ts\`** (or \`.pi/extensions/\`) —
    pi extensions, loaded by pi itself. They get a pi \`ExtensionAPI\`
    argument but \`globalThis.aethon\` is also available, so a pi
    extension can register A2UI components/themes/sidebar sections too.

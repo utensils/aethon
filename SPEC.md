@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-28 (synced after the UI-scaling + workstation hotkey pass; no unchecked release items remain). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
+Last reviewed: 2026-04-28 (synced after the UI-scaling + workstation hotkey pass; no unchecked release items remain). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
 
 ---
 
@@ -165,6 +165,7 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 - [x] Pi extensions reach the Aethon UI surface via `globalThis.aethon` (set before `createAgentSession` so pi's loader sees it). Same `registerComponent` / `setState` / `onEvent` API as Aethon-side extensions, and the global is absent outside Aethon so pi-TUI extensions stay functional. Examples + types under `examples/pi-extensions/`.
 - [x] Extension-registered components are interactive — `aethon.onEvent({templateRootType, componentType, descendantId, eventType}, handler)` runs handlers when an A2UI control inside an extension template fires an event. Handlers can call `setState` / `registerComponent` to drive UI without an LLM round-trip. Renderer threads `templateRootType` through descendant dispatches and the bridge extracts `descendantId` from the host-prefixed componentId. Demo at `examples/pi-extensions/aethon-counter.ts`.
 - [x] Aethon-side extensions via `~/.aethon/extensions/*.{ts,js}` exporting `register(api)` (same API surface as pi-side). `loadAethonExtensions` in the bridge discovers + dynamic-imports them at boot; missing dir is the no-op default. Bridge retains state as a tree and replays on `ready`; frontend hydrates templates into the SkillRegistry and the renderer expands them inline with host-prefixed ids.
+- [x] Project-local Aethon extensions via `<project>/.aethon/extensions/*.{ts,js,mjs}` — when a tab opens or the active project cwd changes, the bridge walks from that cwd up to the nearest git root, loads each existing `.aethon/extensions` directory root-first, dedupes files for the bridge process, refreshes the resource loader, and marks entries as `project-directory` in `listExtensions()` / `RuntimeSnapshot.extensions`. This mirrors pi's project-local extension ergonomics while keeping Aethon's UI API surface identical.
 - [x] Extensions can mutate the entire UI: `aethon.setLayout(payload)` replaces the active layout wholesale, `aethon.patchLayout(path, value)` JSON-Pointer patches it (array-preserving), `aethon.registerSidebarSection({id,title,items})` is a convenience wrapper that appends into the sidebar's `extraSections`. Bridge retains both the layout and pending pre-setLayout patches for ready/report replay. Frontend treats layout state as boot defaults so live runtime fields (model, status, messages, draft) survive reload. Demo at `examples/pi-extensions/aethon-sidebar-panel.ts`.
 - [x] `ctx.pi` namespace for handlers — `aethon.onEvent` handlers receive a typed pi-coding-agent surface scoped for UI work: `ctx.pi.prompt(text)` fires an LLM turn from a click (frontend flips waiting/Stop via a `prompt_started` outbound message, just like a user-typed prompt), `ctx.pi.notify(message)` pushes a non-terminal system bubble, `ctx.pi.session` exposes current model + last 50 messages read-only, `ctx.pi.signal` is pi's active turn AbortSignal so handler-side fetch/spawn cancels with Stop. The dispatch loop is fire-and-forget so handler awaits never block bridge IPC; handler errors emit as `notice` so they can't clobber waiting state for an in-flight prompt. Demo at `examples/pi-extensions/aethon-actions.ts` (Quick Actions sidebar: Summarize commits, Explain README, Show current model).
 - [x] Extensions can register color themes: `aethon.registerTheme({id, label?, vars})` ships a CSS custom-property map (`--bg`, `--text`, `--accent`, …). Bridge sanitizes the id/keys, retains the theme map, emits `extension_themes` deltas, and includes the snapshot in `ready` for reload-replay. Frontend hydrates each theme into a `<style>` tag built via CSSOM `setProperty` so malformed values can't escape the declaration; stale tags are dropped when the list shrinks. Built-in ids `ember`, `paper`, `aether`, and legacy `signature` are reserved. Themes appear in the sidebar Themes section alongside the built-in palettes and persist to `~/.aethon/theme`. Demo at `examples/pi-extensions/aethon-theme.ts` (Solarized Dark + Synthwave).
@@ -361,15 +362,16 @@ receive the same surface as the first arg to their `register(api)`.
 ### Discovery
 
 Today: bridge loads `~/.aethon/extensions/*.{ts,js,mjs}` (Aethon-direct,
-loose files), `~/.aethon/skills/node_modules/*` (npm-distributed skill
-packages with an `aethon.entry` field in `package.json`), and discovers
-(without loading — pi does that) any `~/.pi/agent/extensions/*` that
-references `globalThis.aethon`, tagging them in the runtime snapshot.
+loose files), project-local `.aethon/extensions/*.{ts,js,mjs}` discovered
+from the selected cwd up to its nearest git root (root-first, loaded once
+per bridge process), `~/.aethon/skills/node_modules/*` (npm-distributed
+skill packages with an `aethon.entry` field in `package.json`), and
+discovers (without loading — pi does that) any
+`~/.pi/agent/extensions/*` that references `globalThis.aethon`, tagging
+them in the runtime snapshot.
 
-Backlog: `.aethon/extensions/` project-local discovery (walking up from
-cwd to git root, mirroring pi's `.pi/extensions/` pattern); in-app git
-install (currently users pass git URLs to `npm install --prefix
-~/.aethon/skills`).
+Backlog: in-app git install (currently users pass git URLs to
+`npm install --prefix ~/.aethon/skills`).
 
 ---
 
