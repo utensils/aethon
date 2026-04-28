@@ -835,6 +835,117 @@ fn updater_available() -> bool {
     cfg!(not(any(target_os = "android", target_os = "ios"))) && updater_pubkey_configured()
 }
 
+fn validate_skill_install_spec(spec: &str) -> Result<String, String> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return Err("skill install spec is required".to_string());
+    }
+    if trimmed.len() > 512 {
+        return Err("skill install spec is too long".to_string());
+    }
+    if trimmed.starts_with('-') {
+        return Err("skill install spec cannot start with '-'".to_string());
+    }
+    if trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("skill install spec must be a single package or git URL".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn output_tail(stdout: &[u8], stderr: &[u8]) -> String {
+    let mut text = String::new();
+    let out = String::from_utf8_lossy(stdout);
+    let err = String::from_utf8_lossy(stderr);
+    if !out.trim().is_empty() {
+        text.push_str(out.trim());
+    }
+    if !err.trim().is_empty() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(err.trim());
+    }
+    const MAX: usize = 4000;
+    if text.len() <= MAX {
+        text
+    } else {
+        let mut tail = text.chars().rev().take(MAX).collect::<Vec<_>>();
+        tail.reverse();
+        tail.into_iter().collect()
+    }
+}
+
+/// Install an Aethon npm skill package from inside the app. The spec can be
+/// a normal npm package name, tarball URL, GitHub shorthand, or git URL —
+/// exactly what `npm install <spec>` accepts. Running this in the Tauri shell
+/// avoids the agent sidecar being killed mid-install by the existing
+/// node_modules watcher. On success we still terminate the current agent so
+/// the next request respawns with the freshly installed package loaded.
+#[tauri::command]
+async fn install_aethon_skill(
+    spec: String,
+    app: AppHandle,
+    state: State<'_, AgentProcess>,
+) -> Result<String, String> {
+    let spec = validate_skill_install_spec(&spec)?;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let skills_dir = home.join(".aethon").join("skills");
+    let install_dir = skills_dir.clone();
+    let install_spec = spec.clone();
+    let path_override = resolved_login_path();
+
+    let install_result = tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&install_dir)
+            .map_err(|e| format!("create {}: {e}", install_dir.display()))?;
+        let mut command = Command::new("npm");
+        command
+            .arg("install")
+            .arg("--prefix")
+            .arg(&install_dir)
+            .arg(&install_spec)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(path) = path_override {
+            command.env("PATH", path);
+        }
+        let output = command
+            .output()
+            .map_err(|e| format!("npm install failed to start: {e}"))?;
+        let tail = output_tail(&output.stdout, &output.stderr);
+        if !output.status.success() {
+            let status = output
+                .status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string());
+            return Err(format!("npm install exited {status}: {tail}"));
+        }
+        Ok(tail)
+    })
+    .await
+    .map_err(|e| format!("install task failed: {e}"))?;
+
+    let install_output = install_result?;
+    if let Ok(mut guard) = state.0.lock()
+        && let Some(mut child) = guard.take()
+    {
+        let pid = child.id();
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = app.emit("agent-reloaded", "");
+        eprintln!("[skill-install] killed pid={pid}; will respawn with {spec}");
+    }
+
+    Ok(if install_output.trim().is_empty() {
+        format!("Installed {spec}")
+    } else {
+        install_output
+    })
+}
+
 /// Replace the persisted set of extension-registered menu items and
 /// rebuild both the App menu and the tray menu so the new entries
 /// appear. Idempotent — the frontend re-invokes this on every
@@ -1166,6 +1277,7 @@ pub fn run() {
             write_state,
             read_config,
             updater_available,
+            install_aethon_skill,
             set_extension_menu_items,
             pick_project_directory,
             git_status,

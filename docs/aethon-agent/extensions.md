@@ -93,11 +93,15 @@ per bridge process and appear in `listExtensions()` with source
 Install with:
 
 ```bash
+/skills install @vendor/aethon-pretty-themes
+# or, from a shell:
 npm install --prefix ~/.aethon/skills @vendor/aethon-pretty-themes
 ```
 
-Then restart the app or trigger an agent reload. The bridge walks
-`~/.aethon/skills/node_modules/`
+The in-app installer also accepts GitHub shorthands and git URLs, for
+example `/skills install github:vendor/aethon-pretty-themes`. After install,
+the current agent sidecar is restarted so the next request loads the new
+package. The bridge walks `~/.aethon/skills/node_modules/`
 (including `@scope` namespaces), finds packages with an `aethon` field,
 imports `aethon.entry`, and calls `register(api)`.
 
