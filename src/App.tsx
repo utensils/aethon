@@ -5,7 +5,8 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer from "./components/A2UIRenderer";
-import { SkillRegistry, SkillRegistryProvider } from "./skills/registry";
+import { SkillRegistry } from "./skills/SkillRegistry";
+import { SkillRegistryProvider } from "./skills/registry";
 import {
   builtinLayouts,
   defaultLayoutSkill,
@@ -175,6 +176,46 @@ function normalizeRegisteredCombo(combo: string): string {
   // Stable ordering matches canonicalCombo above (meta/ctrl/alt/shift).
   const ordered = ["meta", "ctrl", "alt", "shift"].filter((m) => mods.has(m));
   return [...ordered, key].filter(Boolean).join("+");
+}
+
+// Replace `image` component data URLs with a placeholder so persisted history
+// doesn't blow past the localStorage quota. The in-memory message keeps the
+// full data URL — only the persisted copy is slimmed.
+function stripImageDataUrls(component: unknown): unknown {
+  if (!component || typeof component !== "object") return component;
+  const c = component as {
+    type?: string;
+    props?: Record<string, unknown>;
+    children?: unknown[];
+  };
+  let next = c;
+  if (
+    c.type === "image" &&
+    typeof c.props?.src === "string" &&
+    c.props.src.startsWith("data:")
+  ) {
+    next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
+  }
+  if (Array.isArray(c.children) && c.children.length > 0) {
+    next = { ...next, children: c.children.map(stripImageDataUrls) };
+  }
+  return next;
+}
+
+const MAX_TEXT_BYTES = 8 * 1024;
+
+function trimMessage(m: ChatMessage): ChatMessage {
+  let out = m;
+  if (m.text && m.text.length > MAX_TEXT_BYTES) {
+    out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
+  }
+  if (m.a2ui && Array.isArray(m.a2ui.components)) {
+    out = {
+      ...out,
+      a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
+    };
+  }
+  return out;
 }
 
 export default function App() {
@@ -424,45 +465,6 @@ export default function App() {
   const PERSIST_FILE = "messages.json";
   const LEGACY_LS_KEY = "aethon-messages";
   const MAX_MESSAGES = 200;
-  const MAX_TEXT_BYTES = 8 * 1024;
-
-  // Replace `image` component data URLs with a placeholder so persisted history
-  // doesn't blow past the localStorage quota. The in-memory message keeps the
-  // full data URL — only the persisted copy is slimmed.
-  function stripImageDataUrls(component: unknown): unknown {
-    if (!component || typeof component !== "object") return component;
-    const c = component as {
-      type?: string;
-      props?: Record<string, unknown>;
-      children?: unknown[];
-    };
-    let next = c;
-    if (
-      c.type === "image" &&
-      typeof c.props?.src === "string" &&
-      (c.props.src).startsWith("data:")
-    ) {
-      next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
-    }
-    if (Array.isArray(c.children) && c.children.length > 0) {
-      next = { ...next, children: c.children.map(stripImageDataUrls) };
-    }
-    return next;
-  }
-
-  function trimMessage(m: ChatMessage): ChatMessage {
-    let out = m;
-    if (m.text && m.text.length > MAX_TEXT_BYTES) {
-      out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
-    }
-    if (m.a2ui && Array.isArray(m.a2ui.components)) {
-      out = {
-        ...out,
-        a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
-      };
-    }
-    return out;
-  }
 
   // Restore on mount. First read disk; if empty, migrate any legacy
   // localStorage value the first build wrote. Tracked as state (not a ref)
@@ -938,6 +940,31 @@ export default function App() {
         const entry = layoutCatalogueRef.current.find((l) => l.id === id);
         if (!entry) return false;
         setLayout(entry.payload);
+        // Seed any state keys the new layout declares that are absent from
+        // current app state. Layout switching is non-destructive — live
+        // user state (messages, canvas, draft, models) wins over the new
+        // layout's seeds, but novel keys (e.g. live-layout's
+        // /sidebar/layouts list, /inspector/* slots) get backfilled so
+        // $ref bindings in the new payload resolve immediately.
+        const seeds = entry.payload.state ?? {};
+        // Always rebuild sidebar.layouts from the catalogue with the
+        // *current* active id, regardless of what each layout JSON
+        // declared. The catalogue is the single source of truth; layout
+        // JSONs that ship a hardcoded `active` flag would otherwise lie.
+        const catalogueItems = layoutCatalogueRef.current.map((l) => ({
+          id: l.id,
+          label: l.id,
+          active: l.id === id,
+        }));
+        setState((prev) => {
+          const seeded =
+            seeds && Object.keys(seeds).length > 0
+              ? deepMergeState(seeds, prev)
+              : { ...prev };
+          const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
+          seeded.sidebar = { ...sidebar, layouts: catalogueItems };
+          return seeded;
+        });
         return true;
       },
       registerLayout: (entry: LayoutCatalogueEntry): boolean => {
@@ -948,6 +975,15 @@ export default function App() {
         } else {
           layoutCatalogueRef.current.push(entry);
         }
+        // Mirror into state so /layout's argSource picker re-resolves.
+        setState((prev) => ({
+          ...prev,
+          layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+            id: l.id,
+            label: l.name,
+            description: l.description,
+          })),
+        }));
         return true;
       },
       // Layout-slot catalogue. The contract (canonical slot names + which
@@ -972,6 +1008,12 @@ export default function App() {
       win.__AETHON_REGISTRY__ = registry;
       win.__AETHON_SET_STATE__ = setState;
     }
+    // The api closures intentionally read live state via stateRef /
+    // setState callbacks, so a stale reference inside `api` doesn't
+    // produce stale data. Adding the function deps would re-build this
+    // effect every render and churn `window.aethon` for no behavioral
+    // gain.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, registry]);
 
   // Mirror an allowlisted set of frontend state slices back to the bridge
@@ -2040,6 +2082,15 @@ export default function App() {
         name: c.name,
         description: c.description,
         usage: c.usage,
+        argSource: c.argSource,
+      })),
+      // Surface the layout catalogue so the slash-arg picker can resolve
+      // /layoutCatalogue when the user types `/layout `. Kept in sync
+      // with layoutCatalogueRef in registerLayout / activateLayout.
+      layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+        id: l.id,
+        label: l.name,
+        description: l.description,
       })),
     }));
   }, []);
@@ -2110,6 +2161,7 @@ export default function App() {
         name: c.name,
         description: c.description,
         usage: c.usage,
+        argSource: c.argSource,
       })),
     }));
   }
@@ -2459,6 +2511,12 @@ export default function App() {
       }
       return false;
     },
+    // The closures inside this onEvent dispatch (newTab, closeTab,
+    // sendChat, etc.) read live state via stateRef / setState callbacks.
+    // Adding them as deps would force the memo to re-build every render
+    // — losing any consumer-side memoization keyed on its identity —
+    // without changing observed behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 

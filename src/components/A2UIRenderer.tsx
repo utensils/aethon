@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, resolvePointer, setPointer } from "../utils/jsonPointer";
-import { useSkillRegistry } from "../skills/registry";
+import { useSkillRegistry } from "../skills/SkillRegistry";
 import {
   Button,
   Card,
@@ -239,6 +239,7 @@ export default function A2UIRenderer({
   // state to reset.
   useEffect(() => {
     if (mode === "controlled") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInternalState(payload.state || {});
   }, [payload, mode]);
 

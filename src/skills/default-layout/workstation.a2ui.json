@@ -70,6 +70,9 @@
                 "id": "models",
                 "title": "models",
                 "monoItems": true,
+                "searchable": true,
+                "groupByPrefix": true,
+                "searchPlaceholder": "filter models — sonnet, gpt, qwen…",
                 "items": { "$ref": "/sidebar/models" }
               },
               {

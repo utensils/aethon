@@ -41,6 +41,20 @@
   --success: #19c332;
   --warn: #febc2e;
   --error: #ff5d5d;
+  /* Syntax-highlighting palette — Ember (warm dark). Token names match
+     the Prism theme in src/components/HighlightedCode.tsx; extensions
+     can re-skin highlighting purely by setting these vars on
+     :root[data-theme="<their-id>"]. */
+  --syntax-text: #e7e1d2;
+  --syntax-comment: #6f6a5d;
+  --syntax-punctuation: #b8b1a1;
+  --syntax-keyword: #ff6a18;
+  --syntax-string: #c8d96a;
+  --syntax-number: #ffb968;
+  --syntax-symbol: #ffd28a;
+  --syntax-operator: #c8c1ad;
+  --syntax-function: #f5cf7d;
+  --syntax-variable: #ff9b6a;
 }
 
 /* Paper — cream paper, ink type, brass accent darkened from #ff6a18
@@ -65,6 +79,18 @@
   --success: #1a8a2a;
   --warn: #c98a00;
   --error: #c4322a;
+  /* Syntax-highlighting palette — Paper (cream light). Stronger contrast
+     and inked tones so highlighted code reads on cream. */
+  --syntax-text: #2b261f;
+  --syntax-comment: #8a8170;
+  --syntax-punctuation: #5b5446;
+  --syntax-keyword: #b94000;
+  --syntax-string: #2f6b1f;
+  --syntax-number: #875000;
+  --syntax-symbol: #5a3b00;
+  --syntax-operator: #6c6353;
+  --syntax-function: #7c4a00;
+  --syntax-variable: #9a3b1f;
 }
 
 /* Æther — deep ink-blue base, brighter brass accent, the signature
@@ -92,6 +118,18 @@
   --success: #3ad36f;
   --warn: #ffc94e;
   --error: #ff7777;
+  /* Syntax-highlighting palette — Æther (ink-blue). Cooler hues with the
+     Æther brass accent for keywords. */
+  --syntax-text: #d8dde9;
+  --syntax-comment: #5b6275;
+  --syntax-punctuation: #97a0b4;
+  --syntax-keyword: #ff8a3d;
+  --syntax-string: #7ad6a3;
+  --syntax-number: #ffc079;
+  --syntax-symbol: #ffd9a8;
+  --syntax-operator: #aab2c4;
+  --syntax-function: #f0c87b;
+  --syntax-variable: #ff9d6a;
 }
 
 /* Motion timing tokens + reduced-motion + focus-ring tokens — applied
@@ -264,6 +302,71 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* Searchable section affordances — filter input + provider groups.
+   The input is intentionally borderless to read as a continuation of
+   the sidebar, with a focus ring driven by the accent token. */
+.a2ui-sidebar-search {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 4px 10px 6px;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+.a2ui-sidebar-search::placeholder {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.a2ui-sidebar-search:focus {
+  border-color: var(--accent-soft);
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-sidebar-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.a2ui-sidebar-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 14px;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: left;
+}
+.a2ui-sidebar-group-title:hover {
+  color: var(--text);
+}
+.a2ui-sidebar-group-caret {
+  display: inline-block;
+  width: 10px;
+  font-size: 0.62rem;
+  opacity: 0.7;
+}
+.a2ui-sidebar-group-name {
+  flex: 0 0 auto;
+}
+.a2ui-sidebar-group-count {
+  margin-left: auto;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  opacity: 0.65;
 }
 
 .a2ui-sidebar-item {
@@ -622,6 +725,69 @@ body {
   font-size: 0.85rem;
 }
 
+/* ---- Syntax-highlighted code blocks (Prism via HighlightedCode) -------- */
+
+/* The primitive block — used by both `code` payloads and react-markdown
+   fenced blocks. Spacing matches the .a2ui-markdown pre so the two
+   visually agree when mixed in the same message. */
+.a2ui-code {
+  position: relative;
+  margin: 0.5em 0;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--syntax-text, var(--text));
+  white-space: pre;
+}
+.a2ui-code code {
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+.a2ui-code-line {
+  display: block;
+}
+.a2ui-code-lineno {
+  display: inline-block;
+  width: 2.25em;
+  margin-right: 0.75em;
+  color: var(--syntax-comment, var(--text-dim));
+  text-align: right;
+  user-select: none;
+  opacity: 0.6;
+}
+.a2ui-code-lang {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  pointer-events: none;
+}
+.a2ui-code-inline {
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.88em;
+  font-family: var(--font-mono);
+}
+
 .a2ui-markdown blockquote {
   margin: 0.5em 0;
   padding-left: 12px;
@@ -761,6 +927,26 @@ body {
 }
 
 .a2ui-slash-item-desc {
+  color: var(--text-dim);
+}
+
+/* Header for arg-mode picker: "/<cmd> — pick a value" */
+.a2ui-slash-arg-header {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.a2ui-slash-arg-cmd {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+.a2ui-slash-arg-hint {
+  font-size: 0.72rem;
   color: var(--text-dim);
 }
 

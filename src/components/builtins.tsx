@@ -15,6 +15,7 @@ import {
   resolveBoolean,
 } from "../utils/dataBinding";
 import { resolvePointer } from "../utils/jsonPointer";
+import { HighlightedCode } from "./HighlightedCode";
 
 interface ComponentProps {
   component: A2UIComponent;
@@ -168,7 +169,12 @@ export function Container({ component, state, renderChildren }: ComponentProps) 
   );
 }
 
-// Code component
+// Code component — Prism-tokenized highlighter that drives every token
+// color from CSS custom properties (--syntax-keyword, --syntax-string, …).
+// Each palette wires its own values, so re-skinning highlighting is just a
+// matter of registering a new theme. Extensions that want a different
+// engine entirely (shiki, highlight.js, …) can register a higher-level
+// component and route their layouts at it instead of the primitive.
 export function Code({ component, state }: ComponentProps) {
   const props = component.props as {
     content: StringValue;
@@ -178,26 +184,16 @@ export function Code({ component, state }: ComponentProps) {
 
   const content = resolveString(props.content, state);
   const language = props.language;
-  // Note: showLineNumbers could be used for future enhancement
-  // const showLineNumbers = props.showLineNumbers
-  //   ? resolveBoolean(props.showLineNumbers, state)
-  //   : false;
-
-  const style: CSSProperties = {
-    background: "var(--bg-input)",
-    border: "1px solid var(--border)",
-    borderRadius: "6px",
-    padding: "12px",
-    fontFamily: "ui-monospace, monospace",
-    fontSize: "0.875rem",
-    overflow: "auto",
-    whiteSpace: "pre",
-  };
+  const showLineNumbers = props.showLineNumbers
+    ? resolveBoolean(props.showLineNumbers, state)
+    : false;
 
   return (
-    <pre className="a2ui-code" style={style} data-language={language}>
-      <code>{content}</code>
-    </pre>
+    <HighlightedCode
+      code={content}
+      language={language}
+      showLineNumbers={showLineNumbers}
+    />
   );
 }
 
