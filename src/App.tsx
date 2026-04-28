@@ -491,6 +491,24 @@ export default function App() {
           model: (prev.model) || config.agent.model!,
         }));
       }
+      // Restore saved sidebar width: patch the leading column token in
+      // /layout/columns so the boot layout opens at the user's last
+      // chosen width. Bail on missing/invalid values — the layout's
+      // own seed wins by default.
+      const savedWidth = (
+        await readStateWithLocalStorageFallback("sidebar_width", "")
+      ).trim();
+      const px = parseInt(savedWidth, 10);
+      if (Number.isFinite(px) && px >= 180 && px <= 540) {
+        setState((prev) => {
+          const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+          const current = (layout.columns as string | undefined) ?? "";
+          if (!current) return prev;
+          const tokens = current.trim().split(/\s+/);
+          tokens[0] = `${px}px`;
+          return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
+        });
+      }
     })();
   }, []);
 
@@ -2366,6 +2384,32 @@ export default function App() {
         seeds && Object.keys(seeds).length > 0
           ? deepMergeState(seeds, prev)
           : { ...prev };
+      // The new layout's `columns` seed is authoritative — different
+      // layouts have different grid SHAPES (workstation: 2 cols,
+      // live-layout: 3 cols). deepMergeState keeps prev's columns,
+      // which would mean a 2-col grid carrying the inspector pane has
+      // nowhere to render. So force-take the seed's columns, then
+      // patch the leading sidebar token with the user's persisted
+      // width so cross-layout resizing feels continuous.
+      const seedLayout =
+        (seeds.layout as Record<string, unknown> | undefined) ?? {};
+      const prevLayout =
+        (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const seedCols = (seedLayout.columns as string | undefined) ?? "";
+      const prevCols = (prevLayout.columns as string | undefined) ?? "";
+      let nextCols = seedCols;
+      if (seedCols && prevCols) {
+        const seedTokens = seedCols.trim().split(/\s+/);
+        const prevTokens = prevCols.trim().split(/\s+/);
+        if (seedTokens.length > 0 && prevTokens[0]?.endsWith("px")) {
+          seedTokens[0] = prevTokens[0];
+          nextCols = seedTokens.join(" ");
+        }
+      }
+      const seededLayout = (seeded.layout as Record<string, unknown> | undefined) ?? {};
+      seeded.layout = nextCols
+        ? { ...seededLayout, columns: nextCols }
+        : seededLayout;
       const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
       seeded.sidebar = { ...sidebar, layouts: catalogueItems };
       return seeded;
@@ -2894,6 +2938,38 @@ export default function App() {
           }
           return true;
         }
+      }
+      if (component.id === "sidebar" && eventType === "resize") {
+        const next = (data as { width?: number } | undefined)?.width;
+        if (typeof next === "number") {
+          // Patch the leading width token in /layout/columns. Layouts
+          // shape their grid columns as either "${SIDEBAR}px 1fr" or
+          // "${SIDEBAR}px 1fr ${INSPECTOR}px" — replace just the first
+          // token so non-sidebar columns survive the rewrite.
+          setState((prev) => {
+            const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+            const current = (layout.columns as string | undefined) ?? "220px 1fr";
+            const tokens = current.trim().split(/\s+/);
+            tokens[0] = `${next}px`;
+            return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
+          });
+        }
+        return true;
+      }
+      if (component.id === "sidebar" && eventType === "resize-end") {
+        // Persist the final width so the next boot opens at the same
+        // size. Read from state.layout.columns (the in-flight value the
+        // resize listener just wrote) so a single source of truth wins.
+        const layout = (stateRef.current.layout as Record<string, unknown> | undefined) ?? {};
+        const cols = (layout.columns as string | undefined) ?? "";
+        const lead = cols.trim().split(/\s+/)[0] ?? "";
+        const px = parseInt(lead, 10);
+        if (Number.isFinite(px) && px > 0) {
+          writeState("sidebar_width", String(px)).catch(() => {
+            /* ignore — best-effort */
+          });
+        }
+        return true;
       }
       // Sidebar select + dropdown chrome pickers (model-picker /
       // appearance-menu) all use the same `{sectionId, itemId}` event

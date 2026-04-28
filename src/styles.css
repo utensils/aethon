@@ -245,6 +245,42 @@ body {
   height: 100%;
   width: 100%;
   overflow-y: auto;
+  position: relative;
+}
+
+/* Resize handle — 6px-wide hit target hugging the sidebar's right edge.
+   Visible accent line shows on hover/active so it's discoverable
+   without crowding the chrome when idle. */
+.a2ui-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 10;
+  user-select: none;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.a2ui-sidebar-resize-handle:hover,
+body.ae-resizing-sidebar .a2ui-sidebar-resize-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
+}
+body.ae-resizing-sidebar {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+body.ae-resizing-sidebar * {
+  cursor: ew-resize !important;
+  user-select: none !important;
 }
 
 .a2ui-sidebar-title {

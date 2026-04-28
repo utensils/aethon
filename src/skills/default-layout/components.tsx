@@ -481,6 +481,38 @@ export function Sidebar({
     // Bound via $ref so extensions can push into a state path and have
     // their sections appear without modifying the layout payload.
     extraSections?: SidebarSection[] | { $ref: string };
+    /** When false, hide the right-edge drag handle. Default true. */
+    resizable?: BooleanValue;
+  };
+  const resizable =
+    props.resizable === undefined ? true : resolveBoolean(props.resizable, state);
+
+  const asideRef = useRef<HTMLElement | null>(null);
+  // Drag handle. On mousedown we capture the pointer and start emitting
+  // `resize` events with the new pixel width. App listens for those and
+  // patches the active layout's grid columns. Cleanup on mouseup.
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const aside = asideRef.current;
+    if (!aside) return;
+    const startX = e.clientX;
+    const startWidth = aside.getBoundingClientRect().width;
+    const MIN = 180;
+    const MAX = 540;
+    document.body.classList.add("ae-resizing-sidebar");
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const next = Math.max(MIN, Math.min(MAX, Math.round(startWidth + dx)));
+      onEvent("resize", { width: next });
+    };
+    const onUp = () => {
+      document.body.classList.remove("ae-resizing-sidebar");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      onEvent("resize-end");
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   };
 
   const title = props.title ? resolveString(props.title, state) : "";
@@ -515,7 +547,7 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="a2ui-sidebar">
+    <aside ref={asideRef} className="a2ui-sidebar">
       {(title || version) && (
         <div className="a2ui-sidebar-title">
           {showBrand && <AeMarkInline size={20} radius={4} />}
@@ -584,6 +616,15 @@ export function Sidebar({
           );
         })}
       </div>
+      {resizable && (
+        <div
+          className="a2ui-sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={onResizeStart}
+        />
+      )}
     </aside>
   );
 }

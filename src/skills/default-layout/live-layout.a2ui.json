@@ -4,7 +4,7 @@
       "id": "root-layout",
       "type": "layout",
       "props": {
-        "columns": "244px 1fr 280px",
+        "columns": { "$ref": "/layout/columns" },
         "rows": "44px 1fr auto auto auto",
         "areas": [
           "sidebar header inspector",
@@ -221,7 +221,8 @@
     "activeProjectId": null,
     "project": null,
     "layout": {
-      "sidebarVisible": true
+      "sidebarVisible": true,
+      "columns": "244px 1fr 280px"
     },
     "sidebar": {
       "history": [],

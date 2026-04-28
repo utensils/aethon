@@ -42,7 +42,11 @@ interface A2UIRendererProps {
   // store (chat input, draft, etc.) instead of its internal copy. This is what
   // lets the App treat the layout's state as the single source of truth.
   state?: Record<string, unknown>;
-  onStateChange?: (next: Record<string, unknown>) => void;
+  onStateChange?: (
+    next:
+      | Record<string, unknown>
+      | ((prev: Record<string, unknown>) => Record<string, unknown>),
+  ) => void;
   // Intercept events before (or instead of) the default Tauri dispatch.
   // Return true to indicate the event was handled — prevents agent forwarding.
   onEvent?: A2UIEventHandler;
@@ -199,7 +203,14 @@ export default function A2UIRenderer({
     updater: (prev: Record<string, unknown>) => Record<string, unknown>,
   ) => {
     if (mode === "controlled") {
-      onStateChange!(updater(externalState as Record<string, unknown>));
+      // Pass the updater to React's setState so it composes against the
+      // LATEST committed state, not `externalState` from the render
+      // closure. Without this, two events firing back-to-back from
+      // outside React (e.g. document-level mousemove then mouseup
+      // during a sidebar resize) both run with the same stale snapshot
+      // — the second event's no-op optimistic update silently reverts
+      // the first event's real mutation.
+      onStateChange!((prev) => updater(prev));
     } else if (mode === "observer") {
       // Compute the post-update merged state, then DIFF against the parent
       // external state so internalState only retains keys that diverge.
