@@ -282,6 +282,11 @@ interface ItemRowProps {
   sectionId: string;
   componentId: string;
   onEvent: BuiltinComponentProps["onEvent"];
+  onItemContextMenu?: (
+    e: React.MouseEvent<HTMLElement>,
+    item: SidebarItem,
+    sectionId: string,
+  ) => void;
   renderChildWithState: BuiltinComponentProps["renderChildWithState"];
   state: BuiltinComponentProps["state"];
   index: number;
@@ -292,6 +297,7 @@ function ItemRow({
   sectionId,
   componentId,
   onEvent,
+  onItemContextMenu,
   renderChildWithState,
   state,
   index,
@@ -307,6 +313,7 @@ function ItemRow({
         onClick={() =>
           onEvent("select", { sectionId, itemId: item.id }, item.id)
         }
+        onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
       >
         {renderChildWithState(synthetic, {
           $item: item,
@@ -331,6 +338,9 @@ function ItemRow({
       behind?: number;
     };
   }).git;
+  const branchTitle = git?.branch
+    ? `Branch: ${git.branch}${git.dirty ? " (uncommitted changes)" : ""}`
+    : undefined;
   return (
     <li
       className={[
@@ -342,6 +352,7 @@ function ItemRow({
         .join(" ")}
       title={tooltip}
       onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
+      onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
       {git?.dirty ? (
         <span
@@ -352,7 +363,7 @@ function ItemRow({
       ) : null}
       <span className="a2ui-sidebar-item-label">{item.label}</span>
       {git?.branch ? (
-        <span className="a2ui-sidebar-item-git-branch" title={`branch: ${git.branch}`}>
+        <span className="a2ui-sidebar-item-git-branch" title={branchTitle}>
           {git.branch}
         </span>
       ) : null}
@@ -386,14 +397,25 @@ interface SearchableSidebarSectionProps {
   componentId: string;
   state: BuiltinComponentProps["state"];
   onEvent: BuiltinComponentProps["onEvent"];
+  onItemContextMenu?: ItemRowProps["onItemContextMenu"];
   renderChildWithState: BuiltinComponentProps["renderChildWithState"];
 }
+
+interface SidebarContextMenuState {
+  x: number;
+  y: number;
+  sectionId: string;
+  itemId: string;
+  label: string;
+}
+
 function SearchableSidebarSection({
   section,
   items,
   componentId,
   state,
   onEvent,
+  onItemContextMenu,
   renderChildWithState,
 }: SearchableSidebarSectionProps) {
   const monoItems = section.monoItems === true;
@@ -469,6 +491,7 @@ function SearchableSidebarSection({
                         sectionId={section.id}
                         componentId={componentId}
                         onEvent={onEvent}
+                        onItemContextMenu={onItemContextMenu}
                         renderChildWithState={renderChildWithState}
                         state={state}
                       />
@@ -490,6 +513,7 @@ function SearchableSidebarSection({
               sectionId={section.id}
               componentId={componentId}
               onEvent={onEvent}
+              onItemContextMenu={onItemContextMenu}
               renderChildWithState={renderChildWithState}
               state={state}
             />
@@ -525,6 +549,55 @@ export function Sidebar({
     props.resizable === undefined ? true : resolveBoolean(props.resizable, state);
 
   const asideRef = useRef<HTMLElement | null>(null);
+  const [contextMenu, setContextMenu] =
+    useState<SidebarContextMenuState | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+    };
+  }, [contextMenu]);
+
+  const openItemContextMenu: ItemRowProps["onItemContextMenu"] = (
+    e,
+    item,
+    sectionId,
+  ) => {
+    if (sectionId !== "projects") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    setContextMenu({
+      x: Math.min(e.clientX, Math.max(8, viewportWidth - 220)),
+      y: Math.min(e.clientY, Math.max(8, viewportHeight - 96)),
+      sectionId,
+      itemId: item.id,
+      label: item.label,
+    });
+  };
+
+  const removeContextProject = () => {
+    if (!contextMenu) return;
+    onEvent("remove-project", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+      label: contextMenu.label,
+    });
+    setContextMenu(null);
+  };
+
   // Drag handle. On mousedown we capture the pointer and start emitting
   // `resize` events with the new pixel width. App listens for those and
   // patches the active layout's grid columns. Cleanup on mouseup.
@@ -607,6 +680,7 @@ export function Sidebar({
                 componentId={component.id}
                 state={state}
                 onEvent={onEvent}
+                onItemContextMenu={openItemContextMenu}
                 renderChildWithState={renderChildWithState}
               />
             );
@@ -628,6 +702,7 @@ export function Sidebar({
                       sectionId={section.id}
                       componentId={component.id}
                       onEvent={onEvent}
+                      onItemContextMenu={openItemContextMenu}
                       renderChildWithState={renderChildWithState}
                       state={state}
                     />
@@ -662,6 +737,29 @@ export function Sidebar({
           onMouseDown={onResizeStart}
         />
       )}
+      {contextMenu &&
+        createPortal(
+          <div
+            className="a2ui-sidebar-context-menu"
+            role="menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={removeContextProject}
+            >
+              Remove from Projects
+            </button>
+            <div className="a2ui-sidebar-context-menu-note">
+              Keeps files on disk
+            </div>
+          </div>,
+          document.body,
+        )}
     </aside>
   );
 }

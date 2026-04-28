@@ -786,12 +786,10 @@ function DropdownPickerCore({
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onResize, true);
     return () => {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onResize, true);
     };
   }, [open]);
 

@@ -48,6 +48,7 @@ export interface SlashCommandContext {
   openProject: (path: string, label?: string) => string;
   setActiveProject: (id: string) => boolean;
   clearProject: () => void;
+  removeProject: (id: string) => boolean;
   listProjects: () => { id: string; label: string; path: string }[];
   activeProject: () => { id: string; label: string; path: string } | null;
 }
