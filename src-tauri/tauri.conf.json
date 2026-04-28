@@ -65,7 +65,7 @@
       "endpoints": [
         "https://github.com/utensils/aethon/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFDRTNGQjM3RTg2ODU1MTgKUldRWVZXam9OL3ZqSEUwbWx0YjhyQ2NqN3VsRUd5Q1dPMzhkdFBiTUNnL1RNYUZVVzgrWmJqMm4K"
     }
   }
 }
