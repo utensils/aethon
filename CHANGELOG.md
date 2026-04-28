@@ -6,6 +6,8 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-28
+
 ### Added
 
 - **Test coverage scaffolding.** Cargo unit tests under
@@ -457,3 +459,4 @@ All notable changes to Aethon. Format loosely follows
 - **`SPEC.md` checklist** reconciled with what's actually shipped.
 
 [Unreleased]: https://github.com/utensils/aethon/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/utensils/aethon/releases/tag/v0.1.0

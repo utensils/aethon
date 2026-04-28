@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-28 (synced after the UI-scaling + workstation hotkey pass; only first public release remains). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, and a Nix distribution package + overlay.
+Last reviewed: 2026-04-28 (synced after the UI-scaling + workstation hotkey pass; no unchecked release items remain). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, and tag-driven GitHub release publishing for v0.1.0.
 
 ---
 
@@ -237,7 +237,7 @@ by an extension without touching React source.
 - [x] Brand mark — `assets/brand/aethon-logo.svg` (cream Bodoni Æ + orange π badge on dark tile) and `aethon-brand-marks.svg` (6-format reference sheet). Rasterized into every Tauri target via `bun tauri icon`. In-app header shows the logo alongside "Aethon" via Vite `?url` import + `$ref`-bound state.
 - [x] macOS About dialog metadata — `bundle.{publisher,homepage,copyright,category,shortDescription,longDescription}` + `bundle.macOS.minimumSystemVersion` populate `Info.plist` (`NSHumanReadableCopyright`, `LSApplicationCategoryType`, etc.). Shows the proper icon + version + "Copyright © 2026 James Brink. MIT License." attribution. Dev binary still shows the generic icon (it's a raw Mach-O without a `.app` wrapper).
 - [x] Nix flake overlay for distribution — `flake.nix` now exports `packages.aethon`, `packages.default`, and `overlays.default` (`pkgs.aethon`). The package follows nixpkgs' Tauri packaging path with `cargo-tauri.hook`, the pinned Rust 1.92 toolchain, `fetchNpmDeps` backed by `package-lock.json`, Linux WebKitGTK build inputs, and a macOS `$out/bin/aethon` wrapper around the generated `.app`. Nix builds disable updater artifact generation inside the build copy so distribution packages don't require release signing secrets.
-- [ ] First public release
+- [x] First public release — `CHANGELOG.md` now has a dated `0.1.0` section, and `.github/workflows/release.yml` publishes public GitHub releases from `v*.*.*` tags. The workflow builds macOS Apple Silicon, macOS Intel, and Linux x86_64 artifacts. If Tauri signing secrets are configured it includes signed updater bundles + `latest.json`; otherwise it publishes installable bundles with updater artifacts disabled for that run.
 
 ### Cross-cutting
 

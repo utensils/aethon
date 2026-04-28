@@ -1,7 +1,7 @@
 # Releasing Aethon
 
-This document covers the one-time setup for cutting signed releases that the
-in-app updater can install.
+This document covers the release workflow and the one-time setup for signed
+releases that the in-app updater can install.
 
 ## 1. Generate a signing keypair (one-time)
 
@@ -40,9 +40,21 @@ the updater rejects the download.
 
 ## 4. Cut a release
 
-Recommended: use `tauri-apps/tauri-action@v0` in a GitHub Actions workflow.
-It builds for each target, signs each bundle, uploads them to a draft
-release, and writes the `latest.json` manifest the updater endpoint expects.
+The `Release` GitHub Actions workflow runs on `v*.*.*` tags and can also be
+started manually from the Actions UI. It builds macOS Apple Silicon, macOS
+Intel, and Linux x86_64 artifacts with `tauri-apps/tauri-action@v0`, then
+publishes them to the matching GitHub release.
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+If `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are
+configured, the workflow keeps `bundle.createUpdaterArtifacts = true`, signs
+the updater bundles, and uploads `latest.json`. If the secrets are absent, it
+still publishes installable app bundles but disables updater artifacts for
+that run so the public release can proceed without invalid signatures.
 
 Manual fallback (single-platform):
 
