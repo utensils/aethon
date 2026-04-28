@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-aarch64
+            platform: macos-15
+            rust-target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - label: macos-x86_64
+            platform: macos-15-intel
+            rust-target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - label: linux-x86_64
+            platform: ubuntu-24.04
+            rust-target: x86_64-unknown-linux-gnu
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    env:
+      CARGO_TERM_COLOR: always
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HAS_UPDATER_SECRETS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          targets: ${{ matrix.rust-target }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build signed updater release
+        if: env.HAS_UPDATER_SECRETS == 'true'
+        uses: tauri-apps/tauri-action@v0
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "Aethon ${{ env.RELEASE_TAG }}"
+          releaseBody: "See CHANGELOG.md for release notes."
+          releaseDraft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          includeUpdaterJson: true
+          tauriScript: bun tauri
+          args: ${{ matrix.args }}
+
+      - name: Build installer release
+        if: env.HAS_UPDATER_SECRETS != 'true'
+        uses: tauri-apps/tauri-action@v0
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "Aethon ${{ env.RELEASE_TAG }}"
+          releaseBody: "See CHANGELOG.md for release notes. Updater artifacts are omitted until TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD are configured."
+          releaseDraft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: >-
+            ${{ matrix.args }}
+            --config '{"bundle":{"createUpdaterArtifacts":false}}'
