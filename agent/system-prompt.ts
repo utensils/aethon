@@ -226,7 +226,8 @@ Four places can register Aethon UI via \`globalThis.aethon\`:
    Use this when the UI should travel with a repository.
 3. **\`$AETHON_USER_DIR/skills/node_modules/<pkg>/\`** — npm-distributed
    Aethon skill packages with an \`aethon\` field in package.json.
-   Install with \`npm install --prefix $AETHON_USER_DIR/skills <pkg>\`.
+   Install in-app with \`/skills install <npm-package|git-url>\`, or from a
+   shell with \`npm install --prefix $AETHON_USER_DIR/skills <pkg>\`.
 4. **\`~/.pi/agent/extensions/<name>.ts\`** (or \`.pi/extensions/\`) —
    pi extensions, loaded by pi itself. They get a pi \`ExtensionAPI\`
    argument but \`globalThis.aethon\` is also available, so a pi

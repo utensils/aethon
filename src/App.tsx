@@ -3256,6 +3256,9 @@ export default function App() {
       setModel,
       resetLayout: () => setLayout(BOOT_LAYOUT),
       listSkills: () => registry.list().map((s) => s.name),
+      installSkill: async (spec: string) => {
+        return await invoke<string>("install_aethon_skill", { spec });
+      },
       listModels: () => {
         const sidebar = (stateRef.current.sidebar as Record<string, unknown>) ?? {};
         return ((sidebar.models as { id: string; label: string; active?: boolean }[]) ?? []);

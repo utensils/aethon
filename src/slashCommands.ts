@@ -31,6 +31,7 @@ export interface SlashCommandContext {
   setModel: (id: string) => Promise<void>;
   resetLayout: () => void;
   listSkills: () => string[];
+  installSkill: (spec: string) => Promise<string>;
   listModels: () => { id: string; label: string; active?: boolean }[];
   toggleTerminal: () => void;
   // Show / hide / toggle the sidebar. State changes propagate via the
@@ -198,8 +199,41 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     },
     {
       name: "skills",
-      description: "List registered skills",
-      run: (_args, ctx) => {
+      description: "List registered skills, or install an Aethon skill package",
+      usage: "[install <npm-package|git-url>]",
+      run: async (args, ctx) => {
+        const v = args.trim();
+        const [subcommand, ...rest] = v.split(/\s+/);
+        if (subcommand === "install" || subcommand === "add") {
+          const spec = rest.join(" ").trim();
+          if (!spec) {
+            ctx.notify({
+              title: "Missing skill package",
+              message: "Usage: /skills install <npm-package|git-url>",
+              kind: "error",
+            });
+            return;
+          }
+          ctx.notify({
+            title: "Installing skill",
+            message: spec,
+            kind: "info",
+            durationMs: null,
+          });
+          const output = await ctx.installSkill(spec);
+          ctx.appendSystem(
+            `Skill install complete: \`${spec}\`\n\n${output || "Agent will reload on next request."}`,
+          );
+          return;
+        }
+        if (v) {
+          ctx.notify({
+            title: `Unknown skills command: ${subcommand}`,
+            message: "Usage: /skills install <npm-package|git-url>",
+            kind: "error",
+          });
+          return;
+        }
         const list = ctx.listSkills();
         ctx.appendSystem(
           list.length > 0

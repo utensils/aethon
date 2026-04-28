@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildBuiltinSlashCommands, parseSlashCommand } from "./slashCommands";
+import {
+  buildBuiltinSlashCommands,
+  parseSlashCommand,
+  type SlashCommandContext,
+} from "./slashCommands";
 
 describe("parseSlashCommand", () => {
   it("returns null for plain text", () => {
@@ -71,5 +75,45 @@ describe("buildBuiltinSlashCommands", () => {
     for (const cmd of buildBuiltinSlashCommands()) {
       expect(typeof cmd.run).toBe("function");
     }
+  });
+
+  it("/skills install invokes the in-app installer", async () => {
+    const installed: string[] = [];
+    const system: string[] = [];
+    const notifications: string[] = [];
+    const ctx: SlashCommandContext = {
+      appendSystem: (text) => system.push(text),
+      notify: (input) => notifications.push(input.title),
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      resetLayout: () => {},
+      listSkills: () => [],
+      installSkill: (spec) => {
+        installed.push(spec);
+        return Promise.resolve("installed output");
+      },
+      listModels: () => [],
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "project-id",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+    };
+    const skills = buildBuiltinSlashCommands().find((c) => c.name === "skills")!;
+
+    await skills.run("install github:utensils/aethon-demo-skill", ctx);
+
+    expect(installed).toEqual(["github:utensils/aethon-demo-skill"]);
+    expect(notifications).toContain("Installing skill");
+    expect(system[0]).toContain("Skill install complete");
+    expect(system[0]).toContain("installed output");
   });
 });
