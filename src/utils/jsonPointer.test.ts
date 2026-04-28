@@ -62,6 +62,37 @@ describe("setPointer", () => {
     expect(after).toEqual({ a: { x: 1, y: 99 } });
   });
 
+  it("preserves arrays when patching through them", () => {
+    const before = {
+      canvas: {
+        components: [
+          { id: "progress", type: "card", props: { title: "Starting" } },
+        ],
+      },
+    };
+    const after = setPointer(
+      before,
+      "/canvas/components/0/props/title",
+      "Streaming",
+    );
+
+    expect(Array.isArray((after.canvas as { components: unknown }).components)).toBe(true);
+    expect(after).toEqual({
+      canvas: {
+        components: [
+          { id: "progress", type: "card", props: { title: "Streaming" } },
+        ],
+      },
+    });
+    expect(before.canvas.components[0].props.title).toBe("Starting");
+  });
+
+  it("creates arrays for missing numeric path segments", () => {
+    const after = setPointer({}, "/canvas/components/0/type", "card");
+    expect(after).toEqual({ canvas: { components: [{ type: "card" }] } });
+    expect(Array.isArray((after.canvas as { components: unknown }).components)).toBe(true);
+  });
+
   it("returns the original ref for empty pointers", () => {
     const before = { a: 1 };
     expect(setPointer(before, "", 9)).toBe(before);
@@ -92,6 +123,31 @@ describe("deletePointer", () => {
     // Documented behavior — leaves the parent shape intact.
     const after = deletePointer({ a: { b: 1 } }, "/a/b");
     expect(after).toEqual({ a: {} });
+  });
+
+  it("preserves arrays when deleting a nested key through them", () => {
+    const before = {
+      canvas: {
+        components: [
+          { id: "progress", type: "card", props: { title: "Streaming" } },
+        ],
+      },
+    };
+    const after = deletePointer(before, "/canvas/components/0/props/title");
+    expect(after).toEqual({
+      canvas: {
+        components: [
+          { id: "progress", type: "card", props: {} },
+        ],
+      },
+    });
+    expect(Array.isArray((after.canvas as { components: unknown }).components)).toBe(true);
+    expect(before.canvas.components[0].props.title).toBe("Streaming");
+  });
+
+  it("removes array elements by index", () => {
+    const after = deletePointer({ items: ["a", "b", "c"] }, "/items/1");
+    expect(after).toEqual({ items: ["a", "c"] });
   });
 
   it("returns the input when pointer is empty", () => {

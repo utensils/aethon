@@ -40,6 +40,10 @@ with `{ "$ref": "<path>" }` re-render. Persisted across webview reload.
 ```ts
 globalThis.aethon.setState("/status", "indexing…");
 globalThis.aethon.setState("/myCounter/count", 42);
+globalThis.aethon.setState("/canvas", {
+  components: [{ id: "progress", type: "card", props: { title: "Starting" } }],
+});
+globalThis.aethon.setState("/canvas/components/0/props/title", "Streaming");
 ```
 
 Routing rules: writes to the mirrored keys (`/messages`, `/draft`,
@@ -47,6 +51,11 @@ Routing rules: writes to the mirrored keys (`/messages`, `/draft`,
 **currently active tab** (or the tab whose turn is in flight). Other paths
 are global. Don't try to write to a specific tab — the bridge handles
 attribution via the AsyncLocalStorage in pi's call chain.
+
+Nested writes are array-preserving, so a running extension or handler can
+seed `/canvas` with an A2UI payload, then progressively patch paths like
+`/canvas/components/0/children/1/props/content` while the same turn is still
+streaming.
 
 ### `setLayout(payload)`
 

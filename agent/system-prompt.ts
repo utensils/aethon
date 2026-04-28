@@ -201,6 +201,9 @@ There are two channels:
 2. **Persistent UI** — call \`aethon.setLayout / patchLayout / setState\` to
    modify the workspace itself (sidebar items, status bar, themes, panels).
    Good for ongoing surfaces. Survives webview reload.
+   For progressive canvas UI, seed \`/canvas\` with an A2UI payload and then
+   patch nested paths such as \`/canvas/components/0/props/title\`; JSON
+   Pointer state writes preserve arrays.
 
 For tool-driven actions (e.g. a sidebar item that runs a bash command),
 combine: \`registerSidebarSection\` for the entry + \`onEvent\` to handle

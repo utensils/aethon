@@ -53,10 +53,41 @@ function decodePointerToken(token: string): string {
   return token.replace(/~1/g, "/").replace(/~0/g, "~");
 }
 
+type PointerContainer = Record<string, unknown> | unknown[];
+
+function isPointerContainer(value: unknown): value is PointerContainer {
+  return typeof value === "object" && value !== null;
+}
+
+function isArrayIndex(token: string | undefined): boolean {
+  return token !== undefined && /^(0|[1-9]\d*)$/.test(token);
+}
+
+function clonePointerContainer(
+  value: unknown,
+  nextToken?: string,
+): PointerContainer {
+  if (Array.isArray(value)) return [...value];
+  if (isPointerContainer(value)) return { ...(value as Record<string, unknown>) };
+  return isArrayIndex(nextToken) ? [] : {};
+}
+
+function readPointerChild(container: PointerContainer, token: string): unknown {
+  return (container as Record<string, unknown>)[token];
+}
+
+function writePointerChild(
+  container: PointerContainer,
+  token: string,
+  value: unknown,
+): void {
+  (container as Record<string, unknown>)[token] = value;
+}
+
 /**
  * Returns a new state object with `value` written at `pointer`.
- * Does not mutate `state`. Intermediate objects are cloned along the
- * write path; sibling branches keep their existing references.
+ * Does not mutate `state`. Intermediate objects/arrays are cloned along
+ * the write path; sibling branches keep their existing references.
  */
 export function setPointer(
   state: Record<string, unknown>,
@@ -70,22 +101,19 @@ export function setPointer(
   const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
   const tokens = path.split("/").map(decodePointerToken);
 
-  const next: Record<string, unknown> = { ...state };
-  let cursor: Record<string, unknown> = next;
+  const next = clonePointerContainer(state);
+  let cursor: PointerContainer = next;
 
   for (let i = 0; i < tokens.length - 1; i++) {
     const key = tokens[i];
-    const existing = cursor[key];
-    const child =
-      typeof existing === "object" && existing !== null
-        ? { ...(existing as Record<string, unknown>) }
-        : {};
-    cursor[key] = child;
+    const existing = readPointerChild(cursor, key);
+    const child = clonePointerContainer(existing, tokens[i + 1]);
+    writePointerChild(cursor, key, child);
     cursor = child;
   }
 
-  cursor[tokens[tokens.length - 1]] = value;
-  return next;
+  writePointerChild(cursor, tokens[tokens.length - 1], value);
+  return next as Record<string, unknown>;
 }
 
 /**
@@ -114,17 +142,22 @@ export function deletePointer(
     probe = (probe as Record<string, unknown>)[t];
   }
 
-  const next: Record<string, unknown> = { ...state };
-  let cursor: Record<string, unknown> = next;
+  const next = clonePointerContainer(state);
+  let cursor: PointerContainer = next;
   for (let i = 0; i < tokens.length - 1; i++) {
     const key = tokens[i];
-    const existing = cursor[key] as Record<string, unknown>;
-    const child = { ...existing };
-    cursor[key] = child;
+    const existing = readPointerChild(cursor, key);
+    const child = clonePointerContainer(existing, tokens[i + 1]);
+    writePointerChild(cursor, key, child);
     cursor = child;
   }
-  delete cursor[tokens[tokens.length - 1]];
-  return next;
+  const leaf = tokens[tokens.length - 1];
+  if (Array.isArray(cursor) && isArrayIndex(leaf)) {
+    cursor.splice(Number(leaf), 1);
+  } else {
+    delete (cursor as Record<string, unknown>)[leaf];
+  }
+  return next as Record<string, unknown>;
 }
 
 /**
