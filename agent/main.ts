@@ -139,6 +139,10 @@ import {
   resolveAethonSystemPrompt,
   type RuntimeSnapshot,
 } from "./system-prompt";
+import {
+  consumeBashTerminalSnapshot,
+  type BashTerminalStreamState,
+} from "./terminal-stream";
 
 // Filesystem locations passed in by the Tauri shell. They have sensible
 // defaults so the bridge still runs when launched directly (tests, dev
@@ -828,7 +832,11 @@ async function main() {
   interface TabRecord {
     id: string;
     session: Awaited<ReturnType<typeof createAgentSession>>["session"];
-    toolArgsCache: Map<string, { name: string; summary: string }>;
+    toolArgsCache: Map<string, {
+      name: string;
+      summary: string;
+      bashStream?: BashTerminalStreamState;
+    }>;
     promptInFlight: boolean;
     agentEndFired: boolean;
     queuedCount: number;
@@ -2138,6 +2146,26 @@ async function main() {
           }
           break;
         }
+        case "tool_execution_update": {
+          if (event.toolName === "bash") {
+            let cached = rec.toolArgsCache.get(event.toolCallId);
+            if (!cached) {
+              cached = {
+                name: event.toolName,
+                summary: summarizeToolArgs(event.toolName, event.args),
+              };
+              rec.toolArgsCache.set(event.toolCallId, cached);
+            }
+            const extracted = extractToolContent(event.partialResult);
+            const streamed = consumeBashTerminalSnapshot(
+              extracted.text,
+              cached.bashStream,
+            );
+            cached.bashStream = streamed.state;
+            emitBashResult(streamed.delta, tabId);
+          }
+          break;
+        }
         case "tool_execution_end": {
           const cached = rec.toolArgsCache.get(event.toolCallId);
           const payload = toolCardPayload({
@@ -2150,7 +2178,11 @@ async function main() {
           send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
           if (event.toolName === "bash") {
             const extracted = extractToolContent(event.result);
-            emitBashResult(extracted.text, tabId);
+            const streamed = consumeBashTerminalSnapshot(
+              extracted.text,
+              cached?.bashStream,
+            );
+            emitBashResult(streamed.delta, tabId);
             send({ type: "terminal_output", tabId, content: "\r\n" });
           }
           rec.toolArgsCache.delete(event.toolCallId);
