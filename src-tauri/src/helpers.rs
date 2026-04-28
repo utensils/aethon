@@ -33,6 +33,7 @@ pub fn validate_state_name(name: &str) -> Result<(), String> {
 pub struct UiConfig {
     pub theme: Option<String>,
     pub font_size: Option<u32>,
+    pub restore_tabs: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -62,6 +63,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         "ui": {
             "theme": cfg.ui.theme,
             "fontSize": cfg.ui.font_size,
+            "restoreTabs": cfg.ui.restore_tabs,
         },
         "agent": {
             "model": cfg.agent.model,
@@ -121,6 +123,7 @@ mod tests {
         let v = parse_config_toml("");
         assert_eq!(v["ui"]["theme"], serde_json::Value::Null);
         assert_eq!(v["ui"]["fontSize"], serde_json::Value::Null);
+        assert_eq!(v["ui"]["restoreTabs"], serde_json::Value::Null);
         assert_eq!(v["agent"]["model"], serde_json::Value::Null);
     }
 
@@ -133,9 +136,10 @@ mod tests {
 
     #[test]
     fn parse_config_toml_extracts_ui_section() {
-        let v = parse_config_toml("[ui]\ntheme = \"dark\"\nfont_size = 16\n");
+        let v = parse_config_toml("[ui]\ntheme = \"dark\"\nfont_size = 16\nrestore_tabs = true\n");
         assert_eq!(v["ui"]["theme"], "dark");
         assert_eq!(v["ui"]["fontSize"], 16);
+        assert_eq!(v["ui"]["restoreTabs"], true);
     }
 
     #[test]
@@ -163,6 +167,7 @@ mod tests {
             assert!(v["agent"].is_object());
             assert!(v["ui"].as_object().unwrap().contains_key("theme"));
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
+            assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
             assert!(v["agent"].as_object().unwrap().contains_key("model"));
         }
     }

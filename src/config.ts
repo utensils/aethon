@@ -11,6 +11,9 @@ export interface AethonConfig {
      *  `aethon.registerTheme`. */
     theme: string | null;
     fontSize: number | null;
+    /** When true, discovered per-tab sessions are reopened automatically
+     *  on app launch instead of only appearing in the empty-state list. */
+    restoreTabs: boolean;
   };
   agent: {
     model: string | null;
@@ -18,7 +21,7 @@ export interface AethonConfig {
 }
 
 const DEFAULTS: AethonConfig = {
-  ui: { theme: null, fontSize: null },
+  ui: { theme: null, fontSize: null, restoreTabs: false },
   agent: { model: null },
 };
 
@@ -47,6 +50,7 @@ export function getConfig(): Promise<AethonConfig> {
           theme: normalizeTheme(obj?.ui?.theme),
           fontSize:
             typeof obj?.ui?.fontSize === "number" ? obj.ui.fontSize : null,
+          restoreTabs: obj?.ui?.restoreTabs === true,
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
