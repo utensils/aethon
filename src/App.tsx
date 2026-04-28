@@ -367,6 +367,10 @@ export default function App() {
   // deltas after a tool card still land in the original bubble; this ref
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
+  // Per app session, remember persisted sessions we auto-opened from
+  // `[ui] restore_tabs = true` so repeated ready/report events don't
+  // duplicate tabs.
+  const autoRestoredSessionIdsRef = useRef(new Set<string>());
 
   // Themes — three built-in palettes (ember/paper/aether) plus
   // extension-registered ones. Persisted to `~/.aethon/theme` so the choice
@@ -941,6 +945,40 @@ export default function App() {
       })
       .finally(() => {
         pendingTabOpens.current.delete(id);
+      });
+  }
+
+  function autoRestoreDiscoveredSessions(
+    discovered: { tabId: string; lastModified: number }[],
+    knownIds: Set<string>,
+  ) {
+    if (discovered.length === 0) return;
+    getConfig()
+      .then((config) => {
+        if (!config.ui.restoreTabs) return;
+        const liveIds = new Set([
+          ...knownIds,
+          ...(((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id)),
+        ]);
+        const toRestore = discovered
+          .filter((d) => !liveIds.has(d.tabId))
+          .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
+          .slice(0, 8);
+        if (toRestore.length === 0) return;
+        // Open oldest first so the most recent session ends up active.
+        for (const session of [...toRestore].reverse()) {
+          autoRestoredSessionIdsRef.current.add(session.tabId);
+          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`);
+        }
+        pushNotification({
+          id: "ae-auto-restore-tabs",
+          title: `Restored ${toRestore.length} session${toRestore.length === 1 ? "" : "s"}`,
+          kind: "success",
+          durationMs: 3000,
+        });
+      })
+      .catch(() => {
+        /* config read already logs; manual restore remains available */
       });
   }
 
@@ -1538,6 +1576,7 @@ export default function App() {
         // label for the row's right-hand meta.
         const knownIds = new Set(
           (((data.tabs as { id: string }[] | undefined) ?? []).map((t) => t.id))
+            .concat(((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id))
             .concat(["default"]),
         );
         const recentSessions = discTabs
@@ -1548,6 +1587,7 @@ export default function App() {
             label: `Session ${d.tabId.slice(0, 8)}`,
             lastModified: formatRelativeTime(d.lastModified),
           }));
+        autoRestoreDiscoveredSessions(discTabs, knownIds);
         // Restore any extension-supplied layout, then replay queued
         // patches. Falls back to the boot layout when none is reported
         // so a removed/disabled extension stops bleeding stale chrome
