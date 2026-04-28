@@ -109,6 +109,9 @@
  *      // Used for tool execution cards. Frontend treats `id` as a stable
  *      // chat-message identity — re-emitting the same id replaces in place
  *      // (so we can stream "running…" → final result).
+ *   { "type": "session_history", "tabId": "<tab-id>", "messages": [...] }
+ *      // Text transcript replay from a restored tab's pi JSONL log.
+ *      // Sent only when the frontend opens a tab with restoreHistory=true.
  *   { "type": "model_changed", "model": "<id>" }
  *   { "type": "error", "message": "..." }
  *
@@ -131,11 +134,15 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { mkdirSync, readFileSync } from "node:fs";
-import { readdir, stat, writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { findProjectExtensionDirs } from "./project-extensions";
+import {
+  readSessionMetadata,
+  readSessionTranscript,
+} from "./session-history";
 import {
   resolveAethonSystemPrompt,
   type RuntimeSnapshot,
@@ -659,9 +666,12 @@ async function discoverPiAethonExtensions(
 //
 // "default" is excluded — the frontend always pre-creates a default tab,
 // and surfacing it as "recent" would duplicate it. Other tabIds are
-// presented in lastModified-descending order (most recent first).
+// presented in lastModified-descending order (most recent first). The
+// newest JSONL file's `session.cwd` is included when available so the
+// frontend can scope Chat History by active project and restore the tab
+// against the same working directory pi used originally.
 async function discoverPersistedTabs(): Promise<
-  { tabId: string; lastModified: number }[]
+  { tabId: string; lastModified: number; cwd?: string }[]
 > {
   let entries: string[];
   try {
@@ -674,30 +684,14 @@ async function discoverPersistedTabs(): Promise<
     }
     return [];
   }
-  const results: { tabId: string; lastModified: number }[] = [];
+  const results: { tabId: string; lastModified: number; cwd?: string }[] = [];
   for (const name of entries) {
     if (name === "default") continue;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
     const dir = join(SESSIONS_DIR, name);
     try {
-      let files: string[];
-      try {
-        files = await readdir(dir);
-      } catch {
-        continue;
-      }
-      const jsonl = files.filter((f) => f.endsWith(".jsonl"));
-      if (jsonl.length === 0) continue;
-      let mtime = 0;
-      for (const f of jsonl) {
-        try {
-          const st = await stat(join(dir, f));
-          if (st.mtimeMs > mtime) mtime = st.mtimeMs;
-        } catch {
-          /* skip */
-        }
-      }
-      if (mtime > 0) results.push({ tabId: name, lastModified: mtime });
+      const meta = await readSessionMetadata(dir);
+      if (meta) results.push({ tabId: name, ...meta });
     } catch {
       /* skip — best effort */
     }
@@ -2001,7 +1995,7 @@ async function main() {
   // in `ready` so the frontend can offer "Recent sessions" in the
   // empty-state composite. Excludes "default" (which the frontend
   // pre-creates anyway). Sorted descending by lastModified.
-  let discoveredTabs: { tabId: string; lastModified: number }[] = [];
+  let discoveredTabs: { tabId: string; lastModified: number; cwd?: string }[] = [];
 
   function defaultModelKey(): string {
     const def = tabs.get("default");
@@ -2534,7 +2528,24 @@ async function main() {
               emitReady();
             }
           }
+          const restoreHistory =
+            (msg as { restoreHistory?: unknown }).restoreHistory === true;
+          let restoredMessages: Awaited<ReturnType<typeof readSessionTranscript>> = [];
+          if (restoreHistory) {
+            try {
+              restoredMessages = await readSessionTranscript(tabSessionDir(tabId));
+            } catch (err) {
+              send({
+                type: "error",
+                tabId,
+                message: `session restore: ${(err as Error).message}`,
+              });
+            }
+          }
           await ensureTab(tabId, initialModel, cwdOverride);
+          if (restoreHistory) {
+            send({ type: "session_history", tabId, messages: restoredMessages });
+          }
           break;
         }
         case "set_project": {
