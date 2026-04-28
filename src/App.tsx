@@ -92,6 +92,15 @@ import {
   writeState,
 } from "./persist";
 import { getConfig } from "./config";
+import {
+  activeProject,
+  emptyProjectsState,
+  loadProjects,
+  pickProjectDirectory,
+  saveProjects,
+  upsertProject,
+  type ProjectsState,
+} from "./projects";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
@@ -741,11 +750,17 @@ export default function App() {
     // shared xterm so it doesn't keep showing the previous tab's
     // scrollback until the next switch / output event.
     dispatchTerminalReplay("");
+    // The active project (if any) supplies the cwd for the new tab's pi
+    // session. Tabs created before a project is picked use the bridge's
+    // default cwd (the spawn directory). Existing tabs keep their original
+    // cwd — switching project doesn't retroactively rebase live sessions.
+    const inheritedCwd = activeProject(projectsRef.current)?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
         tabId: id,
         ...(inheritedModel ? { model: inheritedModel } : {}),
+        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
       }),
     });
     // Track until done so a fast first chat on the new tab can wait
@@ -976,6 +991,20 @@ export default function App() {
       layoutSlots,
       inspectLayoutSlotCoverage: (payload?: A2UIPayload): SlotCoverageReport =>
         inspectLayoutSlotCoverage(payload ?? layout),
+      // Projects — directories the agent works in. `pickProject` opens a
+      // native folder picker; the resolved path is persisted, made
+      // active, and announced to the bridge as the new tab cwd. Returns
+      // null on cancel. `openProject(path)` skips the picker for paths
+      // that are already known (e.g. the empty-state "Recent projects"
+      // list). `setActiveProject(id)` switches the active project for
+      // future tabs without opening one. `clearProject()` reverts to
+      // bridge-default cwd.
+      pickProject: openProjectFromPicker,
+      openProject: (path: string, label?: string) => openProjectByPath(path, label),
+      setActiveProject: setActiveProjectById,
+      clearProject: clearActiveProject,
+      listProjects: () => projectsRef.current.projects.slice(),
+      activeProject: () => activeProject(projectsRef.current),
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
 
@@ -1464,11 +1493,17 @@ export default function App() {
           // restored tab waits for the bridge to register the session
           // (otherwise send_message would race tab_open and lazily
           // create the tab without the inherited model).
+          // Same cwd inheritance as newTab — restored sessions land in the
+          // currently-active project unless they were opened before any
+          // project was set. The bridge dedupes paths internally, so a
+          // re-announce on existing tabs with the same cwd is a no-op.
+          const restoredCwd = activeProject(projectsRef.current)?.path;
           const opening = invoke("agent_command", {
             payload: JSON.stringify({
               type: "tab_open",
               tabId: t.id,
               ...(t.model ? { model: t.model } : {}),
+              ...(restoredCwd ? { cwd: restoredCwd } : {}),
             }),
           });
           pendingTabOpens.current.set(t.id, opening);
@@ -2014,6 +2049,178 @@ export default function App() {
   // ref so the API surface above can mutate it without re-rendering.
   const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
 
+  // Projects (working directories the agent operates in). Persisted to
+  // ~/.aethon/projects.json. The active project's path travels with each
+  // new tab as `cwd` on `tab_open` so pi's SessionManager scopes the
+  // session to that directory. Existing tabs keep their original cwd —
+  // switching project doesn't retroactively change live sessions.
+  const projectsRef = useRef<ProjectsState>(emptyProjectsState());
+
+  // Mirror the projects state into app state so layouts can $ref it.
+  // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
+  // `/sessionLabel` (used by editorial header subtitle) and
+  // `/sidebar/projects` (sidebar item array). Called on every mutation
+  // so a single helper keeps the shape consistent.
+  function syncProjectsToState() {
+    const ps = projectsRef.current;
+    const active = activeProject(ps);
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      return {
+        ...prev,
+        projects: ps.projects,
+        activeProjectId: ps.activeId,
+        project: active
+          ? { id: active.id, label: active.label, path: active.path }
+          : null,
+        sessionLabel: active ? active.label : "",
+        sidebar: {
+          ...sidebar,
+          projects: ps.projects.map((p) => ({
+            id: p.id,
+            label: p.label,
+            hint: p.path,
+            active: p.id === ps.activeId,
+          })),
+        },
+      };
+    });
+  }
+
+  // Persist + mirror. Errors are logged; the in-memory ref still wins so
+  // a transient disk failure doesn't leave the UI inconsistent with what
+  // the user just did.
+  async function persistProjects() {
+    try {
+      await saveProjects(projectsRef.current);
+    } catch (err) {
+      console.warn("saveProjects failed:", err);
+    }
+    syncProjectsToState();
+  }
+
+  // Tell the bridge what `cwd` to use for new sessions on a given tab.
+  // The bridge accepts a `cwd` field on `tab_open`; on `set_project` it
+  // updates the per-tab record but doesn't tear down an in-flight session
+  // (changing cwd mid-flight is a user-visible footgun). Fire-and-forget.
+  function announceProjectToBridge(tabId: string, cwd: string | null) {
+    invoke("agent_command", {
+      payload: JSON.stringify({ type: "set_project", tabId, cwd }),
+    }).catch(() => {
+      /* bridge gone — next tab_open re-announces */
+    });
+  }
+
+  // Load projects once at boot. Done in its own effect so a slow disk
+  // doesn't push out the agent-start path. Mirrors into state on resolve
+  // so the sidebar populates without a re-render trigger.
+  useEffect(() => {
+    (async () => {
+      const ps = await loadProjects();
+      projectsRef.current = ps;
+      syncProjectsToState();
+      // Tell the bridge about the active project so the default tab's
+      // session opens with the right cwd. ensureTab() in the bridge
+      // checks the per-tab cwd record before SessionManager.continueRecent.
+      const active = activeProject(ps);
+      const tabId =
+        (stateRef.current.activeTabId as string | undefined) ?? "default";
+      if (active) announceProjectToBridge(tabId, active.path);
+    })();
+  }, []);
+
+  async function openProjectFromPicker(): Promise<string | null> {
+    const path = await pickProjectDirectory();
+    if (!path) return null;
+    return openProjectByPath(path);
+  }
+
+  function openProjectByPath(path: string, label?: string): string {
+    const { state: nextProjects, id } = upsertProject(
+      projectsRef.current,
+      path,
+      label,
+    );
+    projectsRef.current = nextProjects;
+    persistProjects();
+    // Active tab inherits the new project as its cwd for any future
+    // tab_open replays / resumes. The current bridge session was
+    // created with whatever cwd the tab originally opened against —
+    // pi sessions store file paths that resolved against the OLD
+    // cwd, so we don't yank it out from under them.
+    const tabId =
+      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    announceProjectToBridge(tabId, path);
+    return id;
+  }
+
+  function setActiveProjectById(id: string): boolean {
+    const ps = projectsRef.current;
+    const target = ps.projects.find((p) => p.id === id);
+    if (!target) return false;
+    projectsRef.current = {
+      projects: ps.projects.map((p) =>
+        p.id === id ? { ...p, lastUsed: Date.now() } : p,
+      ),
+      activeId: id,
+    };
+    persistProjects();
+    const tabId =
+      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    announceProjectToBridge(tabId, target.path);
+    return true;
+  }
+
+  function clearActiveProject() {
+    projectsRef.current = { ...projectsRef.current, activeId: null };
+    persistProjects();
+    const tabId =
+      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    announceProjectToBridge(tabId, null);
+  }
+
+  // Walk the layout tree and produce a deduped, sorted list of component
+  // types found in it. Lets the live-layout sidebar's "components in
+  // layout" section derive from the actual active payload instead of
+  // a hardcoded sample list. Keeps the entry shape sidebar items expect
+  // ({id, label, active}). Active is set true for every type since the
+  // layout DOES contain it; clicking does nothing today.
+  function summarizeLayoutComponents(payload: A2UIPayload): {
+    id: string;
+    label: string;
+    active: boolean;
+  }[] {
+    const types = new Set<string>();
+    function walk(node: unknown) {
+      if (!node || typeof node !== "object") return;
+      const n = node as { type?: string; children?: unknown[]; components?: unknown[] };
+      if (typeof n.type === "string") types.add(n.type);
+      if (Array.isArray(n.children)) n.children.forEach(walk);
+      if (Array.isArray(n.components)) n.components.forEach(walk);
+    }
+    walk(payload);
+    return [...types]
+      .sort()
+      .map((t) => ({ id: `c-${t}`, label: t, active: true }));
+  }
+
+  // Refresh /sidebar/components whenever the layout changes so the
+  // live-layout's inspector pane reflects what's actually rendered.
+  // setState here is the React → state-derived-from-prop pattern; the
+  // lint rule's blanket warning is the "avoid cascading renders"
+  // heuristic, and the alternative (computing on each render and
+  // injecting at $ref resolve time) would couple the sidebar component
+  // to the layout shape — exactly what the JSON-pointer indirection
+  // exists to avoid.
+  useEffect(() => {
+    const list = summarizeLayoutComponents(layout);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      return { ...prev, sidebar: { ...sidebar, components: list } };
+    });
+  }, [layout]);
+
   // Layout activation helper — single path used by both
   // window.aethon.activateLayout and the /layout slash command. Seeds
   // the layout's state defaults for keys absent from current app state
@@ -2291,6 +2498,20 @@ export default function App() {
           name: l.name,
           description: l.description,
         })),
+      pickProject: openProjectFromPicker,
+      openProject: (path: string, label?: string) => openProjectByPath(path, label),
+      setActiveProject: setActiveProjectById,
+      clearProject: clearActiveProject,
+      listProjects: () =>
+        projectsRef.current.projects.map((p) => ({
+          id: p.id,
+          label: p.label,
+          path: p.path,
+        })),
+      activeProject: () => {
+        const a = activeProject(projectsRef.current);
+        return a ? { id: a.id, label: a.label, path: a.path } : null;
+      },
     };
   }
 
@@ -2466,7 +2687,7 @@ export default function App() {
         tabType === "editorial-header" ||
         tabType === "vertical-tab-rail";
       if (isTabSurface) {
-        const sel = data as { tabId?: string; action?: string } | undefined;
+        const sel = data as { tabId?: string; action?: string; id?: string } | undefined;
         if (eventType === "select" && sel?.tabId) {
           setActiveTab(sel.tabId);
           return true;
@@ -2479,10 +2700,37 @@ export default function App() {
           newTab();
           return true;
         }
+        // Vertical-tab-rail's project shelf — clicking a project row
+        // switches the active project. id matches a sidebar project id;
+        // unknown ids fall through (no-op) so other layouts can ride the
+        // same shelf channel without crashing.
+        if (eventType === "shelf" && sel?.id) {
+          if (setActiveProjectById(sel.id)) return true;
+        }
       }
       if (component.id === "empty-state") {
         if (eventType === "new-tab") {
           newTab();
+          return true;
+        }
+        if (eventType === "open-project") {
+          // Pop the native folder picker. On a successful pick we've
+          // already persisted + announced the new project — open a
+          // fresh tab in it so the user lands ready-to-chat. If they
+          // cancel, leave the empty state visible.
+          openProjectFromPicker().then((id) => {
+            if (id) newTab();
+          });
+          return true;
+        }
+        if (eventType === "select-project") {
+          const sel = data as
+            | { projectId?: string; label?: string; path?: string }
+            | undefined;
+          if (sel?.projectId) {
+            setActiveProjectById(sel.projectId);
+            newTab();
+          }
           return true;
         }
         if (eventType === "restore-session") {
@@ -2522,6 +2770,17 @@ export default function App() {
           // The CSS for built-ins lives in styles.css; extension themes
           // had their <style> tag injected on hydrateThemes().
           setTheme(selected.itemId);
+          return true;
+        }
+        if (selected?.sectionId === "projects" && selected.itemId) {
+          // The sidebar's projects section also surfaces an "Open
+          // project…" action item; intercept it here so we don't try
+          // to look it up as a project id.
+          if (selected.itemId === "open-project") {
+            openProjectFromPicker();
+            return true;
+          }
+          setActiveProjectById(selected.itemId);
           return true;
         }
       }

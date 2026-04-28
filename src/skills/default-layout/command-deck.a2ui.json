@@ -23,12 +23,8 @@
             "title": "aethon",
             "version": "v0.3",
             "sectionTitle": "sessions",
-            "shelfTitle": "shelf",
-            "shelfItems": [
-              { "id": "default-layout", "label": "default-layout", "icon": "✺" },
-              { "id": "aethon-debug", "label": "aethon-debug", "icon": "⌘" },
-              { "id": "terminal", "label": "terminal", "icon": "▣" }
-            ],
+            "shelfTitle": "projects",
+            "shelfItems": { "$ref": "/sidebar/projects" },
             "tabs": { "$ref": "/tabs" },
             "activeId": { "$ref": "/activeTabId" }
           }
@@ -147,6 +143,7 @@
     "sidebar": {
       "history": [],
       "models": [],
+      "projects": [],
       "extraSections": [],
       "themes": [
         { "id": "ember", "label": "Ember — warm dark", "active": true },
@@ -154,6 +151,9 @@
         { "id": "aether", "label": "Æther — signature" }
       ]
     },
+    "projects": [],
+    "activeProjectId": null,
+    "project": null,
     "terminal": {
       "open": false
     },

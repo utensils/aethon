@@ -433,6 +433,47 @@ body {
   font-family: var(--font-mono);
 }
 
+/* Sidebar actions — small ghost-styled rows below a section's items.
+   Used by the projects section's "Open project…" entry; visually
+   distinct from regular items so the user recognizes it as an action
+   rather than a selectable record. */
+.a2ui-sidebar-actions {
+  list-style: none;
+  margin: 4px 10px 2px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.a2ui-sidebar-action {
+  padding: 5px 8px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  letter-spacing: 0.02em;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+
+.a2ui-sidebar-action:hover {
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  border-style: solid;
+}
+
+.a2ui-sidebar-action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent);
+}
+
 /* ---- Header (Container with className=app-header) ----------------------- */
 
 .app-header {
@@ -559,6 +600,19 @@ body {
   line-height: 1.4;
 }
 
+/* Primary + ghost button states match handoff/interaction-states.md.
+   Primary uses solid accent; ghost uses transparent + border. Both
+   share the same focus-ring + reduced-motion friendly transitions
+   so any layout that swaps in the same classes inherits the spec. */
+.a2ui-empty-state-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .a2ui-empty-state-primary {
   background: var(--accent);
   color: var(--btn-text);
@@ -568,11 +622,91 @@ body {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background var(--motion-fast) ease, opacity var(--motion-fast) ease;
 }
 
 .a2ui-empty-state-primary:hover {
-  opacity: 0.85;
+  opacity: 0.88;
+}
+
+.a2ui-empty-state-primary:active {
+  opacity: 0.78;
+}
+
+.a2ui-empty-state-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-empty-state-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Ghost button — used for the "Open Project…" secondary action and any
+   future non-primary CTA. Border + transparent bg per handoff spec. */
+.a2ui-empty-state-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+
+.a2ui-empty-state-secondary:hover {
+  background: var(--accent-hover-tint);
+}
+
+.a2ui-empty-state-secondary:active {
+  background: var(--accent-active-tint);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.a2ui-empty-state-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent);
+}
+
+/* Active-project breadcrumb above the action row — one-line, label +
+   monospace path, dim. Sits between subtitle and buttons so the user
+   sees what cwd a new tab will inherit before they click. */
+.a2ui-empty-state-active-project {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft);
+  max-width: 100%;
+}
+
+.a2ui-empty-state-active-project-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.a2ui-empty-state-active-project-path {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.a2ui-empty-state-recent-active {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .a2ui-empty-state-recent {
@@ -1577,6 +1711,31 @@ body {
   color: var(--text-dim);
   display: inline-flex;
   width: 14px;
+}
+.ae-session-shelf-item-active {
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+.ae-session-shelf-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ae-session-shelf-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-session-shelf-hint {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ae-session-card {

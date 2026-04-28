@@ -1878,12 +1878,34 @@ async function main() {
     return join(SESSIONS_DIR, safe);
   }
 
+  // Per-tab project (working directory) the agent operates in. Set by the
+  // frontend via `set_project` or as a `cwd` field on `tab_open`. Pi's
+  // SessionManager.continueRecent takes the cwd as its first arg — we
+  // pass the recorded value here so the session's tool calls (read,
+  // bash, write) resolve relative paths against the user's chosen
+  // project, not the bridge's spawn directory. Defaults to `undefined`
+  // → fall back to `process.cwd()` so out-of-the-box behavior is the
+  // same as before any project is picked.
+  const tabProjectCwds = new Map<string, string>();
+
   async function ensureTab(
     tabId: string,
     initialModel?: Model<Api>,
+    cwdOverride?: string,
   ): Promise<TabRecord> {
     const existing = tabs.get(tabId);
     if (existing) return existing;
+
+    // Resolve the cwd in priority order: (1) explicit override (passed
+    // by tab_open's cwd field), (2) the per-tab record updated by
+    // set_project, (3) process.cwd() as the legacy default. Recording
+    // (1) into the map after resolution means a later set_project still
+    // takes effect on subsequent tabs, while this tab keeps the cwd it
+    // was created with — pi sessions cache file paths, so retro-changing
+    // cwd would invalidate every cached read.
+    const resolvedCwd =
+      cwdOverride ?? tabProjectCwds.get(tabId) ?? process.cwd();
+    if (cwdOverride) tabProjectCwds.set(tabId, cwdOverride);
 
     // Persistent per-tab session: the file lives at
     // $AETHON_SESSIONS_DIR/<tabId>/<id>.jsonl. continueRecent picks up
@@ -1896,7 +1918,7 @@ async function main() {
     try {
       const dir = tabSessionDir(tabId);
       mkdirSync(dir, { recursive: true });
-      sessionManager = SessionManager.continueRecent(process.cwd(), dir);
+      sessionManager = SessionManager.continueRecent(resolvedCwd, dir);
     } catch (err) {
       console.error(
         `[aethon-session] persistent setup for tab ${tabId} failed (${
@@ -2234,7 +2256,9 @@ async function main() {
           //
           // Optional `model` (provider/id) sets the session's initial
           // model so a fast first chat doesn't race the inherited
-          // set_model round-trip.
+          // set_model round-trip. Optional `cwd` scopes pi's session to
+          // a user-picked project directory; falls back to process.cwd()
+          // when absent.
           const tabId = msg.tabId;
           if (!tabId || typeof tabId !== "string") {
             send({ type: "error", message: "tab_open: missing tabId" });
@@ -2246,7 +2270,36 @@ async function main() {
             const [provider, ...rest] = modelId.split("/");
             initialModel = modelRegistry.find(provider, rest.join("/")) ?? undefined;
           }
-          await ensureTab(tabId, initialModel);
+          const cwdField = (msg as { cwd?: unknown }).cwd;
+          const cwdOverride =
+            typeof cwdField === "string" && cwdField.length > 0
+              ? cwdField
+              : undefined;
+          await ensureTab(tabId, initialModel, cwdOverride);
+          break;
+        }
+        case "set_project": {
+          // Frontend tells the bridge which directory to use as cwd for
+          // future sessions on the given tab. We don't tear down an
+          // already-open session — pi caches file paths against the
+          // original cwd, so retro-changing it would orphan cached
+          // reads. The next time the tab is recreated (close → reopen,
+          // bridge respawn), the new cwd takes effect. cwd === null
+          // clears the per-tab override and reverts to process.cwd().
+          const tabId = (msg as { tabId?: unknown }).tabId;
+          const cwd = (msg as { cwd?: unknown }).cwd;
+          if (typeof tabId !== "string" || tabId.length === 0) {
+            send({ type: "error", message: "set_project: missing tabId" });
+            break;
+          }
+          if (cwd === null) {
+            tabProjectCwds.delete(tabId);
+          } else if (typeof cwd === "string" && cwd.length > 0) {
+            tabProjectCwds.set(tabId, cwd);
+          } else {
+            send({ type: "error", message: "set_project: cwd must be string|null" });
+            break;
+          }
           break;
         }
         case "tab_close": {
@@ -2271,6 +2324,7 @@ async function main() {
             });
           }
           tabs.delete(tabId);
+          tabProjectCwds.delete(tabId);
           // If we just closed the tab whose turn was "current", clear
           // the global so a stray setState doesn't try to attribute to
           // a tab that no longer exists.

@@ -52,6 +52,14 @@
             "brandMark": true,
             "sections": [
               {
+                "id": "projects",
+                "title": "projects",
+                "items": { "$ref": "/sidebar/projects" },
+                "actions": [
+                  { "id": "open-project", "label": "Open project…" }
+                ]
+              },
+              {
                 "id": "skills",
                 "title": "skills",
                 "items": [
@@ -107,13 +115,16 @@
             "area": "empty-state",
             "visible": { "$ref": "/empty" },
             "title": "Welcome to Aethon",
-            "subtitle": "All tabs are closed. Open a new one to start a conversation.",
+            "subtitle": "All tabs are closed. Open a project, then start a conversation.",
             "primaryButtonLabel": "New Tab",
+            "secondaryButtonLabel": "Open Project…",
             "recentSessions": { "$ref": "/recentSessions" },
+            "recentProjects": { "$ref": "/projects" },
+            "activeProject": { "$ref": "/project" },
             "tips": [
               "Press ⌘T to open a new conversation tab.",
-              "Type / in the composer to see slash commands.",
-              "Run /skills to see what extensions are loaded."
+              "Type /project to choose a working directory.",
+              "Type / in the composer to see slash commands."
             ]
           }
         },
@@ -185,6 +196,7 @@
     "sidebar": {
       "history": [],
       "models": [],
+      "projects": [],
       "extraSections": [],
       "themes": [
         { "id": "ember", "label": "Ember — warm dark", "active": true },
@@ -192,6 +204,9 @@
         { "id": "aether", "label": "Æther — signature" }
       ]
     },
+    "projects": [],
+    "activeProjectId": null,
+    "project": null,
     "terminal": {
       "open": false
     },

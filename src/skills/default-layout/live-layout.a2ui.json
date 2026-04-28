@@ -25,6 +25,14 @@
             "brandMark": true,
             "sections": [
               {
+                "id": "projects",
+                "title": "projects",
+                "items": { "$ref": "/sidebar/projects" },
+                "actions": [
+                  { "id": "open-project", "label": "Open project…" }
+                ]
+              },
+              {
                 "id": "layouts",
                 "title": "layouts",
                 "monoItems": true,
@@ -39,13 +47,7 @@
                 "id": "components",
                 "title": "components in layout",
                 "monoItems": true,
-                "items": [
-                  { "id": "c-sidebar", "label": "sidebar", "active": true },
-                  { "id": "c-tab-strip", "label": "tab-strip", "active": true },
-                  { "id": "c-main-canvas", "label": "main-canvas", "active": true },
-                  { "id": "c-chat-input", "label": "chat-input", "active": true },
-                  { "id": "c-inspector", "label": "inspector", "hint": "new", "active": true }
-                ]
+                "items": { "$ref": "/sidebar/components" }
               },
               {
                 "id": "themes",
@@ -189,25 +191,28 @@
     "hasTabs": true,
     "recentSessions": [],
     "livePill": {
-      "text": "agent · live layout",
-      "title": "aethon.setLayout(splitViewLayout)",
-      "diff": "+ inspector pane · areas → \"sidebar header inspector / sidebar canvas inspector / status status status\"",
-      "when": "just now",
-      "visible": true,
-      "toastVisible": true
+      "text": "",
+      "title": "",
+      "diff": "",
+      "when": "",
+      "visible": false,
+      "toastVisible": false
     },
     "inspector": {
       "messageCount": "0",
-      "ops": [
-        { "text": "registerSkill(default-layout)", "when": "boot" }
-      ]
+      "ops": []
     },
+    "projects": [],
+    "activeProjectId": null,
+    "project": null,
     "layout": {
       "sidebarVisible": true
     },
     "sidebar": {
       "history": [],
       "models": [],
+      "projects": [],
+      "components": [],
       "extraSections": [],
       "layouts": [
         { "id": "workstation", "label": "workstation", "active": true },

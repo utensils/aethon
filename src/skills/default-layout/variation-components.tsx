@@ -317,6 +317,11 @@ interface RailShelfItem {
   id: string;
   label: string;
   icon?: string;
+  /** Optional: when present, treated as a project hint. The rail
+   *  surfaces it under the label so a row in the projects shelf shows
+   *  both name + path. Sidebar items use the same `hint` field. */
+  hint?: string;
+  active?: boolean;
 }
 
 export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentProps) {
@@ -327,7 +332,10 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
     version?: StringValue;
     sectionTitle?: StringValue;
     shelfTitle?: StringValue;
-    shelfItems?: RailShelfItem[];
+    /** Inline list OR JSON Pointer to a state path. Lets the same shelf
+     *  surface either hand-curated entries (icons / labels) or a live
+     *  data slice like `/sidebar/projects`. */
+    shelfItems?: RailShelfItem[] | { $ref: string };
   };
   const tabs: RailTab[] = useMemo(() => {
     if (!props.tabs) return [];
@@ -344,7 +352,12 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
   const shelfTitle = props.shelfTitle
     ? resolveString(props.shelfTitle, state)
     : "shelf";
-  const shelfItems = Array.isArray(props.shelfItems) ? props.shelfItems : [];
+  const shelfItems: RailShelfItem[] = useMemo(() => {
+    if (!props.shelfItems) return [];
+    if (Array.isArray(props.shelfItems)) return props.shelfItems;
+    const v = resolvePointer(state, props.shelfItems.$ref);
+    return Array.isArray(v) ? (v as RailShelfItem[]) : [];
+  }, [props.shelfItems, state]);
 
   return (
     <div className="ae-session-rail">
@@ -410,11 +423,18 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
             {shelfItems.map((it) => (
               <div
                 key={it.id}
-                className="ae-session-shelf-item"
+                className={
+                  "ae-session-shelf-item" + (it.active ? " ae-session-shelf-item-active" : "")
+                }
                 onClick={() => onEvent("shelf", { id: it.id })}
               >
                 {it.icon && <span className="ae-session-shelf-icon">{it.icon}</span>}
-                <span>{it.label}</span>
+                <div className="ae-session-shelf-text">
+                  <span className="ae-session-shelf-label">{it.label}</span>
+                  {it.hint && (
+                    <span className="ae-session-shelf-hint">{it.hint}</span>
+                  )}
+                </div>
               </div>
             ))}
           </>

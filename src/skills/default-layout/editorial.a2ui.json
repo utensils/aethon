@@ -31,7 +31,7 @@
           "props": {
             "area": "header",
             "title": "Æthon π",
-            "subtitle": "the blazing one",
+            "subtitle": { "$ref": "/sessionLabel" },
             "tabs": { "$ref": "/tabs" },
             "activeId": { "$ref": "/activeTabId" }
           }
@@ -112,12 +112,17 @@
     "empty": false,
     "hasTabs": true,
     "recentSessions": [],
+    "sessionLabel": "",
+    "projects": [],
+    "activeProjectId": null,
+    "project": null,
     "layout": {
       "sidebarVisible": true
     },
     "sidebar": {
       "history": [],
       "models": [],
+      "projects": [],
       "extraSections": [],
       "themes": [
         { "id": "ember", "label": "Ember — warm dark", "active": true },

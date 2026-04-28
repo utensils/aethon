@@ -28,6 +28,15 @@ export interface SlashCommandContext {
   // listLayouts() to discover available ids.
   activateLayout: (id: string) => boolean;
   listLayouts: () => { id: string; name: string; description?: string }[];
+  // Projects — directories the agent works in. Used by /project.
+  // `pickProject` opens a native folder dialog; the others are
+  // synchronous since the projects list is in-memory.
+  pickProject: () => Promise<string | null>;
+  openProject: (path: string, label?: string) => string;
+  setActiveProject: (id: string) => boolean;
+  clearProject: () => void;
+  listProjects: () => { id: string; label: string; path: string }[];
+  activeProject: () => { id: string; label: string; path: string } | null;
 }
 
 /** A single completion option for a slash command's argument. The picker
@@ -176,6 +185,63 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           list.length > 0
             ? `Registered skills:\n${list.map((s) => `- ${s}`).join("\n")}`
             : "No skills registered.",
+        );
+      },
+    },
+    {
+      name: "project",
+      description:
+        "Open or switch the active project directory. No arg → folder picker; id/path → switch.",
+      usage: "[id|path]",
+      argSource: "/sidebar/projects",
+      run: async (args, ctx) => {
+        const v = args.trim();
+        const projects = ctx.listProjects();
+        if (!v) {
+          // No arg: pop the native picker. On cancel, list current
+          // projects so the user discovers what's already known
+          // without an extra round-trip.
+          const path = await ctx.pickProject();
+          if (path) {
+            const active = ctx.activeProject();
+            ctx.appendSystem(
+              `Project set to \`${active?.label ?? path}\` (${path}).`,
+            );
+            return;
+          }
+          if (projects.length === 0) {
+            ctx.appendSystem("No projects yet. Cancelled folder picker.");
+            return;
+          }
+          const list = projects
+            .map(
+              (p) =>
+                `- \`${p.id}\` — ${p.label} (${p.path})`,
+            )
+            .join("\n");
+          ctx.appendSystem(`Known projects:\n${list}`);
+          return;
+        }
+        // Treat the arg as either a project id (sidebar selection) or a
+        // raw path. id wins to keep parity with the picker selection.
+        const byId = projects.find((p) => p.id === v);
+        if (byId) {
+          ctx.setActiveProject(byId.id);
+          ctx.appendSystem(`Project set to \`${byId.label}\` (${byId.path}).`);
+          return;
+        }
+        // Plausible path? Accept anything starting with `/` or `~` so we
+        // don't silently miss-classify a typo as a path. The runtime
+        // code expanding `~` happens in the bridge.
+        if (v.startsWith("/") || v.startsWith("~")) {
+          ctx.openProject(v);
+          ctx.appendSystem(`Project set to \`${v}\`.`);
+          return;
+        }
+        ctx.appendSystem(
+          `Unknown project: \`${v}\`. Try one of: ${
+            projects.map((p) => p.id).join(", ") || "(none)"
+          }`,
         );
       },
     },
