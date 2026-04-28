@@ -87,6 +87,21 @@ describe("selectPaletteItems", () => {
     expect(builtinCount).toBe(BUILTIN_KEYBINDINGS.length);
   });
 
+  it("hides a built-in keybinding when an extension overrides the combo", () => {
+    const items = selectPaletteItems(
+      {
+        ...SAMPLE,
+        keybindings: [
+          { combo: "meta+k", action: "custom-clear", description: "Custom clear" },
+        ],
+      },
+      "commands",
+    );
+    const keys = items.filter((i) => i.section === "keybindings");
+    expect(keys.some((k) => k.id === "keybind:builtin:meta+k")).toBe(false);
+    expect(keys.some((k) => k.id === "keybind:ext:meta+k")).toBe(true);
+  });
+
   it("always surfaces an Open Project… entry even with no projects", () => {
     const items = selectPaletteItems(
       { ...SAMPLE, sidebar: {} },

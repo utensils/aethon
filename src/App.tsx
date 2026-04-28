@@ -1065,6 +1065,32 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       // Skip auto-repeat (held key) so a brief hold doesn't double-fire.
       if (e.repeat) return;
+      // Extension-registered keybindings are checked before built-ins so
+      // they can intentionally replace default chrome actions. Dispatch
+      // through the existing a2ui_event route as
+      // {componentType: "keybinding", componentId: "keybinding__tpl__<combo>",
+      //  data: {action, combo}} so a paired aethon.onEvent matcher fires.
+      const combo = canonicalCombo(e);
+      if (combo) {
+        const binding = extensionKeybindingsRef.current.get(combo);
+        if (binding) {
+          e.preventDefault();
+          e.stopPropagation();
+          invoke("dispatch_a2ui_event", {
+            event: JSON.stringify({
+              componentId: `keybinding__tpl__${combo}`,
+              componentType: "keybinding",
+              templateRootType: "keybinding",
+              eventType: "invoke",
+              data: { combo, action: binding.action },
+            }),
+            tabId: stateRef.current.activeTabId,
+          }).catch(() => {
+            /* ignore — bridge gone or webview reload mid-flight */
+          });
+          return;
+        }
+      }
       const mod = e.metaKey || e.ctrlKey;
       // Cmd+` toggles the terminal panel. Mirrors VS Code / iTerm.
       if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
@@ -1173,32 +1199,6 @@ export default function App() {
         e.stopPropagation();
         resetZoom();
         return;
-      }
-      // Extension-registered keybindings — built-ins above win on a
-      // collision, by ordering. Look up the canonical combo and dispatch
-      // through the existing a2ui_event route as
-      // {componentType: "keybinding", componentId: "keybinding__tpl__<combo>",
-      //  data: {action, combo}} so a paired aethon.onEvent matcher fires.
-      const combo = canonicalCombo(e);
-      if (combo) {
-        const binding = extensionKeybindingsRef.current.get(combo);
-        if (binding) {
-          e.preventDefault();
-          e.stopPropagation();
-          invoke("dispatch_a2ui_event", {
-            event: JSON.stringify({
-              componentId: `keybinding__tpl__${combo}`,
-              componentType: "keybinding",
-              templateRootType: "keybinding",
-              eventType: "invoke",
-              data: { combo, action: binding.action },
-            }),
-            tabId: stateRef.current.activeTabId,
-          }).catch(() => {
-            /* ignore — bridge gone or webview reload mid-flight */
-          });
-          return;
-        }
       }
     };
     // useCapture=true so we run BEFORE xterm's keydown listener;
@@ -2751,9 +2751,9 @@ export default function App() {
 
   // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
   // by the keydown handler; written by hydrateKeybindings on
-  // `extension_keybindings` deltas. Built-ins (Cmd+T / Cmd+] / Cmd+[ /
-  // Cmd+W / Cmd+`) check first so collisions silently favor built-ins —
-  // documented as known precedence in the SPEC.
+  // `extension_keybindings` deltas. The keydown handler checks this map
+  // before built-ins so extensions can intentionally override default
+  // chrome actions.
   const extensionKeybindingsRef = useRef<
     Map<string, { combo: string; action: string; description?: string }>
   >(new Map());
@@ -2836,7 +2836,7 @@ export default function App() {
     for (const b of list) {
       const canonical = normalizeRegisteredCombo(b.combo);
       if (!canonical) continue;
-      next.set(canonical, b);
+      next.set(canonical, { ...b, combo: canonical });
     }
     extensionKeybindingsRef.current = next;
   }
@@ -3048,6 +3048,9 @@ export default function App() {
         else if (p.action === "builtin:meta+.") void stopPrompt();
         else if (p.action === "builtin:meta+p") openPalette("switcher");
         else if (p.action === "builtin:meta+shift+p") openPalette("commands");
+        else if (p.action === "builtin:meta+=") adjustZoom(0.1);
+        else if (p.action === "builtin:meta+-") adjustZoom(-0.1);
+        else if (p.action === "builtin:meta+0") resetZoom();
         return;
     }
   }

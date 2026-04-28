@@ -227,8 +227,9 @@ human-readable token using `Cmd` / `Meta` / `Ctrl` / `Alt` / `Option` /
 normalizes to a canonical form for matching. `action` is an opaque
 string the handler can branch on (defaults to the combo).
 
-Built-ins are reserved — `registerKeybinding` rejects them with an
-error. The current set:
+Registered keybindings run before built-in shortcuts, so an extension can
+intentionally override a default chrome action. Unregistering restores the
+built-in behavior. Built-ins without an override are:
 
 | Combo            | Built-in action                       |
 | ---------------- | ------------------------------------- |
@@ -239,6 +240,9 @@ error. The current set:
 | `Cmd+]`          | Next tab                              |
 | `Cmd+[`          | Previous tab                          |
 | `Cmd+\``         | Toggle terminal                       |
+| `Cmd+K`          | Clear chat                            |
+| `Cmd+.`          | Stop current prompt                   |
+| `Cmd+=` / `Cmd+-` / `Cmd+0` | UI zoom controls             |
 
 ```ts
 globalThis.aethon.registerKeybinding({

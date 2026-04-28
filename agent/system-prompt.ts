@@ -363,7 +363,7 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
 
   if (snapshot.keybindings.length > 0) {
     lines.push("");
-    lines.push("Extension-registered keybindings (built-ins like Cmd+T / Cmd+] / Cmd+W not shown):");
+    lines.push("Extension-registered keybindings (registered combos run before built-ins and can override them):");
     for (const k of snapshot.keybindings) {
       const desc = k.description ? ` — ${k.description}` : "";
       lines.push(`- \`${k.combo}\` → action \`${k.action}\`${desc}`);

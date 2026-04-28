@@ -67,6 +67,9 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+`", description: "Toggle terminal" },
   { combo: "meta+k", description: "Clear chat" },
   { combo: "meta+.", description: "Stop current prompt" },
+  { combo: "meta+=", description: "Zoom in" },
+  { combo: "meta+-", description: "Zoom out" },
+  { combo: "meta+0", description: "Reset zoom" },
 ];
 
 export interface SelectInput {
@@ -158,7 +161,9 @@ export function selectPaletteItems(
     }
   };
   const pushKeybindings = () => {
+    const overriddenCombos = new Set((state.keybindings ?? []).map((k) => k.combo));
     for (const b of BUILTIN_KEYBINDINGS) {
+      if (overriddenCombos.has(b.combo)) continue;
       items.push({
         id: `keybind:builtin:${b.combo}`,
         label: b.description,
