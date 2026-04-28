@@ -29,6 +29,18 @@
         "aarch64-darwin"
       ];
 
+      flake.overlays.default =
+        final: _prev:
+        let
+          system = final.stdenv.hostPlatform.system;
+        in
+        if builtins.hasAttr system inputs.self.packages then
+          {
+            aethon = inputs.self.packages.${system}.default;
+          }
+        else
+          { };
+
       perSystem =
         {
           system,
@@ -51,6 +63,46 @@
               "clippy"
               "rust-analyzer"
             ];
+          };
+
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = rustToolchain;
+            rustc = rustToolchain;
+          };
+
+          cargoTauriHook = pkgs.cargo-tauri.hook.override {
+            cargo = rustToolchain;
+          };
+
+          packageJson = builtins.fromJSON (builtins.readFile ./package.json);
+
+          source = lib.cleanSourceWith {
+            src = ./.;
+            filter =
+              path: type:
+              let
+                name = baseNameOf path;
+                rel = lib.removePrefix "${toString ./.}/" (toString path);
+              in
+              !(
+                (
+                  type == "directory"
+                  && builtins.elem rel [
+                    ".aethon"
+                    ".claude"
+                    ".direnv"
+                    ".git"
+                    ".playwright-mcp"
+                    "coverage"
+                    "dist"
+                    "node_modules"
+                    "src-tauri/binaries"
+                    "target"
+                  ]
+                )
+                || name == "result"
+                || lib.hasPrefix "result-" name
+              );
           };
 
           # Linux: full webkit2gtk + GTK closure for Tauri's webview. Listed
@@ -80,6 +132,67 @@
         {
           _module.args.pkgs = pkgs;
 
+          packages = rec {
+            aethon = rustPlatform.buildRustPackage (finalAttrs: {
+              pname = "aethon";
+              inherit (packageJson) version;
+
+              src = source;
+
+              cargoRoot = "src-tauri";
+              buildAndTestSubdir = finalAttrs.cargoRoot;
+
+              cargoLock.lockFile = ./src-tauri/Cargo.lock;
+
+              postPatch = ''
+                substituteInPlace src-tauri/tauri.conf.json \
+                  --replace-fail '"createUpdaterArtifacts": true' '"createUpdaterArtifacts": false'
+              '';
+
+              npmRoot = ".";
+              npmDeps = pkgs.fetchNpmDeps {
+                name = "${finalAttrs.pname}-${finalAttrs.version}-npm-deps";
+                inherit (finalAttrs) src;
+                hash = "sha256-nO82FJPRtzl2jxiSu+Y/keXVhbDPp2D2/7sBT2tB46I=";
+              };
+
+              nativeBuildInputs = [
+                pkgs.bun
+                cargoTauriHook
+                pkgs.nodejs
+                pkgs.npmHooks.npmConfigHook
+              ]
+              ++ lib.optionals pkgs.stdenv.isLinux [
+                pkgs.pkg-config
+                pkgs.wrapGAppsHook3
+              ]
+              ++ lib.optionals pkgs.stdenv.isDarwin [
+                pkgs.makeBinaryWrapper
+              ];
+
+              buildInputs = linuxBuildInputs ++ darwinBuildInputs;
+
+              tauriBuildFlags = lib.optionals pkgs.stdenv.isDarwin [
+                "--no-sign"
+              ];
+
+              postInstall = lib.optionalString pkgs.stdenv.isDarwin ''
+                mkdir -p "$out/bin"
+                makeWrapper "$out/Applications/Aethon.app/Contents/MacOS/aethon" "$out/bin/aethon"
+              '';
+
+              meta = {
+                description = "Pi with a face - agent-driven desktop shell with A2UI";
+                homepage = "https://github.com/utensils/aethon";
+                license = lib.licenses.mit;
+                mainProgram = "aethon";
+                platforms = lib.platforms.linux ++ lib.platforms.darwin;
+              };
+            });
+
+            default = aethon;
+          };
+
           devshells.default = {
             name = "aethon";
 
@@ -108,9 +221,7 @@
             ++ lib.optionals pkgs.stdenv.isLinux [
               {
                 name = "PKG_CONFIG_PATH";
-                value = lib.makeSearchPath "lib/pkgconfig" (
-                  map lib.getDev linuxBuildInputs
-                );
+                value = lib.makeSearchPath "lib/pkgconfig" (map lib.getDev linuxBuildInputs);
               }
               {
                 name = "LD_LIBRARY_PATH";

@@ -7,7 +7,9 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod helpers;
-use helpers::{clamp_font_size, parse_config_toml, validate_state_name, FONT_SIZE_MAX, FONT_SIZE_MIN};
+use helpers::{
+    FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size, parse_config_toml, validate_state_name,
+};
 
 /// Extension-registered menu item. Mirrors the shape the bridge ships
 /// in `extension_menu_items` events so deserialization is direct.
@@ -169,7 +171,9 @@ async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
         .output()
         .ok();
     let branch = match branch_out {
-        Some(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).trim().to_string()),
+        Some(o) if o.status.success() => {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        }
         _ => Command::new("git")
             .arg("-C")
             .arg(&dir)
@@ -192,7 +196,10 @@ async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
         .output()
         .map_err(|e| format!("git status: {e}"))?;
     if !porcelain.status.success() {
-        return Ok(Some(GitStatus { branch, ..Default::default() }));
+        return Ok(Some(GitStatus {
+            branch,
+            ..Default::default()
+        }));
     }
     let text = String::from_utf8_lossy(&porcelain.stdout);
     let mut dirty = false;
@@ -219,7 +226,12 @@ async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
             dirty = true;
         }
     }
-    Ok(Some(GitStatus { branch, dirty, ahead, behind }))
+    Ok(Some(GitStatus {
+        branch,
+        dirty,
+        ahead,
+        behind,
+    }))
 }
 
 #[tauri::command]
@@ -296,10 +308,7 @@ fn resolved_login_path() -> Option<String> {
             // recovered value. `env` always emits the actual exported
             // environment with PATH= colon-separated, regardless of the
             // shell that runs it.
-            let out = Command::new(&shell)
-                .args(["-ilc", "env"])
-                .output()
-                .ok()?;
+            let out = Command::new(&shell).args(["-ilc", "env"]).output().ok()?;
             if !out.status.success() {
                 return None;
             }
@@ -323,8 +332,7 @@ fn resolved_login_path() -> Option<String> {
 /// `src-tauri/build.rs`) so the same binary works no matter what triple
 /// the running machine reports.
 fn find_sidecar_binary() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("current_exe: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let exe_dir = exe
         .parent()
         .ok_or("current_exe has no parent dir")?
@@ -369,10 +377,7 @@ fn find_sidecar_binary() -> Result<PathBuf, String> {
 /// packages from `~/.pi/agent/settings.json`. Stdout is read on a
 /// background thread; each line is emitted as an `agent-response`
 /// Tauri event.
-fn ensure_agent_spawned(
-    guard: &mut Option<Child>,
-    app: &AppHandle,
-) -> Result<(), String> {
+fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<(), String> {
     // Reap a dead child if present — try_wait returns Ok(Some(_)) when exited.
     if let Some(child) = guard.as_mut()
         && let Ok(Some(status)) = child.try_wait()
@@ -569,8 +574,7 @@ fn dispatch_a2ui_event(
 
     let child = guard.as_mut().ok_or("agent not running")?;
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-    let event_value: serde_json::Value =
-        serde_json::from_str(&event).map_err(|e| e.to_string())?;
+    let event_value: serde_json::Value = serde_json::from_str(&event).map_err(|e| e.to_string())?;
     // tabId routes the event (and any handler-fired pi.prompt()) to the
     // originating tab's session instead of always defaulting to "default".
     let payload = serde_json::json!({
@@ -659,7 +663,9 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // hot-reloads without a manual restart.
         let aethon_ext = h.join(".aethon/extensions");
         let _ = std::fs::create_dir_all(&aethon_ext);
-        if aethon_ext.exists() { watch_paths.push(aethon_ext); }
+        if aethon_ext.exists() {
+            watch_paths.push(aethon_ext);
+        }
         // ~/.pi/agent/extensions is pi's territory but Aethon needs to
         // watch it so an extension dropped in there hot-reloads without a
         // manual app restart. Pre-create the directory if missing so the
@@ -668,27 +674,35 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // the next app launch will pick it up.
         let pi_ext = h.join(".pi/agent/extensions");
         let _ = std::fs::create_dir_all(&pi_ext);
-        if pi_ext.exists() { watch_paths.push(pi_ext); }
+        if pi_ext.exists() {
+            watch_paths.push(pi_ext);
+        }
         // ~/.aethon/skills/node_modules holds npm-distributed skill
         // packages (manifest with `aethon` field). Pre-create so a
         // first `npm install --prefix ~/.aethon/skills <pkg>` triggers
         // a reload without needing to restart the app.
         let skills_modules = h.join(".aethon/skills/node_modules");
         let _ = std::fs::create_dir_all(&skills_modules);
-        if skills_modules.exists() { watch_paths.push(skills_modules); }
+        if skills_modules.exists() {
+            watch_paths.push(skills_modules);
+        }
         // ~/.aethon/themes holds loose-file JSON themes (no extension /
         // skill packaging required). Pre-create so the first theme drop
         // fires Create events and triggers an agent respawn that picks it
         // up via loadAethonThemeDirectory.
         let themes_dir = h.join(".aethon/themes");
         let _ = std::fs::create_dir_all(&themes_dir);
-        if themes_dir.exists() { watch_paths.push(themes_dir); }
+        if themes_dir.exists() {
+            watch_paths.push(themes_dir);
+        }
     }
     // Bridge source dir is dev-only — release ships a compiled sidecar
     // and editing the source has no effect on the running binary.
     if cfg!(debug_assertions) {
         let agent_dir = project_root().join("agent");
-        if agent_dir.exists() { watch_paths.push(agent_dir); }
+        if agent_dir.exists() {
+            watch_paths.push(agent_dir);
+        }
     }
     if watch_paths.is_empty() {
         eprintln!("[agent-watch] nothing to watch — hot reload disabled");
@@ -706,8 +720,8 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     let (debounce_tx, debounce_rx) = std::sync::mpsc::channel::<DebounceMsg>();
     std::thread::spawn(move || run_debounce_worker(debounce_rx, app_clone.clone()));
 
-    let mut watcher = match notify::recommended_watcher(
-        move |res: notify::Result<notify::Event>| {
+    let mut watcher =
+        match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             let event = match res {
                 Ok(ev) => ev,
                 Err(err) => {
@@ -726,16 +740,13 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
             );
             // Some platforms (macOS fsevents) report renames from atomic
             // editors as `Modify(Name(_))`. Treat those as content changes too.
-            let is_atomic_rename =
-                matches!(event.kind, EventKind::Modify(ModifyKind::Name(_)));
+            let is_atomic_rename = matches!(event.kind, EventKind::Modify(ModifyKind::Name(_)));
             // Extensions land in their watched dirs as a Create event when
             // the user copies a new file in. Treat those as reload triggers.
-            let is_create =
-                matches!(event.kind, EventKind::Create(_));
+            let is_create = matches!(event.kind, EventKind::Create(_));
             // Removing an extension should also trigger reload so the
             // bridge stops loading it on the next spawn.
-            let is_remove =
-                matches!(event.kind, EventKind::Remove(_));
+            let is_remove = matches!(event.kind, EventKind::Remove(_));
 
             if !(is_data_modify || is_atomic_rename || is_create || is_remove) {
                 return;
@@ -765,14 +776,13 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
                 settle_ms,
                 paths: event.paths.clone(),
             });
-        },
-    ) {
-        Ok(w) => w,
-        Err(err) => {
-            eprintln!("[agent-watch] failed to create watcher: {err}");
-            return None;
-        }
-    };
+        }) {
+            Ok(w) => w,
+            Err(err) => {
+                eprintln!("[agent-watch] failed to create watcher: {err}");
+                return None;
+            }
+        };
 
     let mut watching: Vec<PathBuf> = Vec::new();
     for path in &watch_paths {
@@ -840,10 +850,8 @@ fn set_extension_menu_items(
         let mut guard = store.0.lock().map_err(|e| format!("lock: {e}"))?;
         *guard = items.clone();
     }
-    install_app_menu(&app, &items)
-        .map_err(|e| format!("install_app_menu: {e}"))?;
-    install_tray(&app, &items)
-        .map_err(|e| format!("install_tray: {e}"))?;
+    install_app_menu(&app, &items).map_err(|e| format!("install_app_menu: {e}"))?;
+    install_tray(&app, &items).map_err(|e| format!("install_tray: {e}"))?;
     Ok(())
 }
 
@@ -863,8 +871,8 @@ fn install_app_menu(
     app: &AppHandle,
     extension_items: &[ExtensionMenuItem],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
     use tauri::Emitter;
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
     let new_tab = MenuItemBuilder::with_id("new_tab", "New Tab")
         .accelerator("CmdOrCtrl+T")
@@ -878,18 +886,15 @@ fn install_app_menu(
     let prev_tab = MenuItemBuilder::with_id("prev_tab", "Previous Tab")
         .accelerator("CmdOrCtrl+[")
         .build(app)?;
-    let toggle_terminal =
-        MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
-            .accelerator("CmdOrCtrl+`")
-            .build(app)?;
-    let clear_chat =
-        MenuItemBuilder::with_id("clear_chat", "Clear Chat")
-            .accelerator("CmdOrCtrl+K")
-            .build(app)?;
-    let stop_prompt =
-        MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
-            .accelerator("CmdOrCtrl+.")
-            .build(app)?;
+    let toggle_terminal = MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
+        .accelerator("CmdOrCtrl+`")
+        .build(app)?;
+    let clear_chat = MenuItemBuilder::with_id("clear_chat", "Clear Chat")
+        .accelerator("CmdOrCtrl+K")
+        .build(app)?;
+    let stop_prompt = MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
+        .accelerator("CmdOrCtrl+.")
+        .build(app)?;
     let check_updates =
         MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
 
@@ -960,10 +965,8 @@ fn install_app_menu(
         .item(&PredefinedMenuItem::fullscreen(app, None)?)
         .build()?;
 
-    let docs_item =
-        MenuItemBuilder::with_id("help_docs", "Aethon Documentation").build(app)?;
-    let issues_item =
-        MenuItemBuilder::with_id("help_issues", "Report an Issue…").build(app)?;
+    let docs_item = MenuItemBuilder::with_id("help_docs", "Aethon Documentation").build(app)?;
+    let issues_item = MenuItemBuilder::with_id("help_issues", "Report an Issue…").build(app)?;
     let help_menu = SubmenuBuilder::new(app, "Help")
         .item(&docs_item)
         .item(&issues_item)
@@ -991,9 +994,8 @@ fn install_app_menu(
 
     #[cfg(target_os = "macos")]
     let menu = {
-        let mut b = MenuBuilder::new(app).items(&[
-            &app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu,
-        ]);
+        let mut b = MenuBuilder::new(app)
+            .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu]);
         if let Some(ref s) = extensions_submenu {
             b = b.item(s);
         }
@@ -1001,9 +1003,7 @@ fn install_app_menu(
     };
     #[cfg(not(target_os = "macos"))]
     let menu = {
-        let mut b = MenuBuilder::new(app).items(&[
-            &file_menu, &edit_menu, &view_menu, &tabs_menu,
-        ]);
+        let mut b = MenuBuilder::new(app).items(&[&file_menu, &edit_menu, &view_menu, &tabs_menu]);
         if let Some(ref s) = extensions_submenu {
             b = b.item(s);
         }
@@ -1036,9 +1036,9 @@ fn install_tray(
     app: &AppHandle,
     extension_items: &[ExtensionMenuItem],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::Manager;
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    use tauri::Manager;
 
     fn focus_main(app: &AppHandle) {
         // Cmd+H on macOS hides the app at the application level —
@@ -1055,8 +1055,7 @@ fn install_tray(
     }
 
     let show_item = MenuItem::with_id(app, "tray:show", "Show Aethon", true, None::<&str>)?;
-    let new_tab_item =
-        MenuItem::with_id(app, "tray:new_tab", "New Tab", true, None::<&str>)?;
+    let new_tab_item = MenuItem::with_id(app, "tray:new_tab", "New Tab", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray:quit", "Quit Aethon", true, None::<&str>)?;
     // Extension-supplied tray items (location: "tray") appear after the
     // built-ins. Each id is prefixed `ext:` so the click handler below
@@ -1069,11 +1068,8 @@ fn install_tray(
         extension_menu_items.push(mi);
     }
     // Build the menu's item slice. Mix built-ins with extension entries.
-    let mut item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
-        &show_item,
-        &new_tab_item,
-        &quit_item,
-    ];
+    let mut item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        vec![&show_item, &new_tab_item, &quit_item];
     for ext in &extension_menu_items {
         item_refs.push(ext);
     }
