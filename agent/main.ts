@@ -1527,6 +1527,33 @@ async function main() {
     scheduleStateFileWrite();
     return promise;
   }
+  // Reserved combos — built-in keybindings on the frontend (App.tsx)
+  // own these and check first, so an extension that registered them
+  // would never fire. Reject explicitly so the failure is visible.
+  // Combos here are the canonical lowercase form produced by
+  // App.tsx normalizeRegisteredCombo.
+  const RESERVED_COMBOS = new Set([
+    "meta+t", "meta+w", "meta+]", "meta+[",
+    "meta+`",
+    "meta+p", "meta+shift+p",
+  ]);
+  function canonicalizeCombo(input: string): string {
+    const parts = input.split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
+    const aliased = parts.map((p) =>
+      p === "cmd" || p === "command" ? "meta"
+      : p === "control" ? "ctrl"
+      : p === "option" ? "alt"
+      : p,
+    );
+    const mods = new Set<string>();
+    let key = "";
+    for (const p of aliased) {
+      if (p === "meta" || p === "ctrl" || p === "alt" || p === "shift") mods.add(p);
+      else key = p;
+    }
+    const ordered = ["meta", "ctrl", "alt", "shift"].filter((m) => mods.has(m));
+    return [...ordered, key].filter(Boolean).join("+");
+  }
   function _registerKeybinding(
     binding: unknown,
   ): Promise<MutationResult> {
@@ -1541,6 +1568,12 @@ async function main() {
     const combo = typeof obj.combo === "string" ? obj.combo.trim() : "";
     if (!combo) {
       const errorMsg = "registerKeybinding: combo required (e.g. \"Cmd+Shift+P\")";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const canonical = canonicalizeCombo(combo);
+    if (RESERVED_COMBOS.has(canonical)) {
+      const errorMsg = `registerKeybinding: "${combo}" is a reserved built-in shortcut`;
       send({ type: "notice", message: errorMsg });
       return Promise.resolve({ ok: false, error: errorMsg });
     }
@@ -1610,6 +1643,85 @@ async function main() {
     const { id, promise } = trackMutation();
     send({ type: "extension_slash_commands", mutationId: id, commands: list });
     scheduleStateFileWrite();
+    return promise;
+  }
+
+  // Notifications — agent-pushed toasts. Fire-and-forget by default
+  // (the frontend stack auto-dismisses after durationMs); pass an
+  // explicit id to drive dismiss programmatically. Visible state lives
+  // on the frontend; the bridge doesn't track lifecycle so the state
+  // file isn't polluted by transient toasts.
+  let _notificationCounter = 0;
+  function nextNotificationId(): string {
+    _notificationCounter += 1;
+    return `n${Date.now().toString(36)}-${_notificationCounter}`;
+  }
+  function _notify(input: unknown): Promise<MutationResult> {
+    if (!input || typeof input !== "object") {
+      return Promise.resolve({ ok: false, error: "notify requires { title }" });
+    }
+    const obj = input as {
+      id?: unknown;
+      title?: unknown;
+      message?: unknown;
+      kind?: unknown;
+      durationMs?: unknown;
+      actions?: unknown;
+    };
+    const title = typeof obj.title === "string" ? obj.title.trim() : "";
+    if (!title) {
+      const errorMsg = "notify: title required (non-empty string)";
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const id = typeof obj.id === "string" && obj.id ? obj.id : nextNotificationId();
+    const kind =
+      obj.kind === "success" || obj.kind === "warning" || obj.kind === "error"
+        ? obj.kind
+        : "info";
+    const message = typeof obj.message === "string" ? obj.message : undefined;
+    const durationMs =
+      obj.durationMs === null
+        ? null
+        : typeof obj.durationMs === "number" && Number.isFinite(obj.durationMs)
+          ? obj.durationMs
+          : undefined;
+    let actions:
+      | { label: string; action: string }[]
+      | undefined;
+    if (Array.isArray(obj.actions)) {
+      actions = obj.actions
+        .filter(
+          (a): a is { label: string; action: string } =>
+            !!a &&
+            typeof a === "object" &&
+            typeof (a as { label?: unknown }).label === "string" &&
+            typeof (a as { action?: unknown }).action === "string",
+        )
+        .map((a) => ({ label: a.label, action: a.action }));
+      if (actions.length === 0) actions = undefined;
+    }
+    const notification = {
+      id,
+      title,
+      ...(message ? { message } : {}),
+      kind,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(actions ? { actions } : {}),
+      createdAt: Date.now(),
+    };
+    const { id: mid, promise } = trackMutation();
+    send({ type: "notification", mutationId: mid, notification });
+    // Callers that want to dismiss programmatically should pre-assign
+    // an id and pass it back to dismissNotification — keeps the
+    // MutationResult shape uniform with the rest of the API.
+    return promise;
+  }
+  function _dismissNotification(id: unknown): Promise<MutationResult> {
+    if (typeof id !== "string" || !id) {
+      return Promise.resolve({ ok: false, error: "id required" });
+    }
+    const { id: mid, promise } = trackMutation();
+    send({ type: "notification_dismiss", mutationId: mid, id });
     return promise;
   }
 
@@ -1705,6 +1817,8 @@ async function main() {
     unregisterKeybinding: _unregisterKeybinding,
     registerMenuItem: _registerMenuItem,
     unregisterMenuItem: _unregisterMenuItem,
+    notify: _notify,
+    dismissNotification: _dismissNotification,
     registerEventRoute: _registerEventRoute,
     unregisterEventRoute: _unregisterEventRoute,
     listEventRoutes: _listEventRoutes,

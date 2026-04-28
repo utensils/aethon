@@ -7,7 +7,20 @@
 // arrive in a later phase that exposes pi's getCommands()/handler API.
 
 export interface SlashCommandContext {
+  /** Append a chat-history bubble (system role). Use for output that
+   *  belongs in the conversation surface — `/help` listings, `/skills`
+   *  output, etc. Don't use for transient mutation feedback (use
+   *  `notify` instead so the chat doesn't fill with bookkeeping). */
   appendSystem: (text: string) => void;
+  /** Push a toast notification. Use for transient mutation feedback
+   *  ("Theme set to Paper.", "Layout switched."). Auto-dismisses after
+   *  4s by default; pass `durationMs: null` to make it sticky. */
+  notify: (input: {
+    title: string;
+    message?: string;
+    kind?: "info" | "success" | "warning" | "error";
+    durationMs?: number | null;
+  }) => void;
   clearChat: () => void;
   // Switch the active theme by id. The three built-in palettes
   // (`ember`, `paper`, `aether`) are always available; extension-registered
@@ -98,15 +111,18 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
         }
         const match = themes.find((t) => t.id === v);
         if (!match) {
-          ctx.appendSystem(
-            `Unknown theme: \`${v}\`. Try one of: ${
-              themes.map((t) => t.id).join(", ") || "(none)"
-            }`,
-          );
+          ctx.notify({
+            title: `Unknown theme: ${v}`,
+            message:
+              themes.length > 0
+                ? `Try: ${themes.map((t) => t.id).join(", ")}`
+                : undefined,
+            kind: "error",
+          });
           return;
         }
         ctx.setTheme(match.id);
-        ctx.appendSystem(`Theme set to ${match.label}.`);
+        ctx.notify({ title: `Theme: ${match.label}`, kind: "success" });
       },
     },
     {
@@ -132,7 +148,7 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       description: "Reset the layout to the default",
       run: (_args, ctx) => {
         ctx.resetLayout();
-        ctx.appendSystem("Layout reset to default.");
+        ctx.notify({ title: "Layout reset", kind: "success" });
       },
     },
     {
@@ -166,13 +182,16 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
         }
         const ok = ctx.activateLayout(v);
         if (ok) {
-          ctx.appendSystem(`Layout switched to \`${v}\`.`);
+          ctx.notify({ title: `Layout: ${v}`, kind: "success" });
         } else {
-          ctx.appendSystem(
-            `Unknown layout: \`${v}\`. Try one of: ${
-              layouts.map((l) => l.id).join(", ") || "(none)"
-            }`,
-          );
+          ctx.notify({
+            title: `Unknown layout: ${v}`,
+            message:
+              layouts.length > 0
+                ? `Try: ${layouts.map((l) => l.id).join(", ")}`
+                : undefined,
+            kind: "error",
+          });
         }
       },
     },
@@ -204,20 +223,20 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           const path = await ctx.pickProject();
           if (path) {
             const active = ctx.activeProject();
-            ctx.appendSystem(
-              `Project set to \`${active?.label ?? path}\` (${path}).`,
-            );
+            ctx.notify({
+              title: `Project: ${active?.label ?? path}`,
+              message: path,
+              kind: "success",
+            });
             return;
           }
           if (projects.length === 0) {
-            ctx.appendSystem("No projects yet. Cancelled folder picker.");
+            ctx.notify({ title: "No projects yet", kind: "info" });
             return;
           }
+          // Listing belongs in chat so the user can scroll back to it.
           const list = projects
-            .map(
-              (p) =>
-                `- \`${p.id}\` — ${p.label} (${p.path})`,
-            )
+            .map((p) => `- \`${p.id}\` — ${p.label} (${p.path})`)
             .join("\n");
           ctx.appendSystem(`Known projects:\n${list}`);
           return;
@@ -227,7 +246,11 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
         const byId = projects.find((p) => p.id === v);
         if (byId) {
           ctx.setActiveProject(byId.id);
-          ctx.appendSystem(`Project set to \`${byId.label}\` (${byId.path}).`);
+          ctx.notify({
+            title: `Project: ${byId.label}`,
+            message: byId.path,
+            kind: "success",
+          });
           return;
         }
         // Plausible path? Accept anything starting with `/` or `~` so we
@@ -235,14 +258,17 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
         // code expanding `~` happens in the bridge.
         if (v.startsWith("/") || v.startsWith("~")) {
           ctx.openProject(v);
-          ctx.appendSystem(`Project set to \`${v}\`.`);
+          ctx.notify({ title: `Project: ${v}`, kind: "success" });
           return;
         }
-        ctx.appendSystem(
-          `Unknown project: \`${v}\`. Try one of: ${
-            projects.map((p) => p.id).join(", ") || "(none)"
-          }`,
-        );
+        ctx.notify({
+          title: `Unknown project: ${v}`,
+          message:
+            projects.length > 0
+              ? `Try: ${projects.map((p) => p.id).join(", ")}`
+              : undefined,
+          kind: "error",
+        });
       },
     },
   ];

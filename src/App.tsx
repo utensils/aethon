@@ -13,6 +13,16 @@ import {
   inspectLayoutSlotCoverage,
   layoutSlots,
 } from "./skills/default-layout";
+import { CommandPalette } from "./skills/default-layout/command-palette";
+import type {
+  PaletteItem,
+  PaletteMode,
+} from "./skills/default-layout/palette-items";
+import { NotificationStack } from "./skills/default-layout/notifications";
+import type {
+  NotificationEntry,
+  NotificationKind,
+} from "./skills/default-layout/notifications";
 import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
@@ -314,6 +324,11 @@ export default function App() {
       waiting: tab0.waiting,
       queueCount: tab0.queueCount,
       canvas: tab0.canvas,
+      // Layout-agnostic UI surfaces — the palette + notification stack
+      // both render at App root so they overlay every layout. State
+      // shapes are documented on the components themselves.
+      palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
+      notifications: [],
     };
   });
 
@@ -954,6 +969,38 @@ export default function App() {
         e.stopPropagation();
         closeTab(activeId);
         return;
+      }
+      // Cmd+Shift+P → command palette in "commands" mode (run an action,
+      // slash command, layout, theme, …). Checked before plain Cmd+P so
+      // shift takes precedence — otherwise the lowercase key match would
+      // route both to the switcher.
+      if (e.key.toLowerCase() === "p" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPalette("commands");
+        return;
+      }
+      // Cmd+P → command palette in "switcher" mode (jump to a tab,
+      // session, project, …). Mirrors VS Code's quick-open intuition
+      // but extended with the rest of Aethon's surfaces.
+      if (e.key.toLowerCase() === "p" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPalette("switcher");
+        return;
+      }
+      // Esc closes the palette when it's open. Stays a no-op otherwise
+      // so component-level Esc (chat-input cancel, etc.) keeps working.
+      if (e.key === "Escape") {
+        const palette = stateRef.current.palette as
+          | { open?: boolean }
+          | undefined;
+        if (palette?.open) {
+          e.preventDefault();
+          e.stopPropagation();
+          closePalette();
+          return;
+        }
       }
       // Extension-registered keybindings — built-ins above win on a
       // collision, by ordering. Look up the canonical combo and dispatch
@@ -1892,6 +1939,8 @@ export default function App() {
         // waiting/status. Used e.g. when a second chat IPC arrives while a
         // prompt is in-flight: the user sees the rejection but the Stop
         // button and waiting state for the original prompt persist.
+        // Also surface as a warning toast so a notice that arrives
+        // while the user isn't looking at chat doesn't get missed.
         const message = (data.message as string) ?? "";
         const tabId = (data.tabId as string | undefined) ?? "default";
         if (message) {
@@ -1899,7 +1948,33 @@ export default function App() {
             { id: crypto.randomUUID(), role: "system", text: message },
             tabId,
           );
+          pushNotification({ title: message, kind: "warning" });
         }
+        break;
+      }
+      case "notification": {
+        // Agent-pushed notification. Bridge supplies a stable id (so
+        // dismiss can reference it from agent code), title, optional
+        // message + kind + actions + durationMs. Auto-expiry runs on
+        // the frontend timer; the bridge doesn't track lifecycle.
+        const n = (data.notification as Partial<NotificationEntry> | undefined) ?? {};
+        if (typeof n.title === "string" && n.title) {
+          pushNotification({
+            ...(typeof n.id === "string" ? { id: n.id } : {}),
+            title: n.title,
+            ...(typeof n.message === "string" ? { message: n.message } : {}),
+            ...(n.kind ? { kind: n.kind } : {}),
+            ...(n.durationMs !== undefined ? { durationMs: n.durationMs } : {}),
+            ...(Array.isArray(n.actions) ? { actions: n.actions } : {}),
+          });
+        }
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "notification_dismiss": {
+        const id = data.id as string | undefined;
+        if (id) dismissNotification(id);
+        ackMutation(data.mutationId, true);
         break;
       }
       case "extension_lifecycle": {
@@ -2571,6 +2646,164 @@ export default function App() {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });
   }
 
+  // ---------------------------------------------------------------------
+  // Notifications — toast stack rendered at App root. Used for mutation
+  // feedback (theme set, layout switched) and agent-pushed `notice`s.
+  // Stays out of chat history so the conversation surface isn't cluttered
+  // with UI bookkeeping.
+  // ---------------------------------------------------------------------
+  function pushNotification(input: {
+    id?: string;
+    title: string;
+    message?: string;
+    kind?: NotificationKind;
+    durationMs?: number | null;
+    actions?: { label: string; action: string }[];
+  }): string {
+    const id = input.id ?? crypto.randomUUID();
+    const entry: NotificationEntry = {
+      id,
+      title: input.title,
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
+      // Default to a 4 s auto-dismiss for transient feedback. Pass
+      // `null` to make a notification sticky (warnings with actions
+      // typically want this).
+      durationMs:
+        input.durationMs === null
+          ? null
+          : (input.durationMs ?? 4000),
+      ...(input.actions && input.actions.length > 0
+        ? { actions: input.actions }
+        : {}),
+      createdAt: Date.now(),
+    };
+    setState((prev) => {
+      const list = (prev.notifications as NotificationEntry[] | undefined) ?? [];
+      // Cap the visible stack so a runaway extension can't spam toasts
+      // off-screen. Newest wins; the oldest beyond the cap is dropped.
+      const MAX_VISIBLE = 6;
+      const next = [...list, entry];
+      const trimmed = next.length > MAX_VISIBLE ? next.slice(-MAX_VISIBLE) : next;
+      return { ...prev, notifications: trimmed };
+    });
+    return id;
+  }
+  function dismissNotification(id: string) {
+    setState((prev) => {
+      const list = (prev.notifications as NotificationEntry[] | undefined) ?? [];
+      return { ...prev, notifications: list.filter((n) => n.id !== id) };
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Command palette helpers — open/close/run. The palette renders at App
+  // root over every layout. Items are derived in the component itself
+  // (selectPaletteItems) from existing state slices, so opening with a
+  // mode is enough — no items list to populate here.
+  // ---------------------------------------------------------------------
+  function openPalette(mode: PaletteMode) {
+    setState((prev) => ({
+      ...prev,
+      palette: { ...(prev.palette ?? {}), open: true, mode, query: "", selectedIndex: 0 },
+    }));
+  }
+  function closePalette() {
+    setState((prev) => ({
+      ...prev,
+      palette: { ...(prev.palette ?? {}), open: false, query: "", selectedIndex: 0 },
+    }));
+  }
+  // Route a palette selection to the right handler. The palette emits
+  // serializable payloads only; we resolve them against App helpers
+  // here so the component stays a pure renderer.
+  async function runPaletteItem(item: PaletteItem) {
+    const p = item.payload;
+    switch (p.kind) {
+      case "tab":
+        setActiveTab(p.tabId);
+        return;
+      case "session":
+        newTab(p.sessionId, p.label);
+        return;
+      case "project":
+        setActiveProjectById(p.projectId);
+        return;
+      case "open-project":
+        openProjectFromPicker();
+        return;
+      case "slash": {
+        // Reuse the same path the chat composer takes. Wraps the slash
+        // run with the live ctx so handlers see fresh state. Failures
+        // surface as a toast so the user sees what went wrong without
+        // a chat-history breadcrumb.
+        const cmd = slashCommandsRef.current.find((c) => c.name === p.name);
+        if (!cmd) {
+          pushNotification({
+            title: `Unknown command /${p.name}`,
+            kind: "error",
+          });
+          return;
+        }
+        try {
+          await cmd.run(p.args ?? "", slashContext());
+        } catch (err) {
+          pushNotification({
+            title: `/${p.name} failed`,
+            message: String(err),
+            kind: "error",
+          });
+        }
+        return;
+      }
+      case "keybinding": {
+        // Same dispatch shape the global keydown handler uses. Lets a
+        // paired aethon.onEvent matcher fire as if the user had hit
+        // the key.
+        invoke("dispatch_a2ui_event", {
+          event: JSON.stringify({
+            componentId: `keybinding__tpl__${p.combo}`,
+            componentType: "keybinding",
+            templateRootType: "keybinding",
+            eventType: "invoke",
+            data: { combo: p.combo, action: p.action },
+          }),
+          tabId: stateRef.current.activeTabId,
+        }).catch(() => {
+          /* ignore — bridge gone */
+        });
+        return;
+      }
+      case "layout":
+        activateLayoutById(p.layoutId);
+        return;
+      case "theme":
+        setTheme(p.themeId);
+        return;
+      case "model":
+        await setModel(p.modelId);
+        return;
+      case "action":
+        // Built-in action strings from BUILTIN_KEYBINDINGS — fire the
+        // same path the keydown clauses do so palette-triggered actions
+        // are indistinguishable from key-triggered ones.
+        if (p.action === "builtin:meta+t") newTab();
+        else if (p.action === "builtin:meta+w") {
+          const id = stateRef.current.activeTabId as string | undefined;
+          if (id) closeTab(id);
+        } else if (p.action === "builtin:meta+]") nextTab(1);
+        else if (p.action === "builtin:meta+[") nextTab(-1);
+        else if (p.action === "builtin:meta+`") {
+          setState((prev) => {
+            const term = (prev.terminal as { open?: boolean }) ?? {};
+            return { ...prev, terminal: { ...term, open: !term.open } };
+          });
+        } else if (p.action === "builtin:meta+p") openPalette("switcher");
+        else if (p.action === "builtin:meta+shift+p") openPalette("commands");
+        return;
+    }
+  }
+
   // Manual "Check for Updates" — wired from the Aethon menu and the
   // tray menu. Walks tauri-plugin-updater's check → download → install
   // pipeline and relaunches when done. Posts non-terminal status as
@@ -2634,6 +2867,9 @@ export default function App() {
   function slashContext(): SlashCommandContext {
     return {
       appendSystem,
+      notify: (input) => {
+        pushNotification(input);
+      },
       clearChat,
       setTheme,
       listThemes,
@@ -2827,6 +3063,78 @@ export default function App() {
           // (We don't filter by component.id; the test above did that.)
           return false;
         }
+      }
+      // Command palette events. Palette renders at App root; events
+      // route here directly (it never goes through the dispatch_a2ui
+      // bridge because there's no agent counterpart to invoke).
+      if (component.id === "command-palette") {
+        if (eventType === "close") {
+          closePalette();
+          return true;
+        }
+        if (eventType === "query") {
+          const value = (data as { value?: string } | undefined)?.value ?? "";
+          setState((prev) => ({
+            ...prev,
+            palette: { ...(prev.palette ?? {}), query: value, selectedIndex: 0 },
+          }));
+          return true;
+        }
+        if (eventType === "navigate") {
+          const idx = (data as { index?: number } | undefined)?.index ?? 0;
+          setState((prev) => ({
+            ...prev,
+            palette: { ...(prev.palette ?? {}), selectedIndex: idx },
+          }));
+          return true;
+        }
+        if (eventType === "select") {
+          const item = (data as { item?: PaletteItem } | undefined)?.item;
+          if (item) {
+            // Close FIRST so a slow handler doesn't leave the palette
+            // open over the result. Then run async.
+            closePalette();
+            void runPaletteItem(item);
+          }
+          return true;
+        }
+      }
+      // Notification stack events.
+      if (component.id === "notification-stack") {
+        const id = (data as { id?: string } | undefined)?.id;
+        if ((eventType === "dismiss" || eventType === "expire") && id) {
+          dismissNotification(id);
+          return true;
+        }
+        if (eventType === "action" && id) {
+          const action = (data as { action?: string } | undefined)?.action;
+          // Forward action strings as their own a2ui_event so paired
+          // aethon.onEvent matchers fire. Built-in actions are handled
+          // by the agent / extensions; nothing to short-circuit here.
+          if (action) {
+            invoke("dispatch_a2ui_event", {
+              event: JSON.stringify({
+                componentId: `notification__tpl__${id}`,
+                componentType: "notification",
+                templateRootType: "notification",
+                eventType: "invoke",
+                data: { id, action },
+              }),
+              tabId: stateRef.current.activeTabId,
+            }).catch(() => {
+              /* ignore — bridge gone */
+            });
+          }
+          dismissNotification(id);
+          return true;
+        }
+      }
+      // The header command-bar (used by command-deck layout) fires
+      // `invoke` on click/tap. Open the palette in switcher mode so
+      // the chrome affordance is now actually wired up.
+      if (component.id === "command-bar" && eventType === "invoke") {
+        openPalette("switcher");
+        return true;
       }
       if (component.id === "chat-input" && eventType === "submit") {
         const value = (data as { value?: string } | undefined)?.value ?? "";
@@ -3031,6 +3339,19 @@ export default function App() {
     [],
   );
 
+  // Synthetic A2UIComponent for App-root chrome (palette / notification
+  // stack). The palette + stack expect BuiltinComponentProps so we can
+  // also embed them inside layout JSON if a skill chooses to — at root
+  // we hand-feed the same shape.
+  const paletteComponent = useMemo(
+    () => ({ id: "command-palette", type: "command-palette", props: {} }),
+    [],
+  );
+  const notificationComponent = useMemo(
+    () => ({ id: "notification-stack", type: "notification-stack", props: {} }),
+    [],
+  );
+
   return (
     <SkillRegistryProvider registry={registry}>
       <div className="app">
@@ -3040,6 +3361,20 @@ export default function App() {
           onStateChange={setState}
           onEvent={onEvent}
           tabId={state.activeTabId as string | undefined}
+        />
+        <NotificationStack
+          component={notificationComponent}
+          state={state}
+          onEvent={(eventType, data) =>
+            onEvent(notificationComponent, eventType, data)
+          }
+        />
+        <CommandPalette
+          component={paletteComponent}
+          state={state}
+          onEvent={(eventType, data) =>
+            onEvent(paletteComponent, eventType, data)
+          }
         />
       </div>
     </SkillRegistryProvider>

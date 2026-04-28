@@ -32,6 +32,8 @@ import {
   ModelPicker,
   VerticalTabRail,
 } from "./variation-components";
+import { CommandPalette } from "./command-palette";
+import { NotificationStack } from "./notifications";
 import workstationPayload from "./workstation.a2ui.json";
 import editorialPayload from "./editorial.a2ui.json";
 import commandDeckPayload from "./command-deck.a2ui.json";
@@ -87,6 +89,8 @@ export const defaultLayoutSkill: A2UISkill = {
     "layout-toast": LayoutToast,
     "model-picker": ModelPicker,
     "appearance-menu": AppearanceMenu,
+    "command-palette": CommandPalette,
+    "notification-stack": NotificationStack,
   },
   layout: workstationPayload,
 };
