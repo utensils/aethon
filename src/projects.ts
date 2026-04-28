@@ -96,6 +96,19 @@ export function upsertProject(
   return { state: { projects, activeId: id }, id };
 }
 
+/** Remove a project from Aethon's persisted project list only. This never
+ *  touches the directory on disk; it just drops the metadata record. */
+export function removeProject(
+  state: ProjectsState,
+  id: string,
+): { state: ProjectsState; removed: Project | null } {
+  const removed = state.projects.find((p) => p.id === id) ?? null;
+  if (!removed) return { state, removed: null };
+  const projects = state.projects.filter((p) => p.id !== id);
+  const activeId = state.activeId === id ? null : state.activeId;
+  return { state: { projects, activeId }, removed };
+}
+
 /** Pop a native folder picker via the Tauri shell. Returns null when the
  *  user cancels or when running outside Tauri (no dialog plugin → graceful
  *  no-op). */

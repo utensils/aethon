@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
@@ -107,6 +107,7 @@ import {
   emptyProjectsState,
   loadProjects,
   pickProjectDirectory,
+  removeProject,
   saveProjects,
   upsertProject,
   type ProjectsState,
@@ -144,6 +145,20 @@ interface ModelDescriptor {
   id: string;
   label: string;
   provider: string;
+}
+
+interface RecentSessionItem {
+  id: string;
+  label: string;
+  lastModified?: string;
+}
+
+interface SidebarHistoryItem {
+  id: string;
+  label: string;
+  hint?: string;
+  tooltip?: string;
+  active?: boolean;
 }
 
 // Format a millisecond timestamp into a compact relative-time label like
@@ -326,6 +341,40 @@ export default function App() {
       projectId,
     };
   }
+  const buildSidebarHistory = useCallback((
+    tabs: Tab[],
+    activeTabId: string | undefined,
+    recentSessions: RecentSessionItem[],
+  ): SidebarHistoryItem[] => {
+    const openIds = new Set(tabs.map((t) => t.id));
+    const previewText = (messages: ChatMessage[]) => {
+      const last = [...messages]
+        .reverse()
+        .find((m) => typeof m.text === "string" && m.text.trim().length > 0);
+      return last?.text?.replace(/\s+/g, " ").trim() ?? "";
+    };
+    const openHistory = tabs
+      .filter((t) => t.messages.length > 0)
+      .map((t) => {
+        const preview = previewText(t.messages);
+        return {
+          id: `tab:${t.id}`,
+          label: t.label,
+          hint: t.id === activeTabId ? "active" : `${t.messages.length} msg`,
+          tooltip: preview || t.label,
+          active: t.id === activeTabId,
+        };
+      });
+    const restoredHistory = recentSessions
+      .filter((s) => !openIds.has(s.id))
+      .map((s) => ({
+        id: `session:${s.id}`,
+        label: s.label,
+        hint: s.lastModified,
+        tooltip: "Restore session",
+      }));
+    return [...openHistory, ...restoredHistory].slice(0, 16);
+  }, []);
   // Per-tab terminal buffer cap. Bash output bursts can be huge; without
   // a ceiling the buffer would grow forever and slow tab switches as the
   // replay payload grows.
@@ -722,6 +771,35 @@ export default function App() {
     });
   }
 
+  function toggleSidebar() {
+    setState((prev) => {
+      // Flip /layout/sidebarVisible AND swap /layout/columns +
+      // /layout/areas atomically so the grid template adapts on
+      // the same frame the sidebar cell hides. Without the
+      // template swap the hidden sidebar would still reserve its
+      // 220px column. Workstation hoists tabs into the header
+      // (5 rows total); other layouts (editorial / command-deck /
+      // live-layout) own their own area templates and don't bind
+      // /layout/areas, so this toggle stays workstation-shaped.
+      const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
+      const columns = visible ? "220px minmax(0,1fr)" : "minmax(0,1fr)";
+      const areas = visible
+        ? [
+            "sidebar header",
+            "sidebar canvas",
+            "sidebar terminal",
+            "sidebar composer",
+            "status status",
+          ]
+        : ["header", "canvas", "terminal", "composer", "status"];
+      return {
+        ...prev,
+        layout: { ...layout, sidebarVisible: visible, columns, areas },
+      };
+    });
+  }
+
   async function stopPrompt() {
     const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
     try {
@@ -867,7 +945,11 @@ export default function App() {
   // Promise<unknown>); we only care about completion.
   const pendingTabOpens = useRef(new Map<string, Promise<unknown>>());
 
-  function newTab(restoreId?: string, restoreLabel?: string) {
+  function newTab(
+    restoreId?: string,
+    restoreLabel?: string,
+    options?: { restoredSession?: boolean },
+  ) {
     // restoreId lets the caller open a tab with a specific tabId so the
     // bridge's SessionManager.continueRecent picks up the persisted
     // session for that id. Used by the empty-state's "Recent sessions"
@@ -887,8 +969,16 @@ export default function App() {
       // sequential "Tab N" naming the empty-tab path has used.
       const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
       const projectId = projectsRef.current.activeId;
+      const messages: ChatMessage[] = options?.restoredSession
+        ? [{
+            id: crypto.randomUUID(),
+            role: "system",
+            text: "Restored session context. Continue the conversation to pick up where it left off.",
+          }]
+        : [];
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
+        messages,
         model: inheritedModel,
       };
       tabs.push(tab);
@@ -1099,6 +1189,14 @@ export default function App() {
         toggleTerminal();
         return;
       }
+      // Cmd+B toggles the sidebar. Mirrors the standard editor
+      // shortcut for showing/hiding sidebars.
+      if (e.key.toLowerCase() === "b" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSidebar();
+        return;
+      }
       // Cmd+K → clear active chat. This is advertised in the Workstation
       // panels section and mirrors the View > Clear Chat menu item.
       if (e.key.toLowerCase() === "k" && mod && !e.shiftKey && !e.altKey) {
@@ -1275,6 +1373,7 @@ export default function App() {
       openProject: (path: string, label?: string) => openProjectByPath(path, label),
       setActiveProject: setActiveProjectById,
       clearProject: clearActiveProject,
+      removeProject: removeProjectById,
       listProjects: () => projectsRef.current.projects.slice(),
       activeProject: () => activeProject(projectsRef.current),
     };
@@ -2644,6 +2743,30 @@ export default function App() {
     announceProjectToBridge(tabId, null);
   }
 
+  function removeProjectById(id: string): boolean {
+    const fromKey = projectBucketKey(projectsRef.current.activeId);
+    const wasActive = projectsRef.current.activeId === id;
+    const removedKey = projectBucketKey(id);
+    const result = removeProject(projectsRef.current, id);
+    if (!result.removed) return false;
+
+    projectsRef.current = result.state;
+    gitStatusRef.current.delete(result.removed.path);
+    persistProjects();
+
+    if (wasActive) {
+      switchProjectBucket(fromKey, NO_PROJECT_KEY);
+      const tabId =
+        (stateRef.current.activeTabId as string | undefined) ?? "default";
+      announceProjectToBridge(tabId, null);
+      tabBucketsRef.current.delete(removedKey);
+    } else {
+      tabBucketsRef.current.delete(removedKey);
+    }
+
+    return true;
+  }
+
   // Walk the layout tree and produce a deduped, sorted list of component
   // types found in it. Lets the live-layout sidebar's "components in
   // layout" section derive from the actual active payload instead of
@@ -3137,38 +3260,8 @@ export default function App() {
         const sidebar = (stateRef.current.sidebar as Record<string, unknown>) ?? {};
         return ((sidebar.models as { id: string; label: string; active?: boolean }[]) ?? []);
       },
-      toggleTerminal: () =>
-        setState((prev) => {
-          const term = (prev.terminal as { open?: boolean }) ?? {};
-          return { ...prev, terminal: { ...term, open: !term.open } };
-        }),
-      toggleSidebar: () =>
-        setState((prev) => {
-          // Flip /layout/sidebarVisible AND swap /layout/columns +
-          // /layout/areas atomically so the grid template adapts on
-          // the same frame the sidebar cell hides. Without the
-          // template swap the hidden sidebar would still reserve its
-          // 220px column. Workstation hoists tabs into the header
-          // (5 rows total); other layouts (editorial / command-deck /
-          // live-layout) own their own area templates and don't bind
-          // /layout/areas, so this toggle stays workstation-shaped.
-          const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
-          const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
-          const columns = visible ? "220px minmax(0,1fr)" : "minmax(0,1fr)";
-          const areas = visible
-            ? [
-                "sidebar header",
-                "sidebar canvas",
-                "sidebar terminal",
-                "sidebar composer",
-                "status status",
-              ]
-            : ["header", "canvas", "terminal", "composer", "status"];
-          return {
-            ...prev,
-            layout: { ...layout, sidebarVisible: visible, columns, areas },
-          };
-        }),
+      toggleTerminal,
+      toggleSidebar,
       activateLayout: activateLayoutById,
       listLayouts: () =>
         layoutCatalogueRef.current.map((l) => ({
@@ -3180,6 +3273,7 @@ export default function App() {
       openProject: (path: string, label?: string) => openProjectByPath(path, label),
       setActiveProject: setActiveProjectById,
       clearProject: clearActiveProject,
+      removeProject: removeProjectById,
       listProjects: () =>
         projectsRef.current.projects.map((p) => ({
           id: p.id,
@@ -3485,7 +3579,9 @@ export default function App() {
             // Re-open the persisted session by reusing the same tabId.
             // The bridge's SessionManager.continueRecent reads the
             // existing JSONL files so the LLM history is restored too.
-            newTab(sel.sessionId, sel.label ?? "Restored Session");
+            newTab(sel.sessionId, sel.label ?? "Restored Session", {
+              restoredSession: true,
+            });
           } else {
             newTab();
           }
@@ -3524,6 +3620,13 @@ export default function App() {
           });
         }
         return true;
+      }
+      if (component.id === "sidebar" && eventType === "remove-project") {
+        const selected = data as
+          | { projectId?: string; itemId?: string }
+          | undefined;
+        const projectId = selected?.projectId ?? selected?.itemId;
+        return projectId ? removeProjectById(projectId) : true;
       }
       // Sidebar select + dropdown chrome pickers (model-picker /
       // appearance-menu) all use the same `{sectionId, itemId}` event
@@ -3570,6 +3673,23 @@ export default function App() {
           setActiveProjectById(selected.itemId);
           return true;
         }
+        if (selected?.sectionId === "history" && selected.itemId) {
+          if (selected.itemId.startsWith("tab:")) {
+            setActiveTab(selected.itemId.slice(4));
+            return true;
+          }
+          if (selected.itemId.startsWith("session:")) {
+            const sessionId = selected.itemId.slice(8);
+            const recentSessions =
+              (stateRef.current.recentSessions as RecentSessionItem[] | undefined) ?? [];
+            const item = recentSessions.find((s) => s.id === sessionId);
+            newTab(sessionId, item?.label ?? `Session ${sessionId.slice(0, 8)}`, {
+              restoredSession: true,
+            });
+            return true;
+          }
+          return true;
+        }
       }
       return false;
     },
@@ -3594,27 +3714,45 @@ export default function App() {
     () => ({ id: "notification-stack", type: "notification-stack", props: {} }),
     [],
   );
+  const renderState = useMemo(() => {
+    const tabs = (state.tabs as Tab[] | undefined) ?? [];
+    const recentSessions =
+      (state.recentSessions as RecentSessionItem[] | undefined) ?? [];
+    const sidebar = (state.sidebar as Record<string, unknown> | undefined) ?? {};
+    const history = buildSidebarHistory(
+      tabs,
+      state.activeTabId as string | undefined,
+      recentSessions,
+    );
+    return {
+      ...state,
+      sidebar: {
+        ...sidebar,
+        history,
+      },
+    };
+  }, [buildSidebarHistory, state]);
 
   return (
     <SkillRegistryProvider registry={registry}>
       <div className="app">
         <A2UIRenderer
           payload={layout}
-          state={state}
+          state={renderState}
           onStateChange={setState}
           onEvent={onEvent}
           tabId={state.activeTabId as string | undefined}
         />
         <NotificationStack
           component={notificationComponent}
-          state={state}
+          state={renderState}
           onEvent={(eventType, data) =>
             onEvent(notificationComponent, eventType, data)
           }
         />
         <CommandPalette
           component={paletteComponent}
-          state={state}
+          state={renderState}
           onEvent={(eventType, data) =>
             onEvent(paletteComponent, eventType, data)
           }
