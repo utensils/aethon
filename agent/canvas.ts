@@ -39,8 +39,9 @@ export interface CanvasApi {
 export interface CanvasDeps {
   /**
    * Tab-aware setState. Mirrors the bridge's `_setState(path, value, sourceTabId?)`.
-   * The factory always passes `boundTabId` as `sourceTabId` so attribution
-   * is explicit; pass `undefined` to defer to ALS / active-tab fallback.
+   * The factory always passes the resolved tab as `sourceTabId` so
+   * attribution is explicit at every write — including boot-time
+   * writes which the bridge routes to the canonical "default" tab.
    */
   setState: (
     path: string,
@@ -48,13 +49,15 @@ export interface CanvasDeps {
     sourceTabId: string | undefined,
   ) => Promise<CanvasMutationResult>;
   /**
-   * Returns the currently-attributed tab when no explicit id was given.
-   * The bridge wires this to `tabContext.getStore() ?? currentAgentTabId`.
-   * Used only by `append` to decide which tab's mirrored canvas to read.
+   * Returns the tab id this write should be attributed to. The bridge
+   * wires this to `tabContext.getStore() ?? currentAgentTabId ?? "default"`
+   * — never returns undefined when called from the canvas helper, so
+   * boot-time writes (no ALS, no active turn) still land in a real
+   * tab's per-tab mirror instead of the global state tree.
    */
-  resolveAttributedTab: (explicitTabId: string | undefined) => string | undefined;
+  resolveAttributedTab: (explicitTabId: string | undefined) => string;
   /** Returns the components currently mirrored at `/canvas` for the tab, or `[]`. */
-  readCanvasComponents: (tabId: string | undefined) => CanvasComponent[];
+  readCanvasComponents: (tabId: string) => CanvasComponent[];
 }
 
 export function normalizeCanvasComponents(input: unknown): CanvasComponent[] {
@@ -94,31 +97,36 @@ export function makeCanvasApi(
   boundTabId: string | undefined,
   deps: CanvasDeps,
 ): CanvasApi {
+  // Resolve the attribution at call time (not at construction) so the
+  // global `aethon.canvas` (boundTabId === undefined) picks up whatever
+  // tab is active when the agent is mid-turn, and falls back to the
+  // canonical default tab when no turn is in flight.
+  const resolveTab = (): string => deps.resolveAttributedTab(boundTabId);
   return {
     emit(components) {
       const list = normalizeCanvasComponents(components);
-      return deps.setState("/canvas", { components: list }, boundTabId);
+      return deps.setState("/canvas", { components: list }, resolveTab());
     },
     append(components) {
       const additions = normalizeCanvasComponents(components);
       if (additions.length === 0) return Promise.resolve({ ok: true });
-      const attributedTab = deps.resolveAttributedTab(boundTabId);
+      const attributedTab = resolveTab();
       const existing = deps.readCanvasComponents(attributedTab);
       return deps.setState(
         "/canvas",
         { components: [...existing, ...additions] },
-        boundTabId,
+        attributedTab,
       );
     },
     clear() {
-      return deps.setState("/canvas", { components: [] }, boundTabId);
+      return deps.setState("/canvas", { components: [] }, resolveTab());
     },
     patch(subpath, value) {
       if (typeof subpath !== "string" || subpath.length === 0) {
         return Promise.resolve({ ok: false, error: "subpath required" });
       }
       const normalized = subpath.startsWith("/") ? subpath : "/" + subpath;
-      return deps.setState("/canvas" + normalized, value, boundTabId);
+      return deps.setState("/canvas" + normalized, value, resolveTab());
     },
   };
 }

@@ -60,6 +60,27 @@ describe("setAtPointer", () => {
     expect(after.items).toEqual([10, 99, 30]);
   });
 
+  it("creates arrays for missing intermediates when next token is numeric", () => {
+    // Mirrors the frontend's setPointer: writing /canvas/components/0/type
+    // against an empty tree should produce {canvas: {components: [{type:"x"}]}}
+    // — components must be an Array, not {0: {...}}.
+    const after = setAtPointer({}, "/canvas/components/0/type", "card");
+    expect(after).toEqual({
+      canvas: { components: [{ type: "card" }] },
+    });
+    expect(
+      Array.isArray((after.canvas as { components: unknown }).components),
+    ).toBe(true);
+  });
+
+  it("creates objects for missing intermediates when next token is non-numeric", () => {
+    const after = setAtPointer({}, "/canvas/meta/title", "x");
+    expect(after).toEqual({ canvas: { meta: { title: "x" } } });
+    expect(
+      Array.isArray((after.canvas as { meta: unknown }).meta),
+    ).toBe(false);
+  });
+
   it("rebuilds an array as an array even when intermediate clone uses spread", () => {
     // A subtle case: write at a deep index path, ensuring every
     // intermediate Array is cloned with [...arr] not {...arr}.

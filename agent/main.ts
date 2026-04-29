@@ -1519,19 +1519,17 @@ async function main() {
   function makeCanvasApi(tabId: string | undefined): CanvasApi {
     return buildCanvasApi(tabId, {
       setState: (path, value, sourceTabId) => _setState(path, value, sourceTabId),
+      // Always returns a real tab id. "default" is the canonical
+      // pre-created tab (`ensureTab("default")` runs at startup), so
+      // boot-time canvas writes — when no ALS or active turn exists
+      // yet — still land in `perTabExtState["default"]` and replay
+      // back to the frontend's default tab on `ready`. Without this,
+      // boot writes routed into `extensionStateTree` and the frontend's
+      // active-tab mirror would overwrite them on hydration.
       resolveAttributedTab: (explicit) =>
-        explicit ?? tabContext.getStore() ?? currentAgentTabId,
-      // Reader fallback: when there's an attributed tab, read its
-      // mirrored canvas from `perTabExtState` (where `_setState` routes
-      // tab-attributed writes). When attribution is absent — a boot-time
-      // `aethon.canvas.append(...)` before any tab exists — `_setState`
-      // routes the write into `extensionStateTree` instead, so we have
-      // to read from there or sequential boot appends would each see
-      // an empty canvas and clobber prior writes.
-      readCanvasComponents: (id) => {
-        const source = id ? perTabExtState.get(id) : extensionStateTree;
-        return readCanvasComponentsFromTabState(source);
-      },
+        explicit ?? tabContext.getStore() ?? currentAgentTabId ?? "default",
+      readCanvasComponents: (id) =>
+        readCanvasComponentsFromTabState(perTabExtState.get(id)),
     });
   }
   // Pi may re-run extension register() per session, and `tabs` create
