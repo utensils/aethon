@@ -341,8 +341,22 @@ export default function App() {
   // every per-tab update we write the tab record AND, if it's active,
   // also write the root mirror.
   // ---------------------------------------------------------------------
+  // M6 P1: shell-tab metadata. Present iff Tab.kind === "shell".
+  // Carried as an optional sibling field (rather than refactoring Tab to a
+  // discriminated union) so existing agent-tab code paths stay unchanged.
+  interface ShellMeta {
+    cwd: string;
+    command: string;
+    args: string[];
+    shareMode: "private" | "read" | "read-write" | "read-write-trusted";
+    shellState: "starting" | "running" | "exited";
+    exitCode?: number;
+  }
   interface Tab {
     id: string;
+    /** "agent" (chat session) or "shell" (interactive PTY). Default "agent"
+     *  for back-compat with persisted tab records that pre-date the field. */
+    kind: "agent" | "shell";
     label: string;
     messages: ChatMessage[];
     draft: string;
@@ -361,6 +375,8 @@ export default function App() {
     // projects swaps `state.tabs` for the target project's bucket and
     // hides everyone else.
     projectId: string | null;
+    /** Present iff kind === "shell". */
+    shell?: ShellMeta;
   }
   // Sentinel key for the "no project" bucket. Project ids are UUIDs so
   // a literal can't collide.
@@ -371,9 +387,11 @@ export default function App() {
     id: string,
     label: string,
     projectId: string | null = null,
+    kind: "agent" | "shell" = "agent",
   ): Tab {
     return {
       id,
+      kind,
       label,
       messages: [],
       draft: "",
@@ -923,6 +941,11 @@ export default function App() {
     "queueCount",
     "canvas",
     "model",
+    // M6 P1: shell-tab fields. The "kind" + "shell" mirror lets layouts
+    // bind `visible: { $ref: "/kind" }`-style toggles without running a
+    // full /tabs/<idx> lookup on every render.
+    "kind",
+    "shell",
   ];
 
   function updateTab(tabId: string, mutator: (tab: Tab) => Tab) {
@@ -1020,6 +1043,28 @@ export default function App() {
   // `window.__AETHON_STATE__()` without going through React's state lifecycle.
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // M6 P1: derive boolean flags from the active tab's kind so layout
+  // payloads can bind `visible: { $ref: "/shellTabActive" }` /
+  // `/agentTabActive` without computing equality at the renderer.
+  // Both flags require /hasTabs — when no tab exists, neither is true
+  // (the empty-state composite owns the canvas area instead).
+  const hasTabsForKind = !!state.hasTabs;
+  const tabKind = (state.kind as string | undefined) ?? "agent";
+  useEffect(() => {
+    const isShell = hasTabsForKind && tabKind === "shell";
+    const isAgent = hasTabsForKind && tabKind !== "shell";
+    setState((prev) => {
+      if (prev.shellTabActive === isShell && prev.agentTabActive === isAgent) {
+        return prev;
+      }
+      return {
+        ...prev,
+        shellTabActive: isShell,
+        agentTabActive: isAgent,
+      };
+    });
+  }, [hasTabsForKind, tabKind]);
 
   // ---------------------------------------------------------------------
   // Tab actions. Each one updates local state AND tells the bridge so the
@@ -1121,6 +1166,68 @@ export default function App() {
       });
   }
 
+  // M6 P1: open a new shell tab — interactive PTY-backed user shell.
+  // Symmetric to newTab() but skips the bridge/agent IPC entirely; the
+  // tab's kind = "shell", no pi session is created, and the Rust shell
+  // command spawns a portable_pty child whose stdout streams via
+  // `shell-output` events (handled below) and whose keystrokes flow
+  // through `shell_input` (driven by the shell-canvas composite).
+  function newShellTab(options?: { command?: string; args?: string[]; cwd?: string }) {
+    const id = crypto.randomUUID();
+    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
+      const projectId = projectsRef.current.activeId;
+      const tab: Tab = {
+        ...makeEmptyTab(id, label, projectId, "shell"),
+        shell: {
+          cwd: inheritedCwd ?? "",
+          command: options?.command ?? "",
+          args: options?.args ?? [],
+          shareMode: "private",
+          shellState: "starting",
+        },
+      };
+      tabs.push(tab);
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs,
+        activeTabId: id,
+        empty: false,
+        hasTabs: true,
+      };
+      const tabRec = tab as unknown as Record<string, unknown>;
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = tabRec[key as string];
+      }
+      return result;
+    });
+    invoke("shell_open", {
+      args: {
+        tabId: id,
+        ...(options?.command ? { command: options.command } : {}),
+        ...(options?.args ? { args: options.args } : {}),
+        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+      },
+    })
+      .then(() => {
+        updateTab(id, (t) => ({
+          ...t,
+          shell: t.shell ? { ...t.shell, shellState: "running" } : t.shell,
+        }));
+      })
+      .catch((err: unknown) => {
+        appendSystem(`Failed to open shell tab: ${String(err)}`);
+        updateTab(id, (t) => ({
+          ...t,
+          shell: t.shell
+            ? { ...t.shell, shellState: "exited", exitCode: -1 }
+            : t.shell,
+        }));
+      });
+  }
+
   function autoRestoreDiscoveredSessions(
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -1171,6 +1278,9 @@ export default function App() {
   function closeTab(tabId: string) {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     if (tabs.length === 0) return; // already empty — nothing to close
+    // Capture the kind before setState removes the tab, so we know
+    // whether to also tear down the PTY in the Rust shell registry.
+    const closedKind = tabs.find((t) => t.id === tabId)?.kind;
     let nextBuffer = "";
     let switched = false;
     let becameEmpty = false;
@@ -1228,6 +1338,14 @@ export default function App() {
         payload: JSON.stringify({ type: "tab_close", tabId }),
       }).catch(() => {
         /* ignore — UI already closed */
+      });
+    }
+    // M6 P1: shell tabs own a PTY in the Rust shell registry. Close
+    // it too so the child process is reaped and the reader thread
+    // joins (no zombies on tab close).
+    if (closedKind === "shell") {
+      invoke("shell_close", { tabId }).catch(() => {
+        /* idempotent — already torn down by natural exit */
       });
     }
   }
@@ -1299,11 +1417,22 @@ export default function App() {
         void stopPrompt();
         return;
       }
-      // Cmd+T → new tab. Pi sessions are independent per tab.
-      if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
+      // Cmd+Shift+T → new agent tab (chat session). Checked before plain
+      // Cmd+T so shift takes precedence — the lowercase key match would
+      // otherwise route both to the shell-tab path.
+      if (e.key.toLowerCase() === "t" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         newTab();
+        return;
+      }
+      // M6 P1: Cmd+T → new shell tab. Matches Terminal.app, iTerm2,
+      // GNOME Terminal, Windows Terminal. Existing chat behavior moves
+      // to Cmd+Shift+T.
+      if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        newShellTab();
         return;
       }
       // Cmd+] → next tab; Cmd+[ → previous. Matches macOS browser
@@ -1574,6 +1703,53 @@ export default function App() {
       }
     });
 
+    // M6 P1: shell-output streams a PTY chunk. Append to the originating
+    // shell-tab's terminalBuffer and dispatch a per-tab window event so
+    // the shell-canvas composite (subscribed by tabId) writes the chunk
+    // to its xterm. Inactive shell-tab output stays buffered until the
+    // user switches to it (replay-on-mount, same pattern as agent
+    // bash output for the read-only Terminal panel).
+    const unlistenShellOutput = listen<{ tabId: string; content: string }>(
+      "shell-output",
+      (event) => {
+        const { tabId, content } = event.payload;
+        if (!tabId || typeof content !== "string") return;
+        updateTab(tabId, (t) => {
+          const next = t.terminalBuffer + content;
+          const trimmed = next.length > TERMINAL_REPLAY_MAX
+            ? next.slice(next.length - TERMINAL_REPLAY_MAX)
+            : next;
+          return { ...t, terminalBuffer: trimmed };
+        });
+        window.dispatchEvent(
+          new CustomEvent(`aethon:shell-output:${tabId}`, { detail: content }),
+        );
+      },
+    );
+
+    // M6 P1: shell-exit fires once when the PTY child process ends.
+    // Flip the tab's shell.shellState to "exited" so the canvas can
+    // show a closed-process indicator; the slot is left in the Rust
+    // registry until tab close (cleanup is idempotent).
+    const unlistenShellExit = listen<{ tabId: string; code: number | null }>(
+      "shell-exit",
+      (event) => {
+        const { tabId, code } = event.payload;
+        if (!tabId) return;
+        updateTab(tabId, (t) => {
+          if (t.kind !== "shell" || !t.shell) return t;
+          return {
+            ...t,
+            shell: {
+              ...t.shell,
+              shellState: "exited",
+              ...(typeof code === "number" ? { exitCode: code } : {}),
+            },
+          };
+        });
+      },
+    );
+
     const unlistenReload = listen<string>("agent-reloaded", () => {
       activeResponseIdRef.current = null;
       setStatusFlags({ waiting: false, status: "agent reloaded" });
@@ -1629,7 +1805,16 @@ export default function App() {
         return;
       }
       switch (id) {
-        case "new_tab": newTab(); break;
+        // Cmd+T (menu + tray) defaults to a shell tab in M6 — matches
+        // Terminal.app convention. The legacy "new_tab" id is preserved
+        // so older payloads keep working; "new_agent_tab" is new.
+        case "new_tab":
+        case "new_shell_tab":
+          newShellTab();
+          break;
+        case "new_agent_tab":
+          newTab();
+          break;
         case "close_tab": {
           const activeId = stateRef.current.activeTabId as string | undefined;
           if (activeId) closeTab(activeId);
@@ -1666,6 +1851,8 @@ export default function App() {
       unlistenReload.then((fn) => fn());
       unlistenStderr.then((fn) => fn());
       unlistenMenu.then((fn) => fn());
+      unlistenShellOutput.then((fn) => fn());
+      unlistenShellExit.then((fn) => fn());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
