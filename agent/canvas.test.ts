@@ -305,17 +305,20 @@ describe("makeCanvasApi emit + patch + append", () => {
 });
 
 describe("makeCanvasApi tab-less seed fallback", () => {
-  it("uses the bridge's tab-less retained canvas when per-tab mirror is empty", async () => {
-    // Models the case codex flagged: an extension calls plain
-    // aethon.setState("/canvas", ...) without a tab context, which
-    // routes to extensionStateTree on the bridge. canvas.append should
-    // see THAT seed and compose with it, not replace the visible canvas
-    // with only the appended component.
-    const seeded: CanvasComponent = { type: "card", id: "seeded-via-setState" };
+  // Helper that mirrors the bridge's read priority: per-tab mirror
+  // first, fall back to the tab-less retained canvas ONLY when the
+  // per-tab record has no canvas slot at all. An explicit empty canvas
+  // (after clear/emit-empty) IS a value — must not be resurrected.
+  function makeFallbackDeps(seedComponents: CanvasComponent[]): {
+    deps: CanvasDeps;
+    calls: SetStateCall[];
+    perTab: Map<string, Record<string, unknown>>;
+    tabless: Record<string, unknown>;
+  } {
     const calls: SetStateCall[] = [];
     const perTab = new Map<string, Record<string, unknown>>();
-    const tablessRetained: Record<string, unknown> = {
-      canvas: { components: [seeded] },
+    const tabless: Record<string, unknown> = {
+      canvas: { components: seedComponents },
     };
     const deps: CanvasDeps = {
       setState: (path, value, sourceTabId) => {
@@ -326,17 +329,48 @@ describe("makeCanvasApi tab-less seed fallback", () => {
       },
       resolveTab: (explicit) => explicit ?? "active",
       readCanvasComponents: (id) => {
-        const fromTab = readCanvasComponentsFromTabState(perTab.get(id));
-        if (fromTab.length > 0) return fromTab;
-        return readCanvasComponentsFromTabState(tablessRetained);
+        const tabState = perTab.get(id);
+        if (tabState && (tabState as { canvas?: unknown }).canvas !== undefined) {
+          return readCanvasComponentsFromTabState(tabState);
+        }
+        return readCanvasComponentsFromTabState(tabless);
       },
     };
+    return { deps, calls, perTab, tabless };
+  }
+
+  it("uses the bridge's tab-less retained canvas when per-tab mirror has no canvas slot", async () => {
+    const seeded: CanvasComponent = { type: "card", id: "seeded-via-setState" };
+    const { deps, calls } = makeFallbackDeps([seeded]);
     const api = makeCanvasApi(undefined, deps);
     const fresh: CanvasComponent = { type: "text", id: "appended" };
     await api.append(fresh);
-    expect(calls[0].value).toEqual({
-      components: [seeded, fresh],
-    });
+    expect(calls[0].value).toEqual({ components: [seeded, fresh] });
+  });
+
+  it("does NOT resurrect tab-less seed after the per-tab canvas was explicitly cleared", async () => {
+    const seeded: CanvasComponent = { type: "card", id: "seeded-via-setState" };
+    const { deps, calls } = makeFallbackDeps([seeded]);
+    const api = makeCanvasApi(undefined, deps);
+    // Explicitly clear the canvas on the active tab — sets per-tab
+    // canvas to {components: []}.
+    await api.clear();
+    expect(calls[0].value).toEqual({ components: [] });
+    // Append after clear: must compose with the empty per-tab canvas,
+    // not the stale tab-less seed.
+    const fresh: CanvasComponent = { type: "text", id: "appended" };
+    await api.append(fresh);
+    expect(calls[1].value).toEqual({ components: [fresh] });
+  });
+
+  it("does NOT resurrect tab-less seed after emit([])", async () => {
+    const seeded: CanvasComponent = { type: "card", id: "seeded" };
+    const { deps, calls } = makeFallbackDeps([seeded]);
+    const api = makeCanvasApi(undefined, deps);
+    await api.emit([]);
+    const fresh: CanvasComponent = { type: "text", id: "appended" };
+    await api.append(fresh);
+    expect(calls[1].value).toEqual({ components: [fresh] });
   });
 });
 

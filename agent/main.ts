@@ -1555,15 +1555,17 @@ async function main() {
         currentAgentTabId ??
         frontendActiveTabId() ??
         "default",
-      // Read priority: per-tab mirror first; if empty, fall back to the
-      // bridge's retained tab-less canvas (anything an extension wrote
-      // via plain `aethon.setState("/canvas", ...)` outside any tab
-      // context lives there). Both are "what's on screen right now"
-      // candidates — the per-tab record wins when present because it's
-      // the more specific one.
+      // Read priority: per-tab mirror first; only fall back to the
+      // bridge's retained tab-less canvas (extensionStateTree) when the
+      // per-tab record has NO canvas slot at all. An empty per-tab
+      // canvas (`{canvas: {components: []}}`, e.g. after a `clear()`
+      // or `emit([])`) is an explicit value — using the tab-less seed
+      // there would resurrect components the user just cleared.
       readCanvasComponents: (id) => {
-        const fromTab = readCanvasComponentsFromTabState(perTabExtState.get(id));
-        if (fromTab.length > 0) return fromTab;
+        const tabState = perTabExtState.get(id);
+        if (tabState && (tabState as { canvas?: unknown }).canvas !== undefined) {
+          return readCanvasComponentsFromTabState(tabState);
+        }
         return readCanvasComponentsFromTabState(extensionStateTree);
       },
     });
