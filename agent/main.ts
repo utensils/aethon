@@ -1516,18 +1516,48 @@ async function main() {
   // so a sidebar click that routes to a handler keeps writing to the
   // originating tab even if the user has switched while the handler
   // was async.
+  // Read the frontend's currently-active tab id from its mirrored /tabs
+  // slice (each tab carries `active: true|false`). Used by the canvas
+  // append helper to predict where a tab-less write will land. Returns
+  // `undefined` if frontendState hasn't received /tabs yet (pre-ready).
+  function frontendActiveTabId(): string | undefined {
+    const tabsSlice = frontendState.get("/tabs");
+    if (!Array.isArray(tabsSlice)) return undefined;
+    for (const t of tabsSlice) {
+      if (
+        t &&
+        typeof t === "object" &&
+        (t as { active?: unknown }).active === true &&
+        typeof (t as { id?: unknown }).id === "string"
+      ) {
+        return (t as { id: string }).id;
+      }
+    }
+    return undefined;
+  }
   function makeCanvasApi(tabId: string | undefined): CanvasApi {
     return buildCanvasApi(tabId, {
       setState: (path, value, sourceTabId) => _setState(path, value, sourceTabId),
-      // Always returns a real tab id. "default" is the canonical
-      // pre-created tab (`ensureTab("default")` runs at startup), so
-      // boot-time canvas writes — when no ALS or active turn exists
-      // yet — still land in `perTabExtState["default"]` and replay
-      // back to the frontend's default tab on `ready`. Without this,
-      // boot writes routed into `extensionStateTree` and the frontend's
-      // active-tab mirror would overwrite them on hydration.
-      resolveAttributedTab: (explicit) =>
-        explicit ?? tabContext.getStore() ?? currentAgentTabId ?? "default",
+      // Resolve write attribution + read scope per call. Three regimes:
+      //  1. explicit / ALS / active turn → concrete tab; write attributes
+      //     to it, read targets the same tab's mirror.
+      //  2. pre-ready, tab-less → `writeTab: "default"` so the boot write
+      //     lands in `perTabExtState["default"]` (which the frontend's
+      //     pre-created default tab replays on `ready`); read from the
+      //     same. Boot append composes correctly across calls.
+      //  3. post-ready, tab-less → `writeTab: undefined` so the frontend
+      //     applies the patch to the user's currently-active tab —
+      //     matching plain `setState` semantics. Read targets the
+      //     frontend-active tab id from `frontendState["/tabs"]` so
+      //     `append` predicts the same tab, falling back to "default"
+      //     if /tabs hasn't been mirrored yet.
+      resolveTabs: (explicit) => {
+        const concrete = explicit ?? tabContext.getStore() ?? currentAgentTabId;
+        if (concrete) return { writeTab: concrete, readTab: concrete };
+        if (!frontendReady) return { writeTab: "default", readTab: "default" };
+        const active = frontendActiveTabId();
+        return { writeTab: undefined, readTab: active ?? "default" };
+      },
       readCanvasComponents: (id) =>
         readCanvasComponentsFromTabState(perTabExtState.get(id)),
     });

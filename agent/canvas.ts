@@ -36,12 +36,30 @@ export interface CanvasApi {
   patch(subpath: string, value: unknown): Promise<CanvasMutationResult>;
 }
 
+export interface CanvasResolution {
+  /**
+   * Tab id sent on the outbound state_patch (`sourceTabId` to setState).
+   * `undefined` lets the frontend route the patch to whichever tab is
+   * currently active — matching plain `aethon.setState` semantics for
+   * tab-less writes (e.g. an extension's setInterval after startup).
+   */
+  writeTab: string | undefined;
+  /**
+   * Tab id whose mirrored canvas `append` should read from. Always a
+   * concrete id so the bridge can predict where the upcoming write will
+   * land — pre-ready, "default" (the canonical pre-created tab);
+   * post-ready, the frontend-active tab id (read from frontendState's
+   * /tabs slice), falling back to "default".
+   */
+  readTab: string;
+}
+
 export interface CanvasDeps {
   /**
    * Tab-aware setState. Mirrors the bridge's `_setState(path, value, sourceTabId?)`.
-   * The factory always passes the resolved tab as `sourceTabId` so
-   * attribution is explicit at every write — including boot-time
-   * writes which the bridge routes to the canonical "default" tab.
+   * The factory passes `writeTab` from `resolveTabs(...)` — usually the
+   * concrete attribution, but `undefined` for post-ready tab-less code
+   * so the frontend resolves to the user's currently-active tab.
    */
   setState: (
     path: string,
@@ -49,13 +67,12 @@ export interface CanvasDeps {
     sourceTabId: string | undefined,
   ) => Promise<CanvasMutationResult>;
   /**
-   * Returns the tab id this write should be attributed to. The bridge
-   * wires this to `tabContext.getStore() ?? currentAgentTabId ?? "default"`
-   * — never returns undefined when called from the canvas helper, so
-   * boot-time writes (no ALS, no active turn) still land in a real
-   * tab's per-tab mirror instead of the global state tree.
+   * Resolve write attribution + read scope for one canvas call. Split so
+   * tab-less post-ready writes can omit attribution (matching setState's
+   * "frontend routes to active") while `append` still has a concrete tab
+   * id to read existing components from.
    */
-  resolveAttributedTab: (explicitTabId: string | undefined) => string;
+  resolveTabs: (explicitTabId: string | undefined) => CanvasResolution;
   /** Returns the components currently mirrored at `/canvas` for the tab, or `[]`. */
   readCanvasComponents: (tabId: string) => CanvasComponent[];
 }
@@ -97,36 +114,34 @@ export function makeCanvasApi(
   boundTabId: string | undefined,
   deps: CanvasDeps,
 ): CanvasApi {
-  // Resolve the attribution at call time (not at construction) so the
-  // global `aethon.canvas` (boundTabId === undefined) picks up whatever
-  // tab is active when the agent is mid-turn, and falls back to the
-  // canonical default tab when no turn is in flight.
-  const resolveTab = (): string => deps.resolveAttributedTab(boundTabId);
+  // Resolve at call time (not construction) so the global helper picks
+  // up the live active turn / frontend-active tab on every write.
+  const resolve = (): CanvasResolution => deps.resolveTabs(boundTabId);
   return {
     emit(components) {
       const list = normalizeCanvasComponents(components);
-      return deps.setState("/canvas", { components: list }, resolveTab());
+      return deps.setState("/canvas", { components: list }, resolve().writeTab);
     },
     append(components) {
       const additions = normalizeCanvasComponents(components);
       if (additions.length === 0) return Promise.resolve({ ok: true });
-      const attributedTab = resolveTab();
-      const existing = deps.readCanvasComponents(attributedTab);
+      const tabs = resolve();
+      const existing = deps.readCanvasComponents(tabs.readTab);
       return deps.setState(
         "/canvas",
         { components: [...existing, ...additions] },
-        attributedTab,
+        tabs.writeTab,
       );
     },
     clear() {
-      return deps.setState("/canvas", { components: [] }, resolveTab());
+      return deps.setState("/canvas", { components: [] }, resolve().writeTab);
     },
     patch(subpath, value) {
       if (typeof subpath !== "string" || subpath.length === 0) {
         return Promise.resolve({ ok: false, error: "subpath required" });
       }
       const normalized = subpath.startsWith("/") ? subpath : "/" + subpath;
-      return deps.setState("/canvas" + normalized, value, resolveTab());
+      return deps.setState("/canvas" + normalized, value, resolve().writeTab);
     },
   };
 }

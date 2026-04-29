@@ -37,9 +37,9 @@ function newHarness(opts: {
   if (opts.initialMirror) {
     for (const [k, v] of Object.entries(opts.initialMirror)) mirror.set(k, v);
   }
-  // The bridge's resolver always returns a real tab id ("default" is
-  // its baseline); reproduce that here so makeCanvasApi's CanvasDeps
-  // contract holds in tests too.
+  // Tests model the "always-attributed" regime — explicit or current
+  // turn — so `writeTab === readTab`. Tab-less regimes (pre/post-ready)
+  // are covered by their own dedicated test below.
   const fallbackTab = opts.attributedTab ?? "default";
   const harness: Harness = {
     calls,
@@ -54,7 +54,10 @@ function newHarness(opts: {
         }
         return Promise.resolve(opts.setStateResult ?? { ok: true });
       },
-      resolveAttributedTab: (explicit) => explicit ?? fallbackTab,
+      resolveTabs: (explicit) => {
+        const tab = explicit ?? fallbackTab;
+        return { writeTab: tab, readTab: tab };
+      },
       readCanvasComponents: (tabId) =>
         readCanvasComponentsFromTabState(mirror.get(tabId)),
     }),
@@ -207,7 +210,10 @@ describe("makeCanvasApi.append", () => {
         h.calls.push({ path, value, sourceTabId });
         return Promise.resolve({ ok: true });
       },
-      resolveAttributedTab: (explicit) => explicit ?? "tab-1",
+      resolveTabs: (explicit) => {
+        const tab = explicit ?? "tab-1";
+        return { writeTab: tab, readTab: tab };
+      },
       readCanvasComponents: (id) => readCanvasComponentsFromTabState(h.mirror.get(id)),
     });
     const fresh: CanvasComponent = { type: "text", id: "fresh" };
@@ -266,7 +272,10 @@ describe("makeCanvasApi tab attribution", () => {
         h.calls.push({ path, value, sourceTabId });
         return Promise.resolve({ ok: true });
       },
-      resolveAttributedTab: (explicit) => explicit ?? "tab-active",
+      resolveTabs: (explicit) => {
+        const tab = explicit ?? "tab-active";
+        return { writeTab: tab, readTab: tab };
+      },
       readCanvasComponents: () => [],
     });
     await api.emit({ type: "card" });
@@ -281,32 +290,32 @@ describe("makeCanvasApi tab attribution", () => {
     ]);
   });
 
-  it("global variant (boundTabId undefined) attributes to the resolver's fallback", async () => {
-    // Bridge's contract: resolveAttributedTab always returns a real
-    // tab id (falling back to "default" when no ALS / active tab).
-    // The global aethon.canvas helper picks that up so writes always
-    // attribute to a tab — never to the global state tree.
+  it("post-ready tab-less write omits sourceTabId (lets frontend route to active)", async () => {
+    // The bridge's resolveTabs returns `{writeTab: undefined, readTab: <activeTab>}`
+    // when frontendReady is true and no ALS / active turn exists, so
+    // canvas.* matches plain setState semantics. append still reads
+    // from the predicted active tab so its compose-on-read works.
     const calls: SetStateCall[] = [];
     const seen: (string | undefined)[] = [];
-    const existing: CanvasComponent = { type: "card", id: "from-default" };
+    const existing: CanvasComponent = { type: "card", id: "from-active" };
     const api = makeCanvasApi(undefined, {
       setState: (path, value, sourceTabId) => {
         calls.push({ path, value, sourceTabId });
         return Promise.resolve({ ok: true });
       },
-      resolveAttributedTab: (explicit) => {
+      resolveTabs: (explicit) => {
         seen.push(explicit);
-        return explicit ?? "default";
+        return { writeTab: undefined, readTab: "active-tab" };
       },
       readCanvasComponents: (id) =>
-        id === "default" ? [existing] : [],
+        id === "active-tab" ? [existing] : [],
     });
     await api.append({ type: "text", id: "new" });
     expect(seen).toEqual([undefined]);
     expect(calls[0].value).toEqual({
       components: [existing, { type: "text", id: "new" }],
     });
-    expect(calls[0].sourceTabId).toBe("default");
+    expect(calls[0].sourceTabId).toBeUndefined();
   });
 });
 
@@ -326,7 +335,10 @@ describe("makeCanvasApi emit + patch + append", () => {
         mirror = setAtPointer(mirror, path, value);
         return Promise.resolve({ ok: true });
       },
-      resolveAttributedTab: (explicit) => explicit ?? "tab-1",
+      resolveTabs: (explicit) => {
+        const tab = explicit ?? "tab-1";
+        return { writeTab: tab, readTab: tab };
+      },
       readCanvasComponents: () => readCanvasComponentsFromTabState(mirror),
     });
     const c1: CanvasComponent = {
@@ -352,12 +364,12 @@ describe("makeCanvasApi emit + patch + append", () => {
 });
 
 describe("makeCanvasApi.append boot-time fallback", () => {
-  it("attributes boot writes to the resolver's default tab and survives sequential appends", async () => {
-    // Mirrors the bridge's boot-time wiring: with no ALS / active tab,
-    // resolveAttributedTab returns the canonical default tab so the
-    // write lands in that tab's per-tab mirror (which the frontend
-    // replays on `ready`). The reader and the writer agree on the same
-    // tab id, so two sequential appends compose instead of clobbering.
+  it("pre-ready appends attribute to default tab and compose across calls", async () => {
+    // Pre-ready (no frontend connected, no ALS / active turn): writes
+    // and reads both target the canonical "default" tab, so sequential
+    // appends compose. Without this, boot writes routed into the global
+    // state tree and the frontend's active-tab empty mirror clobbered
+    // them on hydration.
     const calls: SetStateCall[] = [];
     const mirror = new Map<string, { canvas?: { components?: CanvasComponent[] } }>();
     const api = makeCanvasApi(undefined, {
@@ -368,7 +380,7 @@ describe("makeCanvasApi.append boot-time fallback", () => {
         }
         return Promise.resolve({ ok: true });
       },
-      resolveAttributedTab: (explicit) => explicit ?? "default",
+      resolveTabs: () => ({ writeTab: "default", readTab: "default" }),
       readCanvasComponents: (id) =>
         readCanvasComponentsFromTabState(mirror.get(id)),
     });
@@ -377,11 +389,35 @@ describe("makeCanvasApi.append boot-time fallback", () => {
     await api.append(c1);
     await api.append(c2);
     expect(calls).toHaveLength(2);
-    // Both writes attribute to "default" rather than the global tree.
     expect(calls[0].sourceTabId).toBe("default");
     expect(calls[1].sourceTabId).toBe("default");
-    // The second append composes with the first.
     expect(calls[1].value).toEqual({ components: [c1, c2] });
+  });
+});
+
+describe("makeCanvasApi post-ready tab-less write", () => {
+  it("emit/clear/patch send no sourceTabId so the frontend routes to its active tab", async () => {
+    // Matches plain setState semantics: tab-less writes after the
+    // frontend has reported ready must omit attribution. The ONLY
+    // hint we give the helper is the predicted-active read scope, used
+    // by append.
+    const calls: SetStateCall[] = [];
+    const api = makeCanvasApi(undefined, {
+      setState: (path, value, sourceTabId) => {
+        calls.push({ path, value, sourceTabId });
+        return Promise.resolve({ ok: true });
+      },
+      resolveTabs: () => ({ writeTab: undefined, readTab: "active-tab" }),
+      readCanvasComponents: () => [],
+    });
+    await api.emit({ type: "card" });
+    await api.clear();
+    await api.patch("/components/0/props/title", "x");
+    expect(calls.map((c) => c.sourceTabId)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 });
 
@@ -389,7 +425,7 @@ describe("makeCanvasApi error propagation", () => {
   it("propagates setState failure through emit", async () => {
     const api = makeCanvasApi(undefined, {
       setState: () => Promise.resolve({ ok: false, error: "frontend_rejected: oops" }),
-      resolveAttributedTab: () => "default",
+      resolveTabs: () => ({ writeTab: "default", readTab: "default" }),
       readCanvasComponents: () => [],
     });
     const r = await api.emit({ type: "card" });
