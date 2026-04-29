@@ -266,9 +266,45 @@ component's `children` are templates expanded per item with the same
 ```
 
 Without `cell`, each cell prints `row[field]` as plain text. With `cell`,
-the column's template renders inside the cell with `/$row` (the row
-object), `/$index` (row position), and `/$parent` (surrounding state)
-available to nested `$ref`s.
+the column's template renders inside the cell with these scope keys
+available to nested `$ref`s:
+
+- `/$row` — the whole row object
+- `/$index` — row position (0-based)
+- `/$parent` — surrounding state (the same shape `$ref` resolution would
+  use outside the table)
+- `/$column` — column metadata (`field`, `header`, `width`)
+- `/$cell` — the resolved value at `row[field]` (undefined when `field`
+  is absent), so a cell template can read the column's value without
+  re-deriving it from `/$row`
+
+Example — render a status badge whose color depends on the cell value:
+
+```ts
+{
+  type: "table",
+  props: {
+    rows: { $ref: "/projects" },
+    columns: [
+      { header: "Project", field: "label" },
+      {
+        header: "Status",
+        field: "status",
+        cell: {
+          type: "card",
+          props: {
+            tone: { $ref: "/$cell" },         // "success" | "warning" | …
+            title: { $ref: "/$column/header" } // "Status"
+          },
+          children: [
+            { type: "text", props: { value: { $ref: "/$cell" } } }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
 
 ### `form-field`
 

@@ -43,15 +43,25 @@ devshell exposes these helpers (defined in `flake.nix`):
 
 ### Layer responsibilities
 
-1. **Tauri shell** (`src-tauri/src/lib.rs`) — owns the OS boundary. Two Tauri
-   commands: `send_message` (forwards a chat string to the agent's stdin) and
+1. **Tauri shell** (`src-tauri/src/lib.rs`, helpers in `helpers.rs`,
+   debug-only commands + TCP eval server in `debug.rs` gated by
+   `#[cfg(debug_assertions)]`) — owns the OS boundary. Two Tauri commands:
+   `send_message` (forwards a chat string to the agent's stdin) and
    `dispatch_a2ui_event` (forwards a structured event). On the first
    `send_message` it spawns `bun run agent/main.ts` and starts a reader
    thread that emits each stdout line as a Tauri `agent-response` event.
-2. **Agent bridge** (`agent/main.ts`) — JSON-lines over stdio. Reads
-   `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies with
-   `{type:"response"|"a2ui"|"error", ...}`. Provider config comes from env
-   vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …); pi-ai picks one up.
+2. **Agent bridge** (`agent/main.ts` + helpers) — JSON-lines over stdio.
+   Reads `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
+   with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes from
+   env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …); pi-ai picks one up.
+   Helpers (each with a colocated `*.test.ts`):
+   - `agent/project-extensions.ts` — discovers project-local extensions
+     (walks up from the active cwd looking for `.aethon/extensions/`).
+   - `agent/session-history.ts` — reads pi session transcripts under
+     `$AETHON_SESSIONS_DIR/<tabId>/` so the frontend can rehydrate visible
+     history on restart.
+   - `agent/terminal-stream.ts` — buffers `bash`-tool output as an A2UI
+     terminal stream (the `BashTerminalStreamState` snapshot type).
 3. **React frontend** (`src/`) — see below. Listens for `agent-response`
    events, parses each line, and routes it into the chat history or canvas.
 
@@ -89,6 +99,16 @@ console) can swap chrome at runtime:
 - `window.aethon.registerSkill(skill)` — register a skill; if it has a
   `layout`, also activate it
 - `window.aethon.listSkills()` — names of currently registered skills
+- `window.aethon.openProject(path)` — register/activate a project
+
+### Projects
+
+Pi sessions are scoped to a working directory. `src/projects.ts` persists
+the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) and
+the active project's path is passed as `cwd` on `tab_open`. **Existing
+tabs keep the cwd they were created with** — switching the active project
+only affects new tabs. When updating tab/session code, treat the per-tab
+cwd as immutable.
 
 ### Agent runtime contract
 
@@ -96,7 +116,7 @@ The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 
 | Env var | Purpose |
 |---------|---------|
-| `AETHON_DOCS_DIR` | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). The system prompt points the model at these for the authoritative API/component reference. |
+| `AETHON_DOCS_DIR` | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
 | `AETHON_USER_DIR` | `~/.aethon/` — user extensions, skills, sessions, state file. |
 | `AETHON_STATE_FILE` | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration. |
 | `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts. |

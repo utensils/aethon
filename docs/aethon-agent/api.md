@@ -198,6 +198,38 @@ globalThis.aethon.onEvent(
 (extensions only — built-ins are baked into App.tsx and remain the
 default for unmatched events).
 
+### `registerLayout({ id, name, description?, payload })` / `unregisterLayout(id)` / `listLayouts()`
+
+Append a named layout to the runtime catalogue so it appears in
+`/layout`'s picker, `window.aethon.listLayouts()`, the appearance menu,
+and the sidebar Layouts section. Activation goes through
+`setLayout(payload)` — registering only adds metadata.
+
+```ts
+const focusLayout = {
+  components: [/* ... your <layout> tree ... */],
+  state: { /* layout's state seeds — merged into live state on activate */ },
+};
+
+await globalThis.aethon.registerLayout({
+  id: "focus-mode",
+  name: "Focus Mode",
+  description: "Hide the sidebar and tabs; just a canvas + composer.",
+  payload: focusLayout,
+});
+
+// Activate it — frontend's window.aethon.activateLayout("focus-mode") works,
+// or just push the payload directly:
+await globalThis.aethon.setLayout(focusLayout);
+```
+
+`id` must match `/^[A-Za-z][\w-]*$/` and cannot collide with the four
+built-in layouts (`workstation`, `editorial`, `command-deck`,
+`live-layout`). The catalogue replays on `ready` so registrations
+survive bridge respawns. `RuntimeSnapshot.layouts` carries the
+catalogue (id + name + description, payloads omitted to keep the
+snapshot small) so the agent's first-turn context sees it.
+
 ### `registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)`
 
 Add an entry to the native macOS menu bar (or system tray) that the

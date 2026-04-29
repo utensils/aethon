@@ -36,7 +36,29 @@ Or via the slash-command form, which reads from `${CLAUDE_SKILL_DIR}/scripts/`:
 - App running via `bun tauri dev` (or the devshell `dev` helper) — debug TCP server starts automatically
 - `python3` in PATH (used by `debug-eval.sh`)
 
-**Do NOT launch a release build.** The TCP server is gated behind `#[cfg(debug_assertions)]` and is absent from `cargo tauri build` artifacts. If the dev build is not running, ask the user to start it — never fall back to a release binary.
+## Release builds are off-limits — full stop
+
+Every action in this skill assumes the **dev** process. Release builds (anything from `cargo tauri build` — including the bundle at `src-tauri/target/release/bundle/macos/Aethon.app`) are different binaries with different code:
+
+- **No debug TCP server.** It's gated behind `#[cfg(debug_assertions)]`, so `debug-eval.sh` will hang on a release build.
+- **No `window.__AETHON_STATE__` / `__AETHON_INVOKE__` globals.** They're only attached when `cfg!(debug_assertions)`.
+- **Stale code.** The release bundle is whatever the last `cargo tauri build` produced — could be hours, days, or weeks behind current source. Any "bug" you reproduce against a release is the release's bug, not current main.
+
+If the dev build isn't running, **ask the user to start it** (`bun tauri dev` or the `dev` devshell helper). Never fall back to a release binary, and never run `cargo tauri build` to "get something running" — that produces a release.
+
+### Never activate Aethon by app name
+
+`osascript -e 'tell application "aethon" to activate'`, `open -a Aethon`, and similar LaunchServices gestures resolve by name and routinely match an installed/built release `.app` instead of the running dev process — both share the bundle id `com.utensils.aethon`. This has produced silently wrong screenshots in the past: the user was testing dev, but the captured window was an ancient release.
+
+Detection: if `~/.aethon/dev-info.json` exists, a dev process *should* be running with that PID. The debug TCP server is PID-bound, so `debug-eval.sh` is guaranteed to talk to it (or fail loudly if the PID is stale). After a `debug-eval.sh` call, sanity-check `window.location.href` — dev returns `http://localhost:<vitePort>/` (1420 by default), release returns a `tauri://` or `tauri:///` scheme.
+
+To raise/focus the dev window without LaunchServices ambiguity, do it from inside the webview:
+
+```bash
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'window.focus(); return "focused"'
+```
+
+For screenshots, use `debug-screenshot.sh` (it does not activate by app name) and crop after the fact, or ask the user to bring the dev window forward themselves.
 
 ## Available globals (dev only)
 

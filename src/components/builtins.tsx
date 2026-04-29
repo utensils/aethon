@@ -619,7 +619,27 @@ export function Table({
           {list.map((row, ri) => (
             <tr key={ri}>
               {cols.map((c, ci) => {
-                const cellOverlay = { $row: row, $index: ri, $parent: state };
+                // Per-cell scope: $row (whole row), $index (row position),
+                // $parent (surrounding state), $column (column metadata —
+                // header/field/width), $cell (resolved value at the column's
+                // field path on the row, undefined when field is absent).
+                const cellValue =
+                  typeof c.field === "string" &&
+                  row !== null &&
+                  typeof row === "object"
+                    ? (row as Record<string, unknown>)[c.field]
+                    : undefined;
+                const cellOverlay = {
+                  $row: row,
+                  $index: ri,
+                  $parent: state,
+                  $column: {
+                    field: c.field,
+                    header: c.header,
+                    width: c.width,
+                  },
+                  $cell: cellValue,
+                };
                 if (c.cell && renderChildWithState) {
                   return (
                     <td key={ci} style={cellStyle}>
