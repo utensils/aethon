@@ -86,6 +86,48 @@ globalThis.aethon.patchLayout("/components/0/props/areas", [
 ]);
 ```
 
+### `canvas.emit / append / clear / patch`
+
+Programmatic canvas push API — sugar over `setState("/canvas", …)` so
+you don't have to compose the `{components: [...]}` envelope every time.
+Also available on the handler `ctx` (see `onEvent` below) — the ctx
+variant pins to the originating tab so writes survive a tab switch
+mid-handler.
+
+```ts
+// Replace the canvas with a fresh component (or array).
+await globalThis.aethon.canvas.emit({
+  id: "indexing-card",
+  type: "card",
+  props: { title: "Indexing", state: "running" },
+});
+
+// Append onto the existing canvas without reading it manually.
+await globalThis.aethon.canvas.append({
+  id: "next-step",
+  type: "card",
+  props: { title: "Compiling" },
+});
+
+// Empty the canvas.
+await globalThis.aethon.canvas.clear();
+
+// Patch a subpath. Leading `/` is optional; `/canvas` is always prefixed.
+await globalThis.aethon.canvas.patch(
+  "/components/0/props/state",
+  "ok",
+);
+```
+
+Each method returns the same `Promise<MutationResult>` as `setState`.
+`append` reads the bridge's per-tab mirror (no IPC round-trip) so it
+works during boot before the frontend has reported `ready` and stays
+consistent under concurrent handler dispatches on different tabs.
+
+Use this in preference to manual `setState("/canvas", …)` for new
+extensions: the helper survives canvas-shape changes (e.g. if `/canvas`
+ever gains sibling fields beyond `components`).
+
 ### `registerComponent(type, template)`
 
 Define a new A2UI component type. The template is a single A2UI component

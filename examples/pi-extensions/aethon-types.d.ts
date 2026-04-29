@@ -58,11 +58,48 @@ interface AethonPiHandlerCtx {
   readonly signal: AbortSignal | undefined;
 }
 
+interface AethonCanvasComponent {
+  id?: string;
+  type: string;
+  props?: Record<string, unknown>;
+  children?: unknown[];
+}
+
+/**
+ * Programmatic canvas push API — sugar over `setState("/canvas", ...)`.
+ * Per-tab attribution mirrors `setState`: the handler-ctx variant pins
+ * to the originating tab; the global `aethon.canvas` resolves attribution
+ * via AsyncLocalStorage / current active turn.
+ */
+interface AethonCanvasApi {
+  /** Replace the canvas with the given component (or array of components). */
+  emit(
+    components: AethonCanvasComponent | AethonCanvasComponent[],
+  ): Promise<{ ok: boolean; error?: string }>;
+  /** Push the given component(s) onto the end of the existing canvas list. */
+  append(
+    components: AethonCanvasComponent | AethonCanvasComponent[],
+  ): Promise<{ ok: boolean; error?: string }>;
+  /** Empty the canvas. */
+  clear(): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Patch a subpath under `/canvas` — e.g. `patch("/components/0/props/title", "Indexing")`.
+   * Leading slash is optional. Useful for streaming partial updates while
+   * a turn is still in flight.
+   */
+  patch(
+    subpath: string,
+    value: unknown,
+  ): Promise<{ ok: boolean; error?: string }>;
+}
+
 interface AethonEventCtx {
   setState(path: string, value: unknown): void;
   registerComponent(componentType: string, template: unknown): void;
   /** Pi-coding-agent surface scoped for UI handlers. */
   pi: AethonPiHandlerCtx;
+  /** Tab-scoped canvas helper — writes inherit the originating tab. */
+  canvas: AethonCanvasApi;
 }
 
 declare global {
@@ -146,6 +183,15 @@ declare global {
           ok: boolean;
           error?: string;
         }>;
+
+        /**
+         * Programmatic canvas push API. Lets handlers (or boot-time
+         * extension code) replace, append to, clear, or patch the
+         * `/canvas` slot without composing the wrapper envelope every
+         * time. Attribution falls back through the same priority chain
+         * setState uses (active turn → last-known active tab).
+         */
+        canvas: AethonCanvasApi;
       }
     | undefined;
 }
