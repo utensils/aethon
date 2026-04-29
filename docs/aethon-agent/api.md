@@ -230,6 +230,82 @@ survive bridge respawns. `RuntimeSnapshot.layouts` carries the
 catalogue (id + name + description, payloads omitted to keep the
 snapshot small) so the agent's first-turn context sees it.
 
+### React-component skills (`aethon.frontendEntry`)
+
+A2UI templates cover most extension UI cases, but some components
+need real React: charts, virtualized lists, third-party widgets that
+already ship as React components, components that need browser APIs
+the renderer doesn't expose. A skill package can opt in by adding a
+second field next to `aethon.entry`:
+
+```json
+{
+  "name": "@you/aethon-skill-charts",
+  "aethon": {
+    "entry": "src/index.ts",
+    "frontendEntry": "src/frontend.js"
+  }
+}
+```
+
+The `frontendEntry` is **plain JS, not a module**. The bridge reads
+the file as a string and ships it to the webview, where it's wrapped
+with:
+
+```ts
+new Function("React", "skill", code)(React, skillApi)
+```
+
+So write the body as if `React` and `skill` are in scope. `skill` is
+a tiny API:
+
+```ts
+interface SkillEvalApi {
+  registerComponent(
+    type: string,
+    component: React.ComponentType<BuiltinComponentProps>,
+  ): void;
+}
+```
+
+Registered components receive the same `BuiltinComponentProps` shape
+as built-in composites (`component`, `state`, `onEvent`,
+`renderChildren`, `renderChildWithState`). Reference them in any A2UI
+payload by their declared `type`:
+
+```ts
+{ type: "pulse-card", props: { title: "Live", state: "ok" } }
+```
+
+The renderer resolves the type through the SkillRegistry just like
+any built-in. `examples/skill-package/src/frontend.js` ships a
+minimal `pulse-card` demo (CSS-keyframe pulse, hooks via
+`React.useEffect`).
+
+**Authoring options.** The simplest path is plain JS — write
+`React.createElement(...)` directly. If you want JSX or imports, run
+a bundler (esbuild / swc) over a real source file and emit the
+bundled output as `frontendEntry`. The result must execute as a
+function body — top-level `import` / `export` will fail.
+
+**Lifecycle.** Each `extension_skill_modules` delta is wholesale —
+the full set of skills replaces the previous set. Components from a
+removed skill are unregistered; components from a re-evaluated skill
+replace their prior bindings (so `npm install --prefix
+~/.aethon/skills <pkg>` hot-reloads cleanly). Errors per module are
+caught and surfaced as a system notice; one broken skill can't kill
+the others.
+
+**Trust.** Same model as bridge-side skill code: the user installed
+the package, they trust it. `new Function` is essentially eval — no
+sandbox. A malicious skill could already do worse from the bridge
+side (read disk, fork processes); this channel doesn't widen the
+threat model.
+
+`RuntimeSnapshot.skillModules` lists `{ name, entryPath, bytes }`
+for each shipped module — code body omitted (read it from
+`entryPath` if you need to inspect).
+
 ### `registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)`
 
 Add an entry to the native macOS menu bar (or system tray) that the

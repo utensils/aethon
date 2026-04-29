@@ -509,13 +509,23 @@ interface AethonExtensionModule {
 async function loadAethonSkillManifests(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
+  options?: {
+    onFrontendEntry?: (entry: {
+      name: string;
+      entryPath: string;
+      code: string;
+    }) => void;
+  },
 ): Promise<void> {
   const skillsRoot = join(USER_DIR, "skills", "node_modules");
   // Each candidate is { displayName, packageDir, manifest }
   type Candidate = {
     name: string;
     dir: string;
-    manifest: { name?: string; aethon?: { entry?: string } };
+    manifest: {
+      name?: string;
+      aethon?: { entry?: string; frontendEntry?: string };
+    };
   };
   const candidates: Candidate[] = [];
 
@@ -595,6 +605,44 @@ async function loadAethonSkillManifests(
         status: "loaded",
         path: filePath,
       });
+      // Optional frontend entry — a JS file whose body is `(skill,
+      // React) => { … }`. Read and hand back through the callback so
+      // the caller can ship it to the webview. Failures are logged
+      // (`extension_lifecycle` with the bridge entry kept "loaded"
+      // since the bridge-side skill DID register; only the frontend
+      // delivery channel failed).
+      const frontendEntry = c.manifest.aethon?.frontendEntry;
+      if (
+        options?.onFrontendEntry &&
+        typeof frontendEntry === "string" &&
+        frontendEntry.length > 0
+      ) {
+        const fePath = join(c.dir, frontendEntry);
+        try {
+          const code = await Bun.file(fePath).text();
+          options.onFrontendEntry({
+            name: c.name,
+            entryPath: fePath,
+            code,
+          });
+          console.error(
+            `[aethon-skill] ${c.name}: frontend module shipped (${code.length} bytes)`,
+          );
+        } catch (feErr) {
+          const feMessage = (feErr as Error).message;
+          console.error(
+            `[aethon-skill] ${c.name}: failed to read frontendEntry ${fePath}: ${feMessage}`,
+          );
+          send({
+            type: "extension_lifecycle",
+            name: `${c.name} (frontend)`,
+            source: "skill-package",
+            status: "failed",
+            error: feMessage,
+            path: fePath,
+          });
+        }
+      }
     } catch (err) {
       const message = (err as Error).message;
       console.error(`[aethon-skill] ${c.name}: ${message}`);
@@ -1076,6 +1124,21 @@ async function main() {
     }
   >();
 
+  // Skill packages that ship a frontend module — `aethon.frontendEntry`
+  // in package.json points at a JS file whose body registers React
+  // components into the SkillRegistry on the webview side. The bridge
+  // reads the file contents at boot and ships them to the frontend as
+  // a string; the frontend wraps them with `new Function("React",
+  // "skill", code)` and runs the result. This is the channel that lets
+  // skills ship genuine React components (charts, virtualized lists,
+  // third-party widgets) — A2UI templates remain available for the
+  // declarative cases. Same trust model as bridge-side skill code: the
+  // user installed the package, they trust it; no sandbox.
+  const skillFrontendModules = new Map<
+    string,
+    { name: string; entryPath: string; code: string }
+  >();
+
   // Bridge-readable mirror of frontend-populated state slices. The
   // frontend pushes `frontend_state_patch { path, value }` whenever an
   // allowlisted slice changes (models, themes, connection, status, tabs,
@@ -1226,6 +1289,15 @@ async function main() {
         id: l.id,
         name: l.name,
         ...(l.description ? { description: l.description } : {}),
+      })),
+      // Skill packages whose `aethon.frontendEntry` shipped a React
+      // module to the webview. Code body is omitted — it's on disk at
+      // entryPath; this is just enough to answer "which skills extend
+      // the UI with React components?" without scraping.
+      skillModules: [...skillFrontendModules.values()].map((m) => ({
+        name: m.name,
+        entryPath: m.entryPath,
+        bytes: m.code.length,
       })),
     };
   }
@@ -2158,6 +2230,14 @@ async function main() {
       extensionEventRoutes: [...extensionEventRoutes.values()],
       extensionEventRoutingMode: eventRoutingMode,
       extensionLayouts: [...extensionLayouts.values()],
+      // Frontend skill modules — `aethon.frontendEntry` JS bodies that
+      // the webview wraps with `new Function("React", "skill", code)`
+      // to register React components in the SkillRegistry. Replayed on
+      // every ready so reload restores them.
+      extensionSkillModules: [...skillFrontendModules.values()].map((m) => ({
+        name: m.name,
+        code: m.code,
+      })),
       discoveredTabs,
     });
   }
@@ -2422,7 +2502,11 @@ async function main() {
   // in package.json) under ~/.aethon/skills/node_modules/. This lets users
   // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
   // skills that bundle layouts, components, and themes.
-  await loadAethonSkillManifests(aethonApi, loadedExtensions);
+  await loadAethonSkillManifests(aethonApi, loadedExtensions, {
+    onFrontendEntry: ({ name, entryPath, code }) => {
+      skillFrontendModules.set(name, { name, entryPath, code });
+    },
+  });
   // Loose-file themes — JSON in ~/.aethon/themes/*.json registered via the
   // same normalizeTheme path as extension-supplied ones. Lets non-coders
   // share themes without packaging an extension. Hot-reloaded by the same

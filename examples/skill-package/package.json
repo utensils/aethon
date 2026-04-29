@@ -5,7 +5,8 @@
   "type": "module",
   "main": "src/index.ts",
   "aethon": {
-    "entry": "src/index.ts"
+    "entry": "src/index.ts",
+    "frontendEntry": "src/frontend.js"
   },
   "license": "MIT"
 }

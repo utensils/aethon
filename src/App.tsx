@@ -5,6 +5,7 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer from "./components/A2UIRenderer";
+import { reconcileSkillModules } from "./skills/skillModuleLoader";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import {
@@ -1735,6 +1736,9 @@ export default function App() {
               payload: A2UIPayload;
             }[]
           | undefined) ?? [];
+        const extSkillModules = (data.extensionSkillModules as
+          | { name: string; code: string }[]
+          | undefined) ?? [];
         const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
         const discTabs = (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
         allDiscoveredSessionsRef.current = discTabs;
@@ -1753,6 +1757,7 @@ export default function App() {
         hydrateKeybindings(extKeys);
         hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
         hydrateExtensionLayouts(extLayouts);
+        hydrateSkillModules(extSkillModules);
         // Push the persisted menu list into Tauri so the native menu
         // is correct on first paint after webview reload. Errors are
         // logged but non-fatal — the menu falls back to built-ins-only.
@@ -2015,6 +2020,14 @@ export default function App() {
             }[]
           | undefined) ?? [];
         hydrateExtensionLayouts(list);
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "extension_skill_modules": {
+        const list = (data.modules as
+          | { name: string; code: string }[]
+          | undefined) ?? [];
+        hydrateSkillModules(list);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -3012,6 +3025,12 @@ export default function App() {
   const extensionKeybindingsRef = useRef<
     Map<string, { combo: string; action: string; description?: string }>
   >(new Map());
+  // Set of skill-package module names whose `aethon.frontendEntry` JS
+  // body has been evaluated and registered in the SkillRegistry.
+  // Tracked so an `extension_skill_modules` delta with a smaller list
+  // can unregister components from skills that were dropped (uninstall
+  // or rename).
+  const skillModuleNamesRef = useRef<Set<string>>(new Set());
 
   // Built once — handlers close over App-scope helpers via the ctx passed at
   // dispatch time, so the registry itself doesn't need state in scope.
@@ -3145,6 +3164,40 @@ export default function App() {
         sidebar: { ...sidebar, layouts: catalogueItems },
       };
     });
+  }
+
+  // Skill packages with `aethon.frontendEntry` ship a JS body to the
+  // webview where it's wrapped with `new Function("React", "skill",
+  // code)` and executed. The skill API hooks the result into the
+  // SkillRegistry so the registered React components show up under
+  // their declared A2UI types in any layout. Wholesale replacement on
+  // each delta — components from a removed skill go away, a re-eval'd
+  // skill replaces its prior bindings (so a hot reload picks up new
+  // code). Errors per module are caught and surfaced as a `notice` so
+  // one broken skill doesn't kill the others.
+  function hydrateSkillModules(list: { name: string; code: string }[]) {
+    const previous = skillModuleNamesRef.current;
+    const { loaded, unregistered } = reconcileSkillModules(
+      previous,
+      list,
+      registry,
+    );
+    skillModuleNamesRef.current = new Set(list.map((m) => m.name));
+    for (const m of loaded) {
+      if (m.error) {
+        appendSystem(`skill module ${m.name}: ${m.error}`);
+      }
+    }
+    if (loaded.length > 0 || unregistered.length > 0) {
+      // Bump a counter so any A2UIRenderer subtree using a now-changed
+      // component type re-resolves through the SkillRegistry on the
+      // next render. The registry itself doesn't trigger React updates;
+      // bumping a piece of state owned by App.tsx does.
+      setState((prev) => ({
+        ...prev,
+        skillModulesGen: ((prev.skillModulesGen as number | undefined) ?? 0) + 1,
+      }));
+    }
   }
 
   // Merge extension-registered slash commands with the built-ins.
