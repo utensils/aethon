@@ -1518,7 +1518,7 @@ async function main() {
   // was async.
   // Read the frontend's currently-active tab id from its mirrored /tabs
   // slice (each tab carries `active: true|false`). Used by the canvas
-  // append helper to predict where a tab-less write will land. Returns
+  // resolver as a fallback when no ALS / current turn is set. Returns
   // `undefined` if frontendState hasn't received /tabs yet (pre-ready).
   function frontendActiveTabId(): string | undefined {
     const tabsSlice = frontendState.get("/tabs");
@@ -1538,39 +1538,33 @@ async function main() {
   function makeCanvasApi(tabId: string | undefined): CanvasApi {
     return buildCanvasApi(tabId, {
       setState: (path, value, sourceTabId) => _setState(path, value, sourceTabId),
-      // Resolve write attribution + read scope per call. Three regimes:
-      //  1. explicit / ALS / active turn → concrete tab; write attributes
-      //     to it, read targets the same tab's mirror.
-      //  2. pre-ready, tab-less → `writeTab: "default"` so the boot write
-      //     lands in `perTabExtState["default"]` (which the frontend's
-      //     pre-created default tab replays on `ready`); read from the
-      //     same. Boot append composes correctly across calls.
-      //  3. post-ready, tab-less → `writeTab: undefined` so the frontend
-      //     applies the patch to the user's currently-active tab —
-      //     matching plain `setState` semantics. Read targets the
-      //     frontend-active tab id from `frontendState["/tabs"]` so
-      //     `append` predicts the same tab, falling back to "default"
-      //     if /tabs hasn't been mirrored yet.
-      resolveTabs: (explicit) => {
-        const concrete = explicit ?? tabContext.getStore() ?? currentAgentTabId;
-        if (concrete) return { writeTab: concrete, readTab: concrete };
-        if (!frontendReady) return { writeTab: "default", readTab: "default" };
-        const active = frontendActiveTabId();
-        return { writeTab: undefined, readTab: active ?? "default" };
-      },
-      readCanvasComponents: (id) =>
-        readCanvasComponentsFromTabState(perTabExtState.get(id)),
-      // For post-ready tab-less writes, _setState sends an outbound
-      // patch without `tabId` and routes the bridge's mirror update
-      // into `extensionStateTree` (not perTabExtState). The frontend
-      // applies the patch to its active tab; the predicted-active read
-      // scope on the bridge side then needs its OWN mirror update so
-      // a follow-up `append(...)` reads the freshly-written canvas
-      // instead of stale state. Idempotent — folding the same write
-      // twice via `setAtPointer` lands the same final shape.
-      syncMirror: (tabId, path, value) => {
-        const before = perTabExtState.get(tabId) ?? {};
-        perTabExtState.set(tabId, setAtPointer(before, path, value));
+      // Always returns a real tab id. Priority chain:
+      //  1. explicit / ALS / active turn — the obvious cases.
+      //  2. frontend-active tab id (from frontendState["/tabs"]) — best
+      //     guess for post-ready tab-less code (extension setIntervals,
+      //     timers).
+      //  3. "default" — fallback for pre-ready boot code; the bridge
+      //     pre-creates this tab via `ensureTab("default")` at startup.
+      // Locking attribution at call time means `append` reads what the
+      // upcoming write will land on, so two synchronous appends compose.
+      // Differs from plain `aethon.setState` (which lets the frontend
+      // resolve at apply time) — see canvas.ts header comment.
+      resolveTab: (explicit) =>
+        explicit ??
+        tabContext.getStore() ??
+        currentAgentTabId ??
+        frontendActiveTabId() ??
+        "default",
+      // Read priority: per-tab mirror first; if empty, fall back to the
+      // bridge's retained tab-less canvas (anything an extension wrote
+      // via plain `aethon.setState("/canvas", ...)` outside any tab
+      // context lives there). Both are "what's on screen right now"
+      // candidates — the per-tab record wins when present because it's
+      // the more specific one.
+      readCanvasComponents: (id) => {
+        const fromTab = readCanvasComponentsFromTabState(perTabExtState.get(id));
+        if (fromTab.length > 0) return fromTab;
+        return readCanvasComponentsFromTabState(extensionStateTree);
       },
     });
   }

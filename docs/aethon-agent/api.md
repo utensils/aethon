@@ -128,6 +128,22 @@ Use this in preference to manual `setState("/canvas", …)` for new
 extensions: the helper survives canvas-shape changes (e.g. if `/canvas`
 ever gains sibling fields beyond `components`).
 
+**Tab attribution differs from plain `setState`.** The canvas helper
+*always* attributes its writes to a concrete tab id:
+
+  explicit > AsyncLocalStorage (per-turn) > current active turn >
+    frontend-active tab > "default"
+
+Plain `aethon.setState("/canvas", …)` lets the frontend resolve the
+active tab at apply time when no `tabId` is sent. The canvas helper
+locks attribution at *call* time so the read scope inside `append` is
+deterministic — two synchronous appends compose instead of racing on
+"which tab will the frontend pick when this lands?". The trade-off:
+if you `aethon.canvas.emit(…)` from a setInterval after startup, the
+write targets the *current* active tab as of the call, not the active
+tab at apply time. If the user switches tabs mid-call the result lands
+on the originally-selected tab.
+
 ### `registerComponent(type, template)`
 
 Define a new A2UI component type. The template is a single A2UI component
