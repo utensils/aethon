@@ -1555,18 +1555,34 @@ async function main() {
         currentAgentTabId ??
         frontendActiveTabId() ??
         "default",
-      // Read priority: per-tab mirror first; only fall back to the
-      // bridge's retained tab-less canvas (extensionStateTree) when the
-      // per-tab record has NO canvas slot at all. An empty per-tab
-      // canvas (`{canvas: {components: []}}`, e.g. after a `clear()`
-      // or `emit([])`) is an explicit value — using the tab-less seed
-      // there would resurrect components the user just cleared.
+      // Read priority for canvas.append's existing-components lookup:
+      //
+      //   1. Per-tab mirror (perTabExtState[id].canvas), if the canvas
+      //      slot is defined. An explicit empty value — e.g. after
+      //      `clear()` or `emit([])` — is still a value; we don't
+      //      fall through.
+      //
+      //   2. Tab-less retained canvas (extensionStateTree.canvas), but
+      //      ONLY when `id` matches the frontend's currently-active
+      //      tab (or "default" pre-ready, when there's no active tab
+      //      yet). Plain `aethon.setState("/canvas", ...)` outside any
+      //      tab context routes through here on the bridge AND lands
+      //      on the user's active tab on the frontend — so it's only
+      //      visible to the helper as that tab's canvas. Falling back
+      //      for any other tab would leak the seed across tabs and
+      //      break the per-tab isolation the helper otherwise preserves.
+      //
+      //   3. Empty array.
       readCanvasComponents: (id) => {
         const tabState = perTabExtState.get(id);
         if (tabState && (tabState as { canvas?: unknown }).canvas !== undefined) {
           return readCanvasComponentsFromTabState(tabState);
         }
-        return readCanvasComponentsFromTabState(extensionStateTree);
+        const activeForSeed = frontendActiveTabId() ?? "default";
+        if (id === activeForSeed) {
+          return readCanvasComponentsFromTabState(extensionStateTree);
+        }
+        return [];
       },
     });
   }
