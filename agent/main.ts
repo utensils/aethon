@@ -140,6 +140,11 @@ import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { findProjectExtensionDirs } from "./project-extensions";
 import {
+  makeCanvasApi as buildCanvasApi,
+  readCanvasComponentsFromTabState,
+} from "./canvas";
+import type { CanvasApi } from "./canvas";
+import {
   readSessionMetadata,
   readSessionTranscript,
 } from "./session-history";
@@ -1384,6 +1389,7 @@ async function main() {
       setState: AethonApi["setState"];
       registerComponent: AethonApi["registerComponent"];
       pi: PiHandlerCtx;
+      canvas: AethonApi["canvas"];
     },
   ) => void | Promise<void>;
   const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
@@ -1519,6 +1525,32 @@ async function main() {
       ...(attributedTab ? { tabId: attributedTab } : {}),
     });
     return promise;
+  }
+  // Programmatic canvas push API — sugar over `setState("/canvas", ...)`.
+  // Implementation lives in `./canvas.ts` so it can be unit-tested
+  // without booting the bridge; we just pass the bridge-private helpers
+  // (`_setState`, the per-tab mirror reader, the attribution resolver)
+  // as deps.
+  //
+  // `emit` replaces /canvas wholesale; `append` reads the bridge's
+  // mirrored copy in `perTabExtState` and pushes new entries onto the
+  // end; `clear` writes an empty components array; `patch` is a thin
+  // sugar over setState("/canvas" + subpath, value) — useful for
+  // streaming updates to a specific component's props during a turn.
+  //
+  // The handler-ctx variant binds the attributed tab (via `makeCanvasApi(tabId)`)
+  // so a sidebar click that routes to a handler keeps writing to the
+  // originating tab even if the user has switched while the handler
+  // was async.
+  function makeCanvasApi(tabId: string | undefined): CanvasApi {
+    return buildCanvasApi(tabId, {
+      setState: (path, value, sourceTabId) => _setState(path, value, sourceTabId),
+      resolveAttributedTab: (explicit) =>
+        explicit ?? tabContext.getStore() ?? currentAgentTabId,
+      readCanvasComponents: (id) => readCanvasComponentsFromTabState(
+        id ? perTabExtState.get(id) : undefined,
+      ),
+    });
   }
   // Pi may re-run extension register() per session, and `tabs` create
   // sessions on demand — so without dedup, every new tab would re-add
@@ -2121,6 +2153,9 @@ async function main() {
     getLayoutSlots: _getLayoutSlots,
     getFrontendState: _getFrontendState,
     getRuntimeSnapshot: _getRuntimeSnapshot,
+    // Programmatic canvas push API. Tab attribution flows through the
+    // same priority chain as setState (explicit > ALS > currentAgentTabId).
+    canvas: makeCanvasApi(undefined),
   };
   type AethonApi = typeof aethonApi;
   (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
@@ -2928,6 +2963,11 @@ async function main() {
           // the right tab even when the user has since switched.
           const tabScopedSetState = (path: string, value: unknown) =>
             _setState(path, value, handlerTabId);
+          // Tab-scoped canvas helper for handlers — same attribution
+          // guarantee as tabScopedSetState. `append` reads from the
+          // bridge's per-tab mirror, so concurrent dispatches on
+          // different tabs see their own canvas state.
+          const tabScopedCanvas = makeCanvasApi(handlerTabId);
           for (const { match, handler } of a2uiEventHandlers) {
             if (match.templateRootType && match.templateRootType !== ev.templateRootType) continue;
             if (match.componentType && match.componentType !== ev.componentType) continue;
@@ -2965,6 +3005,7 @@ async function main() {
                     setState: tabScopedSetState,
                     registerComponent: aethonApi.registerComponent,
                     pi: piCtx,
+                    canvas: tabScopedCanvas,
                   }),
                 ),
               )

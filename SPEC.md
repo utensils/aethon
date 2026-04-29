@@ -355,11 +355,12 @@ receive the same surface as the first arg to their `register(api)`.
 - `registerMenuItem({label, action, location?, id?, parent?})` / `unregisterMenuItem(id)` — Add menu metadata for A2UI-driven menus
 - `registerEventRoute({componentId?, eventType?})` / `unregisterEventRoute(route)` — Route matching built-in events through extension handlers
 - `registerLayout({id, name, description?, payload})` / `unregisterLayout(id)` / `listLayouts()` — Append to the runtime layout catalogue from the agent side; activation still goes through `setLayout(payload)` (or, on the frontend, `window.aethon.activateLayout(id)`)
+- `canvas.{emit, append, clear, patch}` — Programmatic canvas push API; sugar over `setState("/canvas", …)`. Also surfaced on the handler `ctx` (tab-pinned variant) so a sidebar click can `ctx.canvas.append(...)` without rebuilding the envelope or losing tab attribution mid-handler. Implementation in `agent/canvas.ts` (covered by 23 vitest cases under `agent/canvas.test.ts`).
 - `getFrontendState(path?)`, `getRuntimeSnapshot()`, `getLayout()`, `getLayoutSlots()` — Introspection helpers used by the system prompt and agent-side diagnostics
 
 ### Still on the backlog
 
-- Programmatic canvas push API (`ctx.canvas.emit(...)`)
+(none — M1–M5 surface complete.)
 
 ### Discovery
 
