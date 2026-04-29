@@ -76,8 +76,8 @@ describe("reconcileSkillModules", () => {
   });
 
   it("loads new modules and tracks their names", () => {
-    const { loaded, unregistered } = reconcileSkillModules(
-      new Set<string>(),
+    const { loaded, unregistered, skipped } = reconcileSkillModules(
+      new Map<string, string>(),
       [
         {
           name: "alpha",
@@ -92,24 +92,21 @@ describe("reconcileSkillModules", () => {
     );
     expect(loaded.map((l) => l.name)).toEqual(["alpha", "beta"]);
     expect(unregistered).toEqual([]);
+    expect(skipped).toEqual([]);
     expect(registry.resolve("a")).toBeDefined();
     expect(registry.resolve("b")).toBeDefined();
   });
 
   it("unregisters modules that disappear from the next delta", () => {
+    const code = `skill.registerComponent("a", function () { return null; });`;
     reconcileSkillModules(
-      new Set<string>(),
-      [
-        {
-          name: "alpha",
-          code: `skill.registerComponent("a", function () { return null; });`,
-        },
-      ],
+      new Map<string, string>(),
+      [{ name: "alpha", code }],
       registry,
     );
     expect(registry.resolve("a")).toBeDefined();
     const { unregistered } = reconcileSkillModules(
-      new Set(["alpha"]),
+      new Map([["alpha", code]]),
       [],
       registry,
     );
@@ -117,31 +114,57 @@ describe("reconcileSkillModules", () => {
     expect(registry.resolve("a")).toBeUndefined();
   });
 
-  it("re-evaluates a re-shipped module so component code can hot-reload", () => {
+  it("re-evaluates a re-shipped module when its code changes", () => {
+    const v1Code = `skill.registerComponent("v", function V1() { return React.createElement("div", null, "v1"); });`;
     reconcileSkillModules(
-      new Set<string>(),
-      [
-        {
-          name: "live",
-          code: `skill.registerComponent("v", function V1() { return React.createElement("div", null, "v1"); });`,
-        },
-      ],
+      new Map<string, string>(),
+      [{ name: "live", code: v1Code }],
       registry,
     );
     const v1 = registry.resolve("v");
     expect(v1).toBeDefined();
-    reconcileSkillModules(
-      new Set(["live"]),
-      [
-        {
-          name: "live",
-          code: `skill.registerComponent("v", function V2() { return React.createElement("div", null, "v2"); });`,
-        },
-      ],
+    const v2Code = `skill.registerComponent("v", function V2() { return React.createElement("div", null, "v2"); });`;
+    const { loaded, skipped } = reconcileSkillModules(
+      new Map([["live", v1Code]]),
+      [{ name: "live", code: v2Code }],
       registry,
     );
+    expect(loaded.map((l) => l.name)).toEqual(["live"]);
+    expect(skipped).toEqual([]);
     const v2 = registry.resolve("v");
     expect(v2).toBeDefined();
     expect(v2).not.toBe(v1);
+  });
+
+  it("skips byte-identical re-deliveries so duplicate ready events don't double-run side effects", () => {
+    const code = `
+      // Top-level side effect — simulates a skill that injects a
+      // <style> or arms a setInterval at module load.
+      globalThis.__skill_runs = (globalThis.__skill_runs ?? 0) + 1;
+      skill.registerComponent("s", function () { return null; });
+    `;
+    const g = globalThis as unknown as { __skill_runs?: number };
+    g.__skill_runs = 0;
+    const first = reconcileSkillModules(
+      new Map<string, string>(),
+      [{ name: "stable", code }],
+      registry,
+    );
+    expect(first.loaded.map((l) => l.name)).toEqual(["stable"]);
+    expect(first.skipped).toEqual([]);
+    expect(g.__skill_runs).toBe(1);
+
+    const second = reconcileSkillModules(
+      new Map([["stable", code]]),
+      [{ name: "stable", code }],
+      registry,
+    );
+    expect(second.loaded).toEqual([]);
+    expect(second.skipped).toEqual(["stable"]);
+    // Critical: the side effect did NOT run a second time.
+    expect(g.__skill_runs).toBe(1);
+    // Component still resolves (it was never unregistered).
+    expect(registry.resolve("s")).toBeDefined();
+    delete g.__skill_runs;
   });
 });
