@@ -108,6 +108,12 @@ export interface RuntimeSnapshot {
   // Payloads are NOT included — they can be large; the agent calls
   // `getLayout()` after activation if it needs the structure.
   layouts: { id: string; name: string; description?: string }[];
+  // Skill packages whose `aethon.frontendEntry` shipped a React module
+  // to the webview (file body wrapped with `new Function("React",
+  // "skill", code)` and run on the frontend). `bytes` is the source
+  // size — useful for the agent to spot oversized modules; the actual
+  // code body is NOT in the snapshot.
+  skillModules: { name: string; entryPath: string; bytes: number }[];
 }
 
 // The static base prompt — describes the API surface and renderer
