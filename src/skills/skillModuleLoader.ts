@@ -115,32 +115,52 @@ export function skillRegistryName(moduleName: string): string {
 }
 
 /**
- * Apply the full `extension_skill_modules` payload — wholesale replace.
- * Removes any previously-loaded modules that aren't in the new list,
- * then evaluates the new ones.
+ * Apply the full `extension_skill_modules` payload — wholesale replace,
+ * but skip re-evaluating modules whose code hasn't changed since the
+ * previous load.
  *
- * @param previous — names from the prior load (so we know what to unregister).
- *   Use the `name` returned by `LoadedSkillModule` (NOT the registry
- *   name); this helper handles the prefix.
+ * The startup path sends a `ready` followed by a `report` (which
+ * triggers another `ready`), so the same skill list arrives twice in
+ * one webview lifetime. Without the skip-on-unchanged path, every
+ * top-level side effect in a skill module (timers, DOM listeners,
+ * style injection) would run twice, and a failing module would emit
+ * duplicate system notices. Caller passes a name → code map so we
+ * can hash-compare without recomputing the previous set's source.
+ *
+ * @param previous — name → code from the prior load (so we know what
+ *   to unregister AND what's unchanged). Use the `name` returned by
+ *   `LoadedSkillModule` (NOT the registry name); this helper handles
+ *   the prefix.
  */
 export function reconcileSkillModules(
-  previous: ReadonlySet<string>,
+  previous: ReadonlyMap<string, string>,
   next: SkillModule[],
   registry: SkillRegistry,
-): { loaded: LoadedSkillModule[]; unregistered: string[] } {
-  const nextNames = new Set(next.map((m) => m.name));
+): { loaded: LoadedSkillModule[]; unregistered: string[]; skipped: string[] } {
+  const nextByName = new Map(next.map((m) => [m.name, m]));
   const unregistered: string[] = [];
-  for (const name of previous) {
-    if (!nextNames.has(name)) {
+  for (const name of previous.keys()) {
+    if (!nextByName.has(name)) {
       registry.unregister(skillRegistryName(name));
       unregistered.push(name);
     }
   }
+  const skipped: string[] = [];
+  const toEval: SkillModule[] = [];
+  for (const m of next) {
+    if (previous.get(m.name) === m.code) {
+      // Same name, byte-identical code — components are still in the
+      // registry from the prior eval. No-op.
+      skipped.push(m.name);
+      continue;
+    }
+    toEval.push(m);
+  }
   // Always unregister BEFORE re-registering so a re-evaluated skill's
   // old components don't linger if the new evaluation fails midway.
-  for (const m of next) {
+  for (const m of toEval) {
     registry.unregister(skillRegistryName(m.name));
   }
-  const loaded = next.map((m) => evaluateSkillModule(m, registry));
-  return { loaded, unregistered };
+  const loaded = toEval.map((m) => evaluateSkillModule(m, registry));
+  return { loaded, unregistered, skipped };
 }

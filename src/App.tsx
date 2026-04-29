@@ -3025,12 +3025,14 @@ export default function App() {
   const extensionKeybindingsRef = useRef<
     Map<string, { combo: string; action: string; description?: string }>
   >(new Map());
-  // Set of skill-package module names whose `aethon.frontendEntry` JS
-  // body has been evaluated and registered in the SkillRegistry.
-  // Tracked so an `extension_skill_modules` delta with a smaller list
-  // can unregister components from skills that were dropped (uninstall
-  // or rename).
-  const skillModuleNamesRef = useRef<Set<string>>(new Set());
+  // name → code for skill-package modules whose `aethon.frontendEntry`
+  // JS bodies have been evaluated and registered in the SkillRegistry.
+  // Tracked so:
+  //   - dropped skills (name absent from a fresh delta) get unregistered
+  //   - identical re-deliveries (same name + same code) skip re-eval,
+  //     so the duplicate `ready` the bridge fires after the startup
+  //     `report` doesn't run top-level side effects twice
+  const skillModulesRef = useRef<Map<string, string>>(new Map());
 
   // Built once — handlers close over App-scope helpers via the ctx passed at
   // dispatch time, so the registry itself doesn't need state in scope.
@@ -3176,13 +3178,13 @@ export default function App() {
   // code). Errors per module are caught and surfaced as a `notice` so
   // one broken skill doesn't kill the others.
   function hydrateSkillModules(list: { name: string; code: string }[]) {
-    const previous = skillModuleNamesRef.current;
+    const previous = skillModulesRef.current;
     const { loaded, unregistered } = reconcileSkillModules(
       previous,
       list,
       registry,
     );
-    skillModuleNamesRef.current = new Set(list.map((m) => m.name));
+    skillModulesRef.current = new Map(list.map((m) => [m.name, m.code]));
     for (const m of loaded) {
       if (m.error) {
         appendSystem(`skill module ${m.name}: ${m.error}`);
@@ -3192,7 +3194,8 @@ export default function App() {
       // Bump a counter so any A2UIRenderer subtree using a now-changed
       // component type re-resolves through the SkillRegistry on the
       // next render. The registry itself doesn't trigger React updates;
-      // bumping a piece of state owned by App.tsx does.
+      // bumping a piece of state owned by App.tsx does. Skipped (no-op)
+      // modules don't need a bump — their components are unchanged.
       setState((prev) => ({
         ...prev,
         skillModulesGen: ((prev.skillModulesGen as number | undefined) ?? 0) + 1,
