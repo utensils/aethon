@@ -110,9 +110,19 @@
           "type": "main-canvas",
           "props": {
             "area": "canvas",
-            "visible": { "$ref": "/hasTabs" },
+            "visible": { "$ref": "/agentTabActive" },
             "slot": "/canvas",
             "messages": { "$ref": "/messages" }
+          }
+        },
+        {
+          "id": "shell-canvas",
+          "type": "shell-canvas",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/shellTabActive" },
+            "tabId": { "$ref": "/activeTabId" },
+            "fontSize": 13
           }
         },
         {
@@ -151,7 +161,7 @@
           "type": "chat-input",
           "props": {
             "area": "composer",
-            "visible": { "$ref": "/hasTabs" },
+            "visible": { "$ref": "/agentTabActive" },
             "value": { "$ref": "/draft" },
             "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
             "disabled": { "$ref": "/waiting" },
@@ -184,6 +194,8 @@
     "canvas": null,
     "empty": false,
     "hasTabs": true,
+    "agentTabActive": true,
+    "shellTabActive": false,
     "recentSessions": [],
     "agentStatus": {
       "label": "agent live",

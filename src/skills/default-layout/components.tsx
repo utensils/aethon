@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
+import { invoke } from "@tauri-apps/api/core";
 import { HighlightedCode } from "../../components/HighlightedCode";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -1741,6 +1742,146 @@ interface TabStripItem {
   /** Pending follow-up count behind the active prompt. Adds a small
    *  numeric chip after the label when > 0. */
   queueCount?: number;
+}
+
+// ---------------------------------------------------------------------------
+// ShellCanvas — interactive PTY-backed terminal for shell tabs (M6 P1).
+// Distinct from Terminal: this composite has bidirectional input (term.onData
+// invokes shell_input) and is bound to a specific shell-tab id (so it can
+// subscribe to per-tab `aethon:shell-output:<tabId>` events and resize the
+// matching PTY via shell_resize). Mounts a fresh xterm per tabId — switching
+// tabs unmounts/remounts so scrollback isolation is automatic.
+// ---------------------------------------------------------------------------
+
+export function ShellCanvas({ component, state }: BuiltinComponentProps) {
+  const props = component.props as {
+    /** Shell tab id this canvas is bound to. Resolved via $ref so the
+     *  layout can pass `/activeTabId` and have the canvas track the
+     *  active shell tab automatically. */
+    tabId?: StringValue;
+    fontSize?: NumberValue;
+    bootGreeting?: StringValue;
+  };
+  const tabId = props.tabId ? resolveString(props.tabId, state) : "";
+  const fontSize = props.fontSize ? resolveNumber(props.fontSize, state) : 13;
+  const bootGreeting = props.bootGreeting
+    ? resolveString(props.bootGreeting, state)
+    : "";
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<XTerm | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const tabIdRef = useRef<string>(tabId);
+  useEffect(() => {
+    tabIdRef.current = tabId;
+  }, [tabId]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (!tabId) return; // no tab bound yet — wait for the layout to populate
+
+    const term = new XTerm({
+      fontSize,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      cursorBlink: true,
+      allowProposedApi: true,
+      // Themed via inline CSS vars — for P1 a dark default mirrors the agent
+      // panel; M6's "theme-aware ANSI palette" lands in a follow-up.
+      theme: {
+        background: "#0e0e10",
+        foreground: "#e8e8ec",
+        cursor: "#7c8cff",
+      },
+    });
+    termRef.current = term;
+    const fit = new FitAddon();
+    fitRef.current = fit;
+    term.loadAddon(fit);
+    term.open(containerRef.current);
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch (err) {
+      console.warn("WebGL renderer unavailable, using canvas fallback:", err);
+    }
+    fit.fit();
+    if (bootGreeting) term.write(bootGreeting);
+
+    // Keystrokes → shell_input. Send the raw bytes the shell wants to
+    // see — xterm gives us the pre-encoded sequence (e.g. "\x1b[A" for up
+    // arrow), so we forward verbatim.
+    const onDataDisposable = term.onData((data) => {
+      void invoke("shell_input", { tabId: tabIdRef.current, data }).catch(
+        () => {
+          /* PTY closed mid-keystroke — drop silently */
+        },
+      );
+    });
+
+    // Resize: FitAddon recomputes cols/rows on layout changes; tell the
+    // PTY too so child processes (vim, less, …) reflow correctly.
+    const ro = new ResizeObserver(() => {
+      try {
+        fit.fit();
+        const cols = term.cols;
+        const rows = term.rows;
+        if (cols && rows) {
+          void invoke("shell_resize", {
+            tabId: tabIdRef.current,
+            cols,
+            rows,
+          }).catch(() => {
+            /* PTY closed — drop */
+          });
+        }
+      } catch {
+        /* fit transient errors during teardown */
+      }
+    });
+    ro.observe(containerRef.current);
+
+    // PTY chunks land via per-tab CustomEvent (`aethon:shell-output:<tabId>`).
+    // App.tsx dispatches them; we route to xterm.write here.
+    const onShellOutput = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === "string" && detail.length > 0) {
+        term.write(detail);
+      }
+    };
+    const eventName = `aethon:shell-output:${tabId}`;
+    window.addEventListener(eventName, onShellOutput);
+
+    // Replay any already-buffered scrollback (when the tab was mounted
+    // after some output had already streamed). App.tsx writes buffer to
+    // /tabs/<idx>/terminalBuffer; we read it via state.
+    const tabs = (state["tabs"] as Array<{ id: string; terminalBuffer?: string }> | undefined) ?? [];
+    const tab = tabs.find((t) => t.id === tabId);
+    if (tab?.terminalBuffer) term.write(tab.terminalBuffer);
+
+    return () => {
+      window.removeEventListener(eventName, onShellOutput);
+      ro.disconnect();
+      onDataDisposable.dispose();
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+    // Mount once per tabId — switching tabs creates a new instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabId]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        width: "100%",
+        height: "100%",
+        background: "var(--terminal-bg, #0e0e10)",
+        gridArea: "canvas",
+      }}
+    />
+  );
 }
 
 export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {

@@ -13,6 +13,7 @@ import {
   EmptyState,
   Layout,
   MainCanvas,
+  ShellCanvas,
   Sidebar,
   StatusBar,
   TabStrip,
@@ -63,6 +64,11 @@ export const defaultLayoutSkill: A2UISkill = {
     "tab-strip": TabStrip,
     terminal: Terminal,
     "main-canvas": MainCanvas,
+    // M6 P1: full-canvas interactive PTY for shell tabs. Layouts may slot
+    // it into the canvas area with `visible: { $ref: "/kind" }` (or an
+    // equivalent mode flag) so it appears only when the active tab is a
+    // shell tab.
+    "shell-canvas": ShellCanvas,
     "empty-state": EmptyState,
     // Layout-variation chrome — used by editorial / command-deck / live-layout.
     // Registered alongside the standard composites so any layout payload can

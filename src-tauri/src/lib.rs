@@ -7,6 +7,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod helpers;
+mod shell;
 use helpers::{
     FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size, parse_config_toml, validate_state_name,
 };
@@ -985,8 +986,16 @@ fn install_app_menu(
     use tauri::Emitter;
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
-    let new_tab = MenuItemBuilder::with_id("new_tab", "New Tab")
+    // M6 P1: Cmd+T defaults to "New Shell Tab" (matches Terminal.app /
+    // iTerm2 convention). The existing chat-tab behavior moves to
+    // Cmd+Shift+T as "New Agent Tab". Both menu items emit distinct ids
+    // (`new_tab` legacy alias for shell, `new_agent_tab` for chat) so
+    // the JS-side router can split them — see App.tsx:menu listener.
+    let new_tab = MenuItemBuilder::with_id("new_tab", "New Shell Tab")
         .accelerator("CmdOrCtrl+T")
+        .build(app)?;
+    let new_agent_tab = MenuItemBuilder::with_id("new_agent_tab", "New Agent Tab")
+        .accelerator("CmdOrCtrl+Shift+T")
         .build(app)?;
     let close_tab = MenuItemBuilder::with_id("close_tab", "Close Tab")
         .accelerator("CmdOrCtrl+W")
@@ -1031,6 +1040,7 @@ fn install_app_menu(
     // Cmd+W to whichever menu item it picks first.
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_tab)
+        .item(&new_agent_tab)
         .item(&close_tab)
         .build()?;
 
@@ -1064,6 +1074,7 @@ fn install_app_menu(
 
     let tabs_menu = SubmenuBuilder::new(app, "Tabs")
         .item(&new_tab)
+        .item(&new_agent_tab)
         .item(&close_tab)
         .separator()
         .item(&next_tab)
@@ -1268,6 +1279,7 @@ pub fn run() {
     }
     let builder = builder
         .manage(AgentProcess(Mutex::new(None)))
+        .manage(shell::ShellRegistry::new())
         .invoke_handler(tauri::generate_handler![
             start_agent,
             send_message,
@@ -1281,6 +1293,10 @@ pub fn run() {
             set_extension_menu_items,
             pick_project_directory,
             git_status,
+            shell::shell_open,
+            shell::shell_input,
+            shell::shell_resize,
+            shell::shell_close,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
