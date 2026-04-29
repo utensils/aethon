@@ -144,6 +144,7 @@ import {
   readCanvasComponentsFromTabState,
 } from "./canvas";
 import type { CanvasApi } from "./canvas";
+import { setAtPointer } from "./jsonPointer";
 import {
   readSessionMetadata,
   readSessionTranscript,
@@ -229,33 +230,6 @@ function modelKey(m: Model<Api>): string {
 // Decode a JSON Pointer token (RFC 6901). `~1` → `/`, `~0` → `~`.
 function decodePointerToken(t: string): string {
   return t.replace(/~1/g, "/").replace(/~0/g, "~");
-}
-
-// Apply value at JSON Pointer path inside an immutable tree. Mirror of the
-// frontend's setPointer so the bridge can keep extensionStateTree in sync
-// with what the frontend computes from the same patches.
-function setAtPointer(
-  state: Record<string, unknown>,
-  pointer: string,
-  value: unknown,
-): Record<string, unknown> {
-  if (!pointer || pointer === "" || pointer === "/") return state;
-  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
-  const tokens = path.split("/").map(decodePointerToken);
-  const next: Record<string, unknown> = { ...state };
-  let cursor: Record<string, unknown> = next;
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const key = tokens[i];
-    const existing = cursor[key];
-    const child =
-      typeof existing === "object" && existing !== null
-        ? { ...(existing as Record<string, unknown>) }
-        : {};
-    cursor[key] = child;
-    cursor = child;
-  }
-  cursor[tokens[tokens.length - 1]] = value;
-  return next;
 }
 
 // Layout-aware patch that preserves arrays (mirror of the frontend's
@@ -1542,14 +1516,74 @@ async function main() {
   // so a sidebar click that routes to a handler keeps writing to the
   // originating tab even if the user has switched while the handler
   // was async.
+  // Read the frontend's currently-active tab id from its mirrored /tabs
+  // slice (each tab carries `active: true|false`). Used by the canvas
+  // resolver as a fallback when no ALS / current turn is set. Returns
+  // `undefined` if frontendState hasn't received /tabs yet (pre-ready).
+  function frontendActiveTabId(): string | undefined {
+    const tabsSlice = frontendState.get("/tabs");
+    if (!Array.isArray(tabsSlice)) return undefined;
+    for (const t of tabsSlice) {
+      if (
+        t &&
+        typeof t === "object" &&
+        (t as { active?: unknown }).active === true &&
+        typeof (t as { id?: unknown }).id === "string"
+      ) {
+        return (t as { id: string }).id;
+      }
+    }
+    return undefined;
+  }
   function makeCanvasApi(tabId: string | undefined): CanvasApi {
     return buildCanvasApi(tabId, {
       setState: (path, value, sourceTabId) => _setState(path, value, sourceTabId),
-      resolveAttributedTab: (explicit) =>
-        explicit ?? tabContext.getStore() ?? currentAgentTabId,
-      readCanvasComponents: (id) => readCanvasComponentsFromTabState(
-        id ? perTabExtState.get(id) : undefined,
-      ),
+      // Always returns a real tab id. Priority chain:
+      //  1. explicit / ALS / active turn — the obvious cases.
+      //  2. frontend-active tab id (from frontendState["/tabs"]) — best
+      //     guess for post-ready tab-less code (extension setIntervals,
+      //     timers).
+      //  3. "default" — fallback for pre-ready boot code; the bridge
+      //     pre-creates this tab via `ensureTab("default")` at startup.
+      // Locking attribution at call time means `append` reads what the
+      // upcoming write will land on, so two synchronous appends compose.
+      // Differs from plain `aethon.setState` (which lets the frontend
+      // resolve at apply time) — see canvas.ts header comment.
+      resolveTab: (explicit) =>
+        explicit ??
+        tabContext.getStore() ??
+        currentAgentTabId ??
+        frontendActiveTabId() ??
+        "default",
+      // Read priority for canvas.append's existing-components lookup:
+      //
+      //   1. Per-tab mirror (perTabExtState[id].canvas), if the canvas
+      //      slot is defined. An explicit empty value — e.g. after
+      //      `clear()` or `emit([])` — is still a value; we don't
+      //      fall through.
+      //
+      //   2. Tab-less retained canvas (extensionStateTree.canvas), but
+      //      ONLY when `id` matches the frontend's currently-active
+      //      tab (or "default" pre-ready, when there's no active tab
+      //      yet). Plain `aethon.setState("/canvas", ...)` outside any
+      //      tab context routes through here on the bridge AND lands
+      //      on the user's active tab on the frontend — so it's only
+      //      visible to the helper as that tab's canvas. Falling back
+      //      for any other tab would leak the seed across tabs and
+      //      break the per-tab isolation the helper otherwise preserves.
+      //
+      //   3. Empty array.
+      readCanvasComponents: (id) => {
+        const tabState = perTabExtState.get(id);
+        if (tabState && (tabState as { canvas?: unknown }).canvas !== undefined) {
+          return readCanvasComponentsFromTabState(tabState);
+        }
+        const activeForSeed = frontendActiveTabId() ?? "default";
+        if (id === activeForSeed) {
+          return readCanvasComponentsFromTabState(extensionStateTree);
+        }
+        return [];
+      },
     });
   }
   // Pi may re-run extension register() per session, and `tabs` create

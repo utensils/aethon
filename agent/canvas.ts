@@ -4,7 +4,7 @@
  * Extracted from `agent/main.ts` so it has a unit-test surface without
  * spinning up the full bridge. The factory takes `setState` and a
  * per-tab canvas reader as plain dependencies; the bridge wires them to
- * its real `_setState` and `perTabExtState` map. Pure module — no I/O,
+ * its real `_setState` and per-tab mirror lookups. Pure module — no I/O,
  * no globals, no shared state.
  *
  * The four operations:
@@ -13,9 +13,17 @@
  *   clear()          — write `{components: []}`
  *   patch(p, value)  — sugar over setState("/canvas" + p, value)
  *
- * `append` reads from the bridge's mirror rather than asking the
- * frontend, so it works pre-`ready` (boot-time extension code) and stays
- * consistent under concurrent handler dispatches on different tabs.
+ * Trade-off vs plain `aethon.setState("/canvas", ...)`:
+ *   The canvas helper ALWAYS attributes writes to a concrete tab id —
+ *   the bridge's resolver falls back through ALS → currentAgentTab →
+ *   frontend-active-tab → "default" so attribution is locked at call
+ *   time. Plain setState lets the frontend resolve the active tab at
+ *   apply time when no tabId is sent, which is fine for fire-and-forget
+ *   single writes but races for compose-on-read patterns like `append`
+ *   (the bridge can't know which tab to read from if attribution is
+ *   deferred). Locking attribution lets two synchronous appends compose
+ *   deterministically, at the cost of subtly differing semantics from
+ *   plain setState for tab-less code paths.
  */
 export interface CanvasComponent {
   id?: string;
@@ -38,23 +46,32 @@ export interface CanvasApi {
 
 export interface CanvasDeps {
   /**
-   * Tab-aware setState. Mirrors the bridge's `_setState(path, value, sourceTabId?)`.
-   * The factory always passes `boundTabId` as `sourceTabId` so attribution
-   * is explicit; pass `undefined` to defer to ALS / active-tab fallback.
+   * Tab-aware setState. Mirrors the bridge's `_setState(path, value, sourceTabId)`.
+   * The canvas helper ALWAYS passes a concrete tab id so the bridge's
+   * per-tab mirror stays authoritative for `append` reads.
    */
   setState: (
     path: string,
     value: unknown,
-    sourceTabId: string | undefined,
+    sourceTabId: string,
   ) => Promise<CanvasMutationResult>;
   /**
-   * Returns the currently-attributed tab when no explicit id was given.
-   * The bridge wires this to `tabContext.getStore() ?? currentAgentTabId`.
-   * Used only by `append` to decide which tab's mirrored canvas to read.
+   * Always returns a real tab id — never undefined. Bridge wires:
+   *   explicit ?? ALS ?? currentAgentTabId
+   *     ?? frontendActiveTabId() ?? "default"
+   * "default" is the canonical pre-created tab so boot-time writes
+   * (no frontend, no ALS, no active turn) still land somewhere real.
    */
-  resolveAttributedTab: (explicitTabId: string | undefined) => string | undefined;
-  /** Returns the components currently mirrored at `/canvas` for the tab, or `[]`. */
-  readCanvasComponents: (tabId: string | undefined) => CanvasComponent[];
+  resolveTab: (explicitTabId: string | undefined) => string;
+  /**
+   * Returns the components mirrored at `/canvas` for the given tab.
+   * Implementations should consult per-tab state first, then fall back
+   * to the bridge's tab-less retained canvas (extensionStateTree.canvas)
+   * so a canvas seeded by plain `aethon.setState("/canvas", ...)` is
+   * still composable. Either source represents "what's currently on
+   * screen" — preferring the per-tab record when both exist.
+   */
+  readCanvasComponents: (tabId: string) => CanvasComponent[];
 }
 
 export function normalizeCanvasComponents(input: unknown): CanvasComponent[] {
@@ -87,38 +104,40 @@ export function readCanvasComponentsFromTabState(
  * "active tab" when `boundTabId` is undefined). The bridge calls this
  * once per handler dispatch (binding to the originating tabId) and
  * once at boot for the global `aethon.canvas` (binding to undefined,
- * so writes flow through the same ALS / active-tab fallback that
- * `setState(path, value)` uses).
+ * so writes flow through the resolver's full priority chain).
  */
 export function makeCanvasApi(
   boundTabId: string | undefined,
   deps: CanvasDeps,
 ): CanvasApi {
+  // Resolve at call time (not construction) so the global helper picks
+  // up the live active turn / frontend-active tab on every write.
+  const resolve = (): string => deps.resolveTab(boundTabId);
   return {
     emit(components) {
       const list = normalizeCanvasComponents(components);
-      return deps.setState("/canvas", { components: list }, boundTabId);
+      return deps.setState("/canvas", { components: list }, resolve());
     },
     append(components) {
       const additions = normalizeCanvasComponents(components);
       if (additions.length === 0) return Promise.resolve({ ok: true });
-      const attributedTab = deps.resolveAttributedTab(boundTabId);
-      const existing = deps.readCanvasComponents(attributedTab);
+      const tab = resolve();
+      const existing = deps.readCanvasComponents(tab);
       return deps.setState(
         "/canvas",
         { components: [...existing, ...additions] },
-        boundTabId,
+        tab,
       );
     },
     clear() {
-      return deps.setState("/canvas", { components: [] }, boundTabId);
+      return deps.setState("/canvas", { components: [] }, resolve());
     },
     patch(subpath, value) {
       if (typeof subpath !== "string" || subpath.length === 0) {
         return Promise.resolve({ ok: false, error: "subpath required" });
       }
       const normalized = subpath.startsWith("/") ? subpath : "/" + subpath;
-      return deps.setState("/canvas" + normalized, value, boundTabId);
+      return deps.setState("/canvas" + normalized, value, resolve());
     },
   };
 }
