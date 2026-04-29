@@ -60,6 +60,11 @@ function newHarness(opts: {
       },
       readCanvasComponents: (tabId) =>
         readCanvasComponentsFromTabState(mirror.get(tabId)),
+      syncMirror: () => {
+        // No-op in this harness — writeTab === readTab here, so the
+        // helper never invokes syncMirror anyway. Provided for type
+        // completeness.
+      },
     }),
   };
   return harness;
@@ -215,6 +220,7 @@ describe("makeCanvasApi.append", () => {
         return { writeTab: tab, readTab: tab };
       },
       readCanvasComponents: (id) => readCanvasComponentsFromTabState(h.mirror.get(id)),
+      syncMirror: () => undefined,
     });
     const fresh: CanvasComponent = { type: "text", id: "fresh" };
     await tab2Api.append(fresh);
@@ -277,6 +283,7 @@ describe("makeCanvasApi tab attribution", () => {
         return { writeTab: tab, readTab: tab };
       },
       readCanvasComponents: () => [],
+      syncMirror: () => undefined,
     });
     await api.emit({ type: "card" });
     await api.append({ type: "text" });
@@ -309,6 +316,7 @@ describe("makeCanvasApi tab attribution", () => {
       },
       readCanvasComponents: (id) =>
         id === "active-tab" ? [existing] : [],
+      syncMirror: () => undefined,
     });
     await api.append({ type: "text", id: "new" });
     expect(seen).toEqual([undefined]);
@@ -340,6 +348,7 @@ describe("makeCanvasApi emit + patch + append", () => {
         return { writeTab: tab, readTab: tab };
       },
       readCanvasComponents: () => readCanvasComponentsFromTabState(mirror),
+      syncMirror: () => undefined,
     });
     const c1: CanvasComponent = {
       id: "indexing",
@@ -383,6 +392,7 @@ describe("makeCanvasApi.append boot-time fallback", () => {
       resolveTabs: () => ({ writeTab: "default", readTab: "default" }),
       readCanvasComponents: (id) =>
         readCanvasComponentsFromTabState(mirror.get(id)),
+      syncMirror: () => undefined,
     });
     const c1: CanvasComponent = { type: "card", id: "first" };
     const c2: CanvasComponent = { type: "card", id: "second" };
@@ -392,6 +402,86 @@ describe("makeCanvasApi.append boot-time fallback", () => {
     expect(calls[0].sourceTabId).toBe("default");
     expect(calls[1].sourceTabId).toBe("default");
     expect(calls[1].value).toEqual({ components: [c1, c2] });
+  });
+});
+
+describe("makeCanvasApi tab-less mirror sync", () => {
+  it("invokes syncMirror with readTab when writeTab is undefined", async () => {
+    // Post-ready tab-less write: outbound patch carries no sourceTabId
+    // (frontend routes to active), but the bridge must still update its
+    // perTabExtState[readTab] so the next append composes on top of
+    // the previous one. The helper detects writeTab !== readTab and
+    // calls syncMirror after the setState resolves.
+    const setStateCalls: SetStateCall[] = [];
+    const syncCalls: { tabId: string; path: string; value: unknown }[] = [];
+    let mirror: Record<string, unknown> = {};
+    const api = makeCanvasApi(undefined, {
+      setState: (path, value, sourceTabId) => {
+        setStateCalls.push({ path, value, sourceTabId });
+        return Promise.resolve({ ok: true });
+      },
+      resolveTabs: () => ({ writeTab: undefined, readTab: "active" }),
+      readCanvasComponents: (id) =>
+        readCanvasComponentsFromTabState(
+          (mirror[id] as { canvas?: { components?: CanvasComponent[] } } | undefined),
+        ),
+      syncMirror: (tabId, path, value) => {
+        syncCalls.push({ tabId, path, value });
+        const before =
+          (mirror[tabId] as Record<string, unknown> | undefined) ?? {};
+        mirror = {
+          ...mirror,
+          [tabId]: setAtPointer(before, path, value),
+        };
+      },
+    });
+    const c1: CanvasComponent = { type: "card", id: "first" };
+    const c2: CanvasComponent = { type: "card", id: "second" };
+    await api.append(c1);
+    await api.append(c2);
+    expect(setStateCalls).toHaveLength(2);
+    expect(setStateCalls.map((c) => c.sourceTabId)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(syncCalls).toHaveLength(2);
+    expect(syncCalls[0].tabId).toBe("active");
+    // The second append must compose with the first — proving syncMirror
+    // kept the bridge's view in sync even though the wire went tab-less.
+    expect(setStateCalls[1].value).toEqual({
+      components: [c1, c2],
+    });
+  });
+
+  it("does not invoke syncMirror when writeTab === readTab (already in sync via setState)", async () => {
+    const syncCalls: { tabId: string; path: string; value: unknown }[] = [];
+    const api = makeCanvasApi(undefined, {
+      setState: () => Promise.resolve({ ok: true }),
+      resolveTabs: () => ({ writeTab: "tab-1", readTab: "tab-1" }),
+      readCanvasComponents: () => [],
+      syncMirror: (tabId, path, value) => {
+        syncCalls.push({ tabId, path, value });
+      },
+    });
+    await api.emit({ type: "card" });
+    await api.append({ type: "text" });
+    await api.clear();
+    expect(syncCalls).toEqual([]);
+  });
+
+  it("does not invoke syncMirror if setState fails", async () => {
+    const syncCalls: unknown[] = [];
+    const api = makeCanvasApi(undefined, {
+      setState: () => Promise.resolve({ ok: false, error: "frontend_rejected" }),
+      resolveTabs: () => ({ writeTab: undefined, readTab: "active" }),
+      readCanvasComponents: () => [],
+      syncMirror: (...args) => {
+        syncCalls.push(args);
+      },
+    });
+    const r = await api.emit({ type: "card" });
+    expect(r.ok).toBe(false);
+    expect(syncCalls).toEqual([]);
   });
 });
 
@@ -409,6 +499,7 @@ describe("makeCanvasApi post-ready tab-less write", () => {
       },
       resolveTabs: () => ({ writeTab: undefined, readTab: "active-tab" }),
       readCanvasComponents: () => [],
+      syncMirror: () => undefined,
     });
     await api.emit({ type: "card" });
     await api.clear();
@@ -427,6 +518,7 @@ describe("makeCanvasApi error propagation", () => {
       setState: () => Promise.resolve({ ok: false, error: "frontend_rejected: oops" }),
       resolveTabs: () => ({ writeTab: "default", readTab: "default" }),
       readCanvasComponents: () => [],
+      syncMirror: () => undefined,
     });
     const r = await api.emit({ type: "card" });
     expect(r).toEqual({ ok: false, error: "frontend_rejected: oops" });

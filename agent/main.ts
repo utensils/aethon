@@ -1560,6 +1560,18 @@ async function main() {
       },
       readCanvasComponents: (id) =>
         readCanvasComponentsFromTabState(perTabExtState.get(id)),
+      // For post-ready tab-less writes, _setState sends an outbound
+      // patch without `tabId` and routes the bridge's mirror update
+      // into `extensionStateTree` (not perTabExtState). The frontend
+      // applies the patch to its active tab; the predicted-active read
+      // scope on the bridge side then needs its OWN mirror update so
+      // a follow-up `append(...)` reads the freshly-written canvas
+      // instead of stale state. Idempotent — folding the same write
+      // twice via `setAtPointer` lands the same final shape.
+      syncMirror: (tabId, path, value) => {
+        const before = perTabExtState.get(tabId) ?? {};
+        perTabExtState.set(tabId, setAtPointer(before, path, value));
+      },
     });
   }
   // Pi may re-run extension register() per session, and `tabs` create

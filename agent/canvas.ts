@@ -57,9 +57,9 @@ export interface CanvasResolution {
 export interface CanvasDeps {
   /**
    * Tab-aware setState. Mirrors the bridge's `_setState(path, value, sourceTabId?)`.
-   * The factory passes `writeTab` from `resolveTabs(...)` — usually the
-   * concrete attribution, but `undefined` for post-ready tab-less code
-   * so the frontend resolves to the user's currently-active tab.
+   * The factory passes `writeTab` — usually the concrete attribution,
+   * but `undefined` for post-ready tab-less code so the frontend
+   * resolves to the user's currently-active tab.
    */
   setState: (
     path: string,
@@ -75,6 +75,18 @@ export interface CanvasDeps {
   resolveTabs: (explicitTabId: string | undefined) => CanvasResolution;
   /** Returns the components currently mirrored at `/canvas` for the tab, or `[]`. */
   readCanvasComponents: (tabId: string) => CanvasComponent[];
+  /**
+   * Sync the bridge's per-tab mirror under `tabId` for the predicted
+   * read scope, even when the outbound `setState` was tab-less. Without
+   * this, post-ready tab-less appends would each see an empty `readTab`
+   * and replace prior canvas content instead of composing it. Bridge
+   * implementation writes to `perTabExtState[tabId]` directly.
+   *
+   * Called after the outbound setState resolves. The factory only
+   * invokes it when `writeTab !== readTab` — the cases where the
+   * setState write itself wouldn't have updated `readTab`'s mirror.
+   */
+  syncMirror: (tabId: string, path: string, value: unknown) => void;
 }
 
 export function normalizeCanvasComponents(input: unknown): CanvasComponent[] {
@@ -117,31 +129,45 @@ export function makeCanvasApi(
   // Resolve at call time (not construction) so the global helper picks
   // up the live active turn / frontend-active tab on every write.
   const resolve = (): CanvasResolution => deps.resolveTabs(boundTabId);
+  // Wraps a setState call so post-ready tab-less writes still update
+  // the bridge's per-tab mirror under the predicted read scope. When
+  // `writeTab === readTab` (or both undefined) the underlying setState
+  // already syncs the right mirror, so this is a no-op via the equality
+  // check.
+  async function dispatch(
+    tabs: CanvasResolution,
+    path: string,
+    value: unknown,
+  ): Promise<CanvasMutationResult> {
+    const result = await deps.setState(path, value, tabs.writeTab);
+    if (result.ok && tabs.writeTab !== tabs.readTab) {
+      deps.syncMirror(tabs.readTab, path, value);
+    }
+    return result;
+  }
   return {
     emit(components) {
       const list = normalizeCanvasComponents(components);
-      return deps.setState("/canvas", { components: list }, resolve().writeTab);
+      return dispatch(resolve(), "/canvas", { components: list });
     },
     append(components) {
       const additions = normalizeCanvasComponents(components);
       if (additions.length === 0) return Promise.resolve({ ok: true });
       const tabs = resolve();
       const existing = deps.readCanvasComponents(tabs.readTab);
-      return deps.setState(
-        "/canvas",
-        { components: [...existing, ...additions] },
-        tabs.writeTab,
-      );
+      return dispatch(tabs, "/canvas", {
+        components: [...existing, ...additions],
+      });
     },
     clear() {
-      return deps.setState("/canvas", { components: [] }, resolve().writeTab);
+      return dispatch(resolve(), "/canvas", { components: [] });
     },
     patch(subpath, value) {
       if (typeof subpath !== "string" || subpath.length === 0) {
         return Promise.resolve({ ok: false, error: "subpath required" });
       }
       const normalized = subpath.startsWith("/") ? subpath : "/" + subpath;
-      return deps.setState("/canvas" + normalized, value, resolve().writeTab);
+      return dispatch(resolve(), "/canvas" + normalized, value);
     },
   };
 }
