@@ -101,6 +101,13 @@ export interface RuntimeSnapshot {
       { description: string; defaultComposite: string; required: boolean }
     >;
   } | null;
+  // Extension-registered layouts — the layout catalogue the agent can
+  // append to via `aethon.registerLayout`. Built-in layouts shipped by
+  // the default-layout skill (workstation, editorial, command-deck,
+  // live-layout) are NOT listed here; this is the extension delta only.
+  // Payloads are NOT included — they can be large; the agent calls
+  // `getLayout()` after activation if it needs the structure.
+  layouts: { id: string; name: string; description?: string }[];
 }
 
 // The static base prompt — describes the API surface and renderer

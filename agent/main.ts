@@ -1059,6 +1059,23 @@ async function main() {
     { name: string; description: string; usage?: string }
   >();
 
+  // Layouts registered by extensions. Surfaced to the frontend so they
+  // appear in `window.aethon.listLayouts()` / the `/layout` picker /
+  // the appearance menu. Activation still goes through `setLayout`;
+  // registering a layout only adds metadata to the catalogue. Built-in
+  // layouts (workstation, editorial, command-deck, live-layout) live on
+  // the frontend's `defaultLayoutSkill` and are NOT tracked here — this
+  // is the extension delta only.
+  const extensionLayouts = new Map<
+    string,
+    {
+      id: string;
+      name: string;
+      description?: string;
+      payload: Record<string, unknown>;
+    }
+  >();
+
   // Bridge-readable mirror of frontend-populated state slices. The
   // frontend pushes `frontend_state_patch { path, value }` whenever an
   // allowlisted slice changes (models, themes, connection, status, tabs,
@@ -1204,6 +1221,12 @@ async function main() {
             slots: layoutSlotsCatalogue.slots,
           }
         : null,
+      // Extension-registered layouts — payload omitted (can be large).
+      layouts: [...extensionLayouts.values()].map((l) => ({
+        id: l.id,
+        name: l.name,
+        ...(l.description ? { description: l.description } : {}),
+      })),
     };
   }
 
@@ -1736,6 +1759,109 @@ async function main() {
     return promise;
   }
 
+  // Register a named layout in the runtime catalogue. Mirrors the
+  // frontend's `window.aethon.registerLayout` so agent-side extensions
+  // and skill packages can ship layouts without injecting them through
+  // the webview. Replaces an entry of the same id; a follow-up
+  // `setLayout(payload)` activates it. Built-in layout ids
+  // (workstation/editorial/command-deck/live-layout) are reserved.
+  function _registerLayout(entry: unknown): Promise<MutationResult> {
+    if (!entry || typeof entry !== "object") {
+      return Promise.resolve({
+        ok: false,
+        error: "registerLayout requires { id, name, payload }",
+      });
+    }
+    const obj = entry as {
+      id?: unknown;
+      name?: unknown;
+      description?: unknown;
+      payload?: unknown;
+    };
+    const id = typeof obj.id === "string" ? obj.id.trim() : "";
+    const name = typeof obj.name === "string" ? obj.name.trim() : "";
+    if (!/^[A-Za-z][\w-]*$/.test(id)) {
+      const errorMsg = "registerLayout: id must match /^[A-Za-z][\\w-]*$/";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const BUILTIN_LAYOUT_IDS = new Set([
+      "workstation",
+      "editorial",
+      "command-deck",
+      "live-layout",
+    ]);
+    if (BUILTIN_LAYOUT_IDS.has(id)) {
+      const errorMsg = `registerLayout: "${id}" is a reserved built-in id`;
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    if (!name) {
+      const errorMsg = "registerLayout: name must be a non-empty string";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    if (!obj.payload || typeof obj.payload !== "object") {
+      const errorMsg = "registerLayout: payload must be an A2UI object";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const description =
+      typeof obj.description === "string" ? obj.description : undefined;
+    extensionLayouts.set(id, {
+      id,
+      name,
+      ...(description ? { description } : {}),
+      payload: obj.payload as Record<string, unknown>,
+    });
+    const list = [...extensionLayouts.values()];
+    const { id: mutationId, promise } = trackMutation();
+    send({
+      type: "extension_layouts",
+      mutationId,
+      layouts: list,
+    });
+    scheduleStateFileWrite();
+    return promise;
+  }
+
+  function _unregisterLayout(idValue: unknown): Promise<MutationResult> {
+    const id = typeof idValue === "string" ? idValue.trim() : "";
+    if (!id) {
+      return Promise.resolve({
+        ok: false,
+        error: "unregisterLayout: id must be a non-empty string",
+      });
+    }
+    if (!extensionLayouts.delete(id)) {
+      return Promise.resolve({
+        ok: false,
+        error: `unregisterLayout: "${id}" is not a registered layout`,
+      });
+    }
+    const list = [...extensionLayouts.values()];
+    const { id: mutationId, promise } = trackMutation();
+    send({
+      type: "extension_layouts",
+      mutationId,
+      layouts: list,
+    });
+    scheduleStateFileWrite();
+    return promise;
+  }
+
+  function _listLayouts(): {
+    id: string;
+    name: string;
+    description?: string;
+  }[] {
+    return [...extensionLayouts.values()].map((l) => ({
+      id: l.id,
+      name: l.name,
+      ...(l.description ? { description: l.description } : {}),
+    }));
+  }
+
   // Notifications — agent-pushed toasts. Fire-and-forget by default
   // (the frontend stack auto-dismisses after durationMs); pass an
   // explicit id to drive dismiss programmatically. Visible state lives
@@ -1903,6 +2029,9 @@ async function main() {
     registerSidebarSection: _registerSidebarSection,
     registerTheme: _registerTheme,
     registerSlashCommand: _registerSlashCommand,
+    registerLayout: _registerLayout,
+    unregisterLayout: _unregisterLayout,
+    listLayouts: _listLayouts,
     registerKeybinding: _registerKeybinding,
     unregisterKeybinding: _unregisterKeybinding,
     registerMenuItem: _registerMenuItem,
@@ -2028,6 +2157,7 @@ async function main() {
       extensionMenuItems: [...extensionMenuItems.values()],
       extensionEventRoutes: [...extensionEventRoutes.values()],
       extensionEventRoutingMode: eventRoutingMode,
+      extensionLayouts: [...extensionLayouts.values()],
       discoveredTabs,
     });
   }

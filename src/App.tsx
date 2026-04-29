@@ -1727,6 +1727,14 @@ export default function App() {
           | undefined) ?? [];
         const extEventRoutingMode =
           data.extensionEventRoutingMode === "extension" ? "extension" : "builtin";
+        const extLayouts = (data.extensionLayouts as
+          | {
+              id: string;
+              name: string;
+              description?: string;
+              payload: A2UIPayload;
+            }[]
+          | undefined) ?? [];
         const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
         const discTabs = (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
         allDiscoveredSessionsRef.current = discTabs;
@@ -1744,6 +1752,7 @@ export default function App() {
         hydrateSlashCommands(extSlash);
         hydrateKeybindings(extKeys);
         hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
+        hydrateExtensionLayouts(extLayouts);
         // Push the persisted menu list into Tauri so the native menu
         // is correct on first paint after webview reload. Errors are
         // logged but non-fatal — the menu falls back to built-ins-only.
@@ -1993,6 +2002,19 @@ export default function App() {
           | undefined) ?? [];
         const mode = data.mode === "extension" ? "extension" : "builtin";
         hydrateEventRoutes(list, mode);
+        ackMutation(data.mutationId, true);
+        break;
+      }
+      case "extension_layouts": {
+        const list = (data.layouts as
+          | {
+              id: string;
+              name: string;
+              description?: string;
+              payload: A2UIPayload;
+            }[]
+          | undefined) ?? [];
+        hydrateExtensionLayouts(list);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -2776,12 +2798,20 @@ export default function App() {
         tabs: [],
         activeTabId: undefined,
       };
+      // Heal an orphaned bucket: tabs present but the saved activeTabId
+      // doesn't match any of them (or is missing). Without this fixup,
+      // the fallthrough below would set empty:true with tabs.length>0,
+      // leaving the canvas and empty-state both visibly inconsistent.
+      const hasOrphan =
+        next.tabs.length > 0 &&
+        !next.tabs.some((t) => t.id === next.activeTabId);
+      const activeTabId = hasOrphan ? next.tabs[0].id : next.activeTabId;
       const result: Record<string, unknown> = {
         ...prev,
         tabs: next.tabs,
-        activeTabId: next.activeTabId,
+        activeTabId,
       };
-      const activeTab = next.tabs.find((t) => t.id === next.activeTabId);
+      const activeTab = next.tabs.find((t) => t.id === activeTabId);
       if (activeTab) {
         const rec = activeTab as unknown as Record<string, unknown>;
         for (const key of TAB_MIRROR_KEYS) {
@@ -3066,6 +3096,55 @@ export default function App() {
       next.set(canonical, { ...b, combo: canonical });
     }
     extensionKeybindingsRef.current = next;
+  }
+
+  // Hydrate the extension-registered layout catalogue from a bridge
+  // delta (or replayed `ready`). Wholesale replacement: any prior
+  // extension-registered entries are dropped, built-ins survive.
+  // Mirrors into `state.layoutCatalogue` and `state.sidebar.layouts`
+  // so the appearance menu / `/layout` picker / sidebar Layouts
+  // section all re-resolve via $ref.
+  function hydrateExtensionLayouts(
+    list: {
+      id: string;
+      name: string;
+      description?: string;
+      payload: A2UIPayload;
+    }[],
+  ) {
+    const builtinIds = new Set(builtinLayouts.map((l) => l.id));
+    const surviving = layoutCatalogueRef.current.filter((l) => builtinIds.has(l.id));
+    const incoming = list
+      .filter((l) => !builtinIds.has(l.id) && typeof l.id === "string" && l.payload)
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        description: l.description,
+        payload: l.payload,
+      }));
+    layoutCatalogueRef.current = [...surviving, ...incoming];
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+      const prevLayoutItems =
+        (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
+      const activeId =
+        prevLayoutItems.find((l) => l.active)?.id ??
+        layoutCatalogueRef.current[0]?.id;
+      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
+        id: l.id,
+        label: l.id,
+        active: l.id === activeId,
+      }));
+      return {
+        ...prev,
+        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
+          id: l.id,
+          label: l.name,
+          description: l.description,
+        })),
+        sidebar: { ...sidebar, layouts: catalogueItems },
+      };
+    });
   }
 
   // Merge extension-registered slash commands with the built-ins.
@@ -3830,8 +3909,17 @@ export default function App() {
       state.activeTabId as string | undefined,
       recentSessions,
     );
+    // Derive the layout's tab-visibility gates from tabs.length so they
+    // can never drift out of sync with reality. Code paths that mutate
+    // tabs (newTab/closeTab/switchProjectBucket) still write hasTabs/empty
+    // for cleanliness, but if any of them ever forget — or set both true
+    // (the orphan-active-id case in switchProjectBucket fallthrough) —
+    // the visible UI stays consistent.
+    const hasTabs = tabs.length > 0;
     return {
       ...state,
+      hasTabs,
+      empty: !hasTabs,
       sidebar: {
         ...sidebar,
         history,
