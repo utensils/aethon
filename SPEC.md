@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-04-28 (audit-driven cleanup pass: bridge-side `aethon.registerLayout` shipped, table cell scope grew `/$column` and `/$cell`, the layout's `/hasTabs` / `/empty` gates are now derived from `tabs.length` in `renderState` so the visibility cells can never drift, and React-component skills landed via `aethon.frontendEntry` in `package.json`). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, in-app `/skills install <npm-package|git-url>` skill installation, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
+Last reviewed: 2026-04-29 (forward-looking audit pass: M1–M5 complete; **M6 — Interactive Terminals & Workspace Polish** added below to scope real PTY-backed user shell tabs, an opt-in agent-sharing model, hotkey expansion, a graphical settings panel, drag-and-drop into the composer, OS notifications, bridge crash recovery, and a handful of polish items uncovered by the audit). Previous review: 2026-04-28 (bridge-side `aethon.registerLayout` shipped, table cell scope grew `/$column` and `/$cell`, the layout's `/hasTabs` / `/empty` gates derived from `tabs.length` in `renderState` so visibility cells can't drift, and React-component skills via `aethon.frontendEntry` in `package.json`). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, in-app `/skills install <npm-package|git-url>` skill installation, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
 
 ---
 
@@ -241,6 +241,74 @@ by an extension without touching React source.
 - [x] **System prompt covers `for-each` iteration** — replaces the prior "no array iteration" warning. Documents `{$item, $index, $parent}` scope keys with a worked example.
 - [x] **System prompt covers the mutation feedback contract** — `agent/system-prompt.ts` now ships a "Knowing whether a mutation succeeded" section explaining the Promise return, the failure modes (`timeout`, `frontend_rejected: …`, validation), and the pre-connect immediate-resolve behavior. Bundled `docs/aethon-agent/api.md` carries the same contract at the head of the Mutation section.
 - [x] **`docs/aethon-agent/{api,components,extensions}.md` updated.** Each shipped M5 item updated the bundled docs alongside the code change — `registerSlashCommand`, `registerKeybinding`, `registerMenuItem`, `registerEventRoute`, `getFrontendState`, `getRuntimeSnapshot.layoutStructure`, `for-each`, `empty-state`, and the full primitive set (`heading`, `paragraph`, `divider`, `checkbox`, `select`, `slider`, `list`, `table`, `date-picker`, `icon`, `form`, `form-field`). Composites' new prop schemas (`emptyHint`, `headerLabel`, `bootGreeting`, `sendLabel`, `stopLabel`, `queueBadgeFormat`) are documented too.
+
+### M6 — Interactive Terminals & Workspace Polish
+
+The agent-control surface (M1–M5) is shipped. M6 turns Aethon into a
+*proper* desktop terminal-class app: real PTY-backed user shell tabs that
+look and feel like Terminal.app/iTerm2, an opt-in agent-sharing model so
+the agent can see (and optionally drive) the user's shell, hotkey
+expansion to terminal-app conventions, a graphical settings panel, and
+the rest of the polish bundle the audit surfaced (drag-and-drop,
+notifications, crash recovery, tool-card timing, reopen closed tab,
+cross-session search). Phase order is `tab kinds + PTY + Cmd+T` first,
+then sharing, then polish.
+
+#### Interactive shell tabs
+
+- [ ] **Tab kinds** — `Tab` interface gains `kind: "agent" | "shell"`. Agent tabs keep today's chat-history / draft / waiting / queueCount fields; shell tabs carry `cwd`, `command`, `args`, `shareMode`, `shellState`, `exitCode?`, `scrollback`. Tab strip renders a kind icon (chat-bubble vs terminal-prompt) and a status dot for shell tabs (green=alive, gray=exited, yellow=sharing-rw). Tab metadata persists across restarts; PTYs are re-spawned fresh on relaunch (scrollback is not persisted to disk in v1).
+- [ ] **PTY backend (Rust)** — `portable-pty` crate (mature, cross-platform, used by Wezterm/Zed). Tauri commands: `shell_open(tabId, command?, args?, cwd?, env?)`, `shell_input(tabId, data)`, `shell_resize(tabId, cols, rows)`, `shell_close(tabId)`. Per-tab `Mutex<HashMap<TabId, ShellSlot>>` in app state holds `(child, master_writer, reader_thread_handle)`. Reader thread emits `shell-output {tabId, content}` events at 4KiB chunks; child exit emits `shell-exit {tabId, code}`. Cleanup on tab close is mandatory (no zombie processes).
+- [ ] **Interactive xterm.js** — Terminal composite gains an interactive mode: `readOnly: false` wires the existing-but-unrouted `onData` handler (`src/skills/default-layout/components.tsx:1636`) to `shell_input`, FitAddon resize fires `shell_resize`, and a status line below the cell shows `cwd · command (PID) · share-mode-badge · cols×rows`. Mouse reporting, true color, bracketed paste, and 256-color palette all flow through xterm's existing handling.
+- [ ] **`Cmd+T` = new shell tab, `Cmd+Shift+T` = new agent tab** — matches Terminal.app, iTerm2, GNOME Terminal, Windows Terminal. Existing Aethon users who prefer the old binding can flip via `[shortcuts] new_tab_kind = "agent"` in `~/.aethon/config.toml`. The native menu (`File → New Shell Tab` + `New Agent Tab`) and tray menu mirror.
+- [ ] **Spawn defaults** — command falls back to `$SHELL` (zsh on macOS, bash on Linux, PowerShell on Windows); login-interactive flags are `-il` on Unix; cwd inherits the active project's path else `$HOME`; env passes through Tauri env plus the macOS login-shell PATH cache (already exists for the agent — same recovery applies); `TERM=xterm-256color`, `COLORTERM=truecolor`, `AETHON=1` are added.
+- [ ] **Theme-aware ANSI palette** — themes (`ember`, `paper`, `aether` plus extension/loose-file themes) gain a `--ansi-{black,red,green,yellow,blue,magenta,cyan,white,bright-*}` block mapped onto xterm `theme.{black,…,brightWhite}`. Missing keys derive a sensible fallback from `--bg`/`--text`/`--accent` at register-time.
+- [ ] **Foreground process tab title** — Linux `/proc/<pid>/comm`, macOS `proc_listpids`+`proc_pidpath`, Windows `OpenProcess`+`GetModuleBaseName` poll at 1Hz; emits `shell-title-update {tabId, title}`. Falls back to static command basename where unsupported.
+- [ ] **Close-confirm when foreground job is running** — `Cmd+W` / tab-close button checks whether the current foreground PID is the user's shell or a child (`vim`, `npm test`, `ssh`). Child running → confirm dialog with SIGTERM + 5s grace + SIGKILL. Setting `[shell] prompt_before_close = true` (default).
+- [ ] **Drag-drop file → shell-quoted paste** — file drops onto the terminal cell paste the absolute path with `shellQuote` escaping (single-quote-wrapped, embedded quotes escaped). Image drops fall through to xterm's default paste-as-text.
+
+#### Agent ↔ shell sharing
+
+- [ ] **Per-tab share mode** — `private` (default) | `read` | `read-write`. Settable via clickable badge in the terminal status line, right-click menu, or palette ("Shell sharing → ..."). Default is configurable via `[shell] default_share_mode`. Mode is per-tab and opt-in; the badge is always visible — no hidden state.
+- [ ] **`aethon.shells.{list,read,write}` API + agent tools** — `listShells()` returns shareable-tab metadata only; `readShell({tabId, lines?, since?})` returns recent scrollback (default last 200 lines, max 5000); `writeShell({tabId, text})` injects keystrokes (read-write only). Tools register through the existing pi extension system. `ctx.shells` namespace surfaces the same on event handler ctx.
+- [ ] **Per-write user confirmation in read-write mode** — each `writeShell` call prompts the user inline (Allow / Allow-once / Deny) by default. Lifting the per-write prompt requires explicit "trusted" sub-mode (fourth badge state). Confirmation UI is an A2UI overlay (no new primitive).
+- [ ] **Privacy guardrail: mode flips don't expose old scrollback** — switching from `private` → `read` exposes only content from the flip onward. Bridge tracks line offset at flip time. Sharing-mode changes emit `shell-share-change {tabId, mode}` so `RuntimeSnapshot` reflects the current mode.
+
+#### Hotkey expansion
+
+- [ ] `Cmd/Ctrl+1` … `Cmd/Ctrl+8` — jump to tab N (matches every browser).
+- [ ] `Cmd/Ctrl+9` — jump to last tab (Chrome/Firefox convention).
+- [ ] `Cmd/Ctrl+Shift+]` / `Cmd/Ctrl+Shift+[` — move active tab right / left.
+- [ ] `Cmd/Ctrl+,` — open the Settings panel (macOS native preferences convention).
+- [ ] `Cmd/Ctrl+L` — focus composer (agent tabs) / terminal (shell tabs).
+- [ ] `Cmd/Ctrl+Ctrl+F` (macOS `Cmd+Ctrl+F`, others `F11`) — toggle fullscreen via Tauri `set_fullscreen`.
+- [ ] `Cmd/Ctrl+Shift+S` — export current chat as Markdown to `~/Downloads/` (agent tabs only).
+- [ ] `Cmd/Ctrl+Shift+F` — search across past sessions (see polish section).
+- [ ] `F12` — toggle dev tools (debug builds only).
+- [ ] `Cmd/Ctrl+Opt+T` — reopen most-recently-closed tab from the in-memory stack.
+- [ ] Native menu accelerators in `src-tauri/src/lib.rs` extended in lockstep so menu and shortcut paths never drift. Extension `registerKeybinding` priority is unchanged: extensions still run first and may override built-ins.
+
+#### Workspace polish
+
+- [ ] **Settings UI** — A2UI overlay registered by the `default-layout` skill (`settings-panel` composite). Sections: Appearance (theme, font size, UI zoom, ANSI preview, restore-tabs), Behavior (default share mode, prompt-before-close, completion-notification toggle), Agent (default model, system-prompt override path), Shell (default command, args, inherit-env, login PATH override — closes the existing `[shell]` backlog item), Updater (channel placeholder for M7), About (version, build date, "Open logs", "Check for updates", "Report Issue"). Writes via new `write_config_section` Tauri command (atomic-write with `.bak` fallback). `parse_config_toml` in `src-tauri/src/helpers.rs` extended to round-trip rather than parse-only.
+- [ ] **Drag-and-drop & paste files into composer** — `@<absolute-path>` token insertion for file drops onto the chat-input composite (multiple files → space-separated tokens). Image drops + Cmd/Ctrl+V image paste render an inline preview in the draft and attach as a data URL on send (image primitive already accepts this; persist code already strips images on save).
+- [ ] **Native OS notifications** — `tauri-plugin-notification` plugin. Notification fires when `state.waiting` flips `true`→`false` AND the originating tab is unfocused (or window unfocused) AND turn duration ≥ `[ui] notify_min_duration_seconds` (default 8). Click → focus window + switch tab. Setting `[ui] notify_on_completion = true` (default true).
+- [ ] **Bridge crash recovery** — Rust spawn-with-supervisor pattern: on bun child exit, emit `agent-crashed {exitCode, stderr}` event. Frontend clears `waiting` and `queueCount` for all tabs, appends a system notice with a Restart button (or auto-restart per `[shell] auto_restart_agent = true`, default). Per-tab `SessionManager.continueRecent` resumes context on the next message.
+- [ ] **Tool-card elapsed-time + long-running warning** — bash tool cards show running clock (`Running... 3.2s`, 4Hz update). At 30s, subtitle shifts amber with "Long-running command — Stop to cancel". Final state shows total duration. Implementation entirely in the existing tool-card render path — `tool_execution_start/update/end` already carry timestamps.
+- [ ] **Reopen closed tab stack** — in-memory stack of last 10 closed tabs (id, kind, label, cwd, projectId, command/args for shell, restoredSessionId for agent). `Cmd/Ctrl+Opt+T` pops; palette gains "Reopen closed tab → \<label\>" entries. Agent tabs restore via the existing JSONL replay path; shell tabs spawn fresh PTYs at the same cwd.
+- [ ] **Cross-session search** — `Cmd/Ctrl+Shift+F` opens an A2UI overlay (registered by `default-layout`). Bridge scans `~/.aethon/sessions/*/` JSONL files (regex/grep approach in v1, lazy mtime-keyed cache, real ranking can come later). Filter scope toggle: current project / all projects. Result rows: project, tab label, snippet, role, timestamp; click → restore the tab scrolled to the match. Cap 5000 results, paginated.
+
+#### Configuration additions
+
+- [ ] **`[shell]` section** — `default_command` (default `$SHELL`), `default_args` (default `["-il"]` Unix, `[]` Windows), `inherit_env` (default true), `default_share_mode` (default `"private"`), `prompt_before_close` (default true), `auto_restart_agent` (default true). Subsumes the existing `[shell]` login-PATH override backlog item.
+- [ ] **`[shortcuts] new_tab_kind`** — `"shell"` (default) | `"agent"`. Lets users keep `Cmd+T = agent tab` if preferred.
+- [ ] **`[ui] notify_on_completion` + `notify_min_duration_seconds`** — surface the OS-notification gate as user-tunable.
+
+#### Documentation + tests
+
+- [ ] **`docs/aethon-agent/{api,components,extensions}.md` updated** — `aethon.shells.{list,read,write}`, `ctx.shells.*`, `settings-panel` composite, `pty-canvas` slot, share-mode badge, the new keybinding set.
+- [ ] **`SPEC.md` keyboard summary + Configuration schema updated** alongside each shipped item.
+- [ ] **CLAUDE.md keyboard summary** mirrored.
+- [ ] **Tests**: vitest for settings-panel form submission and share-badge cycling; `src/utils/shellQuote.test.ts` for file-drop quoting; `agent/shell-share.test.ts` for read/write tool dispatch + line-offset privacy guardrail; cargo tests for PTY spawn/resize/exit-code/cleanup. All wired into the `check` gate. Codex peer review per phase, high reasoning, green before merge.
 
 ### Cross-cutting
 
@@ -487,8 +555,13 @@ Pi settings (`~/.pi/agent/settings.json`) drive provider/auth, model
 discovery, and `enabledModels` filtering for the picker. Aethon's
 config layers on top, not a replacement.
 
-**Backlog**: consider adding `[updater]` (endpoint, channel) and `[shell]`
-(login-PATH override) sections as the corresponding code paths grow.
+**Planned for M6**: `[shell]` (default command/args, env passthrough,
+default share mode, prompt-before-close, login-PATH override),
+`[shortcuts] new_tab_kind` (Cmd+T migration opt-out), and
+`[ui] notify_on_completion` + `notify_min_duration_seconds`.
+
+**Backlog**: `[updater]` (endpoint, channel) deferred to M7 alongside the
+multi-channel release pipeline.
 
 ---
 
@@ -519,9 +592,13 @@ config layers on top, not a replacement.
    philosophy.
 6. **Terminal integration** — Embedded `xterm.js` with the WebGL renderer
    for GPU-accelerated terminal output. Pi's tools get shell access through
-   this. The terminal is an A2UI component registered by the default layout
-   skill — it can be shown, hidden, resized, or replaced like any other
-   component.
+   the agent-tab terminal panel (read-only sink for bash output). M6
+   extends this with a second terminal mode — interactive PTY-backed
+   *user* shell tabs (Tab kind = `"shell"`) using `portable-pty` on the
+   Rust side, with an opt-in per-tab sharing model so the agent can
+   read or drive the user's shell on request. Both modes share the same
+   `xterm.js` composite — `readOnly: true` in agent tabs, `readOnly: false`
+   in shell tabs.
 
 ---
 
