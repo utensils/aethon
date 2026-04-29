@@ -134,16 +134,23 @@ export function makeCanvasApi(
   // `writeTab === readTab` (or both undefined) the underlying setState
   // already syncs the right mirror, so this is a no-op via the equality
   // check.
-  async function dispatch(
+  //
+  // syncMirror runs SYNCHRONOUSLY before setState's await so two
+  // fire-and-forget appends in the same tick both compose — the second
+  // append's read sees the first append's write even though neither
+  // has been ack'd yet. Matches `_setState`'s own behavior: it writes
+  // perTabExtState synchronously before sending the outbound patch.
+  // If setState fails, the mirror sits ahead of the frontend by one
+  // patch — same edge case the attributed-write path already accepts.
+  function dispatch(
     tabs: CanvasResolution,
     path: string,
     value: unknown,
   ): Promise<CanvasMutationResult> {
-    const result = await deps.setState(path, value, tabs.writeTab);
-    if (result.ok && tabs.writeTab !== tabs.readTab) {
+    if (tabs.writeTab !== tabs.readTab) {
       deps.syncMirror(tabs.readTab, path, value);
     }
-    return result;
+    return deps.setState(path, value, tabs.writeTab);
   }
   return {
     emit(components) {

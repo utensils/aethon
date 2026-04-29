@@ -469,19 +469,46 @@ describe("makeCanvasApi tab-less mirror sync", () => {
     expect(syncCalls).toEqual([]);
   });
 
-  it("does not invoke syncMirror if setState fails", async () => {
-    const syncCalls: unknown[] = [];
+  it("invokes syncMirror synchronously so fire-and-forget appends compose", async () => {
+    // Two appends in the same tick without awaiting the first. The
+    // helper must fold the first write into the bridge's mirror BEFORE
+    // setState's await yields, so the second append's read sees it.
+    // (Without this, both appends read [] and the second clobbers the
+    // first on the wire.)
+    const setStateCalls: SetStateCall[] = [];
+    let mirror: Record<string, unknown> = {};
     const api = makeCanvasApi(undefined, {
-      setState: () => Promise.resolve({ ok: false, error: "frontend_rejected" }),
+      setState: (path, value, sourceTabId) => {
+        setStateCalls.push({ path, value, sourceTabId });
+        // Simulate a non-trivial round-trip. The helper must NOT wait
+        // for this before the second append's read.
+        return new Promise((resolve) =>
+          setTimeout(() => resolve({ ok: true }), 5),
+        );
+      },
       resolveTabs: () => ({ writeTab: undefined, readTab: "active" }),
-      readCanvasComponents: () => [],
-      syncMirror: (...args) => {
-        syncCalls.push(args);
+      readCanvasComponents: (id) =>
+        readCanvasComponentsFromTabState(
+          (mirror[id] as { canvas?: { components?: CanvasComponent[] } } | undefined),
+        ),
+      syncMirror: (tabId, path, value) => {
+        const before =
+          (mirror[tabId] as Record<string, unknown> | undefined) ?? {};
+        mirror = {
+          ...mirror,
+          [tabId]: setAtPointer(before, path, value),
+        };
       },
     });
-    const r = await api.emit({ type: "card" });
-    expect(r.ok).toBe(false);
-    expect(syncCalls).toEqual([]);
+    const c1: CanvasComponent = { type: "card", id: "first" };
+    const c2: CanvasComponent = { type: "card", id: "second" };
+    // Don't await the first — fire and forget, then immediately fire
+    // the second.
+    const p1 = api.append(c1);
+    const p2 = api.append(c2);
+    await Promise.all([p1, p2]);
+    expect(setStateCalls).toHaveLength(2);
+    expect(setStateCalls[1].value).toEqual({ components: [c1, c2] });
   });
 });
 
