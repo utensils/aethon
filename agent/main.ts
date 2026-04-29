@@ -144,6 +144,7 @@ import {
   readCanvasComponentsFromTabState,
 } from "./canvas";
 import type { CanvasApi } from "./canvas";
+import { setAtPointer } from "./jsonPointer";
 import {
   readSessionMetadata,
   readSessionTranscript,
@@ -229,33 +230,6 @@ function modelKey(m: Model<Api>): string {
 // Decode a JSON Pointer token (RFC 6901). `~1` → `/`, `~0` → `~`.
 function decodePointerToken(t: string): string {
   return t.replace(/~1/g, "/").replace(/~0/g, "~");
-}
-
-// Apply value at JSON Pointer path inside an immutable tree. Mirror of the
-// frontend's setPointer so the bridge can keep extensionStateTree in sync
-// with what the frontend computes from the same patches.
-function setAtPointer(
-  state: Record<string, unknown>,
-  pointer: string,
-  value: unknown,
-): Record<string, unknown> {
-  if (!pointer || pointer === "" || pointer === "/") return state;
-  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
-  const tokens = path.split("/").map(decodePointerToken);
-  const next: Record<string, unknown> = { ...state };
-  let cursor: Record<string, unknown> = next;
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const key = tokens[i];
-    const existing = cursor[key];
-    const child =
-      typeof existing === "object" && existing !== null
-        ? { ...(existing as Record<string, unknown>) }
-        : {};
-    cursor[key] = child;
-    cursor = child;
-  }
-  cursor[tokens[tokens.length - 1]] = value;
-  return next;
 }
 
 // Layout-aware patch that preserves arrays (mirror of the frontend's
@@ -1547,9 +1521,17 @@ async function main() {
       setState: (path, value, sourceTabId) => _setState(path, value, sourceTabId),
       resolveAttributedTab: (explicit) =>
         explicit ?? tabContext.getStore() ?? currentAgentTabId,
-      readCanvasComponents: (id) => readCanvasComponentsFromTabState(
-        id ? perTabExtState.get(id) : undefined,
-      ),
+      // Reader fallback: when there's an attributed tab, read its
+      // mirrored canvas from `perTabExtState` (where `_setState` routes
+      // tab-attributed writes). When attribution is absent — a boot-time
+      // `aethon.canvas.append(...)` before any tab exists — `_setState`
+      // routes the write into `extensionStateTree` instead, so we have
+      // to read from there or sequential boot appends would each see
+      // an empty canvas and clobber prior writes.
+      readCanvasComponents: (id) => {
+        const source = id ? perTabExtState.get(id) : extensionStateTree;
+        return readCanvasComponentsFromTabState(source);
+      },
     });
   }
   // Pi may re-run extension register() per session, and `tabs` create

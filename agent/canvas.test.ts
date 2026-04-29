@@ -6,6 +6,7 @@ import {
   type CanvasComponent,
   type CanvasMutationResult,
 } from "./canvas";
+import { setAtPointer } from "./jsonPointer";
 
 interface SetStateCall {
   path: string;
@@ -299,6 +300,79 @@ describe("makeCanvasApi tab attribution", () => {
       components: [existing, { type: "text", id: "new" }],
     });
     expect(calls[0].sourceTabId).toBeUndefined();
+  });
+});
+
+describe("makeCanvasApi emit + patch + append", () => {
+  it("preserves the components array across patch and survives a follow-up append", async () => {
+    // Wires the harness through the real bridge-side `setAtPointer` so
+    // a `canvas.patch` write at /canvas/components/0/... folds into the
+    // mirror without flattening the array. Regression: previously the
+    // mirror used a spread-only writer that turned `[c1]` into `{0: c1}`,
+    // so the next `canvas.append` saw "no array" and dropped the
+    // existing component.
+    const calls: SetStateCall[] = [];
+    let mirror: Record<string, unknown> = {};
+    const api = makeCanvasApi("tab-1", {
+      setState: (path, value, sourceTabId) => {
+        calls.push({ path, value, sourceTabId });
+        mirror = setAtPointer(mirror, path, value);
+        return Promise.resolve({ ok: true });
+      },
+      resolveAttributedTab: (explicit) => explicit ?? "tab-1",
+      readCanvasComponents: () => readCanvasComponentsFromTabState(mirror),
+    });
+    const c1: CanvasComponent = {
+      id: "indexing",
+      type: "card",
+      props: { title: "Indexing", state: "running" },
+    };
+    await api.emit(c1);
+    await api.patch("/components/0/props/state", "ok");
+    const c2: CanvasComponent = { id: "next", type: "card", props: { title: "Done" } };
+    await api.append(c2);
+    // Mirror still has an array — not the regressed `{0: ..., 1: ...}` shape.
+    const components = (
+      (mirror.canvas as { components?: unknown }).components
+    );
+    expect(Array.isArray(components)).toBe(true);
+    expect(components).toHaveLength(2);
+    expect((components as { props: { state: string } }[])[0].props.state).toBe(
+      "ok",
+    );
+    expect((components as { id: string }[])[1].id).toBe("next");
+  });
+});
+
+describe("makeCanvasApi.append boot-time fallback", () => {
+  it("reads from a global state tree when no tab is attributed", async () => {
+    // Mirrors the bridge's boot-time wiring: when no tab exists yet,
+    // _setState routes writes into a global store; the reader has to
+    // pull from that same store or sequential appends each see [].
+    const calls: SetStateCall[] = [];
+    let globalCanvas: { components?: CanvasComponent[] } | undefined = undefined;
+    const api = makeCanvasApi(undefined, {
+      setState: (path, value, sourceTabId) => {
+        calls.push({ path, value, sourceTabId });
+        if (path === "/canvas" && value && typeof value === "object") {
+          globalCanvas = value;
+        }
+        return Promise.resolve({ ok: true });
+      },
+      resolveAttributedTab: () => undefined,
+      readCanvasComponents: (id) =>
+        id === undefined
+          ? readCanvasComponentsFromTabState({ canvas: globalCanvas })
+          : [],
+    });
+    const c1: CanvasComponent = { type: "card", id: "first" };
+    const c2: CanvasComponent = { type: "card", id: "second" };
+    await api.append(c1);
+    await api.append(c2);
+    expect(calls).toHaveLength(2);
+    // The second append must include c1 in its components list — the
+    // boot-time bug was that it didn't.
+    expect(calls[1].value).toEqual({ components: [c1, c2] });
   });
 });
 
