@@ -307,46 +307,27 @@ fn default_shell_command() -> CommandBuilder {
 /// across the next PTY read. If the trailing bytes are *truly* invalid
 /// (not just incomplete), emit everything and rely on `from_utf8_lossy`
 /// at the call site to replace them with U+FFFD.
+///
+/// The truncation-vs-invalid distinction comes from
+/// [`Utf8Error::error_len`]: `None` means "not enough data to decide" —
+/// safe to hold and try again with the next read; `Some(_)` means "this
+/// byte is definitively wrong" — flush lossily so we don't stall output
+/// when a process emits Latin-1 (e.g. `\xE9!`) or other bad bytes.
 fn utf8_safe_split(buf: &[u8]) -> usize {
     match std::str::from_utf8(buf) {
         Ok(_) => buf.len(),
-        Err(e) => {
-            let valid = e.valid_up_to();
-            let remaining = buf.len() - valid;
-            // Max UTF-8 codepoint is 4 bytes; if more than that follows the
-            // last valid char, the bytes are invalid (not just partial),
-            // so don't carry them indefinitely.
-            if remaining >= 4 {
-                return buf.len();
-            }
-            // Look at the lead byte of the invalid tail. If its declared
-            // length exceeds what we have, it's a partial codepoint —
-            // hold it until the next read completes the sequence.
-            let lead = buf[valid];
-            let expected = utf8_seq_len(lead);
-            if expected > 0 && remaining < expected {
-                valid
-            } else {
-                // Invalid lead or unexpected continuation — flush lossy.
-                buf.len()
-            }
-        }
+        Err(e) => match e.error_len() {
+            // None = trailing bytes are a partial-but-not-yet-invalid
+            // codepoint. Hold the tail; emit only the valid prefix.
+            None => e.valid_up_to(),
+            // Some(_) = a definitively invalid sequence. Don't buffer it
+            // — flush everything so from_utf8_lossy can replace it with
+            // U+FFFD and the following bytes still reach the user.
+            Some(_) => buf.len(),
+        },
     }
 }
 
-fn utf8_seq_len(lead: u8) -> usize {
-    if lead < 0x80 {
-        1
-    } else if lead & 0xE0 == 0xC0 {
-        2
-    } else if lead & 0xF0 == 0xE0 {
-        3
-    } else if lead & 0xF8 == 0xF0 {
-        4
-    } else {
-        0
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -483,13 +464,14 @@ mod tests {
     }
 
     #[test]
-    fn utf8_seq_len_tags_each_class() {
-        assert_eq!(utf8_seq_len(b'a'), 1);
-        assert_eq!(utf8_seq_len(0xC3), 2); // 2-byte lead
-        assert_eq!(utf8_seq_len(0xE4), 3); // 3-byte lead
-        assert_eq!(utf8_seq_len(0xF0), 4); // 4-byte lead
-        assert_eq!(utf8_seq_len(0x80), 0); // continuation byte
-        assert_eq!(utf8_seq_len(0xFF), 0); // invalid
+    fn utf8_safe_split_does_not_buffer_latin1_byte_followed_by_ascii() {
+        // Codex-flagged regression: \xE9 is a 3-byte UTF-8 lead, but if the
+        // very next byte is `!` (0x21, ASCII — not a continuation), the
+        // sequence is *definitively* invalid. Older logic held it as
+        // "incomplete" and stalled output until EOF; now from_utf8's
+        // error_len() returns Some(_), so we flush lossily.
+        let b = b"hi\xE9!";
+        assert_eq!(utf8_safe_split(b), b.len());
     }
 
     #[test]
