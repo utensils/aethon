@@ -142,11 +142,23 @@ pub fn shell_open<R: Runtime>(
     let child_for_thread = Arc::clone(&child_handle);
     let reader_thread = thread::spawn(move || {
         let mut buf = vec![0u8; READ_CHUNK_BYTES];
+        // Carry bytes across reads. PTY chunk boundaries land mid-codepoint
+        // for multi-byte UTF-8 (CJK, emoji, ANSI in non-Latin shells), and a
+        // per-chunk `from_utf8_lossy` would replace those split bytes with
+        // U+FFFD permanently. Hold any trailing partial sequence and prepend
+        // it to the next read.
+        let mut carry: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                    carry.extend_from_slice(&buf[..n]);
+                    let emit_len = utf8_safe_split(&carry);
+                    if emit_len == 0 {
+                        continue;
+                    }
+                    let chunk = String::from_utf8_lossy(&carry[..emit_len]).into_owned();
+                    carry.drain(..emit_len);
                     let _ = app_for_thread.emit(
                         "shell-output",
                         ShellOutputPayload {
@@ -157,6 +169,19 @@ pub fn shell_open<R: Runtime>(
                 }
                 Err(_) => break,
             }
+        }
+        // Flush any remaining bytes lossily on EOF — at this point the PTY
+        // is closed so a partial trailing sequence will never complete.
+        if !carry.is_empty() {
+            let chunk = String::from_utf8_lossy(&carry).into_owned();
+            let _ = app_for_thread.emit(
+                "shell-output",
+                ShellOutputPayload {
+                    tab_id: tab_id_for_thread.clone(),
+                    content: chunk,
+                },
+            );
+            carry.clear();
         }
         // PTY closed (natural child exit OR shell_close dropped master).
         // Reap the child so the parent process doesn't accumulate zombies.
@@ -277,6 +302,52 @@ fn default_shell_command() -> CommandBuilder {
     }
 }
 
+/// Largest prefix of `buf` we can safely emit without splitting a UTF-8
+/// codepoint. Returns the number of bytes to emit; the rest stays carried
+/// across the next PTY read. If the trailing bytes are *truly* invalid
+/// (not just incomplete), emit everything and rely on `from_utf8_lossy`
+/// at the call site to replace them with U+FFFD.
+fn utf8_safe_split(buf: &[u8]) -> usize {
+    match std::str::from_utf8(buf) {
+        Ok(_) => buf.len(),
+        Err(e) => {
+            let valid = e.valid_up_to();
+            let remaining = buf.len() - valid;
+            // Max UTF-8 codepoint is 4 bytes; if more than that follows the
+            // last valid char, the bytes are invalid (not just partial),
+            // so don't carry them indefinitely.
+            if remaining >= 4 {
+                return buf.len();
+            }
+            // Look at the lead byte of the invalid tail. If its declared
+            // length exceeds what we have, it's a partial codepoint —
+            // hold it until the next read completes the sequence.
+            let lead = buf[valid];
+            let expected = utf8_seq_len(lead);
+            if expected > 0 && remaining < expected {
+                valid
+            } else {
+                // Invalid lead or unexpected continuation — flush lossy.
+                buf.len()
+            }
+        }
+    }
+}
+
+fn utf8_seq_len(lead: u8) -> usize {
+    if lead < 0x80 {
+        1
+    } else if lead & 0xE0 == 0xC0 {
+        2
+    } else if lead & 0xF0 == 0xE0 {
+        3
+    } else if lead & 0xF8 == 0xF0 {
+        4
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,6 +427,96 @@ mod tests {
         assert!(slot.reader_thread.take().is_none());
         // Slot count is back to zero.
         assert!(reg.slots.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn utf8_safe_split_passes_complete_ascii() {
+        assert_eq!(utf8_safe_split(b"hello"), 5);
+        assert_eq!(utf8_safe_split(b""), 0);
+    }
+
+    #[test]
+    fn utf8_safe_split_holds_partial_two_byte_sequence() {
+        // 'é' = 0xC3 0xA9. With only the lead byte, hold it.
+        let b = b"hi\xC3";
+        assert_eq!(utf8_safe_split(b), 2);
+    }
+
+    #[test]
+    fn utf8_safe_split_holds_partial_three_byte_sequence() {
+        // U+4E2D ('中') = 0xE4 0xB8 0xAD. With only 1 of 3 bytes, hold.
+        let b = b"a\xE4";
+        assert_eq!(utf8_safe_split(b), 1);
+        // With only 2 of 3 bytes, hold.
+        let b = b"a\xE4\xB8";
+        assert_eq!(utf8_safe_split(b), 1);
+    }
+
+    #[test]
+    fn utf8_safe_split_holds_partial_four_byte_sequence() {
+        // U+1F600 ('😀') = 0xF0 0x9F 0x98 0x80. Partial holds.
+        let b = b"x\xF0\x9F\x98";
+        assert_eq!(utf8_safe_split(b), 1);
+    }
+
+    #[test]
+    fn utf8_safe_split_emits_complete_codepoint() {
+        // Full 'é' lands.
+        let b = "héllo".as_bytes();
+        assert_eq!(utf8_safe_split(b), b.len());
+    }
+
+    #[test]
+    fn utf8_safe_split_flushes_truly_invalid_tail() {
+        // Five bytes after the last valid char with no plausible UTF-8
+        // lead — flush everything (caller's lossy decode replaces with FFFD).
+        let b = b"hi\xFF\xFF\xFF\xFF\xFF";
+        assert_eq!(utf8_safe_split(b), b.len());
+    }
+
+    #[test]
+    fn utf8_safe_split_flushes_unexpected_continuation() {
+        // A continuation byte (0x80) with no preceding lead is invalid;
+        // emit lossy rather than holding it forever.
+        let b = b"hi\x80";
+        assert_eq!(utf8_safe_split(b), b.len());
+    }
+
+    #[test]
+    fn utf8_seq_len_tags_each_class() {
+        assert_eq!(utf8_seq_len(b'a'), 1);
+        assert_eq!(utf8_seq_len(0xC3), 2); // 2-byte lead
+        assert_eq!(utf8_seq_len(0xE4), 3); // 3-byte lead
+        assert_eq!(utf8_seq_len(0xF0), 4); // 4-byte lead
+        assert_eq!(utf8_seq_len(0x80), 0); // continuation byte
+        assert_eq!(utf8_seq_len(0xFF), 0); // invalid
+    }
+
+    #[test]
+    fn utf8_safe_split_simulates_streaming_decode() {
+        // Round-trip a string split mid-codepoint across two chunks.
+        // Confirms a `carry`-pattern caller produces the original bytes.
+        let original = "한 글 中文 😀 mix";
+        let bytes = original.as_bytes();
+        // Pick a split that lands inside a multi-byte codepoint.
+        // '글' is 3 bytes (E1 9E 80) — choose a split inside it.
+        let split = 5;
+        assert!(!original.is_char_boundary(split));
+        let mut carry = Vec::new();
+        let mut emitted = String::new();
+        for chunk in [&bytes[..split], &bytes[split..]] {
+            carry.extend_from_slice(chunk);
+            let take = utf8_safe_split(&carry);
+            if take > 0 {
+                emitted.push_str(&String::from_utf8_lossy(&carry[..take]));
+                carry.drain(..take);
+            }
+        }
+        // Final flush (mimics EOF).
+        if !carry.is_empty() {
+            emitted.push_str(&String::from_utf8_lossy(&carry));
+        }
+        assert_eq!(emitted, original);
     }
 
     #[test]
