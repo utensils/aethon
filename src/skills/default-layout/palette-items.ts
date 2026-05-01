@@ -294,7 +294,14 @@ export function rankItems(
   }
   const scored: { item: PaletteItem; score: number }[] = [];
   for (const item of items) {
-    const haystack = `${item.label} ${item.hint ?? ""} ${item.id}`;
+    // Score against user-visible text plus the section label. Including
+    // the internal `id` (e.g. `keybind:builtin:meta+b`) made fuzzy hit
+    // unrelated rows whose ids happened to share characters with the
+    // query (typing "theme" matched every keybinding because their ids
+    // contain h/e/m in order). The section label is what users actually
+    // expect to search by — typing "theme" should find every theme,
+    // typing "model" every model — so we score it explicitly here.
+    const haystack = `${item.label} ${item.hint ?? ""} ${SECTION_LABEL[item.section]}`;
     let score = fuzzyScore(q, haystack);
     if (score <= 0) continue;
     if (preferred && item.section === preferred) score += 20;

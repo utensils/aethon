@@ -2716,9 +2716,17 @@ body.ae-resizing-sidebar * {
   font-size: var(--text-sm);
   line-height: 1.3;
   min-width: 0;
+  /* Reserve space for the active-row accent rail so non-active rows
+     don't shift on highlight transitions. */
+  border-left: 3px solid transparent;
 }
 .ae-palette-row-active {
   background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.ae-palette-row-active .ae-palette-row-label {
+  color: var(--accent);
+  font-weight: 500;
 }
 .ae-palette-row-label {
   color: var(--text);
