@@ -87,12 +87,55 @@ export function CommandPalette({ state, onEvent }: BuiltinComponentProps) {
     row?.scrollIntoView({ block: "nearest" });
   }, [clamped, palette.open]);
 
-  if (!palette.open) return null;
-
+  // Belt-and-braces navigation: a document-level keydown handler that
+  // fires regardless of where focus actually lives. The input's own
+  // onKeyDown (below) handles the common case, but if anything steals
+  // focus mid-render — a re-render that shifts focus, a row's
+  // onMouseEnter, an extension keystroke handler — the input would go
+  // deaf to ArrowUp/Down. Capture-phase listener so it beats other
+  // bubble-phase keydown listeners on the same combos.
   const close = () => onEvent("close");
   const select = (item: PaletteItem) => onEvent("select", { item });
   const setQuery = (q: string) => onEvent("query", { value: q });
   const setIndex = (idx: number) => onEvent("navigate", { index: idx });
+  useEffect(() => {
+    if (!palette.open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        setIndex(items.length > 0 ? (clamped + 1) % items.length : 0);
+        // Refocus input — the user keeps typing into it after navigating.
+        inputRef.current?.focus();
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        setIndex(
+          items.length > 0
+            ? (clamped - 1 + items.length) % items.length
+            : 0,
+        );
+        inputRef.current?.focus();
+        return;
+      }
+      if (e.key === "Enter") {
+        const target = items[clamped];
+        if (target) {
+          e.preventDefault();
+          e.stopPropagation();
+          select(target);
+        }
+        return;
+      }
+    };
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [palette.open, clamped, items.length]);
+
+  if (!palette.open) return null;
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
@@ -122,16 +165,22 @@ export function CommandPalette({ state, onEvent }: BuiltinComponentProps) {
     }
   };
 
-  // Group display items by section while preserving their ranked order.
-  // We don't re-sort within a section — ranking already accounts for the
-  // user's section preference (`>`, `@`, `?` prefixes).
+  // Group display items by section. Each section appears once with all
+  // its matching items — even if score-sort interleaved sections in the
+  // ranked list (e.g. "/theme" slash-command outscoring some theme rows
+  // pushed Ember/Æther into a separate Themes block from Paper). Section
+  // *order* follows first-appearance in the ranked list so the highest-
+  // scoring section's block lands at the top; *items within* a section
+  // keep their score-sorted order.
   const grouped: { section: PaletteSection; items: PaletteItem[] }[] = [];
+  const sectionIndex = new Map<PaletteSection, number>();
   for (const item of items) {
-    const last = grouped[grouped.length - 1];
-    if (last && last.section === item.section) {
-      last.items.push(item);
-    } else {
+    const idx = sectionIndex.get(item.section);
+    if (idx === undefined) {
+      sectionIndex.set(item.section, grouped.length);
       grouped.push({ section: item.section, items: [item] });
+    } else {
+      grouped[idx].items.push(item);
     }
   }
 
