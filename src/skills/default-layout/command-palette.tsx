@@ -63,8 +63,32 @@ export function CommandPalette({ state, onEvent }: BuiltinComponentProps) {
     () => rankItems(allItems, palette.query),
     [allItems, palette.query],
   );
-  const clamped = items.length > 0
-    ? Math.max(0, Math.min(palette.selectedIndex, items.length - 1))
+  // Group items by section so each section appears once with all its
+  // matching items, then flatten to a render-order array. `displayItems`
+  // is the **single source of truth** for both highlighting (`runningIndex`
+  // below) and keyboard selection — using it everywhere prevents a
+  // regression where score-sort and section-grouping disagreed on order
+  // and Enter selected a different item than the visually-active one.
+  const grouped = useMemo(() => {
+    const out: { section: PaletteSection; items: PaletteItem[] }[] = [];
+    const idxBySection = new Map<PaletteSection, number>();
+    for (const item of items) {
+      const idx = idxBySection.get(item.section);
+      if (idx === undefined) {
+        idxBySection.set(item.section, out.length);
+        out.push({ section: item.section, items: [item] });
+      } else {
+        out[idx].items.push(item);
+      }
+    }
+    return out;
+  }, [items]);
+  const displayItems = useMemo(
+    () => grouped.flatMap((g) => g.items),
+    [grouped],
+  );
+  const clamped = displayItems.length > 0
+    ? Math.max(0, Math.min(palette.selectedIndex, displayItems.length - 1))
     : 0;
 
   // Auto-focus the input when opened. Fires once per open transition,
@@ -98,13 +122,26 @@ export function CommandPalette({ state, onEvent }: BuiltinComponentProps) {
   const select = (item: PaletteItem) => onEvent("select", { item });
   const setQuery = (q: string) => onEvent("query", { value: q });
   const setIndex = (idx: number) => onEvent("navigate", { index: idx });
+  // Stash the latest `displayItems` + `clamped` in a ref so the
+  // document-level keydown handler always reads current values without
+  // having to re-register on every state change. Re-registering would
+  // otherwise need `items` (or `displayItems`) in the deps array, which
+  // would trigger a new addEventListener on every keystroke; using a
+  // ref avoids that churn AND fixes a stale-closure bug where same-
+  // length result swaps would leave the handler executing items from a
+  // previous query.
+  const navRef = useRef({ items: displayItems, clamped });
+  useEffect(() => {
+    navRef.current = { items: displayItems, clamped };
+  });
   useEffect(() => {
     if (!palette.open) return;
     const handler = (e: KeyboardEvent) => {
+      const { items: cur, clamped: curIdx } = navRef.current;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         e.stopPropagation();
-        setIndex(items.length > 0 ? (clamped + 1) % items.length : 0);
+        setIndex(cur.length > 0 ? (curIdx + 1) % cur.length : 0);
         // Refocus input — the user keeps typing into it after navigating.
         inputRef.current?.focus();
         return;
@@ -112,16 +149,12 @@ export function CommandPalette({ state, onEvent }: BuiltinComponentProps) {
       if (e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
-        setIndex(
-          items.length > 0
-            ? (clamped - 1 + items.length) % items.length
-            : 0,
-        );
+        setIndex(cur.length > 0 ? (curIdx - 1 + cur.length) % cur.length : 0);
         inputRef.current?.focus();
         return;
       }
       if (e.key === "Enter") {
-        const target = items[clamped];
+        const target = cur[curIdx];
         if (target) {
           e.preventDefault();
           e.stopPropagation();
@@ -133,56 +166,20 @@ export function CommandPalette({ state, onEvent }: BuiltinComponentProps) {
     document.addEventListener("keydown", handler, true);
     return () => document.removeEventListener("keydown", handler, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [palette.open, clamped, items.length]);
+  }, [palette.open]);
 
   if (!palette.open) return null;
 
+  // Input-level handler is just an Escape fallback. Arrow nav and Enter
+  // are owned by the document capture handler above; relying on the
+  // input's onKeyDown alone made navigation deaf when anything stole
+  // focus.
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
       close();
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const target = items[clamped];
-      if (target) select(target);
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setIndex(items.length > 0 ? (clamped + 1) % items.length : 0);
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setIndex(
-        items.length > 0
-          ? (clamped - 1 + items.length) % items.length
-          : 0,
-      );
-      return;
     }
   };
-
-  // Group display items by section. Each section appears once with all
-  // its matching items — even if score-sort interleaved sections in the
-  // ranked list (e.g. "/theme" slash-command outscoring some theme rows
-  // pushed Ember/Æther into a separate Themes block from Paper). Section
-  // *order* follows first-appearance in the ranked list so the highest-
-  // scoring section's block lands at the top; *items within* a section
-  // keep their score-sorted order.
-  const grouped: { section: PaletteSection; items: PaletteItem[] }[] = [];
-  const sectionIndex = new Map<PaletteSection, number>();
-  for (const item of items) {
-    const idx = sectionIndex.get(item.section);
-    if (idx === undefined) {
-      sectionIndex.set(item.section, grouped.length);
-      grouped.push({ section: item.section, items: [item] });
-    } else {
-      grouped[idx].items.push(item);
-    }
-  }
 
   let runningIndex = 0;
   return (
