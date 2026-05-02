@@ -140,6 +140,7 @@ import { basename, dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { findProjectExtensionDirs } from "./project-extensions";
+import { extractAgentEndError } from "./agent-errors";
 import {
   makeCanvasApi as buildCanvasApi,
   readCanvasComponentsFromTabState,
@@ -2832,10 +2833,40 @@ async function main() {
           break;
         }
         case "agent_end": {
+          // Pi swallows API errors (credit-balance 400, auth, network, …)
+          // inside `handleRunFailure`: it pushes a synthetic assistant
+          // message with `stopReason: "error"` + `errorMessage` and emits
+          // a normal `agent_end` rather than rejecting the prompt promise.
+          // Without surfacing the errorMessage here the UI just sat
+          // silent — no error bubble, status pulse stuck on "live".
+          // Aborts (Cmd+.) come through with `stopReason: "aborted"` and
+          // are NOT user-facing errors; skip those (extractAgentEndError
+          // filters them out).
+          const failedMessage = extractAgentEndError(event.messages);
+          if (failedMessage) {
+            send({ type: "error", tabId, message: failedMessage });
+          }
           rec.agentEndFired = true;
           rec.promptInFlight = false;
           if (currentAgentTabId === tabId) currentAgentTabId = undefined;
           send({ type: "response_end", tabId });
+          break;
+        }
+        case "auto_retry_end": {
+          // Pi's auto-retry path (transient 5xx, rate-limit) — when retries
+          // are exhausted with no success, surface the final error so the
+          // user sees what's wrong instead of a silent failure. agent_end
+          // also fires with the failure message, so this is a belt-and-
+          // braces channel that's safe to coexist (the frontend renders
+          // both as separate chat lines, and "exhausted" + the actual
+          // 4xx is more useful than just the 4xx).
+          if (!event.success && event.finalError) {
+            send({
+              type: "error",
+              tabId,
+              message: `auto-retry exhausted: ${event.finalError}`,
+            });
+          }
           break;
         }
       }
