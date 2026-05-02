@@ -2997,6 +2997,133 @@ body.ae-resizing-sidebar * {
 }
 
 /* =============================================================================
+   Settings panel — Cmd+, opens. Modal overlay with sectioned form.
+   ============================================================================= */
+
+.ae-settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.ae-settings-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(640px, 90vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ae-settings-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-settings-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  flex: 1 1 auto;
+}
+.ae-settings-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.ae-settings-close:hover {
+  color: var(--text);
+}
+.ae-settings-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.ae-settings-section {
+  margin-bottom: 22px;
+}
+.ae-settings-section-title {
+  margin: 0 0 8px 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.ae-settings-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ae-settings-field {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ae-settings-field-label {
+  flex: 1 1 auto;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.ae-settings-field-control {
+  flex: 0 0 auto;
+}
+.ae-settings-input {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  min-width: 200px;
+}
+.ae-settings-note {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  margin: 0 0 8px 0;
+}
+.ae-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.ae-settings-primary,
+.ae-settings-secondary {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.92rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+.ae-settings-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.ae-settings-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ae-settings-secondary {
+  background: transparent;
+  color: var(--text);
+}
+.ae-settings-secondary:hover {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+/* =============================================================================
    Tool card — agent tool-call surface with live elapsed-time clock.
    Replaces the plain `card` primitive for tool execution events. Color
    shifts with state: idle = dim, running = accent, ≥30 s long-running =
