@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 240" role="img"
+     aria-label="Aethon — pi with a face">
+  <title>Aethon — pi with a face</title>
+  <desc>Dark serif wordmark "Aethon" with an orange π badge on the Æ ligature,
+        on a cream rounded tile. Tagline beneath: "PI WITH A FACE".</desc>
+
+  <!-- Cream rounded tile background — light counterpart to the dark hero. -->
+  <rect x="0" y="0" width="960" height="240" rx="32" fill="#fef3e2"/>
+
+  <!-- Wordmark: rendered as one text element so kerning + baseline are
+       robust across font fallbacks. See aethon-hero-dark.svg for the
+       full design rationale (the two files differ only in palette). -->
+  <g transform="translate(480, 158)" text-anchor="middle">
+    <text font-family="'Bodoni 72', Didot, 'Playfair Display', Georgia, 'Times New Roman', serif"
+          font-weight="700" font-size="156" fill="#1f1f23"
+          letter-spacing="0.005em">Æthon</text>
+  </g>
+
+  <!-- π badge — orange disc with cream italic π, anchored above the
+       upper-right serif of the Æ. -->
+  <g transform="translate(346, 64)">
+    <circle r="22" fill="#ff6a18"/>
+    <text y="9" text-anchor="middle"
+          font-family="'Bodoni 72', Didot, 'Playfair Display', Georgia, 'Times New Roman', serif"
+          font-style="italic" font-weight="700" font-size="28" fill="#fef3e2">π</text>
+  </g>
+
+  <!-- Hairline rule beneath the wordmark. -->
+  <line x1="380" y1="190" x2="580" y2="190" stroke="#ff6a18" stroke-width="1" opacity="0.6"/>
+
+  <!-- Tagline. -->
+  <text x="480" y="218" text-anchor="middle"
+        font-family="-apple-system, 'Segoe UI', system-ui, sans-serif"
+        font-size="14" font-weight="600" fill="#ff6a18" opacity="0.95"
+        letter-spacing="0.36em">PI WITH A FACE</text>
+</svg>

@@ -46,6 +46,13 @@ coverage/
 *.png
 *.zip
 !src-tauri/icons/*.png
+!website/public/*.png
 
 # Local working notes — not for git.
 /TODO.md
+
+# VitePress build output (cache survives a clean checkout, dist is the
+# Pages artifact). The lockfile under website/ is committed.
+website/.vitepress/cache/
+website/.vitepress/dist/
+website/node_modules/
