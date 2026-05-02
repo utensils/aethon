@@ -2408,29 +2408,38 @@ function ShellStatusBar(props: {
     () => ({ shareMode, tabId }),
     [shareMode, tabId],
   );
-  // Adapter: the default React badge fires `cycle-share-mode`, which
-  // App.tsx routes from the surrounding shell-canvas. Re-emit through
-  // the parent BuiltinComponentProps onEvent so it lands on the
-  // shell-canvas channel.
+  // Adapter: the default React badge fires `cycle-share-mode`. A
+  // declarative override template emits primitive events (typically
+  // `click` from a button). Both intents map to "user wants to cycle
+  // share mode" — translate either into App's cycle handler by re-
+  // emitting on the surrounding shell-canvas channel with the live
+  // tabId injected (App's handler reads `data.tabId`; a template's
+  // click event won't supply it). Returning `true` suppresses the inner
+  // renderer's own `dispatch_a2ui_event` so the same gesture doesn't
+  // leak a duplicate synthetic event to the bridge.
   //
-  // Returning `true` for `cycle-share-mode` tells the inner renderer the
-  // event is routed and to suppress its own `dispatch_a2ui_event` —
-  // otherwise every click would leak a duplicate synthetic
-  // `share-mode-badge` event to the bridge.
-  //
-  // Other event types (a custom override template's `click`/`submit`/
-  // anything else) fall through (return false) so the inner renderer's
-  // bridge dispatch fires with templateRootType="share-mode-badge" — the
-  // documented path for extension handlers to observe a custom badge.
+  // Other event types fall through (return false) so a custom badge
+  // template can still emit non-cycle gestures — those reach the bridge
+  // with `templateRootType="share-mode-badge"` for extension handlers.
+  // The bridge's `aethon.shells` surface deliberately omits a
+  // `setShareMode` — privacy mode flips MUST come from the user gesture
+  // routed through here, never from the agent.
   const handleBadgeEvent = useMemo<A2UIEventHandler>(
     () => (_component, eventType, data) => {
-      if (eventType === "cycle-share-mode") {
-        onEvent(eventType, data);
+      if (eventType === "cycle-share-mode" || eventType === "click") {
+        const payload =
+          data && typeof data === "object"
+            ? (data as Record<string, unknown>)
+            : {};
+        onEvent("cycle-share-mode", {
+          ...payload,
+          tabId: payload.tabId ?? tabId,
+        });
         return true;
       }
       return false;
     },
-    [onEvent],
+    [onEvent, tabId],
   );
   const dimsLabel = cols && rows ? `${cols}×${rows}` : "—";
   return (

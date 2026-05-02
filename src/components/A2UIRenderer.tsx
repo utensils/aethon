@@ -440,10 +440,26 @@ export default function A2UIRenderer({
         // componentIds (events from interactive children would otherwise
         // be ambiguous between instances).
         const expanded = rewriteTemplateIds(tpl, `${component.id}__tpl`);
+        // Expose the host component's props inside the scoped state as
+        // `$props` so the template can `$ref: "/$props/<key>"` to read
+        // live values from the host. Without this, a declarative override
+        // for a component like `share-mode-badge` (which carries a live
+        // `{shareMode, tabId}` from the parent) loses access to those
+        // values — the React-component override path passes them via
+        // `component.props`, so the template path needs an equivalent.
+        const hostProps =
+          component.props && typeof component.props === "object"
+            ? component.props
+            : {};
+        const baseScope = scopedState ?? activeState;
+        const templateScope: Record<string, unknown> = {
+          ...baseScope,
+          $props: hostProps,
+        };
         // Track the host template type so descendants' events carry it —
         // extension handlers register by template type to filter events
         // from their own template instances.
-        return renderComponent(expanded, component.type, scopedState);
+        return renderComponent(expanded, component.type, templateScope);
       }
     }
     const Component = Primitive ?? registry.resolve(component.type);

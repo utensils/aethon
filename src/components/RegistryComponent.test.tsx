@@ -166,6 +166,34 @@ describe("RegistryComponent", () => {
     expect(html.startsWith("<div class=\"a2ui-renderer\"")).toBe(false);
   });
 
+  it("exposes componentProps as $props inside a template override expansion", () => {
+    // Codex pass-4 caught this: when a registered template is the
+    // override target, the template subtree only sees the parent state
+    // unless we inject the host's props. The default share-mode badge
+    // relies on `componentProps={{shareMode, tabId}}` to render the
+    // current mode; a declarative override needs equivalent access via
+    // `$ref: "/$props/<key>"`.
+    const registry = new SkillRegistry();
+    registry.setTemplates({
+      "share-mode-badge": {
+        id: "ext-badge",
+        type: "card",
+        props: { title: { $ref: "/$props/shareMode" } },
+      },
+    });
+    const html = renderToStaticMarkup(
+      <SkillRegistryProvider registry={registry}>
+        <RegistryComponent
+          type="share-mode-badge"
+          state={{}}
+          onEvent={noop}
+          componentProps={{ shareMode: "read-write", tabId: "tab-9" }}
+        />
+      </SkillRegistryProvider>,
+    );
+    expect(html).toContain("read-write");
+  });
+
   it("forwards componentProps into the synthetic component for the override", () => {
     // The share-mode badge needs live `shareMode` + `tabId` props passed
     // into the resolved component — both for the default React badge and
