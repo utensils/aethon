@@ -141,6 +141,7 @@ import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { findProjectExtensionDirs } from "./project-extensions";
 import { extractAgentEndError } from "./agent-errors";
+import { logger } from "./logger";
 import {
   makeCanvasApi as buildCanvasApi,
   readCanvasComponentsFromTabState,
@@ -563,7 +564,7 @@ async function loadAethonSkillManifests(
     entries = await readdir(skillsRoot);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-skill] readdir ${skillsRoot}: ${(err as Error).message}`);
+      logger.scope("skill").warn(`readdir ${skillsRoot}: ${(err as Error).message}`);
     }
     return;
   }
@@ -585,7 +586,7 @@ async function loadAethonSkillManifests(
   for (const c of candidates) {
     const entry = c.manifest.aethon?.entry;
     if (typeof entry !== "string" || entry.length === 0) {
-      console.error(`[aethon-skill] ${c.name}: aethon.entry not set, skipping`);
+      logger.scope("skill").warn(`${c.name}: aethon.entry not set, skipping`);
       send({
         type: "extension_lifecycle",
         name: c.name,
@@ -608,7 +609,7 @@ async function loadAethonSkillManifests(
       const mod: AethonExtensionModule = await import(pathToFileURL(filePath).href);
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
-        console.error(`[aethon-skill] ${c.name}: no register() export, skipping`);
+        logger.scope("skill").warn(`${c.name}: no register() export, skipping`);
         send({
           type: "extension_lifecycle",
           name: c.name,
@@ -629,7 +630,7 @@ async function loadAethonSkillManifests(
       await register(api);
       registry.set(c.name, "skill-package");
       options?.onLoaded?.(c.name);
-      console.error(`[aethon-skill] loaded ${c.name} from ${entry}`);
+      logger.scope("skill").info(`loaded ${c.name} from ${entry}`);
       send({
         type: "extension_lifecycle",
         name: c.name,
@@ -657,14 +658,14 @@ async function loadAethonSkillManifests(
             entryPath: fePath,
             code,
           });
-          console.error(
-            `[aethon-skill] ${c.name}: frontend module shipped (${code.length} bytes)`,
-          );
+          logger
+            .scope("skill")
+            .info(`${c.name}: frontend module shipped (${code.length} bytes)`);
         } catch (feErr) {
           const feMessage = (feErr as Error).message;
-          console.error(
-            `[aethon-skill] ${c.name}: failed to read frontendEntry ${fePath}: ${feMessage}`,
-          );
+          logger
+            .scope("skill")
+            .warn(`${c.name}: failed to read frontendEntry ${fePath}: ${feMessage}`);
           send({
             type: "extension_lifecycle",
             name: `${c.name} (frontend)`,
@@ -684,7 +685,7 @@ async function loadAethonSkillManifests(
       }
     } catch (err) {
       const message = (err as Error).message;
-      console.error(`[aethon-skill] ${c.name}: ${message}`);
+      logger.scope("skill").warn(`${c.name}: ${message}`);
       send({
         type: "extension_lifecycle",
         name: c.name,
@@ -726,7 +727,7 @@ async function discoverPiAethonExtensions(
     entries = await readdir(dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-pi] readdir ${dir}: ${(err as Error).message}`);
+      logger.scope("pi-discover").warn(`readdir ${dir}: ${(err as Error).message}`);
     }
     return;
   }
@@ -772,9 +773,9 @@ async function discoverPersistedTabs(): Promise<
     entries = await readdir(SESSIONS_DIR);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(
-        `[aethon-tabs] readdir ${SESSIONS_DIR}: ${(err as Error).message}`,
-      );
+      logger
+        .scope("tabs")
+        .warn(`readdir ${SESSIONS_DIR}: ${(err as Error).message}`);
     }
     return [];
   }
@@ -810,7 +811,7 @@ async function loadAethonThemeDirectory(
     entries = await readdir(dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-themes] readdir ${dir}: ${(err as Error).message}`);
+      logger.scope("themes").warn(`readdir ${dir}: ${(err as Error).message}`);
     }
     return;
   }
@@ -823,9 +824,9 @@ async function loadAethonThemeDirectory(
       // registerTheme handles validation internally — invalid input emits
       // a notice and resolves with {ok:false}.
       api.registerTheme(parsed);
-      console.error(`[aethon-themes] loaded ${name}`);
+      logger.scope("themes").info(`loaded ${name}`);
     } catch (err) {
-      console.error(`[aethon-themes] ${name}: ${(err as Error).message}`);
+      logger.scope("themes").warn(`${name}: ${(err as Error).message}`);
     }
   }
 }
@@ -863,15 +864,14 @@ async function loadAethonExtensionDirectory(
     }) => void;
   },
 ): Promise<void> {
+  const log = logger.scope(options.logPrefix);
   let entries: string[];
   try {
     entries = await readdir(options.dir);
   } catch (err) {
     // Missing dir is the common case — extensions are optional.
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(
-        `[${options.logPrefix}] readdir ${options.dir}: ${(err as Error).message}`,
-      );
+      log.warn(`readdir ${options.dir}: ${(err as Error).message}`);
     }
     return;
   }
@@ -885,7 +885,7 @@ async function loadAethonExtensionDirectory(
       const mod: AethonExtensionModule = await import(pathToFileURL(file).href);
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
-        console.error(`[${options.logPrefix}] ${name}: no register() export, skipping`);
+        log.warn(`${name}: no register() export, skipping`);
         // Lifecycle event — abstract feedback channel. Default-layout
         // surfaces this as a chat-side system notice; other layouts /
         // extensions can listen on `aethon:extension-lifecycle` and
@@ -911,7 +911,7 @@ async function loadAethonExtensionDirectory(
       options.loadedFiles?.add(file);
       registry.set(displayName, options.source);
       options.onLoaded?.(displayName);
-      console.error(`[${options.logPrefix}] loaded ${name}`);
+      log.info(`loaded ${name}`);
       send({
         type: "extension_lifecycle",
         name: displayName,
@@ -921,7 +921,7 @@ async function loadAethonExtensionDirectory(
       });
     } catch (err) {
       const message = (err as Error).message;
-      console.error(`[${options.logPrefix}] ${name}: ${message}`);
+      log.warn(`${name}: ${message}`);
       send({
         type: "extension_lifecycle",
         name: displayName,
@@ -1116,9 +1116,9 @@ async function main() {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
-        console.error(
-          `[aethon-boot] read ${BOOT_LAYOUT_FILE}: ${(err as Error).message}`,
-        );
+        logger
+          .scope("boot")
+          .warn(`read ${BOOT_LAYOUT_FILE}: ${(err as Error).message}`);
       }
       // ENOENT is fine outside Tauri-spawned dev; getLayout() falls
       // back to null and the system prompt still tells the agent to
@@ -1147,9 +1147,9 @@ async function main() {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
-        console.error(
-          `[aethon-slots] read ${LAYOUT_SLOTS_FILE}: ${(err as Error).message}`,
-        );
+        logger
+          .scope("slots")
+          .warn(`read ${LAYOUT_SLOTS_FILE}: ${(err as Error).message}`);
       }
     }
   }
@@ -1667,7 +1667,7 @@ async function main() {
             JSON.stringify(getRuntimeSnapshot(), null, 2),
           );
         } catch (err) {
-          console.error(`[aethon-state] write ${STATE_FILE}: ${(err as Error).message}`);
+          logger.scope("state").warn(`write ${STATE_FILE}: ${(err as Error).message}`);
         } finally {
           stateFileWriting = false;
         }
@@ -2940,11 +2940,13 @@ async function main() {
       mkdirSync(dir, { recursive: true });
       sessionManager = SessionManager.continueRecent(resolvedCwd, dir);
     } catch (err) {
-      console.error(
-        `[aethon-session] persistent setup for tab ${tabId} failed (${
-          (err as Error).message
-        }); falling back to in-memory`,
-      );
+      logger
+        .scope("session")
+        .warn(
+          `persistent setup for tab ${tabId} failed (${
+            (err as Error).message
+          }); falling back to in-memory`,
+        );
       sessionManager = SessionManager.inMemory();
     }
 

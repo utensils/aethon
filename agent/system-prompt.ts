@@ -20,6 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { logger } from "./logger";
 
 export interface RuntimeSnapshot {
   release: boolean;
@@ -548,14 +549,14 @@ export function resolveAethonSystemPrompt(
     override = readFileSync(overridePath, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-prompt] read ${overridePath}: ${(err as Error).message}`);
+      logger.scope("prompt").warn(`read ${overridePath}: ${(err as Error).message}`);
     }
   }
   try {
     extra = readFileSync(appendPath, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-prompt] read ${appendPath}: ${(err as Error).message}`);
+      logger.scope("prompt").warn(`read ${appendPath}: ${(err as Error).message}`);
     }
   }
   const base = override?.trim() || DEFAULT_AETHON_PROMPT;

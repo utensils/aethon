@@ -349,6 +349,38 @@ status bar. Production builds skip the watcher entirely.
 If you find yourself wanting to manually restart the agent during dev, the
 simplest path is `touch agent/main.ts`.
 
+## Logging
+
+Both the Rust shell and the bridge (TS) use leveled, scoped loggers and
+write to two sinks:
+
+| Sink | What goes there | When to use |
+|---|---|---|
+| stderr | Live stream as the app runs | Watching `bun tauri dev` output, seeing what's happening right now |
+| `~/.aethon/logs/` | Daily-rotating files, 7-day retention | Post-hoc investigation, release-build crashes, comparing across runs |
+
+Two file series share that directory:
+- `aethon.YYYY-MM-DD` — Rust shell (`tracing` crate), covers agent
+  supervisor, file watcher, debug TCP server, Tauri commands.
+- `bridge.YYYY-MM-DD.log` — bun bridge (`agent/logger.ts`), covers
+  extension loaders, theme/skill discovery, system-prompt assembly,
+  per-tab session setup.
+
+Files older than 7 days are pruned at app startup; rotation is per-day.
+Each line is `ISO_TS LEVEL scope: message` so `grep ext-loader …` works.
+
+Levels follow `AETHON_LOG` (preferred) or `RUST_LOG` / `LOG_LEVEL` env
+vars. Defaults are `info` in dev and `warn` in release. Examples:
+
+```bash
+AETHON_LOG=debug bun tauri dev          # everything
+AETHON_LOG=warn bun tauri dev           # quiet — warnings + errors only
+AETHON_LOG=aethon::agent_watch=debug bun tauri dev  # one scope verbose
+```
+
+The Rust subscriber uses `tracing-subscriber::EnvFilter` so target-scoped
+filters work (`aethon::agent_watch=debug,aethon::config=warn`).
+
 ## Driving the app from Claude (`aethon-debug` skill)
 
 `.claude/skills/aethon-debug/` ships a slash-commandable skill for inspecting
