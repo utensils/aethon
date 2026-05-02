@@ -4108,6 +4108,28 @@ export default function App() {
     });
   }
 
+  // Tell the Rust shell to watch (or stop watching) a project's
+  // `.aethon/extensions/` dir for changes. Edits to files in a watched
+  // dir trigger the same kill-and-respawn flow as `~/.aethon/extensions/`,
+  // so project extensions hot-reload without a manual app restart. Pairs
+  // with announceProjectToBridge — both fire whenever the active project
+  // changes, but they cover different things (cwd for new sessions vs.
+  // the file-watch list for hot-reload).
+  function watchProjectForBridge(path: string) {
+    invoke("watch_project_extensions", { projectPath: path }).catch(
+      (err: unknown) => {
+        console.warn("[aethon] watch_project_extensions failed:", err);
+      },
+    );
+  }
+  function unwatchProjectForBridge(path: string) {
+    invoke("unwatch_project_extensions", { projectPath: path }).catch(
+      (err: unknown) => {
+        console.warn("[aethon] unwatch_project_extensions failed:", err);
+      },
+    );
+  }
+
   // Refresh the cached git status for one project path. Best-effort —
   // a missing `git` binary or a non-repo path resolves to an empty
   // entry and is treated as "no badge". Runs through the Tauri command
@@ -4185,6 +4207,9 @@ export default function App() {
         (stateRef.current.activeTabId as string | undefined) ?? "default";
       if (active) {
         announceProjectToBridge(tabId, active.path);
+        // Hot-reload the active project's `.aethon/extensions/` from
+        // boot, not just from the next setActiveProjectById call.
+        watchProjectForBridge(active.path);
         // Retag any pre-load tabs (default boot tab + bridge replays) so
         // they live in the active project's bucket from now on. Without
         // this they'd stay in NO_PROJECT_KEY and silently disappear the
@@ -4305,6 +4330,7 @@ export default function App() {
     if (!target) return false;
     const fromKey = projectBucketKey(ps.activeId);
     const toKey = projectBucketKey(id);
+    const previousActive = activeProject(ps);
     projectsRef.current = {
       projects: ps.projects.map((p) =>
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
@@ -4317,11 +4343,19 @@ export default function App() {
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, target.path);
+    // Swap the file-watcher's project ext dir so edits in the new
+    // project's `.aethon/extensions/` hot-reload, and edits in the old
+    // one stop firing.
+    if (previousActive && previousActive.path !== target.path) {
+      unwatchProjectForBridge(previousActive.path);
+    }
+    watchProjectForBridge(target.path);
     return true;
   }
 
   function clearActiveProject() {
     const fromKey = projectBucketKey(projectsRef.current.activeId);
+    const previousActive = activeProject(projectsRef.current);
     projectsRef.current = { ...projectsRef.current, activeId: null };
     persistProjects();
     switchProjectBucket(fromKey, NO_PROJECT_KEY);
@@ -4329,6 +4363,7 @@ export default function App() {
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, null);
+    if (previousActive) unwatchProjectForBridge(previousActive.path);
   }
 
   function removeProjectById(id: string): boolean {
@@ -4338,8 +4373,9 @@ export default function App() {
     const result = removeProject(projectsRef.current, id);
     if (!result.removed) return false;
 
+    const removedPath = result.removed.path;
     projectsRef.current = result.state;
-    gitStatusRef.current.delete(result.removed.path);
+    gitStatusRef.current.delete(removedPath);
     persistProjects();
 
     if (wasActive) {
@@ -4353,6 +4389,10 @@ export default function App() {
       tabBucketsRef.current.delete(removedKey);
       syncRecentSessionsToState();
     }
+    // Always unwatch — the project may have been active or just on the
+    // recents list with its ext dir watched eagerly. Idempotent on the
+    // Rust side, so calling for a never-watched path is harmless.
+    unwatchProjectForBridge(removedPath);
 
     return true;
   }

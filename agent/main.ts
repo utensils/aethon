@@ -1178,8 +1178,146 @@ async function main() {
   const loadFailures = new Map<string, ExtensionFailure>();
   // Project-local extension discovery can run on startup, tab_open, and
   // set_project. Track absolute files so switching back to the same project
-  // doesn't duplicate event handlers or repeated UI mutations.
+  // doesn't duplicate event handlers or repeated UI mutations. Cleared on
+  // every project-extension unload so reloading the same project re-runs
+  // the register() call chain from a clean baseline.
   const loadedProjectExtensionFiles = new Set<string>();
+
+  // Cwd we last loaded project extensions for, so a re-load with the same
+  // cwd can short-circuit (avoid the unload + reload churn). Null until
+  // the first project-load. The initial null is load-bearing — set_project
+  // / tab_open compare against it to decide whether the project changed —
+  // even though boot synchronously reassigns it before any inbound message
+  // is processed.
+  // eslint-disable-next-line no-useless-assignment
+  let currentProjectCwd: string | null = null;
+
+  // Baseline snapshots of every registry an extension can write into.
+  // Captured AFTER user-level + skill-package + pi-extension loaders run,
+  // BEFORE any project-directory extension runs. `unloadProjectExtensions`
+  // restores the live registries from these snapshots, then re-emits the
+  // hydrate messages so the frontend drops the project's contributions.
+  // Keyed by registry name to keep the snapshot/restore loop terse.
+  interface ProjectBaselineSnapshot {
+    components: Map<string, unknown>;
+    themes: Map<string, ThemeRecord>;
+    slashCommands: typeof extensionSlashCommands;
+    keybindings: typeof extensionKeybindings;
+    menuItems: typeof extensionMenuItems;
+    layouts: typeof extensionLayouts;
+    eventRoutes: typeof extensionEventRoutes;
+    eventHandlerCount: number;
+    stateTree: Record<string, unknown>;
+  }
+  let projectBaseline: ProjectBaselineSnapshot | null = null;
+  function captureProjectExtensionBaseline(): void {
+    projectBaseline = {
+      components: new Map(extensionComponents),
+      themes: new Map(extensionThemes),
+      slashCommands: new Map(extensionSlashCommands),
+      keybindings: new Map(extensionKeybindings),
+      menuItems: new Map(extensionMenuItems),
+      layouts: new Map(extensionLayouts),
+      eventRoutes: new Map(extensionEventRoutes),
+      eventHandlerCount: a2uiEventHandlers.length,
+      // Deep clone the state tree so subsequent setState mutations don't
+      // mutate the snapshot. JSON round-trip is fine here — extension
+      // state is JSON-serializable by contract (it ends up in
+      // $AETHON_STATE_FILE) and the tree stays small in practice.
+      stateTree: JSON.parse(JSON.stringify(extensionStateTree)) as Record<
+        string,
+        unknown
+      >,
+    };
+  }
+  /**
+   * Restore every registry to the post-non-project-load baseline. Used
+   * before loading a different project's extensions so we don't leak
+   * project A's components / themes / slash commands into project B.
+   * Re-emits the corresponding hydrate messages so the frontend drops
+   * the unloaded surface immediately. No-op when no baseline has been
+   * captured yet (means we haven't reached the post-boot point yet).
+   */
+  function unloadProjectExtensions(): void {
+    if (!projectBaseline) return;
+    // Drop project-directory entries from the load registry + failure
+    // registry. User-level + skill-package + pi-extension entries stay.
+    for (const [name, source] of loadedExtensions) {
+      if (source === "project-directory") loadedExtensions.delete(name);
+    }
+    for (const [name, info] of loadFailures) {
+      if (info.source === "project-directory") loadFailures.delete(name);
+    }
+    loadedProjectExtensionFiles.clear();
+
+    // Restore each Map registry from the snapshot.
+    extensionComponents.clear();
+    for (const [k, v] of projectBaseline.components) extensionComponents.set(k, v);
+    extensionThemes.clear();
+    for (const [k, v] of projectBaseline.themes) extensionThemes.set(k, v);
+    extensionSlashCommands.clear();
+    for (const [k, v] of projectBaseline.slashCommands) {
+      extensionSlashCommands.set(k, v);
+    }
+    extensionKeybindings.clear();
+    for (const [k, v] of projectBaseline.keybindings) {
+      extensionKeybindings.set(k, v);
+    }
+    extensionMenuItems.clear();
+    for (const [k, v] of projectBaseline.menuItems) extensionMenuItems.set(k, v);
+    extensionLayouts.clear();
+    for (const [k, v] of projectBaseline.layouts) extensionLayouts.set(k, v);
+    extensionEventRoutes.clear();
+    for (const [k, v] of projectBaseline.eventRoutes) {
+      extensionEventRoutes.set(k, v);
+    }
+    // Trim event handlers back to the baseline length. New handlers always
+    // append, so anything past the baseline length came from project
+    // extensions.
+    a2uiEventHandlers.length = projectBaseline.eventHandlerCount;
+    // Restore extensionStateTree from the deep clone.
+    extensionStateTree = JSON.parse(
+      JSON.stringify(projectBaseline.stateTree),
+    ) as Record<string, unknown>;
+
+    // Re-emit hydrate messages so the frontend drops the project's
+    // contributions. mutationId omitted — these are server-initiated
+    // refreshes, not requested mutations.
+    send({
+      type: "extension_components",
+      components: Object.fromEntries(extensionComponents),
+    });
+    send({
+      type: "extension_themes",
+      themes: [...extensionThemes.values()].map((t) => ({
+        id: t.id,
+        label: t.label,
+        vars: t.vars,
+      })),
+    });
+    send({
+      type: "extension_slash_commands",
+      commands: [...extensionSlashCommands.values()],
+    });
+    send({
+      type: "extension_keybindings",
+      bindings: [...extensionKeybindings.values()],
+    });
+    send({
+      type: "extension_menu_items",
+      items: [...extensionMenuItems.values()],
+    });
+    send({
+      type: "extension_layouts",
+      layouts: [...extensionLayouts.values()],
+    });
+    send({
+      type: "extension_event_routes",
+      routes: [...extensionEventRoutes.values()],
+      mode: eventRoutingMode,
+    });
+    scheduleStateFileWrite();
+  }
 
   // Event routes registered by extensions. Keyed by
   // `<componentId>:<eventType>` (where empty fields match everything).
@@ -2955,17 +3093,6 @@ async function main() {
     },
   };
   await loadAethonExtensions(aethonApi, loadedExtensions, loadHooks);
-  // Project-local Aethon extensions mirror pi's project-local extension
-  // pattern. At startup this covers the bridge cwd; later tab_open /
-  // set_project messages load extensions for user-selected project cwd values
-  // before new sessions are created.
-  await loadProjectAethonExtensions(
-    process.cwd(),
-    aethonApi,
-    loadedExtensions,
-    loadedProjectExtensionFiles,
-    loadHooks,
-  );
   // Discover npm-distributed skill packages (manifest with `aethon` field
   // in package.json) under ~/.aethon/skills/node_modules/. This lets users
   // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
@@ -2987,6 +3114,28 @@ async function main() {
   // existence so the runtime snapshot covers all UI-driving extensions
   // regardless of source.
   await discoverPiAethonExtensions(loadedExtensions);
+
+  // Snapshot the post-non-project-load state. Anything project-directory
+  // extensions register lands ON TOP of this baseline; switching projects
+  // (or unloading the current project) restores the registries from this
+  // snapshot so project A's components / themes / slash commands / etc.
+  // don't leak into project B. User-level + skill-package + pi extensions
+  // remain because they aren't project-scoped — they trigger an agent
+  // respawn through the file watcher when they change.
+  captureProjectExtensionBaseline();
+
+  // Project-local Aethon extensions mirror pi's project-local extension
+  // pattern. At startup this covers the bridge cwd; later tab_open /
+  // set_project messages load extensions for user-selected project cwd
+  // values, unloading whatever the previous project had loaded first.
+  await loadProjectAethonExtensions(
+    process.cwd(),
+    aethonApi,
+    loadedExtensions,
+    loadedProjectExtensionFiles,
+    loadHooks,
+  );
+  currentProjectCwd = process.cwd();
 
   // Refresh the resource loader so the appendSystemPromptOverride
   // callback re-runs against the now-populated extension state. The
@@ -3200,6 +3349,15 @@ async function main() {
               ? cwdField
               : undefined;
           if (cwdOverride) {
+            // Unload the previous project's extensions before loading the
+            // new project's. Skipping this caused project A's slash
+            // commands / themes / etc. to leak into project B (the user-
+            // reported bug). When the new cwd matches the one we loaded
+            // last, the unload+reload is wasted churn — short-circuit.
+            const projectChanged = cwdOverride !== currentProjectCwd;
+            if (projectChanged) {
+              unloadProjectExtensions();
+            }
             const result = await loadProjectAethonExtensions(
               cwdOverride,
               aethonApi,
@@ -3207,10 +3365,12 @@ async function main() {
               loadedProjectExtensionFiles,
               loadHooks,
             );
-            // Reload on either successful loads OR fresh failures so the
-            // new tab's system prompt picks up `failedExtensions` even when
-            // every project extension broke.
-            if (result.loaded > 0 || result.failed > 0) {
+            currentProjectCwd = cwdOverride;
+            // Reload on successful loads OR fresh failures (so the new
+            // tab's system prompt picks up failedExtensions) OR when the
+            // project just changed (so the prompt reflects the cleared
+            // state even if the new project has zero extensions).
+            if (result.loaded > 0 || result.failed > 0 || projectChanged) {
               await resourceLoader.reload();
               scheduleStateFileWrite();
               emitReady();
@@ -3254,6 +3414,13 @@ async function main() {
             tabProjectCwds.delete(tabId);
           } else if (typeof cwd === "string" && cwd.length > 0) {
             tabProjectCwds.set(tabId, cwd);
+            // Strict project scoping: tear down the previous project's
+            // extension surface before layering the new one on top. See
+            // tab_open above; same reasoning applies here.
+            const projectChanged = cwd !== currentProjectCwd;
+            if (projectChanged) {
+              unloadProjectExtensions();
+            }
             const result = await loadProjectAethonExtensions(
               cwd,
               aethonApi,
@@ -3261,9 +3428,10 @@ async function main() {
               loadedProjectExtensionFiles,
               loadHooks,
             );
-            // Reload on either fresh loads or failures (see tab_open
-            // comment) so failedExtensions reaches the next prompt.
-            if (result.loaded > 0 || result.failed > 0) {
+            currentProjectCwd = cwd;
+            // Reload on fresh loads, fresh failures, or just because the
+            // project switched (the unload changed the prompt state).
+            if (result.loaded > 0 || result.failed > 0 || projectChanged) {
               await resourceLoader.reload();
               scheduleStateFileWrite();
               emitReady();
