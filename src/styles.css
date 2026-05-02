@@ -1699,13 +1699,30 @@ body.ae-resizing-sidebar * {
   padding: 0 8px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
-  /* No scrollbar: tabs shrink to fit. The label has its own
-     text-overflow: ellipsis so labels truncate cleanly when squeezed. */
-  overflow: hidden;
+  /* Tabs shrink to fit (label has ellipsis), so a scrollbar is rare —
+     only appears when a user opens enough tabs to exceed the strip's
+     `min-inline-size: 4rem` floor × N (≈10+ in a typical workspace).
+     Hide the scrollbar visually so the row stays clean at common
+     widths, but keep `overflow-x: auto` so trackpad / shift-wheel /
+     keyboard navigation can still reach tabs that overflowed; without
+     this, those tabs are clipped and become unreachable. `overflow-y`
+     is hidden because nothing in the strip is meant to scroll
+     vertically. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
   min-height: 38px;
   height: 38px;
   min-width: 0;
   flex: 1 1 auto;
+}
+.a2ui-tab-strip::-webkit-scrollbar {
+  /* WebKit (the only browser engine the Tauri webview uses on macOS,
+     and one of the engines on Linux) needs an explicit zero-size rule
+     to suppress the scrollbar — `scrollbar-width: none` is Firefox-only. */
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .a2ui-tab {
