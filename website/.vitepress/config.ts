@@ -1,6 +1,8 @@
 import { defineConfig } from "vitepress";
 
-const SITE_URL = "https://utensils.github.io/aethon/";
+// utensils.io is the org's GitHub Pages custom domain — every repo
+// Pages site is served at https://utensils.io/<repo>/.
+const SITE_URL = "https://utensils.io/aethon/";
 const REPO = "utensils/aethon";
 
 export default defineConfig({
