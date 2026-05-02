@@ -523,6 +523,14 @@ async function loadAethonSkillManifests(
       entryPath: string;
       code: string;
     }) => void;
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: "skill-package";
+      status: "failed" | "skipped";
+      error: string;
+      path?: string;
+    }) => void;
   },
 ): Promise<void> {
   const skillsRoot = join(USER_DIR, "skills", "node_modules");
@@ -585,6 +593,13 @@ async function loadAethonSkillManifests(
         error: "aethon.entry not set",
         path: c.dir,
       });
+      options?.onFailure?.({
+        name: c.name,
+        source: "skill-package",
+        status: "skipped",
+        error: "aethon.entry not set",
+        path: c.dir,
+      });
       continue;
     }
     const filePath = join(c.dir, entry);
@@ -601,10 +616,18 @@ async function loadAethonSkillManifests(
           error: "no register() export",
           path: filePath,
         });
+        options?.onFailure?.({
+          name: c.name,
+          source: "skill-package",
+          status: "skipped",
+          error: "no register() export",
+          path: filePath,
+        });
         continue;
       }
       await register(api);
       registry.set(c.name, "skill-package");
+      options?.onLoaded?.(c.name);
       console.error(`[aethon-skill] loaded ${c.name} from ${entry}`);
       send({
         type: "extension_lifecycle",
@@ -649,6 +672,13 @@ async function loadAethonSkillManifests(
             error: feMessage,
             path: fePath,
           });
+          options?.onFailure?.({
+            name: `${c.name} (frontend)`,
+            source: "skill-package",
+            status: "failed",
+            error: feMessage,
+            path: fePath,
+          });
         }
       }
     } catch (err) {
@@ -656,6 +686,13 @@ async function loadAethonSkillManifests(
       console.error(`[aethon-skill] ${c.name}: ${message}`);
       send({
         type: "extension_lifecycle",
+        name: c.name,
+        source: "skill-package",
+        status: "failed",
+        error: message,
+        path: filePath,
+      });
+      options?.onFailure?.({
         name: c.name,
         source: "skill-package",
         status: "failed",
@@ -815,6 +852,14 @@ async function loadAethonExtensionDirectory(
     logPrefix: string;
     displayName?: (fileName: string) => string;
     loadedFiles?: Set<string>;
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: Extract<ExtensionSource, "directory" | "project-directory">;
+      status: "failed" | "skipped";
+      error: string;
+      path: string;
+    }) => void;
   },
 ): Promise<void> {
   let entries: string[];
@@ -852,11 +897,19 @@ async function loadAethonExtensionDirectory(
           error: "no register() export",
           path: file,
         });
+        options.onFailure?.({
+          name: displayName,
+          source: options.source,
+          status: "skipped",
+          error: "no register() export",
+          path: file,
+        });
         continue;
       }
       await register(api);
       options.loadedFiles?.add(file);
       registry.set(displayName, options.source);
+      options.onLoaded?.(displayName);
       console.error(`[${options.logPrefix}] loaded ${name}`);
       send({
         type: "extension_lifecycle",
@@ -876,6 +929,13 @@ async function loadAethonExtensionDirectory(
         error: message,
         path: file,
       });
+      options.onFailure?.({
+        name: displayName,
+        source: options.source,
+        status: "failed",
+        error: message,
+        path: file,
+      });
     }
   }
 }
@@ -886,11 +946,23 @@ async function loadAethonExtensionDirectory(
 async function loadAethonExtensions(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
+  hooks?: {
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: Extract<ExtensionSource, "directory" | "project-directory">;
+      status: "failed" | "skipped";
+      error: string;
+      path: string;
+    }) => void;
+  },
 ): Promise<void> {
   await loadAethonExtensionDirectory(api, registry, {
     dir: join(USER_DIR, "extensions"),
     source: "directory",
     logPrefix: "aethon-ext",
+    onLoaded: hooks?.onLoaded,
+    onFailure: hooks?.onFailure,
   });
 }
 
@@ -899,6 +971,16 @@ async function loadProjectAethonExtensions(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
   loadedFiles: Set<string>,
+  hooks?: {
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: Extract<ExtensionSource, "directory" | "project-directory">;
+      status: "failed" | "skipped";
+      error: string;
+      path: string;
+    }) => void;
+  },
 ): Promise<number> {
   const dirs = await findProjectExtensionDirs(cwd);
   const before = loadedFiles.size;
@@ -909,6 +991,8 @@ async function loadProjectAethonExtensions(
       logPrefix: "aethon-project-ext",
       loadedFiles,
       displayName: (name) => projectExtensionDisplayName(projectRoot, extensionDir, name),
+      onLoaded: hooks?.onLoaded,
+      onFailure: hooks?.onFailure,
     });
   }
   return loadedFiles.size - before;
@@ -1057,6 +1141,22 @@ async function main() {
   // querying the state file) can see what's actually been loaded —
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
+  // Per-extension failure registry. Mirrors the `extension_lifecycle` events
+  // the bridge already emits — populated when status is "failed" or
+  // "skipped", cleared when the same display-name later loads cleanly.
+  // Surfaced to the agent via `RuntimeSnapshot.failedExtensions` so it can
+  // see what didn't load without scraping stderr or asking the user.
+  type ExtensionFailureSource = Extract<
+    ExtensionSource,
+    "directory" | "project-directory" | "skill-package"
+  >;
+  interface ExtensionFailure {
+    source: ExtensionFailureSource;
+    status: "failed" | "skipped";
+    error: string;
+    path?: string;
+  }
+  const loadFailures = new Map<string, ExtensionFailure>();
   // Project-local extension discovery can run on startup, tab_open, and
   // set_project. Track absolute files so switching back to the same project
   // doesn't duplicate event handlers or repeated UI mutations.
@@ -1262,6 +1362,13 @@ async function main() {
       extensions: [...loadedExtensions.entries()].map(([name, source]) => ({
         name,
         source,
+      })),
+      failedExtensions: [...loadFailures.entries()].map(([name, info]) => ({
+        name,
+        source: info.source,
+        status: info.status,
+        error: info.error,
+        ...(info.path ? { path: info.path } : {}),
       })),
       themes: [...extensionThemes.values()].map((t) => ({
         id: t.id,
@@ -2752,7 +2859,28 @@ async function main() {
   // give wrong answers to "what extensions are loaded?" on its very
   // first turn (the exact failure the user reported). Failures in one
   // extension don't block others.
-  await loadAethonExtensions(aethonApi, loadedExtensions);
+  // Hooks shared by every loader: a clean load clears any prior failure
+  // entry for that name (extension was fixed), a fresh failure replaces it.
+  // Captures the data we surface in `RuntimeSnapshot.failedExtensions` so
+  // the agent's system prompt + state file see what didn't load.
+  const loadHooks = {
+    onLoaded: (name: string) => {
+      loadFailures.delete(name);
+      scheduleStateFileWrite();
+    },
+    onFailure: (
+      f: ExtensionFailure & { name: string },
+    ) => {
+      loadFailures.set(f.name, {
+        source: f.source,
+        status: f.status,
+        error: f.error,
+        path: f.path,
+      });
+      scheduleStateFileWrite();
+    },
+  };
+  await loadAethonExtensions(aethonApi, loadedExtensions, loadHooks);
   // Project-local Aethon extensions mirror pi's project-local extension
   // pattern. At startup this covers the bridge cwd; later tab_open /
   // set_project messages load extensions for user-selected project cwd values
@@ -2762,6 +2890,7 @@ async function main() {
     aethonApi,
     loadedExtensions,
     loadedProjectExtensionFiles,
+    loadHooks,
   );
   // Discover npm-distributed skill packages (manifest with `aethon` field
   // in package.json) under ~/.aethon/skills/node_modules/. This lets users
@@ -2771,6 +2900,8 @@ async function main() {
     onFrontendEntry: ({ name, entryPath, code }) => {
       skillFrontendModules.set(name, { name, entryPath, code });
     },
+    onLoaded: loadHooks.onLoaded,
+    onFailure: loadHooks.onFailure,
   });
   // Loose-file themes — JSON in ~/.aethon/themes/*.json registered via the
   // same normalizeTheme path as extension-supplied ones. Lets non-coders
@@ -3000,6 +3131,7 @@ async function main() {
               aethonApi,
               loadedExtensions,
               loadedProjectExtensionFiles,
+              loadHooks,
             );
             if (loaded > 0) {
               await resourceLoader.reload();
@@ -3050,6 +3182,7 @@ async function main() {
               aethonApi,
               loadedExtensions,
               loadedProjectExtensionFiles,
+              loadHooks,
             );
             if (loaded > 0) {
               await resourceLoader.reload();

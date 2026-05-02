@@ -32,6 +32,21 @@ export interface RuntimeSnapshot {
     name: string;
     source: "directory" | "project-directory" | "skill-package" | "pi-extension";
   }[];
+  // Extensions that failed to load (parse / runtime error during import or
+  // register()) or were skipped (missing register export, missing
+  // aethon.entry, etc). Populated by the bridge's extension loaders alongside
+  // `loadedExtensions`. The agent reads this so it knows when an extension
+  // it just wrote did not actually take effect — without this field the
+  // failure was visible only to the user as a chat-side SYSTEM banner, and
+  // the agent had to ask "did it load?" or scrape stderr to find out.
+  // Cleared per-name when the same extension successfully loads later.
+  failedExtensions: {
+    name: string;
+    source: "directory" | "project-directory" | "skill-package";
+    status: "failed" | "skipped";
+    error: string;
+    path?: string;
+  }[];
   themes: { id: string; label: string }[];
   components: string[];
   layoutSummary: string;
@@ -359,6 +374,19 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     lines.push("Loaded extensions:");
     for (const ext of snapshot.extensions) {
       lines.push(`- \`${ext.name}\` (${ext.source})`);
+    }
+  }
+
+  if (snapshot.failedExtensions && snapshot.failedExtensions.length > 0) {
+    lines.push("");
+    lines.push(
+      "Extensions that did NOT load (parse / register() errors or skipped). The user sees these as SYSTEM banners in chat; you do too, here. If you authored or just edited one of these and the next user message is about it, treat the failure as your problem to fix — read the file, identify the cause from the error, and propose a corrected version. Don't ask the user whether it loaded; this list is the answer.",
+    );
+    for (const ext of snapshot.failedExtensions) {
+      const where = ext.path ? ` at \`${ext.path}\`` : "";
+      lines.push(
+        `- \`${ext.name}\` (${ext.source}, ${ext.status})${where} — ${ext.error}`,
+      );
     }
   }
 
