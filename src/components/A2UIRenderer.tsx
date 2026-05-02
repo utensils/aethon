@@ -189,11 +189,19 @@ export function RegistryComponent({
   state,
   onEvent,
   componentProps,
+  tabId,
 }: {
   type: string;
   state: Record<string, unknown>;
   onEvent: A2UIEventHandler;
   componentProps?: Record<string, unknown>;
+  // Tab id forwarded into the inner renderer's event dispatch. Critical
+  // for App-root overlays — without this, an extension that replaces
+  // command-palette / search-panel / settings-panel / notification-stack
+  // with a declarative template emits events that the bridge defaults
+  // to tabId="default", routing extension handlers / ctx.pi.prompt()
+  // against the wrong pi session in any non-default active tab.
+  tabId?: string;
 }) {
   const payload = useMemo<A2UIPayload>(
     () => ({
@@ -202,7 +210,13 @@ export function RegistryComponent({
     [type, componentProps],
   );
   return (
-    <A2UIRenderer payload={payload} state={state} onEvent={onEvent} bare />
+    <A2UIRenderer
+      payload={payload}
+      state={state}
+      onEvent={onEvent}
+      tabId={tabId}
+      bare
+    />
   );
 }
 

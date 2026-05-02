@@ -5879,26 +5879,31 @@ export default function App() {
             of them via aethon.registerComponent("<type>", custom). Each
             overlay gates its own visibility on state (e.g. /commandPalette
             /open), so the renderers stay mounted but render null when
-            closed. */}
+            closed. tabId is forwarded so extension override templates
+            route their bridge events against the active pi session. */}
         <RegistryComponent
           type="notification-stack"
           state={renderState}
           onEvent={onEvent}
+          tabId={state.activeTabId as string | undefined}
         />
         <RegistryComponent
           type="command-palette"
           state={renderState}
           onEvent={onEvent}
+          tabId={state.activeTabId as string | undefined}
         />
         <RegistryComponent
           type="settings-panel"
           state={renderState}
           onEvent={onEvent}
+          tabId={state.activeTabId as string | undefined}
         />
         <RegistryComponent
           type="search-panel"
           state={renderState}
           onEvent={onEvent}
+          tabId={state.activeTabId as string | undefined}
         />
       </div>
     </SkillRegistryProvider>

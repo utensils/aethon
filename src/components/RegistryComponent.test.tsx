@@ -141,6 +141,31 @@ describe("RegistryComponent", () => {
     expect(html).not.toContain("DEFAULT");
   });
 
+  it("renders a template override expansion through the inner renderer", () => {
+    // Smoke test for the bare-mode delegate path: when the registry has
+    // a template (not a React component) for the type, the inner
+    // A2UIRenderer expands it. Used by codex-flagged path where an
+    // extension overrides command-palette/settings-panel/etc. via
+    // aethon.registerComponent.
+    const registry = new SkillRegistry();
+    registry.setTemplates({
+      "command-palette": {
+        id: "ext-root",
+        type: "card",
+        props: { title: "Custom palette" },
+      },
+    });
+    const html = renderToStaticMarkup(
+      <SkillRegistryProvider registry={registry}>
+        <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
+      </SkillRegistryProvider>,
+    );
+    expect(html).toContain("Custom palette");
+    // No outer `.a2ui-renderer` wrapper — bare mode keeps these leaf
+    // renders out of the main app's flex layout.
+    expect(html.startsWith("<div class=\"a2ui-renderer\"")).toBe(false);
+  });
+
   it("forwards componentProps into the synthetic component for the override", () => {
     // The share-mode badge needs live `shareMode` + `tabId` props passed
     // into the resolved component — both for the default React badge and

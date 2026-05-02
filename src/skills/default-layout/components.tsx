@@ -2408,21 +2408,27 @@ function ShellStatusBar(props: {
     () => ({ shareMode, tabId }),
     [shareMode, tabId],
   );
-  // Adapter: the badge fires onEvent with a synthetic component whose id
-  // is "share-mode-badge"; the surrounding shell-canvas is what App.tsx
-  // routes share-mode events from. Re-emit with the BuiltinComponentProps
-  // signature the parent passes us so cycle-share-mode flows up the
-  // shell-canvas event channel exactly as before.
+  // Adapter: the default React badge fires `cycle-share-mode`, which
+  // App.tsx routes from the surrounding shell-canvas. Re-emit through
+  // the parent BuiltinComponentProps onEvent so it lands on the
+  // shell-canvas channel.
   //
-  // Returning `true` tells the inner A2UIRenderer the event has been
-  // routed, so it does NOT fire its own `dispatch_a2ui_event`. Without
-  // this, every badge click would also send a synthetic event for the
-  // ad-hoc "share-mode-badge" component to the bridge — leaking a
-  // duplicate to extension handlers (with `tabId: "default"` to boot).
+  // Returning `true` for `cycle-share-mode` tells the inner renderer the
+  // event is routed and to suppress its own `dispatch_a2ui_event` —
+  // otherwise every click would leak a duplicate synthetic
+  // `share-mode-badge` event to the bridge.
+  //
+  // Other event types (a custom override template's `click`/`submit`/
+  // anything else) fall through (return false) so the inner renderer's
+  // bridge dispatch fires with templateRootType="share-mode-badge" — the
+  // documented path for extension handlers to observe a custom badge.
   const handleBadgeEvent = useMemo<A2UIEventHandler>(
     () => (_component, eventType, data) => {
-      onEvent(eventType, data);
-      return true;
+      if (eventType === "cycle-share-mode") {
+        onEvent(eventType, data);
+        return true;
+      }
+      return false;
     },
     [onEvent],
   );
@@ -2446,6 +2452,7 @@ function ShellStatusBar(props: {
         state={state}
         onEvent={handleBadgeEvent}
         componentProps={badgeProps}
+        tabId={tabId}
       />
       <span className="ae-shell-status-spacer" />
       <span className="ae-shell-status-dims">{dimsLabel}</span>
