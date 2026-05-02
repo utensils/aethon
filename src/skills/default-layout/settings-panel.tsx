@@ -41,6 +41,29 @@ const BUILTIN_THEMES = [
   { id: "aether", label: "Æther — signature" },
 ];
 
+// 16-swatch ANSI preview block — order matches xterm's standard ANSI
+// indices (0..7 standard + 8..15 bright) so users reading a terminal
+// `\x1b[34m` recognise the swatch position. Bound to CSS vars so the
+// preview tracks the active theme live.
+const ANSI_PREVIEW_KEYS = [
+  "--ansi-black",
+  "--ansi-red",
+  "--ansi-green",
+  "--ansi-yellow",
+  "--ansi-blue",
+  "--ansi-magenta",
+  "--ansi-cyan",
+  "--ansi-white",
+  "--ansi-bright-black",
+  "--ansi-bright-red",
+  "--ansi-bright-green",
+  "--ansi-bright-yellow",
+  "--ansi-bright-blue",
+  "--ansi-bright-magenta",
+  "--ansi-bright-cyan",
+  "--ansi-bright-white",
+] as const;
+
 export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   const settings = readSettingsState(state);
 
@@ -70,6 +93,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
       ui: { ...configSnapshot.ui, ...(p.ui ?? {}) },
       agent: { ...configSnapshot.agent, ...(p.agent ?? {}) },
       shell: { ...configSnapshot.shell, ...(p.shell ?? {}) },
+      shortcuts: { ...configSnapshot.shortcuts, ...(p.shortcuts ?? {}) },
     };
   }, [configSnapshot, settings.pending]);
 
@@ -87,6 +111,15 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
       await openUrl(`file://${path}`);
     } catch (err) {
       console.warn("open config.toml failed:", err);
+    }
+  };
+  const openSystemPromptFile = async () => {
+    try {
+      const home = (await invoke<string>("aethon_home_dir")) ?? "";
+      const path = `${home}/.aethon/system-prompt.md`;
+      await openUrl(`file://${path}`);
+    } catch (err) {
+      console.warn("open system-prompt.md failed:", err);
     }
   };
 
@@ -195,6 +228,32 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
+            <Section title="Agent">
+              <Field label="Default model for new tabs">
+                <input
+                  type="text"
+                  className="ae-settings-input"
+                  placeholder="anthropic/claude-sonnet-4-6"
+                  value={eff.agent.model ?? ""}
+                  onChange={(e) =>
+                    update({
+                      agent: { ...eff.agent, model: e.target.value || null },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="System prompt override">
+                <button
+                  type="button"
+                  className="ae-settings-secondary"
+                  onClick={openSystemPromptFile}
+                  title="Open or create ~/.aethon/system-prompt.md"
+                >
+                  Open system-prompt.md
+                </button>
+              </Field>
+            </Section>
+
             <Section title="Shell">
               <Field label="Default share mode for new shell tabs">
                 <select
@@ -230,12 +289,114 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                   }
                 />
               </Field>
+              <Field label="Default shell command (override $SHELL)">
+                <input
+                  type="text"
+                  className="ae-settings-input"
+                  placeholder="(uses $SHELL by default)"
+                  value={eff.shell.defaultCommand ?? ""}
+                  onChange={(e) =>
+                    update({
+                      shell: {
+                        ...eff.shell,
+                        defaultCommand: e.target.value || null,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Inherit host environment">
+                <input
+                  type="checkbox"
+                  checked={eff.shell.inheritEnv}
+                  onChange={(e) =>
+                    update({
+                      shell: {
+                        ...eff.shell,
+                        inheritEnv: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
+            </Section>
+
+            <Section title="Behavior">
+              <Field label="Confirm close when shell job is running">
+                <input
+                  type="checkbox"
+                  checked={eff.shell.promptBeforeClose}
+                  onChange={(e) =>
+                    update({
+                      shell: {
+                        ...eff.shell,
+                        promptBeforeClose: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Cmd+T opens">
+                <select
+                  className="ae-settings-input"
+                  value={eff.shortcuts.newTabKind}
+                  onChange={(e) =>
+                    update({
+                      shortcuts: {
+                        ...eff.shortcuts,
+                        newTabKind:
+                          e.target.value === "shell" ? "shell" : "agent",
+                      },
+                    })
+                  }
+                >
+                  <option value="agent">
+                    Agent tab (focus-aware default)
+                  </option>
+                  <option value="shell">Always a shell tab</option>
+                </select>
+              </Field>
+              <div className="ae-settings-ansi-preview">
+                <span className="ae-settings-field-label">
+                  ANSI palette preview
+                </span>
+                <div className="ae-ansi-grid" aria-hidden="true">
+                  {ANSI_PREVIEW_KEYS.map((key) => (
+                    <span
+                      key={key}
+                      className="ae-ansi-swatch"
+                      style={{ background: `var(${key})` }}
+                      title={key}
+                    />
+                  ))}
+                </div>
+              </div>
+            </Section>
+
+            <Section title="Updater">
+              <Field label="Release channel">
+                <select
+                  className="ae-settings-input"
+                  value="stable"
+                  disabled
+                  title="Multi-channel releases land in M7"
+                >
+                  <option value="stable">stable</option>
+                  <option value="beta">beta (M7)</option>
+                  <option value="nightly">nightly (M7)</option>
+                </select>
+              </Field>
+              <p className="ae-settings-note">
+                Channel selection ships with M7's release pipeline. Until
+                then, update via the system menu's Check for Updates.
+              </p>
             </Section>
 
             <Section title="Advanced">
               <p className="ae-settings-note">
-                For advanced keys (system prompt overrides, login PATH, etc.),
-                edit <code>~/.aethon/config.toml</code> directly.
+                For keys not surfaced here, edit{" "}
+                <code>~/.aethon/config.toml</code> directly. The Save button
+                round-trips comments and unknown keys, so hand edits survive.
               </p>
               <button
                 type="button"

@@ -503,6 +503,48 @@ switched", "Update available"). Don't use them for chat content — push
 into the conversation via `ctx.pi.notify(...)` if a message belongs in
 history.
 
+### `shells.list / shells.read / shells.write`
+
+Opt-in agent ↔ shell-tab sharing (M6 P2). The `shells` namespace exposes
+the user's shareable PTY-backed shell tabs. The user picks who can see
+what via the share-mode badge on each shell sub-tab — the API only
+returns tabs whose mode is `read`, `read-write`, or
+`read-write-trusted`. Private tabs are invisible.
+
+```ts
+aethon.shells.list();
+// → { ok: true, data: [{ tabId, cwd, command, shareMode }, …] }
+
+aethon.shells.read({
+  tabId,                // from list()
+  sinceTotal?: number,  // forward-paging cursor; omit for the latest window
+  maxBytes?: number,    // default 8192, hard-capped at 65536
+});
+// → { ok: true, data: { content, totalAppended, shareFloor, shareMode } }
+
+aethon.shells.write({ tabId, text });
+// → { ok: true } | { ok: false, error: "user denied write" | "share mode does not allow writes" | … }
+```
+
+Read is forward-paging from the `totalAppended` byte cursor. Cold-start
+callers (no cursor) get the latest `maxBytes` of scrollback. The
+`shareFloor` value pins the privacy floor: bytes below it were emitted
+before the user opted in and are never returned. The `shareMode` field
+echoes the live mode so callers can short-circuit a follow-up `write`
+that would be denied.
+
+Writes inject keystrokes verbatim — include `\n` to submit a command.
+In `read-write` mode, every call pops an Allow / Deny toast and resolves
+when the user clicks (or auto-denies after ~4m30s). In
+`read-write-trusted` the prompt is skipped. The bridge waits for the
+frontend handshake before resolving any of these calls; calls placed
+during register-time return `frontend_not_ready` rather than dangling.
+
+The same surface is exposed to event-handler `ctx` as `ctx.shells.*`
+so handlers can read or drive shells without going through the global.
+Tools `listShells` / `readShell` / `writeShell` register automatically;
+the model can use them via the standard tool-use protocol.
+
 ## Event Handling
 
 ### `onEvent(match, handler)`

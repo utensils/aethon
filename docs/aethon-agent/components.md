@@ -587,6 +587,90 @@ without monkey-patching the composite:
    The default xterm composite consumes this; alternative renderers
    should prefer the tap event.
 
+### `terminal-panel`
+
+The bottom-of-canvas terminal panel. Hosts a sub-tab strip with the
+read-only **Agent bash** view always pinned first, plus zero or more
+interactive shell sub-tabs. Replaces the standalone `terminal` composite
+in the workstation layout (M6 restructure).
+
+```ts
+{
+  area: "terminal",
+  visible?: BooleanValue,        // bound to /terminal/open
+  fontSize?: NumberValue,        // forwarded to xterm
+}
+```
+
+Active sub-tab is tracked at `/terminalPanel/activeSubId` (defaults to
+`"agent-bash"`). Skills can drive sub-tab selection via setState; the
+default user wiring is the `Cmd+\`` toggle, the `+` button to spawn a
+new shell sub-tab, and `Cmd+1..9` to jump between sub-tabs when focus
+is in the panel.
+
+### `shell-canvas`
+
+Interactive PTY-backed terminal for a single shell tab. Mounted as the
+bottom-panel body when a non-`agent-bash` sub-tab is active. Status line
+under the xterm shows `cwd · command · share-mode badge · cols×rows`.
+Clicking the share-mode badge cycles through the four modes (`private`
+→ `read` → `read-write` → `read-write-trusted`).
+
+The xterm theme reads from CSS custom properties — `--terminal-bg`,
+`--terminal-fg`, `--terminal-cursor`, `--terminal-selection`, plus the
+16 `--ansi-*` keys. Built-in themes (`ember`, `paper`, `aether`) ship
+all 20; extension themes can opt in by setting them in the theme's
+`vars` block, otherwise xterm falls back to a sensible dark default.
+
+OSC 0/1/2 title-set sequences in the PTY's stdout (`\x1b]0;<title>\x07`
+and the like) update the sub-tab label live so users see
+`vim · README.md` / `user@host` / `htop` instead of `Shell N`.
+
+### `tool-card`
+
+Tool-execution surface with a live elapsed-time clock. Replaces the
+plain `card` for `bash` / `read` / `write` / etc. Color shifts with
+state: idle is dim, running is accent, ≥30 s is amber (long-running
+warning), error is danger red. Total duration is formatted as
+`Xs` for sub-minute, `Xm SSs` beyond.
+
+### `settings-panel`
+
+`Cmd+,` opens this overlay. Form-based editor for the most-used
+`~/.aethon/config.toml` keys. Sections: Appearance, Notifications,
+Agent (default model + system-prompt override path), Shell (default
+share mode, auto-restart, command/args, inherit_env), Behavior
+(prompt-before-close, Cmd+T action, ANSI palette preview), Updater
+(channel — placeholder for M7), Advanced (open `config.toml` directly).
+
+Save round-trips through `toml_edit` so leading comments + unknown keys
+stay intact.
+
+### `search-panel`
+
+`Cmd+Shift+F` opens this overlay. Cross-session search across every
+`~/.aethon/sessions/<tabId>/*.jsonl` file. Project-scope toggle limits
+to the active project; results show the project label (when known) and
+the matched substring is highlighted in the snippet via a `<mark>`
+wrapper. Click a result → restore the originating tab, scroll to the
+matching message, briefly flash it.
+
+### `share-mode badge`
+
+Renders inline inside the shell-canvas status line. Color-coded by
+mode:
+
+| Mode | Badge | Tooltip |
+|---|---|---|
+| `private` | gray | "Agent can't see this shell" |
+| `read` | accent | "Agent can read scrollback" |
+| `read-write` | warn | "Agent can read + write (each write needs Allow)" |
+| `read-write-trusted` | error | "Agent can drive this shell without prompting" |
+
+Clicking the badge cycles to the next mode. The cycle helper lives in
+`src/utils/shareMode.ts` and is shared between the badge, the palette,
+and the settings panel.
+
 ### `main-canvas`
 
 ```ts

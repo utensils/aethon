@@ -31,6 +31,7 @@ import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { cycleShareMode } from "./utils/shareMode";
+import { shellQuoteAll } from "./utils/shellQuote";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -105,7 +106,7 @@ import {
   readStateWithLocalStorageFallback,
   writeState,
 } from "./persist";
-import { getConfig, type AethonConfig } from "./config";
+import { clearConfigCache, getConfig, type AethonConfig } from "./config";
 import {
   activeProject,
   emptyProjectsState,
@@ -575,6 +576,17 @@ export default function App() {
   // P5: live config for [shell] auto_restart_agent. Read by the
   // `agent-crashed` listener.
   const autoRestartAgentRef = useRef<boolean>(true);
+  // [shell] default_command / default_args / inherit_env / prompt_before_close —
+  // applied at shell_open time. Defaults track the helpers.rs schema so the
+  // first paint behaves identically to a fully-loaded config.
+  const shellDefaultCommandRef = useRef<string | null>(null);
+  const shellDefaultArgsRef = useRef<string[]>([]);
+  const shellInheritEnvRef = useRef<boolean>(true);
+  const shellPromptBeforeCloseRef = useRef<boolean>(true);
+  // [shortcuts] new_tab_kind — controls Cmd+T routing when focus is
+  // outside the bottom terminal panel. "agent" (default) → new agent
+  // tab, "shell" → always open a shell sub-tab.
+  const shortcutsNewTabKindRef = useRef<"agent" | "shell">("agent");
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
@@ -717,6 +729,13 @@ export default function App() {
         Math.max(0, config.ui.notifyMinDurationSeconds) * 1000;
       // P5: [shell] auto_restart_agent.
       autoRestartAgentRef.current = config.shell.autoRestartAgent;
+      // Extended [shell] keys.
+      shellDefaultCommandRef.current = config.shell.defaultCommand;
+      shellDefaultArgsRef.current = config.shell.defaultArgs;
+      shellInheritEnvRef.current = config.shell.inheritEnv;
+      shellPromptBeforeCloseRef.current = config.shell.promptBeforeClose;
+      // [shortcuts] new_tab_kind.
+      shortcutsNewTabKindRef.current = config.shortcuts.newTabKind;
 
       // [agent] model: when set, seed the picker default for this
       // session. Only applied if no per-session model has been saved
@@ -959,6 +978,89 @@ export default function App() {
     requestAnimationFrame(() => focusTerminalPanel());
   }
 
+  /** Cmd+L: focus the active tab's primary input. Agent tab → chat
+   *  composer, shell tab → that shell's xterm. The bottom terminal
+   *  panel is opened first when needed so the focus call has a target
+   *  to land on. */
+  function focusActiveContextInput() {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const tab = activeId ? tabs.find((t) => t.id === activeId) : undefined;
+    if (tab?.kind === "shell") {
+      const term =
+        (stateRef.current.terminal as { open?: boolean } | undefined) ?? {};
+      if (!term.open) {
+        setState((prev) => {
+          const t = (prev.terminal as { open?: boolean } | undefined) ?? {};
+          return { ...prev, terminal: { ...t, open: true } };
+        });
+      }
+      requestAnimationFrame(() => focusTerminalPanel());
+      return;
+    }
+    focusComposer();
+  }
+
+  /** Cmd+Shift+S: export the active agent tab's chat history as a
+   *  Markdown file in ~/Downloads/. Shell tabs no-op (no chat
+   *  history). The body uses GitHub-flavored Markdown — role labels
+   *  as `### user` / `### assistant`, message text as paragraphs. */
+  async function exportActiveChatMarkdown() {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const tab = activeId ? tabs.find((t) => t.id === activeId) : undefined;
+    if (!tab || tab.kind !== "agent") {
+      pushNotification({
+        id: "ae-export-no-chat",
+        title: "Nothing to export",
+        message: "Switch to an agent tab to export its chat as Markdown.",
+        kind: "info",
+        durationMs: 2400,
+      });
+      return;
+    }
+    const messages = tab.messages ?? [];
+    if (messages.length === 0) {
+      pushNotification({
+        id: "ae-export-empty",
+        title: "Empty chat",
+        message: "There are no messages to export yet.",
+        kind: "info",
+        durationMs: 2400,
+      });
+      return;
+    }
+    const body = messages
+      .map((m) => {
+        const heading = `### ${m.role}`;
+        const text = (m.text ?? "").replace(/\r\n/g, "\n").trim();
+        return `${heading}\n\n${text}\n`;
+      })
+      .join("\n");
+    const header = `# ${tab.label}\n\n_Exported from Aethon · ${new Date().toISOString()}_\n\n`;
+    try {
+      const path = await invoke<string>("export_chat_markdown", {
+        label: tab.label,
+        content: header + body,
+      });
+      pushNotification({
+        id: "ae-export-saved",
+        title: "Chat exported",
+        message: `Saved to ${path}`,
+        kind: "success",
+        durationMs: 3000,
+      });
+    } catch (err) {
+      pushNotification({
+        id: "ae-export-failed",
+        title: "Export failed",
+        message: err instanceof Error ? err.message : String(err),
+        kind: "error",
+        durationMs: 4000,
+      });
+    }
+  }
+
   function focusComposer() {
     if (typeof document === "undefined") return;
     const ta = document.querySelector<HTMLTextAreaElement>(
@@ -1091,6 +1193,19 @@ export default function App() {
     resolve(allowed);
   }
 
+  /** Pending close-shell-tab confirmations keyed off notification id.
+   *  Same shape as `shellWriteConsentRef` — the action route below
+   *  resolves the corresponding promise on Close / Cancel. */
+  const shellCloseConsentRef = useRef<
+    Map<string, (allowed: boolean) => void>
+  >(new Map());
+  function resolveShellCloseConsent(notifId: string, allowed: boolean) {
+    const resolve = shellCloseConsentRef.current.get(notifId);
+    if (!resolve) return;
+    shellCloseConsentRef.current.delete(notifId);
+    resolve(allowed);
+  }
+
   /** Mirror a share-mode change from the Rust source-of-truth into the
    *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
    *  shell tab. The Rust side enforces the actual privacy boundary —
@@ -1191,6 +1306,31 @@ export default function App() {
         actions: [
           { label: "Allow", action: `shell-write-allow:${id}` },
           { label: "Deny", action: `shell-write-deny:${id}` },
+        ],
+      });
+    });
+  }
+
+  /** Pop a Close / Cancel notification before tearing down a running
+   *  shell tab. Resolves true → caller proceeds with `closeTabNow`,
+   *  false → caller bails. Notifications use the existing `actions`
+   *  primitive so styling and dismissal flow through one code path. */
+  function promptCloseShellTabConfirmation(
+    tabLabel: string,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const id = `shell-close-${crypto.randomUUID().slice(0, 8)}`;
+      shellCloseConsentRef.current.set(id, resolve);
+      pushNotification({
+        id,
+        title: `Close "${tabLabel}"?`,
+        message:
+          "The shell is still running. Closing terminates it (SIGTERM, then SIGKILL after 5s).",
+        kind: "warning",
+        durationMs: null,
+        actions: [
+          { label: "Close", action: `shell-close-allow:${id}` },
+          { label: "Cancel", action: `shell-close-deny:${id}` },
         ],
       });
     });
@@ -1313,13 +1453,38 @@ export default function App() {
   function newTab(
     restoreId?: string,
     restoreLabel?: string,
-    options?: { restoredSession?: boolean; cwd?: string },
+    options?: { restoredSession?: boolean; cwd?: string; scrollToMatch?: string },
   ) {
     // restoreId lets the caller open a tab with a specific tabId so the
     // bridge's SessionManager.continueRecent picks up the persisted
     // session for that id. Used by the empty-state's "Recent sessions"
     // list. Omitted for normal new-tab gestures (Cmd+T, +, menu).
     const id = restoreId ?? crypto.randomUUID();
+    // Search-hit scroll target. Stored in /scrollToMatchByTab/<id> so
+    // ChatHistory picks it up once the bridge replays messages. Null
+    // out the entry after a few seconds so a user who scrolls away
+    // doesn't keep getting yanked back.
+    const scrollToMatch = options?.scrollToMatch;
+    if (scrollToMatch) {
+      setState((prev) => {
+        const cur =
+          (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
+        return {
+          ...prev,
+          scrollToMatchByTab: { ...cur, [id]: scrollToMatch },
+        };
+      });
+      window.setTimeout(() => {
+        setState((prev) => {
+          const cur =
+            (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
+          if (!(id in cur)) return prev;
+          const next = { ...cur };
+          delete next[id];
+          return { ...prev, scrollToMatchByTab: next };
+        });
+      }, 5000);
+    }
     // Inherit the previously-active tab's model so the picker stays
     // consistent. Without this, the new tab's pi session would default
     // to whatever ~/.pi/agent/settings.json declares — which is often
@@ -1406,6 +1571,19 @@ export default function App() {
     const id = crypto.randomUUID();
     const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
     const seedShareMode = defaultShareModeRef.current;
+    // Resolve command + args precedence: explicit options.* always wins;
+    // otherwise fall through to `[shell] default_command` / `default_args`
+    // (refs hydrated from getConfig). Empty strings / empty arrays mean
+    // "use the platform default" — Rust falls back to $SHELL when command
+    // is omitted from the IPC payload.
+    const resolvedCommand =
+      options?.command ?? shellDefaultCommandRef.current ?? undefined;
+    const resolvedArgs =
+      options?.args ??
+      (shellDefaultArgsRef.current.length > 0
+        ? shellDefaultArgsRef.current
+        : undefined);
+    const inheritEnv = shellInheritEnvRef.current;
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
@@ -1414,8 +1592,8 @@ export default function App() {
         ...makeEmptyTab(id, label, projectId, "shell"),
         shell: {
           cwd: inheritedCwd ?? "",
-          command: options?.command ?? "",
-          args: options?.args ?? [],
+          command: resolvedCommand ?? "",
+          args: resolvedArgs ?? [],
           shareMode: seedShareMode,
           shellState: "starting",
         },
@@ -1441,8 +1619,8 @@ export default function App() {
     invoke("shell_open", {
       args: {
         tabId: id,
-        ...(options?.command ? { command: options.command } : {}),
-        ...(options?.args ? { args: options.args } : {}),
+        ...(resolvedCommand ? { command: resolvedCommand } : {}),
+        ...(resolvedArgs ? { args: resolvedArgs } : {}),
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
         // Seed the share mode atomically inside shell_open so the
         // privacy floor pins at total_appended=0 — every byte from the
@@ -1450,6 +1628,10 @@ export default function App() {
         // configured a non-private default. Applying the mode post-open
         // would race the login banner and pin it below the floor.
         ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
+        // Forward `[shell] inherit_env`. Default true on Rust side too,
+        // so only send when the user opted out — keeps the IPC payload
+        // tight and reads identically across config presence.
+        ...(inheritEnv === false ? { inheritEnv: false } : {}),
       },
     })
       .then(() => {
@@ -1589,6 +1771,52 @@ export default function App() {
     setActiveTab(tabs[idx].id);
   }
 
+  /** Sub-tab variant of jumpToTab: idx 0 selects agent-bash, idx 1+
+   *  selects the corresponding shell sub-tab in `/tabs` (filtered to
+   *  kind === "shell"). Out-of-range no-ops so a Cmd+5 with two shells
+   *  open is silent. */
+  function jumpToShellSubTab(idx: number) {
+    if (idx === 0) {
+      setActiveSubTab("agent-bash");
+      return;
+    }
+    const shellTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+      .filter((t) => t.kind === "shell");
+    const shellIdx = idx - 1;
+    if (shellIdx < 0 || shellIdx >= shellTabs.length) return;
+    setActiveSubTab(shellTabs[shellIdx].id);
+  }
+
+  /** Reorder the active *shell sub-tab* one slot left (-1) or right
+   *  (+1) within the bottom panel. Swaps positions with the next/prev
+   *  shell tab in `/tabs` so non-shell entries stay in place — agents
+   *  in the top strip don't shuffle when the user reorders shells.
+   *  agent-bash is pinned first; trying to move it is a no-op. */
+  function moveActiveShellSubTab(direction: 1 | -1) {
+    const activeSub = (stateRef.current.terminalPanel as
+      | { activeSubId?: string }
+      | undefined)?.activeSubId;
+    if (!activeSub || activeSub === "agent-bash") return;
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const shellPositions = tabs
+        .map((t, i) => (t.kind === "shell" ? i : -1))
+        .filter((i) => i >= 0);
+      if (shellPositions.length <= 1) return prev;
+      const idx = tabs.findIndex((t) => t.id === activeSub);
+      if (idx < 0) return prev;
+      const subPos = shellPositions.indexOf(idx);
+      if (subPos < 0) return prev;
+      const swapSubPos =
+        (subPos + direction + shellPositions.length) % shellPositions.length;
+      const swapIdx = shellPositions[swapSubPos];
+      const tmp = tabs[idx];
+      tabs[idx] = tabs[swapIdx];
+      tabs[swapIdx] = tmp;
+      return { ...prev, tabs };
+    });
+  }
+
   /** Move the active tab one slot left (-1) or right (+1) within the
    *  current project's bucket. Wraps at the ends so a "move right" on
    *  the last tab puts it first — matches Chrome's Cmd+Shift+]/[. */
@@ -1679,7 +1907,29 @@ export default function App() {
     }
   }
 
+  /** Close a tab, prompting for confirmation when closing a running
+   *  shell tab and `[shell] prompt_before_close` is true. The user can
+   *  disable the prompt entirely via Settings → Shell. Foreground-job
+   *  detection (vim/htop/ssh vs. just the shell) is tracked separately
+   *  and not yet wired — for v1 the prompt fires for any running shell. */
   function closeTab(tabId: string) {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const closing = tabs.find((t) => t.id === tabId);
+    if (
+      closing?.kind === "shell" &&
+      closing.shell?.shellState === "running" &&
+      shellPromptBeforeCloseRef.current
+    ) {
+      void promptCloseShellTabConfirmation(closing.label).then((allowed) => {
+        if (!allowed) return;
+        closeTabNow(tabId);
+      });
+      return;
+    }
+    closeTabNow(tabId);
+  }
+
+  function closeTabNow(tabId: string) {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     if (tabs.length === 0) return; // already empty — nothing to close
     // Capture the kind before setState removes the tab, so we know
@@ -1846,7 +2096,15 @@ export default function App() {
       if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
+        // Focus inside the bottom terminal panel always opens a shell —
+        // Cmd+T is "new tab of whatever surface I'm using". When focus
+        // is elsewhere, `[shortcuts] new_tab_kind` lets the user opt
+        // into "always open shell" by setting it to "shell"; default
+        // ("agent") preserves the focus-aware behaviour.
+        if (
+          isFocusInTerminalPanel() ||
+          shortcutsNewTabKindRef.current === "shell"
+        ) {
           newShellTab();
         } else {
           newTab();
@@ -1870,16 +2128,28 @@ export default function App() {
       }
       // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
       // Matches Chrome/Firefox tab-reorder shortcut. Wraps at the ends.
+      // When focus is inside the bottom terminal panel, the same combo
+      // reorders shell sub-tabs instead so the user's mental model
+      // ("act on the surface I'm looking at") holds. agent-bash is
+      // pinned first and cannot be reordered.
       if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        moveActiveTab(1);
+        if (isFocusInTerminalPanel()) {
+          moveActiveShellSubTab(1);
+        } else {
+          moveActiveTab(1);
+        }
         return;
       }
       if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        moveActiveTab(-1);
+        if (isFocusInTerminalPanel()) {
+          moveActiveShellSubTab(-1);
+        } else {
+          moveActiveTab(-1);
+        }
         return;
       }
       // Cmd+1..8 → jump to tab N (1-indexed); Cmd+9 → jump to last.
@@ -1900,6 +2170,25 @@ export default function App() {
         e.key >= "1" &&
         e.key <= "9"
       ) {
+        // Focus inside the bottom terminal panel → jump between
+        // sub-tabs (idx 0 = agent-bash, 1..N = shell sub-tabs). 9 is
+        // "last sub-tab". Outside the panel → jump between agent tabs
+        // in the top strip.
+        if (isFocusInTerminalPanel()) {
+          const shellSubTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+            .filter((t) => t.kind === "shell");
+          // total = agent-bash + shellSubTabs.length
+          const total = 1 + shellSubTabs.length;
+          if (total === 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.key === "9") {
+            jumpToShellSubTab(total - 1);
+          } else {
+            jumpToShellSubTab(parseInt(e.key, 10) - 1);
+          }
+          return;
+        }
         const agentTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
           .filter((t) => t.kind !== "shell");
         if (agentTabs.length === 0) return;
@@ -2021,6 +2310,74 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         toggleSettings();
+        return;
+      }
+      // Cmd+L → focus the active tab's primary input. Per-context jump
+      // (vs. Cmd+0's toggle): agent tab → composer, shell tab → that
+      // shell's xterm. When the active tab is an agent but focus is
+      // currently in the bottom panel, also opens the panel toggle so
+      // the user is never confused about where the cursor went.
+      if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        e.stopPropagation();
+        focusActiveContextInput();
+        return;
+      }
+      // Cmd+Ctrl+F (mac) / F11 (others) → toggle window fullscreen.
+      // The native menu also exposes the system fullscreen item; both
+      // funnel through the Rust `toggle_fullscreen` command so behaviour
+      // stays in sync. F11 is recognised by `e.key === "F11"`; on mac
+      // Cmd+Ctrl+F is the system convention.
+      if (e.key === "F11") {
+        e.preventDefault();
+        e.stopPropagation();
+        invoke("toggle_fullscreen").catch((err: unknown) => {
+          console.warn("toggle_fullscreen failed:", err);
+        });
+        return;
+      }
+      if (
+        mod &&
+        e.ctrlKey &&
+        e.metaKey &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === "f"
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        invoke("toggle_fullscreen").catch((err: unknown) => {
+          console.warn("toggle_fullscreen failed:", err);
+        });
+        return;
+      }
+      // Cmd+Shift+S → export active agent chat as Markdown to
+      // ~/Downloads/. No-op on shell tabs (chat history doesn't apply).
+      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        e.stopPropagation();
+        void exportActiveChatMarkdown();
+        return;
+      }
+      // F12 → toggle WebKit DevTools. Debug builds only — release
+      // builds get a "not available" toast from the Rust command. The
+      // function key is unmodified so it doesn't collide with text
+      // input; we only swallow it when the user is at the document
+      // level rather than typing into a contenteditable.
+      if (e.key === "F12") {
+        e.preventDefault();
+        e.stopPropagation();
+        invoke("toggle_devtools").catch((err: unknown) => {
+          // Surface the release-build "not available" path inline so
+          // the user knows why nothing happened.
+          pushNotification({
+            id: "ae-devtools-unavailable",
+            title: "DevTools unavailable",
+            message: err instanceof Error ? err.message : String(err),
+            kind: "info",
+            durationMs: 2000,
+          });
+        });
         return;
       }
     };
@@ -2260,6 +2617,25 @@ export default function App() {
       },
     );
 
+    // M6 follow-up: shell-title fires whenever a PTY's stdout contains
+    // an OSC 0/1/2 title-set sequence. Replace the tab label with the
+    // shell-emitted title so the user sees `vim · README.md` /
+    // `user@host` / `htop` instead of the static `Shell N`. Falls
+    // back to the default label if the user never opens a tool that
+    // reports titles — that's the existing behaviour.
+    const unlistenShellTitle = listen<{ tabId: string; title: string }>(
+      "shell-title",
+      (event) => {
+        const { tabId, title } = event.payload;
+        if (!tabId || typeof title !== "string" || title.length === 0) return;
+        const safe = title.length > 64 ? `${title.slice(0, 61)}…` : title;
+        updateTab(tabId, (t) => {
+          if (t.kind !== "shell" || t.label === safe) return t;
+          return { ...t, label: safe };
+        });
+      },
+    );
+
     const unlistenReload = listen<string>("agent-reloaded", () => {
       activeResponseIdRef.current = null;
       setStatusFlags({ waiting: false, status: "agent reloaded" });
@@ -2417,13 +2793,20 @@ export default function App() {
       }
     });
 
-    // P4: drag-and-drop file paths from the OS into the chat composer.
-    // Tauri 2's webview exposes the paths directly (HTML5 dataTransfer
-    // is sandboxed and would only return File handles). On `drop`, if
-    // the active tab is an agent tab, append `@<absolute-path>` tokens
-    // to the draft. Multiple files → space-separated. Shell tabs
-    // ignore drops here — the shell-canvas can grow its own quoting
-    // path in a follow-up.
+    // P4: drag-and-drop file paths from the OS. Tauri 2's webview
+    // exposes the paths directly (HTML5 dataTransfer is sandboxed and
+    // only yields File handles). Routing:
+    //   * Drop on the bottom terminal panel while a shell sub-tab is
+    //     active, or anywhere when the active top-level tab is a shell
+    //     → write shell-quoted POSIX path(s) into the PTY via
+    //     `shell_input`. Each path is single-quote-wrapped via the
+    //     shellQuote helper so spaces / metacharacters never break the
+    //     paste into multiple tokens.
+    //   * Otherwise (active tab is an agent tab) → append
+    //     `@<absolute-path>` tokens to the draft.
+    // Position hit-test uses `document.elementFromPoint` against the
+    // physical-to-CSS-pixel-converted drop coordinates so the user can
+    // drop directly onto the panel they want to receive the path.
     const dragDropDisposer = (async () => {
       try {
         const { getCurrentWebview } = await import(
@@ -2439,10 +2822,49 @@ export default function App() {
           if (!activeId) return;
           const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
           const tab = tabs.find((t) => t.id === activeId);
-          if (!tab || tab.kind !== "agent") return;
-          const tokens = paths
-            .map((p) => `@${p}`)
-            .join(" ");
+          if (!tab) return;
+
+          // Resolve which shell — if any — should receive the drop.
+          // Top-level shell tab wins outright; otherwise, hit-test the
+          // drop position against the bottom terminal panel and inspect
+          // the active sub-tab.
+          let targetShellId: string | null = null;
+          if (tab.kind === "shell") {
+            targetShellId = tab.id;
+          } else {
+            const pos = evt.payload.position;
+            const dpr = window.devicePixelRatio || 1;
+            const cssX = pos.x / dpr;
+            const cssY = pos.y / dpr;
+            const elem = document.elementFromPoint(cssX, cssY);
+            const inPanel = elem?.closest(".ae-terminal-panel") ?? null;
+            if (inPanel) {
+              const tp = (stateRef.current.terminalPanel as
+                | { activeSubId?: string }
+                | undefined) ?? {};
+              const subId = tp.activeSubId;
+              if (subId && subId !== "agent-bash") {
+                const subTab = tabs.find((t) => t.id === subId);
+                if (subTab && subTab.kind === "shell") {
+                  targetShellId = subTab.id;
+                }
+              }
+            }
+          }
+
+          if (targetShellId) {
+            const data = shellQuoteAll(paths);
+            void invoke("shell_input", {
+              tabId: targetShellId,
+              data,
+            }).catch(() => {
+              /* PTY closed mid-drop — drop silently */
+            });
+            return;
+          }
+
+          if (tab.kind !== "agent") return;
+          const tokens = paths.map((p) => `@${p}`).join(" ");
           updateTab(activeId, (t) => ({
             ...t,
             draft: t.draft.length > 0 ? `${t.draft} ${tokens}` : tokens,
@@ -2454,6 +2876,71 @@ export default function App() {
       }
     })();
 
+    // Image paste into the chat composer. Tauri webview surfaces clipboard
+    // images via `event.clipboardData.items`; for each `image/*` item we
+    // persist the bytes to `~/.aethon/pastes/<uuid>.<ext>` via the
+    // `save_paste_image` Tauri command and insert `@<path>` into the
+    // active agent tab's draft. The agent's existing read tool can then
+    // pick up the image via the path. Files larger than the Rust 32 MiB
+    // cap surface as a notification rather than silently dropping.
+    const onClipboardPaste = (e: ClipboardEvent) => {
+      const focused = document.activeElement;
+      const composer = document.querySelector(".a2ui-chat-input");
+      if (!composer || !focused || !composer.contains(focused)) return;
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      const imageItems: DataTransferItem[] = [];
+      for (let i = 0; i < items.length; i += 1) {
+        const it = items[i];
+        if (it.kind === "file" && it.type.startsWith("image/")) {
+          imageItems.push(it);
+        }
+      }
+      if (imageItems.length === 0) return;
+      e.preventDefault();
+      void Promise.all(
+        imageItems.map(async (item) => {
+          const file = item.getAsFile();
+          if (!file) return null;
+          const buffer = await file.arrayBuffer();
+          const bytes = Array.from(new Uint8Array(buffer));
+          const ext = file.type.split("/")[1] ?? "png";
+          try {
+            const path = await invoke<string>("save_paste_image", {
+              bytes,
+              extension: ext,
+            });
+            return path;
+          } catch (err) {
+            pushNotification({
+              id: "ae-paste-image-failed",
+              title: "Image paste failed",
+              message: err instanceof Error ? err.message : String(err),
+              kind: "error",
+              durationMs: 3000,
+            });
+            return null;
+          }
+        }),
+      ).then((paths) => {
+        const activeId = stateRef.current.activeTabId as string | undefined;
+        if (!activeId) return;
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const tab = tabs.find((t) => t.id === activeId);
+        if (!tab || tab.kind !== "agent") return;
+        const tokens = paths
+          .filter((p): p is string => typeof p === "string")
+          .map((p) => `@${p}`)
+          .join(" ");
+        if (tokens.length === 0) return;
+        updateTab(activeId, (t) => ({
+          ...t,
+          draft: t.draft.length > 0 ? `${t.draft} ${tokens}` : tokens,
+        }));
+      });
+    };
+    document.addEventListener("paste", onClipboardPaste, true);
+
     return () => {
       unlistenResponse.then((fn) => fn());
       unlistenReload.then((fn) => fn());
@@ -2462,7 +2949,9 @@ export default function App() {
       unlistenMenu.then((fn) => fn());
       unlistenShellOutput.then((fn) => fn());
       unlistenShellExit.then((fn) => fn());
+      unlistenShellTitle.then((fn) => fn());
       dragDropDisposer.then((fn) => fn?.());
+      document.removeEventListener("paste", onClipboardPaste, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4150,15 +4639,16 @@ export default function App() {
       const MAX_VISIBLE = 6;
       const next = [...without, entry];
       const trimmed = next.length > MAX_VISIBLE ? next.slice(-MAX_VISIBLE) : next;
-      // Drop side effect: any shell-write consent prompts that just
-      // got silently evicted (dedup or trim) need their resolver fired
-      // as deny — otherwise `aethon.shells.write` hangs until the
-      // 5-min bridge timeout. Compare `list` → `trimmed` and resolve
-      // any prompt id that disappeared.
+      // Drop side effect: any pending consent prompts that just got
+      // silently evicted (dedup or trim) need their resolver fired so
+      // the originator promise doesn't dangle. Both shell-write
+      // (5-min bridge timeout) and shell-close (Cmd+W → tab stays
+      // alive) need this guarantee.
       const survivedIds = new Set(trimmed.map((n) => n.id));
       for (const n of list) {
         if (!survivedIds.has(n.id)) {
           resolveShellWriteConsent(n.id, false);
+          resolveShellCloseConsent(n.id, false);
         }
       }
       return { ...prev, notifications: trimmed };
@@ -4288,13 +4778,35 @@ export default function App() {
     };
     try {
       await invoke("write_config", { config: merged });
-      // Reset the in-memory config cache so the next call re-reads
-      // from disk. The simplest reset is module-side; getConfig() in
-      // src/config.ts memoizes via a module-level Promise, so a
-      // dynamic import + cache-bust isn't easy. Easiest: live with
-      // the stale cache for this session — the disk write IS what
-      // matters for next launch. Fold a cache invalidator into
-      // config.ts in a follow-up.
+      // Drop the in-memory cache and re-read so the running app picks
+      // up theme / font / ref-tracked defaults without a page reload.
+      clearConfigCache();
+      try {
+        const fresh = await getConfig();
+        if (fresh.ui.theme) {
+          document.documentElement.dataset.theme = fresh.ui.theme;
+        }
+        const size = fresh.ui.fontSize;
+        if (typeof size === "number" && Number.isFinite(size)) {
+          const clamped = Math.max(10, Math.min(24, Math.round(size)));
+          document.documentElement.style.setProperty(
+            "--app-font-size",
+            `${clamped}px`,
+          );
+        }
+        defaultShareModeRef.current = fresh.shell.defaultShareMode;
+        notifyOnCompletionRef.current = fresh.ui.notifyOnCompletion;
+        notifyMinDurationMsRef.current =
+          Math.max(0, fresh.ui.notifyMinDurationSeconds) * 1000;
+        autoRestartAgentRef.current = fresh.shell.autoRestartAgent;
+        shellDefaultCommandRef.current = fresh.shell.defaultCommand;
+        shellDefaultArgsRef.current = fresh.shell.defaultArgs;
+        shellInheritEnvRef.current = fresh.shell.inheritEnv;
+        shellPromptBeforeCloseRef.current = fresh.shell.promptBeforeClose;
+        shortcutsNewTabKindRef.current = fresh.shortcuts.newTabKind;
+      } catch (err) {
+        console.warn("settings save: re-read failed:", err);
+      }
       pushNotification({
         id: "ae-settings-saved",
         title: "Settings saved",
@@ -4320,29 +4832,75 @@ export default function App() {
    *  keystroke. */
   function toggleSessionSearch() {
     setState((prev) => {
-      const cur = (prev.search as { open?: boolean } | undefined) ?? {};
+      const cur = (prev.search as
+        | { open?: boolean; scope?: "all" | "current" }
+        | undefined) ?? {};
       return {
         ...prev,
-        search: { open: !cur.open, query: "" },
+        search: {
+          open: !cur.open,
+          query: "",
+          scope: cur.scope ?? "all",
+        },
       };
     });
   }
   function closeSessionSearch() {
-    setState((prev) => ({ ...prev, search: { open: false, query: "" } }));
+    setState((prev) => {
+      const cur = (prev.search as
+        | { scope?: "all" | "current" }
+        | undefined) ?? {};
+      return {
+        ...prev,
+        search: { open: false, query: "", scope: cur.scope ?? "all" },
+      };
+    });
   }
   function setSearchQuery(value: string) {
     setState((prev) => {
-      const cur = (prev.search as { open?: boolean; query?: string } | undefined) ?? {};
-      return { ...prev, search: { open: !!cur.open, query: value } };
+      const cur = (prev.search as
+        | { open?: boolean; scope?: "all" | "current" }
+        | undefined) ?? {};
+      return {
+        ...prev,
+        search: {
+          open: !!cur.open,
+          query: value,
+          scope: cur.scope ?? "all",
+        },
+      };
     });
   }
-  function openSearchHit(hit: { tabId?: string }) {
+  function setSearchScope(scope: "all" | "current") {
+    setState((prev) => {
+      const cur = (prev.search as
+        | { open?: boolean; query?: string }
+        | undefined) ?? {};
+      return {
+        ...prev,
+        search: {
+          open: !!cur.open,
+          query: cur.query ?? "",
+          scope,
+        },
+      };
+    });
+  }
+  function openSearchHit(hit: { tabId?: string; snippetMatch?: string }) {
     if (!hit?.tabId) return;
     closeSessionSearch();
     // Reopen the originating tab. SessionManager.continueRecent picks
     // up the persisted JSONL session under ~/.aethon/sessions/<tabId>/
     // so the user lands inside their previous conversation.
-    newTab(hit.tabId, undefined, { restoredSession: true });
+    // Carry the matched snippet through to the new tab so the
+    // chat-history component can highlight + scroll to it once the
+    // session replay completes.
+    newTab(hit.tabId, undefined, {
+      restoredSession: true,
+      ...(typeof hit.snippetMatch === "string" && hit.snippetMatch.length > 0
+        ? { scrollToMatch: hit.snippetMatch }
+        : {}),
+    });
   }
 
   function openPalette(mode: PaletteMode) {
@@ -4685,6 +5243,30 @@ export default function App() {
           dismissNotification(id);
           return true;
         }
+        // Close-shell-tab consent prompts. Same security shape as
+        // shell-write — must run before extension-route interception
+        // so a user's Close / Cancel can't be hijacked. Filter
+        // narrowly on the reserved `shell-close-` prefix + a dismiss
+        // of an id with a pending resolver.
+        const isShellCloseAction =
+          eventType === "action" &&
+          typeof action === "string" &&
+          action.startsWith("shell-close-");
+        const isShellCloseDismiss =
+          (eventType === "dismiss" || eventType === "expire") &&
+          typeof id === "string" &&
+          shellCloseConsentRef.current.has(id);
+        if (isShellCloseAction && id && action) {
+          const allowed = action.startsWith("shell-close-allow:");
+          resolveShellCloseConsent(id, allowed);
+          dismissNotification(id);
+          return true;
+        }
+        if (isShellCloseDismiss && id) {
+          resolveShellCloseConsent(id, false);
+          dismissNotification(id);
+          return true;
+        }
         // P5: agent-crashed notification actions. Restart respawns
         // the bridge; dismiss just closes the toast.
         if (
@@ -4769,8 +5351,23 @@ export default function App() {
           setSearchQuery(value);
           return true;
         }
+        if (eventType === "scope") {
+          const scope = (data as { scope?: "all" | "current" } | undefined)
+            ?.scope;
+          if (scope === "all" || scope === "current") {
+            setSearchScope(scope);
+          }
+          return true;
+        }
         if (eventType === "select") {
-          const hit = (data as { hit?: { tabId?: string } } | undefined)?.hit;
+          const hit = (data as
+            | {
+                hit?: {
+                  tabId?: string;
+                  snippetMatch?: string;
+                };
+              }
+            | undefined)?.hit;
           if (hit) openSearchHit(hit);
           return true;
         }
@@ -4815,21 +5412,25 @@ export default function App() {
       if (component.id === "notification-stack") {
         const id = (data as { id?: string } | undefined)?.id;
         if ((eventType === "dismiss" || eventType === "expire") && id) {
-          // Dismissing a pending shell-write confirmation = deny. The
-          // resolver still has to fire — otherwise the bridge's promise
-          // dangles until the 5-min timeout.
+          // Dismissing a pending shell-write OR shell-close confirmation
+          // = deny. Both resolvers fire on every dismiss/expire so a
+          // dropped notification can't dangle the originator's promise.
           resolveShellWriteConsent(id, false);
+          resolveShellCloseConsent(id, false);
           dismissNotification(id);
           return true;
         }
         if (eventType === "action" && id) {
           const action = (data as { action?: string } | undefined)?.action;
-          // Built-in shell-write Allow/Deny actions resolve a pending
-          // consent without a bridge round-trip. Other actions get
-          // forwarded as a2ui events for extension matchers.
+          // Built-in shell-write / shell-close Allow/Deny actions
+          // resolve pending consents without a bridge round-trip. Other
+          // actions get forwarded as a2ui events for extension matchers.
           if (action && action.startsWith("shell-write-")) {
             const allowed = action.startsWith("shell-write-allow:");
             resolveShellWriteConsent(id, allowed);
+          } else if (action && action.startsWith("shell-close-")) {
+            const allowed = action.startsWith("shell-close-allow:");
+            resolveShellCloseConsent(id, allowed);
           } else if (action) {
             invoke("dispatch_a2ui_event", {
               event: JSON.stringify({

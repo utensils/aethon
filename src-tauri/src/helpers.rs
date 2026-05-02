@@ -61,6 +61,33 @@ pub struct ShellConfig {
     /// respawn it. Default `true`. Set `false` to surface the crash
     /// notice without auto-restart (useful when debugging the bridge).
     pub auto_restart_agent: Option<bool>,
+    /// Override the program spawned for new shell tabs. Empty string
+    /// or omission falls back to `$SHELL` (and the platform default).
+    /// e.g. `default_command = "/usr/local/bin/fish"`.
+    pub default_command: Option<String>,
+    /// Extra argv for the spawned shell. Appended after the platform
+    /// default (e.g. `-il` on Unix). Use to pass profile flags or a
+    /// `-c <command>` you want every new tab to run.
+    pub default_args: Option<Vec<String>>,
+    /// Whether new shell tabs inherit the Aethon process's environment
+    /// (`PATH`, locale, etc.). Default `true` — shells inherit the
+    /// login PATH the bridge already augments. Set `false` for hermetic
+    /// shells (the PTY still gets `TERM=xterm-256color` etc.).
+    pub inherit_env: Option<bool>,
+    /// When closing a shell tab whose foreground job is *not* the shell
+    /// itself (e.g. `vim`, `npm test`, `ssh`), prompt before killing.
+    /// Default `true`. Cmd+W honours this; the X close button always
+    /// honours it. Frontend-side check.
+    pub prompt_before_close: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
+pub struct ShortcutsConfig {
+    /// What `Cmd+T` opens when focus is *outside* the bottom terminal
+    /// panel. Allowed values: `"agent"` (default — the focus-aware
+    /// behaviour shipped in M6 P1) or `"shell"` (Cmd+T always opens a
+    /// new shell sub-tab). Anything else falls back to `"agent"`.
+    pub new_tab_kind: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -71,6 +98,8 @@ pub struct AethonConfig {
     pub agent: AgentConfig,
     #[serde(default)]
     pub shell: ShellConfig,
+    #[serde(default)]
+    pub shortcuts: ShortcutsConfig,
 }
 
 /// Validate-and-normalize the configured default share mode. Unknown
@@ -84,6 +113,16 @@ pub fn normalize_default_share_mode(input: Option<&str>) -> &'static str {
         Some("read-write-trusted") => "read-write-trusted",
         // Includes Some("private"), Some(<unknown>), and None.
         _ => "private",
+    }
+}
+
+/// Validate-and-normalize the `[shortcuts] new_tab_kind` key. Unknown or
+/// missing values fall through to `"agent"` (the focus-aware default).
+pub fn normalize_new_tab_kind(input: Option<&str>) -> &'static str {
+    match input {
+        Some("shell") => "shell",
+        // Includes Some("agent"), Some(<unknown>), and None.
+        _ => "agent",
     }
 }
 
@@ -106,6 +145,13 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .notify_min_duration_seconds
         .map(|n| n.min(3600))
         .unwrap_or(8);
+    let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
+    let default_command = cfg
+        .shell
+        .default_command
+        .as_deref()
+        .filter(|s| !s.is_empty());
+    let default_args: Vec<String> = cfg.shell.default_args.unwrap_or_default();
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
@@ -120,6 +166,13 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         "shell": {
             "defaultShareMode": default_share_mode,
             "autoRestartAgent": cfg.shell.auto_restart_agent.unwrap_or(true),
+            "defaultCommand": default_command,
+            "defaultArgs": default_args,
+            "inheritEnv": cfg.shell.inherit_env.unwrap_or(true),
+            "promptBeforeClose": cfg.shell.prompt_before_close.unwrap_or(true),
+        },
+        "shortcuts": {
+            "newTabKind": new_tab_kind,
         },
     })
 }
@@ -250,6 +303,78 @@ mod tests {
         // forwarded as the user wrote them — so a typo can't widen access.
         let v = parse_config_toml("[shell]\ndefault_share_mode = \"yolo\"\n");
         assert_eq!(v["shell"]["defaultShareMode"], "private");
+    }
+
+    // ── normalize_new_tab_kind ────────────────────────────────────────────
+    #[test]
+    fn normalize_new_tab_kind_accepts_known_values() {
+        assert_eq!(normalize_new_tab_kind(Some("agent")), "agent");
+        assert_eq!(normalize_new_tab_kind(Some("shell")), "shell");
+    }
+
+    #[test]
+    fn normalize_new_tab_kind_falls_back_to_agent() {
+        assert_eq!(normalize_new_tab_kind(None), "agent");
+        assert_eq!(normalize_new_tab_kind(Some("")), "agent");
+        assert_eq!(normalize_new_tab_kind(Some("Agent")), "agent");
+        assert_eq!(normalize_new_tab_kind(Some("shells")), "agent");
+    }
+
+    // ── parse_config_toml: shortcuts + extended shell keys ────────────────
+    #[test]
+    fn parse_config_toml_shortcuts_default_is_agent() {
+        let v = parse_config_toml("");
+        assert_eq!(v["shortcuts"]["newTabKind"], "agent");
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_shortcuts_section() {
+        let v = parse_config_toml("[shortcuts]\nnew_tab_kind = \"shell\"\n");
+        assert_eq!(v["shortcuts"]["newTabKind"], "shell");
+        let v = parse_config_toml("[shortcuts]\nnew_tab_kind = \"yolo\"\n");
+        assert_eq!(v["shortcuts"]["newTabKind"], "agent");
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_extended_shell_keys() {
+        let v = parse_config_toml(
+            r#"[shell]
+default_command = "/bin/fish"
+default_args = ["-l"]
+inherit_env = false
+prompt_before_close = false
+"#,
+        );
+        assert_eq!(v["shell"]["defaultCommand"], "/bin/fish");
+        assert_eq!(
+            v["shell"]["defaultArgs"],
+            serde_json::json!(["-l"])
+        );
+        assert_eq!(v["shell"]["inheritEnv"], false);
+        assert_eq!(v["shell"]["promptBeforeClose"], false);
+    }
+
+    #[test]
+    fn parse_config_toml_extended_shell_keys_default() {
+        let v = parse_config_toml("");
+        assert_eq!(
+            v["shell"]["defaultCommand"],
+            serde_json::Value::Null
+        );
+        assert_eq!(v["shell"]["defaultArgs"], serde_json::json!([]));
+        assert_eq!(v["shell"]["inheritEnv"], true);
+        assert_eq!(v["shell"]["promptBeforeClose"], true);
+    }
+
+    #[test]
+    fn parse_config_toml_empty_default_command_is_null() {
+        // Power users sometimes write `default_command = ""` to mean
+        // "fall back to default". Treat empty string the same as omitted.
+        let v = parse_config_toml("[shell]\ndefault_command = \"\"\n");
+        assert_eq!(
+            v["shell"]["defaultCommand"],
+            serde_json::Value::Null
+        );
     }
 
     #[test]
