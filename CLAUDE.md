@@ -120,6 +120,51 @@ console) can swap chrome at runtime:
 - `window.aethon.listSkills()` — names of currently registered skills
 - `window.aethon.openProject(path)` — register/activate a project
 
+### Keyboard shortcuts (current set)
+
+| Combo | Action |
+|---|---|
+| `Cmd+T` | New shell tab (Terminal.app convention) |
+| `Cmd+Shift+T` | New agent tab |
+| `Cmd+W` | Close active tab |
+| `Cmd+Opt+T` | Reopen most-recently-closed tab |
+| `Cmd+]` / `Cmd+[` | Next / previous tab |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Move active tab right / left |
+| `Cmd+1`..`Cmd+8` | Jump to tab N |
+| `Cmd+9` | Jump to last tab |
+| `Cmd+P` / `Cmd+Shift+P` | Command palette (switcher / commands) |
+| `Cmd+\`` | Toggle agent bash output panel (read-only sink for bash tool output — distinct from the interactive shell-tab PTY) |
+| `Cmd+B` | Toggle sidebar |
+| `Cmd+K` | Clear chat |
+| `Cmd+.` | Stop current prompt |
+| `Cmd+=` / `Cmd+-` / `Cmd+0` | Zoom in / out / reset |
+| `Esc` | Close palette (when open) |
+
+`metaKey || ctrlKey` for cross-platform — Linux/Windows users get the
+same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
+mirror these. Extension `aethon.registerKeybinding` priority is
+unchanged: extensions run first and may override built-ins.
+
+### "Two terminals" mental model
+
+Aethon ships **two distinct terminal surfaces**, intentionally
+separated:
+
+1. **Agent bash output panel** (`Cmd+\``, header reads "Agent bash · read-only").
+   A read-only stream of the bash tool's stdout for the active agent
+   tab — what the agent saw when it ran `ls` / `git diff` / `npm test`.
+   Same content also appears in chat as a tool card; the panel just
+   pins it visible while you scroll chat.
+2. **Shell tabs** (`Cmd+T`, M6 P1+P2). Full interactive PTY backed by
+   `portable-pty`. TUI-capable (vim, htop, fzf), 256-color, mouse
+   reporting. Status line under the xterm shows
+   `cwd · command · share-mode badge · cols×rows`.
+
+The label contrast is deliberate. Don't merge them — they serve
+different needs. If a user only wants the agent's bash visible, the
+panel is enough; if they want to drive their own shell, that's a
+shell tab.
+
 ### Tab kinds — agent vs shell
 
 `Tab.kind` is `"agent" | "shell"`. Agent tabs carry chat-history fields
