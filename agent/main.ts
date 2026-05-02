@@ -3508,6 +3508,19 @@ async function main() {
           }
           if (cwd === null) {
             tabProjectCwds.delete(tabId);
+            // Mirror the cwd-changed branch below: clearing the active
+            // project must also unload that project's extensions.
+            // Otherwise its components, themes, slash commands, layout
+            // overrides, and `failedExtensions` keep showing in the
+            // no-project workspace until the user picks another project
+            // or the agent restarts. Skip if no project was ever loaded.
+            if (currentProjectCwd !== null) {
+              unloadProjectExtensions();
+              currentProjectCwd = null;
+              await resourceLoader.reload();
+              scheduleStateFileWrite();
+              emitReady();
+            }
           } else if (typeof cwd === "string" && cwd.length > 0) {
             tabProjectCwds.set(tabId, cwd);
             // Strict project scoping: tear down the previous project's
