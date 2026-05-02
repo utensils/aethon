@@ -16,6 +16,12 @@ export interface AethonConfig {
     /** When true, discovered per-tab sessions are reopened automatically
      *  on app launch instead of only appearing in the empty-state list. */
     restoreTabs: boolean;
+    /** Fire a native OS notification when an agent turn finishes while
+     *  the originating tab/window is unfocused. Default true. */
+    notifyOnCompletion: boolean;
+    /** Don't fire the completion notification for turns shorter than
+     *  this many seconds. Default 8 — sub-second turns rarely need it. */
+    notifyMinDurationSeconds: number;
   };
   agent: {
     model: string | null;
@@ -29,7 +35,13 @@ export interface AethonConfig {
 }
 
 const DEFAULTS: AethonConfig = {
-  ui: { theme: null, fontSize: null, restoreTabs: false },
+  ui: {
+    theme: null,
+    fontSize: null,
+    restoreTabs: false,
+    notifyOnCompletion: true,
+    notifyMinDurationSeconds: 8,
+  },
   agent: { model: null },
   shell: { defaultShareMode: "private" },
 };
@@ -60,6 +72,15 @@ export function getConfig(): Promise<AethonConfig> {
           fontSize:
             typeof obj?.ui?.fontSize === "number" ? obj.ui.fontSize : null,
           restoreTabs: obj?.ui?.restoreTabs === true,
+          notifyOnCompletion:
+            typeof obj?.ui?.notifyOnCompletion === "boolean"
+              ? obj.ui.notifyOnCompletion
+              : true,
+          notifyMinDurationSeconds:
+            typeof obj?.ui?.notifyMinDurationSeconds === "number" &&
+            obj.ui.notifyMinDurationSeconds >= 0
+              ? obj.ui.notifyMinDurationSeconds
+              : 8,
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,

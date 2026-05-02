@@ -560,6 +560,16 @@ export default function App() {
   // newShellTab. Defaults to `"private"` until the config loads — the
   // safest possible seed for new shell tabs.
   const defaultShareModeRef = useRef<ShellMeta["shareMode"]>("private");
+  // P4: per-tab turn start timestamps. Set on `prompt_started`, cleared
+  // on `response_end`. Used to compute turn duration for the OS
+  // completion notification gate.
+  const turnStartedAtRef = useRef<Map<string, number>>(new Map());
+  // P4: live config for OS notifications. Mirrors `config.ui.notifyOnCompletion`
+  // / `notifyMinDurationSeconds` and is updated in the boot config effect.
+  // Held in a ref (not state) so the response_end handler reads the
+  // latest value without re-binding.
+  const notifyOnCompletionRef = useRef<boolean>(true);
+  const notifyMinDurationMsRef = useRef<number>(8 * 1000);
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
@@ -695,6 +705,11 @@ export default function App() {
       // newShellTab calls open with the configured default. Already
       // clamped to the four valid modes by getConfig() / parse_config_toml.
       defaultShareModeRef.current = config.shell.defaultShareMode;
+
+      // P4: notify_on_completion + notify_min_duration_seconds.
+      notifyOnCompletionRef.current = config.ui.notifyOnCompletion;
+      notifyMinDurationMsRef.current =
+        Math.max(0, config.ui.notifyMinDurationSeconds) * 1000;
 
       // [agent] model: when set, seed the picker default for this
       // session. Only applied if no per-session model has been saved
@@ -2130,6 +2145,43 @@ export default function App() {
       }
     });
 
+    // P4: drag-and-drop file paths from the OS into the chat composer.
+    // Tauri 2's webview exposes the paths directly (HTML5 dataTransfer
+    // is sandboxed and would only return File handles). On `drop`, if
+    // the active tab is an agent tab, append `@<absolute-path>` tokens
+    // to the draft. Multiple files → space-separated. Shell tabs
+    // ignore drops here — the shell-canvas can grow its own quoting
+    // path in a follow-up.
+    const dragDropDisposer = (async () => {
+      try {
+        const { getCurrentWebview } = await import(
+          "@tauri-apps/api/webview"
+        );
+        return await getCurrentWebview().onDragDropEvent((evt) => {
+          if (evt.payload.type !== "drop") return;
+          const paths = evt.payload.paths ?? [];
+          if (paths.length === 0) return;
+          const activeId = stateRef.current.activeTabId as
+            | string
+            | undefined;
+          if (!activeId) return;
+          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+          const tab = tabs.find((t) => t.id === activeId);
+          if (!tab || tab.kind !== "agent") return;
+          const tokens = paths
+            .map((p) => `@${p}`)
+            .join(" ");
+          updateTab(activeId, (t) => ({
+            ...t,
+            draft: t.draft.length > 0 ? `${t.draft} ${tokens}` : tokens,
+          }));
+        });
+      } catch (err) {
+        console.warn("dragdrop subscribe failed:", err);
+        return undefined;
+      }
+    })();
+
     return () => {
       unlistenResponse.then((fn) => fn());
       unlistenReload.then((fn) => fn());
@@ -2137,6 +2189,7 @@ export default function App() {
       unlistenMenu.then((fn) => fn());
       unlistenShellOutput.then((fn) => fn());
       unlistenShellExit.then((fn) => fn());
+      dragDropDisposer.then((fn) => fn?.());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2767,6 +2820,9 @@ export default function App() {
         // status to one tab; status bar text only flips for the active.
         const tabId = (data.tabId as string | undefined) ?? "default";
         const remaining = (data.queued as number | undefined) ?? undefined;
+        // Record turn start so response_end can compute duration and
+        // decide whether to fire the OS completion notification (P4).
+        turnStartedAtRef.current.set(tabId, Date.now());
         updateTab(tabId, (tab) => ({
           ...tab,
           waiting: true,
@@ -2809,6 +2865,19 @@ export default function App() {
             const q = (prev.queueCount as number) ?? 0;
             if (q > 0) return prev;
             return { ...prev, status: "ready" };
+          });
+        }
+        // P4: fire native OS notification when an agent turn completes
+        // while the window is unfocused (or the originating tab isn't
+        // active). Only for "real" turns (≥ notifyMinDurationSeconds)
+        // and only if the user hasn't disabled via [ui] notify_on_completion.
+        const startedAt = turnStartedAtRef.current.get(tabId);
+        turnStartedAtRef.current.delete(tabId);
+        if (startedAt !== undefined) {
+          const turnDurationMs = Date.now() - startedAt;
+          void maybeFireCompletionNotification({
+            tabId,
+            turnDurationMs,
           });
         }
         break;
@@ -3828,6 +3897,54 @@ export default function App() {
       const list = (prev.notifications as NotificationEntry[] | undefined) ?? [];
       return { ...prev, notifications: list.filter((n) => n.id !== id) };
     });
+  }
+
+  /** P4: native OS notification on agent turn completion. Fires when:
+   *    1. `[ui] notify_on_completion` is true (default), AND
+   *    2. The turn ran at least `notify_min_duration_seconds` seconds, AND
+   *    3. The window is unfocused OR the originating tab isn't the
+   *       active one (i.e. the user is not looking at the result).
+   *
+   *  Click → focus the window + switch to that tab. Permission is
+   *  requested lazily on first call so the OS prompt only appears
+   *  when there's actually something to notify about (Tauri's
+   *  notification plugin handles the macOS / Linux / Windows backend).
+   */
+  async function maybeFireCompletionNotification(input: {
+    tabId: string;
+    turnDurationMs: number;
+  }) {
+    if (!notifyOnCompletionRef.current) return;
+    if (input.turnDurationMs < notifyMinDurationMsRef.current) return;
+    // Only fire when the user can't already see the result. Active-tab
+    // check: a focused window with the originating tab active means the
+    // user is looking at it; no notification needed.
+    const windowFocused = typeof document !== "undefined" && document.hasFocus();
+    const isActiveTab =
+      stateRef.current.activeTabId === input.tabId;
+    if (windowFocused && isActiveTab) return;
+    try {
+      const notif = await import("@tauri-apps/plugin-notification");
+      let granted = await notif.isPermissionGranted();
+      if (!granted) {
+        const perm = await notif.requestPermission();
+        granted = perm === "granted";
+      }
+      if (!granted) return;
+      const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+      const tab = tabs.find((t) => t.id === input.tabId);
+      const lastMsg = tab?.messages?.at(-1);
+      const body =
+        typeof lastMsg?.text === "string" && lastMsg.text.length > 0
+          ? lastMsg.text.slice(0, 120)
+          : "Turn complete.";
+      notif.sendNotification({
+        title: tab?.label ? `${tab.label} ✓` : "Aethon ✓",
+        body,
+      });
+    } catch (err) {
+      console.warn("notification fire failed:", err);
+    }
   }
 
   // ---------------------------------------------------------------------

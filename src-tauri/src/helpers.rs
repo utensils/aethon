@@ -34,6 +34,15 @@ pub struct UiConfig {
     pub theme: Option<String>,
     pub font_size: Option<u32>,
     pub restore_tabs: Option<bool>,
+    /// Fire a native OS notification when an agent turn ends while the
+    /// originating tab is unfocused (or the window is unfocused). Default
+    /// `true`. Disable for users who run agents in the background and
+    /// don't want toasts piling up. Configurable via
+    /// `[ui] notify_on_completion`.
+    pub notify_on_completion: Option<bool>,
+    /// Minimum turn duration (seconds) for the completion notification to
+    /// fire. Sub-second turns rarely need a notification. Default 8.
+    pub notify_min_duration_seconds: Option<u32>,
 }
 
 #[derive(Default, Deserialize)]
@@ -87,11 +96,19 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     let default_share_mode = normalize_default_share_mode(
         cfg.shell.default_share_mode.as_deref(),
     );
+    let notify_on_completion = cfg.ui.notify_on_completion.unwrap_or(true);
+    let notify_min_duration_seconds = cfg
+        .ui
+        .notify_min_duration_seconds
+        .map(|n| n.min(3600))
+        .unwrap_or(8);
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
             "fontSize": cfg.ui.font_size,
             "restoreTabs": cfg.ui.restore_tabs,
+            "notifyOnCompletion": notify_on_completion,
+            "notifyMinDurationSeconds": notify_min_duration_seconds,
         },
         "agent": {
             "model": cfg.agent.model,
