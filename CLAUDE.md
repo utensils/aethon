@@ -124,16 +124,16 @@ console) can swap chrome at runtime:
 
 | Combo | Action |
 |---|---|
-| `Cmd+T` | New shell tab (Terminal.app convention) |
-| `Cmd+Shift+T` | New agent tab |
+| `Cmd+T` | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel |
+| `Cmd+Shift+T` | New shell sub-tab (always — auto-opens the bottom panel) |
 | `Cmd+W` | Close active tab |
 | `Cmd+Opt+T` | Reopen most-recently-closed tab |
-| `Cmd+]` / `Cmd+[` | Next / previous tab |
-| `Cmd+Shift+]` / `Cmd+Shift+[` | Move active tab right / left |
-| `Cmd+1`..`Cmd+8` | Jump to tab N |
-| `Cmd+9` | Jump to last tab |
+| `Cmd+]` / `Cmd+[` | Next / previous *agent* tab (top strip; shells are filtered) |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Move active agent tab right / left |
+| `Cmd+1`..`Cmd+8` | Jump to agent tab N |
+| `Cmd+9` | Jump to last agent tab |
 | `Cmd+P` / `Cmd+Shift+P` | Command palette (switcher / commands) |
-| `Cmd+\`` | Toggle agent bash output panel (read-only sink for bash tool output — distinct from the interactive shell-tab PTY) |
+| `Cmd+\`` | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab) |
 | `Cmd+B` | Toggle sidebar |
 | `Cmd+K` | Clear chat |
 | `Cmd+.` | Stop current prompt |
@@ -145,25 +145,34 @@ same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
 mirror these. Extension `aethon.registerKeybinding` priority is
 unchanged: extensions run first and may override built-ins.
 
-### "Two terminals" mental model
+### Terminal panel mental model
 
-Aethon ships **two distinct terminal surfaces**, intentionally
-separated:
+The **bottom terminal panel** (toggle `Cmd+\``) is a tabbed surface
+hosting two kinds of sub-tabs:
 
-1. **Agent bash output panel** (`Cmd+\``, header reads "Agent bash · read-only").
-   A read-only stream of the bash tool's stdout for the active agent
-   tab — what the agent saw when it ran `ls` / `git diff` / `npm test`.
-   Same content also appears in chat as a tool card; the panel just
-   pins it visible while you scroll chat.
-2. **Shell tabs** (`Cmd+T`, M6 P1+P2). Full interactive PTY backed by
+1. **Agent bash** (always present, sub-tab id `"agent-bash"`,
+   read-only). A live stream of the bash tool's stdout for the active
+   agent tab. Same content also appears in chat as a tool card; the
+   panel pins it visible while you scroll chat.
+2. **Shell sub-tabs** (zero or more). Full interactive PTYs backed by
    `portable-pty`. TUI-capable (vim, htop, fzf), 256-color, mouse
    reporting. Status line under the xterm shows
    `cwd · command · share-mode badge · cols×rows`.
 
-The label contrast is deliberate. Don't merge them — they serve
-different needs. If a user only wants the agent's bash visible, the
-panel is enough; if they want to drive their own shell, that's a
-shell tab.
+The top tab strip carries **only agent tabs** (chat sessions). Shell
+sub-tabs render in the bottom panel; the `TabStrip` composite filters
+out `kind === "shell"` automatically.
+
+`Cmd+T` is **focus-aware**: focus inside the bottom panel → new shell
+sub-tab; focus elsewhere → new agent tab. `Cmd+Shift+T` always spawns
+a new shell sub-tab and auto-opens the panel. This matches the
+mental model "new tab of whatever surface I'm using".
+
+State paths: `/terminalPanel/activeSubId` tracks which sub-tab is
+visible (defaults to `"agent-bash"`). `/terminal/open` toggles the
+whole panel. Shells live in `/tabs` next to agents but with
+`kind === "shell"` — the rendering layer routes them to the correct
+surface.
 
 ### Tab kinds — agent vs shell
 

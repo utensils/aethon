@@ -116,16 +116,6 @@
           }
         },
         {
-          "id": "shell-canvas",
-          "type": "shell-canvas",
-          "props": {
-            "area": "canvas",
-            "visible": { "$ref": "/shellTabActive" },
-            "tabId": { "$ref": "/activeTabId" },
-            "fontSize": 13
-          }
-        },
-        {
           "id": "empty-state",
           "type": "empty-state",
           "props": {
@@ -146,14 +136,12 @@
           }
         },
         {
-          "id": "terminal",
-          "type": "terminal",
+          "id": "terminal-panel",
+          "type": "terminal-panel",
           "props": {
             "area": "terminal",
             "visible": { "$ref": "/terminal/open" },
-            "fontSize": 13,
-            "subscribeToBash": true,
-            "readOnly": true
+            "fontSize": 13
           }
         },
         {
@@ -228,6 +216,9 @@
     "project": null,
     "terminal": {
       "open": false
+    },
+    "terminalPanel": {
+      "activeSubId": "agent-bash"
     },
     "slashCommands": []
   }

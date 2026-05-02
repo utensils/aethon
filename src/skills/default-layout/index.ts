@@ -18,6 +18,7 @@ import {
   StatusBar,
   TabStrip,
   Terminal,
+  TerminalPanel,
   ToolCard,
 } from "./components";
 import {
@@ -70,6 +71,10 @@ export const defaultLayoutSkill: A2UISkill = {
     // equivalent mode flag) so it appears only when the active tab is a
     // shell tab.
     "shell-canvas": ShellCanvas,
+    // M6 restructure: tabbed bottom panel. Hosts the read-only
+    // agent-bash sub-tab + every user shell as a separate sub-tab.
+    // Replaces the standalone `terminal` cell in workstation.
+    "terminal-panel": TerminalPanel,
     // M6 P4: tool-call card with live elapsed-time clock + long-running
     // amber warning at 30s. Bridge emits this for tool execution events
     // (replacing the plain `card` primitive in toolCardPayload).

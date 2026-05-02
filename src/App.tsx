@@ -1345,18 +1345,22 @@ export default function App() {
         },
       };
       tabs.push(tab);
-      const result: Record<string, unknown> = {
+      // M6 restructure: shells live in the bottom panel as sub-tabs,
+      // not the top tab strip. Don't promote to /activeTabId — that
+      // stays on the user's agent tab. Instead, open the panel and
+      // make this shell the active sub-tab so the user sees it.
+      const panel =
+        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
+      const term =
+        (prev.terminal as { open?: boolean } | undefined) ?? {};
+      return {
         ...prev,
         tabs,
-        activeTabId: id,
-        empty: false,
-        hasTabs: true,
+        terminalPanel: { ...panel, activeSubId: id },
+        terminal: { ...term, open: true },
+        // hasTabs / empty unchanged — those track the AGENT tab strip,
+        // and shells don't affect that surface.
       };
-      const tabRec = tab as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = tabRec[key as string];
-      }
-      return result;
     });
     invoke("shell_open", {
       args: {
@@ -1427,21 +1431,63 @@ export default function App() {
   }
 
   function nextTab(direction: 1 | -1) {
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+      .filter((t) => t.kind !== "shell");
     if (tabs.length <= 1) return;
     const activeId = stateRef.current.activeTabId as string | undefined;
     const idx = tabs.findIndex((t) => t.id === activeId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      // Active tab is no longer an agent (or not in /tabs). Jump to
+      // the first agent tab in the requested direction.
+      setActiveTab(direction > 0 ? tabs[0].id : tabs[tabs.length - 1].id);
+      return;
+    }
     const nextIdx = (idx + direction + tabs.length) % tabs.length;
     setActiveTab(tabs[nextIdx].id);
+  }
+
+  /** True when keyboard focus is anywhere inside the bottom terminal
+   *  panel (the agent-bash xterm or any shell sub-tab). Drives the
+   *  focus-aware Cmd+T routing: focus in the panel → new shell sub-tab,
+   *  otherwise → new agent tab. Falls back to false outside Tauri
+   *  (no DOM) so unit tests don't have to mock `document`. */
+  function isFocusInTerminalPanel(): boolean {
+    if (typeof document === "undefined") return false;
+    const focused = document.activeElement;
+    if (!focused) return false;
+    const panel = document.querySelector(".ae-terminal-panel");
+    return !!panel?.contains(focused);
+  }
+
+  /** Switch which sub-tab is active in the bottom terminal panel
+   *  (M6 restructure). Sub-tab id is either the special string
+   *  "agent-bash" (the always-present read-only view) or a shell tab
+   *  id from `/tabs`. Auto-opens the panel if it was hidden so the
+   *  user can see the result of their click. */
+  function setActiveSubTab(subId: string) {
+    setState((prev) => {
+      const panel =
+        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
+      const term = (prev.terminal as { open?: boolean } | undefined) ?? {};
+      if (panel.activeSubId === subId && term.open === true) {
+        return prev;
+      }
+      return {
+        ...prev,
+        terminalPanel: { ...panel, activeSubId: subId },
+        terminal: { ...term, open: true },
+      };
+    });
   }
 
   /** Jump to tab at zero-based index, clamped to the live tab list.
    *  No-op when out of range so a Cmd+5 with only 3 tabs is silent
    *  rather than throwing. Used by Cmd/Ctrl+1..9 keybindings (browser
-   *  + iTerm convention). */
+   *  + iTerm convention). Filters to agent tabs only — shell tabs live
+   *  in the bottom panel and have their own selection. */
   function jumpToTab(idx: number) {
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+      .filter((t) => t.kind !== "shell");
     if (tabs.length === 0) return;
     if (idx < 0 || idx >= tabs.length) return;
     setActiveTab(tabs[idx].id);
@@ -1669,22 +1715,30 @@ export default function App() {
         void stopPrompt();
         return;
       }
-      // Cmd+Shift+T → new agent tab (chat session). Checked before plain
-      // Cmd+T so shift takes precedence — the lowercase key match would
-      // otherwise route both to the shell-tab path.
+      // Cmd+Shift+T → explicit new shell sub-tab in the bottom panel
+      // (M6 restructure). Auto-opens the panel and makes the new shell
+      // the active sub-tab. Useful when the user wants a shell without
+      // having to focus the bottom panel first.
       if (e.key.toLowerCase() === "t" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        newTab();
+        newShellTab();
         return;
       }
-      // M6 P1: Cmd+T → new shell tab. Matches Terminal.app, iTerm2,
-      // GNOME Terminal, Windows Terminal. Existing chat behavior moves
-      // to Cmd+Shift+T.
+      // Cmd+T — focus-aware (M6 restructure):
+      //   - focus inside the bottom terminal panel → new shell sub-tab
+      //   - focus elsewhere → new agent tab (the pre-P1 default)
+      // Matches the user's mental model: "new tab" of whatever surface
+      // I'm currently using. Browsers, VS Code, and iTerm all key off
+      // the focused surface for "new"-style shortcuts.
       if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        newShellTab();
+        if (isFocusInTerminalPanel()) {
+          newShellTab();
+        } else {
+          newTab();
+        }
         return;
       }
       // Cmd+] → next tab; Cmd+[ → previous. Matches macOS browser
@@ -4432,6 +4486,29 @@ export default function App() {
       // `vertical-tab-rail`). Matching by type keeps the contract layout-
       // agnostic so a new layout's tabs work without touching App.tsx.
       const tabType = component.type;
+
+      // Terminal panel sub-tab events (M6 restructure). The panel
+      // hosts the read-only agent-bash sub-tab plus every shell as a
+      // separate sub-tab; selection / close / new-shell live here.
+      if (component.type === "terminal-panel") {
+        const sel = data as { subTabId?: string } | undefined;
+        if (eventType === "select-sub-tab" && sel?.subTabId) {
+          setActiveSubTab(sel.subTabId);
+          return true;
+        }
+        if (eventType === "close-sub-tab" && sel?.subTabId) {
+          // Closing a shell sub-tab is just closing its underlying tab.
+          // The agent-bash sub-tab can't be closed (no X button rendered).
+          if (sel.subTabId !== "agent-bash") {
+            closeTab(sel.subTabId);
+          }
+          return true;
+        }
+        if (eventType === "new-shell-sub-tab") {
+          newShellTab();
+          return true;
+        }
+      }
 
       // Shell-canvas: badge click cycles share mode. Look up current
       // mode in the bound tab, advance via the cycle helper, persist
