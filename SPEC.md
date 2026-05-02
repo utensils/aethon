@@ -275,16 +275,16 @@ then sharing, then polish.
 
 #### Hotkey expansion
 
-- [ ] `Cmd/Ctrl+1` … `Cmd/Ctrl+8` — jump to tab N (matches every browser).
-- [ ] `Cmd/Ctrl+9` — jump to last tab (Chrome/Firefox convention).
-- [ ] `Cmd/Ctrl+Shift+]` / `Cmd/Ctrl+Shift+[` — move active tab right / left.
+- [x] `Cmd/Ctrl+1` … `Cmd/Ctrl+8` — jump to tab N (matches every browser).
+- [x] `Cmd/Ctrl+9` — jump to last tab (Chrome/Firefox convention).
+- [x] `Cmd/Ctrl+Shift+]` / `Cmd/Ctrl+Shift+[` — move active tab right / left.
 - [ ] `Cmd/Ctrl+,` — open the Settings panel (macOS native preferences convention).
 - [ ] `Cmd/Ctrl+L` — focus composer (agent tabs) / terminal (shell tabs).
 - [ ] `Cmd/Ctrl+Ctrl+F` (macOS `Cmd+Ctrl+F`, others `F11`) — toggle fullscreen via Tauri `set_fullscreen`.
 - [ ] `Cmd/Ctrl+Shift+S` — export current chat as Markdown to `~/Downloads/` (agent tabs only).
 - [ ] `Cmd/Ctrl+Shift+F` — search across past sessions (see polish section).
 - [ ] `F12` — toggle dev tools (debug builds only).
-- [ ] `Cmd/Ctrl+Opt+T` — reopen most-recently-closed tab from the in-memory stack.
+- [x] `Cmd/Ctrl+Opt+T` — reopen most-recently-closed tab from the in-memory stack (cap 10). Agent tabs spawn fresh; shell tabs spawn a new PTY at the original cwd / command / args. Session-history replay for restored agent tabs is a follow-up.
 - [ ] Native menu accelerators in `src-tauri/src/lib.rs` extended in lockstep so menu and shortcut paths never drift. Extension `registerKeybinding` priority is unchanged: extensions still run first and may override built-ins.
 
 #### Workspace polish

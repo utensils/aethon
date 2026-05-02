@@ -1421,12 +1421,103 @@ export default function App() {
     setActiveTab(tabs[nextIdx].id);
   }
 
+  /** Jump to tab at zero-based index, clamped to the live tab list.
+   *  No-op when out of range so a Cmd+5 with only 3 tabs is silent
+   *  rather than throwing. Used by Cmd/Ctrl+1..9 keybindings (browser
+   *  + iTerm convention). */
+  function jumpToTab(idx: number) {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    if (tabs.length === 0) return;
+    if (idx < 0 || idx >= tabs.length) return;
+    setActiveTab(tabs[idx].id);
+  }
+
+  /** Move the active tab one slot left (-1) or right (+1) within the
+   *  current project's bucket. Wraps at the ends so a "move right" on
+   *  the last tab puts it first — matches Chrome's Cmd+Shift+]/[. */
+  function moveActiveTab(direction: 1 | -1) {
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    if (!activeId) return;
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      if (tabs.length <= 1) return prev;
+      const idx = tabs.findIndex((t) => t.id === activeId);
+      if (idx < 0) return prev;
+      const nextIdx = (idx + direction + tabs.length) % tabs.length;
+      const [moved] = tabs.splice(idx, 1);
+      tabs.splice(nextIdx, 0, moved);
+      return { ...prev, tabs };
+    });
+  }
+
+  /** In-memory stack of recently-closed tab metadata (most recent at end).
+   *  Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to
+   *  bound memory. Each entry preserves enough info to spawn an
+   *  equivalent tab via `reopenLastClosedTab` (Cmd/Ctrl+Opt+T). Per-tab
+   *  session JSONL files are not deleted on close, so a follow-up can
+   *  wire history-replay through the bridge by re-spawning with the
+   *  original tabId; v1 just spawns a fresh tab matching the closed
+   *  one's shape. */
+  interface ClosedTabEntry {
+    kind: "agent" | "shell";
+    label: string;
+    projectId: string | null;
+    /** Shell tabs only — passed back to newShellTab. */
+    cwd?: string;
+    command?: string;
+    args?: string[];
+  }
+  const CLOSED_TAB_STACK_MAX = 10;
+  const closedTabsRef = useRef<ClosedTabEntry[]>([]);
+
+  function pushClosedTab(tab: Tab) {
+    const entry: ClosedTabEntry = {
+      kind: tab.kind,
+      label: tab.label,
+      projectId: tab.projectId,
+      ...(tab.kind === "shell" && tab.shell
+        ? {
+            cwd: tab.shell.cwd,
+            command: tab.shell.command,
+            args: tab.shell.args,
+          }
+        : {}),
+    };
+    closedTabsRef.current.push(entry);
+    if (closedTabsRef.current.length > CLOSED_TAB_STACK_MAX) {
+      closedTabsRef.current.splice(
+        0,
+        closedTabsRef.current.length - CLOSED_TAB_STACK_MAX,
+      );
+    }
+  }
+
+  /** Reopen the most-recently-closed tab. Agent tabs spawn fresh
+   *  (a follow-up will hook session-history replay); shell tabs spawn
+   *  a new PTY at the original cwd. No-op on empty stack. */
+  function reopenLastClosedTab() {
+    const entry = closedTabsRef.current.pop();
+    if (!entry) return;
+    if (entry.kind === "shell") {
+      newShellTab({
+        ...(entry.command ? { command: entry.command } : {}),
+        ...(entry.args ? { args: entry.args } : {}),
+        ...(entry.cwd ? { cwd: entry.cwd } : {}),
+      });
+    } else {
+      newTab();
+    }
+  }
+
   function closeTab(tabId: string) {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     if (tabs.length === 0) return; // already empty — nothing to close
     // Capture the kind before setState removes the tab, so we know
     // whether to also tear down the PTY in the Rust shell registry.
-    const closedKind = tabs.find((t) => t.id === tabId)?.kind;
+    const closing = tabs.find((t) => t.id === tabId);
+    const closedKind = closing?.kind;
+    // Push to the reopen stack so Cmd/Ctrl+Opt+T can resurrect it.
+    if (closing) pushClosedTab(closing);
     let nextBuffer = "";
     let switched = false;
     let becameEmpty = false;
@@ -1594,6 +1685,53 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         nextTab(-1);
+        return;
+      }
+      // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
+      // Matches Chrome/Firefox tab-reorder shortcut. Wraps at the ends.
+      if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveActiveTab(1);
+        return;
+      }
+      if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveActiveTab(-1);
+        return;
+      }
+      // Cmd+1..8 → jump to tab N (1-indexed); Cmd+9 → jump to last.
+      // Universal across browsers (Chrome / Firefox / Safari) + iTerm2 /
+      // Windows Terminal. The first 8 use direct indexing so layouts
+      // with > 9 tabs still get keyboard access for the first few; the
+      // 9th key is the "last tab" affordance.
+      if (
+        mod &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key >= "1" &&
+        e.key <= "9"
+      ) {
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        if (tabs.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "9") {
+          jumpToTab(tabs.length - 1);
+        } else {
+          jumpToTab(parseInt(e.key, 10) - 1);
+        }
+        return;
+      }
+      // Cmd+Opt+T → reopen most-recently-closed tab. Matches iTerm2's
+      // restore-closed-window shortcut; safe alongside Cmd+T (new shell)
+      // and Cmd+Shift+T (new agent). No-op on empty stack so a stray
+      // press is silent.
+      if (e.key.toLowerCase() === "t" && mod && e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        reopenLastClosedTab();
         return;
       }
       // Cmd+W → close active tab (no-op on the last/default tab).

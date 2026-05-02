@@ -1563,12 +1563,16 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   const readOnly = props.readOnly
     ? resolveBoolean(props.readOnly, state)
     : false;
+  // Default header explicitly distinguishes this read-only agent-bash
+  // panel from the new interactive shell tabs (M6 P1 — Cmd+T). Without
+  // the contrast, users see two terminals and assume one is broken.
   const headerLabel = props.headerLabel
     ? resolveString(props.headerLabel, state)
-    : "Aethon Terminal";
+    : "Agent bash · read-only";
   const bootGreeting = props.bootGreeting
     ? resolveString(props.bootGreeting, state)
-    : "Aethon Terminal\r\n$ ";
+    : "Agent bash output appears here while the agent runs commands.\r\n" +
+      "Press ⌘T for an interactive shell tab.\r\n\r\n";
   // Stash boot greeting in a ref so the mount-once effect (which doesn't
   // depend on `bootGreeting`) writes the right initial buffer even if the
   // prop changes later. Replay also reads from this ref so a $ref-driven
