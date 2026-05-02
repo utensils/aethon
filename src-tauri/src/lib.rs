@@ -1,7 +1,9 @@
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -258,6 +260,18 @@ async fn pick_project_directory(app: AppHandle) -> Result<Option<String>, String
 
 struct AgentProcess(Mutex<Option<Child>>);
 
+/// Shared atomic flag set by the file-watcher debounce worker just
+/// before it kills the bun child for a hot-reload. The stdout reader
+/// checks this on EOF: if true, the kill was intentional (`agent-reloaded`
+/// was already emitted) — reset and stay silent. If false, the child
+/// died unexpectedly and we emit `agent-crashed` so the frontend can
+/// surface a notice + offer auto-restart.
+struct AgentReloadFlag(Arc<AtomicBool>);
+
+fn agent_reload_in_progress(app: &AppHandle) -> Arc<AtomicBool> {
+    Arc::clone(&app.state::<AgentReloadFlag>().0)
+}
+
 /// Find the project root (the directory containing `agent/main.ts`). Tauri
 /// launches the dev binary with cwd set to `src-tauri/`, but our agent script
 /// lives one level up, so a naive relative path resolves to the wrong place.
@@ -475,8 +489,17 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
     let pid = child.id();
     eprintln!("[agent] spawned pid={pid}");
 
+    // Tail-buffer of recent stderr lines. When the bun child crashes
+    // unexpectedly, the supervisor emits an `agent-crashed` event with
+    // the last few lines so the frontend can surface a useful error
+    // notice rather than a generic "process exited" toast.
+    let stderr_tail: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::with_capacity(32)));
+    const STDERR_TAIL_CAP: usize = 32;
+
     let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
     let app_stdout = app.clone();
+    let reload_flag_stdout = agent_reload_in_progress(app);
+    let stderr_tail_for_supervisor = Arc::clone(&stderr_tail);
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
@@ -488,6 +511,28 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
             }
         }
         eprintln!("[agent] stdout reader for pid={pid} exited");
+        // Stdout reader exits when the child closes stdout — i.e. the
+        // child has died. Distinguish intentional kills (hot-reload via
+        // the file watcher, which sets `agent_reload_in_progress` first)
+        // from unexpected crashes. Reset the flag for the next cycle.
+        if reload_flag_stdout.swap(false, std::sync::atomic::Ordering::AcqRel) {
+            // Intentional kill — `agent-reloaded` was already emitted by
+            // the watcher; nothing more to do.
+            return;
+        }
+        // Unexpected exit. Surface a notice with stderr tail so the
+        // user sees something actionable.
+        let tail: Vec<String> = match stderr_tail_for_supervisor.lock() {
+            Ok(g) => g.iter().cloned().collect(),
+            Err(_) => Vec::new(),
+        };
+        let _ = app_stdout.emit(
+            "agent-crashed",
+            serde_json::json!({
+                "pid": pid,
+                "stderrTail": tail,
+            }),
+        );
     });
 
     // Capture stderr too — when the agent crashes inside Tauri's spawn env,
@@ -496,12 +541,19 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
     // aethon-debug skill / status bar to surface.
     let stderr = child.stderr.take().ok_or("no stderr on spawned agent")?;
     let app_stderr = app.clone();
+    let stderr_tail_writer = Arc::clone(&stderr_tail);
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
             match line {
                 Ok(text) => {
                     eprintln!("[agent stderr pid={pid}] {text}");
+                    if let Ok(mut g) = stderr_tail_writer.lock() {
+                        if g.len() >= STDERR_TAIL_CAP {
+                            g.pop_front();
+                        }
+                        g.push_back(text.clone());
+                    }
                     let _ = app_stderr.emit("agent-stderr", text);
                 }
                 Err(_) => break,
@@ -640,6 +692,11 @@ fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandl
             && let Some(mut child) = guard.take()
         {
             let pid = child.id();
+            // Mark this kill as intentional so the stdout reader
+            // doesn't surface it as a crash. The reader resets the
+            // flag on EOF.
+            let reload_flag = agent_reload_in_progress(&app);
+            reload_flag.store(true, std::sync::atomic::Ordering::Release);
             let _ = child.kill();
             let _ = child.wait();
             let _ = app.emit("agent-reloaded", "");
@@ -1293,6 +1350,7 @@ pub fn run() {
     }
     let builder = builder
         .manage(AgentProcess(Mutex::new(None)))
+        .manage(AgentReloadFlag(Arc::new(AtomicBool::new(false))))
         .manage(shell::ShellRegistry::new())
         .invoke_handler(tauri::generate_handler![
             start_agent,
