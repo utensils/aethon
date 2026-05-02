@@ -131,6 +131,7 @@ import {
   getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { buildShellTools } from "./shell-tools";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createInterface } from "node:readline";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -2593,6 +2594,12 @@ async function main() {
       settingsManager,
       sessionManager,
       resourceLoader,
+      // M6 P2.3: pi-tool registration for aethon.shells.{list,read,write}.
+      // The model can now invoke these via tool-use protocol instead of
+      // having to know to call globalThis.aethon.shells.* from inside a
+      // bash tool. Each tool is a thin wrapper; the security boundary
+      // (share-mode gates + privacy floor) is enforced Rust-side.
+      customTools: buildShellTools(),
       ...(initialModel ? { model: initialModel } : {}),
     });
 
