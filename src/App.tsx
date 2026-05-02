@@ -3657,6 +3657,17 @@ export default function App() {
       const MAX_VISIBLE = 6;
       const next = [...without, entry];
       const trimmed = next.length > MAX_VISIBLE ? next.slice(-MAX_VISIBLE) : next;
+      // Drop side effect: any shell-write consent prompts that just
+      // got silently evicted (dedup or trim) need their resolver fired
+      // as deny — otherwise `aethon.shells.write` hangs until the
+      // 5-min bridge timeout. Compare `list` → `trimmed` and resolve
+      // any prompt id that disappeared.
+      const survivedIds = new Set(trimmed.map((n) => n.id));
+      for (const n of list) {
+        if (!survivedIds.has(n.id)) {
+          resolveShellWriteConsent(n.id, false);
+        }
+      }
       return { ...prev, notifications: trimmed };
     });
     return id;
@@ -3981,6 +3992,39 @@ export default function App() {
   // hands off control.
   const onEvent = useMemo(
     () => async (component: { id: string; type?: string }, eventType: string, data?: unknown) => {
+      // Reserved system notifications: shell-write consent prompts
+      // (M6 P2.2) MUST run before extension-route interception so a
+      // user-driven Allow/Deny / dismiss can never be hijacked by an
+      // extension. Same-name event matches on `notification-stack`
+      // would otherwise route to the bridge and the user's click
+      // becomes a silent no-op while `aethon.shells.write` waits for
+      // its 5-min timeout. Filter narrowly: only events whose action
+      // string starts with the reserved `shell-write-` prefix, plus
+      // `dismiss`/`expire` of an id that has a pending resolver. Any
+      // other notification-stack event still flows through routing.
+      if (component.id === "notification-stack") {
+        const id = (data as { id?: string } | undefined)?.id;
+        const action = (data as { action?: string } | undefined)?.action;
+        const isShellWriteAction =
+          eventType === "action" &&
+          typeof action === "string" &&
+          action.startsWith("shell-write-");
+        const isShellWriteDismiss =
+          (eventType === "dismiss" || eventType === "expire") &&
+          typeof id === "string" &&
+          shellWriteConsentRef.current.has(id);
+        if (isShellWriteAction && id && action) {
+          const allowed = action.startsWith("shell-write-allow:");
+          resolveShellWriteConsent(id, allowed);
+          dismissNotification(id);
+          return true;
+        }
+        if (isShellWriteDismiss && id) {
+          resolveShellWriteConsent(id, false);
+          dismissNotification(id);
+          return true;
+        }
+      }
       // Extensions can register event-route intercepts via
       // aethon.registerEventRoute. When an event matches a registered
       // route, we return false here so the renderer falls through to
