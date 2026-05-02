@@ -1,5 +1,5 @@
-import { Highlight } from "prism-react-renderer";
-import { aethonPrismTheme } from "./prismTheme";
+import { useEffect, useReducer } from "react";
+import { getCachedHighlight, highlightCode } from "../utils/highlight";
 
 interface HighlightedCodeProps {
   code: string;
@@ -16,34 +16,13 @@ function trimSingleTrailingNewline(s: string): string {
   return s.endsWith("\n") ? s.slice(0, -1) : s;
 }
 
-// prism-react-renderer ships a small set of grammars by default. Map common
-// aliases to the loaded language names; unknown values fall back to `text`
-// so highlighting becomes a no-op rather than crashing.
-const LANGUAGE_ALIASES: Record<string, string> = {
-  ts: "typescript",
-  tsx: "tsx",
-  js: "javascript",
-  jsx: "jsx",
-  rs: "rust",
-  py: "python",
-  sh: "bash",
-  shell: "bash",
-  zsh: "bash",
-  yml: "yaml",
-  md: "markdown",
-  html: "markup",
-  xml: "markup",
-  svg: "markup",
-  vue: "markup",
-  console: "bash",
-};
-
-function normalizeLanguage(lang?: string): string {
-  if (!lang) return "text";
-  const v = lang.toLowerCase();
-  return LANGUAGE_ALIASES[v] ?? v;
-}
-
+// Worker-backed Shiki highlighter (same pattern as Claudette's chat).
+// Renders dual-theme HTML: each token span carries `--shiki-light` +
+// `--shiki-dark` inline, and src/styles.css picks via `light-dark()` based
+// on the active theme's `color-scheme`. Cache hit → render highlighted
+// immediately; miss → render plain text and force-update once the worker
+// resolves. A null worker result (unknown language, worker fault) keeps
+// the plain-text fallback.
 export function HighlightedCode({
   code,
   language,
@@ -51,52 +30,51 @@ export function HighlightedCode({
   inline,
   className,
 }: HighlightedCodeProps) {
-  const lang = normalizeLanguage(language);
   const text = trimSingleTrailingNewline(code);
+  const lang = (language ?? "").toLowerCase();
+  const cached = lang ? getCachedHighlight(text, lang) : null;
+  const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    if (!lang) return;
+    if (cached != null) return;
+    let cancelled = false;
+    void highlightCode(text, lang).then((html) => {
+      if (!cancelled && html != null) forceUpdate();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `text` and `lang` cover identity changes; `cached` retriggers if the
+    // cache is reset between renders.
+  }, [text, lang, cached]);
 
   if (inline) {
+    if (cached != null) {
+      return (
+        <code
+          className={`a2ui-code-inline ${className ?? ""}`}
+          dangerouslySetInnerHTML={{ __html: cached }}
+        />
+      );
+    }
     return (
-      <Highlight code={text} language={lang} theme={aethonPrismTheme}>
-        {({ tokens, getTokenProps }) => (
-          <code className={`a2ui-code-inline ${className ?? ""}`}>
-            {tokens.map((line, i) => (
-              <span key={i}>
-                {line.map((token, key) => (
-                  <span key={key} {...getTokenProps({ token })} />
-                ))}
-              </span>
-            ))}
-          </code>
-        )}
-      </Highlight>
+      <code className={`a2ui-code-inline ${className ?? ""}`}>{text}</code>
     );
   }
 
   return (
-    <Highlight code={text} language={lang} theme={aethonPrismTheme}>
-      {({ tokens, getLineProps, getTokenProps }) => (
-        <pre
-          className={`a2ui-code ${className ?? ""}`}
-          data-language={language ?? lang}
-        >
-          {language && <span className="a2ui-code-lang">{language}</span>}
-          <code>
-            {tokens.map((line, i) => {
-              const lineProps = getLineProps({ line });
-              return (
-                <div key={i} {...lineProps} className="a2ui-code-line">
-                  {showLineNumbers && (
-                    <span className="a2ui-code-lineno">{i + 1}</span>
-                  )}
-                  {line.map((token, key) => (
-                    <span key={key} {...getTokenProps({ token })} />
-                  ))}
-                </div>
-              );
-            })}
-          </code>
-        </pre>
+    <pre
+      className={`a2ui-code ${className ?? ""}`}
+      data-language={language ?? lang}
+      data-show-lineno={showLineNumbers ? "true" : undefined}
+    >
+      {language && <span className="a2ui-code-lang">{language}</span>}
+      {cached != null ? (
+        <code dangerouslySetInnerHTML={{ __html: cached }} />
+      ) : (
+        <code>{text}</code>
       )}
-    </Highlight>
+    </pre>
   );
 }
