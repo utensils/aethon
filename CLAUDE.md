@@ -45,11 +45,19 @@ devshell exposes these helpers (defined in `flake.nix`):
 
 1. **Tauri shell** (`src-tauri/src/lib.rs`, helpers in `helpers.rs`,
    debug-only commands + TCP eval server in `debug.rs` gated by
-   `#[cfg(debug_assertions)]`) — owns the OS boundary. Two Tauri commands:
-   `send_message` (forwards a chat string to the agent's stdin) and
-   `dispatch_a2ui_event` (forwards a structured event). On the first
-   `send_message` it spawns `bun run agent/main.ts` and starts a reader
-   thread that emits each stdout line as a Tauri `agent-response` event.
+   `#[cfg(debug_assertions)]`, PTY shell-tab module in `shell.rs`) —
+   owns the OS boundary. Core agent commands: `send_message` (forwards
+   a chat string to the agent's stdin) and `dispatch_a2ui_event`
+   (forwards a structured event). On the first `send_message` it spawns
+   `bun run agent/main.ts` and starts a reader thread that emits each
+   stdout line as a Tauri `agent-response` event. Shell-tab commands
+   (`shell_open`, `shell_input`, `shell_resize`, `shell_close`) live in
+   `shell.rs` behind a `ShellRegistry` (per-tab `portable-pty` PTY +
+   reader thread; emits `shell-output` / `shell-exit` events). UTF-8
+   chunk boundaries are preserved across reader-thread reads via a
+   carry buffer + `Utf8Error::error_len()` truncation/invalid split —
+   don't replace this with per-chunk `from_utf8_lossy`, multi-byte
+   sequences will corrupt.
 2. **Agent bridge** (`agent/main.ts` + helpers) — JSON-lines over stdio.
    Reads `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
    with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes from
@@ -68,11 +76,16 @@ devshell exposes these helpers (defined in `flake.nix`):
 ### Frontend model — three things to know
 
 **1. Layout-as-payload.** The default UI is *not* hardcoded React. It's
-`src/skills/default-layout/layout.a2ui.json`, loaded as the boot payload and
-fed to the same `A2UIRenderer` that handles agent output. A skill is the
-extension primitive; the default layout *is* a skill (`defaultLayoutSkill`).
-Don't add static chrome in `App.tsx` — extend the layout JSON or register a
-new skill.
+`src/skills/default-layout/workstation.a2ui.json`, loaded as the boot payload
+and fed to the same `A2UIRenderer` that handles agent output. A skill is the
+extension primitive; the default-layout skill registers `workstation` (the
+boot default) plus three sibling variations (`command-deck`, `editorial`,
+`live-layout`) — switching is a sidebar/palette click that calls
+`window.aethon.activateLayout(id)`. Don't add static chrome in `App.tsx` —
+extend the layout JSON or register a new skill. Layouts must conform to
+the slot contract in `src/skills/default-layout/slots.json` + `slots.ts`
+(canonical area names: `header`, `sidebar`, `canvas`, `composer`,
+`terminal`, `status`; non-canonical layouts declare a `slotMap`).
 
 **2. Single state store, JSON Pointer addressed.** All app state lives in one
 object on `App` (`messages`, `draft`, `waiting`, `status`, `connection`,
@@ -96,10 +109,45 @@ console) can swap chrome at runtime:
 
 - `window.aethon.setLayout(payload)` — replace the active layout
 - `window.aethon.resetLayout()` — restore the default-layout boot payload
+- `window.aethon.registerLayout({ id, name, payload })` — register a layout
+  variation that appears in the sidebar's `layouts` section + palette.
+  Also exposed agent-side as `aethon.registerLayout` (bridge in
+  `agent/main.ts`). Reserved ids: `workstation`, `command-deck`,
+  `editorial`, `live-layout`. Id pattern: `/^[A-Za-z][\w-]*$/`.
+- `window.aethon.activateLayout(id)` — switch to a registered layout
 - `window.aethon.registerSkill(skill)` — register a skill; if it has a
   `layout`, also activate it
 - `window.aethon.listSkills()` — names of currently registered skills
 - `window.aethon.openProject(path)` — register/activate a project
+
+### Tab kinds — agent vs shell
+
+`Tab.kind` is `"agent" | "shell"`. Agent tabs carry chat-history fields
+(`messages`, `draft`, `waiting`, `queueCount`); shell tabs carry a
+`shell: ShellMeta` payload (`cwd`, `command`, `args`, `shareMode`,
+`shellState`, `exitCode?`). Most code paths special-case via
+`tab.kind === "shell"` checks (see `closeTab`, `newShellTab`,
+`/agentTabActive` + `/shellTabActive` derived flags). The shell-canvas
+composite (`ShellCanvas` in `components.tsx`) replaces the agent
+`main-canvas` + `chat-input` cells when a shell tab is active —
+controlled by the `/agentTabActive` / `/shellTabActive` `$ref` visibility
+flags in `workstation.a2ui.json`. Keybindings: `Cmd+T` = new shell tab,
+`Cmd+Shift+T` = new agent tab (Terminal.app convention; configurable via
+`[shortcuts] new_tab_kind` once that setting lands).
+
+### Command palette
+
+`Cmd+P` opens the switcher (tabs / sessions / projects / layouts /
+themes / models first); `Cmd+Shift+P` opens it in commands mode (slash
+commands / keybindings first). The palette is a registered builtin
+component (`command-palette` type) in `defaultLayoutSkill` so a skill
+can override it via `aethon.registerComponent`. Pure ranking + section
+selectors live in `src/skills/default-layout/palette-items.ts` so vitest
+can exercise them without React. Query prefixes: `>` forces commands,
+`@` forces tabs, `?` forces keybindings. Arrow nav uses a document-level
+capture-phase keydown handler keyed off a `navRef` so focus theft and
+content swaps don't strand the selection — see the comments in
+`command-palette.tsx` before refactoring.
 
 ### Projects
 
@@ -243,15 +291,20 @@ The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
 keyed against milestones M1–M5). Update both that checklist and any
 relevant notes here when capabilities land.
 
-**Quick highlights as of writing:** M1–M5 essentially complete. Tool
-execution surfaces as A2UI cards, multi-tab persistent sessions, light
-theme, system tray + native menu, slash command picker, real
-`~/.aethon/config.toml`, layout-slot contract (`canvas` + `composer`
-required, `slotMap` for non-canonical layouts), generic
+**Quick highlights as of writing:** M1–M5 complete + M6 P1 shipped
+(interactive PTY-backed user shell tabs via `portable-pty`, `Tab.kind`
+discriminator, `Cmd+T` = shell / `Cmd+Shift+T` = agent, theme-agnostic
+xterm. M6 P2 — agent-sharing API + `[shell]` config — is the next
+phase). Tool execution surfaces as A2UI cards, multi-tab persistent
+sessions, light theme, system tray + native menu, slash command picker,
+real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
+`composer` required, `slotMap` for non-canonical layouts), generic
 `extension_lifecycle` feedback channel, registerable slash commands /
-keybindings / menu items / event routes, mutation-feedback channel
-(every mutation returns `Promise<MutationResult>`). Not yet: Nix flake
-overlay for distribution, first public release.
+keybindings / menu items / event routes / layouts (4-layout catalogue
+via `aethon.registerLayout`), mutation-feedback channel (every mutation
+returns `Promise<MutationResult>`), command palette (Cmd+P switcher /
+Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
+.deb/AppImage + Windows NSIS bundles via Nix overlay.
 
 ## Test coverage + linting
 
