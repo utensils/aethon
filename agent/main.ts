@@ -1387,8 +1387,22 @@ async function main() {
   // assumption that retained-state replay will deliver them — extensions
   // that await at register-time would otherwise block 5s on the timeout.
   let frontendReady = false;
+  // Resolved when frontendReady flips true. Queries (which need data,
+  // not just ack) await this so they don't get the side-effect-mutation
+  // shortcut that returns {ok:true, data:undefined}.
+  const frontendReadyResolvers: Array<() => void> = [];
+  const frontendReadyPromise: Promise<void> = new Promise((resolve) => {
+    frontendReadyResolvers.push(resolve);
+  });
+  function markFrontendReady() {
+    if (frontendReady) return;
+    frontendReady = true;
+    for (const r of frontendReadyResolvers.splice(0)) r();
+  }
 
-  function trackMutation(): { id: string; promise: Promise<MutationResult> } {
+  function trackMutation(
+    timeoutMs: number = MUTATION_ACK_TIMEOUT_MS,
+  ): { id: string; promise: Promise<MutationResult> } {
     const id = nextMutationId();
     if (!frontendReady) {
       // Pre-connect mutations — the bridge retains state and replays on
@@ -1402,10 +1416,18 @@ async function main() {
         if (!pendingMutations.has(id)) return;
         pendingMutations.delete(id);
         resolve({ ok: false, error: "timeout" });
-      }, MUTATION_ACK_TIMEOUT_MS);
+      }, timeoutMs);
       pendingMutations.set(id, { resolve, timer });
     });
     return { id, promise };
+  }
+  /** Wait until the frontend handshake completes. Used by query-style
+   *  ops (`aethon.shells.list/read`) so they don't ride the
+   *  side-effect-mutation shortcut that returns `{ok:true, data:undefined}`
+   *  pre-ready. */
+  async function awaitFrontendReady(): Promise<void> {
+    if (frontendReady) return;
+    await frontendReadyPromise;
   }
 
   function ackMutation(
@@ -2174,28 +2196,37 @@ async function main() {
   // -------------------------------------------------------------------------
   // aethon.shells — opt-in agent ↔ shell sharing (M6 P2)
   // -------------------------------------------------------------------------
-  // Two read-only operations, both gated by the per-tab `ShareMode`
-  // enforced Rust-side in `shell.rs`:
+  // Three operations, all gated by the per-tab `ShareMode` enforced
+  // Rust-side in `shell.rs`:
   //   - list()     → ShareableShell[] for tabs whose mode != private
   //   - read(args) → ScrollbackSnapshot ≥ floor (refused for private)
+  //   - write(args) → inject keystrokes (gated to read-write*; in
+  //                   read-write the frontend pops a user-confirmation
+  //                   overlay before invoking the Rust write).
   //
   // **There is no agent-driven setShareMode.** Mode changes are user-only
   // — driven by the status-bar badge click in `ShellCanvas`. Exposing
   // a setShareMode here would let agent code flip a known tab id from
   // `/tabs` mirror into sharing and then read it, defeating the opt-in
-  // boundary that `list()` enforces. If a future workflow needs to
-  // request access, surface it as a user-confirmation overlay rather
-  // than a direct mutation.
+  // boundary that `list()` enforces.
   //
-  // Wire shape is `shell_query`. Both ops round-trip through the
+  // Wire shape is `shell_query`. All three ops round-trip through the
   // mutation-ack channel so awaiters get a uniform `MutationResult`
-  // (with `data` populated for queries). Writes ship in P2.2 alongside
-  // pi-tool registration + per-write confirmation overlay.
-  function _shellQuery(
-    op: "list" | "read",
+  // (with `data` populated for queries). The write op uses an extended
+  // ack timeout because it can wait on user confirmation in the UI.
+  const SHELL_WRITE_ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 min — user may step away
+
+  async function _shellQuery(
+    op: "list" | "read" | "write",
     args: Record<string, unknown> = {},
+    timeoutMs?: number,
   ): Promise<MutationResult> {
-    const { id, promise } = trackMutation();
+    // Queries need real data, not the side-effect-mutation shortcut.
+    // Pre-ready callers (extension boot, autorun scripts) wait here so
+    // the frontend has a chance to wire its `shell_query` handler before
+    // we send and the ack has somewhere to land.
+    await awaitFrontendReady();
+    const { id, promise } = trackMutation(timeoutMs);
     send({ type: "shell_query", mutationId: id, op, args });
     return promise;
   }
@@ -2220,9 +2251,28 @@ async function main() {
         : {}),
     });
   }
+  function _shellsWrite(input: {
+    tabId: string;
+    text: string;
+  }): Promise<MutationResult> {
+    if (!input || typeof input.tabId !== "string" || !input.tabId) {
+      return Promise.resolve({ ok: false, error: "tabId required" });
+    }
+    if (typeof input.text !== "string") {
+      return Promise.resolve({ ok: false, error: "text must be a string" });
+    }
+    // Use the extended timeout — read-write tabs prompt the user, who
+    // may not be at the keyboard right when the agent calls.
+    return _shellQuery(
+      "write",
+      { tabId: input.tabId, text: input.text },
+      SHELL_WRITE_ACK_TIMEOUT_MS,
+    );
+  }
   const shellsApi = {
     list: _shellsList,
     read: _shellsRead,
+    write: _shellsWrite,
   };
 
   const aethonApi = {
@@ -2969,8 +3019,11 @@ async function main() {
           // Frontend has rendered and is ready to ack mutations. Flip the
           // gate so subsequent mutations return Promises that wait for an
           // ack instead of resolving immediately. Pre-report mutations
-          // were assumed-ok via retained-state replay.
-          frontendReady = true;
+          // were assumed-ok via retained-state replay. Call
+          // `markFrontendReady` (not just the assignment) so any pending
+          // query awaiters (`aethon.shells.list/read` racing with boot)
+          // unblock atomically.
+          markFrontendReady();
           emitReady();
           break;
         }

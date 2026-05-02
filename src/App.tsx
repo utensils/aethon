@@ -977,6 +977,22 @@ export default function App() {
     });
   }
 
+  /** Pending agent-write confirmations keyed by notification id. The
+   *  resolver fires when the user clicks Allow/Deny or dismisses the
+   *  notification. Cleared as soon as the resolver fires so a stale
+   *  duplicate click is a no-op. Module-scoped via a ref so the
+   *  notification action handler (defined far below) can reach it
+   *  without dragging it through closures. */
+  const shellWriteConsentRef = useRef<Map<string, (allowed: boolean) => void>>(
+    new Map(),
+  );
+  function resolveShellWriteConsent(notifId: string, allowed: boolean) {
+    const resolve = shellWriteConsentRef.current.get(notifId);
+    if (!resolve) return;
+    shellWriteConsentRef.current.delete(notifId);
+    resolve(allowed);
+  }
+
   /** Mirror a share-mode change from the Rust source-of-truth into the
    *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
    *  shell tab. The Rust side enforces the actual privacy boundary —
@@ -1000,6 +1016,79 @@ export default function App() {
           shareMode: mode as ShellMeta["shareMode"],
         },
       };
+    });
+  }
+
+  /** Route an `aethon.shells.write` request through the share-mode gate.
+   *  - private / read       → reject (Rust would too; we early-out)
+   *  - read-write           → push a confirmation notification with
+   *                            Allow / Deny actions. Resolves on click.
+   *  - read-write-trusted   → invoke shell_write directly.
+   *  Defense-in-depth: the Rust `shell_write` Tauri command re-checks
+   *  the mode, so a frontend bug can't bypass the gate. */
+  async function routeShellWrite(
+    args: Record<string, unknown>,
+  ): Promise<{ ok: true }> {
+    const tabId = String(args.tabId ?? "");
+    const text = String(args.text ?? "");
+    if (!tabId) throw new Error("tabId required");
+    if (text.length === 0) throw new Error("text must be non-empty");
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || tab.kind !== "shell" || !tab.shell) {
+      throw new Error(`no shell tab with id ${tabId}`);
+    }
+    const mode = tab.shell.shareMode;
+    if (mode === "private" || mode === "read") {
+      throw new Error(`share mode "${mode}" does not allow agent writes`);
+    }
+    if (mode === "read-write-trusted") {
+      await invoke("shell_write", { tabId, data: text });
+      return { ok: true };
+    }
+    // read-write: prompt the user and only proceed on Allow.
+    const allowed = await promptShellWriteConfirmation({
+      tabId,
+      text,
+      tabLabel: tab.label,
+    });
+    if (!allowed) {
+      throw new Error("user denied agent write");
+    }
+    await invoke("shell_write", { tabId, data: text });
+    return { ok: true };
+  }
+
+  /** Push a sticky notification with Allow / Deny actions and resolve
+   *  with the user's choice (or false on dismiss). The pending choice
+   *  is keyed off the notification id and stored in
+   *  `shellWriteConsentRef` so the existing notification action route
+   *  can hand back the resolution. */
+  function promptShellWriteConfirmation(input: {
+    tabId: string;
+    text: string;
+    tabLabel: string;
+  }): Promise<boolean> {
+    return new Promise((resolve) => {
+      const id = `shell-write-${crypto.randomUUID().slice(0, 8)}`;
+      shellWriteConsentRef.current.set(id, resolve);
+      // Truncate the preview — agents can ask for long pastes; we want
+      // the notification to stay scannable. The full text still goes
+      // to the PTY on Allow.
+      const preview = input.text.length > 80
+        ? `${input.text.slice(0, 80).replace(/\n/g, "⏎")}…`
+        : input.text.replace(/\n/g, "⏎");
+      pushNotification({
+        id,
+        title: `Agent wants to type in "${input.tabLabel}"`,
+        message: preview,
+        kind: "warning",
+        durationMs: null, // sticky — only user choice or dismiss closes it
+        actions: [
+          { label: "Allow", action: `shell-write-allow:${id}` },
+          { label: "Deny", action: `shell-write-deny:${id}` },
+        ],
+      });
     });
   }
 
@@ -1247,30 +1336,19 @@ export default function App() {
         ...(options?.command ? { command: options.command } : {}),
         ...(options?.args ? { args: options.args } : {}),
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+        // Seed the share mode atomically inside shell_open so the
+        // privacy floor pins at total_appended=0 — every byte from the
+        // first prompt forward is visible to the agent when the user
+        // configured a non-private default. Applying the mode post-open
+        // would race the login banner and pin it below the floor.
+        ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
       },
     })
-      .then(async () => {
+      .then(() => {
         updateTab(id, (t) => ({
           ...t,
           shell: t.shell ? { ...t.shell, shellState: "running" } : t.shell,
         }));
-        // Sync the Rust-side share mode if the configured default is
-        // anything other than the Rust default (`private`). Without this,
-        // an agent that reads the seed from the React Tab record would
-        // think the tab is shareable while the Rust side still rejects
-        // reads — the source-of-truth divergence the privacy floor is
-        // designed to prevent. Done after `running` so the floor lands
-        // at total_appended=0 (no pre-consent bytes possible).
-        if (seedShareMode !== "private") {
-          try {
-            await invoke("shell_set_share_mode", {
-              tabId: id,
-              mode: seedShareMode,
-            });
-          } catch (err) {
-            console.warn("seed shell_set_share_mode failed:", err);
-          }
-        }
       })
       .catch((err: unknown) => {
         appendSystem(`Failed to open shell tab: ${String(err)}`);
@@ -2228,21 +2306,28 @@ export default function App() {
         break;
       }
       case "shell_query": {
-        // Bridge proxy for `aethon.shells.{list, read}` — read-only
-        // operations only. Mode changes go through the status-bar badge
-        // (frontend invokes `shell_set_share_mode` directly), never
-        // through the agent surface; otherwise an extension could flip
-        // a private tab into sharing without a user gesture and bypass
-        // the opt-in boundary `list()` enforces.
+        // Bridge proxy for `aethon.shells.{list, read, write}`. Mode
+        // changes go through the status-bar badge (frontend invokes
+        // `shell_set_share_mode` directly), never through the agent
+        // surface; otherwise an extension could flip a private tab into
+        // sharing without a user gesture and bypass the opt-in boundary.
+        //
+        // For write: we check share mode here (read-write → overlay
+        // confirm; read-write-trusted → write directly; private/read →
+        // refuse), then invoke the Rust shell_write which gates again
+        // as defense-in-depth.
         const op = data.op as string | undefined;
         const args = (data.args as Record<string, unknown> | undefined) ?? {};
         const mid = data.mutationId;
-        const route = async () => {
+        const route = async (): Promise<unknown> => {
           if (op === "list") {
             return await invoke("shell_list_shareable");
           }
           if (op === "read") {
             return await invoke("shell_read_scrollback", { args });
+          }
+          if (op === "write") {
+            return await routeShellWrite(args);
           }
           throw new Error(`unknown shell_query op: ${op}`);
         };
@@ -3971,15 +4056,22 @@ export default function App() {
       if (component.id === "notification-stack") {
         const id = (data as { id?: string } | undefined)?.id;
         if ((eventType === "dismiss" || eventType === "expire") && id) {
+          // Dismissing a pending shell-write confirmation = deny. The
+          // resolver still has to fire — otherwise the bridge's promise
+          // dangles until the 5-min timeout.
+          resolveShellWriteConsent(id, false);
           dismissNotification(id);
           return true;
         }
         if (eventType === "action" && id) {
           const action = (data as { action?: string } | undefined)?.action;
-          // Forward action strings as their own a2ui_event so paired
-          // aethon.onEvent matchers fire. Built-in actions are handled
-          // by the agent / extensions; nothing to short-circuit here.
-          if (action) {
+          // Built-in shell-write Allow/Deny actions resolve a pending
+          // consent without a bridge round-trip. Other actions get
+          // forwarded as a2ui events for extension matchers.
+          if (action && action.startsWith("shell-write-")) {
+            const allowed = action.startsWith("shell-write-allow:");
+            resolveShellWriteConsent(id, allowed);
+          } else if (action) {
             invoke("dispatch_a2ui_event", {
               event: JSON.stringify({
                 componentId: `notification__tpl__${id}`,

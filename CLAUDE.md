@@ -128,16 +128,21 @@ console) can swap chrome at runtime:
 `shellState`, `exitCode?`). Share-mode UI helpers live in
 `src/utils/shareMode.ts` (`cycleShareMode`, `shareModeLabel`,
 `shareModeTooltip`); the security boundary is enforced Rust-side in
-`shell.rs` (`ShareState` + `Scrollback`). The bridge surface is
-**read-only**: `aethon.shells.{list, read}` — round-trips through the
-mutation-ack channel as `shell_query` ops with `MutationResult.data`
-populated. **Do not add an agent-driven `setShareMode`** — discoverable
-tab ids in `/tabs` plus a setter would defeat the opt-in boundary
-`list()` enforces (only the user's badge click may flip a mode).
-Reads are forward-paging from the caller's cursor; cold-start callers
-omit the cursor to get the latest `max_bytes`. Don't add a fast-path
-that lets the bridge invoke Tauri commands directly — the read clamp +
-privacy floor have to live where the PTY does. Most code paths special-case via
+`shell.rs` (`ShareState` + `Scrollback`). The bridge surface is `aethon.shells.{list, read, write}` — round-trips
+through the mutation-ack channel as `shell_query` ops with
+`MutationResult.data` populated. **Do not add an agent-driven
+`setShareMode`** — discoverable tab ids in `/tabs` plus a setter would
+defeat the opt-in boundary `list()` enforces (only the user's badge
+click may flip a mode). Reads are forward-paging from the caller's
+cursor; cold-start callers omit the cursor to get the latest
+`max_bytes`. Writes pop an Allow/Deny notification in `read-write` mode
+(reusing the existing notification primitive — `pushNotification` with
+`durationMs: null` + `actions`); `read-write-trusted` writes go through
+without prompting. Pre-frontend-ready callers awaiting
+`shells.list/read/write` block until the handshake completes (queries
+need real `data`, not the side-effect-mutation shortcut). Don't add a
+fast-path that lets the bridge invoke Tauri commands directly — the
+read clamp + privacy floor have to live where the PTY does. Most code paths special-case via
 `tab.kind === "shell"` checks (see `closeTab`, `newShellTab`,
 `/agentTabActive` + `/shellTabActive` derived flags). The shell-canvas
 composite (`ShellCanvas` in `components.tsx`) replaces the agent
@@ -306,11 +311,14 @@ relevant notes here when capabilities land.
 **Quick highlights as of writing:** M1–M5 complete + M6 P1 shipped
 (interactive PTY-backed user shell tabs via `portable-pty`, `Tab.kind`
 discriminator, `Cmd+T` = shell / `Cmd+Shift+T` = agent, theme-agnostic
-xterm) + M6 P2.1 shipped (per-tab `ShareMode` 4-value enum with
-privacy-floor guardrail, `aethon.shells.{list,read}` bridge API,
+xterm) + M6 P2 shipped (per-tab `ShareMode` 4-value enum with
+privacy-floor guardrail, `aethon.shells.{list, read, write}` bridge
+API with per-write Allow/Deny user confirmation in `read-write` mode,
 clickable share-mode badge in the shell status line, `[shell]
-default_share_mode` config). M6 P2.2 — `aethon.shells.write` + pi-tool
-registration + per-write confirmation overlay — is the next phase.
+default_share_mode` config seeded inside `shell_open` so the floor
+pins at byte 0). Pi-tool registration of `listShells`/`readShell`/
+`writeShell` is the next phase — the API is already reachable via
+`globalThis.aethon.shells.*` from extensions today.
 Tool execution surfaces as A2UI cards, multi-tab persistent
 sessions, light theme, system tray + native menu, slash command picker,
 real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
