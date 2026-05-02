@@ -163,6 +163,57 @@ const PRIMITIVE_REGISTRY: Record<
   table: Table,
 };
 
+// Mount a registry-resolved component as a leaf at the app root. Used for
+// overlays (command-palette, notification-stack, settings-panel,
+// search-panel) so a skill can replace them via
+// `aethon.registerComponent("<type>", custom)` — without this helper the
+// overlays would have to be direct-imported in App.tsx, which bypasses
+// the registry and silently defeats the documented override path.
+//
+// Skills can also unregister an overlay (returns null) to suppress it.
+//
+// `react-hooks/static-components` is suppressed because the resolved
+// component IS dynamic by design — it's the registry, the override
+// surface for the entire UI. The registry returns a stable function
+// reference per type; replacement happens only via deliberate
+// register/unregister calls, not on every render. The same pattern lives
+// inside `renderComponent` below; this helper exists so callers that
+// can't invoke `renderComponent` (App.tsx top-level overlays) get the
+// same dispatch semantics.
+export function RegistryComponent({
+  type,
+  state,
+  onEvent,
+}: {
+  type: string;
+  state: Record<string, unknown>;
+  onEvent: (component: A2UIComponent, eventType: string, data?: unknown) => void;
+}) {
+  const registry = useSkillRegistry();
+  // Stable synthetic component — same id/type each render so child
+  // useMemos keyed off it don't thrash and onEvent closures stay stable.
+  const component = useMemo<A2UIComponent>(
+    () => ({ id: type, type, props: {} }),
+    [type],
+  );
+  // Registry dispatch is the override surface; the resolved reference is
+  // stable per registry entry and only changes on explicit re-registration,
+  // which is precisely the contract `react-hooks/static-components` would
+  // otherwise rule out.
+  const Resolved = PRIMITIVE_REGISTRY[type] ?? registry.resolve(type);
+  if (!Resolved) return null;
+  return (
+    // eslint-disable-next-line react-hooks/static-components
+    <Resolved
+      component={component}
+      state={state}
+      onEvent={(eventType: string, data?: unknown) =>
+        onEvent(component, eventType, data)
+      }
+    />
+  );
+}
+
 export default function A2UIRenderer({
   payload,
   state: externalState,

@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import A2UIRenderer from "./components/A2UIRenderer";
+import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
 import { reconcileSkillModules } from "./skills/skillModuleLoader";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
@@ -14,14 +14,10 @@ import {
   inspectLayoutSlotCoverage,
   layoutSlots,
 } from "./skills/default-layout";
-import { CommandPalette } from "./skills/default-layout/command-palette";
-import { SearchPanel } from "./skills/default-layout/search-panel";
-import { SettingsPanel } from "./skills/default-layout/settings-panel";
 import type {
   PaletteItem,
   PaletteMode,
 } from "./skills/default-layout/palette-items";
-import { NotificationStack } from "./skills/default-layout/notifications";
 import type {
   NotificationEntry,
   NotificationKind,
@@ -2538,49 +2534,68 @@ export default function App() {
   // so a flurry of state changes (typing into the composer) coalesces into
   // a single ack-bearing patch per slice.
   const lastFrontendStateRef = useRef<Record<string, string>>({});
+  // Per-frame coalesce timer. Each state change reschedules; the IPC
+  // burst only fires once the user stops mutating state for a tick. This
+  // matters most when typing into the composer — without the debounce,
+  // every keystroke fires a /draft patch (one IPC per character).
+  const frontendPatchTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    // Snapshot the watched slices. Each entry maps a JSON-Pointer-like
-    // path the bridge will store under to a value the frontend computes
-    // from current state.
-    const sidebar = (state.sidebar as Record<string, unknown> | undefined) ?? {};
-    const tabs = (state.tabs as Tab[] | undefined) ?? [];
-    const messagesCount = ((state.messages as unknown[] | undefined) ?? []).length;
-    const slices: Record<string, unknown> = {
-      "/sidebar/models": sidebar.models ?? [],
-      "/sidebar/themes": sidebar.themes ?? [],
-      "/connection": state.connection ?? "disconnected",
-      "/status": state.status ?? "",
-      "/draft": state.draft ?? "",
-      "/messagesCount": messagesCount,
-      "/tabs": tabs.map((t) => ({
-        id: t.id,
-        label: t.label,
-        model: t.model ?? "",
-        active: t.id === (state.activeTabId as string | undefined),
-      })),
-    };
-    const last = lastFrontendStateRef.current;
-    const next: Record<string, string> = { ...last };
-    let changed = false;
-    for (const [path, value] of Object.entries(slices)) {
-      const serialized = JSON.stringify(value);
-      if (last[path] === serialized) continue;
-      next[path] = serialized;
-      changed = true;
-      // Fire-and-forget — bridge processes the patch and updates its
-      // frontendState map. No ack needed; this is one-way mirroring.
-      invoke("agent_command", {
-        payload: JSON.stringify({
-          type: "frontend_state_patch",
-          path,
-          value,
-        }),
-      }).catch(() => {
-        // Bridge gone or webview reloaded mid-flight — fine, the next
-        // patch will retry, and the bridge sees these as best-effort.
-      });
+    if (frontendPatchTimerRef.current !== null) {
+      window.clearTimeout(frontendPatchTimerRef.current);
     }
-    if (changed) lastFrontendStateRef.current = next;
+    frontendPatchTimerRef.current = window.setTimeout(() => {
+      frontendPatchTimerRef.current = null;
+      // Snapshot the watched slices. Each entry maps a JSON-Pointer-like
+      // path the bridge will store under to a value the frontend computes
+      // from current state.
+      const sidebar =
+        (state.sidebar as Record<string, unknown> | undefined) ?? {};
+      const tabs = (state.tabs as Tab[] | undefined) ?? [];
+      const messagesCount =
+        ((state.messages as unknown[] | undefined) ?? []).length;
+      const slices: Record<string, unknown> = {
+        "/sidebar/models": sidebar.models ?? [],
+        "/sidebar/themes": sidebar.themes ?? [],
+        "/connection": state.connection ?? "disconnected",
+        "/status": state.status ?? "",
+        "/draft": state.draft ?? "",
+        "/messagesCount": messagesCount,
+        "/tabs": tabs.map((t) => ({
+          id: t.id,
+          label: t.label,
+          model: t.model ?? "",
+          active: t.id === (state.activeTabId as string | undefined),
+        })),
+      };
+      const last = lastFrontendStateRef.current;
+      const next: Record<string, string> = { ...last };
+      let changed = false;
+      for (const [path, value] of Object.entries(slices)) {
+        const serialized = JSON.stringify(value);
+        if (last[path] === serialized) continue;
+        next[path] = serialized;
+        changed = true;
+        // Fire-and-forget — bridge processes the patch and updates its
+        // frontendState map. No ack needed; this is one-way mirroring.
+        invoke("agent_command", {
+          payload: JSON.stringify({
+            type: "frontend_state_patch",
+            path,
+            value,
+          }),
+        }).catch(() => {
+          // Bridge gone or webview reloaded mid-flight — fine, the next
+          // patch will retry, and the bridge sees these as best-effort.
+        });
+      }
+      if (changed) lastFrontendStateRef.current = next;
+    }, 16);
+    return () => {
+      if (frontendPatchTimerRef.current !== null) {
+        window.clearTimeout(frontendPatchTimerRef.current);
+        frontendPatchTimerRef.current = null;
+      }
+    };
   }, [state]);
 
   useEffect(() => {
@@ -5822,26 +5837,6 @@ export default function App() {
     [],
   );
 
-  // Synthetic A2UIComponent for App-root chrome (palette / notification
-  // stack). The palette + stack expect BuiltinComponentProps so we can
-  // also embed them inside layout JSON if a skill chooses to — at root
-  // we hand-feed the same shape.
-  const paletteComponent = useMemo(
-    () => ({ id: "command-palette", type: "command-palette", props: {} }),
-    [],
-  );
-  const notificationComponent = useMemo(
-    () => ({ id: "notification-stack", type: "notification-stack", props: {} }),
-    [],
-  );
-  const settingsComponent = useMemo(
-    () => ({ id: "settings-panel", type: "settings-panel", props: {} }),
-    [],
-  );
-  const searchComponent = useMemo(
-    () => ({ id: "search-panel", type: "search-panel", props: {} }),
-    [],
-  );
   const renderState = useMemo(() => {
     const tabs = (state.tabs as Tab[] | undefined) ?? [];
     const recentSessions =
@@ -5880,33 +5875,30 @@ export default function App() {
           onEvent={onEvent}
           tabId={state.activeTabId as string | undefined}
         />
-        <NotificationStack
-          component={notificationComponent}
+        {/* App-root overlays — registry-resolved so a skill can replace any
+            of them via aethon.registerComponent("<type>", custom). Each
+            overlay gates its own visibility on state (e.g. /commandPalette
+            /open), so the renderers stay mounted but render null when
+            closed. */}
+        <RegistryComponent
+          type="notification-stack"
           state={renderState}
-          onEvent={(eventType, data) =>
-            onEvent(notificationComponent, eventType, data)
-          }
+          onEvent={onEvent}
         />
-        <CommandPalette
-          component={paletteComponent}
+        <RegistryComponent
+          type="command-palette"
           state={renderState}
-          onEvent={(eventType, data) =>
-            onEvent(paletteComponent, eventType, data)
-          }
+          onEvent={onEvent}
         />
-        <SettingsPanel
-          component={settingsComponent}
+        <RegistryComponent
+          type="settings-panel"
           state={renderState}
-          onEvent={(eventType, data) =>
-            onEvent(settingsComponent, eventType, data)
-          }
+          onEvent={onEvent}
         />
-        <SearchPanel
-          component={searchComponent}
+        <RegistryComponent
+          type="search-panel"
           state={renderState}
-          onEvent={(eventType, data) =>
-            onEvent(searchComponent, eventType, data)
-          }
+          onEvent={onEvent}
         />
       </div>
     </SkillRegistryProvider>

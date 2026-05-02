@@ -199,7 +199,7 @@ by an extension without touching React source.
 #### Bridge ↔ Frontend contract gaps
 
 - [x] **`getLayout()` returns the active rendered layout** — bridge now preloads the canonical boot layout SYNCHRONOUSLY from `$AETHON_BOOT_LAYOUT_FILE` (set by the Tauri shell, pointing at `src/skills/default-layout/layout.a2ui.json` in dev or the bundled resource in release) BEFORE any extension's `register(api)` runs. `_getLayout()` returns `extensionLayout ?? (bootLayout + pendingLayoutPatches folded)`, and a `boot_layout` inbound message lets the frontend refresh the value when the active layout skill changes. Verified end-to-end: `right-sidebar-model-picker` extension's prior bailout (`if (!layout) return`) now succeeds and applies its 5 patches; layoutSummary correctly reports `sidebar=right` after register-time. Bundled boot layout added to `tauri.conf.json` `bundle.resources` so release builds get it too.
-- [x] **Bridge-readable frontend state** — frontend pushes `frontend_state_patch { path, value }` whenever an allowlisted slice changes (`/sidebar/models`, `/sidebar/themes`, `/connection`, `/status`, `/tabs`, `/draft`, `/messagesCount`). Bridge stores in `frontendState` Map; `aethon.getFrontendState(path?)` returns the live value; `getRuntimeSnapshot().uiState` includes the full mirror so the system prompt's runtime section + `~/.aethon/state.json` reflect what's actually on screen. Diff-on-frontend keeps the IPC chatter low (one patch per slice per change). Best-effort mirror, no ack.
+- [x] **Bridge-readable frontend state** — frontend pushes `frontend_state_patch { path, value }` whenever an allowlisted slice changes (`/sidebar/models`, `/sidebar/themes`, `/connection`, `/status`, `/tabs`, `/draft`, `/messagesCount`). Bridge stores in `frontendState` Map; `aethon.getFrontendState(path?)` returns the live value; `getRuntimeSnapshot().uiState` includes the full mirror so the system prompt's runtime section + `~/.aethon/state.json` reflect what's actually on screen. Frame-debounced (≈16 ms) + diff-on-frontend coalesces a flurry of state changes — typing into the composer is one patch after the user pauses, not one per keystroke. Best-effort mirror, no ack.
 - [x] **Mutation feedback channel** — every mutating outbound message (`state_patch`, `layout_set`, `layout_patch`, `extension_components`, `extension_themes`) carries a `mutationId`. Frontend acks via `mutation_ack { mutationId, success, error? }`. Bridge resolves a per-mutation Promise so the API now returns `Promise<{ok: boolean, error?: string}>`. Sync use is unchanged (Promises just GC if not awaited). Pre-frontend-ready calls resolve immediately with `{ok: true}` (covered by retained-state replay). 5-second timeout guards stuck Promises. `registerTheme` validation failures emit a `notice` (not `error`) so they don't clobber waiting state, and the Promise carries the same detail.
 - [x] **Boot-layout structural snapshot in `RuntimeSnapshot`** — `RuntimeSnapshot.layoutStructure` ships `{rootId, rootType, columns?, rows?, areas?, children: [{id, type, area?}]}` extracted from the active layout (extension-set or boot+patches). Agent answers "what's in the layout?" without paying for the full `getLayout()` round-trip; the system prompt's runtime section emits a one-liner showing the root's children + areas.
 
@@ -304,6 +304,16 @@ then sharing, then polish.
 - [x] **Remaining `[shell]` keys** — `default_command` (override `$SHELL`), `default_args` (extra argv appended after the platform default), `inherit_env` (default true; `false` clears the host env before stamping `TERM`/`COLORTERM`/`AETHON`), `prompt_before_close` (default true), `auto_restart_agent` (default true).
 - [x] **`[shortcuts] new_tab_kind`** — `"agent"` (default — focus-aware) | `"shell"` (always shell). Lets users force Cmd+T to always open a shell.
 - [x] **`[ui] notify_on_completion` + `notify_min_duration_seconds`** — surface the OS-notification gate as user-tunable.
+
+#### Abstraction integrity
+
+- [x] **App-root overlays go through the registry** — `command-palette`,
+  `notification-stack`, `settings-panel`, `search-panel`, and the
+  `share-mode-badge` are mounted via `<RegistryComponent type="…">` (or
+  `useSkillRegistry().resolve(…)` inside their host) so a skill can
+  replace any of them with `aethon.registerComponent("<type>", custom)`.
+  Previously these were direct-imported in `App.tsx`, silently defeating
+  the documented override path.
 
 #### Documentation + tests
 
