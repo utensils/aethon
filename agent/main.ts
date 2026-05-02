@@ -1421,13 +1421,28 @@ async function main() {
     });
     return { id, promise };
   }
-  /** Wait until the frontend handshake completes. Used by query-style
-   *  ops (`aethon.shells.list/read`) so they don't ride the
-   *  side-effect-mutation shortcut that returns `{ok:true, data:undefined}`
-   *  pre-ready. */
-  async function awaitFrontendReady(): Promise<void> {
-    if (frontendReady) return;
-    await frontendReadyPromise;
+  /** Wait until the frontend handshake completes, bounded by `timeoutMs`
+   *  so we never deadlock during extension registration. Extensions
+   *  that call `aethon.shells.list()` from inside their async
+   *  `register()` would otherwise hang forever: the stdin loop (which
+   *  receives the eventual `report`) doesn't start until registration
+   *  completes, and registration is blocked on this very await.
+   *
+   *  Returns `true` when ready, `false` on timeout. Callers that pass
+   *  no timeout block until ready (legitimate from post-startup code
+   *  like event handlers and tool calls). */
+  async function awaitFrontendReady(timeoutMs?: number): Promise<boolean> {
+    if (frontendReady) return true;
+    if (typeof timeoutMs !== "number") {
+      await frontendReadyPromise;
+      return true;
+    }
+    return await Promise.race<boolean>([
+      frontendReadyPromise.then(() => true),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), timeoutMs),
+      ),
+    ]);
   }
 
   function ackMutation(
@@ -2216,16 +2231,29 @@ async function main() {
   // ack timeout because it can wait on user confirmation in the UI.
   const SHELL_WRITE_ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 min — user may step away
 
+  /** Bounded wait for the frontend handshake before sending a query.
+   *  Mirrors the regular mutation-ack timeout so an extension that
+   *  awaits `aethon.shells.list()` from its async `register()` gets a
+   *  clean `frontend_not_ready` failure after 5 s instead of a process
+   *  deadlock (registration runs before the stdin loop starts; the
+   *  stdin loop is what delivers `report`, so a long await blocks
+   *  startup). */
+  const SHELL_QUERY_READY_WAIT_MS = MUTATION_ACK_TIMEOUT_MS;
+
   async function _shellQuery(
     op: "list" | "read" | "write",
     args: Record<string, unknown> = {},
     timeoutMs?: number,
   ): Promise<MutationResult> {
     // Queries need real data, not the side-effect-mutation shortcut.
-    // Pre-ready callers (extension boot, autorun scripts) wait here so
-    // the frontend has a chance to wire its `shell_query` handler before
-    // we send and the ack has somewhere to land.
-    await awaitFrontendReady();
+    // Bounded so register-time callers never deadlock startup.
+    const ready = await awaitFrontendReady(SHELL_QUERY_READY_WAIT_MS);
+    if (!ready) {
+      return {
+        ok: false,
+        error: "frontend_not_ready",
+      };
+    }
     const { id, promise } = trackMutation(timeoutMs);
     send({ type: "shell_query", mutationId: id, op, args });
     return promise;

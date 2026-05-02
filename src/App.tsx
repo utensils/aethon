@@ -120,6 +120,13 @@ const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
 
 const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 1.6;
+/** Lifetime of an Allow/Deny prompt for `aethon.shells.write` in
+ *  read-write mode. Set ~30 s under the bridge-side ack timeout
+ *  (5 min) so a late click can never inject keystrokes after the
+ *  caller's promise has already failed with `timeout`. The auto-
+ *  expire flows through the existing notification dismiss path,
+ *  which resolves the consent as deny. */
+const SHELL_WRITE_PROMPT_TTL_MS = 4 * 60 * 1000 + 30 * 1000;
 
 function writeUiViewportVars(scale: number) {
   const root = document.documentElement;
@@ -1059,9 +1066,9 @@ export default function App() {
     return { ok: true };
   }
 
-  /** Push a sticky notification with Allow / Deny actions and resolve
-   *  with the user's choice (or false on dismiss). The pending choice
-   *  is keyed off the notification id and stored in
+  /** Push a Allow/Deny notification and resolve with the user's choice
+   *  (or `false` on dismiss / auto-expire). The pending choice is
+   *  keyed off the notification id and stored in
    *  `shellWriteConsentRef` so the existing notification action route
    *  can hand back the resolution. */
   function promptShellWriteConfirmation(input: {
@@ -1083,7 +1090,13 @@ export default function App() {
         title: `Agent wants to type in "${input.tabLabel}"`,
         message: preview,
         kind: "warning",
-        durationMs: null, // sticky — only user choice or dismiss closes it
+        // Auto-expire ~30 s before the bridge's 5-min ack timeout so a
+        // late Allow click can never invoke `shell_write` after the
+        // caller's promise has already resolved as timed-out. The
+        // notification's `expire` event flows through the existing
+        // dismiss path → `resolveShellWriteConsent(id, false)` →
+        // bridge sees a denied result and the prompt vanishes.
+        durationMs: SHELL_WRITE_PROMPT_TTL_MS,
         actions: [
           { label: "Allow", action: `shell-write-allow:${id}` },
           { label: "Deny", action: `shell-write-deny:${id}` },
