@@ -1260,6 +1260,7 @@ pub fn run() {
     builder = builder.plugin(tauri_plugin_process::init());
     builder = builder.plugin(tauri_plugin_opener::init());
     builder = builder.plugin(tauri_plugin_dialog::init());
+    builder = builder.plugin(tauri_plugin_notification::init());
     // Gate the updater plugin on a configured pubkey. Without one,
     // signature verification can't decode anything and every update
     // would fail post-download — so we just don't register the plugin

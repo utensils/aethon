@@ -18,6 +18,7 @@ import {
   StatusBar,
   TabStrip,
   Terminal,
+  ToolCard,
 } from "./components";
 import {
   AeMark,
@@ -69,6 +70,10 @@ export const defaultLayoutSkill: A2UISkill = {
     // equivalent mode flag) so it appears only when the active tab is a
     // shell tab.
     "shell-canvas": ShellCanvas,
+    // M6 P4: tool-call card with live elapsed-time clock + long-running
+    // amber warning at 30s. Bridge emits this for tool execution events
+    // (replacing the plain `card` primitive in toolCardPayload).
+    "tool-card": ToolCard,
     "empty-state": EmptyState,
     // Layout-variation chrome — used by editorial / command-deck / live-layout.
     // Registered alongside the standard composites so any layout payload can

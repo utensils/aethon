@@ -530,6 +530,121 @@ function SearchableSidebarSection({
   );
 }
 
+// ---------------------------------------------------------------------------
+// ToolCard — agent tool-call card with live elapsed-time clock (M6 P4).
+//
+// Replaces the plain `card` primitive for tool-call rendering so we can:
+//   - Show "Running… 3.2s" while the tool is executing (4 Hz updates)
+//   - Shift the title amber + add "Long-running command" hint at 30 s
+//   - Show "Completed in 12.4s" on natural finish, "Failed in 2.1s" on error
+//
+// Props match the bridge's existing toolCardPayload shape, with two new
+// timestamps. The bridge emits `startedAt` on tool_execution_start and
+// `endedAt` on tool_execution_end; if `endedAt` is omitted while
+// `startedAt` is set, the card is still running.
+// ---------------------------------------------------------------------------
+
+const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
+
+function formatToolDuration(ms: number): string {
+  if (ms < 0) ms = 0;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m ${sec.toString().padStart(2, "0")}s`;
+}
+
+export function ToolCard({
+  component,
+  state,
+  renderChildren,
+}: BuiltinComponentProps) {
+  const props = component.props as {
+    title?: StringValue;
+    description?: StringValue;
+    /** epoch ms — when the tool started executing. */
+    startedAt?: NumberValue;
+    /** epoch ms — when the tool finished. Omit while running. */
+    endedAt?: NumberValue;
+    isError?: BooleanValue;
+    /** Tool name shown in the title; argsSummary as the description. */
+    toolName?: StringValue;
+  };
+  const baseTitle = props.title ? resolveString(props.title, state) : "";
+  const description = props.description
+    ? resolveString(props.description, state)
+    : undefined;
+  const startedAt = props.startedAt
+    ? resolveNumber(props.startedAt, state)
+    : undefined;
+  const endedAt = props.endedAt ? resolveNumber(props.endedAt, state) : undefined;
+  const isError = props.isError
+    ? resolveBoolean(props.isError, state)
+    : false;
+  const running = startedAt !== undefined && endedAt === undefined;
+
+  // Tick at 4 Hz while running so the clock stays smooth without
+  // thrashing. The interval is cleared on unmount AND on the
+  // running→done transition so cards in chat history don't keep
+  // timers alive forever.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const handle = window.setInterval(() => {
+      setNow(Date.now());
+    }, 250);
+    return () => window.clearInterval(handle);
+  }, [running]);
+
+  const elapsedMs = useMemo(() => {
+    if (startedAt === undefined) return 0;
+    if (endedAt !== undefined) return Math.max(0, endedAt - startedAt);
+    return Math.max(0, now - startedAt);
+  }, [startedAt, endedAt, now]);
+
+  const isLongRunning = running && elapsedMs >= TOOL_LONG_RUN_THRESHOLD_MS;
+
+  const titleSuffix = useMemo(() => {
+    if (running) return ` · running… ${formatToolDuration(elapsedMs)}`;
+    if (isError) return ` · failed in ${formatToolDuration(elapsedMs)}`;
+    if (startedAt !== undefined)
+      return ` · completed in ${formatToolDuration(elapsedMs)}`;
+    return "";
+  }, [running, isError, startedAt, elapsedMs]);
+
+  const accentColor = isError
+    ? "var(--danger, #c5494a)"
+    : isLongRunning
+      ? "var(--warning, #d18a2c)"
+      : running
+        ? "var(--accent)"
+        : "var(--text-dim)";
+
+  return (
+    <div
+      className="ae-tool-card"
+      data-running={running ? "true" : "false"}
+      data-long-running={isLongRunning ? "true" : "false"}
+      data-error={isError ? "true" : "false"}
+    >
+      <div className="ae-tool-card-title" style={{ color: accentColor }}>
+        <span className="ae-tool-card-title-base">{baseTitle}</span>
+        <span className="ae-tool-card-title-suffix">{titleSuffix}</span>
+      </div>
+      {isLongRunning && (
+        <div className="ae-tool-card-warning">
+          Long-running command — press <kbd>⌘.</kbd> to stop.
+        </div>
+      )}
+      {description && (
+        <div className="ae-tool-card-description">{description}</div>
+      )}
+      {renderChildren && renderChildren()}
+    </div>
+  );
+}
+
 export function Sidebar({
   component,
   state,

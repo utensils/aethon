@@ -380,9 +380,22 @@ function toolCardPayload(opts: {
   result?: unknown;
   isError?: boolean;
   running?: boolean;
+  /** Epoch ms — when tool_execution_start fired. Required for the
+   *  `tool-card` component to render an elapsed-time clock. */
+  startedAt?: number;
+  /** Epoch ms — when tool_execution_end fired. Omit while running. */
+  endedAt?: number;
 }) {
-  const { callId, toolName, argsSummary, result, isError, running } = opts;
-  const titleSuffix = running ? " · running…" : isError ? " · error" : "";
+  const {
+    callId,
+    toolName,
+    argsSummary,
+    result,
+    isError,
+    running,
+    startedAt,
+    endedAt,
+  } = opts;
   const children: unknown[] = [];
   if (result !== undefined) {
     const extracted = extractToolContent(result);
@@ -411,10 +424,21 @@ function toolCardPayload(opts: {
     components: [
       {
         id: `tool-${callId}`,
-        type: "card",
+        type: "tool-card",
         props: {
-          title: `${toolName}${titleSuffix}`,
+          // Title is the bare tool name; the component composes its own
+          // " · running… 3.2s" / " · completed in 12.4s" suffix from
+          // startedAt/endedAt so the clock stays live without the bridge
+          // re-emitting on every tick.
+          title: toolName,
+          toolName,
           description: argsSummary || undefined,
+          ...(startedAt !== undefined ? { startedAt } : {}),
+          ...(endedAt !== undefined ? { endedAt } : {}),
+          ...(isError ? { isError: true } : {}),
+          // Note: `running` is implicit — the component treats
+          // `startedAt set + endedAt undefined` as still running.
+          ...(running ? {} : {}),
         },
         children,
       },
@@ -924,6 +948,9 @@ async function main() {
       name: string;
       summary: string;
       bashStream?: BashTerminalStreamState;
+      /** Epoch ms — when tool_execution_start fired. Used by the M6 P4
+       *  `tool-card` component to render a live elapsed-time clock. */
+      startedAt?: number;
     }>;
     promptInFlight: boolean;
     agentEndFired: boolean;
@@ -2618,12 +2645,18 @@ async function main() {
         }
         case "tool_execution_start": {
           const summary = summarizeToolArgs(event.toolName, event.args);
-          rec.toolArgsCache.set(event.toolCallId, { name: event.toolName, summary });
+          const startedAt = Date.now();
+          rec.toolArgsCache.set(event.toolCallId, {
+            name: event.toolName,
+            summary,
+            startedAt,
+          });
           const payload = toolCardPayload({
             callId: event.toolCallId,
             toolName: event.toolName,
             argsSummary: summary,
             running: true,
+            startedAt,
           });
           send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
           if (event.toolName === "bash") {
@@ -2661,6 +2694,9 @@ async function main() {
             argsSummary: cached?.summary ?? "",
             result: event.result,
             isError: event.isError,
+            ...(cached?.startedAt !== undefined
+              ? { startedAt: cached.startedAt, endedAt: Date.now() }
+              : {}),
           });
           send({ type: "a2ui", tabId, id: `tool-${event.toolCallId}`, payload });
           if (event.toolName === "bash") {
