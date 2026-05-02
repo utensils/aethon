@@ -2,6 +2,8 @@
 // callers on first paint share a single IPC. Defaults returned outside Tauri.
 
 import { invoke } from "@tauri-apps/api/core";
+import type { ShareMode } from "./utils/shareMode";
+import { SHARE_MODES } from "./utils/shareMode";
 
 export interface AethonConfig {
   ui: {
@@ -18,11 +20,18 @@ export interface AethonConfig {
   agent: {
     model: string | null;
   };
+  shell: {
+    /** Initial share mode for new shell tabs. Defaults to `private` —
+     *  the agent sees nothing until the user explicitly opts in via the
+     *  status-bar badge. Configurable via `[shell] default_share_mode`. */
+    defaultShareMode: ShareMode;
+  };
 }
 
 const DEFAULTS: AethonConfig = {
   ui: { theme: null, fontSize: null, restoreTabs: false },
   agent: { model: null },
+  shell: { defaultShareMode: "private" },
 };
 
 function hasTauri(): boolean {
@@ -55,6 +64,9 @@ export function getConfig(): Promise<AethonConfig> {
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
         },
+        shell: {
+          defaultShareMode: normalizeShareMode(obj?.shell?.defaultShareMode),
+        },
       };
     } catch (err) {
       console.warn("read_config failed:", err);
@@ -66,4 +78,15 @@ export function getConfig(): Promise<AethonConfig> {
 
 function normalizeTheme(t: unknown): string | null {
   return typeof t === "string" && t.length > 0 ? t : null;
+}
+
+/** Mirrors `normalize_default_share_mode` in helpers.rs. Belt-and-braces:
+ *  the Rust read_config command already clamps unknown values to
+ *  "private", but if a future TOML revision or an in-memory mutation
+ *  ships an unknown value, fall through here so the type still narrows. */
+function normalizeShareMode(value: unknown): ShareMode {
+  if (typeof value !== "string") return "private";
+  return SHARE_MODES.includes(value as ShareMode)
+    ? (value as ShareMode)
+    : "private";
 }

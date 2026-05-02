@@ -42,11 +42,36 @@ pub struct AgentConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct ShellConfig {
+    /// Initial share mode for new shell tabs. Allowed values mirror the
+    /// `ShareMode` enum in `shell.rs`: "private" (default), "read",
+    /// "read-write", "read-write-trusted". Anything else falls back to
+    /// "private" so a typo can't accidentally widen exposure.
+    pub default_share_mode: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct AethonConfig {
     #[serde(default)]
     pub ui: UiConfig,
     #[serde(default)]
     pub agent: AgentConfig,
+    #[serde(default)]
+    pub shell: ShellConfig,
+}
+
+/// Validate-and-normalize the configured default share mode. Unknown
+/// strings, missing values, and parse failures all fall through to
+/// `"private"` — the safest possible default. Lives next to the parser
+/// so test coverage sits with the other config helpers.
+pub fn normalize_default_share_mode(input: Option<&str>) -> &'static str {
+    match input {
+        Some("read") => "read",
+        Some("read-write") => "read-write",
+        Some("read-write-trusted") => "read-write-trusted",
+        // Includes Some("private"), Some(<unknown>), and None.
+        _ => "private",
+    }
 }
 
 /// Parse a TOML config string into the canonical JSON shape the frontend
@@ -59,6 +84,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     } else {
         toml::from_str(input).unwrap_or_default()
     };
+    let default_share_mode = normalize_default_share_mode(
+        cfg.shell.default_share_mode.as_deref(),
+    );
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
@@ -67,6 +95,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "agent": {
             "model": cfg.agent.model,
+        },
+        "shell": {
+            "defaultShareMode": default_share_mode,
         },
     })
 }
@@ -156,6 +187,47 @@ mod tests {
         assert_eq!(v["ui"]["theme"], "light");
         assert_eq!(v["ui"]["fontSize"], serde_json::Value::Null);
         assert_eq!(v["agent"]["model"], serde_json::Value::Null);
+    }
+
+    // ── normalize_default_share_mode ──────────────────────────────────────
+    #[test]
+    fn normalize_default_share_mode_accepts_known_values() {
+        assert_eq!(normalize_default_share_mode(Some("private")), "private");
+        assert_eq!(normalize_default_share_mode(Some("read")), "read");
+        assert_eq!(
+            normalize_default_share_mode(Some("read-write")),
+            "read-write"
+        );
+        assert_eq!(
+            normalize_default_share_mode(Some("read-write-trusted")),
+            "read-write-trusted"
+        );
+    }
+
+    #[test]
+    fn normalize_default_share_mode_falls_back_to_private_on_unknown() {
+        assert_eq!(normalize_default_share_mode(None), "private");
+        assert_eq!(normalize_default_share_mode(Some("")), "private");
+        assert_eq!(normalize_default_share_mode(Some("yolo")), "private");
+        assert_eq!(normalize_default_share_mode(Some("read-only")), "private");
+        // Case-sensitive — uppercase variants should not silently match.
+        assert_eq!(normalize_default_share_mode(Some("Read")), "private");
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_shell_section() {
+        let v = parse_config_toml("[shell]\ndefault_share_mode = \"read\"\n");
+        assert_eq!(v["shell"]["defaultShareMode"], "read");
+    }
+
+    #[test]
+    fn parse_config_toml_shell_default_is_private() {
+        let v = parse_config_toml("");
+        assert_eq!(v["shell"]["defaultShareMode"], "private");
+        // And bogus values get clamped on the Rust side, not silently
+        // forwarded as the user wrote them — so a typo can't widen access.
+        let v = parse_config_toml("[shell]\ndefault_share_mode = \"yolo\"\n");
+        assert_eq!(v["shell"]["defaultShareMode"], "private");
     }
 
     #[test]

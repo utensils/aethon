@@ -28,6 +28,7 @@ import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { deletePointer, setPointer } from "./utils/jsonPointer";
+import { cycleShareMode } from "./utils/shareMode";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -547,6 +548,11 @@ export default function App() {
     vars: Record<string, string>;
   }
   const themesRef = useRef<Map<string, ExtensionTheme>>(new Map());
+  // [shell] default_share_mode resolved from ~/.aethon/config.toml. Read
+  // once on boot (see the getConfig() effect below) and consulted by
+  // newShellTab. Defaults to `"private"` until the config loads — the
+  // safest possible seed for new shell tabs.
+  const defaultShareModeRef = useRef<ShellMeta["shareMode"]>("private");
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
@@ -678,6 +684,11 @@ export default function App() {
           `${clamped}px`,
         );
       }
+      // [shell] default_share_mode: seed the ref so subsequent
+      // newShellTab calls open with the configured default. Already
+      // clamped to the four valid modes by getConfig() / parse_config_toml.
+      defaultShareModeRef.current = config.shell.defaultShareMode;
+
       // [agent] model: when set, seed the picker default for this
       // session. Only applied if no per-session model has been saved
       // and the bridge hasn't already locked one in. The bridge's
@@ -966,6 +977,32 @@ export default function App() {
     });
   }
 
+  /** Mirror a share-mode change from the Rust source-of-truth into the
+   *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
+   *  shell tab. The Rust side enforces the actual privacy boundary —
+   *  this just keeps the badge UI honest. */
+  function applyShareModeToTab(tabId: string, mode: string) {
+    if (!tabId) return;
+    const validModes: ShellMeta["shareMode"][] = [
+      "private",
+      "read",
+      "read-write",
+      "read-write-trusted",
+    ];
+    if (!validModes.includes(mode as ShellMeta["shareMode"])) return;
+    updateTab(tabId, (t) => {
+      if (t.kind !== "shell" || !t.shell) return t;
+      if (t.shell.shareMode === mode) return t;
+      return {
+        ...t,
+        shell: {
+          ...t.shell,
+          shareMode: mode as ShellMeta["shareMode"],
+        },
+      };
+    });
+  }
+
   function updateActiveTab(mutator: (tab: Tab) => Tab) {
     setState((prev) => {
       const activeId = prev.activeTabId as string | undefined;
@@ -1175,6 +1212,7 @@ export default function App() {
   function newShellTab(options?: { command?: string; args?: string[]; cwd?: string }) {
     const id = crypto.randomUUID();
     const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
+    const seedShareMode = defaultShareModeRef.current;
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
@@ -1185,7 +1223,7 @@ export default function App() {
           cwd: inheritedCwd ?? "",
           command: options?.command ?? "",
           args: options?.args ?? [],
-          shareMode: "private",
+          shareMode: seedShareMode,
           shellState: "starting",
         },
       };
@@ -1211,11 +1249,28 @@ export default function App() {
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
       },
     })
-      .then(() => {
+      .then(async () => {
         updateTab(id, (t) => ({
           ...t,
           shell: t.shell ? { ...t.shell, shellState: "running" } : t.shell,
         }));
+        // Sync the Rust-side share mode if the configured default is
+        // anything other than the Rust default (`private`). Without this,
+        // an agent that reads the seed from the React Tab record would
+        // think the tab is shareable while the Rust side still rejects
+        // reads — the source-of-truth divergence the privacy floor is
+        // designed to prevent. Done after `running` so the floor lands
+        // at total_appended=0 (no pre-consent bytes possible).
+        if (seedShareMode !== "private") {
+          try {
+            await invoke("shell_set_share_mode", {
+              tabId: id,
+              mode: seedShareMode,
+            });
+          } catch (err) {
+            console.warn("seed shell_set_share_mode failed:", err);
+          }
+        }
       })
       .catch((err: unknown) => {
         appendSystem(`Failed to open shell tab: ${String(err)}`);
@@ -1862,7 +1917,12 @@ export default function App() {
   // applied (or rejected) the change. Fire-and-forget — we don't await the
   // ack-send because the bridge ack channel is independent of any other
   // outgoing message.
-  function ackMutation(mutationId: unknown, success: boolean, error?: string) {
+  function ackMutation(
+    mutationId: unknown,
+    success: boolean,
+    error?: string,
+    data?: unknown,
+  ) {
     if (typeof mutationId !== "string" || mutationId.length === 0) return;
     invoke("agent_command", {
       payload: JSON.stringify({
@@ -1870,6 +1930,7 @@ export default function App() {
         mutationId,
         success,
         ...(error ? { error } : {}),
+        ...(data !== undefined ? { data } : {}),
       }),
     }).catch(() => {
       /* bridge gone — extension's awaiter will hit the timeout instead */
@@ -2164,6 +2225,45 @@ export default function App() {
         const components = (data.components as Record<string, unknown>) ?? {};
         registry.setTemplates(components);
         ackMutation(data.mutationId, true);
+        break;
+      }
+      case "shell_query": {
+        // Bridge proxy for `aethon.shells.{list, read, setShareMode}`.
+        // Each op invokes a Tauri command and rounds the result back to
+        // the bridge as a `mutation_ack` so the awaiting Promise resolves
+        // with `data` populated. Errors flow through the same channel
+        // as `success: false, error: <msg>`.
+        const op = data.op as string | undefined;
+        const args = (data.args as Record<string, unknown> | undefined) ?? {};
+        const mid = data.mutationId;
+        const route = async () => {
+          if (op === "list") {
+            const r = await invoke("shell_list_shareable");
+            return r;
+          }
+          if (op === "read") {
+            const r = await invoke("shell_read_scrollback", { args });
+            return r;
+          }
+          if (op === "setShareMode") {
+            const tabId = String(args.tabId ?? "");
+            const mode = String(args.mode ?? "");
+            const r = await invoke("shell_set_share_mode", { tabId, mode });
+            // Mirror to local Tab state so the UI badge updates without
+            // round-tripping through the bridge again. Do this only on
+            // success — Tauri throws on lock failures so reaching here
+            // means the Rust state already accepted the new mode.
+            applyShareModeToTab(tabId, mode);
+            return r;
+          }
+          throw new Error(`unknown shell_query op: ${op}`);
+        };
+        route()
+          .then((result) => ackMutation(mid, true, undefined, result))
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            ackMutation(mid, false, msg);
+          });
         break;
       }
       case "extension_themes": {
@@ -3940,6 +4040,30 @@ export default function App() {
       // `vertical-tab-rail`). Matching by type keeps the contract layout-
       // agnostic so a new layout's tabs work without touching App.tsx.
       const tabType = component.type;
+
+      // Shell-canvas: badge click cycles share mode. Look up current
+      // mode in the bound tab, advance via the cycle helper, persist
+      // through the Rust side (shell_set_share_mode) AND mirror locally
+      // via applyShareModeToTab so the badge label refreshes immediately.
+      if (component.type === "shell-canvas" && eventType === "cycle-share-mode") {
+        const sel = data as { tabId?: string } | undefined;
+        const id = sel?.tabId;
+        if (typeof id !== "string" || !id) return true;
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const tab = tabs.find((t) => t.id === id);
+        if (!tab || tab.kind !== "shell" || !tab.shell) return true;
+        const next = cycleShareMode(tab.shell.shareMode);
+        invoke("shell_set_share_mode", { tabId: id, mode: next })
+          .then(() => {
+            applyShareModeToTab(id, next);
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn("shell_set_share_mode failed:", msg);
+          });
+        return true;
+      }
+
       const isTabSurface =
         tabType === "tab-strip" ||
         tabType === "editorial-header" ||

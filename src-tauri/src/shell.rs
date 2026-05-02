@@ -9,7 +9,7 @@
 //! child and drops the PTY so the reader unblocks for clean shutdown
 //! on tab close — no zombie processes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -19,6 +19,146 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 const READ_CHUNK_BYTES: usize = 4096;
+
+/// Per-tab scrollback ring cap. 1 MiB lands ~10–20k lines of typical
+/// terminal output — enough for the agent to skim back through a build
+/// or a `git log`, bounded so a runaway process can't OOM us.
+const SCROLLBACK_BYTES: usize = 1024 * 1024;
+
+/// Agent ↔ shell sharing model. Default is `Private` — the agent sees
+/// nothing of the tab's contents until the user opts in. The four-value
+/// shape is intentional: `ReadWrite` is the same as `ReadWriteTrusted`
+/// with confirmation gating; merging them would erase the difference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ShareMode {
+    Private,
+    Read,
+    ReadWrite,
+    ReadWriteTrusted,
+}
+
+impl ShareMode {
+    pub fn is_shareable(self) -> bool {
+        !matches!(self, Self::Private)
+    }
+    /// Used by the (P2.2) write path to gate `aethon.shells.write` —
+    /// kept in P2.1 alongside `is_shareable` so the predicate set lives
+    /// in one place.
+    #[allow(dead_code)]
+    pub fn allows_write(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::ReadWriteTrusted)
+    }
+}
+
+/// Mode + privacy-floor pair. Held under a single mutex so transitions
+/// are atomic — flipping mode and bumping the floor must never tear,
+/// otherwise an agent read could land between the two writes and
+/// observe scrollback from before the user opted in.
+#[derive(Debug)]
+pub struct ShareState {
+    pub mode: ShareMode,
+    /// Byte index in [`Scrollback::total_appended`] space below which
+    /// reads are not allowed. Set on each transition into a shareable
+    /// mode from a non-shareable one. Stays put across shareable→shareable
+    /// transitions and across shareable→private→shareable round-trips
+    /// (so a user toggling read off then back on doesn't suddenly
+    /// re-expose the in-between window).
+    pub floor: u64,
+}
+
+impl ShareState {
+    pub fn new() -> Self {
+        Self {
+            mode: ShareMode::Private,
+            floor: 0,
+        }
+    }
+    /// Apply a mode change relative to the live scrollback cursor.
+    /// Bumps `floor` to `total_appended` whenever the new mode is
+    /// shareable AND was previously private — that's the moment the
+    /// agent first gains visibility, and only content from that point
+    /// on is in-bounds. Returns the resulting state.
+    pub fn transition(&mut self, next: ShareMode, total_appended: u64) -> &Self {
+        let was_private = !self.mode.is_shareable();
+        let now_shareable = next.is_shareable();
+        if was_private && now_shareable {
+            self.floor = total_appended;
+        }
+        self.mode = next;
+        self
+    }
+}
+
+impl Default for ShareState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Capped byte ring with a monotonic write cursor. The ring drops oldest
+/// bytes on overflow; `total_appended` keeps growing forever so callers
+/// can use it as a stable cursor for incremental reads ("give me bytes
+/// since N"). `oldest_total` is the smallest cursor still in the ring —
+/// reads with a cursor below that get clamped up to it.
+#[derive(Debug)]
+pub struct Scrollback {
+    bytes: VecDeque<u8>,
+    cap: usize,
+    total_appended: u64,
+}
+
+impl Scrollback {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            bytes: VecDeque::with_capacity(cap.min(64 * 1024)),
+            cap,
+            total_appended: 0,
+        }
+    }
+    pub fn append(&mut self, chunk: &[u8]) {
+        self.bytes.extend(chunk.iter().copied());
+        self.total_appended = self.total_appended.saturating_add(chunk.len() as u64);
+        // Drop oldest bytes until back under cap. `drain` on VecDeque is
+        // O(n) but the cap is fixed so overflow drops are bounded per
+        // append — the worst case is the first chunk after the ring
+        // reaches cap, after which every subsequent chunk drops a
+        // chunk-sized slice.
+        if self.bytes.len() > self.cap {
+            let drop = self.bytes.len() - self.cap;
+            self.bytes.drain(..drop);
+        }
+    }
+    /// Smallest cursor still in the ring. Equal to
+    /// `total_appended - bytes.len()`.
+    pub fn oldest_total(&self) -> u64 {
+        self.total_appended - self.bytes.len() as u64
+    }
+    pub fn total_appended(&self) -> u64 {
+        self.total_appended
+    }
+    /// Snapshot of bytes at or after `since_total`, capped at `max_bytes`
+    /// from the *tail* (most recent). Returns `(content_bytes, slice_starts_at_total)`
+    /// so the caller can store the next cursor as `slice_starts_at_total + content.len()`.
+    /// `since_total` below the live oldest is clamped up.
+    pub fn read_since(&mut self, since_total: u64, max_bytes: usize) -> (Vec<u8>, u64) {
+        let oldest = self.oldest_total();
+        let from_total = since_total.max(oldest);
+        let skip = (from_total - oldest) as usize;
+        if skip >= self.bytes.len() {
+            return (Vec::new(), self.total_appended);
+        }
+        let after_skip = self.bytes.len() - skip;
+        let take = after_skip.min(max_bytes);
+        // Take the *latest* `take` bytes from the after-skip window so
+        // requests with a small `max_bytes` see the most recent activity
+        // rather than an arbitrary slab from the middle.
+        let tail_start = self.bytes.len() - take;
+        let slice_total = oldest + tail_start as u64;
+        let contig = self.bytes.make_contiguous();
+        (contig[tail_start..].to_vec(), slice_total)
+    }
+}
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -53,12 +193,20 @@ pub struct ShellOpenArgs {
 }
 
 type ChildHandle = Arc<Mutex<Option<Box<dyn Child + Send + Sync>>>>;
+type ScrollbackHandle = Arc<Mutex<Scrollback>>;
+type ShareHandle = Arc<Mutex<ShareState>>;
 
 struct ShellSlot {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     child: ChildHandle,
     reader_thread: Option<JoinHandle<()>>,
+    scrollback: ScrollbackHandle,
+    share: ShareHandle,
+    /// Cosmetic. Carried for the status-line badge + `list_shareable`.
+    /// Not authoritative — the agent always re-asks Rust for live state.
+    cwd: String,
+    command: String,
 }
 
 #[derive(Default)]
@@ -109,7 +257,7 @@ pub fn shell_open<R: Runtime>(
             cmd.arg(a);
         }
     }
-    if let Some(cwd) = args.cwd {
+    if let Some(cwd) = args.cwd.as_ref() {
         cmd.cwd(cwd);
     }
     cmd.env("TERM", "xterm-256color");
@@ -137,9 +285,13 @@ pub fn shell_open<R: Runtime>(
         .map_err(|e| format!("try_clone_reader: {e}"))?;
 
     let child_handle: ChildHandle = Arc::new(Mutex::new(Some(child)));
+    let scrollback_handle: ScrollbackHandle =
+        Arc::new(Mutex::new(Scrollback::new(SCROLLBACK_BYTES)));
+    let share_handle: ShareHandle = Arc::new(Mutex::new(ShareState::new()));
     let app_for_thread = app.clone();
     let tab_id_for_thread = args.tab_id.clone();
     let child_for_thread = Arc::clone(&child_handle);
+    let scrollback_for_thread = Arc::clone(&scrollback_handle);
     let reader_thread = thread::spawn(move || {
         let mut buf = vec![0u8; READ_CHUNK_BYTES];
         // Carry bytes across reads. PTY chunk boundaries land mid-codepoint
@@ -157,8 +309,14 @@ pub fn shell_open<R: Runtime>(
                     if emit_len == 0 {
                         continue;
                     }
-                    let chunk = String::from_utf8_lossy(&carry[..emit_len]).into_owned();
-                    carry.drain(..emit_len);
+                    let raw = carry.drain(..emit_len).collect::<Vec<u8>>();
+                    // Append raw bytes (pre-lossy-decode) to the scrollback
+                    // ring so cursor math stays stable in *byte* units —
+                    // matches what the bridge will offer to the agent.
+                    if let Ok(mut sb) = scrollback_for_thread.lock() {
+                        sb.append(&raw);
+                    }
+                    let chunk = String::from_utf8_lossy(&raw).into_owned();
                     let _ = app_for_thread.emit(
                         "shell-output",
                         ShellOutputPayload {
@@ -173,6 +331,9 @@ pub fn shell_open<R: Runtime>(
         // Flush any remaining bytes lossily on EOF — at this point the PTY
         // is closed so a partial trailing sequence will never complete.
         if !carry.is_empty() {
+            if let Ok(mut sb) = scrollback_for_thread.lock() {
+                sb.append(&carry);
+            }
             let chunk = String::from_utf8_lossy(&carry).into_owned();
             let _ = app_for_thread.emit(
                 "shell-output",
@@ -201,11 +362,20 @@ pub fn shell_open<R: Runtime>(
         );
     });
 
+    let display_cwd = args.cwd.clone().unwrap_or_default();
+    let display_command = args
+        .command
+        .clone()
+        .unwrap_or_else(default_shell_label);
     let slot = ShellSlot {
         writer,
         master: pair.master,
         child: child_handle,
         reader_thread: Some(reader_thread),
+        scrollback: scrollback_handle,
+        share: share_handle,
+        cwd: display_cwd,
+        command: display_command,
     };
     state
         .slots
@@ -289,17 +459,171 @@ pub fn shell_close(
 fn default_shell_command() -> CommandBuilder {
     #[cfg(unix)]
     {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        let mut cmd = CommandBuilder::new(shell);
+        let mut cmd = CommandBuilder::new(default_shell_label());
         cmd.arg("-il");
         cmd
     }
     #[cfg(windows)]
     {
-        let mut cmd = CommandBuilder::new("powershell.exe");
+        let mut cmd = CommandBuilder::new(default_shell_label());
         cmd.arg("-NoLogo");
         cmd
     }
+}
+
+fn default_shell_label() -> String {
+    #[cfg(unix)]
+    {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    }
+    #[cfg(windows)]
+    {
+        "powershell.exe".to_string()
+    }
+}
+
+// =============================================================================
+// Share-mode + scrollback API (M6 P2)
+// =============================================================================
+//
+// Three Tauri commands exposed to the frontend, which proxies bridge
+// requests for `aethon.shells.{list,read}`:
+//
+//   shell_set_share_mode(tabId, mode)  → updates ShareState atomically;
+//                                         on private→shareable transitions,
+//                                         pins the privacy floor at the
+//                                         live scrollback cursor.
+//   shell_read_scrollback(tabId, ...)  → returns recent bytes ≥ floor.
+//                                         Refuses if mode is private.
+//   shell_list_shareable()              → metadata for tabs whose mode is
+//                                         not private. Hidden tabs stay
+//                                         invisible to the agent.
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareableShell {
+    pub tab_id: String,
+    pub cwd: String,
+    pub command: String,
+    pub share_mode: ShareMode,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrollbackSnapshot {
+    pub content: String,
+    /// Cursor at the end of `content`. Pass back as `since_total` to
+    /// resume the stream without re-reading bytes already seen.
+    pub total_appended: u64,
+    pub share_floor: u64,
+    pub share_mode: ShareMode,
+}
+
+#[tauri::command]
+pub fn shell_set_share_mode(
+    state: State<'_, ShellRegistry>,
+    tab_id: String,
+    mode: ShareMode,
+) -> Result<ShareMode, String> {
+    let guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
+    let slot = guard
+        .get(&tab_id)
+        .ok_or_else(|| format!("no shell for tab {tab_id}"))?;
+    let total = slot
+        .scrollback
+        .lock()
+        .map_err(|e| format!("scrollback lock: {e}"))?
+        .total_appended();
+    let mut share = slot
+        .share
+        .lock()
+        .map_err(|e| format!("share lock: {e}"))?;
+    share.transition(mode, total);
+    Ok(share.mode)
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellReadArgs {
+    pub tab_id: String,
+    /// Cursor returned by the previous read. Pass `None` to start from
+    /// the privacy floor (most-recent-first behavior bounded by `max_bytes`).
+    #[serde(default)]
+    pub since_total: Option<u64>,
+    /// Cap on returned content size. Defaults to 8 KiB. Hard cap 64 KiB
+    /// so a runaway agent loop can't pull a megabyte at a time.
+    #[serde(default)]
+    pub max_bytes: Option<usize>,
+}
+
+const READ_DEFAULT_MAX: usize = 8 * 1024;
+const READ_HARD_CAP: usize = 64 * 1024;
+
+#[tauri::command]
+pub fn shell_read_scrollback(
+    state: State<'_, ShellRegistry>,
+    args: ShellReadArgs,
+) -> Result<ScrollbackSnapshot, String> {
+    let guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
+    let slot = guard
+        .get(&args.tab_id)
+        .ok_or_else(|| format!("no shell for tab {}", args.tab_id))?;
+    let share = {
+        let s = slot
+            .share
+            .lock()
+            .map_err(|e| format!("share lock: {e}"))?;
+        (s.mode, s.floor)
+    };
+    let (mode, floor) = share;
+    if !mode.is_shareable() {
+        return Err("share mode is private".to_string());
+    }
+    let max_bytes = args
+        .max_bytes
+        .unwrap_or(READ_DEFAULT_MAX)
+        .min(READ_HARD_CAP);
+    let mut sb = slot
+        .scrollback
+        .lock()
+        .map_err(|e| format!("scrollback lock: {e}"))?;
+    let cursor = args.since_total.unwrap_or(floor).max(floor);
+    let (raw, slice_total) = sb.read_since(cursor, max_bytes);
+    let content = String::from_utf8_lossy(&raw).into_owned();
+    Ok(ScrollbackSnapshot {
+        content,
+        total_appended: slice_total + raw.len() as u64,
+        share_floor: floor,
+        share_mode: mode,
+    })
+}
+
+#[tauri::command]
+pub fn shell_list_shareable(
+    state: State<'_, ShellRegistry>,
+) -> Result<Vec<ShareableShell>, String> {
+    let guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
+    let mut out = Vec::new();
+    for (tab_id, slot) in guard.iter() {
+        let mode = slot
+            .share
+            .lock()
+            .map_err(|e| format!("share lock: {e}"))?
+            .mode;
+        if !mode.is_shareable() {
+            continue;
+        }
+        out.push(ShareableShell {
+            tab_id: tab_id.clone(),
+            cwd: slot.cwd.clone(),
+            command: slot.command.clone(),
+            share_mode: mode,
+        });
+    }
+    // Stable order — sort by tab id so the agent gets a deterministic
+    // listing across calls (helpful for tests + replay debugging).
+    out.sort_by(|a, b| a.tab_id.cmp(&b.tab_id));
+    Ok(out)
 }
 
 /// Largest prefix of `buf` we can safely emit without splitting a UTF-8
@@ -358,6 +682,10 @@ mod tests {
             master: pair.master,
             child: Arc::new(Mutex::new(None)), // tests reap manually
             reader_thread: None,
+            scrollback: Arc::new(Mutex::new(Scrollback::new(SCROLLBACK_BYTES))),
+            share: Arc::new(Mutex::new(ShareState::new())),
+            cwd: String::new(),
+            command: command.to_string(),
         };
         reg.slots.lock().unwrap().insert(tab_id.to_string(), slot);
         child
@@ -499,6 +827,140 @@ mod tests {
             emitted.push_str(&String::from_utf8_lossy(&carry));
         }
         assert_eq!(emitted, original);
+    }
+
+    // ----- ShareMode + ShareState -------------------------------------------
+
+    #[test]
+    fn share_mode_classification() {
+        assert!(!ShareMode::Private.is_shareable());
+        assert!(ShareMode::Read.is_shareable());
+        assert!(ShareMode::ReadWrite.is_shareable());
+        assert!(ShareMode::ReadWriteTrusted.is_shareable());
+        assert!(!ShareMode::Private.allows_write());
+        assert!(!ShareMode::Read.allows_write());
+        assert!(ShareMode::ReadWrite.allows_write());
+        assert!(ShareMode::ReadWriteTrusted.allows_write());
+    }
+
+    #[test]
+    fn share_state_floor_pins_at_first_shareable_transition() {
+        let mut s = ShareState::new();
+        assert_eq!(s.floor, 0);
+        s.transition(ShareMode::Read, 1024);
+        assert_eq!(s.floor, 1024);
+        // Shareable → shareable: floor stays put.
+        s.transition(ShareMode::ReadWrite, 2048);
+        assert_eq!(s.floor, 1024);
+        // Shareable → private: floor stays put.
+        s.transition(ShareMode::Private, 3072);
+        assert_eq!(s.floor, 1024);
+        // Private → shareable again: floor advances to *now*. No
+        // re-exposure of the in-between window.
+        s.transition(ShareMode::Read, 4096);
+        assert_eq!(s.floor, 4096);
+    }
+
+    #[test]
+    fn share_state_round_trip_through_private_does_not_leak_old_window() {
+        // Concrete attack scenario: user grants Read at byte 100, runs
+        // sensitive output to 500, flips to Private, runs more output to
+        // 1000, flips back to Read. The agent must not see the 500–1000
+        // window — the floor must advance to 1000.
+        let mut s = ShareState::new();
+        s.transition(ShareMode::Read, 100);
+        assert_eq!(s.floor, 100);
+        s.transition(ShareMode::Private, 500);
+        s.transition(ShareMode::Read, 1000);
+        assert_eq!(s.floor, 1000);
+    }
+
+    // ----- Scrollback --------------------------------------------------------
+
+    #[test]
+    fn scrollback_append_advances_total() {
+        let mut sb = Scrollback::new(1024);
+        sb.append(b"hello");
+        sb.append(b" world");
+        assert_eq!(sb.total_appended(), 11);
+        assert_eq!(sb.oldest_total(), 0);
+    }
+
+    #[test]
+    fn scrollback_drops_oldest_on_overflow() {
+        let mut sb = Scrollback::new(8);
+        sb.append(b"abcdefgh");
+        assert_eq!(sb.total_appended(), 8);
+        assert_eq!(sb.oldest_total(), 0);
+        sb.append(b"IJ");
+        assert_eq!(sb.total_appended(), 10);
+        assert_eq!(sb.oldest_total(), 2);
+        let (got, slice_total) = sb.read_since(0, 16);
+        assert_eq!(got, b"cdefghIJ");
+        assert_eq!(slice_total, 2);
+    }
+
+    #[test]
+    fn scrollback_read_since_clamps_below_oldest() {
+        let mut sb = Scrollback::new(4);
+        sb.append(b"WXYZ1234"); // oldest=4, total=8
+        let (got, slice_total) = sb.read_since(0, 16);
+        assert_eq!(got, b"1234");
+        assert_eq!(slice_total, 4);
+    }
+
+    #[test]
+    fn scrollback_read_since_returns_only_tail_of_max_bytes() {
+        let mut sb = Scrollback::new(64);
+        sb.append(b"0123456789");
+        let (got, slice_total) = sb.read_since(0, 4);
+        assert_eq!(got, b"6789");
+        assert_eq!(slice_total, 6);
+    }
+
+    #[test]
+    fn scrollback_read_since_at_or_past_total_is_empty() {
+        let mut sb = Scrollback::new(64);
+        sb.append(b"hi");
+        let (got, slice_total) = sb.read_since(2, 16);
+        assert!(got.is_empty());
+        assert_eq!(slice_total, 2);
+        let (got, _) = sb.read_since(99, 16);
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn scrollback_incremental_cursor_walks_full_stream() {
+        let mut sb = Scrollback::new(64);
+        sb.append(b"hello ");
+        sb.append(b"world!");
+        // Drain incrementally with a tiny budget per call.
+        let mut cursor = 0u64;
+        let mut acc: Vec<u8> = Vec::new();
+        for _ in 0..5 {
+            let (got, slice_total) = sb.read_since(cursor, 4);
+            if got.is_empty() {
+                break;
+            }
+            acc.extend_from_slice(&got);
+            cursor = slice_total + got.len() as u64;
+        }
+        assert_eq!(&acc[..], b"hello world!");
+    }
+
+    #[test]
+    fn scrollback_floor_blocks_pre_consent_bytes() {
+        // End-to-end of the privacy contract: bytes appended *before* the
+        // floor must never appear in a read snapshot, even if since_total
+        // is 0 / unset.
+        let mut sb = Scrollback::new(64);
+        sb.append(b"SECRET-");
+        let floor = sb.total_appended();
+        sb.append(b"public");
+        let cursor = floor; // caller would pass since_total=floor
+        let (got, slice_total) = sb.read_since(cursor, 16);
+        assert_eq!(got, b"public");
+        assert_eq!(slice_total, floor);
     }
 
     #[test]

@@ -125,7 +125,15 @@ console) can swap chrome at runtime:
 `Tab.kind` is `"agent" | "shell"`. Agent tabs carry chat-history fields
 (`messages`, `draft`, `waiting`, `queueCount`); shell tabs carry a
 `shell: ShellMeta` payload (`cwd`, `command`, `args`, `shareMode`,
-`shellState`, `exitCode?`). Most code paths special-case via
+`shellState`, `exitCode?`). Share-mode UI helpers live in
+`src/utils/shareMode.ts` (`cycleShareMode`, `shareModeLabel`,
+`shareModeTooltip`); the security boundary is enforced Rust-side in
+`shell.rs` (`ShareState` + `Scrollback`). The bridge surface is
+`aethon.shells.{list, read, setShareMode}` — round-trips through the
+mutation-ack channel as `shell_query` ops with `MutationResult.data`
+populated. Don't add a fast-path that lets the bridge invoke Tauri
+commands directly — the read clamp + privacy floor have to live where
+the PTY does. Most code paths special-case via
 `tab.kind === "shell"` checks (see `closeTab`, `newShellTab`,
 `/agentTabActive` + `/shellTabActive` derived flags). The shell-canvas
 composite (`ShellCanvas` in `components.tsx`) replaces the agent
@@ -294,8 +302,12 @@ relevant notes here when capabilities land.
 **Quick highlights as of writing:** M1–M5 complete + M6 P1 shipped
 (interactive PTY-backed user shell tabs via `portable-pty`, `Tab.kind`
 discriminator, `Cmd+T` = shell / `Cmd+Shift+T` = agent, theme-agnostic
-xterm. M6 P2 — agent-sharing API + `[shell]` config — is the next
-phase). Tool execution surfaces as A2UI cards, multi-tab persistent
+xterm) + M6 P2.1 shipped (per-tab `ShareMode` 4-value enum with
+privacy-floor guardrail, `aethon.shells.{list,read}` bridge API,
+clickable share-mode badge in the shell status line, `[shell]
+default_share_mode` config). M6 P2.2 — `aethon.shells.write` + pi-tool
+registration + per-write confirmation overlay — is the next phase.
+Tool execution surfaces as A2UI cards, multi-tab persistent
 sessions, light theme, system tray + native menu, slash command picker,
 real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
 `composer` required, `slotMap` for non-canonical layouts), generic

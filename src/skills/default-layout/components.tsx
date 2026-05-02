@@ -29,6 +29,11 @@ import type {
   StringValue,
 } from "../../types/a2ui";
 import {
+  shareModeLabel,
+  shareModeTooltip,
+  type ShareMode,
+} from "../../utils/shareMode";
+import {
   resolveBoolean,
   resolveNumber,
   resolveString,
@@ -1753,7 +1758,7 @@ interface TabStripItem {
 // tabs unmounts/remounts so scrollback isolation is automatic.
 // ---------------------------------------------------------------------------
 
-export function ShellCanvas({ component, state }: BuiltinComponentProps) {
+export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
     /** Shell tab id this canvas is bound to. Resolved via $ref so the
      *  layout can pass `/activeTabId` and have the canvas track the
@@ -1768,10 +1773,28 @@ export function ShellCanvas({ component, state }: BuiltinComponentProps) {
     ? resolveString(props.bootGreeting, state)
     : "";
 
+  // Pull the bound tab's shell metadata (cwd, command, share mode, dims)
+  // so the status line can reflect them live. Read-only — mutations flow
+  // through the `onEvent("set-share-mode", ...)` route below.
+  type ShellMetaShape = {
+    cwd?: string;
+    command?: string;
+    shareMode?: ShareMode;
+    shellState?: string;
+  };
+  const tabs = (state["tabs"] as
+    | Array<{ id: string; kind?: string; shell?: ShellMetaShape }>
+    | undefined) ?? [];
+  const boundTab = tabs.find((t) => t.id === tabId);
+  const shell = boundTab?.shell;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const tabIdRef = useRef<string>(tabId);
+  // Live cols×rows for the status line. Updated in the same ResizeObserver
+  // callback that resizes the PTY so the displayed value never drifts.
+  const [dims, setDims] = useState<{ cols: number; rows: number } | null>(null);
   useEffect(() => {
     tabIdRef.current = tabId;
   }, [tabId]);
@@ -1820,13 +1843,20 @@ export function ShellCanvas({ component, state }: BuiltinComponentProps) {
     });
 
     // Resize: FitAddon recomputes cols/rows on layout changes; tell the
-    // PTY too so child processes (vim, less, …) reflow correctly.
+    // PTY too so child processes (vim, less, …) reflow correctly. Mirror
+    // the same dims into local state so the status line displays them
+    // without a separate poll loop.
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
         const cols = term.cols;
         const rows = term.rows;
         if (cols && rows) {
+          setDims((prev) =>
+            prev && prev.cols === cols && prev.rows === rows
+              ? prev
+              : { cols, rows },
+          );
           void invoke("shell_resize", {
             tabId: tabIdRef.current,
             cols,
@@ -1872,15 +1902,83 @@ export function ShellCanvas({ component, state }: BuiltinComponentProps) {
   }, [tabId]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        background: "var(--terminal-bg, #0e0e10)",
-        gridArea: "canvas",
-      }}
-    />
+    <div className="ae-shell-canvas-wrap" style={{ gridArea: "canvas" }}>
+      <div
+        ref={containerRef}
+        className="ae-shell-canvas-term"
+      />
+      <ShellStatusBar
+        cwd={shell?.cwd ?? ""}
+        command={shell?.command ?? ""}
+        shareMode={shell?.shareMode ?? "private"}
+        cols={dims?.cols ?? 0}
+        rows={dims?.rows ?? 0}
+        onCycleShareMode={() => {
+          if (!tabId) return;
+          onEvent("cycle-share-mode", { tabId });
+        }}
+      />
+    </div>
+  );
+}
+
+// Status line under the shell terminal — cwd · command · share-mode badge ·
+// cols×rows. Click the badge to advance the share mode by one step (or
+// click again past trusted to revoke). Cycle order + labels live in
+// `src/utils/shareMode.ts`.
+function ShellStatusBar(props: {
+  cwd: string;
+  command: string;
+  shareMode: ShareMode;
+  cols: number;
+  rows: number;
+  onCycleShareMode: () => void;
+}) {
+  const { cwd, command, shareMode, cols, rows, onCycleShareMode } = props;
+  const cwdShort = useMemo(() => {
+    if (!cwd) return "";
+    // Show basename + parent for context (".../aethon" instead of just
+    // "aethon"), full path is in the title attribute.
+    const parts = cwd.replace(/\/+$/, "").split("/");
+    if (parts.length <= 2) return cwd;
+    return `…/${parts.slice(-2).join("/")}`;
+  }, [cwd]);
+  const shareLabel = useMemo(
+    () => shareModeLabel(shareMode),
+    [shareMode],
+  );
+  const shareTooltip = useMemo(
+    () => shareModeTooltip(shareMode),
+    [shareMode],
+  );
+  const dimsLabel = cols && rows ? `${cols}×${rows}` : "—";
+  return (
+    <div className="ae-shell-status-bar" role="status">
+      {cwdShort && (
+        <span className="ae-shell-status-cwd" title={cwd}>
+          {cwdShort}
+        </span>
+      )}
+      {command && (
+        <>
+          <span className="ae-shell-status-sep" aria-hidden="true">·</span>
+          <span className="ae-shell-status-cmd">{command}</span>
+        </>
+      )}
+      <span className="ae-shell-status-sep" aria-hidden="true">·</span>
+      <button
+        type="button"
+        className="ae-share-badge"
+        data-mode={shareMode}
+        title={shareTooltip}
+        aria-label={`Share mode: ${shareLabel}. ${shareTooltip}`}
+        onClick={onCycleShareMode}
+      >
+        {shareLabel}
+      </button>
+      <span className="ae-shell-status-spacer" />
+      <span className="ae-shell-status-dims">{dimsLabel}</span>
+    </div>
   );
 }
 
