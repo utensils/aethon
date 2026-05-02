@@ -764,9 +764,14 @@ body.ae-resizing-sidebar * {
 }
 
 /* Header spacer — flex grow filler so chrome controls (model picker,
-   appearance menu) right-align even when the rest of the row is short. */
+   appearance menu) right-align even when the rest of the row is short.
+   Basis MUST be 0 (not auto): with `auto`, WebKit resolves the empty
+   div's basis from container free space, swallowing ~1000px before the
+   grow phase even runs and squeezing the sibling tab-strip down to its
+   shrink minimum. With basis 0, strip + spacer split free space cleanly
+   by their grow factors, which is the original intent. */
 .ae-header-spacer {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -1694,7 +1699,9 @@ body.ae-resizing-sidebar * {
   padding: 0 8px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
+  /* No scrollbar: tabs shrink to fit. The label has its own
+     text-overflow: ellipsis so labels truncate cleanly when squeezed. */
+  overflow: hidden;
   min-height: 38px;
   height: 38px;
   min-width: 0;
@@ -1718,9 +1725,14 @@ body.ae-resizing-sidebar * {
   position: relative;
   top: 1px; /* sits flush with the tab-strip's bottom border when active */
   margin-bottom: -1px;
-  min-inline-size: clamp(7.5rem, 18vw, 12rem);
+  /* Tabs share the strip evenly: `flex: 1 1 0` distributes remaining
+     space by grow factor with no per-item basis claim, so 1 tab takes
+     the whole strip (clamped by max-inline-size below) and 12 tabs each
+     get 1/12. min-inline-size keeps the close button reachable even
+     when squeezed; the label inside has overflow: hidden + ellipsis. */
+  min-inline-size: 4rem;
   max-inline-size: min(18rem, 36vw);
-  flex: 0 1 12rem;
+  flex: 1 1 0;
 }
 
 .a2ui-tab:hover {
