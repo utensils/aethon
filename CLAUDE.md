@@ -129,11 +129,15 @@ console) can swap chrome at runtime:
 `src/utils/shareMode.ts` (`cycleShareMode`, `shareModeLabel`,
 `shareModeTooltip`); the security boundary is enforced Rust-side in
 `shell.rs` (`ShareState` + `Scrollback`). The bridge surface is
-`aethon.shells.{list, read, setShareMode}` — round-trips through the
+**read-only**: `aethon.shells.{list, read}` — round-trips through the
 mutation-ack channel as `shell_query` ops with `MutationResult.data`
-populated. Don't add a fast-path that lets the bridge invoke Tauri
-commands directly — the read clamp + privacy floor have to live where
-the PTY does. Most code paths special-case via
+populated. **Do not add an agent-driven `setShareMode`** — discoverable
+tab ids in `/tabs` plus a setter would defeat the opt-in boundary
+`list()` enforces (only the user's badge click may flip a mode).
+Reads are forward-paging from the caller's cursor; cold-start callers
+omit the cursor to get the latest `max_bytes`. Don't add a fast-path
+that lets the bridge invoke Tauri commands directly — the read clamp +
+privacy floor have to live where the PTY does. Most code paths special-case via
 `tab.kind === "shell"` checks (see `closeTab`, `newShellTab`,
 `/agentTabActive` + `/shellTabActive` derived flags). The shell-canvas
 composite (`ShellCanvas` in `components.tsx`) replaces the agent

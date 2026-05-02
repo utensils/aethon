@@ -137,11 +137,21 @@ impl Scrollback {
     pub fn total_appended(&self) -> u64 {
         self.total_appended
     }
-    /// Snapshot of bytes at or after `since_total`, capped at `max_bytes`
-    /// from the *tail* (most recent). Returns `(content_bytes, slice_starts_at_total)`
-    /// so the caller can store the next cursor as `slice_starts_at_total + content.len()`.
+    /// Forward-page from `since_total`: returns up to `max_bytes` bytes
+    /// starting at that cursor, plus the cursor of the slice's first
+    /// byte. Caller advances the cursor as `slice_total + content.len()`.
     /// `since_total` below the live oldest is clamped up.
-    pub fn read_since(&mut self, since_total: u64, max_bytes: usize) -> (Vec<u8>, u64) {
+    ///
+    /// Note: this is a *forward* read. To get the most recent N bytes
+    /// (cold-start "show me what's on screen"), pass
+    /// `since_total = total_appended - N` clamped to the privacy floor —
+    /// the call site in [`shell_read_scrollback`] does exactly that.
+    /// A previous version always returned the tail of `max_bytes` from
+    /// the after-skip window, which made paging skip bytes (codex P2):
+    /// `read(since=0, max=4)` on a 12-byte buffer returned the last 4
+    /// bytes and reported `total=8`, so the next cursor jumped past
+    /// bytes 0..8 forever.
+    pub fn read_from(&mut self, since_total: u64, max_bytes: usize) -> (Vec<u8>, u64) {
         let oldest = self.oldest_total();
         let from_total = since_total.max(oldest);
         let skip = (from_total - oldest) as usize;
@@ -150,13 +160,8 @@ impl Scrollback {
         }
         let after_skip = self.bytes.len() - skip;
         let take = after_skip.min(max_bytes);
-        // Take the *latest* `take` bytes from the after-skip window so
-        // requests with a small `max_bytes` see the most recent activity
-        // rather than an arbitrary slab from the middle.
-        let tail_start = self.bytes.len() - take;
-        let slice_total = oldest + tail_start as u64;
         let contig = self.bytes.make_contiguous();
-        (contig[tail_start..].to_vec(), slice_total)
+        (contig[skip..skip + take].to_vec(), from_total)
     }
 }
 
@@ -587,8 +592,18 @@ pub fn shell_read_scrollback(
         .scrollback
         .lock()
         .map_err(|e| format!("scrollback lock: {e}"))?;
-    let cursor = args.since_total.unwrap_or(floor).max(floor);
-    let (raw, slice_total) = sb.read_since(cursor, max_bytes);
+    // Cold-start "show me the latest" when no cursor: rewind from the
+    // live total by `max_bytes`, clamped to the privacy floor so we
+    // never reach behind it. Subsequent calls pass back the returned
+    // `total_appended` so paging walks forward.
+    let cursor = match args.since_total {
+        Some(c) => c.max(floor),
+        None => sb
+            .total_appended()
+            .saturating_sub(max_bytes as u64)
+            .max(floor),
+    };
+    let (raw, slice_total) = sb.read_from(cursor, max_bytes);
     let content = String::from_utf8_lossy(&raw).into_owned();
     Ok(ScrollbackSnapshot {
         content,
@@ -895,37 +910,41 @@ mod tests {
         sb.append(b"IJ");
         assert_eq!(sb.total_appended(), 10);
         assert_eq!(sb.oldest_total(), 2);
-        let (got, slice_total) = sb.read_since(0, 16);
+        let (got, slice_total) = sb.read_from(0, 16);
         assert_eq!(got, b"cdefghIJ");
         assert_eq!(slice_total, 2);
     }
 
     #[test]
-    fn scrollback_read_since_clamps_below_oldest() {
+    fn scrollback_read_from_clamps_below_oldest() {
         let mut sb = Scrollback::new(4);
         sb.append(b"WXYZ1234"); // oldest=4, total=8
-        let (got, slice_total) = sb.read_since(0, 16);
+        let (got, slice_total) = sb.read_from(0, 16);
         assert_eq!(got, b"1234");
         assert_eq!(slice_total, 4);
     }
 
     #[test]
-    fn scrollback_read_since_returns_only_tail_of_max_bytes() {
+    fn scrollback_read_from_returns_forward_window_not_tail() {
+        // Codex P2 regression: the previous read_since returned the
+        // *tail* of max_bytes regardless of the cursor, so paging from 0
+        // skipped the head. Verify forward semantics: read(since=0,max=4)
+        // on "0123456789" returns the head, not the tail.
         let mut sb = Scrollback::new(64);
         sb.append(b"0123456789");
-        let (got, slice_total) = sb.read_since(0, 4);
-        assert_eq!(got, b"6789");
-        assert_eq!(slice_total, 6);
+        let (got, slice_total) = sb.read_from(0, 4);
+        assert_eq!(got, b"0123");
+        assert_eq!(slice_total, 0);
     }
 
     #[test]
-    fn scrollback_read_since_at_or_past_total_is_empty() {
+    fn scrollback_read_from_at_or_past_total_is_empty() {
         let mut sb = Scrollback::new(64);
         sb.append(b"hi");
-        let (got, slice_total) = sb.read_since(2, 16);
+        let (got, slice_total) = sb.read_from(2, 16);
         assert!(got.is_empty());
         assert_eq!(slice_total, 2);
-        let (got, _) = sb.read_since(99, 16);
+        let (got, _) = sb.read_from(99, 16);
         assert!(got.is_empty());
     }
 
@@ -934,14 +953,16 @@ mod tests {
         let mut sb = Scrollback::new(64);
         sb.append(b"hello ");
         sb.append(b"world!");
-        // Drain incrementally with a tiny budget per call.
+        // Drain incrementally with a tiny budget per call. With forward
+        // paging, every byte is observed exactly once.
         let mut cursor = 0u64;
         let mut acc: Vec<u8> = Vec::new();
-        for _ in 0..5 {
-            let (got, slice_total) = sb.read_since(cursor, 4);
+        for _ in 0..10 {
+            let (got, slice_total) = sb.read_from(cursor, 4);
             if got.is_empty() {
                 break;
             }
+            assert_eq!(slice_total, cursor, "slice_total must equal cursor (forward paging)");
             acc.extend_from_slice(&got);
             cursor = slice_total + got.len() as u64;
         }
@@ -958,9 +979,29 @@ mod tests {
         let floor = sb.total_appended();
         sb.append(b"public");
         let cursor = floor; // caller would pass since_total=floor
-        let (got, slice_total) = sb.read_since(cursor, 16);
+        let (got, slice_total) = sb.read_from(cursor, 16);
         assert_eq!(got, b"public");
         assert_eq!(slice_total, floor);
+    }
+
+    #[test]
+    fn scrollback_paging_no_cursor_then_resume() {
+        // Mimics the cold-start use case: caller passes no cursor, gets
+        // the latest `max_bytes`, then pages forward from the returned
+        // cursor. This is the exact pattern shell_read_scrollback uses
+        // when args.since_total is None.
+        let mut sb = Scrollback::new(64);
+        sb.append(b"hello world!");
+        let max_bytes = 4usize;
+        // Cold start cursor = total - max_bytes (clamped to oldest).
+        let total = sb.total_appended();
+        let cold_cursor = total.saturating_sub(max_bytes as u64).max(sb.oldest_total());
+        let (got, slice_total) = sb.read_from(cold_cursor, max_bytes);
+        assert_eq!(got, b"rld!");
+        assert_eq!(slice_total, 8);
+        // Resume from after the returned slice — should be empty (caught up).
+        let (got, _) = sb.read_from(slice_total + got.len() as u64, max_bytes);
+        assert!(got.is_empty());
     }
 
     #[test]

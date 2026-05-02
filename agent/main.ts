@@ -2174,20 +2174,25 @@ async function main() {
   // -------------------------------------------------------------------------
   // aethon.shells — opt-in agent ↔ shell sharing (M6 P2)
   // -------------------------------------------------------------------------
-  // Three operations, all gated by the per-tab `ShareMode` enforced
-  // Rust-side in `shell.rs`:
-  //   - list()        → ShareableShell[] for tabs whose mode != private
-  //   - read(args)    → ScrollbackSnapshot ≥ floor (refused for private)
-  //   - setShareMode  → user-driven mode change; bumps privacy floor on
-  //                     each private→shareable transition.
+  // Two read-only operations, both gated by the per-tab `ShareMode`
+  // enforced Rust-side in `shell.rs`:
+  //   - list()     → ShareableShell[] for tabs whose mode != private
+  //   - read(args) → ScrollbackSnapshot ≥ floor (refused for private)
   //
-  // The wire shape is `shell_query`. All three round-trip through the
+  // **There is no agent-driven setShareMode.** Mode changes are user-only
+  // — driven by the status-bar badge click in `ShellCanvas`. Exposing
+  // a setShareMode here would let agent code flip a known tab id from
+  // `/tabs` mirror into sharing and then read it, defeating the opt-in
+  // boundary that `list()` enforces. If a future workflow needs to
+  // request access, surface it as a user-confirmation overlay rather
+  // than a direct mutation.
+  //
+  // Wire shape is `shell_query`. Both ops round-trip through the
   // mutation-ack channel so awaiters get a uniform `MutationResult`
   // (with `data` populated for queries). Writes ship in P2.2 alongside
   // pi-tool registration + per-write confirmation overlay.
-  type ShareModeWire = "private" | "read" | "read-write" | "read-write-trusted";
   function _shellQuery(
-    op: "list" | "read" | "setShareMode",
+    op: "list" | "read",
     args: Record<string, unknown> = {},
   ): Promise<MutationResult> {
     const { id, promise } = trackMutation();
@@ -2215,31 +2220,9 @@ async function main() {
         : {}),
     });
   }
-  function _shellsSetShareMode(
-    tabId: unknown,
-    mode: unknown,
-  ): Promise<MutationResult> {
-    if (typeof tabId !== "string" || !tabId) {
-      return Promise.resolve({ ok: false, error: "tabId required" });
-    }
-    const validModes: ShareModeWire[] = [
-      "private",
-      "read",
-      "read-write",
-      "read-write-trusted",
-    ];
-    if (typeof mode !== "string" || !validModes.includes(mode as ShareModeWire)) {
-      return Promise.resolve({
-        ok: false,
-        error: "mode must be one of: " + validModes.join(", "),
-      });
-    }
-    return _shellQuery("setShareMode", { tabId, mode });
-  }
   const shellsApi = {
     list: _shellsList,
     read: _shellsRead,
-    setShareMode: _shellsSetShareMode,
   };
 
   const aethonApi = {

@@ -2228,33 +2228,21 @@ export default function App() {
         break;
       }
       case "shell_query": {
-        // Bridge proxy for `aethon.shells.{list, read, setShareMode}`.
-        // Each op invokes a Tauri command and rounds the result back to
-        // the bridge as a `mutation_ack` so the awaiting Promise resolves
-        // with `data` populated. Errors flow through the same channel
-        // as `success: false, error: <msg>`.
+        // Bridge proxy for `aethon.shells.{list, read}` — read-only
+        // operations only. Mode changes go through the status-bar badge
+        // (frontend invokes `shell_set_share_mode` directly), never
+        // through the agent surface; otherwise an extension could flip
+        // a private tab into sharing without a user gesture and bypass
+        // the opt-in boundary `list()` enforces.
         const op = data.op as string | undefined;
         const args = (data.args as Record<string, unknown> | undefined) ?? {};
         const mid = data.mutationId;
         const route = async () => {
           if (op === "list") {
-            const r = await invoke("shell_list_shareable");
-            return r;
+            return await invoke("shell_list_shareable");
           }
           if (op === "read") {
-            const r = await invoke("shell_read_scrollback", { args });
-            return r;
-          }
-          if (op === "setShareMode") {
-            const tabId = String(args.tabId ?? "");
-            const mode = String(args.mode ?? "");
-            const r = await invoke("shell_set_share_mode", { tabId, mode });
-            // Mirror to local Tab state so the UI badge updates without
-            // round-tripping through the bridge again. Do this only on
-            // success — Tauri throws on lock failures so reaching here
-            // means the Rust state already accepted the new mode.
-            applyShareModeToTab(tabId, mode);
-            return r;
+            return await invoke("shell_read_scrollback", { args });
           }
           throw new Error(`unknown shell_query op: ${op}`);
         };
