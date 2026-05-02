@@ -2901,3 +2901,99 @@ body.ae-resizing-sidebar * {
 .ae-notification-close:hover {
   color: var(--text);
 }
+
+/* =============================================================================
+   Shell canvas — interactive PTY tab. The container is a flex column so
+   the xterm fills the canvas cell and a thin status bar sits underneath
+   showing cwd, command, the share-mode badge, and live cols×rows.
+   ============================================================================= */
+
+.ae-shell-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--terminal-bg, #0e0e10);
+  min-height: 0;
+}
+.ae-shell-canvas-term {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.ae-shell-status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-shell-status-cwd,
+.ae-shell-status-cmd {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.ae-shell-status-cwd {
+  color: var(--text);
+}
+.ae-shell-status-cmd {
+  color: var(--accent);
+}
+.ae-shell-status-sep {
+  color: var(--border);
+}
+.ae-shell-status-spacer {
+  flex: 1 1 auto;
+}
+.ae-shell-status-dims {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Share-mode badge — clickable, cycles modes. Color-coded so the
+ * privacy state reads at a glance:
+ *   private             → muted (the safe default)
+ *   read                → blue
+ *   read-write          → amber (caution: agent will ask before each write)
+ *   read-write-trusted  → red (no confirmation — only set this deliberately)
+ */
+.ae-share-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+.ae-share-badge:hover {
+  background: color-mix(in oklab, currentColor 14%, transparent);
+}
+.ae-share-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ae-share-badge[data-mode="private"] {
+  color: var(--text-dim);
+}
+.ae-share-badge[data-mode="read"] {
+  color: #5b8def;
+}
+.ae-share-badge[data-mode="read-write"] {
+  color: #d18a2c;
+}
+.ae-share-badge[data-mode="read-write-trusted"] {
+  color: #c5494a;
+}

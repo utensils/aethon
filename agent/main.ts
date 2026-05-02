@@ -215,6 +215,10 @@ export interface MutationResult {
    *  - "frontend_disconnected"        — bridge died mid-flight
    */
   error?: string;
+  /** Optional payload for query-style mutations (e.g. `aethon.shells.list`,
+   *  `aethon.shells.read`). The shape is op-specific — see the namespace
+   *  that produced the result. Null for plain side-effect mutations. */
+  data?: unknown;
 }
 const MUTATION_ACK_TIMEOUT_MS = 5_000;
 let _mutationCounter = 0;
@@ -1404,12 +1408,21 @@ async function main() {
     return { id, promise };
   }
 
-  function ackMutation(id: string, success: boolean, error?: string) {
+  function ackMutation(
+    id: string,
+    success: boolean,
+    error?: string,
+    data?: unknown,
+  ) {
     const entry = pendingMutations.get(id);
     if (!entry) return;
     pendingMutations.delete(id);
     clearTimeout(entry.timer);
-    entry.resolve({ ok: !!success, ...(error ? { error } : {}) });
+    entry.resolve({
+      ok: !!success,
+      ...(error ? { error } : {}),
+      ...(data !== undefined ? { data } : {}),
+    });
   }
 
   // Plain functions so methods can call each other without `this` binding
@@ -2158,6 +2171,60 @@ async function main() {
     return layoutSlotsCatalogue ?? null;
   }
 
+  // -------------------------------------------------------------------------
+  // aethon.shells — opt-in agent ↔ shell sharing (M6 P2)
+  // -------------------------------------------------------------------------
+  // Two read-only operations, both gated by the per-tab `ShareMode`
+  // enforced Rust-side in `shell.rs`:
+  //   - list()     → ShareableShell[] for tabs whose mode != private
+  //   - read(args) → ScrollbackSnapshot ≥ floor (refused for private)
+  //
+  // **There is no agent-driven setShareMode.** Mode changes are user-only
+  // — driven by the status-bar badge click in `ShellCanvas`. Exposing
+  // a setShareMode here would let agent code flip a known tab id from
+  // `/tabs` mirror into sharing and then read it, defeating the opt-in
+  // boundary that `list()` enforces. If a future workflow needs to
+  // request access, surface it as a user-confirmation overlay rather
+  // than a direct mutation.
+  //
+  // Wire shape is `shell_query`. Both ops round-trip through the
+  // mutation-ack channel so awaiters get a uniform `MutationResult`
+  // (with `data` populated for queries). Writes ship in P2.2 alongside
+  // pi-tool registration + per-write confirmation overlay.
+  function _shellQuery(
+    op: "list" | "read",
+    args: Record<string, unknown> = {},
+  ): Promise<MutationResult> {
+    const { id, promise } = trackMutation();
+    send({ type: "shell_query", mutationId: id, op, args });
+    return promise;
+  }
+  function _shellsList(): Promise<MutationResult> {
+    return _shellQuery("list");
+  }
+  function _shellsRead(input: {
+    tabId: string;
+    sinceTotal?: number;
+    maxBytes?: number;
+  }): Promise<MutationResult> {
+    if (!input || typeof input.tabId !== "string" || !input.tabId) {
+      return Promise.resolve({ ok: false, error: "tabId required" });
+    }
+    return _shellQuery("read", {
+      tabId: input.tabId,
+      ...(typeof input.sinceTotal === "number"
+        ? { sinceTotal: input.sinceTotal }
+        : {}),
+      ...(typeof input.maxBytes === "number"
+        ? { maxBytes: input.maxBytes }
+        : {}),
+    });
+  }
+  const shellsApi = {
+    list: _shellsList,
+    read: _shellsRead,
+  };
+
   const aethonApi = {
     registerComponent: _registerComponent,
     setState: _setState,
@@ -2190,6 +2257,8 @@ async function main() {
     // Programmatic canvas push API. Tab attribution flows through the
     // same priority chain as setState (explicit > ALS > currentAgentTabId).
     canvas: makeCanvasApi(undefined),
+    // Opt-in agent ↔ shell sharing — see _shellQuery comment above.
+    shells: shellsApi,
   };
   type AethonApi = typeof aethonApi;
   (globalThis as { aethon?: AethonApi }).aethon = aethonApi;
@@ -2907,15 +2976,19 @@ async function main() {
         }
         case "mutation_ack": {
           // Frontend acknowledges a mutation by id. Resolves the
-          // corresponding pending Promise so awaiters unblock.
+          // corresponding pending Promise so awaiters unblock. `data`
+          // carries query payloads (e.g. shells.list / shells.read);
+          // for plain mutations it's absent.
           const mid = (msg as { mutationId?: unknown }).mutationId;
           const success = (msg as { success?: unknown }).success;
           const errorField = (msg as { error?: unknown }).error;
+          const dataField = (msg as { data?: unknown }).data;
           if (typeof mid !== "string") break;
           ackMutation(
             mid,
             success === undefined ? true : !!success,
             typeof errorField === "string" ? errorField : undefined,
+            dataField,
           );
           break;
         }

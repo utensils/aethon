@@ -1297,6 +1297,9 @@ pub fn run() {
             shell::shell_input,
             shell::shell_resize,
             shell::shell_close,
+            shell::shell_set_share_mode,
+            shell::shell_read_scrollback,
+            shell::shell_list_shareable,
             #[cfg(debug_assertions)]
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
