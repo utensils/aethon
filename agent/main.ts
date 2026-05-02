@@ -982,9 +982,27 @@ async function loadProjectAethonExtensions(
       path: string;
     }) => void;
   },
-): Promise<number> {
+): Promise<{ loaded: number; failed: number }> {
   const dirs = await findProjectExtensionDirs(cwd);
   const before = loadedFiles.size;
+  // Count failures observed in THIS call so the caller can reload prompt
+  // resources even when zero extensions loaded — without this, a project
+  // whose only extensions broke would update `loadFailures` but the
+  // session's system prompt would not see the new failedExtensions list,
+  // defeating the whole point of the failure-surfacing path. The user's
+  // own onFailure hook (if any) still runs.
+  let failedThisCall = 0;
+  const wrappedHooks = {
+    onLoaded: hooks?.onLoaded,
+    onFailure: hooks?.onFailure
+      ? (f: Parameters<NonNullable<typeof hooks.onFailure>>[0]) => {
+          failedThisCall += 1;
+          hooks.onFailure?.(f);
+        }
+      : (() => {
+          failedThisCall += 1;
+        }),
+  };
   for (const { projectRoot, extensionDir } of dirs) {
     await loadAethonExtensionDirectory(api, registry, {
       dir: extensionDir,
@@ -992,11 +1010,11 @@ async function loadProjectAethonExtensions(
       logPrefix: "aethon-project-ext",
       loadedFiles,
       displayName: (name) => projectExtensionDisplayName(projectRoot, extensionDir, name),
-      onLoaded: hooks?.onLoaded,
-      onFailure: hooks?.onFailure,
+      onLoaded: wrappedHooks.onLoaded,
+      onFailure: wrappedHooks.onFailure,
     });
   }
-  return loadedFiles.size - before;
+  return { loaded: loadedFiles.size - before, failed: failedThisCall };
 }
 
 async function main() {
@@ -3157,14 +3175,17 @@ async function main() {
               ? cwdField
               : undefined;
           if (cwdOverride) {
-            const loaded = await loadProjectAethonExtensions(
+            const result = await loadProjectAethonExtensions(
               cwdOverride,
               aethonApi,
               loadedExtensions,
               loadedProjectExtensionFiles,
               loadHooks,
             );
-            if (loaded > 0) {
+            // Reload on either successful loads OR fresh failures so the
+            // new tab's system prompt picks up `failedExtensions` even when
+            // every project extension broke.
+            if (result.loaded > 0 || result.failed > 0) {
               await resourceLoader.reload();
               scheduleStateFileWrite();
               emitReady();
@@ -3208,14 +3229,16 @@ async function main() {
             tabProjectCwds.delete(tabId);
           } else if (typeof cwd === "string" && cwd.length > 0) {
             tabProjectCwds.set(tabId, cwd);
-            const loaded = await loadProjectAethonExtensions(
+            const result = await loadProjectAethonExtensions(
               cwd,
               aethonApi,
               loadedExtensions,
               loadedProjectExtensionFiles,
               loadHooks,
             );
-            if (loaded > 0) {
+            // Reload on either fresh loads or failures (see tab_open
+            // comment) so failedExtensions reaches the next prompt.
+            if (result.loaded > 0 || result.failed > 0) {
               await resourceLoader.reload();
               scheduleStateFileWrite();
               emitReady();
