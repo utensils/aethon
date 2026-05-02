@@ -5624,11 +5624,18 @@ export default function App() {
         }
       }
 
-      // Shell-canvas: badge click cycles share mode. Look up current
-      // mode in the bound tab, advance via the cycle helper, persist
-      // through the Rust side (shell_set_share_mode) AND mirror locally
-      // via applyShareModeToTab so the badge label refreshes immediately.
-      if (component.type === "shell-canvas" && eventType === "cycle-share-mode") {
+      // Share-mode cycle. Match either source: the inline badge inside
+      // ShellCanvas re-emits on the shell-canvas channel; a standalone
+      // `<share-mode-badge>` placed directly in a custom layout emits
+      // on its own component type. Either path runs the same effect:
+      // look up the current mode, advance via the cycle helper, persist
+      // through the Rust side AND mirror locally so the badge label
+      // refreshes immediately.
+      if (
+        eventType === "cycle-share-mode" &&
+        (component.type === "shell-canvas" ||
+          component.type === "share-mode-badge")
+      ) {
         const sel = data as { tabId?: string } | undefined;
         const id = sel?.tabId;
         if (typeof id !== "string" || !id) return true;
