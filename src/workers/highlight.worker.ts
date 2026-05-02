@@ -99,6 +99,15 @@ const LANG_ALIASES: Record<string, string> = {
 let highlighterPromise: Promise<HighlighterCore> | null = null;
 const loadedLangs = new Set<string>();
 const failedLangs = new Set<string>();
+// In-flight extension-supplied grammar loads, keyed by canonical lang.
+// `ensureLang` awaits any pending entry for the requested lang BEFORE
+// falling through to the LANG_LOADERS lookup — without this, a register
+// + highlight pair (the documented flow) races: the highlight handler
+// runs while loadLanguage is still in flight, finds no LANG_LOADERS
+// entry, marks the lang failed, and the main-thread cache stores the
+// plain-text fallback. With this map the highlight awaits the load and
+// uses the freshly-registered grammar.
+const registrationPromises = new Map<string, Promise<void>>();
 
 function getHighlighter(): Promise<HighlighterCore> {
   if (!highlighterPromise) {
@@ -119,6 +128,17 @@ async function ensureLang(
   lang: string,
 ): Promise<string> {
   const canonical = LANG_ALIASES[lang] ?? lang;
+  // If an extension just registered a grammar for this lang, wait for
+  // its loadLanguage to finish before deciding. Critical for the
+  // documented `aethon.registerHighlightGrammar(lang, grammar)` →
+  // immediate render flow: without the wait, the highlight handler
+  // runs first, finds no LANG_LOADERS entry, marks failed, and caches
+  // plain text. With the wait, the registration completes first and
+  // loadedLangs[canonical] is set when we re-check below.
+  const pendingRegistration = registrationPromises.get(canonical);
+  if (pendingRegistration) {
+    await pendingRegistration;
+  }
   if (loadedLangs.has(canonical)) return canonical;
   if (failedLangs.has(canonical)) return "text";
   const loader = LANG_LOADERS[canonical];
@@ -199,7 +219,7 @@ async function highlight(code: string, lang: string): Promise<string | null> {
  * highlight request for the failed lang falls through to the regular
  * `ensureLang` path which marks it failed and renders as plain text.
  */
-async function registerGrammar(lang: string, grammar: unknown): Promise<void> {
+async function loadGrammar(lang: string, grammar: unknown): Promise<void> {
   try {
     const hl = await getHighlighter();
     await hl.loadLanguage(grammar as never);
@@ -208,6 +228,23 @@ async function registerGrammar(lang: string, grammar: unknown): Promise<void> {
   } catch (e) {
     console.warn(`[shiki worker] failed to register grammar for "${lang}":`, e);
   }
+}
+
+function registerGrammar(lang: string, grammar: unknown): Promise<void> {
+  // Insert into registrationPromises SYNCHRONOUSLY so a highlight message
+  // dispatched right after this register-grammar message (the documented
+  // flow — both arrive on the same JS turn from the main thread) sees the
+  // pending entry in `ensureLang` and awaits it rather than racing past.
+  const p = loadGrammar(lang, grammar).finally(() => {
+    // Drop only if we're still the in-flight entry — guards against a
+    // re-registration overwriting and then this old promise clearing
+    // the new one out from under future highlights.
+    if (registrationPromises.get(lang) === p) {
+      registrationPromises.delete(lang);
+    }
+  });
+  registrationPromises.set(lang, p);
+  return p;
 }
 
 /**

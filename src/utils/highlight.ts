@@ -146,6 +146,19 @@ export function prewarmHighlighter(): void {
  * `docs/aethon-agent/extensions.md`.
  */
 export function registerGrammar(lang: string, grammar: unknown): void {
+  // Drop any cache entry keyed by this lang. A common scenario:
+  //   1. User loads a workspace; chat renders code ```mylang``` as plain
+  //      text because the grammar isn't loaded yet → cached as plain.
+  //   2. An extension calls `registerGrammar("mylang", …)` later in boot.
+  //   3. Without this eviction, the same `(lang, code)` pair would keep
+  //      hitting the stale plain-text entry and the user would never see
+  //      the new grammar take effect on already-rendered blocks.
+  // Iteration is fine — the cache caps at 500 entries and registrations
+  // are rare (extension boot, not per-render).
+  const prefix = `${lang}\0`;
+  for (const key of [...cache.keys()]) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
   getWorker().postMessage({ type: "register-grammar", lang, grammar });
 }
 

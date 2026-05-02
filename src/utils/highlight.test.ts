@@ -119,4 +119,18 @@ describe("registerGrammar (extension surface)", () => {
     registerGrammar("lean", { name: "lean", scopeName: "source.lean" });
     expect(__testing.cache.size).toBe(0);
   });
+
+  it("evicts stale cache entries for the registered lang so a prior plain-text fallback doesn't shadow the new grammar", () => {
+    // Pre-seed cache with the failure scenario: a plain-text result for
+    // ```mylang``` blocks rendered before the grammar was registered.
+    __testing.cache.set("mylang\0FOO bar", "<plain/>");
+    __testing.cache.set("mylang\0baz", "<plain/>");
+    __testing.cache.set("typescript\0const x = 1;", "<ts/>");
+    expect(__testing.cache.size).toBe(3);
+    registerGrammar("mylang", { name: "mylang", scopeName: "source.mylang" });
+    // Both mylang entries gone; unrelated typescript entry retained.
+    expect(__testing.cache.has("mylang\0FOO bar")).toBe(false);
+    expect(__testing.cache.has("mylang\0baz")).toBe(false);
+    expect(__testing.cache.has("typescript\0const x = 1;")).toBe(true);
+  });
 });
