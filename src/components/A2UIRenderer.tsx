@@ -42,6 +42,14 @@ export type A2UIEventHandler = (
 
 interface A2UIRendererProps {
   payload: A2UIPayload;
+  // When true, render the components as a Fragment instead of wrapping
+  // them in `<div class="a2ui-renderer">`. The wrapper has global
+  // `flex: 1; overflow: hidden` styles that are correct for the main
+  // layout-payload mount but break leaf renders (e.g. RegistryComponent
+  // mounting an overlay or the share-mode badge inline in a status bar):
+  // the wrapper would otherwise consume flex space alongside the real
+  // layout. Used by RegistryComponent below.
+  bare?: boolean;
   // Optional state setter — when supplied, the renderer mutates this caller-owned
   // store (chat input, draft, etc.) instead of its internal copy. This is what
   // lets the App treat the layout's state as the single source of truth.
@@ -163,12 +171,62 @@ const PRIMITIVE_REGISTRY: Record<
   table: Table,
 };
 
+// Mount a registry-resolved component as a leaf at the app root. Used for
+// overlays (command-palette, notification-stack, settings-panel,
+// search-panel, share-mode-badge) so a skill can replace them via
+// `aethon.registerComponent("<type>", custom)` — without this helper the
+// overlays would have to be direct-imported, which bypasses the registry
+// and silently defeats the documented override path.
+//
+// Implementation: synthesize a one-component A2UI payload and run it
+// through the main renderer. That gets template/React/primitive lookup
+// priority right (templates from `aethon.registerComponent` win over
+// default skill components), automatically. Callers with a need to
+// pass live data into the synthetic root use `componentProps` —
+// shareMode/tabId for the share badge is the canonical example.
+export function RegistryComponent({
+  type,
+  state,
+  onEvent,
+  componentProps,
+  tabId,
+}: {
+  type: string;
+  state: Record<string, unknown>;
+  onEvent: A2UIEventHandler;
+  componentProps?: Record<string, unknown>;
+  // Tab id forwarded into the inner renderer's event dispatch. Critical
+  // for App-root overlays — without this, an extension that replaces
+  // command-palette / search-panel / settings-panel / notification-stack
+  // with a declarative template emits events that the bridge defaults
+  // to tabId="default", routing extension handlers / ctx.pi.prompt()
+  // against the wrong pi session in any non-default active tab.
+  tabId?: string;
+}) {
+  const payload = useMemo<A2UIPayload>(
+    () => ({
+      components: [{ id: type, type, props: componentProps ?? {} }],
+    }),
+    [type, componentProps],
+  );
+  return (
+    <A2UIRenderer
+      payload={payload}
+      state={state}
+      onEvent={onEvent}
+      tabId={tabId}
+      bare
+    />
+  );
+}
+
 export default function A2UIRenderer({
   payload,
   state: externalState,
   onStateChange,
   onEvent: externalOnEvent,
   tabId,
+  bare = false,
 }: A2UIRendererProps) {
   const registry = useSkillRegistry();
   const [internalState, setInternalState] = useState<Record<string, unknown>>(
@@ -365,13 +423,15 @@ export default function A2UIRenderer({
     // Use the iteration-augmented state if we're inside a for-each;
     // otherwise the renderer's own state.
     const activeState = scopedState ?? state;
-    const Component =
-      PRIMITIVE_REGISTRY[component.type] ?? registry.resolve(component.type);
 
-    if (!Component) {
-      // No React impl — try the extension template registry. Templates are
-      // declarative A2UI subtrees registered by pi extensions via the
-      // bridge; we expand them in place using the same renderer + state.
+    // Lookup priority — primitives are immutable; for everything else,
+    // extension-registered templates beat the default React component
+    // so `aethon.registerComponent("<type>", template)` from the bridge
+    // is a real override surface (otherwise built-in skills always win
+    // and the documented override is silently dead). Skill-registered
+    // React components remain the default.
+    const Primitive = PRIMITIVE_REGISTRY[component.type];
+    if (!Primitive) {
       const template = registry.resolveTemplate(component.type);
       if (template && typeof template === "object") {
         const tpl = template as A2UIComponent;
@@ -380,11 +440,30 @@ export default function A2UIRenderer({
         // componentIds (events from interactive children would otherwise
         // be ambiguous between instances).
         const expanded = rewriteTemplateIds(tpl, `${component.id}__tpl`);
+        // Expose the host component's props inside the scoped state as
+        // `$props` so the template can `$ref: "/$props/<key>"` to read
+        // live values from the host. Without this, a declarative override
+        // for a component like `share-mode-badge` (which carries a live
+        // `{shareMode, tabId}` from the parent) loses access to those
+        // values — the React-component override path passes them via
+        // `component.props`, so the template path needs an equivalent.
+        const hostProps =
+          component.props && typeof component.props === "object"
+            ? component.props
+            : {};
+        const baseScope = scopedState ?? activeState;
+        const templateScope: Record<string, unknown> = {
+          ...baseScope,
+          $props: hostProps,
+        };
         // Track the host template type so descendants' events carry it —
         // extension handlers register by template type to filter events
         // from their own template instances.
-        return renderComponent(expanded, component.type, scopedState);
+        return renderComponent(expanded, component.type, templateScope);
       }
+    }
+    const Component = Primitive ?? registry.resolve(component.type);
+    if (!Component) {
       console.warn(`Unknown A2UI component type: ${component.type}`);
       return null;
     }
@@ -422,6 +501,15 @@ export default function A2UIRenderer({
     );
   };
 
+  if (bare) {
+    return (
+      <Fragment>
+        {payload.components.map((component) => (
+          <Fragment key={component.id}>{renderComponent(component)}</Fragment>
+        ))}
+      </Fragment>
+    );
+  }
   return (
     <div className="a2ui-renderer">
       {payload.components.map((component) => renderComponent(component))}

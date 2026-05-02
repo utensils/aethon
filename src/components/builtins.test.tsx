@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { A2UIComponent } from "../types/a2ui";
-import { DatePicker, Form, FormField, Icon } from "./builtins";
+import { Button, DatePicker, Form, FormField, Icon } from "./builtins";
 
 const noop = () => {};
 
@@ -88,5 +88,73 @@ describe("new A2UI primitives", () => {
     expect(formHtml).toContain("<form");
     expect(formHtml).toContain('type="submit"');
     expect(formHtml).toContain("Apply");
+  });
+});
+
+describe("Button event override", () => {
+  // Codex pass-6 added this contract: a declarative override template
+  // for `share-mode-badge` (or any host that listens for a non-`click`
+  // event) needs a way to make a primitive button emit that event
+  // directly. Without this, custom badge templates can never trigger
+  // the `cycle-share-mode` adapter — the bridge intentionally has no
+  // setShareMode, so they'd be display-only.
+  //
+  // Vitest runs in node (no jsdom), so we exercise the closure directly
+  // by reaching into the React element tree we pass to Button. That
+  // verifies handleClick wires the event/data props through correctly.
+
+  function readClickHandler(
+    onEvent: (eventType: string, data?: unknown) => void,
+    component: A2UIComponent,
+  ): () => void {
+    // React.createElement(Button, ...).type is Button itself; calling it
+    // synchronously returns the rendered React element (a <button>).
+    // Read its onClick prop and invoke directly.
+    const element = (
+      Button({ component, state: {}, onEvent }) as unknown as {
+        props: { onClick?: () => void };
+      }
+    );
+    if (typeof element.props.onClick !== "function") {
+      throw new Error("Button did not return an onClick handler");
+    }
+    return element.props.onClick;
+  }
+
+  it("emits 'click' by default", () => {
+    const onEvent = vi.fn();
+    const handler = readClickHandler(onEvent, {
+      id: "b",
+      type: "button",
+      props: { label: "Cycle" },
+    });
+    handler();
+    expect(onEvent).toHaveBeenCalledWith("click", {});
+  });
+
+  it("respects the `event` prop override (cycle-share-mode pattern)", () => {
+    const onEvent = vi.fn();
+    const handler = readClickHandler(onEvent, {
+      id: "ext-cycle",
+      type: "button",
+      props: {
+        label: "Toggle",
+        event: "cycle-share-mode",
+        data: { tabId: "t-1" },
+      },
+    });
+    handler();
+    expect(onEvent).toHaveBeenCalledWith("cycle-share-mode", { tabId: "t-1" });
+  });
+
+  it("ignores invalid event values and falls back to 'click'", () => {
+    const onEvent = vi.fn();
+    const handler = readClickHandler(onEvent, {
+      id: "b",
+      type: "button",
+      props: { label: "X", event: "" },
+    });
+    handler();
+    expect(onEvent).toHaveBeenCalledWith("click", {});
   });
 });

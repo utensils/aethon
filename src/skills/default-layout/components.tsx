@@ -28,19 +28,20 @@ import type {
   SidebarSection,
   StringValue,
 } from "../../types/a2ui";
-import {
-  shareModeLabel,
-  shareModeTooltip,
-  type ShareMode,
-} from "../../utils/shareMode";
+import type { ShareMode } from "../../utils/shareMode";
 import {
   resolveBoolean,
   resolveNumber,
   resolveString,
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
-import A2UIRenderer from "../../components/A2UIRenderer";
-import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import A2UIRenderer, {
+  RegistryComponent,
+} from "../../components/A2UIRenderer";
+import type {
+  A2UIEventHandler,
+  BuiltinComponentProps,
+} from "../../components/A2UIRenderer";
 
 // Adapter: react-markdown invokes `code` for both inline AND fenced code
 // blocks. We split on whether the parent is `<pre>` (fenced) and route
@@ -2365,30 +2366,34 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
         cwd={shell?.cwd ?? ""}
         command={shell?.command ?? ""}
         shareMode={shell?.shareMode ?? "private"}
+        tabId={tabId}
         cols={dims?.cols ?? 0}
         rows={dims?.rows ?? 0}
-        onCycleShareMode={() => {
-          if (!tabId) return;
-          onEvent("cycle-share-mode", { tabId });
-        }}
+        state={state}
+        onEvent={onEvent}
       />
     </div>
   );
 }
 
 // Status line under the shell terminal — cwd · command · share-mode badge ·
-// cols×rows. Click the badge to advance the share mode by one step (or
-// click again past trusted to revoke). Cycle order + labels live in
+// cols×rows. The badge is dispatched through the registry via
+// `<RegistryComponent type="share-mode-badge" />` so an extension that
+// registered a `share-mode-badge` template via `aethon.registerComponent`
+// wins over the default React `ShareModeBadge` (template-first lookup
+// for non-primitives). Cycle order + labels live in
 // `src/utils/shareMode.ts`.
 function ShellStatusBar(props: {
   cwd: string;
   command: string;
   shareMode: ShareMode;
+  tabId?: string;
   cols: number;
   rows: number;
-  onCycleShareMode: () => void;
+  state: Record<string, unknown>;
+  onEvent: BuiltinComponentProps["onEvent"];
 }) {
-  const { cwd, command, shareMode, cols, rows, onCycleShareMode } = props;
+  const { cwd, command, shareMode, tabId, cols, rows, state, onEvent } = props;
   const cwdShort = useMemo(() => {
     if (!cwd) return "";
     // Show basename + parent for context (".../aethon" instead of just
@@ -2397,13 +2402,41 @@ function ShellStatusBar(props: {
     if (parts.length <= 2) return cwd;
     return `…/${parts.slice(-2).join("/")}`;
   }, [cwd]);
-  const shareLabel = useMemo(
-    () => shareModeLabel(shareMode),
-    [shareMode],
+  // Live shareMode + tabId pass through componentProps; both the default
+  // React badge and any override template see them via component.props.
+  const badgeProps = useMemo(
+    () => ({ shareMode, tabId }),
+    [shareMode, tabId],
   );
-  const shareTooltip = useMemo(
-    () => shareModeTooltip(shareMode),
-    [shareMode],
+  // Adapter: the default React badge fires `cycle-share-mode`, which
+  // App.tsx routes from the surrounding shell-canvas. Re-emit through
+  // the parent BuiltinComponentProps onEvent so it lands on the
+  // shell-canvas channel; inject `tabId` if the badge didn't supply
+  // it (the standalone-placement path emits with no data).
+  //
+  // Returning `true` for `cycle-share-mode` only — every OTHER event
+  // type (primitive `click`, `submit`, anything from a custom template
+  // with multiple controls) falls through (return false) so the inner
+  // renderer dispatches it to the bridge with
+  // `templateRootType="share-mode-badge"`. Extension handlers observe
+  // those events and drive the cycle (or do whatever else they want).
+  // The bridge's `aethon.shells` surface deliberately omits a
+  // `setShareMode` — privacy mode flips MUST come from a user gesture
+  // routed through here, never from the agent.
+  const handleBadgeEvent = useMemo<A2UIEventHandler>(
+    () => (_component, eventType, data) => {
+      if (eventType !== "cycle-share-mode") return false;
+      const payload =
+        data && typeof data === "object"
+          ? (data as Record<string, unknown>)
+          : {};
+      onEvent("cycle-share-mode", {
+        ...payload,
+        tabId: payload.tabId ?? tabId,
+      });
+      return true;
+    },
+    [onEvent, tabId],
   );
   const dimsLabel = cols && rows ? `${cols}×${rows}` : "—";
   return (
@@ -2420,16 +2453,13 @@ function ShellStatusBar(props: {
         </>
       )}
       <span className="ae-shell-status-sep" aria-hidden="true">·</span>
-      <button
-        type="button"
-        className="ae-share-badge"
-        data-mode={shareMode}
-        title={shareTooltip}
-        aria-label={`Share mode: ${shareLabel}. ${shareTooltip}`}
-        onClick={onCycleShareMode}
-      >
-        {shareLabel}
-      </button>
+      <RegistryComponent
+        type="share-mode-badge"
+        state={state}
+        onEvent={handleBadgeEvent}
+        componentProps={badgeProps}
+        tabId={tabId}
+      />
       <span className="ae-shell-status-spacer" />
       <span className="ae-shell-status-dims">{dimsLabel}</span>
     </div>

@@ -38,6 +38,8 @@ import {
 import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
 import { SettingsPanel } from "./settings-panel";
+import { SearchPanel } from "./search-panel";
+import { ShareModeBadge } from "./share-mode-badge";
 import workstationPayload from "./workstation.a2ui.json";
 import editorialPayload from "./editorial.a2ui.json";
 import commandDeckPayload from "./command-deck.a2ui.json";
@@ -109,6 +111,12 @@ export const defaultLayoutSkill: A2UISkill = {
     "command-palette": CommandPalette,
     "notification-stack": NotificationStack,
     "settings-panel": SettingsPanel,
+    "search-panel": SearchPanel,
+    // M6 P2: shell tab share-mode badge — extracted as its own
+    // registerable component so a skill can replace it (e.g. with a
+    // custom click-flow or icon set) without rewriting the whole shell
+    // status bar.
+    "share-mode-badge": ShareModeBadge,
   },
   layout: workstationPayload,
 };

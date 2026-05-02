@@ -96,11 +96,18 @@ is a `$ref` — see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. JSON Pointer
 helpers: `src/utils/jsonPointer.ts` and `src/utils/dataBinding.ts`.
 
 **3. Two registries.** `A2UIRenderer.tsx` has a hardcoded `PRIMITIVE_REGISTRY`
-(`text`, `card`, `button`, `container`, `code`, `text-input`) — these can't
-be overridden. Everything else (`layout`, `sidebar`, `chat-history`,
-`chat-input`, `status-bar`, `terminal`, `main-canvas`) comes from the
-`SkillRegistry`, exposed via React context (`useSkillRegistry`). To add a
-new component type, register it on a skill, not in the primitives table.
+of 19 input/layout primitives (`text`, `heading`, `paragraph`, `code`, `card`,
+`button`, `container`, `divider`, `image`, `icon`, `text-input`,
+`date-picker`, `select`, `checkbox`, `slider`, `form`, `form-field`, `list`,
+`table`) — these can't be overridden. Everything else (`layout`, `sidebar`,
+`chat-history`, `chat-input`, `status-bar`, `terminal-panel`, `main-canvas`,
+`shell-canvas`, `tool-card`, `command-palette`, `notification-stack`,
+`settings-panel`, `search-panel`, `share-mode-badge`, …) comes from the
+`SkillRegistry`, exposed via React context (`useSkillRegistry`). App-root
+overlays mount through `<RegistryComponent type="…" />` (also exported
+from `A2UIRenderer.tsx`) so a skill can swap any of them with
+`aethon.registerComponent`. To add a new component type, register it on a
+skill, not in the primitives table.
 
 ### Runtime API
 
@@ -404,9 +411,10 @@ Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
 | `bunx vitest run --coverage` | TS coverage report (v8) | `coverage` |
 
 The `check` devshell command runs all of the above as a single CI gate.
-ESLint is configured for **0 errors**; some warnings in `App.tsx` /
-`ChatInput` are tracked anti-patterns to address in a follow-up (set-state
-in effect, ref access during render).
+ESLint is configured for **0 errors and 0 warnings**. A handful of `react-hooks`
+disables (set-state-in-effect for state-resync paths, exhaustive-deps for
+intentionally-empty memo deps) are scoped per-line with author rationale —
+audit them on touch, don't broaden them.
 
 ## Local-only files (gitignored)
 

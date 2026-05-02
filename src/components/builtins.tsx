@@ -152,15 +152,26 @@ export function Button({ component, state, onEvent }: ComponentProps) {
     label: StringValue;
     variant?: "primary" | "secondary" | "ghost";
     disabled?: BooleanValue;
+    /** Override the emitted event name. Defaults to "click". Useful for
+     *  declarative override templates that need to emit a host-specific
+     *  event — e.g. a `share-mode-badge` template that wants its button
+     *  to cycle the mode writes
+     *  `{type:"button", props:{event:"cycle-share-mode"}}` so the host
+     *  adapter recognizes the intent without translation heuristics.
+     *  Optional `data` is forwarded as the event payload. */
+    event?: string;
+    data?: unknown;
   };
 
   const label = resolveString(props.label, state);
   const variant = props.variant || "primary";
   const disabled = props.disabled ? resolveBoolean(props.disabled, state) : false;
+  const eventName = typeof props.event === "string" && props.event ? props.event : "click";
+  const eventData = props.data !== undefined ? props.data : {};
 
   const handleClick = () => {
     if (disabled) return;
-    onEvent("click", {});
+    onEvent(eventName, eventData);
   };
 
   const style: CSSProperties = {
