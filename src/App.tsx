@@ -1453,7 +1453,16 @@ export default function App() {
   function newTab(
     restoreId?: string,
     restoreLabel?: string,
-    options?: { restoredSession?: boolean; cwd?: string; scrollToMatch?: string },
+    options?: {
+      restoredSession?: boolean;
+      cwd?: string;
+      scrollToMatch?: string;
+      /** Override the project bucket the new tab lands in. Used by
+       *  reopen-closed-tab so a session restored after the user has
+       *  switched projects still appears in (and runs against) its
+       *  original project, not the currently-active one. */
+      projectId?: string | null;
+    },
   ) {
     // restoreId lets the caller open a tab with a specific tabId so the
     // bridge's SessionManager.continueRecent picks up the persisted
@@ -1498,7 +1507,13 @@ export default function App() {
       // user sees a meaningful name; otherwise fall back to the
       // sequential "Tab N" naming the empty-tab path has used.
       const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      const projectId = projectsRef.current.activeId;
+      // Explicit override (reopen-closed-tab) wins over the live active
+      // project. `projectId === null` (closed tab had no project) is a
+      // valid override that resolves to the unscoped bucket.
+      const projectId =
+        options?.projectId !== undefined
+          ? options.projectId
+          : projectsRef.current.activeId;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
@@ -1537,7 +1552,17 @@ export default function App() {
     // session. Tabs created before a project is picked use the bridge's
     // default cwd (the spawn directory). Existing tabs keep their original
     // cwd — switching project doesn't retroactively rebase live sessions.
-    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
+    // Explicit `options.projectId` (reopen-closed-tab) resolves the cwd
+    // off that project rather than the currently-active one, so a
+    // restored session's tools run from its original directory.
+    const explicitProjectCwd =
+      options?.projectId !== undefined && options.projectId !== null
+        ? projectsRef.current.projects.find(
+            (p) => p.id === options.projectId,
+          )?.path
+        : undefined;
+    const inheritedCwd =
+      options?.cwd ?? explicitProjectCwd ?? activeProject(projectsRef.current)?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
@@ -1922,7 +1947,14 @@ export default function App() {
         ...(entry.cwd ? { cwd: entry.cwd } : {}),
       });
     } else {
-      newTab(entry.id, entry.label, { restoredSession: true });
+      // Restore in the *original* project bucket. Without this, a tab
+      // closed under project A but reopened after switching to project
+      // B would replay project A's conversation while running against
+      // project B's cwd — subsequent tool calls hit the wrong directory.
+      newTab(entry.id, entry.label, {
+        restoredSession: true,
+        projectId: entry.projectId,
+      });
     }
   }
 
@@ -4942,12 +4974,41 @@ export default function App() {
   function openSearchHit(hit: { tabId?: string; snippetMatch?: string }) {
     if (!hit?.tabId) return;
     closeSessionSearch();
+    // If a tab with this id is already in /tabs, just activate it +
+    // forward the scroll target. Pushing a new tab record with a
+    // duplicate id breaks React keys and confuses subsequent updateTab
+    // / closeTab lookups (codex finding on PR #26).
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const existing = tabs.find((t) => t.id === hit.tabId);
+    if (existing) {
+      setActiveTab(existing.id);
+      if (typeof hit.snippetMatch === "string" && hit.snippetMatch.length > 0) {
+        const id = existing.id;
+        const match = hit.snippetMatch;
+        setState((prev) => {
+          const cur =
+            (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
+          return {
+            ...prev,
+            scrollToMatchByTab: { ...cur, [id]: match },
+          };
+        });
+        window.setTimeout(() => {
+          setState((prev) => {
+            const cur =
+              (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
+            if (!(id in cur)) return prev;
+            const next = { ...cur };
+            delete next[id];
+            return { ...prev, scrollToMatchByTab: next };
+          });
+        }, 5000);
+      }
+      return;
+    }
     // Reopen the originating tab. SessionManager.continueRecent picks
     // up the persisted JSONL session under ~/.aethon/sessions/<tabId>/
     // so the user lands inside their previous conversation.
-    // Carry the matched snippet through to the new tab so the
-    // chat-history component can highlight + scroll to it once the
-    // session replay completes.
     newTab(hit.tabId, undefined, {
       restoredSession: true,
       ...(typeof hit.snippetMatch === "string" && hit.snippetMatch.length > 0

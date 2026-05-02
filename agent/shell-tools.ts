@@ -34,12 +34,12 @@ function getShellsApi(): ShellsApi | null {
   return g.aethon?.shells ?? null;
 }
 
-function errResult(message: string) {
-  return {
-    content: [{ type: "text" as const, text: `Error: ${message}` }],
-    details: null,
-    errorMessage: message,
-  };
+/** Throw on tool failure so pi sets `toolResult.isError = true` and the
+ *  provider adapter renders a tool error. Returning a normal result
+ *  with `errorMessage` looks succeeded to downstream consumers (pi
+ *  only marks isError on throw — see `@mariozechner/pi-coding-agent`). */
+function fail(message: string): never {
+  throw new Error(message);
 }
 
 const ListParams = Type.Object({});
@@ -88,9 +88,9 @@ export function buildShellTools(): ToolDefinition[] {
       _params: ListParamsT,
     ) {
       const api = getShellsApi();
-      if (!api) return errResult("aethon.shells API unavailable");
+      if (!api) fail("aethon.shells API unavailable");
       const r = await api.list();
-      if (!r.ok) return errResult(r.error ?? "unknown");
+      if (!r.ok) fail(r.error ?? "unknown");
       return {
         content: [
           {
@@ -116,21 +116,30 @@ export function buildShellTools(): ToolDefinition[] {
       params: ReadParamsT,
     ) {
       const api = getShellsApi();
-      if (!api) return errResult("aethon.shells API unavailable");
+      if (!api) fail("aethon.shells API unavailable");
       const r = await api.read({
         tabId: params.tabId,
         ...(params.sinceTotal !== undefined ? { sinceTotal: params.sinceTotal } : {}),
         ...(params.maxBytes !== undefined ? { maxBytes: params.maxBytes } : {}),
       });
-      if (!r.ok) return errResult(r.error ?? "unknown");
+      if (!r.ok) fail(r.error ?? "unknown");
       const data = (r.data ?? {}) as {
         content?: string;
         totalAppended?: number;
         shareFloor?: number;
         shareMode?: string;
       };
+      // Surface the paging cursor in the *visible* tool text — model
+      // providers don't forward `details` to the LLM, so a cursor that
+      // only lives in details is invisible at the next turn. The model
+      // re-uses `totalAppended` as the next call's `sinceTotal` to walk
+      // the stream forward.
+      const meta = `[shell ${data.shareMode ?? "?"} · totalAppended=${data.totalAppended ?? 0} · shareFloor=${data.shareFloor ?? 0}]`;
+      const body = data.content ?? "";
       return {
-        content: [{ type: "text" as const, text: data.content ?? "" }],
+        content: [
+          { type: "text" as const, text: body.length > 0 ? `${meta}\n${body}` : meta },
+        ],
         details: data,
       };
     },
@@ -149,9 +158,9 @@ export function buildShellTools(): ToolDefinition[] {
       params: WriteParamsT,
     ) {
       const api = getShellsApi();
-      if (!api) return errResult("aethon.shells API unavailable");
+      if (!api) fail("aethon.shells API unavailable");
       const r = await api.write({ tabId: params.tabId, text: params.text });
-      if (!r.ok) return errResult(r.error ?? "unknown");
+      if (!r.ok) fail(r.error ?? "unknown");
       return {
         content: [{ type: "text" as const, text: "ok" }],
         details: r.data ?? null,

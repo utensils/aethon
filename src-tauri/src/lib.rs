@@ -443,7 +443,19 @@ fn search_sessions(
                     Ok(v) => v,
                     Err(_) => continue,
                 };
-                let role = v
+                // Pi session JSONL envelope is `{type:"message", message:{role, content}}`
+                // (matches the restore path in `agent/session-history.ts`).
+                // Older v1 reads at the top level, which never matches —
+                // fall through to that as a tolerant fallback so any
+                // non-pi sources (e.g. a future raw export) still index.
+                if v.get("type").and_then(|t| t.as_str()) != Some("message") {
+                    continue;
+                }
+                let inner = match v.get("message") {
+                    Some(m) if m.is_object() => m,
+                    _ => continue,
+                };
+                let role = inner
                     .get("role")
                     .and_then(|r| r.as_str())
                     .unwrap_or("")
@@ -451,7 +463,7 @@ fn search_sessions(
                 if role != "user" && role != "assistant" {
                     continue;
                 }
-                let content_text = extract_text_from_content(&v);
+                let content_text = extract_text_from_content(inner);
                 if content_text.is_empty() {
                     continue;
                 }
@@ -462,6 +474,7 @@ fn search_sessions(
                 };
                 let (before, match_, after) =
                     build_snippet_parts(&content_text, pos, needle.len(), 60, 100);
+                // Timestamp lives on the outer envelope, not the message.
                 let timestamp = v.get("timestamp").and_then(|t| t.as_i64());
                 hits.push(SearchHit {
                     tab_id: tab_id.clone(),
@@ -1566,6 +1579,7 @@ async fn install_aethon_skill(
     spec: String,
     app: AppHandle,
     state: State<'_, AgentProcess>,
+    reload_flag: State<'_, AgentReloadFlag>,
 ) -> Result<String, String> {
     let spec = validate_skill_install_spec(&spec)?;
     let home = app
@@ -1613,6 +1627,13 @@ async fn install_aethon_skill(
         && let Some(mut child) = guard.take()
     {
         let pid = child.id();
+        // Mark this kill as intentional BEFORE the actual kill — the
+        // stdout reader's EOF handler reads this flag to decide whether
+        // to fire `agent-crashed`. Without the flag, the EOF supervisor
+        // misclassifies the skill-install reload as a crash and the
+        // user sees both a crash toast and the auto-restart on top of
+        // the deliberate `agent-reloaded` flow.
+        reload_flag.0.store(true, std::sync::atomic::Ordering::SeqCst);
         let _ = child.kill();
         let _ = child.wait();
         let _ = app.emit("agent-reloaded", "");

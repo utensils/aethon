@@ -70,7 +70,6 @@ describe("listShells tool", () => {
     const result = await tool.execute("call-1", {});
 
     expect(fakeShells.list).toHaveBeenCalledOnce();
-    expect(result.errorMessage).toBeUndefined();
     expect(result.details).toEqual(data);
     expect(result.content[0]).toMatchObject({
       type: "text",
@@ -78,17 +77,13 @@ describe("listShells tool", () => {
     });
   });
 
-  it("surfaces ok=false via errorMessage and an Error: prefix", async () => {
+  it("throws on ok=false so pi marks the tool result as an error", async () => {
     fakeShells.list.mockResolvedValue({ ok: false, error: "frontend_not_ready" });
 
     const tool = getTool("listShells");
-    const result = await tool.execute("call-1", {});
-
-    expect(result.errorMessage).toBe("frontend_not_ready");
-    expect(result.content[0]).toMatchObject({
-      type: "text",
-      text: "Error: frontend_not_ready",
-    });
+    await expect(tool.execute("call-1", {})).rejects.toThrow(
+      "frontend_not_ready",
+    );
   });
 
   it("returns an empty list when bridge omits data", async () => {
@@ -103,13 +98,13 @@ describe("listShells tool", () => {
     });
   });
 
-  it("falls back to a generic error when api unavailable", async () => {
+  it("throws when the api is unavailable", async () => {
     (globalThis as { aethon?: unknown }).aethon = undefined;
 
     const tool = getTool("listShells");
-    const result = await tool.execute("call-1", {});
-
-    expect(result.errorMessage).toMatch(/aethon\.shells API unavailable/);
+    await expect(tool.execute("call-1", {})).rejects.toThrow(
+      /aethon\.shells API unavailable/,
+    );
   });
 });
 
@@ -142,7 +137,7 @@ describe("readShell tool", () => {
     });
   });
 
-  it("returns the content string as the visible text", async () => {
+  it("returns content with a meta-line so the model sees the paging cursor", async () => {
     fakeShells.read.mockResolvedValue({
       ok: true,
       data: {
@@ -156,9 +151,11 @@ describe("readShell tool", () => {
     const tool = getTool("readShell");
     const result = await tool.execute("call-1", { tabId: "tab-1" });
 
+    // Model providers don't forward `details` to the LLM, so the cursor
+    // has to live in the visible text — otherwise the model can't page.
     expect(result.content[0]).toMatchObject({
       type: "text",
-      text: "boot banner\n$ ",
+      text: "[shell read · totalAppended=14 · shareFloor=0]\nboot banner\n$ ",
     });
     expect(result.details).toMatchObject({
       shareFloor: 0,
@@ -167,27 +164,33 @@ describe("readShell tool", () => {
     });
   });
 
-  it("propagates the privacy-floor refusal verbatim", async () => {
+  it("throws on the privacy-floor refusal", async () => {
     // shell.rs returns this error string when read is attempted on a
-    // private tab. The tool must not swallow it as 'unknown'.
+    // private tab. Throwing makes pi mark the tool result as an error.
     fakeShells.read.mockResolvedValue({
       ok: false,
       error: "share mode is private",
     });
 
     const tool = getTool("readShell");
-    const result = await tool.execute("call-1", { tabId: "tab-1" });
-
-    expect(result.errorMessage).toBe("share mode is private");
+    await expect(
+      tool.execute("call-1", { tabId: "tab-1" }),
+    ).rejects.toThrow("share mode is private");
   });
 
-  it("treats missing data as an empty content payload", async () => {
-    fakeShells.read.mockResolvedValue({ ok: true });
+  it("returns just the meta line when content is empty", async () => {
+    fakeShells.read.mockResolvedValue({
+      ok: true,
+      data: { totalAppended: 0, shareFloor: 0, shareMode: "read" },
+    });
 
     const tool = getTool("readShell");
     const result = await tool.execute("call-1", { tabId: "tab-1" });
 
-    expect(result.content[0]).toMatchObject({ type: "text", text: "" });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: "[shell read · totalAppended=0 · shareFloor=0]",
+    });
   });
 });
 
@@ -216,39 +219,31 @@ describe("writeShell tool", () => {
     expect(result.content[0]).toMatchObject({ type: "text", text: "ok" });
   });
 
-  it("propagates a denied-by-user refusal", async () => {
+  it("throws on a denied-by-user refusal", async () => {
     // Bridge returns this when the user clicks Deny on the consent
-    // prompt (or it auto-expires).
+    // prompt (or it auto-expires). Throwing → pi marks the tool result
+    // as an error so the model sees the failure semantics, not a fake
+    // "ok" response with an Error: prefix.
     fakeShells.write.mockResolvedValue({
       ok: false,
       error: "user denied write",
     });
 
     const tool = getTool("writeShell");
-    const result = await tool.execute("call-1", {
-      tabId: "tab-1",
-      text: "rm -rf /\n",
-    });
-
-    expect(result.errorMessage).toBe("user denied write");
-    expect(result.content[0]).toMatchObject({
-      type: "text",
-      text: "Error: user denied write",
-    });
+    await expect(
+      tool.execute("call-1", { tabId: "tab-1", text: "rm -rf /\n" }),
+    ).rejects.toThrow("user denied write");
   });
 
-  it("propagates a private-tab refusal", async () => {
+  it("throws on a private-tab refusal", async () => {
     fakeShells.write.mockResolvedValue({
       ok: false,
       error: "share mode does not allow writes",
     });
 
     const tool = getTool("writeShell");
-    const result = await tool.execute("call-1", {
-      tabId: "tab-1",
-      text: "x",
-    });
-
-    expect(result.errorMessage).toBe("share mode does not allow writes");
+    await expect(
+      tool.execute("call-1", { tabId: "tab-1", text: "x" }),
+    ).rejects.toThrow("share mode does not allow writes");
   });
 });

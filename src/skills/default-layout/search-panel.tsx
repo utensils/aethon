@@ -151,9 +151,20 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
   // previous timer is cleared so we only fire after the user pauses.
   // setState is always wrapped in a timeout (zero or debounced) so the
   // react-hooks/set-state-in-effect rule stays satisfied.
+  //
+  // Race guard: a slow scan from query "fo" could resolve *after* the
+  // user typed "foo" and the next scan finished — overwriting the
+  // newer results with stale ones. Use a monotonic request id (held in
+  // a ref) so the resolved Promise can self-discard if it isn't the
+  // latest in flight.
+  const searchReqIdRef = useRef(0);
   useEffect(() => {
     const q = search.open ? search.query.trim() : "";
     if (q.length === 0) {
+      // Bumping the request id invalidates any in-flight scan so its
+      // late resolution can't repopulate `results` after the user
+      // cleared the query.
+      searchReqIdRef.current += 1;
       const handle = window.setTimeout(() => {
         setResults([]);
         setBusy(false);
@@ -161,18 +172,22 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
       return () => window.clearTimeout(handle);
     }
     const handle = window.setTimeout(async () => {
+      const reqId = ++searchReqIdRef.current;
       setBusy(true);
       try {
         const hits = await invoke<SearchHit[]>("search_sessions", {
           query: q,
           limit: RESULT_LIMIT,
         });
+        // Stale guard — a newer query has already started; drop these.
+        if (reqId !== searchReqIdRef.current) return;
         setResults(Array.isArray(hits) ? hits : []);
       } catch (err) {
+        if (reqId !== searchReqIdRef.current) return;
         console.warn("search_sessions failed:", err);
         setResults([]);
       } finally {
-        setBusy(false);
+        if (reqId === searchReqIdRef.current) setBusy(false);
       }
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
