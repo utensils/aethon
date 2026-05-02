@@ -195,6 +195,13 @@ pub struct ShellOpenArgs {
     pub cols: Option<u16>,
     #[serde(default)]
     pub rows: Option<u16>,
+    /// Initial share mode. When non-private, the privacy floor pins at
+    /// 0 (the reader hasn't appended anything yet), so the user sees
+    /// every byte from the very first prompt onward — closes the
+    /// codex-flagged "configured default sharing misses login banner"
+    /// race that existed when the seed was applied post-open.
+    #[serde(default)]
+    pub share_mode: Option<ShareMode>,
 }
 
 type ChildHandle = Arc<Mutex<Option<Box<dyn Child + Send + Sync>>>>;
@@ -292,7 +299,20 @@ pub fn shell_open<R: Runtime>(
     let child_handle: ChildHandle = Arc::new(Mutex::new(Some(child)));
     let scrollback_handle: ScrollbackHandle =
         Arc::new(Mutex::new(Scrollback::new(SCROLLBACK_BYTES)));
-    let share_handle: ShareHandle = Arc::new(Mutex::new(ShareState::new()));
+    // Apply the configured initial share mode *before* the reader thread
+    // starts streaming output — pinning the floor at total_appended=0
+    // means the user sees every byte from the first prompt onward when
+    // they configured a non-private default. Applying post-open would
+    // race the early banner / shell prompt and pin them below the floor.
+    let initial_share_state = match args.share_mode {
+        Some(mode) if mode != ShareMode::Private => {
+            let mut s = ShareState::new();
+            s.transition(mode, 0);
+            s
+        }
+        _ => ShareState::new(),
+    };
+    let share_handle: ShareHandle = Arc::new(Mutex::new(initial_share_state));
     let app_for_thread = app.clone();
     let tab_id_for_thread = args.tab_id.clone();
     let child_for_thread = Arc::clone(&child_handle);
@@ -611,6 +631,50 @@ pub fn shell_read_scrollback(
         share_floor: floor,
         share_mode: mode,
     })
+}
+
+/// Agent-driven keystroke injection (M6 P2.2). Distinct from
+/// [`shell_input`] (which is the user's own keyboard path, ungated)
+/// because the agent's writes pass through a `ShareMode` gate: only
+/// `ReadWrite` and `ReadWriteTrusted` are allowed. The frontend layers
+/// per-write user confirmation on top of `ReadWrite`; this Rust gate is
+/// the underlying defense-in-depth so a frontend bug can't invoke this
+/// for a `Read` or `Private` tab.
+#[tauri::command]
+pub fn shell_write(
+    state: State<'_, ShellRegistry>,
+    tab_id: String,
+    data: String,
+) -> Result<(), String> {
+    write_keystrokes(&state, &tab_id, data.as_bytes())
+}
+
+/// The actual mode-gated write. Split out from the Tauri command so
+/// cargo tests can exercise it without a Tauri runtime.
+fn write_keystrokes(
+    state: &ShellRegistry,
+    tab_id: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    let mut guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
+    let slot = guard
+        .get_mut(tab_id)
+        .ok_or_else(|| format!("no shell for tab {tab_id}"))?;
+    let mode = slot
+        .share
+        .lock()
+        .map_err(|e| format!("share lock: {e}"))?
+        .mode;
+    if !mode.allows_write() {
+        return Err(format!(
+            "share mode does not allow agent writes (current: {mode:?})"
+        ));
+    }
+    slot.writer
+        .write_all(data)
+        .map_err(|e| format!("write: {e}"))?;
+    slot.writer.flush().map_err(|e| format!("flush: {e}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1002,6 +1066,75 @@ mod tests {
         // Resume from after the returned slice — should be empty (caught up).
         let (got, _) = sb.read_from(slice_total + got.len() as u64, max_bytes);
         assert!(got.is_empty());
+    }
+
+    // ----- shell_write gate (M6 P2.2) ----------------------------------------
+
+    /// Force a slot's share mode without a Tauri runtime. Mirrors what
+    /// `shell_set_share_mode` does for tests.
+    fn force_mode(reg: &ShellRegistry, tab_id: &str, mode: ShareMode) {
+        let guard = reg.slots.lock().unwrap();
+        let slot = guard.get(tab_id).expect("slot present");
+        let mut s = slot.share.lock().unwrap();
+        let total = slot.scrollback.lock().unwrap().total_appended();
+        s.transition(mode, total);
+    }
+
+    #[test]
+    fn write_keystrokes_rejects_private() {
+        let reg = registry();
+        let mut child = open_raw(&reg, "wp", "/bin/sleep", vec!["0.05".into()]);
+        let r = write_keystrokes(&reg, "wp", b"hi");
+        assert!(r.is_err());
+        assert!(
+            r.as_ref().unwrap_err().contains("does not allow"),
+            "expected gating error, got: {:?}",
+            r.err()
+        );
+        let _ = child.wait();
+        reg.slots.lock().unwrap().remove("wp").unwrap();
+    }
+
+    #[test]
+    fn write_keystrokes_rejects_read_only() {
+        let reg = registry();
+        let mut child = open_raw(&reg, "wr", "/bin/sleep", vec!["0.05".into()]);
+        force_mode(&reg, "wr", ShareMode::Read);
+        let r = write_keystrokes(&reg, "wr", b"hi");
+        assert!(r.is_err());
+        let _ = child.wait();
+        reg.slots.lock().unwrap().remove("wr").unwrap();
+    }
+
+    #[test]
+    fn write_keystrokes_succeeds_for_read_write() {
+        let reg = registry();
+        let mut child = open_raw(&reg, "wrw", "/bin/sleep", vec!["0.05".into()]);
+        force_mode(&reg, "wrw", ShareMode::ReadWrite);
+        // The PTY is already alive — write a benign byte.
+        let r = write_keystrokes(&reg, "wrw", b"\x03");
+        assert!(r.is_ok(), "{:?}", r.err());
+        let _ = child.wait();
+        reg.slots.lock().unwrap().remove("wrw").unwrap();
+    }
+
+    #[test]
+    fn write_keystrokes_succeeds_for_read_write_trusted() {
+        let reg = registry();
+        let mut child = open_raw(&reg, "wrwt", "/bin/sleep", vec!["0.05".into()]);
+        force_mode(&reg, "wrwt", ShareMode::ReadWriteTrusted);
+        let r = write_keystrokes(&reg, "wrwt", b"\x03");
+        assert!(r.is_ok(), "{:?}", r.err());
+        let _ = child.wait();
+        reg.slots.lock().unwrap().remove("wrwt").unwrap();
+    }
+
+    #[test]
+    fn write_keystrokes_unknown_tab_is_error() {
+        let reg = registry();
+        let r = write_keystrokes(&reg, "nope", b"hi");
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("no shell for tab"));
     }
 
     #[test]
