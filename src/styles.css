@@ -2060,8 +2060,16 @@ body.ae-resizing-sidebar * {
   font-size: var(--chrome-text-compact);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text-dim);
-  flex: 1;
-  max-width: 540px;
+  /* The header has both this bar and a sibling `.ae-header-spacer` with
+     `flex: 1 1 auto`. We want the spacer to be the sole grow filler so
+     `model-picker` / `appearance-menu` stay flushed right. `flex: 1`
+     (basis 0%) made the bar fight the spacer and lose, collapsing to
+     ~22px. `flex: 0 1 540px` (grow 0, basis 540) was closer but the bar
+     still shrank below its basis even when the row had room — so we use
+     `flex: 0 0 540px` and rely on `width:auto` + the row's intrinsic
+     overflow to handle very narrow windows (where this bar wraps to a
+     new row visually because the chrome dropdowns hold their width). */
+  flex: 0 0 540px;
   min-width: 0;
 }
 
