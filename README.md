@@ -17,7 +17,7 @@
   <img alt="Rust 1.92" src="https://img.shields.io/badge/Rust-1.92-DEA584?logo=rust&logoColor=white">
   <img alt="Bun" src="https://img.shields.io/badge/Bun-1.x-FBF0DF?logo=bun&logoColor=black">
   <img alt="Nix flake" src="https://img.shields.io/badge/Nix-flake-5277C3?logo=nixos&logoColor=white">
-  <img alt="Platforms: macOS | Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey">
+  <img alt="Platforms: macOS | Linux | Windows" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
 </p>
 
 > **Early development — not ready for production use.** The API and protocol surface are still settling; expect breaking changes between commits.
@@ -35,25 +35,34 @@ The name comes from Greek mythology: *Αἴθων*, one of the horses that pulle
 
 **Workspace**
 
-- Multi-tab agent sessions — each tab owns its own pi conversation, model, draft, and terminal buffer (`⌘T` new, `⌘]` / `⌘[` next/prev, `⌘W` close).
+- Multi-tab sessions — top-strip agent tabs (each owning a pi conversation, model, draft, and bash buffer) and bottom-panel shell sub-tabs (interactive PTY-backed terminals). `⌘T` is focus-aware: shell sub-tab when focus is in the bottom panel, agent tab elsewhere; `⌘⇧T` flips the default; `⌘1`–`⌘9` jump, `⌘W` closes, `⌘⌥T` reopens the most-recently-closed.
 - Native macOS menu + system tray — built-ins (Quit, Hide, Cut/Copy/Paste, Minimize) for free, plus app-specific items (New Tab, Toggle Terminal, Stop Prompt, Check for Updates) that route through the same dispatcher as the keyboard shortcuts.
-- Live terminal panel (`⌘\``) — xterm.js with the WebGL renderer. Streams the agent's bash output per tab.
-- Persistent state — chat history, tabs, and themes survive relaunch under `~/.aethon/`. Pi LLM context persists per tab via pi's session manager.
+- Tabbed terminal panel (`⌘\``) — xterm.js with the WebGL renderer. Hosts a read-only "Agent bash" sub-tab streaming the active agent's bash output, plus zero or more interactive shell sub-tabs. Full TUI support (vim, htop, fzf), 256-color and true-color, theme-aware ANSI palette via CSS variables.
+- Settings panel (`⌘,`) and cross-session search (`⌘⇧F`) — both registered builtins; an extension can replace either via `aethon.registerComponent`.
+- Auto-updater wired via `tauri-plugin-updater` — checks the GitHub Releases manifest, downloads with progress, and relaunches.
+- Persistent state — chat history, tabs (agent + shell), themes, projects, and `~/.aethon/config.toml` settings survive relaunch. Pi LLM context persists per tab via pi's session manager.
 
 **Agent-controlled UI**
 
-- Themes registered live via `aethon.registerTheme({ id, vars })` or dropped as `~/.aethon/themes/*.json`.
-- Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer.
+- Themes registered live via `aethon.registerTheme({ id, vars })` or dropped as `~/.aethon/themes/*.json`. Themes drive the entire palette — including the terminal's ANSI swatches.
+- Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer. Templates registered via `aethon.registerComponent("<type>", …)` win over the default React component, so any built-in can be replaced declaratively.
+- App-root overlays (`command-palette`, `notification-stack`, `settings-panel`, `search-panel`, `share-mode-badge`) all mount through the registry — overridable from a skill without forking the chrome.
 - Layout slot contract — alternative layouts host the standard composites by adhering to canonical area names (`canvas`, `composer`, `sidebar`, `tabs`, `terminal`, `status`, `header`, `empty-state`) or by declaring a `slotMap` remap.
-- Four built-in layouts (`workstation`, `editorial`, `command-deck`, `live-layout`) on the Æther signature palette — swap with `/layout <id>`. Extensions register additional palettes via `aethon.registerTheme`.
+- Four built-in layouts (`workstation`, `editorial`, `command-deck`, `live-layout`) on the Æther signature palette — swap with `/layout <id>`. Extensions register additional layouts via `aethon.registerLayout`.
+
+**Agent ↔ shell sharing (opt-in)**
+
+- Each shell tab carries a four-value `shareMode` (`private` / `read` / `read-write` / `read-write-trusted`) and a clickable badge in the status line cycles through them. Default is `private` (configurable per-tab and globally via `[shell] default_share_mode`).
+- The bridge surface is `aethon.shells.{list, read, write}` — extensions and the agent can enumerate shareable tabs, page scrollback (forward-cursor, no rewind past the privacy floor), and inject keystrokes (each `read-write` write needs an Allow/Deny user prompt; `read-write-trusted` skips it).
+- Privacy floor is enforced Rust-side in `shell.rs`; agents cannot see scrollback from before the user opted in, and `setShareMode` is intentionally absent from the agent surface.
 
 **Extensibility**
 
-- Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed skill (manifest via `package.json#aethon`).
+- Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed skill (manifest via `package.json#aethon`). Project-local extensions discovered from the active cwd up to its git root via `.aethon/extensions/`.
 - Slash commands, keybindings, menu items, and event interceptors — all registerable from extensions, all reported back in the runtime snapshot so the agent knows what's wired.
 - Generic `extension_lifecycle` event channel — extensions get visible chat-side feedback when they load / fail / reload, and other layouts can intercept the window event to substitute a toast / sidebar pulse / status pill.
 
-**Slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`, `/sidebar`, `/layout`. Unknown commands fall through to pi.
+**Slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`, `/sidebar`, `/layout`, `/project`. Unknown commands fall through to pi.
 
 See [`SPEC.md`](SPEC.md) for the full status checklist and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
@@ -93,7 +102,7 @@ input for Nix builds.
 | Command     | What it does                                                       |
 | ----------- | ------------------------------------------------------------------ |
 | `dev`       | Launch the app with hot reload (auto-increments Vite + debug ports if 1420/19433 are busy) |
-| `build-app` | Release bundle (`.app` / `.dmg` / `.deb` / `.AppImage`)            |
+| `build-app` | Release bundle (`.app` / `.dmg` on macOS, `.deb` / `.rpm` on Linux, NSIS `.exe` on Windows) |
 | `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest          |
 | `lint`      | ESLint frontend + agent (no auto-fix)                              |
 | `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                |
@@ -123,7 +132,7 @@ input for Nix builds.
 │  │             React Frontend (Vite)                    │  │
 │  │  ┌─────────────────────┐  ┌──────────────────────┐  │  │
 │  │  │  A2UI Renderer       │  │  default-layout     │  │  │
-│  │  │  (20 primitives +    │  │  (sidebar, canvas,  │  │  │
+│  │  │  (19 primitives +    │  │  (sidebar, canvas,  │  │  │
 │  │  │  scoped templates)   │  │  terminal, ...)     │  │  │
 │  │  └─────────────────────┘  └──────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -150,6 +159,7 @@ aethon/
 ├── docs/aethon-agent/   # Bundled reference docs the agent reads
 ├── examples/            # Pi extensions + skill packages (reference)
 ├── flake.nix            # Nix dev environment, package, and overlay
+├── bun.lock             # Bun lockfile (used by `bun install` in the devshell)
 ├── package-lock.json    # npm dependency snapshot for reproducible Nix builds
 └── package.json         # Frontend deps + tauri CLI
 ```
