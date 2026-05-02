@@ -1596,6 +1596,112 @@ export default function App() {
         nextTab(-1);
         return;
       }
+<<<<<<< Updated upstream
+||||||| Stash base
+      // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
+      // Matches Chrome/Firefox tab-reorder shortcut. Wraps at the ends.
+      if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveActiveTab(1);
+        return;
+      }
+      if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveActiveTab(-1);
+        return;
+      }
+      // Cmd+1..8 → jump to tab N (1-indexed); Cmd+9 → jump to last.
+      // Universal across browsers (Chrome / Firefox / Safari) + iTerm2 /
+      // Windows Terminal. The first 8 use direct indexing so layouts
+      // with > 9 tabs still get keyboard access for the first few; the
+      // 9th key is the "last tab" affordance.
+      if (
+        mod &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key >= "1" &&
+        e.key <= "9"
+      ) {
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        if (tabs.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "9") {
+          jumpToTab(tabs.length - 1);
+        } else {
+          jumpToTab(parseInt(e.key, 10) - 1);
+        }
+        return;
+      }
+      // Cmd+Opt+T → reopen most-recently-closed tab. Matches iTerm2's
+      // restore-closed-window shortcut; safe alongside Cmd+T (new shell)
+      // and Cmd+Shift+T (new agent). No-op on empty stack so a stray
+      // press is silent.
+      if (e.key.toLowerCase() === "t" && mod && e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        reopenLastClosedTab();
+        return;
+      }
+=======
+      // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
+      // Matches Chrome/Firefox tab-reorder shortcut. Wraps at the ends.
+      if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveActiveTab(1);
+        return;
+      }
+      if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveActiveTab(-1);
+        return;
+      }
+      // Cmd+1..8 → jump to tab N (1-indexed); Cmd+9 → jump to last.
+      // Universal across browsers (Chrome / Firefox / Safari) + iTerm2 /
+      // Windows Terminal. The first 8 use direct indexing so layouts
+      // with > 9 tabs still get keyboard access for the first few; the
+      // 9th key is the "last tab" affordance.
+      if (
+        mod &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key >= "1" &&
+        e.key <= "9"
+      ) {
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        if (tabs.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "9") {
+          jumpToTab(tabs.length - 1);
+        } else {
+          jumpToTab(parseInt(e.key, 10) - 1);
+        }
+        return;
+      }
+      // Cmd+Opt+T → reopen most-recently-closed tab. Matches iTerm2's
+      // restore-closed-window shortcut; safe alongside Cmd+T (new shell)
+      // and Cmd+Shift+T (new agent). On macOS the Option key mutates
+      // `e.key` (Opt+T → "†"), so match the *physical* key via
+      // `e.code === "KeyT"` whenever Alt/Option is part of the shortcut
+      // — the printable-key check would silently no-op on Mac (codex
+      // P2 follow-up to PR #17).
+      if (
+        mod &&
+        e.altKey &&
+        !e.shiftKey &&
+        (e.code === "KeyT" || e.key.toLowerCase() === "t")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        reopenLastClosedTab();
+        return;
+      }
+>>>>>>> Stashed changes
       // Cmd+W → close active tab (no-op on the last/default tab).
       if (e.key.toLowerCase() === "w" && mod && !e.shiftKey && !e.altKey) {
         const activeId = stateRef.current.activeTabId as string | undefined;
@@ -3785,14 +3891,34 @@ export default function App() {
       case "action":
         // Built-in action strings from BUILTIN_KEYBINDINGS — fire the
         // same path the keydown clauses do so palette-triggered actions
-        // are indistinguishable from key-triggered ones.
-        if (p.action === "builtin:meta+t") newTab();
+        // are indistinguishable from key-triggered ones. Whenever the
+        // palette gains a new builtin keybinding entry, this dispatcher
+        // must grow alongside it — codex flagged a regression where new
+        // entries (Cmd+1..9, Cmd+Shift+]/[, etc.) were advertised but
+        // routed to the wrong action or no-op.
+        if (p.action === "builtin:meta+t") newShellTab();
+        else if (p.action === "builtin:meta+shift+t") newTab();
+        else if (p.action === "builtin:meta+alt+t") reopenLastClosedTab();
         else if (p.action === "builtin:meta+w") {
           const id = stateRef.current.activeTabId as string | undefined;
           if (id) closeTab(id);
         } else if (p.action === "builtin:meta+]") nextTab(1);
         else if (p.action === "builtin:meta+[") nextTab(-1);
-        else if (p.action === "builtin:meta+`") toggleTerminal();
+        else if (p.action === "builtin:meta+shift+]") moveActiveTab(1);
+        else if (p.action === "builtin:meta+shift+[") moveActiveTab(-1);
+        else if (p.action === "builtin:meta+1") jumpToTab(0);
+        else if (p.action === "builtin:meta+2") jumpToTab(1);
+        else if (p.action === "builtin:meta+3") jumpToTab(2);
+        else if (p.action === "builtin:meta+4") jumpToTab(3);
+        else if (p.action === "builtin:meta+5") jumpToTab(4);
+        else if (p.action === "builtin:meta+6") jumpToTab(5);
+        else if (p.action === "builtin:meta+7") jumpToTab(6);
+        else if (p.action === "builtin:meta+8") jumpToTab(7);
+        else if (p.action === "builtin:meta+9") {
+          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+          if (tabs.length > 0) jumpToTab(tabs.length - 1);
+        } else if (p.action === "builtin:meta+`") toggleTerminal();
+        else if (p.action === "builtin:meta+b") toggleSidebar();
         else if (p.action === "builtin:meta+k") clearChat();
         else if (p.action === "builtin:meta+.") void stopPrompt();
         else if (p.action === "builtin:meta+p") openPalette("switcher");
