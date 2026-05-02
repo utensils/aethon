@@ -912,6 +912,75 @@ export default function App() {
     });
   }
 
+  /** Toggle the terminal panel AND move focus to/from it.
+   *
+   *  Open + focus: pulls focus into the active sub-tab's terminal
+   *  (xterm has a `.focus()` method exposed via the live DOM).
+   *  Close + return-focus: drops focus back to the chat composer so
+   *  typing continues seamlessly. Without this users have to re-click
+   *  to refocus after every panel toggle. */
+  function toggleTerminalAndFocus() {
+    const wasOpen = !!(stateRef.current.terminal as { open?: boolean } | undefined)?.open;
+    toggleTerminal();
+    // Defer focus until after React has committed the render so the
+    // panel's xterm canvas exists in the DOM.
+    requestAnimationFrame(() => {
+      if (wasOpen) {
+        focusComposer();
+      } else {
+        focusTerminalPanel();
+      }
+    });
+  }
+
+  /** Cmd+0: toggle focus between the chat composer and the bottom
+   *  terminal panel. If the panel is closed, opens it first. */
+  function toggleFocusComposerTerminal() {
+    const inPanel = isFocusInTerminalPanel();
+    if (inPanel) {
+      focusComposer();
+      return;
+    }
+    const term = (stateRef.current.terminal as { open?: boolean } | undefined) ?? {};
+    if (!term.open) {
+      // Open first, then focus on the next frame.
+      setState((prev) => {
+        const t = (prev.terminal as { open?: boolean } | undefined) ?? {};
+        return { ...prev, terminal: { ...t, open: true } };
+      });
+    }
+    requestAnimationFrame(() => focusTerminalPanel());
+  }
+
+  function focusComposer() {
+    if (typeof document === "undefined") return;
+    const ta = document.querySelector<HTMLTextAreaElement>(
+      ".a2ui-chat-input textarea, .a2ui-chat-input input",
+    );
+    ta?.focus();
+  }
+
+  function focusTerminalPanel() {
+    if (typeof document === "undefined") return;
+    // xterm renders an inner textarea (`.xterm-helper-textarea`) that
+    // it forwards keystrokes to. Focusing it routes typing into the
+    // active sub-tab's PTY (or the read-only agent-bash xterm where
+    // it's a no-op input but the cursor still indicates focus).
+    const panel = document.querySelector(".ae-terminal-panel");
+    const helperTa = panel?.querySelector<HTMLTextAreaElement>(
+      ".xterm-helper-textarea",
+    );
+    if (helperTa) {
+      helperTa.focus();
+      return;
+    }
+    // Fallback: focus the panel's first focusable element.
+    const focusable = panel?.querySelector<HTMLElement>(
+      'button, [tabindex]:not([tabindex="-1"])',
+    );
+    focusable?.focus();
+  }
+
   function toggleSidebar() {
     setState((prev) => {
       // Flip /layout/sidebarVisible AND swap /layout/columns +
@@ -1463,7 +1532,15 @@ export default function App() {
    *  (M6 restructure). Sub-tab id is either the special string
    *  "agent-bash" (the always-present read-only view) or a shell tab
    *  id from `/tabs`. Auto-opens the panel if it was hidden so the
-   *  user can see the result of their click. */
+   *  user can see the result of their click.
+   *
+   *  When switching BACK to agent-bash, dispatch a replay of the
+   *  active agent tab's `terminalBuffer` so the freshly-mounted
+   *  Terminal composite re-renders the previously-buffered output.
+   *  Without this, sub-tab switching loses everything the agent
+   *  printed while a shell sub-tab was active (codex P2 finding on
+   *  PR #20).
+   */
   function setActiveSubTab(subId: string) {
     setState((prev) => {
       const panel =
@@ -1478,6 +1555,18 @@ export default function App() {
         terminal: { ...term, open: true },
       };
     });
+    if (subId === "agent-bash") {
+      // Replay the active agent tab's terminal buffer on next paint so
+      // the Terminal composite (which just (re)mounted via the sub-tab
+      // selection) sees its content.
+      requestAnimationFrame(() => {
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const activeId = stateRef.current.activeTabId as string | undefined;
+        const active = activeId ? tabs.find((t) => t.id === activeId) : undefined;
+        const buffer = active?.terminalBuffer ?? "";
+        dispatchTerminalReplay(buffer);
+      });
+    }
   }
 
   /** Jump to tab at zero-based index, clamped to the live tab list.
@@ -1684,11 +1773,14 @@ export default function App() {
         }
       }
       const mod = e.metaKey || e.ctrlKey;
-      // Cmd+` toggles the terminal panel. Mirrors VS Code / iTerm.
+      // Cmd+` toggles the bottom terminal panel AND moves focus there
+      // when opening (so the user can type immediately). Mirrors
+      // VS Code's Ctrl+` behavior. When closing, return focus to the
+      // chat composer so typing continues seamlessly.
       if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        toggleTerminal();
+        toggleTerminalAndFocus();
         return;
       }
       // Cmd+B toggles the sidebar. Mirrors the standard editor
@@ -1775,6 +1867,12 @@ export default function App() {
       // Windows Terminal. The first 8 use direct indexing so layouts
       // with > 9 tabs still get keyboard access for the first few; the
       // 9th key is the "last tab" affordance.
+      // Cmd+1..8 → jump to agent tab N; Cmd+9 → jump to last agent
+      // tab. Filter shells before counting so the indices line up with
+      // what the user actually sees in the top strip (codex P2 finding
+      // on PR #20: with [agent, agent, shell] the previous code passed
+      // index 2 to jumpToTab and no-op'd because the filtered array
+      // only has 2 items).
       if (
         mod &&
         !e.shiftKey &&
@@ -1782,22 +1880,30 @@ export default function App() {
         e.key >= "1" &&
         e.key <= "9"
       ) {
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        if (tabs.length === 0) return;
+        const agentTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+          .filter((t) => t.kind !== "shell");
+        if (agentTabs.length === 0) return;
         e.preventDefault();
         e.stopPropagation();
         if (e.key === "9") {
-          jumpToTab(tabs.length - 1);
+          jumpToTab(agentTabs.length - 1);
         } else {
           jumpToTab(parseInt(e.key, 10) - 1);
         }
         return;
       }
       // Cmd+Opt+T → reopen most-recently-closed tab. Matches iTerm2's
-      // restore-closed-window shortcut; safe alongside Cmd+T (new shell)
-      // and Cmd+Shift+T (new agent). No-op on empty stack so a stray
-      // press is silent.
-      if (e.key.toLowerCase() === "t" && mod && e.altKey && !e.shiftKey) {
+      // restore-closed-window shortcut. macOS lets Option mutate the
+      // printable-key value (Opt+T arrives as `e.key === "†"`), so
+      // match the *physical* key via `e.code === "KeyT"` whenever Alt
+      // is part of the shortcut. Without this the advertised combo
+      // silently no-ops on Mac (codex P2 review of PR #17).
+      if (
+        mod &&
+        e.altKey &&
+        !e.shiftKey &&
+        (e.code === "KeyT" || e.key.toLowerCase() === "t")
+      ) {
         e.preventDefault();
         e.stopPropagation();
         reopenLastClosedTab();
@@ -1860,10 +1966,23 @@ export default function App() {
         adjustZoom(-0.1);
         return;
       }
-      if (mod && !e.altKey && !e.shiftKey && e.key === "0") {
+      // Cmd+Shift+0 → reset zoom. Moved off Cmd+0 so that combo can do
+      // composer ↔ terminal focus toggle (more discoverable than reset
+      // zoom, which is rare).
+      if (mod && !e.altKey && e.shiftKey && e.key === "0") {
         e.preventDefault();
         e.stopPropagation();
         resetZoom();
+        return;
+      }
+      // Cmd+0 → toggle focus between the chat composer and the bottom
+      // terminal panel. Mirrors VS Code's Cmd+J / Cmd+1 split-pane
+      // focus-toggle pattern but bound to a more discoverable key. If
+      // the panel is closed, opens it first.
+      if (mod && !e.altKey && !e.shiftKey && e.key === "0") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFocusComposerTerminal();
         return;
       }
     };
@@ -2158,15 +2277,19 @@ export default function App() {
         return;
       }
       switch (id) {
-        // Cmd+T (menu + tray) defaults to a shell tab in M6 — matches
-        // Terminal.app convention. The legacy "new_tab" id is preserved
-        // so older payloads keep working; "new_agent_tab" is new.
+        // M6 restructure: "File → New Tab" (Cmd+T) opens an agent tab
+        // — the menu can't observe webview focus, so it picks the
+        // safer default. The webview keydown handler intercepts Cmd+T
+        // when focus is in the bottom terminal panel and routes to
+        // newShellTab there. "File → New Shell Tab" (Cmd+Shift+T) is
+        // the explicit shell-tab path. The legacy "new_agent_tab" id
+        // is kept as an alias in case any older payload references it.
         case "new_tab":
-        case "new_shell_tab":
-          newShellTab();
-          break;
         case "new_agent_tab":
           newTab();
+          break;
+        case "new_shell_tab":
+          newShellTab();
           break;
         case "close_tab": {
           const activeId = stateRef.current.activeTabId as string | undefined;
@@ -4101,14 +4224,15 @@ export default function App() {
           if (id) closeTab(id);
         } else if (p.action === "builtin:meta+]") nextTab(1);
         else if (p.action === "builtin:meta+[") nextTab(-1);
-        else if (p.action === "builtin:meta+`") toggleTerminal();
+        else if (p.action === "builtin:meta+`") toggleTerminalAndFocus();
+        else if (p.action === "builtin:meta+0") toggleFocusComposerTerminal();
         else if (p.action === "builtin:meta+k") clearChat();
         else if (p.action === "builtin:meta+.") void stopPrompt();
         else if (p.action === "builtin:meta+p") openPalette("switcher");
         else if (p.action === "builtin:meta+shift+p") openPalette("commands");
         else if (p.action === "builtin:meta+=") adjustZoom(0.1);
         else if (p.action === "builtin:meta+-") adjustZoom(-0.1);
-        else if (p.action === "builtin:meta+0") resetZoom();
+        else if (p.action === "builtin:meta+shift+0") resetZoom();
         return;
     }
   }

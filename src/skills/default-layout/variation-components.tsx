@@ -165,6 +165,11 @@ interface TabItem {
   id: string;
   label: string;
   dirty?: boolean;
+  /** Tab kind. Shell tabs (`"shell"`) are rendered in the bottom
+   *  terminal panel as sub-tabs, so every tab-strip-style surface
+   *  filters them out. Records without `kind` predate the
+   *  discriminator and are treated as agent. */
+  kind?: "agent" | "shell";
 }
 
 export function EditorialHeader({ component, state, onEvent }: BuiltinComponentProps) {
@@ -179,10 +184,16 @@ export function EditorialHeader({ component, state, onEvent }: BuiltinComponentP
     : "Æthon π";
   const subtitle = props.subtitle ? resolveString(props.subtitle, state) : "";
   const tabs: TabItem[] = useMemo(() => {
-    if (!props.tabs) return [];
-    if (Array.isArray(props.tabs)) return props.tabs;
-    const v = resolvePointer(state, props.tabs.$ref);
-    return Array.isArray(v) ? (v as TabItem[]) : [];
+    const tabsRef = props.tabs;
+    if (!tabsRef) return [];
+    const raw: TabItem[] = Array.isArray(tabsRef)
+      ? tabsRef
+      : (() => {
+          const v = resolvePointer(state, tabsRef.$ref);
+          return Array.isArray(v) ? (v as TabItem[]) : [];
+        })();
+    // Filter shells — they live in the bottom terminal panel.
+    return raw.filter((t) => t.kind !== "shell");
   }, [props.tabs, state]);
   const activeId = props.activeId ? resolveString(props.activeId, state) : "";
 
@@ -346,10 +357,16 @@ export function VerticalTabRail({ component, state, onEvent }: BuiltinComponentP
     shelfItems?: RailShelfItem[] | { $ref: string };
   };
   const tabs: RailTab[] = useMemo(() => {
-    if (!props.tabs) return [];
-    if (Array.isArray(props.tabs)) return props.tabs;
-    const v = resolvePointer(state, props.tabs.$ref);
-    return Array.isArray(v) ? (v as RailTab[]) : [];
+    const tabsRef = props.tabs;
+    if (!tabsRef) return [];
+    const raw: RailTab[] = Array.isArray(tabsRef)
+      ? tabsRef
+      : (() => {
+          const v = resolvePointer(state, tabsRef.$ref);
+          return Array.isArray(v) ? (v as RailTab[]) : [];
+        })();
+    // Filter shells — they live in the bottom terminal panel.
+    return raw.filter((t) => t.kind !== "shell");
   }, [props.tabs, state]);
   const activeId = props.activeId ? resolveString(props.activeId, state) : "";
   const title = props.title ? resolveString(props.title, state) : "aethon";
