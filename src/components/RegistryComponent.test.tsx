@@ -21,17 +21,18 @@ function CustomPalette({ component }: BuiltinComponentProps) {
 }
 
 describe("RegistryComponent", () => {
-  it("renders an empty renderer wrapper when no registration exists", () => {
+  it("renders nothing when no registration exists", () => {
     const registry = new SkillRegistry();
     const html = renderToStaticMarkup(
       <SkillRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
       </SkillRegistryProvider>,
     );
-    // RegistryComponent delegates to A2UIRenderer, which always wraps in
-    // `.a2ui-renderer`; the unknown type produces no children, so the
-    // wrapper is empty (no overlay rendered, no DOM noise).
-    expect(html).toBe('<div class="a2ui-renderer"></div>');
+    // RegistryComponent uses A2UIRenderer in `bare` mode (Fragment, no
+    // wrapper div) so an unknown type contributes zero DOM. Crucial: the
+    // wrapped form had `flex: 1; overflow: hidden` styles that would
+    // starve sibling layouts.
+    expect(html).toBe("");
   });
 
   it("resolves a registered component type via the skill registry", () => {

@@ -2413,8 +2413,17 @@ function ShellStatusBar(props: {
   // routes share-mode events from. Re-emit with the BuiltinComponentProps
   // signature the parent passes us so cycle-share-mode flows up the
   // shell-canvas event channel exactly as before.
+  //
+  // Returning `true` tells the inner A2UIRenderer the event has been
+  // routed, so it does NOT fire its own `dispatch_a2ui_event`. Without
+  // this, every badge click would also send a synthetic event for the
+  // ad-hoc "share-mode-badge" component to the bridge — leaking a
+  // duplicate to extension handlers (with `tabId: "default"` to boot).
   const handleBadgeEvent = useMemo<A2UIEventHandler>(
-    () => (_component, eventType, data) => onEvent(eventType, data),
+    () => (_component, eventType, data) => {
+      onEvent(eventType, data);
+      return true;
+    },
     [onEvent],
   );
   const dimsLabel = cols && rows ? `${cols}×${rows}` : "—";

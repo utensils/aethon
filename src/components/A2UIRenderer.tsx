@@ -42,6 +42,14 @@ export type A2UIEventHandler = (
 
 interface A2UIRendererProps {
   payload: A2UIPayload;
+  // When true, render the components as a Fragment instead of wrapping
+  // them in `<div class="a2ui-renderer">`. The wrapper has global
+  // `flex: 1; overflow: hidden` styles that are correct for the main
+  // layout-payload mount but break leaf renders (e.g. RegistryComponent
+  // mounting an overlay or the share-mode badge inline in a status bar):
+  // the wrapper would otherwise consume flex space alongside the real
+  // layout. Used by RegistryComponent below.
+  bare?: boolean;
   // Optional state setter — when supplied, the renderer mutates this caller-owned
   // store (chat input, draft, etc.) instead of its internal copy. This is what
   // lets the App treat the layout's state as the single source of truth.
@@ -193,7 +201,9 @@ export function RegistryComponent({
     }),
     [type, componentProps],
   );
-  return <A2UIRenderer payload={payload} state={state} onEvent={onEvent} />;
+  return (
+    <A2UIRenderer payload={payload} state={state} onEvent={onEvent} bare />
+  );
 }
 
 export default function A2UIRenderer({
@@ -202,6 +212,7 @@ export default function A2UIRenderer({
   onStateChange,
   onEvent: externalOnEvent,
   tabId,
+  bare = false,
 }: A2UIRendererProps) {
   const registry = useSkillRegistry();
   const [internalState, setInternalState] = useState<Record<string, unknown>>(
@@ -460,6 +471,15 @@ export default function A2UIRenderer({
     );
   };
 
+  if (bare) {
+    return (
+      <Fragment>
+        {payload.components.map((component) => (
+          <Fragment key={component.id}>{renderComponent(component)}</Fragment>
+        ))}
+      </Fragment>
+    );
+  }
   return (
     <div className="a2ui-renderer">
       {payload.components.map((component) => renderComponent(component))}
