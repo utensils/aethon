@@ -77,17 +77,18 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+7", description: "Jump to tab 7" },
   { combo: "meta+8", description: "Jump to tab 8" },
   { combo: "meta+9", description: "Jump to last tab" },
-  { combo: "meta+`", description: "Toggle agent bash output panel" },
+  { combo: "meta+`", description: "Toggle terminal panel + focus" },
+  { combo: "meta+0", description: "Toggle focus between composer and terminal" },
   { combo: "meta+b", description: "Toggle sidebar" },
   { combo: "meta+k", description: "Clear chat" },
   { combo: "meta+.", description: "Stop current prompt" },
   { combo: "meta+=", description: "Zoom in" },
   { combo: "meta+-", description: "Zoom out" },
-  { combo: "meta+0", description: "Reset zoom" },
+  { combo: "meta+shift+0", description: "Reset zoom" },
 ];
 
 export interface SelectInput {
-  tabs?: { id: string; label: string }[];
+  tabs?: { id: string; label: string; kind?: "agent" | "shell" }[];
   activeTabId?: string;
   recentSessions?: { id: string; label: string; lastModified?: string; cwd?: string }[];
   sidebar?: {
@@ -116,6 +117,10 @@ export function selectPaletteItems(
 
   const pushTabs = () => {
     for (const t of state.tabs ?? []) {
+      // Shell tabs render in the bottom terminal panel as sub-tabs.
+      // The palette's "Tabs" section is for top-strip agent tabs only —
+      // shell sub-tabs are reachable via the panel's own UI.
+      if (t.kind === "shell") continue;
       items.push({
         id: `tab:${t.id}`,
         label: t.label,

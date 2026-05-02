@@ -986,15 +986,28 @@ fn install_app_menu(
     use tauri::Emitter;
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
-    // M6 P1: Cmd+T defaults to "New Shell Tab" (matches Terminal.app /
-    // iTerm2 convention). The existing chat-tab behavior moves to
-    // Cmd+Shift+T as "New Agent Tab". Both menu items emit distinct ids
-    // (`new_tab` legacy alias for shell, `new_agent_tab` for chat) so
-    // the JS-side router can split them — see App.tsx:menu listener.
-    let new_tab = MenuItemBuilder::with_id("new_tab", "New Shell Tab")
+    // M6 restructure: Cmd+T is focus-aware in the webview keydown
+    // handler — it spawns an agent tab when focus is outside the bottom
+    // terminal panel and a shell sub-tab when focus is inside. The
+    // native menu can't observe webview focus, so the menu item
+    // triggers an explicit "open new agent tab" action (the unambiguous
+    // default users expect from "File → New Tab" everywhere). Cmd+T as
+    // an accelerator still exists ONLY on this menu item — when the OS
+    // delivers Cmd+T to the menu, the menu fires `new_tab` which the JS
+    // router maps to `newTab()` (agent). When the user presses Cmd+T
+    // with focus in the panel, the keydown handler intercepts and
+    // calls `newShellTab()` instead. To prevent the menu from also
+    // firing in that case we'd ideally suppress it via JS, but Tauri's
+    // accelerator handling is OS-level — keeping the menu item as the
+    // agent-tab path means the worst-case race spawns an agent tab,
+    // which is the safer default than a surprise PTY.
+    let new_tab = MenuItemBuilder::with_id("new_tab", "New Tab")
         .accelerator("CmdOrCtrl+T")
         .build(app)?;
-    let new_agent_tab = MenuItemBuilder::with_id("new_agent_tab", "New Agent Tab")
+    // Cmd+Shift+T is the explicit "always shell" entry. The webview
+    // handler routes it to newShellTab regardless of focus and
+    // auto-opens the bottom panel. The menu mirrors that behavior.
+    let new_agent_tab = MenuItemBuilder::with_id("new_shell_tab", "New Shell Tab")
         .accelerator("CmdOrCtrl+Shift+T")
         .build(app)?;
     let close_tab = MenuItemBuilder::with_id("close_tab", "Close Tab")
