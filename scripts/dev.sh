@@ -26,19 +26,35 @@ VITE_BASE="${AETHON_VITE_PORT_BASE:-1420}"
 DEBUG_BASE="${AETHON_DEBUG_PORT_BASE:-19433}"
 DEV_INFO="${HOME}/.aethon/dev-info.json"
 
-# Test if a TCP port on 127.0.0.1 is currently bound. nc is in macOS base
-# image and the Nix devshell. /dev/tcp would also work but it's bash-only
-# and prints noise on connection refused. Returns 0 (success / "port is
-# busy") when nc connects.
+# Test whether ANY process is listening on TCP $1 on any interface or
+# address family. We use lsof here (available on macOS and the Nix
+# devshell on Linux) instead of `nc -z 127.0.0.1` because `nc -z` only
+# tests IPv4 — when Vite from a stale run is bound on `::1:<port>`
+# (modern macOS resolves "localhost" to IPv6 first), the IPv4 probe
+# returns "free" and the script handed Vite a port that fails to bind.
+#
+# `-t` prints just PIDs (so we test by emptiness), `-nP` skips DNS /
+# protocol lookups for speed, `-iTCP:$port -sTCP:LISTEN` filters to
+# TCP listeners on the given port across all interfaces and families.
 is_port_busy() {
-  nc -z 127.0.0.1 "$1" >/dev/null 2>&1
+  [[ -n "$(lsof -t -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null)" ]]
 }
 
+# Bound search to keep a runaway loop (every port busy somehow) from
+# spinning forever — give up after 200 ports above the base. In practice
+# the user has at most a handful of stale dev servers; a hard ceiling is
+# safer than an infinite loop.
 find_free_port() {
-  local p="$1"
-  while is_port_busy "$p"; do
+  local base="$1"
+  local p="$base"
+  local stop=$((base + 200))
+  while [[ "$p" -lt "$stop" ]] && is_port_busy "$p"; do
     p=$((p + 1))
   done
+  if [[ "$p" -ge "$stop" ]]; then
+    echo "[dev] could not find a free port near $base (checked through $((stop - 1)))" >&2
+    return 1
+  fi
   echo "$p"
 }
 
