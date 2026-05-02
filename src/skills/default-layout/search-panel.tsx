@@ -11,20 +11,31 @@
 // implementation re-runs the search on each query change with a
 // short debounce; v1 ships scan-only, no token index.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 
 interface SearchHit {
   tabId: string;
   role: string;
-  snippet: string;
+  /** Three-way snippet split — `<before><match><after>`. Rust-side
+   *  build_snippet_parts produces these so the frontend can wrap the
+   *  middle in `<mark>` without hand-rolling JS index gymnastics. */
+  snippetBefore: string;
+  snippetMatch: string;
+  snippetAfter: string;
   timestamp?: number;
 }
+
+type ProjectScope = "current" | "all";
 
 interface SearchState {
   open: boolean;
   query: string;
+  /** Which project bucket to filter results to. Defaults to "all" so a
+   *  cold-start search isn't surprisingly empty for users who don't yet
+   *  have an active project. The toggle persists for the session. */
+  scope: ProjectScope;
 }
 
 function readSearchState(state: Record<string, unknown>): SearchState {
@@ -32,7 +43,49 @@ function readSearchState(state: Record<string, unknown>): SearchState {
   return {
     open: !!s.open,
     query: typeof s.query === "string" ? s.query : "",
+    scope: s.scope === "current" ? "current" : "all",
   };
+}
+
+interface TabRecord {
+  id: string;
+  label?: string;
+  projectId?: string | null;
+  kind?: string;
+}
+
+interface ProjectRecord {
+  id: string;
+  label: string;
+  path?: string;
+}
+
+interface DiscoveredRecord {
+  tabId: string;
+  cwd?: string;
+}
+
+/** Look up a (projectLabel, projectId) for a result hit by:
+ *  1. Checking the live `/tabs` list (preferred — active tab knows its project)
+ *  2. Falling back to discovered-session cwd → matching project path
+ *  3. Returning `null` for closed-tab results we can't attribute */
+function resolveHitProject(
+  hit: SearchHit,
+  tabs: TabRecord[],
+  discovered: DiscoveredRecord[],
+  projects: ProjectRecord[],
+): ProjectRecord | null {
+  const tab = tabs.find((t) => t.id === hit.tabId);
+  if (tab?.projectId) {
+    const p = projects.find((q) => q.id === tab.projectId);
+    if (p) return p;
+  }
+  const disc = discovered.find((d) => d.tabId === hit.tabId);
+  if (disc?.cwd) {
+    const p = projects.find((q) => q.path === disc.cwd);
+    if (p) return p;
+  }
+  return null;
 }
 
 const DEBOUNCE_MS = 180;
@@ -43,6 +96,46 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<SearchHit[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Cross-reference the live state for project attribution + scope
+  // filtering. All read-only — we never write back here. Wrap each
+  // pull in its own useMemo so the result identity is stable across
+  // renders (otherwise the `?? []` fallback creates a fresh array
+  // every render and the `annotated` memo never hits its cache).
+  const tabs = useMemo<TabRecord[]>(
+    () => (state.tabs as TabRecord[] | undefined) ?? [],
+    [state.tabs],
+  );
+  const discovered = useMemo<DiscoveredRecord[]>(
+    () =>
+      (state.discoveredSessions as DiscoveredRecord[] | undefined) ?? [],
+    [state.discoveredSessions],
+  );
+  const projects = useMemo<ProjectRecord[]>(
+    () =>
+      (state.projects as { projects?: ProjectRecord[] } | undefined)
+        ?.projects ?? [],
+    [state.projects],
+  );
+  const activeProjectId =
+    (state.projects as { activeId?: string | null } | undefined)?.activeId ??
+    null;
+
+  // Annotated results = each hit + resolved project. Filtering happens
+  // here so the rendered list re-runs when the user flips scope without
+  // re-firing the (potentially expensive) session scan.
+  const annotated = useMemo(() => {
+    return results.map((hit) => ({
+      hit,
+      project: resolveHitProject(hit, tabs, discovered, projects),
+    }));
+  }, [results, tabs, discovered, projects]);
+
+  const filtered = useMemo(() => {
+    if (search.scope === "all") return annotated;
+    if (!activeProjectId) return annotated;
+    return annotated.filter((row) => row.project?.id === activeProjectId);
+  }, [annotated, search.scope, activeProjectId]);
 
   // Auto-focus the input when opened. Same pattern as CommandPalette.
   const wasOpenRef = useRef(false);
@@ -56,31 +149,45 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
 
   // Debounced search. Each keystroke schedules a new search; the
   // previous timer is cleared so we only fire after the user pauses.
-  // Empty query → empty results (avoid an expensive scan with no hit
-  // criterion).
+  // setState is always wrapped in a timeout (zero or debounced) so the
+  // react-hooks/set-state-in-effect rule stays satisfied.
+  //
+  // Race guard: a slow scan from query "fo" could resolve *after* the
+  // user typed "foo" and the next scan finished — overwriting the
+  // newer results with stale ones. Use a monotonic request id (held in
+  // a ref) so the resolved Promise can self-discard if it isn't the
+  // latest in flight.
+  const searchReqIdRef = useRef(0);
   useEffect(() => {
-    if (!search.open) {
-      setResults([]);
-      return;
-    }
-    const q = search.query.trim();
+    const q = search.open ? search.query.trim() : "";
     if (q.length === 0) {
-      setResults([]);
-      return;
+      // Bumping the request id invalidates any in-flight scan so its
+      // late resolution can't repopulate `results` after the user
+      // cleared the query.
+      searchReqIdRef.current += 1;
+      const handle = window.setTimeout(() => {
+        setResults([]);
+        setBusy(false);
+      }, 0);
+      return () => window.clearTimeout(handle);
     }
     const handle = window.setTimeout(async () => {
+      const reqId = ++searchReqIdRef.current;
       setBusy(true);
       try {
         const hits = await invoke<SearchHit[]>("search_sessions", {
           query: q,
           limit: RESULT_LIMIT,
         });
+        // Stale guard — a newer query has already started; drop these.
+        if (reqId !== searchReqIdRef.current) return;
         setResults(Array.isArray(hits) ? hits : []);
       } catch (err) {
+        if (reqId !== searchReqIdRef.current) return;
         console.warn("search_sessions failed:", err);
         setResults([]);
       } finally {
-        setBusy(false);
+        if (reqId === searchReqIdRef.current) setBusy(false);
       }
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
@@ -90,6 +197,7 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
 
   const close = () => onEvent("close");
   const setQuery = (q: string) => onEvent("query", { value: q });
+  const setScope = (scope: ProjectScope) => onEvent("scope", { scope });
   const select = (hit: SearchHit) => onEvent("select", { hit });
 
   return (
@@ -124,17 +232,49 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
           />
           {busy && <span className="ae-search-busy">searching…</span>}
         </div>
+        <div className="ae-search-scope" role="tablist" aria-label="Result scope">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={search.scope === "all"}
+            className={`ae-search-scope-tab${
+              search.scope === "all" ? " ae-search-scope-active" : ""
+            }`}
+            onClick={() => setScope("all")}
+          >
+            All projects
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={search.scope === "current"}
+            disabled={!activeProjectId}
+            title={
+              activeProjectId
+                ? "Limit results to the active project"
+                : "Open a project to scope search to it"
+            }
+            className={`ae-search-scope-tab${
+              search.scope === "current" ? " ae-search-scope-active" : ""
+            }`}
+            onClick={() => setScope("current")}
+          >
+            Current project
+          </button>
+        </div>
         <div className="ae-search-results">
           {search.query.trim().length === 0 ? (
             <div className="ae-search-empty">
               Type to search messages across all your sessions.
             </div>
-          ) : results.length === 0 && !busy ? (
+          ) : filtered.length === 0 && !busy ? (
             <div className="ae-search-empty">
-              No matches for "{search.query.trim()}".
+              {results.length > 0 && search.scope === "current"
+                ? `No matches in this project for "${search.query.trim()}".`
+                : `No matches for "${search.query.trim()}".`}
             </div>
           ) : (
-            results.map((hit, i) => (
+            filtered.map(({ hit, project }, i) => (
               <button
                 key={`${hit.tabId}-${i}`}
                 type="button"
@@ -143,14 +283,23 @@ export function SearchPanel({ state, onEvent }: BuiltinComponentProps) {
               >
                 <div className="ae-search-row-meta">
                   <span className="ae-search-row-role">{hit.role}</span>
-                  <span className="ae-search-row-tab">{hit.tabId}</span>
+                  <span
+                    className="ae-search-row-tab"
+                    title={hit.tabId}
+                  >
+                    {project?.label ?? hit.tabId}
+                  </span>
                   {hit.timestamp ? (
                     <span className="ae-search-row-time">
                       {new Date(hit.timestamp).toLocaleString()}
                     </span>
                   ) : null}
                 </div>
-                <div className="ae-search-row-snippet">{hit.snippet}</div>
+                <div className="ae-search-row-snippet">
+                  {hit.snippetBefore}
+                  <mark className="ae-search-row-mark">{hit.snippetMatch}</mark>
+                  {hit.snippetAfter}
+                </div>
               </button>
             ))
           )}

@@ -179,6 +179,79 @@ struct ShellExitPayload {
     code: Option<i32>,
 }
 
+/// Title update payload — emitted when a shell's output stream contains
+/// an OSC 0/1/2 title-set sequence. The frontend updates the sub-tab
+/// label (`<title>`) in place. Cosmetic — the underlying tab id /
+/// command / cwd don't change.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ShellTitlePayload {
+    tab_id: String,
+    title: String,
+}
+
+/// Scan a chunk of raw PTY bytes for the *last* OSC title-set sequence
+/// it contains. Returns `Some(title)` when one is found, `None`
+/// otherwise. Only OSC 0 ("set both icon name + title"), 1 ("icon name"),
+/// and 2 ("window title") are recognised — other OSC codes (palette,
+/// hyperlinks, working directory) are ignored. Both ST terminators are
+/// supported: BEL (`0x07`) and ESC `\` (`0x1b 0x5c`). Returns the
+/// *last* title in the chunk so a shell that emits a snapshot of
+/// "command · cwd" right before each prompt wins over the transient
+/// updates a child process may have flashed during execution.
+pub(crate) fn parse_osc_title(bytes: &[u8]) -> Option<String> {
+    let mut i = 0;
+    let mut last: Option<String> = None;
+    while i + 3 < bytes.len() {
+        // Look for OSC introducer `\x1b]`.
+        if bytes[i] == 0x1b && bytes[i + 1] == b']' {
+            let osc_start = i + 2;
+            // Match the leading code: 0;, 1;, or 2;. Anything else, skip.
+            let (code_len, valid) = match bytes.get(osc_start..osc_start + 2) {
+                Some([b'0', b';']) | Some([b'1', b';']) | Some([b'2', b';']) => (2, true),
+                _ => (0, false),
+            };
+            if !valid {
+                i += 1;
+                continue;
+            }
+            let body_start = osc_start + code_len;
+            // Find ST: BEL or ESC \ . Bound the search so a malformed
+            // sequence can't make us scan to EOF — title-set payloads
+            // are short by convention.
+            let max_scan = (body_start + 4096).min(bytes.len());
+            let mut term_idx: Option<(usize, usize)> = None; // (end_of_title, total_consumed)
+            let mut j = body_start;
+            while j < max_scan {
+                if bytes[j] == 0x07 {
+                    term_idx = Some((j, j + 1));
+                    break;
+                }
+                if bytes[j] == 0x1b && bytes.get(j + 1) == Some(&b'\\') {
+                    term_idx = Some((j, j + 2));
+                    break;
+                }
+                j += 1;
+            }
+            if let Some((title_end, advance_to)) = term_idx {
+                if let Ok(title) = std::str::from_utf8(&bytes[body_start..title_end]) {
+                    let trimmed = title.trim().to_string();
+                    if !trimmed.is_empty() {
+                        last = Some(trimmed);
+                    }
+                }
+                i = advance_to;
+                continue;
+            }
+            // No terminator — bail to avoid scanning forever on partial
+            // sequences. The next chunk's carry will pick up the rest.
+            break;
+        }
+        i += 1;
+    }
+    last
+}
+
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellOpenArgs {
@@ -202,6 +275,11 @@ pub struct ShellOpenArgs {
     /// race that existed when the seed was applied post-open.
     #[serde(default)]
     pub share_mode: Option<ShareMode>,
+    /// When false, clear the inherited process env before applying
+    /// `TERM`/`COLORTERM`/`AETHON` and the per-tab `env` table. Defaults
+    /// to true (inherit). Mirrors `[shell] inherit_env`.
+    #[serde(default)]
+    pub inherit_env: Option<bool>,
 }
 
 type ChildHandle = Arc<Mutex<Option<Box<dyn Child + Send + Sync>>>>;
@@ -272,6 +350,12 @@ pub fn shell_open<R: Runtime>(
     if let Some(cwd) = args.cwd.as_ref() {
         cmd.cwd(cwd);
     }
+    // Hermetic mode: drop the host env before stamping our own
+    // baseline. `TERM`/`COLORTERM`/`AETHON` and the explicit per-tab
+    // `env` table still get applied below so the shell remains usable.
+    if args.inherit_env == Some(false) {
+        cmd.env_clear();
+    }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("AETHON", "1");
@@ -325,6 +409,12 @@ pub fn shell_open<R: Runtime>(
         // U+FFFD permanently. Hold any trailing partial sequence and prepend
         // it to the next read.
         let mut carry: Vec<u8> = Vec::new();
+        // OSC title-set buffer. Many shells (zsh, bash with PROMPT_COMMAND,
+        // vim, ssh, htop) emit `\x1b]0;<title>\x07` or `\x1b]2;<title>\x07`
+        // to update their host terminal's tab title. Capturing it here
+        // gives us "vim · README.md" / "user@host" / "htop" in the sub-tab
+        // label without needing per-platform foreground-process detection.
+        let mut last_title: Option<String> = None;
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
@@ -340,6 +430,23 @@ pub fn shell_open<R: Runtime>(
                     // matches what the bridge will offer to the agent.
                     if let Ok(mut sb) = scrollback_for_thread.lock() {
                         sb.append(&raw);
+                    }
+                    // Look for OSC title-set sequences in the raw bytes
+                    // (cheaper than re-scanning the lossily-decoded chunk
+                    // — the sequences are 7-bit ASCII so byte-level scan
+                    // is correct). Emit a `shell-title` event when the
+                    // captured title changes.
+                    if let Some(title) = parse_osc_title(&raw)
+                        && last_title.as_deref() != Some(title.as_str())
+                    {
+                        last_title = Some(title.clone());
+                        let _ = app_for_thread.emit(
+                            "shell-title",
+                            ShellTitlePayload {
+                                tab_id: tab_id_for_thread.clone(),
+                                title,
+                            },
+                        );
                     }
                     let chunk = String::from_utf8_lossy(&raw).into_owned();
                     let _ = app_for_thread.emit(
@@ -736,6 +843,57 @@ fn utf8_safe_split(buf: &[u8]) -> usize {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    // ── parse_osc_title ──────────────────────────────────────────────────
+    #[test]
+    fn parse_osc_title_recognises_osc_0_with_bel() {
+        let bytes = b"\x1b]0;vim README.md\x07rest";
+        assert_eq!(parse_osc_title(bytes).as_deref(), Some("vim README.md"));
+    }
+
+    #[test]
+    fn parse_osc_title_recognises_osc_2_with_st() {
+        let bytes = b"\x1b]2;user@host\x1b\\$ ";
+        assert_eq!(parse_osc_title(bytes).as_deref(), Some("user@host"));
+    }
+
+    #[test]
+    fn parse_osc_title_returns_last_match() {
+        // Multiple titles in one chunk — the most recent wins so the user's
+        // tab label tracks the freshest state.
+        let bytes = b"\x1b]0;old\x07stuff\x1b]2;new\x07more";
+        assert_eq!(parse_osc_title(bytes).as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn parse_osc_title_skips_non_title_oscs() {
+        // OSC 4 (palette) and OSC 8 (hyperlinks) are not titles.
+        let bytes = b"\x1b]4;1;rgb:ff/00/00\x07";
+        assert_eq!(parse_osc_title(bytes), None);
+        let bytes = b"\x1b]8;;https://example.com\x07link\x1b]8;;\x07";
+        assert_eq!(parse_osc_title(bytes), None);
+    }
+
+    #[test]
+    fn parse_osc_title_handles_empty_title() {
+        // Empty title (`\x1b]0;\x07`) shouldn't surface as a label.
+        let bytes = b"\x1b]0;\x07";
+        assert_eq!(parse_osc_title(bytes), None);
+    }
+
+    #[test]
+    fn parse_osc_title_returns_none_when_unterminated() {
+        // No BEL / ST → don't return a partial title; the next chunk will
+        // carry the terminator.
+        let bytes = b"\x1b]0;partial title with no terminator and lots of text";
+        assert_eq!(parse_osc_title(bytes), None);
+    }
+
+    #[test]
+    fn parse_osc_title_ignores_plain_text() {
+        let bytes = b"$ ls\r\nfoo  bar  baz\r\n";
+        assert_eq!(parse_osc_title(bytes), None);
+    }
 
     fn registry() -> ShellRegistry {
         ShellRegistry::new()

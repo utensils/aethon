@@ -244,7 +244,37 @@ You probably don't want this unless you're building a focused-mode
 extension — `setLayout` replaces sidebar, header, status bar, the lot.
 Prefer `patchLayout` for incremental tweaks.
 
-### 6. Custom A2UI component reused as a card type
+### 6. Drive a user shell tab via `ctx.shells`
+
+Event handlers can reach the same shell sharing API as the model:
+
+```ts
+api.onEvent(
+  { componentType: "sidebar-item", descendantId: "diagnose-shell" },
+  async (event, ctx) => {
+    const shells = await ctx.shells.list();
+    if (!shells.ok || !shells.data?.length) {
+      ctx.pi.notify("No shareable shells. Click the badge to flip one to 'read'.");
+      return;
+    }
+    const tab = shells.data[0];
+    const last = await ctx.shells.read({ tabId: tab.tabId, maxBytes: 4096 });
+    if (last.ok && last.data?.content) {
+      await ctx.pi.prompt(
+        `Diagnose the recent output from "${tab.command}":\n\n${last.data.content}`,
+      );
+    }
+  },
+);
+```
+
+`ctx.shells.write` pops the same Allow / Deny prompt the model writes
+hit when the tab is in `read-write` — the security boundary lives in
+Rust regardless of how the API is reached. Calls during register-time
+return `frontend_not_ready`; defer them into a handler or a sidebar
+click to give the bridge handshake time to settle.
+
+### 7. Custom A2UI component reused as a card type
 
 ```ts
 api.registerComponent("info-card", {

@@ -546,7 +546,8 @@ function SearchableSidebarSection({
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
 
-function formatToolDuration(ms: number): string {
+// eslint-disable-next-line react-refresh/only-export-components -- exported for vitest unit tests; doesn't affect HMR semantics in practice
+export function formatToolDuration(ms: number): string {
   if (ms < 0) ms = 0;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   const totalSec = Math.floor(ms / 1000);
@@ -901,11 +902,45 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
   const emptyHint = props.emptyHint
     ? resolveString(props.emptyHint, state)
     : "Send a message to start a conversation.";
+  // M6 P6 search refinement: when reopening a tab from a search hit,
+  // scroll to the first message containing the matched substring
+  // instead of the bottom. Driven by `state.scrollToMatchByTab[tabId]`
+  // — App.tsx populates this from the search-hit click and clears it
+  // after one render so subsequent message arrivals scroll-to-bottom
+  // again as usual.
+  const scrollToMatchByTab =
+    (state.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
+  const scrollToMatch = tabId ? scrollToMatchByTab[tabId] : undefined;
 
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    if (!el) return;
+    if (scrollToMatch && messages.length > 0) {
+      const needle = scrollToMatch.toLowerCase();
+      const idx = messages.findIndex((m) =>
+        (m.text ?? "").toLowerCase().includes(needle),
+      );
+      if (idx >= 0) {
+        const row = el.querySelectorAll(".a2ui-chat-message")[idx];
+        if (row instanceof HTMLElement) {
+          row.scrollIntoView({ block: "center", behavior: "auto" });
+          row.classList.add("a2ui-chat-message-flash");
+          window.setTimeout(
+            () => row.classList.remove("a2ui-chat-message-flash"),
+            1200,
+          );
+          return;
+        }
+      }
+    }
+    el.scrollTop = el.scrollHeight;
+    // `messages.length` + `scrollToMatch` capture the cases that should
+    // re-run scroll: a new message arrived OR a search hit just landed.
+    // The closure also reads each message's text inside `findIndex`,
+    // but adding `messages` to deps would re-fire on every text-stream
+    // chunk and yank the user back to the match every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, scrollToMatch]);
 
   return (
     <div className="a2ui-chat-history" ref={listRef}>
@@ -1639,6 +1674,115 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
 }
 
 // ---------------------------------------------------------------------------
+// Theme-aware xterm palette. Reads `--terminal-{bg,fg,cursor,selection}` and
+// the 16 `--ansi-*` custom properties off `:root` so xterm picks up the
+// active Aethon theme instead of a hardcoded dark palette. Falls back to a
+// sensible dark default for any var that isn't defined (e.g. when an
+// extension theme didn't ship the ANSI block).
+// ---------------------------------------------------------------------------
+
+interface XTermThemeShape {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+const ANSI_FALLBACK: XTermThemeShape = {
+  background: "#0e0e10",
+  foreground: "#e8e8ec",
+  cursor: "#7c8cff",
+  selectionBackground: "rgba(124, 140, 255, 0.32)",
+  black: "#1a1a1c",
+  red: "#ff5c4d",
+  green: "#6ec85c",
+  yellow: "#ffb845",
+  blue: "#6ea7ff",
+  magenta: "#d97afa",
+  cyan: "#5fd5e0",
+  white: "#d6cfc1",
+  brightBlack: "#4a4a4f",
+  brightRed: "#ff7a6f",
+  brightGreen: "#88dd75",
+  brightYellow: "#ffc870",
+  brightBlue: "#8fbeff",
+  brightMagenta: "#e69dff",
+  brightCyan: "#82e1ea",
+  brightWhite: "#fef3e2",
+};
+
+function readTerminalTheme(): XTermThemeShape {
+  if (typeof window === "undefined") return ANSI_FALLBACK;
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => {
+    const raw = cs.getPropertyValue(name).trim();
+    return raw.length > 0 ? raw : fallback;
+  };
+  return {
+    background: v("--terminal-bg", ANSI_FALLBACK.background),
+    foreground: v("--terminal-fg", ANSI_FALLBACK.foreground),
+    cursor: v("--terminal-cursor", ANSI_FALLBACK.cursor),
+    selectionBackground: v(
+      "--terminal-selection",
+      ANSI_FALLBACK.selectionBackground,
+    ),
+    black: v("--ansi-black", ANSI_FALLBACK.black),
+    red: v("--ansi-red", ANSI_FALLBACK.red),
+    green: v("--ansi-green", ANSI_FALLBACK.green),
+    yellow: v("--ansi-yellow", ANSI_FALLBACK.yellow),
+    blue: v("--ansi-blue", ANSI_FALLBACK.blue),
+    magenta: v("--ansi-magenta", ANSI_FALLBACK.magenta),
+    cyan: v("--ansi-cyan", ANSI_FALLBACK.cyan),
+    white: v("--ansi-white", ANSI_FALLBACK.white),
+    brightBlack: v("--ansi-bright-black", ANSI_FALLBACK.brightBlack),
+    brightRed: v("--ansi-bright-red", ANSI_FALLBACK.brightRed),
+    brightGreen: v("--ansi-bright-green", ANSI_FALLBACK.brightGreen),
+    brightYellow: v("--ansi-bright-yellow", ANSI_FALLBACK.brightYellow),
+    brightBlue: v("--ansi-bright-blue", ANSI_FALLBACK.brightBlue),
+    brightMagenta: v("--ansi-bright-magenta", ANSI_FALLBACK.brightMagenta),
+    brightCyan: v("--ansi-bright-cyan", ANSI_FALLBACK.brightCyan),
+    brightWhite: v("--ansi-bright-white", ANSI_FALLBACK.brightWhite),
+  };
+}
+
+/** Watch `:root[data-theme]` for changes and re-skin a live xterm instance.
+ *  Call from the xterm useEffect; returns a cleanup that disconnects the
+ *  observer. The xterm `theme` setter triggers an immediate re-render so
+ *  switching themes mid-session updates running shells. */
+function observeTerminalTheme(term: XTerm): () => void {
+  if (typeof window === "undefined") return () => {};
+  const apply = () => {
+    try {
+      term.options.theme = readTerminalTheme();
+    } catch {
+      /* term disposed mid-update — drop */
+    }
+  };
+  const obs = new MutationObserver(apply);
+  obs.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => obs.disconnect();
+}
+
+// ---------------------------------------------------------------------------
 // Terminal — xterm.js with WebGL renderer. Falls back to canvas if WebGL
 // init fails (which it can on some Linux GPUs / older webviews).
 // ---------------------------------------------------------------------------
@@ -1713,18 +1857,17 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     if (!containerRef.current) return;
     if (termRef.current) return;
 
+    const baseTheme = readTerminalTheme();
     const term = new XTerm({
       fontSize,
       cols,
       rows,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      theme: {
-        background: "#0e0e10",
-        foreground: "#e8e8ec",
-        // Make the cursor invisible in read-only mode by drawing it the same
-        // color as the background — xterm.js doesn't expose a cursor.hide flag.
-        cursor: readOnly ? "#0e0e10" : "#7c8cff",
-      },
+      theme: readOnly
+        ? // Hide the cursor in read-only mode by drawing it the same colour
+          // as the background — xterm.js doesn't expose a `cursor.hide` flag.
+          { ...baseTheme, cursor: baseTheme.background }
+        : baseTheme,
       cursorBlink: !readOnly,
       // disableStdin tells xterm to ignore keystrokes entirely. Without this
       // a focused terminal still calls onData for each keystroke (which we
@@ -1777,9 +1920,14 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       };
       onReplayEvent = (e: Event) => {
         const detail = (e as CustomEvent<string>).detail;
-        // Clear restores the prompt-style header line plus the buffered
-        // contents for the now-active tab. Empty buffer = fresh prompt.
-        term.clear();
+        // `term.reset()` wipes both the visible viewport AND the
+        // scrollback ring; `term.clear()` only scrolls visible lines
+        // off the top, leaving the prior buffer reachable via
+        // mouse-scroll. Without reset, switching back to agent-bash
+        // would stack the boot greeting (from mount) on top of the
+        // replayed greeting (from this handler) — visible to the user
+        // as a double-banner.
+        term.reset();
         term.write(bootGreetingRef.current);
         if (typeof detail === "string" && detail.length > 0) {
           term.write(detail);
@@ -1797,9 +1945,11 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       }
     });
     ro.observe(containerRef.current);
+    const stopThemeObserver = observeTerminalTheme(term);
 
     return () => {
       ro.disconnect();
+      stopThemeObserver();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);
       }
@@ -2112,13 +2262,11 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       cursorBlink: true,
       allowProposedApi: true,
-      // Themed via inline CSS vars — for P1 a dark default mirrors the agent
-      // panel; M6's "theme-aware ANSI palette" lands in a follow-up.
-      theme: {
-        background: "#0e0e10",
-        foreground: "#e8e8ec",
-        cursor: "#7c8cff",
-      },
+      // Theme + ANSI palette read from `--terminal-*` / `--ansi-*`
+      // CSS custom properties on `:root`. observeTerminalTheme below
+      // re-applies on `data-theme` attribute changes so switching
+      // theme mid-session updates running shells.
+      theme: readTerminalTheme(),
     });
     termRef.current = term;
     const fit = new FitAddon();
@@ -2174,6 +2322,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
       }
     });
     ro.observe(containerRef.current);
+    const stopThemeObserver = observeTerminalTheme(term);
 
     // PTY chunks land via per-tab CustomEvent (`aethon:shell-output:<tabId>`).
     // App.tsx dispatches them; we route to xterm.write here.
@@ -2196,6 +2345,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     return () => {
       window.removeEventListener(eventName, onShellOutput);
       ro.disconnect();
+      stopThemeObserver();
       onDataDisposable.dispose();
       term.dispose();
       termRef.current = null;

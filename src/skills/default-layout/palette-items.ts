@@ -79,12 +79,19 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+9", description: "Jump to last tab" },
   { combo: "meta+`", description: "Toggle terminal panel + focus" },
   { combo: "meta+0", description: "Toggle focus between composer and terminal" },
+  { combo: "meta+l", description: "Focus active tab's input" },
   { combo: "meta+b", description: "Toggle sidebar" },
   { combo: "meta+k", description: "Clear chat" },
   { combo: "meta+.", description: "Stop current prompt" },
   { combo: "meta+=", description: "Zoom in" },
   { combo: "meta+-", description: "Zoom out" },
   { combo: "meta+shift+0", description: "Reset zoom" },
+  { combo: "meta+shift+s", description: "Export chat as Markdown" },
+  { combo: "meta+shift+f", description: "Search across sessions" },
+  { combo: "meta+,", description: "Open Settings" },
+  { combo: "meta+ctrl+f", description: "Toggle fullscreen (mac)" },
+  { combo: "F11", description: "Toggle fullscreen" },
+  { combo: "F12", description: "Toggle DevTools (debug builds)" },
 ];
 
 export interface SelectInput {

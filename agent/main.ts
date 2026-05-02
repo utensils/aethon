@@ -1396,6 +1396,12 @@ async function main() {
       registerComponent: AethonApi["registerComponent"];
       pi: PiHandlerCtx;
       canvas: AethonApi["canvas"];
+      /** Opt-in agent ↔ shell sharing. Same surface as
+       *  `globalThis.aethon.shells` — `list()`, `read({tabId, …})`,
+       *  `write({tabId, text})`. Shares the privacy floor + Allow/Deny
+       *  flow; calls before the frontend handshake completes resolve to
+       *  `frontend_not_ready` rather than blocking forever. */
+      shells: AethonApi["shells"];
     },
   ) => void | Promise<void>;
   const a2uiEventHandlers: { match: A2UIEventMatch; handler: A2UIEventHandler }[] = [];
@@ -3237,6 +3243,7 @@ async function main() {
                     registerComponent: aethonApi.registerComponent,
                     pi: piCtx,
                     canvas: tabScopedCanvas,
+                    shells: shellsApi,
                   }),
                 ),
               )

@@ -34,6 +34,23 @@ export interface AethonConfig {
     /** Auto-respawn the bun bridge child on unexpected exit. Default
      *  true; configurable via `[shell] auto_restart_agent`. */
     autoRestartAgent: boolean;
+    /** Override the program spawned for new shell tabs. Null/empty
+     *  falls back to `$SHELL` and the platform default. */
+    defaultCommand: string | null;
+    /** Extra argv appended after the platform default. */
+    defaultArgs: string[];
+    /** Whether new shell tabs inherit the host process env. Default true. */
+    inheritEnv: boolean;
+    /** Confirm Cmd+W / X close when a child process is foreground.
+     *  Default true. */
+    promptBeforeClose: boolean;
+  };
+  shortcuts: {
+    /** What `Cmd+T` opens when focus is *outside* the bottom terminal
+     *  panel: `"agent"` (default — focus-aware behaviour) or `"shell"`
+     *  (Cmd+T always opens a shell sub-tab). Anything else falls
+     *  through to `"agent"`. */
+    newTabKind: "agent" | "shell";
   };
 }
 
@@ -46,7 +63,15 @@ const DEFAULTS: AethonConfig = {
     notifyMinDurationSeconds: 8,
   },
   agent: { model: null },
-  shell: { defaultShareMode: "private", autoRestartAgent: true },
+  shell: {
+    defaultShareMode: "private",
+    autoRestartAgent: true,
+    defaultCommand: null,
+    defaultArgs: [],
+    inheritEnv: true,
+    promptBeforeClose: true,
+  },
+  shortcuts: { newTabKind: "agent" },
 };
 
 function hasTauri(): boolean {
@@ -58,6 +83,13 @@ function hasTauri(): boolean {
 }
 
 let inflight: Promise<AethonConfig> | null = null;
+
+/** Drop the in-memory config cache so the next `getConfig()` call
+ *  re-reads from disk. Call after writing the config (Settings panel
+ *  Save) so subsequent reads see fresh values without a page reload. */
+export function clearConfigCache(): void {
+  inflight = null;
+}
 
 export function getConfig(): Promise<AethonConfig> {
   if (inflight) return inflight;
@@ -94,6 +126,28 @@ export function getConfig(): Promise<AethonConfig> {
             typeof obj?.shell?.autoRestartAgent === "boolean"
               ? obj.shell.autoRestartAgent
               : true,
+          defaultCommand:
+            typeof obj?.shell?.defaultCommand === "string" &&
+            obj.shell.defaultCommand.length > 0
+              ? obj.shell.defaultCommand
+              : null,
+          defaultArgs: Array.isArray(obj?.shell?.defaultArgs)
+            ? obj.shell.defaultArgs.filter(
+                (s): s is string => typeof s === "string",
+              )
+            : [],
+          inheritEnv:
+            typeof obj?.shell?.inheritEnv === "boolean"
+              ? obj.shell.inheritEnv
+              : true,
+          promptBeforeClose:
+            typeof obj?.shell?.promptBeforeClose === "boolean"
+              ? obj.shell.promptBeforeClose
+              : true,
+        },
+        shortcuts: {
+          newTabKind:
+            obj?.shortcuts?.newTabKind === "shell" ? "shell" : "agent",
         },
       };
     } catch (err) {

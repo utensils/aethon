@@ -67,6 +67,29 @@
   --syntax-operator: #c8c1ad;
   --syntax-function: #f5cf7d;
   --syntax-variable: #ff9b6a;
+  /* xterm theme + ANSI palette — Ember (warm dark). The ShellCanvas
+     and Terminal composites construct xterm with these vars. Themes
+     can re-skin the shell entirely by overriding these. */
+  --terminal-bg: #161618;
+  --terminal-fg: #fef3e2;
+  --terminal-cursor: #ff6a18;
+  --terminal-selection: rgba(255, 106, 24, 0.32);
+  --ansi-black: #1a1a1c;
+  --ansi-red: #ff5c4d;
+  --ansi-green: #6ec85c;
+  --ansi-yellow: #ffb845;
+  --ansi-blue: #6ea7ff;
+  --ansi-magenta: #d97afa;
+  --ansi-cyan: #5fd5e0;
+  --ansi-white: #d6cfc1;
+  --ansi-bright-black: #4a4a4f;
+  --ansi-bright-red: #ff7a6f;
+  --ansi-bright-green: #88dd75;
+  --ansi-bright-yellow: #ffc870;
+  --ansi-bright-blue: #8fbeff;
+  --ansi-bright-magenta: #e69dff;
+  --ansi-bright-cyan: #82e1ea;
+  --ansi-bright-white: #fef3e2;
 }
 
 /* Paper — cream paper, ink type, brass accent darkened from #ff6a18
@@ -103,6 +126,28 @@
   --syntax-operator: #6c6353;
   --syntax-function: #7c4a00;
   --syntax-variable: #9a3b1f;
+  /* xterm theme + ANSI palette — Paper (cream light). Inked,
+     higher-contrast tones so terminal output reads on cream. */
+  --terminal-bg: #fffaee;
+  --terminal-fg: #1f1f23;
+  --terminal-cursor: #d4530c;
+  --terminal-selection: rgba(212, 83, 12, 0.24);
+  --ansi-black: #1f1f23;
+  --ansi-red: #c4322a;
+  --ansi-green: #2f6b1f;
+  --ansi-yellow: #875000;
+  --ansi-blue: #1a55a8;
+  --ansi-magenta: #8b3a96;
+  --ansi-cyan: #1a7080;
+  --ansi-white: #6a6356;
+  --ansi-bright-black: #4a4438;
+  --ansi-bright-red: #d63f37;
+  --ansi-bright-green: #3d8429;
+  --ansi-bright-yellow: #b06900;
+  --ansi-bright-blue: #2c6cc4;
+  --ansi-bright-magenta: #a04ba8;
+  --ansi-bright-cyan: #2c8da0;
+  --ansi-bright-white: #1f1f23;
 }
 
 /* Æther — deep ink-blue base, brighter brass accent, the signature
@@ -142,6 +187,28 @@
   --syntax-operator: #aab2c4;
   --syntax-function: #f0c87b;
   --syntax-variable: #ff9d6a;
+  /* xterm theme + ANSI palette — Æther (cool dark). Cooler hues
+     to match the ink-blue chrome. */
+  --terminal-bg: #0e1118;
+  --terminal-fg: #fef3e2;
+  --terminal-cursor: #ff8a3d;
+  --terminal-selection: rgba(255, 138, 61, 0.28);
+  --ansi-black: #181b25;
+  --ansi-red: #ff7a85;
+  --ansi-green: #6ed59f;
+  --ansi-yellow: #ffc070;
+  --ansi-blue: #82a8ff;
+  --ansi-magenta: #c890ff;
+  --ansi-cyan: #6dd6e6;
+  --ansi-white: #c0c5d3;
+  --ansi-bright-black: #4d536b;
+  --ansi-bright-red: #ff97a0;
+  --ansi-bright-green: #8ee0b4;
+  --ansi-bright-yellow: #ffd49a;
+  --ansi-bright-blue: #a6c2ff;
+  --ansi-bright-magenta: #dbb1ff;
+  --ansi-bright-cyan: #93e0ec;
+  --ansi-bright-white: #fef3e2;
 }
 
 /* Motion timing tokens + reduced-motion + focus-ring tokens — applied
@@ -3090,6 +3157,27 @@ body.ae-resizing-sidebar * {
   font-size: 0.88rem;
   margin: 0 0 8px 0;
 }
+.ae-settings-ansi-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ae-ansi-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-auto-rows: 22px;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--terminal-bg, var(--bg-input));
+}
+.ae-ansi-swatch {
+  border-radius: 4px;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .ae-settings-footer {
   display: flex;
   justify-content: flex-end;
@@ -3228,6 +3316,55 @@ body.ae-resizing-sidebar * {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.ae-search-row-mark {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.ae-search-scope {
+  display: flex;
+  gap: 4px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-search-scope-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.ae-search-scope-tab:hover:not(:disabled) {
+  background: var(--accent-hover-tint);
+  color: var(--text);
+}
+.ae-search-scope-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ae-search-scope-active {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Search-hit scroll-to-match flash on the chat row that contained the
+   matched substring. Quick attention pull, then the row settles back to
+   normal so the user can continue reading. */
+.a2ui-chat-message-flash {
+  animation: a2ui-chat-flash 1200ms ease-out;
+}
+@keyframes a2ui-chat-flash {
+  0% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+
 .ae-search-footer {
   display: flex;
   gap: 12px;

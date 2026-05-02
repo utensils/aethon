@@ -91,14 +91,12 @@
           }
         },
         {
-          "id": "terminal",
-          "type": "terminal",
+          "id": "terminal-panel",
+          "type": "terminal-panel",
           "props": {
             "area": "terminal",
             "visible": { "$ref": "/terminal/open" },
-            "fontSize": 13,
-            "subscribeToBash": true,
-            "readOnly": true
+            "fontSize": 13
           }
         },
         {
@@ -160,6 +158,9 @@
     },
     "terminal": {
       "open": false
+    },
+    "terminalPanel": {
+      "activeSubId": "agent-bash"
     },
     "slashCommands": []
   }
