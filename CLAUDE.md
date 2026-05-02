@@ -128,7 +128,7 @@ console) can swap chrome at runtime:
 | `Cmd+Shift+T` | New shell sub-tab (always — auto-opens the bottom panel) |
 | `Cmd+W` | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`). |
 | `Cmd+Opt+T` | Reopen most-recently-closed tab |
-| `Cmd+]` / `Cmd+[` | Next / previous *agent* tab (top strip; shells are filtered) |
+| `Cmd+]` / `Cmd+[` | Next / previous *agent* tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. |
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead. |
 | `Cmd+1`..`Cmd+8` | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash). |
 | `Cmd+9` | Jump to last agent tab (or last shell sub-tab when focus is in panel). |

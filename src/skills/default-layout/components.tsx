@@ -1920,9 +1920,14 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       };
       onReplayEvent = (e: Event) => {
         const detail = (e as CustomEvent<string>).detail;
-        // Clear restores the prompt-style header line plus the buffered
-        // contents for the now-active tab. Empty buffer = fresh prompt.
-        term.clear();
+        // `term.reset()` wipes both the visible viewport AND the
+        // scrollback ring; `term.clear()` only scrolls visible lines
+        // off the top, leaving the prior buffer reachable via
+        // mouse-scroll. Without reset, switching back to agent-bash
+        // would stack the boot greeting (from mount) on top of the
+        // replayed greeting (from this handler) — visible to the user
+        // as a double-banner.
+        term.reset();
         term.write(bootGreetingRef.current);
         if (typeof detail === "string" && detail.length > 0) {
           term.write(detail);

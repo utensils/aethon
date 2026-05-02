@@ -104,10 +104,13 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   };
   const save = () => onEvent("save");
   const cancel = () => onEvent("close");
+  // `aethon_home_dir` returns the *Aethon* dir (`~/.aethon`), not the
+  // user's home — joining another `/.aethon/` produces a wrong nested
+  // path that the agent never reads. Append the bare filename only.
   const openConfigFile = async () => {
     try {
-      const home = (await invoke<string>("aethon_home_dir")) ?? "";
-      const path = `${home}/.aethon/config.toml`;
+      const aethonDir = (await invoke<string>("aethon_home_dir")) ?? "";
+      const path = `${aethonDir}/config.toml`;
       await openUrl(`file://${path}`);
     } catch (err) {
       console.warn("open config.toml failed:", err);
@@ -115,8 +118,8 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   };
   const openSystemPromptFile = async () => {
     try {
-      const home = (await invoke<string>("aethon_home_dir")) ?? "";
-      const path = `${home}/.aethon/system-prompt.md`;
+      const aethonDir = (await invoke<string>("aethon_home_dir")) ?? "";
+      const path = `${aethonDir}/system-prompt.md`;
       await openUrl(`file://${path}`);
     } catch (err) {
       console.warn("open system-prompt.md failed:", err);

@@ -1787,6 +1787,25 @@ export default function App() {
     setActiveSubTab(shellTabs[shellIdx].id);
   }
 
+  /** Cycle the active sub-tab in the bottom terminal panel. Order is
+   *  agent-bash first, then each shell sub-tab in `/tabs` order; wraps
+   *  at the ends. Used by Cmd+]/[ when focus is in the panel so the
+   *  user navigates the surface they're looking at. */
+  function nextShellSubTab(direction: 1 | -1) {
+    const subIds = ["agent-bash" as string].concat(
+      ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+        .filter((t) => t.kind === "shell")
+        .map((t) => t.id),
+    );
+    if (subIds.length <= 1) return;
+    const cur = (stateRef.current.terminalPanel as
+      | { activeSubId?: string }
+      | undefined)?.activeSubId ?? "agent-bash";
+    const idx = Math.max(0, subIds.indexOf(cur));
+    const nextIdx = (idx + direction + subIds.length) % subIds.length;
+    setActiveSubTab(subIds[nextIdx]);
+  }
+
   /** Reorder the active *shell sub-tab* one slot left (-1) or right
    *  (+1) within the bottom panel. Swaps positions with the next/prev
    *  shell tab in `/tabs` so non-shell entries stay in place — agents
@@ -2111,19 +2130,28 @@ export default function App() {
         }
         return;
       }
-      // Cmd+] → next tab; Cmd+[ → previous. Matches macOS browser
-      // conventions (Safari/Chrome use Cmd+Shift+] but Cmd+] alone is
-      // common in IDE tab cycling).
+      // Cmd+] → next tab; Cmd+[ → previous. When focus is inside the
+      // bottom terminal panel, the same combo cycles between sub-tabs
+      // (agent-bash + each shell) so the user navigates the surface
+      // they're looking at. Outside the panel → top agent tab strip.
       if (e.key === "]" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        nextTab(1);
+        if (isFocusInTerminalPanel()) {
+          nextShellSubTab(1);
+        } else {
+          nextTab(1);
+        }
         return;
       }
       if (e.key === "[" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        nextTab(-1);
+        if (isFocusInTerminalPanel()) {
+          nextShellSubTab(-1);
+        } else {
+          nextTab(-1);
+        }
         return;
       }
       // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
@@ -2898,6 +2926,15 @@ export default function App() {
       }
       if (imageItems.length === 0) return;
       e.preventDefault();
+      // Capture the target tab at paste time, NOT after the async save
+      // resolves — otherwise pasting a slow-saving image in tab A and
+      // switching to tab B before save_paste_image returns would
+      // attach the @path token to whichever agent tab is active later.
+      const targetId = stateRef.current.activeTabId as string | undefined;
+      if (!targetId) return;
+      const targetTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+      const targetTab = targetTabs.find((t) => t.id === targetId);
+      if (!targetTab || targetTab.kind !== "agent") return;
       void Promise.all(
         imageItems.map(async (item) => {
           const file = item.getAsFile();
@@ -2923,17 +2960,20 @@ export default function App() {
           }
         }),
       ).then((paths) => {
-        const activeId = stateRef.current.activeTabId as string | undefined;
-        if (!activeId) return;
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const tab = tabs.find((t) => t.id === activeId);
-        if (!tab || tab.kind !== "agent") return;
         const tokens = paths
           .filter((p): p is string => typeof p === "string")
           .map((p) => `@${p}`)
           .join(" ");
         if (tokens.length === 0) return;
-        updateTab(activeId, (t) => ({
+        // Verify the captured tab still exists (the user could have
+        // closed it during the async save). If it's gone, the @path
+        // tokens are orphaned — better than appending to an unrelated
+        // tab. The pasted file remains in ~/.aethon/pastes/ for manual
+        // recovery.
+        const stillExists = (stateRef.current.tabs as Tab[] | undefined)
+          ?.some((t) => t.id === targetId);
+        if (!stillExists) return;
+        updateTab(targetId, (t) => ({
           ...t,
           draft: t.draft.length > 0 ? `${t.draft} ${tokens}` : tokens,
         }));
@@ -4739,7 +4779,12 @@ export default function App() {
    *  panel form binds to `pending` (overlaid on the live snapshot)
    *  so the user sees changes immediately; Save commits them. */
   function applySettingsPatch(
-    patch: Partial<{ ui: unknown; agent: unknown; shell: unknown }>,
+    patch: Partial<{
+      ui: unknown;
+      agent: unknown;
+      shell: unknown;
+      shortcuts: unknown;
+    }>,
   ) {
     setState((prev) => {
       const cur = (prev.settings as { open?: boolean; pending?: Record<string, unknown> | null } | undefined) ?? {};
@@ -4774,6 +4819,14 @@ export default function App() {
       shell: {
         ...(live?.shell ?? {}),
         ...((pending as { shell?: object }).shell ?? {}),
+      },
+      // Always include `shortcuts` so `[shortcuts] new_tab_kind` survives
+      // any other Settings save. write_config drops sections it doesn't
+      // see — without this, saving Theme would silently revert a
+      // previously-saved shortcut to the default.
+      shortcuts: {
+        ...(live?.shortcuts ?? {}),
+        ...((pending as { shortcuts?: object }).shortcuts ?? {}),
       },
     };
     try {
