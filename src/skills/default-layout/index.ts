@@ -37,6 +37,7 @@ import {
 } from "./variation-components";
 import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
+import { SettingsPanel } from "./settings-panel";
 import workstationPayload from "./workstation.a2ui.json";
 import editorialPayload from "./editorial.a2ui.json";
 import commandDeckPayload from "./command-deck.a2ui.json";
@@ -107,6 +108,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "appearance-menu": AppearanceMenu,
     "command-palette": CommandPalette,
     "notification-stack": NotificationStack,
+    "settings-panel": SettingsPanel,
   },
   layout: workstationPayload,
 };

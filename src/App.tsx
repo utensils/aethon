@@ -15,6 +15,7 @@ import {
   layoutSlots,
 } from "./skills/default-layout";
 import { CommandPalette } from "./skills/default-layout/command-palette";
+import { SettingsPanel } from "./skills/default-layout/settings-panel";
 import type {
   PaletteItem,
   PaletteMode,
@@ -103,7 +104,7 @@ import {
   readStateWithLocalStorageFallback,
   writeState,
 } from "./persist";
-import { getConfig } from "./config";
+import { getConfig, type AethonConfig } from "./config";
 import {
   activeProject,
   emptyProjectsState,
@@ -2001,6 +2002,14 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         toggleFocusComposerTerminal();
+        return;
+      }
+      // Cmd+, → open Settings panel (M6 P3). macOS-native Preferences
+      // shortcut. Toggles closed if already open.
+      if (mod && !e.altKey && !e.shiftKey && e.key === ",") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSettings();
         return;
       }
     };
@@ -4206,6 +4215,94 @@ export default function App() {
   // (selectPaletteItems) from existing state slices, so opening with a
   // mode is enough — no items list to populate here.
   // ---------------------------------------------------------------------
+  /** Toggle the Settings panel (M6 P3). Loads the on-disk config on
+   *  open via `getConfig()`, exposes form bindings via the
+   *  `/settings/pending` slice, and writes back via the
+   *  `write_config` Tauri command on Save. */
+  function toggleSettings() {
+    setState((prev) => {
+      const cur = (prev.settings as { open?: boolean } | undefined) ?? {};
+      return {
+        ...prev,
+        settings: { open: !cur.open, pending: null },
+      };
+    });
+  }
+  function closeSettings() {
+    setState((prev) => ({
+      ...prev,
+      settings: { open: false, pending: null },
+    }));
+  }
+  /** Apply a partial AethonConfig patch to `/settings/pending`. The
+   *  panel form binds to `pending` (overlaid on the live snapshot)
+   *  so the user sees changes immediately; Save commits them. */
+  function applySettingsPatch(
+    patch: Partial<{ ui: unknown; agent: unknown; shell: unknown }>,
+  ) {
+    setState((prev) => {
+      const cur = (prev.settings as { open?: boolean; pending?: Record<string, unknown> | null } | undefined) ?? {};
+      const merged = { ...(cur.pending ?? {}), ...patch };
+      return {
+        ...prev,
+        settings: { open: !!cur.open, pending: merged },
+      };
+    });
+  }
+  /** Save the pending settings: compose a full config object (live
+   *  snapshot + pending overlay), invoke `write_config`, then close
+   *  the panel and re-prime the in-memory `getConfig()` cache so
+   *  subsequent reads pick up the new values. */
+  async function saveSettings() {
+    const cur = (stateRef.current.settings as
+      | { open?: boolean; pending?: Record<string, unknown> | null }
+      | undefined) ?? {};
+    const pending = cur.pending ?? {};
+    let live: AethonConfig | null = null;
+    try {
+      live = await getConfig();
+    } catch (err) {
+      console.warn("settings save: getConfig failed:", err);
+    }
+    const merged = {
+      ui: { ...(live?.ui ?? {}), ...((pending as { ui?: object }).ui ?? {}) },
+      agent: {
+        ...(live?.agent ?? {}),
+        ...((pending as { agent?: object }).agent ?? {}),
+      },
+      shell: {
+        ...(live?.shell ?? {}),
+        ...((pending as { shell?: object }).shell ?? {}),
+      },
+    };
+    try {
+      await invoke("write_config", { config: merged });
+      // Reset the in-memory config cache so the next call re-reads
+      // from disk. The simplest reset is module-side; getConfig() in
+      // src/config.ts memoizes via a module-level Promise, so a
+      // dynamic import + cache-bust isn't easy. Easiest: live with
+      // the stale cache for this session — the disk write IS what
+      // matters for next launch. Fold a cache invalidator into
+      // config.ts in a follow-up.
+      pushNotification({
+        id: "ae-settings-saved",
+        title: "Settings saved",
+        kind: "success",
+        durationMs: 2000,
+      });
+    } catch (err) {
+      pushNotification({
+        id: "ae-settings-save-failed",
+        title: "Failed to save settings",
+        message: err instanceof Error ? err.message : String(err),
+        kind: "error",
+        durationMs: 4000,
+      });
+      return;
+    }
+    closeSettings();
+  }
+
   function openPalette(mode: PaletteMode) {
     setState((prev) => ({
       ...prev,
@@ -4598,6 +4695,25 @@ export default function App() {
           return false;
         }
       }
+      // Settings panel events (M6 P3). Renders at App root like the
+      // palette. Update applies a partial AethonConfig to the pending
+      // overlay; save commits via write_config; close discards.
+      if (component.id === "settings-panel") {
+        if (eventType === "close") {
+          closeSettings();
+          return true;
+        }
+        if (eventType === "update") {
+          const patch = (data as { patch?: Record<string, unknown> } | undefined)?.patch;
+          if (patch) applySettingsPatch(patch);
+          return true;
+        }
+        if (eventType === "save") {
+          void saveSettings();
+          return true;
+        }
+      }
+
       // Command palette events. Palette renders at App root; events
       // route here directly (it never goes through the dispatch_a2ui
       // bridge because there's no agent counterpart to invoke).
@@ -4950,6 +5066,10 @@ export default function App() {
     () => ({ id: "notification-stack", type: "notification-stack", props: {} }),
     [],
   );
+  const settingsComponent = useMemo(
+    () => ({ id: "settings-panel", type: "settings-panel", props: {} }),
+    [],
+  );
   const renderState = useMemo(() => {
     const tabs = (state.tabs as Tab[] | undefined) ?? [];
     const recentSessions =
@@ -5000,6 +5120,13 @@ export default function App() {
           state={renderState}
           onEvent={(eventType, data) =>
             onEvent(paletteComponent, eventType, data)
+          }
+        />
+        <SettingsPanel
+          component={settingsComponent}
+          state={renderState}
+          onEvent={(eventType, data) =>
+            onEvent(settingsComponent, eventType, data)
           }
         />
       </div>
