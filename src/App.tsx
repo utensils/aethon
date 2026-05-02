@@ -3353,6 +3353,24 @@ export default function App() {
               pendingTabOpens.current.delete(t.id);
             });
         }
+        // Post-respawn project re-announce. The bridge boots with
+        // process.cwd() — which is whatever directory bun was launched
+        // from, NOT necessarily the user's active project. If we don't
+        // re-announce, a hot-reload triggered while a non-cwd project
+        // is active leaves the wrong project's extensions loaded. The
+        // loop above only sends tab_open for non-default tabs, so when
+        // the active tab IS "default" (common: single-tab session)
+        // nothing announces. Send an explicit set_project for the
+        // active tab so the bridge swaps to the right project. The
+        // bridge short-circuits when cwd matches its currentProjectCwd
+        // so this is harmless on a fresh boot where the boot effect
+        // already announced.
+        const activeProj = activeProject(projectsRef.current);
+        if (activeProj) {
+          const activeTabId =
+            (stateRef.current.activeTabId as string | undefined) ?? "default";
+          announceProjectToBridge(activeTabId, activeProj.path);
+        }
         break;
       }
       case "extension_components": {

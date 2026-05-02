@@ -1206,8 +1206,20 @@ async function main() {
     menuItems: typeof extensionMenuItems;
     layouts: typeof extensionLayouts;
     eventRoutes: typeof extensionEventRoutes;
+    eventRoutingMode: "builtin" | "extension";
     eventHandlerCount: number;
+    // Insertion-ordered snapshot of the dedupe set used by `_onEvent`.
+    // Without restoring this, switching back to a project causes its
+    // `register()` to silently no-op on every onEvent call (the key is
+    // still in the set even though the handler was trimmed).
+    handlerDedupeKeys: string[];
     stateTree: Record<string, unknown>;
+    // Active extension-supplied layout (full replacement). Cloned so a
+    // later patchLayout doesn't mutate the snapshot in place.
+    extensionLayout: unknown;
+    // Pending patches against the boot layout (what's queued when no
+    // setLayout has been called). Cloned for the same reason.
+    pendingLayoutPatches: { path: string; value: unknown }[];
   }
   let projectBaseline: ProjectBaselineSnapshot | null = null;
   function captureProjectExtensionBaseline(): void {
@@ -1219,7 +1231,9 @@ async function main() {
       menuItems: new Map(extensionMenuItems),
       layouts: new Map(extensionLayouts),
       eventRoutes: new Map(extensionEventRoutes),
+      eventRoutingMode,
       eventHandlerCount: a2uiEventHandlers.length,
+      handlerDedupeKeys: [...registeredHandlerKeys],
       // Deep clone the state tree so subsequent setState mutations don't
       // mutate the snapshot. JSON round-trip is fine here — extension
       // state is JSON-serializable by contract (it ends up in
@@ -1228,6 +1242,16 @@ async function main() {
         string,
         unknown
       >,
+      // Layout overrides — cloned via JSON so a project's later
+      // patchLayout doesn't reach into the snapshot.
+      extensionLayout:
+        extensionLayout === undefined
+          ? undefined
+          : JSON.parse(JSON.stringify(extensionLayout)),
+      pendingLayoutPatches: pendingLayoutPatches.map((p) => ({
+        path: p.path,
+        value: p.value,
+      })),
     };
   }
   /**
@@ -1275,10 +1299,30 @@ async function main() {
     // append, so anything past the baseline length came from project
     // extensions.
     a2uiEventHandlers.length = projectBaseline.eventHandlerCount;
+    // Reset the dedupe set to its baseline snapshot. Without this, a
+    // switch back to the same project would silently no-op every
+    // `aethon.onEvent` call because the keys were already in the set.
+    registeredHandlerKeys.clear();
+    for (const k of projectBaseline.handlerDedupeKeys) {
+      registeredHandlerKeys.add(k);
+    }
+    // Restore the routing mode. A project that switched to "extension"
+    // mode would otherwise leak that mode into the next project.
+    eventRoutingMode = projectBaseline.eventRoutingMode;
     // Restore extensionStateTree from the deep clone.
     extensionStateTree = JSON.parse(
       JSON.stringify(projectBaseline.stateTree),
     ) as Record<string, unknown>;
+    // Restore layout overrides. Clone again so the live values don't
+    // share structure with the snapshot.
+    extensionLayout =
+      projectBaseline.extensionLayout === undefined
+        ? undefined
+        : JSON.parse(JSON.stringify(projectBaseline.extensionLayout));
+    pendingLayoutPatches = projectBaseline.pendingLayoutPatches.map((p) => ({
+      path: p.path,
+      value: p.value,
+    }));
 
     // Re-emit hydrate messages so the frontend drops the project's
     // contributions. mutationId omitted — these are server-initiated
@@ -1316,6 +1360,27 @@ async function main() {
       routes: [...extensionEventRoutes.values()],
       mode: eventRoutingMode,
     });
+    // Push the restored layout to the frontend. Compute the same
+    // effective tree _getLayout would return: extensionLayout if set,
+    // else bootLayout with pendingLayoutPatches folded in. When that
+    // resolves to a concrete tree we send `layout_set`; the frontend
+    // applies it and a project's setLayout-overridden chrome goes away.
+    // Falling back to bootLayout matters most — the common case is a
+    // project that never set a layout, where we need to undo whatever
+    // the previous project did.
+    const effective = (() => {
+      if (extensionLayout) return extensionLayout;
+      if (!bootLayout) return null;
+      if (pendingLayoutPatches.length === 0) return bootLayout;
+      let tree = bootLayout;
+      for (const { path, value } of pendingLayoutPatches) {
+        tree = patchLayoutTree(tree, path, value);
+      }
+      return tree;
+    })();
+    if (effective) {
+      send({ type: "layout_set", payload: effective });
+    }
     scheduleStateFileWrite();
   }
 
