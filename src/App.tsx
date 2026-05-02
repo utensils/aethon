@@ -570,6 +570,9 @@ export default function App() {
   // latest value without re-binding.
   const notifyOnCompletionRef = useRef<boolean>(true);
   const notifyMinDurationMsRef = useRef<number>(8 * 1000);
+  // P5: live config for [shell] auto_restart_agent. Read by the
+  // `agent-crashed` listener.
+  const autoRestartAgentRef = useRef<boolean>(true);
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
   const BUILTIN_THEMES: { id: string; label: string }[] = [
@@ -710,6 +713,8 @@ export default function App() {
       notifyOnCompletionRef.current = config.ui.notifyOnCompletion;
       notifyMinDurationMsRef.current =
         Math.max(0, config.ui.notifyMinDurationSeconds) * 1000;
+      // P5: [shell] auto_restart_agent.
+      autoRestartAgentRef.current = config.shell.autoRestartAgent;
 
       // [agent] model: when set, seed the picker default for this
       // session. Only applied if no per-session model has been saved
@@ -2231,6 +2236,63 @@ export default function App() {
       });
     });
 
+    // P5: bridge crash recovery. Rust supervisor emits this when the
+    // bun child exits unexpectedly (intentional hot-reload kills go
+    // through `agent-reloaded` instead). Clear all per-tab waiting
+    // state, surface a notice, and auto-restart per [shell] config.
+    const unlistenCrashed = listen<{ pid?: number; stderrTail?: string[] }>(
+      "agent-crashed",
+      (event) => {
+        const tail = event.payload?.stderrTail ?? [];
+        const lastLine = tail.length > 0 ? tail[tail.length - 1] : "no stderr";
+        activeResponseIdRef.current = null;
+        // Clear waiting/queue across every tab — pi sessions are gone.
+        setState((prev) => {
+          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => ({
+            ...t,
+            waiting: false,
+            queueCount: 0,
+          }));
+          return {
+            ...prev,
+            tabs,
+            waiting: false,
+            queueCount: 0,
+            status: "agent crashed",
+          };
+        });
+        const willAutoRestart = autoRestartAgentRef.current;
+        pushNotification({
+          id: "ae-agent-crashed",
+          title: "Agent process exited unexpectedly",
+          message: lastLine.slice(0, 200),
+          kind: "error",
+          // Keep visible until the user dismisses or restart succeeds —
+          // a transient toast would race a user who's away from the
+          // keyboard while a long agent turn died.
+          durationMs: null,
+          actions: willAutoRestart
+            ? [{ label: "Dismiss", action: "ae-agent-crashed:dismiss" }]
+            : [
+                { label: "Restart", action: "ae-agent-crashed:restart" },
+                { label: "Dismiss", action: "ae-agent-crashed:dismiss" },
+              ],
+        });
+        if (willAutoRestart) {
+          // Brief delay so the user actually sees the notice flash
+          // before the next request silently respawns. The next chat
+          // send will respawn anyway via ensure_agent_spawned, but
+          // priming here means the system-prompt + ready handshake
+          // happens up-front.
+          window.setTimeout(() => {
+            invoke("start_agent").catch(() => {
+              /* respawn deferred to next user action */
+            });
+          }, 500);
+        }
+      },
+    );
+
     // Mirror agent stderr into the chat as a system message — when the bridge
     // dies on startup this is the only signal we have.
     const unlistenStderr = listen<string>("agent-stderr", (event) => {
@@ -2362,6 +2424,7 @@ export default function App() {
     return () => {
       unlistenResponse.then((fn) => fn());
       unlistenReload.then((fn) => fn());
+      unlistenCrashed.then((fn) => fn());
       unlistenStderr.then((fn) => fn());
       unlistenMenu.then((fn) => fn());
       unlistenShellOutput.then((fn) => fn());
@@ -4468,6 +4531,21 @@ export default function App() {
         if (isShellWriteDismiss && id) {
           resolveShellWriteConsent(id, false);
           dismissNotification(id);
+          return true;
+        }
+        // P5: agent-crashed notification actions. Restart respawns
+        // the bridge; dismiss just closes the toast.
+        if (
+          eventType === "action" &&
+          typeof action === "string" &&
+          action.startsWith("ae-agent-crashed:")
+        ) {
+          if (action === "ae-agent-crashed:restart") {
+            invoke("start_agent").catch((err: unknown) => {
+              console.warn("agent restart failed:", err);
+            });
+          }
+          if (id) dismissNotification(id);
           return true;
         }
       }

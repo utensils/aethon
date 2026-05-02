@@ -31,6 +31,9 @@ export interface AethonConfig {
      *  the agent sees nothing until the user explicitly opts in via the
      *  status-bar badge. Configurable via `[shell] default_share_mode`. */
     defaultShareMode: ShareMode;
+    /** Auto-respawn the bun bridge child on unexpected exit. Default
+     *  true; configurable via `[shell] auto_restart_agent`. */
+    autoRestartAgent: boolean;
   };
 }
 
@@ -43,7 +46,7 @@ const DEFAULTS: AethonConfig = {
     notifyMinDurationSeconds: 8,
   },
   agent: { model: null },
-  shell: { defaultShareMode: "private" },
+  shell: { defaultShareMode: "private", autoRestartAgent: true },
 };
 
 function hasTauri(): boolean {
@@ -87,6 +90,10 @@ export function getConfig(): Promise<AethonConfig> {
         },
         shell: {
           defaultShareMode: normalizeShareMode(obj?.shell?.defaultShareMode),
+          autoRestartAgent:
+            typeof obj?.shell?.autoRestartAgent === "boolean"
+              ? obj.shell.autoRestartAgent
+              : true,
         },
       };
     } catch (err) {

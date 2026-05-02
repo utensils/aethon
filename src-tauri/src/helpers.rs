@@ -57,6 +57,10 @@ pub struct ShellConfig {
     /// "read-write", "read-write-trusted". Anything else falls back to
     /// "private" so a typo can't accidentally widen exposure.
     pub default_share_mode: Option<String>,
+    /// When the bun bridge child crashes unexpectedly, automatically
+    /// respawn it. Default `true`. Set `false` to surface the crash
+    /// notice without auto-restart (useful when debugging the bridge).
+    pub auto_restart_agent: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -115,6 +119,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "shell": {
             "defaultShareMode": default_share_mode,
+            "autoRestartAgent": cfg.shell.auto_restart_agent.unwrap_or(true),
         },
     })
 }
