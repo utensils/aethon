@@ -35,9 +35,13 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
-import A2UIRenderer from "../../components/A2UIRenderer";
-import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
-import { useSkillRegistry } from "../SkillRegistry";
+import A2UIRenderer, {
+  RegistryComponent,
+} from "../../components/A2UIRenderer";
+import type {
+  A2UIEventHandler,
+  BuiltinComponentProps,
+} from "../../components/A2UIRenderer";
 
 // Adapter: react-markdown invokes `code` for both inline AND fenced code
 // blocks. We split on whether the parent is `<pre>` (fenced) and route
@@ -2373,10 +2377,12 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
 }
 
 // Status line under the shell terminal — cwd · command · share-mode badge ·
-// cols×rows. The badge is registry-resolved (`share-mode-badge` type) so
-// a skill can override it via `aethon.registerComponent`; the default
-// implementation lives in `share-mode-badge.tsx`. Cycle order + labels
-// live in `src/utils/shareMode.ts`.
+// cols×rows. The badge is dispatched through the registry via
+// `<RegistryComponent type="share-mode-badge" />` so an extension that
+// registered a `share-mode-badge` template via `aethon.registerComponent`
+// wins over the default React `ShareModeBadge` (template-first lookup
+// for non-primitives). Cycle order + labels live in
+// `src/utils/shareMode.ts`.
 function ShellStatusBar(props: {
   cwd: string;
   command: string;
@@ -2388,8 +2394,6 @@ function ShellStatusBar(props: {
   onEvent: BuiltinComponentProps["onEvent"];
 }) {
   const { cwd, command, shareMode, tabId, cols, rows, state, onEvent } = props;
-  const registry = useSkillRegistry();
-  const ShareBadge = registry.resolve("share-mode-badge");
   const cwdShort = useMemo(() => {
     if (!cwd) return "";
     // Show basename + parent for context (".../aethon" instead of just
@@ -2398,16 +2402,20 @@ function ShellStatusBar(props: {
     if (parts.length <= 2) return cwd;
     return `…/${parts.slice(-2).join("/")}`;
   }, [cwd]);
-  // Synthetic component carrying the live shareMode + tabId as props so
-  // the badge doesn't have to look them up from `state` itself. A custom
-  // skill replacement can read these the same way.
-  const badgeComponent = useMemo<A2UIComponent>(
-    () => ({
-      id: "share-mode-badge",
-      type: "share-mode-badge",
-      props: { shareMode, tabId },
-    }),
+  // Live shareMode + tabId pass through componentProps; both the default
+  // React badge and any override template see them via component.props.
+  const badgeProps = useMemo(
+    () => ({ shareMode, tabId }),
     [shareMode, tabId],
+  );
+  // Adapter: the badge fires onEvent with a synthetic component whose id
+  // is "share-mode-badge"; the surrounding shell-canvas is what App.tsx
+  // routes share-mode events from. Re-emit with the BuiltinComponentProps
+  // signature the parent passes us so cycle-share-mode flows up the
+  // shell-canvas event channel exactly as before.
+  const handleBadgeEvent = useMemo<A2UIEventHandler>(
+    () => (_component, eventType, data) => onEvent(eventType, data),
+    [onEvent],
   );
   const dimsLabel = cols && rows ? `${cols}×${rows}` : "—";
   return (
@@ -2424,14 +2432,12 @@ function ShellStatusBar(props: {
         </>
       )}
       <span className="ae-shell-status-sep" aria-hidden="true">·</span>
-      {ShareBadge ? (
-        // eslint-disable-next-line react-hooks/static-components -- see resolve() rationale above.
-        <ShareBadge
-          component={badgeComponent}
-          state={state}
-          onEvent={(eventType, data) => onEvent(eventType, data)}
-        />
-      ) : null}
+      <RegistryComponent
+        type="share-mode-badge"
+        state={state}
+        onEvent={handleBadgeEvent}
+        componentProps={badgeProps}
+      />
       <span className="ae-shell-status-spacer" />
       <span className="ae-shell-status-dims">{dimsLabel}</span>
     </div>

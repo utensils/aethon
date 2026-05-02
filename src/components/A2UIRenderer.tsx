@@ -165,53 +165,35 @@ const PRIMITIVE_REGISTRY: Record<
 
 // Mount a registry-resolved component as a leaf at the app root. Used for
 // overlays (command-palette, notification-stack, settings-panel,
-// search-panel) so a skill can replace them via
+// search-panel, share-mode-badge) so a skill can replace them via
 // `aethon.registerComponent("<type>", custom)` — without this helper the
-// overlays would have to be direct-imported in App.tsx, which bypasses
-// the registry and silently defeats the documented override path.
+// overlays would have to be direct-imported, which bypasses the registry
+// and silently defeats the documented override path.
 //
-// Skills can also unregister an overlay (returns null) to suppress it.
-//
-// `react-hooks/static-components` is suppressed because the resolved
-// component IS dynamic by design — it's the registry, the override
-// surface for the entire UI. The registry returns a stable function
-// reference per type; replacement happens only via deliberate
-// register/unregister calls, not on every render. The same pattern lives
-// inside `renderComponent` below; this helper exists so callers that
-// can't invoke `renderComponent` (App.tsx top-level overlays) get the
-// same dispatch semantics.
+// Implementation: synthesize a one-component A2UI payload and run it
+// through the main renderer. That gets template/React/primitive lookup
+// priority right (templates from `aethon.registerComponent` win over
+// default skill components), automatically. Callers with a need to
+// pass live data into the synthetic root use `componentProps` —
+// shareMode/tabId for the share badge is the canonical example.
 export function RegistryComponent({
   type,
   state,
   onEvent,
+  componentProps,
 }: {
   type: string;
   state: Record<string, unknown>;
-  onEvent: (component: A2UIComponent, eventType: string, data?: unknown) => void;
+  onEvent: A2UIEventHandler;
+  componentProps?: Record<string, unknown>;
 }) {
-  const registry = useSkillRegistry();
-  // Stable synthetic component — same id/type each render so child
-  // useMemos keyed off it don't thrash and onEvent closures stay stable.
-  const component = useMemo<A2UIComponent>(
-    () => ({ id: type, type, props: {} }),
-    [type],
+  const payload = useMemo<A2UIPayload>(
+    () => ({
+      components: [{ id: type, type, props: componentProps ?? {} }],
+    }),
+    [type, componentProps],
   );
-  // Registry dispatch is the override surface; the resolved reference is
-  // stable per registry entry and only changes on explicit re-registration,
-  // which is precisely the contract `react-hooks/static-components` would
-  // otherwise rule out.
-  const Resolved = PRIMITIVE_REGISTRY[type] ?? registry.resolve(type);
-  if (!Resolved) return null;
-  return (
-    // eslint-disable-next-line react-hooks/static-components
-    <Resolved
-      component={component}
-      state={state}
-      onEvent={(eventType: string, data?: unknown) =>
-        onEvent(component, eventType, data)
-      }
-    />
-  );
+  return <A2UIRenderer payload={payload} state={state} onEvent={onEvent} />;
 }
 
 export default function A2UIRenderer({
@@ -416,13 +398,15 @@ export default function A2UIRenderer({
     // Use the iteration-augmented state if we're inside a for-each;
     // otherwise the renderer's own state.
     const activeState = scopedState ?? state;
-    const Component =
-      PRIMITIVE_REGISTRY[component.type] ?? registry.resolve(component.type);
 
-    if (!Component) {
-      // No React impl — try the extension template registry. Templates are
-      // declarative A2UI subtrees registered by pi extensions via the
-      // bridge; we expand them in place using the same renderer + state.
+    // Lookup priority — primitives are immutable; for everything else,
+    // extension-registered templates beat the default React component
+    // so `aethon.registerComponent("<type>", template)` from the bridge
+    // is a real override surface (otherwise built-in skills always win
+    // and the documented override is silently dead). Skill-registered
+    // React components remain the default.
+    const Primitive = PRIMITIVE_REGISTRY[component.type];
+    if (!Primitive) {
       const template = registry.resolveTemplate(component.type);
       if (template && typeof template === "object") {
         const tpl = template as A2UIComponent;
@@ -436,6 +420,9 @@ export default function A2UIRenderer({
         // from their own template instances.
         return renderComponent(expanded, component.type, scopedState);
       }
+    }
+    const Component = Primitive ?? registry.resolve(component.type);
+    if (!Component) {
       console.warn(`Unknown A2UI component type: ${component.type}`);
       return null;
     }

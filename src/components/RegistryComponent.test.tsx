@@ -21,14 +21,17 @@ function CustomPalette({ component }: BuiltinComponentProps) {
 }
 
 describe("RegistryComponent", () => {
-  it("renders nothing when the type is not registered", () => {
+  it("renders an empty renderer wrapper when no registration exists", () => {
     const registry = new SkillRegistry();
     const html = renderToStaticMarkup(
       <SkillRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
       </SkillRegistryProvider>,
     );
-    expect(html).toBe("");
+    // RegistryComponent delegates to A2UIRenderer, which always wraps in
+    // `.a2ui-renderer`; the unknown type produces no children, so the
+    // wrapper is empty (no overlay rendered, no DOM noise).
+    expect(html).toBe('<div class="a2ui-renderer"></div>');
   });
 
   it("resolves a registered component type via the skill registry", () => {
@@ -103,5 +106,63 @@ describe("RegistryComponent", () => {
     // The text primitive renders an empty span with no content prop, but
     // the wrapper element exists.
     expect(html.length).toBeGreaterThan(0);
+  });
+
+  it("template registered via setTemplates beats the default React component", () => {
+    // Codex peer-review caught this: extensions register declarative A2UI
+    // subtrees through `aethon.registerComponent(...)`, which lands in
+    // `setTemplates` (NOT `register`). If templates didn't take priority
+    // over default skill components, every override-claim in SPEC.md was
+    // silently broken.
+    const registry = new SkillRegistry();
+    function DefaultPalette() {
+      return <div data-impl="default">DEFAULT</div>;
+    }
+    registry.register({
+      name: "default-skill",
+      components: { "command-palette": DefaultPalette },
+    });
+    // Extension-style template override — analogous to the bridge sending
+    // `extension_components: { "command-palette": <subtree> }`.
+    registry.setTemplates({
+      "command-palette": {
+        id: "ext-palette-root",
+        type: "card",
+        props: { title: "EXT-OVERRIDE" },
+      },
+    });
+    const html = renderToStaticMarkup(
+      <SkillRegistryProvider registry={registry}>
+        <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
+      </SkillRegistryProvider>,
+    );
+    expect(html).toContain("EXT-OVERRIDE");
+    expect(html).not.toContain("DEFAULT");
+  });
+
+  it("forwards componentProps into the synthetic component for the override", () => {
+    // The share-mode badge needs live `shareMode` + `tabId` props passed
+    // into the resolved component — both for the default React badge and
+    // for any extension template override. componentProps does that.
+    const registry = new SkillRegistry();
+    function PropInspect({ component }: BuiltinComponentProps) {
+      return <div>{JSON.stringify(component.props)}</div>;
+    }
+    registry.register({
+      name: "t",
+      components: { "share-mode-badge": PropInspect },
+    });
+    const html = renderToStaticMarkup(
+      <SkillRegistryProvider registry={registry}>
+        <RegistryComponent
+          type="share-mode-badge"
+          state={{}}
+          onEvent={noop}
+          componentProps={{ shareMode: "read-write", tabId: "tab-1" }}
+        />
+      </SkillRegistryProvider>,
+    );
+    expect(html).toContain("read-write");
+    expect(html).toContain("tab-1");
   });
 });
