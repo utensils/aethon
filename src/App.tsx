@@ -1608,12 +1608,15 @@ export default function App() {
   /** In-memory stack of recently-closed tab metadata (most recent at end).
    *  Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to
    *  bound memory. Each entry preserves enough info to spawn an
-   *  equivalent tab via `reopenLastClosedTab` (Cmd/Ctrl+Opt+T). Per-tab
-   *  session JSONL files are not deleted on close, so a follow-up can
-   *  wire history-replay through the bridge by re-spawning with the
-   *  original tabId; v1 just spawns a fresh tab matching the closed
-   *  one's shape. */
+   *  equivalent tab via `reopenLastClosedTab` (Cmd/Ctrl+Opt+T). For
+   *  agent tabs the original tabId is preserved so the bridge's
+   *  SessionManager.continueRecent picks up the persisted JSONL
+   *  session — the user sees their previous conversation, not a
+   *  fresh chat. */
   interface ClosedTabEntry {
+    /** Original tabId — used as restoreId on reopen so the bridge
+     *  resumes the session via SessionManager.continueRecent. */
+    id: string;
     kind: "agent" | "shell";
     label: string;
     projectId: string | null;
@@ -1627,6 +1630,7 @@ export default function App() {
 
   function pushClosedTab(tab: Tab) {
     const entry: ClosedTabEntry = {
+      id: tab.id,
       kind: tab.kind,
       label: tab.label,
       projectId: tab.projectId,
@@ -1647,9 +1651,18 @@ export default function App() {
     }
   }
 
-  /** Reopen the most-recently-closed tab. Agent tabs spawn fresh
-   *  (a follow-up will hook session-history replay); shell tabs spawn
-   *  a new PTY at the original cwd. No-op on empty stack. */
+  /** Reopen the most-recently-closed tab.
+   *
+   *  Agent tabs reopen with the *original* tabId — that's the cue for
+   *  the bridge's SessionManager.continueRecent to pick up the
+   *  persisted JSONL session under `~/.aethon/sessions/<tabId>/`.
+   *  The frontend's session-history replay path then renders the
+   *  previous transcript. Result: the user sees their conversation
+   *  exactly as they left it.
+   *
+   *  Shell tabs spawn a fresh PTY at the original cwd — scrollback
+   *  isn't persisted so a "fresh shell at the right place" is the
+   *  closest we can get. No-op on empty stack. */
   function reopenLastClosedTab() {
     const entry = closedTabsRef.current.pop();
     if (!entry) return;
@@ -1660,7 +1673,7 @@ export default function App() {
         ...(entry.cwd ? { cwd: entry.cwd } : {}),
       });
     } else {
-      newTab();
+      newTab(entry.id, entry.label, { restoredSession: true });
     }
   }
 
