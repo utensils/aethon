@@ -1,0 +1,190 @@
+/* Aethon docs theme — bridges Aethon's three-palette token system into
+   VitePress's --vp-c-* surface. Light scheme uses Paper; dark uses Ember.
+   The Æther signature palette is kept in the documentation (see
+   guide/themes.md) rather than as a third site mode (VitePress is binary
+   light/dark). All tokens here are kept in sync with src/styles.css —
+   touch one, touch both. */
+
+/* ─────────────────────────────────────── Paper (light) ─── */
+:root {
+  /* Aethon canonical tokens */
+  --aethon-bg: #fef3e2;
+  --aethon-bg-elev: #fffaee;
+  --aethon-bg-input: #f5e8d0;
+  --aethon-border: #e3d8be;
+  --aethon-text: #1f1f23;
+  --aethon-text-dim: #6a6356;
+  --aethon-accent: #d4530c;
+  --aethon-accent-soft: rgba(212, 83, 12, 0.16);
+  --aethon-success: #1a8a2a;
+  --aethon-warn: #c98a00;
+  --aethon-error: #c4322a;
+
+  /* Brand → VitePress */
+  --vp-c-brand-1: #b94000;
+  --vp-c-brand-2: #d4530c;
+  --vp-c-brand-3: #ff6a18;
+  --vp-c-brand-soft: rgba(212, 83, 12, 0.16);
+
+  /* Surfaces */
+  --vp-c-bg: var(--aethon-bg);
+  --vp-c-bg-alt: var(--aethon-bg-elev);
+  --vp-c-bg-elv: var(--aethon-bg-elev);
+  --vp-c-bg-soft: #fbe5c4;
+
+  /* Text */
+  --vp-c-text-1: var(--aethon-text);
+  --vp-c-text-2: var(--aethon-text-dim);
+  --vp-c-text-3: #8a8170;
+
+  /* Borders / dividers */
+  --vp-c-border: var(--aethon-border);
+  --vp-c-divider: var(--aethon-border);
+  --vp-c-gutter: var(--aethon-border);
+
+  /* Status colors */
+  --vp-c-tip-1: var(--aethon-success);
+  --vp-c-warning-1: var(--aethon-warn);
+  --vp-c-danger-1: var(--aethon-error);
+
+  /* Typography */
+  --vp-font-family-base: "Geist Variable", "Geist", "Inter", system-ui,
+    -apple-system, sans-serif;
+  --vp-font-family-mono: "Geist Mono Variable", "Geist Mono",
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Hero — drives the landing page */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    #b94000 30%,
+    #ff6a18
+  );
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(212, 83, 12, 0.15) 20%,
+    rgba(255, 106, 24, 0.18) 80%
+  );
+  --vp-home-hero-image-filter: blur(56px);
+
+  /* Buttons */
+  --vp-button-brand-bg: var(--vp-c-brand-2);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-1);
+  --vp-button-brand-active-bg: var(--vp-c-brand-1);
+  --vp-button-brand-text: #fef3e2;
+  --vp-button-brand-hover-text: #fef3e2;
+  --vp-button-brand-active-text: #fef3e2;
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-active-border: transparent;
+
+  /* Code blocks */
+  --vp-code-block-bg: #fffaee;
+  --vp-code-bg: #f5e8d0;
+  --vp-code-color: #b94000;
+
+  /* Custom blocks */
+  --vp-custom-block-tip-border: transparent;
+  --vp-custom-block-tip-text: #1a8a2a;
+  --vp-custom-block-tip-bg: rgba(26, 138, 42, 0.08);
+  --vp-custom-block-warning-border: transparent;
+  --vp-custom-block-warning-text: #875000;
+  --vp-custom-block-warning-bg: rgba(201, 138, 0, 0.12);
+  --vp-custom-block-danger-border: transparent;
+  --vp-custom-block-danger-text: #c4322a;
+  --vp-custom-block-danger-bg: rgba(196, 50, 42, 0.1);
+}
+
+/* ─────────────────────────────────────── Ember (dark) ─── */
+.dark {
+  /* Aethon canonical tokens */
+  --aethon-bg: #161618;
+  --aethon-bg-elev: #1f1f23;
+  --aethon-bg-input: #25252a;
+  --aethon-border: #2e2e34;
+  --aethon-text: #fef3e2;
+  --aethon-text-dim: #9c9a92;
+  --aethon-accent: #ff6a18;
+  --aethon-accent-soft: rgba(255, 106, 24, 0.18);
+  --aethon-success: #19c332;
+  --aethon-warn: #febc2e;
+  --aethon-error: #ff5d5d;
+
+  /* Brand */
+  --vp-c-brand-1: #ff8a3d;
+  --vp-c-brand-2: #ff6a18;
+  --vp-c-brand-3: #d4530c;
+  --vp-c-brand-soft: rgba(255, 106, 24, 0.18);
+
+  /* Surfaces */
+  --vp-c-bg: var(--aethon-bg);
+  --vp-c-bg-alt: var(--aethon-bg-elev);
+  --vp-c-bg-elv: var(--aethon-bg-elev);
+  --vp-c-bg-soft: #25252a;
+
+  /* Text */
+  --vp-c-text-1: var(--aethon-text);
+  --vp-c-text-2: var(--aethon-text-dim);
+  --vp-c-text-3: #6f6a5d;
+
+  /* Borders */
+  --vp-c-border: var(--aethon-border);
+  --vp-c-divider: var(--aethon-border);
+  --vp-c-gutter: var(--aethon-border);
+
+  /* Status */
+  --vp-c-tip-1: var(--aethon-success);
+  --vp-c-warning-1: var(--aethon-warn);
+  --vp-c-danger-1: var(--aethon-error);
+
+  /* Hero */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    #ff6a18 30%,
+    #ffb968
+  );
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(255, 106, 24, 0.22) 20%,
+    rgba(255, 138, 61, 0.18) 80%
+  );
+  --vp-home-hero-image-filter: blur(72px);
+
+  /* Buttons */
+  --vp-button-brand-bg: #ff6a18;
+  --vp-button-brand-hover-bg: #ff8a3d;
+  --vp-button-brand-active-bg: #d4530c;
+  --vp-button-brand-text: #1f1f23;
+  --vp-button-brand-hover-text: #1f1f23;
+  --vp-button-brand-active-text: #1f1f23;
+
+  /* Code */
+  --vp-code-block-bg: #1f1f23;
+  --vp-code-bg: #25252a;
+  --vp-code-color: #ffb968;
+
+  /* Custom blocks */
+  --vp-custom-block-tip-text: #88dd75;
+  --vp-custom-block-tip-bg: rgba(25, 195, 50, 0.12);
+  --vp-custom-block-warning-text: #ffc870;
+  --vp-custom-block-warning-bg: rgba(254, 188, 46, 0.12);
+  --vp-custom-block-danger-text: #ff7a6f;
+  --vp-custom-block-danger-bg: rgba(255, 93, 93, 0.12);
+}
+
+/* Sidebar tweaks — let the brand pulse on the active item */
+.VPSidebarItem.is-active > .item .text,
+.VPSidebarItem.is-active > .item .link {
+  color: var(--vp-c-brand-1) !important;
+}
+
+/* Slight refinements on the home hero so the brass accent reads as
+   illumination rather than a hard rectangle. */
+.VPHero .name {
+  letter-spacing: -0.02em;
+}
+
+.VPHero .image-bg {
+  opacity: 0.85;
+}

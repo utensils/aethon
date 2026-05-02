@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 240" role="img"
+     aria-label="Aethon — pi with a face">
+  <title>Aethon — pi with a face</title>
+  <desc>Cream serif wordmark "Aethon" with an orange π badge on the Æ ligature,
+        on a dark rounded tile. Tagline beneath: "PI WITH A FACE".</desc>
+
+  <!-- Rounded tile background — same palette as the app icon. -->
+  <rect x="0" y="0" width="960" height="240" rx="32" fill="#1f1f23"/>
+
+  <!--
+    Wordmark layout: render the entire word "Æthon" as a single text
+    element so the kerning / baseline lines up automatically — much more
+    robust than gluing a scaled symbol next to a separate "thon" text.
+    The π badge is positioned over the upper-right serif of the Æ
+    using the same coordinate space.
+
+    Using `text-anchor="middle"` plus a measured x lets the wordmark
+    stay centered horizontally even if a reader's font fallback chain
+    differs from ours.
+  -->
+  <g transform="translate(480, 158)" text-anchor="middle">
+    <text font-family="'Bodoni 72', Didot, 'Playfair Display', Georgia, 'Times New Roman', serif"
+          font-weight="700" font-size="156" fill="#fef3e2"
+          letter-spacing="0.005em">Æthon</text>
+  </g>
+
+  <!--
+    π badge — orange disc with cream italic π, anchored above the wordmark
+    where the upper-right serif of the Æ would land. Positioned absolutely
+    in viewBox space so it's stable across font fallbacks.
+  -->
+  <g transform="translate(346, 64)">
+    <circle r="22" fill="#ff6a18"/>
+    <text y="9" text-anchor="middle"
+          font-family="'Bodoni 72', Didot, 'Playfair Display', Georgia, 'Times New Roman', serif"
+          font-style="italic" font-weight="700" font-size="28" fill="#fef3e2">π</text>
+  </g>
+
+  <!-- Hairline rule beneath the wordmark — visual separator before the tagline. -->
+  <line x1="380" y1="190" x2="580" y2="190" stroke="#ff6a18" stroke-width="1" opacity="0.4"/>
+
+  <!-- Tagline: small caps, generous tracking, restrained orange. -->
+  <text x="480" y="218" text-anchor="middle"
+        font-family="-apple-system, 'Segoe UI', system-ui, sans-serif"
+        font-size="14" font-weight="600" fill="#ff6a18" opacity="0.85"
+        letter-spacing="0.36em">PI WITH A FACE</text>
+</svg>
