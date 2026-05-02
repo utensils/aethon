@@ -7,8 +7,9 @@
  * fetched, and Vite splits each into its own chunk.
  *
  * Wire protocol:
- *   in:  { id: number, code: string, lang: string }
- *   out: { id: number, html: string | null }
+ *   in (highlight):  { id: number, code: string, lang: string }
+ *   in (register):   { type: "register-grammar", lang: string, grammar: unknown }
+ *   out:             { id: number, html: string | null }
  *
  * `html` is the inner-HTML of Shiki's `<code>` element (no `<pre>` wrapper).
  * `null` indicates a hard failure; the main thread should fall back to plain
@@ -16,10 +17,12 @@
  * `span` elements with `class`/`style` attributes plus text nodes are
  * permitted) — defense in depth for `dangerouslySetInnerHTML` on the consumer.
  *
+ * `register-grammar` is fire-and-forget — the main thread is expected to
+ * issue all registrations during bootstrap or extension-load before any
+ * highlight requests for the registered language. The handler awaits its
+ * own `loadLanguage` so a follow-up highlight for `lang` sees it loaded.
+ *
  * Mirrors the Shiki worker pattern in ../../Claudette/src/ui/src/workers/.
- * Aethon doesn't currently need plugin-contributed grammars, so the
- * `register-grammar` channel from Claudette is omitted; the file can grow
- * one when extension-supplied grammars become a thing.
  */
 
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
@@ -184,15 +187,48 @@ async function highlight(code: string, lang: string): Promise<string | null> {
   }
 }
 
-interface IncomingMessage {
-  id: number;
-  code: string;
-  lang: string;
+/**
+ * Load an extension-contributed TextMate grammar into the highlighter.
+ * Idempotent — re-registering the same `lang` is harmless (Shiki's
+ * `loadLanguage` overwrites the existing grammar). On success the lang
+ * id is added to `loadedLangs` so subsequent `ensureLang` calls
+ * short-circuit without consulting the built-in `LANG_LOADERS` map.
+ *
+ * Errors are caught and logged but never re-thrown: a malformed grammar
+ * must not poison the worker for unrelated languages. A follow-up
+ * highlight request for the failed lang falls through to the regular
+ * `ensureLang` path which marks it failed and renders as plain text.
+ */
+async function registerGrammar(lang: string, grammar: unknown): Promise<void> {
+  try {
+    const hl = await getHighlighter();
+    await hl.loadLanguage(grammar as never);
+    loadedLangs.add(lang);
+    failedLangs.delete(lang);
+  } catch (e) {
+    console.warn(`[shiki worker] failed to register grammar for "${lang}":`, e);
+  }
 }
 
+/**
+ * Tagged-union message protocol. `register-grammar` is the only tagged
+ * variant; highlight requests stay untagged for backwards compatibility.
+ * The "in" type guard below distinguishes them at runtime.
+ */
+type IncomingMessage =
+  | { type: "register-grammar"; lang: string; grammar: unknown }
+  | { id: number; code: string; lang: string };
+
 self.addEventListener("message", (e: MessageEvent<IncomingMessage>) => {
-  const { id, code, lang } = e.data;
-  void highlight(code, lang).then((html) => {
-    (self as unknown as Worker).postMessage({ id, html });
-  });
+  const data = e.data;
+  if ("type" in data && data.type === "register-grammar") {
+    void registerGrammar(data.lang, data.grammar);
+    return;
+  }
+  if ("id" in data) {
+    const { id, code, lang } = data;
+    void highlight(code, lang).then((html) => {
+      (self as unknown as Worker).postMessage({ id, html });
+    });
+  }
 });

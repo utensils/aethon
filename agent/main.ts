@@ -2289,6 +2289,30 @@ async function main() {
     return promise;
   }
 
+  function _registerHighlightGrammar(
+    lang: unknown,
+    grammar: unknown,
+  ): Promise<MutationResult> {
+    if (typeof lang !== "string" || lang.trim().length === 0) {
+      const errorMsg = "registerHighlightGrammar: lang must be a non-empty string";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    if (!grammar || typeof grammar !== "object") {
+      const errorMsg = "registerHighlightGrammar: grammar must be a TextMate grammar object";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const { id: mid, promise } = trackMutation();
+    send({
+      type: "register_highlight_grammar",
+      mutationId: mid,
+      lang: lang.trim(),
+      grammar,
+    });
+    return promise;
+  }
+
   function _registerTheme(theme: unknown): Promise<MutationResult> {
     const normalized = normalizeTheme(theme);
     if (!normalized) {
@@ -2471,6 +2495,7 @@ async function main() {
     patchLayout: _patchLayout,
     registerSidebarSection: _registerSidebarSection,
     registerTheme: _registerTheme,
+    registerHighlightGrammar: _registerHighlightGrammar,
     registerSlashCommand: _registerSlashCommand,
     registerLayout: _registerLayout,
     unregisterLayout: _unregisterLayout,

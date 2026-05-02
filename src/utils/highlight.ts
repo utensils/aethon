@@ -127,6 +127,28 @@ export function prewarmHighlighter(): void {
   void highlightCode("", "text");
 }
 
+/**
+ * Register an extension-contributed TextMate grammar with the highlight
+ * worker. Fire-and-forget; the worker's `register-grammar` handler awaits
+ * its own `loadLanguage` so a follow-up `highlightCode(_, lang)` sees it
+ * loaded. Idempotent — re-registering the same `lang` overwrites.
+ *
+ * This is the extension surface for `code` primitive. The primitive
+ * itself can't be overridden (it's in `PRIMITIVE_REGISTRY`, by design),
+ * but extensions that need to highlight a language Aethon doesn't ship
+ * (e.g. Lean, Coq, an in-house DSL) can register a TextMate grammar
+ * here and the existing `code` primitive will use it.
+ *
+ * For extensions that want a different highlighting *engine* entirely
+ * (highlight.js, codemirror, …), the documented escape hatch is to
+ * register a custom component type via `aethon.registerComponent` and
+ * route layouts at it instead of `code` — see
+ * `docs/aethon-agent/extensions.md`.
+ */
+export function registerGrammar(lang: string, grammar: unknown): void {
+  getWorker().postMessage({ type: "register-grammar", lang, grammar });
+}
+
 // Reset module state when Vite hot-reloads this file in dev so we don't leak
 // the previous Worker instance across HMR boundaries.
 if (import.meta.hot) {

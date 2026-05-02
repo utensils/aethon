@@ -5,9 +5,15 @@
 // the aethon-debug skill.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Track every postMessage so the registerGrammar test can assert the
+// payload reached the worker even though we stub the actual Worker class.
+const workerPostMessages: unknown[] = [];
+
 vi.mock("../workers/highlight.worker?worker", () => ({
   default: class {
-    postMessage(): void {}
+    postMessage(msg: unknown): void {
+      workerPostMessages.push(msg);
+    }
     addEventListener(): void {}
     removeEventListener(): void {}
     terminate(): void {}
@@ -18,10 +24,12 @@ import {
   __testing,
   getCachedHighlight,
   highlightCode,
+  registerGrammar,
 } from "./highlight";
 
 afterEach(() => {
   __testing.reset();
+  workerPostMessages.length = 0;
 });
 
 describe("getCachedHighlight", () => {
@@ -91,6 +99,24 @@ describe("highlightCode cache", () => {
     __testing.cache.set("a\0b", "cached");
     expect(__testing.cache.size).toBe(1);
     __testing.reset();
+    expect(__testing.cache.size).toBe(0);
+  });
+});
+
+describe("registerGrammar (extension surface)", () => {
+  it("forwards lang + grammar to the worker as a register-grammar message", () => {
+    const grammar = { name: "lean", scopeName: "source.lean" };
+    registerGrammar("lean", grammar);
+    // The worker stub records every postMessage; first one was the
+    // prewarm-style highlight (none), the register call is the most
+    // recent.
+    const last = workerPostMessages[workerPostMessages.length - 1];
+    expect(last).toEqual({ type: "register-grammar", lang: "lean", grammar });
+  });
+
+  it("does not consult or populate the cache", () => {
+    expect(__testing.cache.size).toBe(0);
+    registerGrammar("lean", { name: "lean", scopeName: "source.lean" });
     expect(__testing.cache.size).toBe(0);
   });
 });

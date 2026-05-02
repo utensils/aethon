@@ -26,6 +26,7 @@ import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { deletePointer, setPointer } from "./utils/jsonPointer";
+import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
@@ -2505,6 +2506,17 @@ export default function App() {
       removeProject: removeProjectById,
       listProjects: () => projectsRef.current.projects.slice(),
       activeProject: () => activeProject(projectsRef.current),
+      // Extension surface for the `code` primitive's syntax highlighter.
+      // Mirrors the bridge-side aethon.registerHighlightGrammar so a
+      // frontend skill module (loaded via skill `frontendEntry`) can
+      // teach Shiki a new language without an IPC round-trip. Bridge
+      // extensions go through `register_highlight_grammar` IPC instead.
+      registerHighlightGrammar: (lang: string, grammar: unknown): boolean => {
+        if (typeof lang !== "string" || lang.trim().length === 0) return false;
+        if (!grammar || typeof grammar !== "object") return false;
+        registerHighlightGrammar(lang.trim(), grammar);
+        return true;
+      },
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
 
@@ -3387,6 +3399,22 @@ export default function App() {
         const themes = (data.themes as ExtensionTheme[] | undefined) ?? [];
         hydrateThemes(themes);
         ackMutation(data.mutationId, true);
+        break;
+      }
+      case "register_highlight_grammar": {
+        // Extension surface for the `code` primitive: a TextMate grammar
+        // for a language Shiki doesn't ship by default. Forward to the
+        // worker; it overwrites any prior grammar for the same lang and
+        // a follow-up highlight request picks it up. Bridge already
+        // validated lang + grammar shape, so we trust the payload here.
+        const lang = data.lang as string | undefined;
+        const grammar = data.grammar;
+        if (typeof lang === "string" && grammar) {
+          registerHighlightGrammar(lang, grammar);
+          ackMutation(data.mutationId, true);
+        } else {
+          ackMutation(data.mutationId, false, "register_highlight_grammar: bad payload");
+        }
         break;
       }
       case "extension_slash_commands": {

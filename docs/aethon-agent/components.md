@@ -91,6 +91,22 @@ The grid-area prop only matters inside a `layout` parent.
 Use for tool results, file dumps, command output. Don't use for inline
 formatting in body text — use Markdown in `text` content instead.
 
+Highlighting runs through a Shiki worker with a dual-theme output
+(`github-light` + `github-dark`); CSS picks the right shade via
+`light-dark()` against the active theme's `color-scheme`. Languages
+load on demand. Aethon ships ~35 built-in grammars (`bash`, `c`, `cpp`,
+`csharp`, `css`, `diff`, `dockerfile`, `go`, `graphql`, `haskell`,
+`html`, `ini`, `java`, `javascript`, `json`, `jsx`, `kotlin`, `lua`,
+`make`, `markdown`, `nix`, `php`, `python`, `ruby`, `rust`, `scala`,
+`shell`, `sql`, `swift`, `toml`, `tsx`, `typescript`, `xml`, `yaml`,
+`zig`); unknown values render as plain text.
+
+To extend the language set without replacing the primitive, call
+`globalThis.aethon.registerHighlightGrammar(lang, grammar)` with a
+TextMate grammar JSON — see `api.md`. To replace the engine entirely,
+register a custom component type via `registerComponent` and route
+your layouts at it instead of `code`.
+
 ### `image`
 
 ```ts
