@@ -46,3 +46,6 @@ coverage/
 *.png
 *.zip
 !src-tauri/icons/*.png
+
+# Local working notes — not for git.
+/TODO.md
