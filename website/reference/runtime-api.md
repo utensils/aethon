@@ -24,16 +24,21 @@ The extension API is exposed under a single global, `aethon` (alias of
 
 ### Mutation
 
+Most `register*` calls record **metadata** only. The action is wired
+separately via `aethon.onEvent({ componentType, descendantId }, handler)`
+— that way a layout can replace either half without touching the other.
+
 | Call | Purpose |
 |---|---|
 | `aethon.registerComponent(type, template)` | Register an A2UI component template (built-in or skill-scoped). |
 | `aethon.registerTheme({ id, label?, vars })` | Register a CSS-variable bundle. |
-| `aethon.registerLayout({ id, name, payload })` | Register a layout sibling to `workstation` / `editorial` / etc. |
-| `aethon.registerSlashCommand({ command, description, handler })` | Register a `/command`. |
-| `aethon.registerKeybinding(combo, handler)` | Bind a key combination. Extension bindings run first. |
-| `aethon.registerMenuItem(item)` | Register a native menu item. |
-| `aethon.registerSidebarSection(section)` | Register a sidebar group. |
-| `aethon.onEvent(channel, handler)` | Intercept events (return `true` to suppress default handling). |
+| `aethon.registerLayout({ id, name, description?, payload })` / `unregisterLayout(id)` / `listLayouts()` | Register a layout sibling to `workstation` / `editorial` / etc. |
+| `aethon.registerSlashCommand({ name, description, usage? })` | Record a `/command` — pair with `onEvent({ componentType: "slash-command", descendantId: "<name>" })`. |
+| `aethon.registerKeybinding({ combo, action?, description? })` / `unregisterKeybinding(combo)` | Bind a key combination — pair with `onEvent({ componentType: "keybinding", descendantId: "<combo>" })`. Extension bindings run first. |
+| `aethon.registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)` | Register a native menu item — pair with `onEvent({ componentType: "menu-item", descendantId: "<action>" })`. |
+| `aethon.registerSidebarSection({ id, title, items })` | Register a sidebar group. |
+| `aethon.registerEventRoute({ componentId?, eventType? })` / `unregisterEventRoute(...)` / `listEventRoutes()` / `setEventRoutingMode("builtin" \| "extension")` | Intercept App-dispatched events. |
+| `aethon.onEvent(match, handler)` | Wire a handler. `match` is `{ componentType?, componentId?, descendantId?, eventType?, templateRootType? }` — omitted fields wildcard. |
 | `aethon.setLayout(payload)` | Replace the active layout payload. |
 | `aethon.activateLayout(id)` | Switch to a registered layout by id. |
 | `aethon.resetLayout()` | Restore the default-layout boot payload. |

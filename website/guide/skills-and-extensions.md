@@ -13,14 +13,20 @@ inside the running app at `Cmd+P` → "Open agent docs").
 
 | Surface | API | Example |
 |---|---|---|
-| A2UI components | `aethon.registerComponent("type", template)` | Replace `chat-history`, add `team-status`. |
-| Themes | `aethon.registerTheme({ id, vars })` | Drop-in palette. |
-| Layouts | `aethon.registerLayout({ id, name, payload })` | Sibling to `workstation` / `editorial`. |
-| Slash commands | `aethon.registerSlashCommand(cmd)` | `/team-deploy`, `/standup`. |
-| Keybindings | `aethon.registerKeybinding(combo, handler)` | Override or add. |
-| Menu items | `aethon.registerMenuItem(item)` | Native menu entries. |
-| Event handlers | `aethon.onEvent("a2ui-event", fn)` | Intercept events before default handling. |
-| Sidebar sections | `aethon.registerSidebarSection(section)` | Custom sidebar group. |
+| A2UI components | `aethon.registerComponent(type, template)` | Replace `chat-history`, add `team-status`. |
+| Themes | `aethon.registerTheme({ id, label?, vars })` | Drop-in palette. |
+| Layouts | `aethon.registerLayout({ id, name, description?, payload })` | Sibling to `workstation` / `editorial`. |
+| Slash commands | `aethon.registerSlashCommand({ name, description, usage? })` paired with `onEvent` | `/team-deploy`, `/standup`. |
+| Keybindings | `aethon.registerKeybinding({ combo, action?, description? })` paired with `onEvent` | Override or add. |
+| Menu items | `aethon.registerMenuItem({ label, action, location?, id?, parent? })` paired with `onEvent` | Native menu entries. |
+| Event handlers | `aethon.onEvent({ componentType, descendantId? }, handler)` | Wire a registered surface to its action. |
+| Event routes | `aethon.registerEventRoute({ componentId?, eventType? })` | Intercept App-dispatched events. |
+| Sidebar sections | `aethon.registerSidebarSection({ id, title, items })` | Custom sidebar group. |
+
+Most of the `register*` calls record **metadata only**. The action is
+attached separately via `aethon.onEvent({ componentType, descendantId },
+handler)` — keeping registration declarative and handlers separately
+addressable so a layout can intercept or replace either half.
 
 Full signatures live in [Runtime API reference](/reference/runtime-api).
 
@@ -55,7 +61,22 @@ Some extensions ship as npm packages with an `aethon` field in their
 }
 ```
 
-Install them under `~/.aethon/skills/`:
+Install them with the in-app slash command — runs from the Tauri shell
+(not the agent sidecar, so the install can't kill itself mid-flight):
+
+```
+/skills install @my-org/aethon-team-skills
+/skills install github:my-org/aethon-team-skills
+/skills install https://github.com/my-org/aethon-team-skills.git
+```
+
+The command runs the equivalent of
+`npm install --prefix ~/.aethon/skills <spec>` and restarts the
+agent sidecar so the next request loads the new package. npm specs,
+tarballs, GitHub shorthands, and git URLs are all accepted; shell-like
+option / whitespace input is rejected.
+
+You can also install manually if you prefer:
 
 ```bash
 npm install --prefix ~/.aethon/skills @my-org/aethon-team-skills
@@ -124,13 +145,18 @@ The minimum is:
 
 ```ts
 // ~/.aethon/extensions/hello.ts
-export default function (aethon: globalThis.Aethon) {
-  aethon.registerSlashCommand({
-    command: "hello",
-    description: "Say hi.",
-    handler: () => "Hello from Aethon!",
-  });
-}
+globalThis.aethon.registerSlashCommand({
+  name: "hello",
+  description: "Say hi.",
+  usage: "/hello",
+});
+
+globalThis.aethon.onEvent(
+  { componentType: "slash-command", descendantId: "hello" },
+  (_event, ctx) => {
+    ctx.pi.notify("Hello from Aethon!");
+  },
+);
 ```
 
 Save → wait for the `extension_lifecycle` event → run `/hello`.

@@ -25,34 +25,66 @@ pi (the model), so model-side commands like `/think harder` keep working.
 The `/skills` output lists every extension-registered command alongside
 its description. Reach them the same way: `/<name> [args…]`.
 
-A skill registers a command with:
+A skill registers a command in two halves: a metadata record and a
+paired event handler.
 
 ```ts
 aethon.registerSlashCommand({
-  command: "team-deploy",
+  name: "team-deploy",
   description: "Deploy the active branch to staging.",
-  handler: async (args, ctx) => {
-    /* …implementation… */
-    return "Deploying…";
-  },
+  usage: "/team-deploy [staging|prod]",
 });
+
+aethon.onEvent(
+  { componentType: "slash-command", descendantId: "team-deploy" },
+  async (event, ctx) => {
+    const args = event.data?.args ?? "";
+    /* …implementation… */
+    ctx.pi.notify("Deploying…");
+  },
+);
 ```
 
-Returning a string from the handler renders that string as an agent
-message in the chat. Returning a Promise makes the chat show a
-thinking indicator until the Promise resolves. Throwing surfaces an
-error in the chat as a red status message.
+The `registerSlashCommand` call records metadata so the slash-command
+picker, palette, and `/help` know about it. The paired
+`aethon.onEvent` handler runs when the user invokes `/team-deploy` —
+it receives the event with `data.args` set to whatever followed the
+command name. Use `ctx.pi.notify` / `ctx.pi.prompt` to push messages
+or fire LLM turns.
+
+Built-in command names are reserved (`clear`, `help`, `theme`,
+`model`, `reset`, `terminal`, `sidebar`, `layout`, `skills`,
+`project`); registering one is rejected with a notice.
+
+## Installing skills
+
+`/skills` lists what's loaded; `/skills install <npm-package|git-url>`
+installs new ones. Examples:
+
+```
+/skills install @my-org/aethon-team-skills
+/skills install github:my-org/aethon-skills
+/skills install https://github.com/my-org/aethon-skills.git
+```
+
+The Tauri shell runs the equivalent of
+`npm install --prefix ~/.aethon/skills <spec>` and restarts the agent
+sidecar so the new package is loaded on the next request. Tarballs,
+GitHub shorthands, and git URLs are accepted; shell-like option /
+whitespace input is rejected.
 
 ## Tips
 
 - `/help` is the source of truth for what commands are *currently*
   loaded. Extensions can come and go — the running set is what counts.
-- Type just `/` and pause to surface a slash-command suggestion list
-  (when extensions register one — the default chat composer doesn't
-  ship one, but the command palette `Cmd+Shift+P` covers the same
-  ground).
+- Type `/` and pause to surface the **slash-command picker** — it
+  ranks built-ins and extension-registered commands and accepts arrow-key
+  navigation. The command palette (`Cmd+Shift+P`) covers the same ground
+  with a fuzzy search.
 - Extensions can register **slash command aliases** by registering
-  multiple commands that share an implementation.
+  multiple metadata records that share a handler — pair multiple
+  `registerSlashCommand` calls with a single `onEvent` whose
+  match uses a wildcard `descendantId`.
 
 ## Where to next
 
