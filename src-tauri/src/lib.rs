@@ -250,6 +250,158 @@ fn toml_string(s: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+/// Cross-session search (M6 P6). Walks `~/.aethon/sessions/<tabId>/*.jsonl`
+/// and returns user / assistant messages whose text content contains
+/// the query (case-insensitive substring match — no regex parsing,
+/// keeps the bar low). Capped at `limit` matches.
+#[derive(serde::Serialize)]
+struct SearchHit {
+    #[serde(rename = "tabId")]
+    tab_id: String,
+    role: String,
+    snippet: String,
+    timestamp: Option<i64>,
+}
+
+#[tauri::command]
+fn search_sessions(
+    query: String,
+    limit: Option<u32>,
+    app: AppHandle,
+) -> Result<Vec<SearchHit>, String> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cap = limit.unwrap_or(200).min(5000) as usize;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let sessions = home.join(".aethon").join("sessions");
+    if !sessions.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut hits: Vec<SearchHit> = Vec::new();
+    let entries = match std::fs::read_dir(&sessions) {
+        Ok(e) => e,
+        Err(_) => return Ok(Vec::new()),
+    };
+    'tab_loop: for tab_entry in entries.flatten() {
+        let tab_dir = tab_entry.path();
+        if !tab_dir.is_dir() {
+            continue;
+        }
+        let tab_id = tab_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let files = match std::fs::read_dir(&tab_dir) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        for file_entry in files.flatten() {
+            let path = file_entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let text = match std::fs::read_to_string(&path) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let v: serde_json::Value = match serde_json::from_str(trimmed) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let role = v
+                    .get("role")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if role != "user" && role != "assistant" {
+                    continue;
+                }
+                let content_text = extract_text_from_content(&v);
+                if content_text.is_empty() {
+                    continue;
+                }
+                let lower = content_text.to_lowercase();
+                let pos = match lower.find(&needle) {
+                    Some(p) => p,
+                    None => continue,
+                };
+                let snippet = build_snippet(&content_text, pos, 60, 100);
+                let timestamp = v.get("timestamp").and_then(|t| t.as_i64());
+                hits.push(SearchHit {
+                    tab_id: tab_id.clone(),
+                    role: role.clone(),
+                    snippet,
+                    timestamp,
+                });
+                if hits.len() >= cap {
+                    break 'tab_loop;
+                }
+            }
+        }
+    }
+    Ok(hits)
+}
+
+fn extract_text_from_content(v: &serde_json::Value) -> String {
+    let content = match v.get("content") {
+        Some(c) => c,
+        None => return String::new(),
+    };
+    if let Some(s) = content.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = content.as_array() {
+        let mut chunks: Vec<String> = Vec::new();
+        for part in arr {
+            if let Some(s) = part.as_str() {
+                chunks.push(s.to_string());
+            } else if part.get("type").and_then(|t| t.as_str()) == Some("text")
+                && let Some(t) = part.get("text").and_then(|t| t.as_str())
+            {
+                chunks.push(t.to_string());
+            }
+        }
+        return chunks.join("\n");
+    }
+    String::new()
+}
+
+fn build_snippet(text: &str, byte_pos: usize, before: usize, after: usize) -> String {
+    // Char-boundary-safe slicing around byte_pos.
+    let start = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| byte_pos.saturating_sub(before) <= i)
+        .unwrap_or(0);
+    let end_target = byte_pos + after;
+    let end = text
+        .char_indices()
+        .map(|(i, c)| i + c.len_utf8())
+        .find(|&i| i >= end_target)
+        .unwrap_or(text.len());
+    let mut snippet = String::new();
+    if start > 0 {
+        snippet.push('…');
+    }
+    snippet.push_str(&text[start..end]);
+    if end < text.len() {
+        snippet.push('…');
+    }
+    snippet.replace('\n', " ").replace('\r', "")
+}
+
 #[cfg(debug_assertions)]
 mod debug;
 
@@ -1498,6 +1650,7 @@ pub fn run() {
             read_config,
             write_config,
             aethon_home_dir,
+            search_sessions,
             updater_available,
             install_aethon_skill,
             set_extension_menu_items,

@@ -3124,6 +3124,127 @@ body.ae-resizing-sidebar * {
 }
 
 /* =============================================================================
+   Cross-session search overlay (Cmd+Shift+F). Modeled after the
+   command palette but with a results pane sized for snippets.
+   ============================================================================= */
+
+.ae-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 200;
+}
+.ae-search-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(680px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ae-search-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-search-icon {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+.ae-search-input {
+  flex: 1 1 auto;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+  padding: 4px 0;
+}
+.ae-search-busy {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.ae-search-results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.ae-search-empty {
+  padding: 18px 20px;
+  color: var(--text-dim);
+  text-align: center;
+  font-size: 0.92rem;
+}
+.ae-search-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  font-family: inherit;
+}
+.ae-search-row:hover,
+.ae-search-row:focus-visible {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border-left-color: var(--accent);
+  outline: none;
+}
+.ae-search-row-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.ae-search-row-role {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.ae-search-row-tab {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ae-search-row-time {
+  margin-left: auto;
+}
+.ae-search-row-snippet {
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ae-search-footer {
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.ae-search-footer kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+/* =============================================================================
    Tool card — agent tool-call surface with live elapsed-time clock.
    Replaces the plain `card` primitive for tool execution events. Color
    shifts with state: idle = dim, running = accent, ≥30 s long-running =

@@ -15,6 +15,7 @@ import {
   layoutSlots,
 } from "./skills/default-layout";
 import { CommandPalette } from "./skills/default-layout/command-palette";
+import { SearchPanel } from "./skills/default-layout/search-panel";
 import { SettingsPanel } from "./skills/default-layout/settings-panel";
 import type {
   PaletteItem,
@@ -1935,6 +1936,16 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         closeTab(activeId);
+        return;
+      }
+      // Cmd+Shift+F → cross-session search overlay (M6 P6). Searches
+      // every persisted JSONL session under ~/.aethon/sessions/<tabId>/
+      // via the Tauri search_sessions command. Click a result → restore
+      // the originating tab.
+      if (e.key.toLowerCase() === "f" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSessionSearch();
         return;
       }
       // Cmd+Shift+P → command palette in "commands" mode (run an action,
@@ -4303,6 +4314,37 @@ export default function App() {
     closeSettings();
   }
 
+  /** Toggle the cross-session search overlay (M6 P6). State lives at
+   *  `/search`; the SearchPanel composite reads `open` + `query` and
+   *  invokes `search_sessions` Tauri command on every (debounced)
+   *  keystroke. */
+  function toggleSessionSearch() {
+    setState((prev) => {
+      const cur = (prev.search as { open?: boolean } | undefined) ?? {};
+      return {
+        ...prev,
+        search: { open: !cur.open, query: "" },
+      };
+    });
+  }
+  function closeSessionSearch() {
+    setState((prev) => ({ ...prev, search: { open: false, query: "" } }));
+  }
+  function setSearchQuery(value: string) {
+    setState((prev) => {
+      const cur = (prev.search as { open?: boolean; query?: string } | undefined) ?? {};
+      return { ...prev, search: { open: !!cur.open, query: value } };
+    });
+  }
+  function openSearchHit(hit: { tabId?: string }) {
+    if (!hit?.tabId) return;
+    closeSessionSearch();
+    // Reopen the originating tab. SessionManager.continueRecent picks
+    // up the persisted JSONL session under ~/.aethon/sessions/<tabId>/
+    // so the user lands inside their previous conversation.
+    newTab(hit.tabId, undefined, { restoredSession: true });
+  }
+
   function openPalette(mode: PaletteMode) {
     setState((prev) => ({
       ...prev,
@@ -4714,6 +4756,26 @@ export default function App() {
         }
       }
 
+      // Cross-session search panel events (M6 P6). Like the palette,
+      // renders at App root and never goes through the bridge —
+      // search results land via the Tauri search_sessions command.
+      if (component.id === "search-panel") {
+        if (eventType === "close") {
+          closeSessionSearch();
+          return true;
+        }
+        if (eventType === "query") {
+          const value = (data as { value?: string } | undefined)?.value ?? "";
+          setSearchQuery(value);
+          return true;
+        }
+        if (eventType === "select") {
+          const hit = (data as { hit?: { tabId?: string } } | undefined)?.hit;
+          if (hit) openSearchHit(hit);
+          return true;
+        }
+      }
+
       // Command palette events. Palette renders at App root; events
       // route here directly (it never goes through the dispatch_a2ui
       // bridge because there's no agent counterpart to invoke).
@@ -5070,6 +5132,10 @@ export default function App() {
     () => ({ id: "settings-panel", type: "settings-panel", props: {} }),
     [],
   );
+  const searchComponent = useMemo(
+    () => ({ id: "search-panel", type: "search-panel", props: {} }),
+    [],
+  );
   const renderState = useMemo(() => {
     const tabs = (state.tabs as Tab[] | undefined) ?? [];
     const recentSessions =
@@ -5127,6 +5193,13 @@ export default function App() {
           state={renderState}
           onEvent={(eventType, data) =>
             onEvent(settingsComponent, eventType, data)
+          }
+        />
+        <SearchPanel
+          component={searchComponent}
+          state={renderState}
+          onEvent={(eventType, data) =>
+            onEvent(searchComponent, eventType, data)
           }
         />
       </div>
