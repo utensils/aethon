@@ -655,7 +655,7 @@ the matched substring is highlighted in the snippet via a `<mark>`
 wrapper. Click a result → restore the originating tab, scroll to the
 matching message, briefly flash it.
 
-### `share-mode badge`
+### `share-mode-badge`
 
 Renders inline inside the shell-canvas status line. Color-coded by
 mode:
@@ -670,6 +670,33 @@ mode:
 Clicking the badge cycles to the next mode. The cycle helper lives in
 `src/utils/shareMode.ts` and is shared between the badge, the palette,
 and the settings panel.
+
+**Override surface** — the badge is a registered component so a skill
+can replace it via `aethon.registerComponent("share-mode-badge", …)`.
+The host adapter routes events with name `cycle-share-mode` to the
+shell-canvas cycle handler; data carries `{tabId}` (auto-injected by
+the adapter when omitted from a custom template).
+
+For declarative template overrides, use the `event` prop on the
+`button` primitive to emit `cycle-share-mode` directly — the click
+maps to the cycle without any host-side heuristics:
+
+```ts
+globalThis.aethon.registerComponent("share-mode-badge", {
+  id: "ext-badge",
+  type: "button",
+  props: {
+    label: { $ref: "/$props/shareMode" },
+    event: "cycle-share-mode",
+  },
+});
+```
+
+`$props` exposes the host's live data (`shareMode`, `tabId`) inside
+the template's scoped state. Multi-control templates name their
+cycle button with `event: "cycle-share-mode"` and leave the others
+emitting plain `click` so they reach the bridge as ordinary
+events for extension handlers to observe.
 
 ### `main-canvas`
 
