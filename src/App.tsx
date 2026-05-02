@@ -1457,11 +1457,6 @@ export default function App() {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
-      /** Override the project bucket the new tab lands in. Used by
-       *  reopen-closed-tab so a session restored after the user has
-       *  switched projects still appears in (and runs against) its
-       *  original project, not the currently-active one. */
-      projectId?: string | null;
     },
   ) {
     // restoreId lets the caller open a tab with a specific tabId so the
@@ -1507,13 +1502,7 @@ export default function App() {
       // user sees a meaningful name; otherwise fall back to the
       // sequential "Tab N" naming the empty-tab path has used.
       const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      // Explicit override (reopen-closed-tab) wins over the live active
-      // project. `projectId === null` (closed tab had no project) is a
-      // valid override that resolves to the unscoped bucket.
-      const projectId =
-        options?.projectId !== undefined
-          ? options.projectId
-          : projectsRef.current.activeId;
+      const projectId = projectsRef.current.activeId;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
@@ -1552,17 +1541,7 @@ export default function App() {
     // session. Tabs created before a project is picked use the bridge's
     // default cwd (the spawn directory). Existing tabs keep their original
     // cwd — switching project doesn't retroactively rebase live sessions.
-    // Explicit `options.projectId` (reopen-closed-tab) resolves the cwd
-    // off that project rather than the currently-active one, so a
-    // restored session's tools run from its original directory.
-    const explicitProjectCwd =
-      options?.projectId !== undefined && options.projectId !== null
-        ? projectsRef.current.projects.find(
-            (p) => p.id === options.projectId,
-          )?.path
-        : undefined;
-    const inheritedCwd =
-      options?.cwd ?? explicitProjectCwd ?? activeProject(projectsRef.current)?.path;
+    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
@@ -1940,6 +1919,25 @@ export default function App() {
   function reopenLastClosedTab() {
     const entry = closedTabsRef.current.pop();
     if (!entry) return;
+    // If the closed tab belongs to a different project bucket than
+    // the active one, switch to that bucket first. This fixes two
+    // symptoms codex flagged on the previous fix attempt:
+    //   1. The new tab now actually lands in its original project's
+    //      tab list (was visually appearing under the active project
+    //      but tagged with the original projectId — a tear that
+    //      flipped on next switch).
+    //   2. cwd resolution flows through the live active-project
+    //      lookup, so unscoped tabs (projectId === null) reopened
+    //      while a project is active correctly fall back to the
+    //      bridge's default cwd instead of borrowing the active one.
+    const activeId = projectsRef.current.activeId;
+    if (entry.projectId !== activeId) {
+      if (entry.projectId === null) {
+        clearActiveProject();
+      } else {
+        setActiveProjectById(entry.projectId);
+      }
+    }
     if (entry.kind === "shell") {
       newShellTab({
         ...(entry.command ? { command: entry.command } : {}),
@@ -1947,14 +1945,7 @@ export default function App() {
         ...(entry.cwd ? { cwd: entry.cwd } : {}),
       });
     } else {
-      // Restore in the *original* project bucket. Without this, a tab
-      // closed under project A but reopened after switching to project
-      // B would replay project A's conversation while running against
-      // project B's cwd — subsequent tool calls hit the wrong directory.
-      newTab(entry.id, entry.label, {
-        restoredSession: true,
-        projectId: entry.projectId,
-      });
+      newTab(entry.id, entry.label, { restoredSession: true });
     }
   }
 
