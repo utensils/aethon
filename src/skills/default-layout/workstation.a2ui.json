@@ -64,7 +64,7 @@
             "area": "sidebar",
             "visible": { "$ref": "/layout/sidebarVisible" },
             "title": "aethon",
-            "version": "v0.3",
+            "version": { "$ref": "/appVersion" },
             "brandMark": true,
             "sections": [
               {

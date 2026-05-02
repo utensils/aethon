@@ -875,14 +875,43 @@ async function loadAethonExtensionDirectory(
     }
     return;
   }
-  for (const name of entries) {
-    if (!/\.(ts|js|mjs)$/.test(name)) continue;
-    const file = join(options.dir, name);
-    if (options.loadedFiles?.has(file)) continue;
-    const displayName =
-      options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, "");
+  // Filter to extension files we haven't loaded yet, and resolve their
+  // display names once. The previous implementation walked entries in a
+  // sequential `for…of` with `await import(...)` per file, which is
+  // O(N × import_time). Bun pays a transpile cost on the first import
+  // of each .ts file, so in projects with many extensions this stacked
+  // up to multiple seconds (the user-reported "ages" complaint). Now we
+  // parallelize the import phase via Promise.allSettled and keep the
+  // register() phase sequential so registrations against shared maps
+  // (handler dedupe, theme/component registries) stay deterministic.
+  const candidates = entries
+    .filter((name) => /\.(ts|js|mjs)$/.test(name))
+    .map((name) => ({
+      name,
+      file: join(options.dir, name),
+      displayName:
+        options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, ""),
+    }))
+    .filter((c) => !options.loadedFiles?.has(c.file));
+
+  const imports = await Promise.allSettled(
+    candidates.map(
+      (c) => import(pathToFileURL(c.file).href) as Promise<AethonExtensionModule>,
+    ),
+  );
+
+  for (let i = 0; i < candidates.length; i++) {
+    const { name, file, displayName } = candidates[i];
+    const result = imports[i];
     try {
-      const mod: AethonExtensionModule = await import(pathToFileURL(file).href);
+      if (result.status === "rejected") {
+        // Re-throw into the catch below so failure-emission stays in one
+        // place.
+        throw result.reason instanceof Error
+          ? result.reason
+          : new Error(String(result.reason));
+      }
+      const mod = result.value;
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
         log.warn(`${name}: no register() export, skipping`);

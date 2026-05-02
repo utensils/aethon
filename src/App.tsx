@@ -503,6 +503,11 @@ export default function App() {
     return {
       ...(BOOT_LAYOUT.state ?? {}),
       logoUrl,
+      // App version surfaced as a state slice so layout JSON can $ref it
+      // (e.g. sidebar's `version` prop). Single source of truth is
+      // package.json — vite injects __APP_VERSION__ at build time. The
+      // "v" prefix matches the human-friendly format the UI used before.
+      appVersion: `v${__APP_VERSION__}`,
       tabs: [tab0],
       activeTabId: tab0.id,
       // Mirror keys point at the active tab's empty view so layout bindings
