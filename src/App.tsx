@@ -45,6 +45,7 @@ import { canonicalCombo, normalizeRegisteredCombo } from "./utils/keybindings";
 import { coerceChatMessages } from "./utils/messages";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
+import { useProjects } from "./hooks/useProjects";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -3714,19 +3715,6 @@ export default function App() {
   // switching project doesn't retroactively change live sessions.
   const projectsRef = useRef<ProjectsState>(emptyProjectsState());
 
-  // Cached git status keyed by absolute project path. Populated by the
-  // poller below (refreshGitStatusFor) and read by syncProjectsToState
-  // when mirroring projects into /sidebar/projects. Kept in a ref so
-  // a status update can re-trigger sync without re-scheduling all the
-  // other project work.
-  interface GitStatus {
-    branch?: string;
-    dirty?: boolean;
-    ahead?: number;
-    behind?: number;
-  }
-  const gitStatusRef = useRef<Map<string, GitStatus>>(new Map());
-
   // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
   // switches active project, we snapshot the current state.tabs +
   // activeTabId into the OLD bucket and load the NEW bucket into state
@@ -3736,6 +3724,24 @@ export default function App() {
   const tabBucketsRef = useRef<
     Map<string, { tabs: Tab[]; activeTabId: string | undefined }>
   >(new Map());
+
+  // Project I/O (git status polling, bridge IPC for cwd + extension
+  // watching). The hook owns the gitStatusRef cache, the 30s poll
+  // effect, and announce/watch/unwatch invokes; orchestrators
+  // (openProjectByPath et al.) stay inline because they mutate
+  // tabBucketsRef and trigger terminal replay — they'll move when
+  // useTabs is extracted.
+  const {
+    gitStatusRef,
+    refreshGitStatusFor,
+    refreshAllGitStatus,
+    announceProjectToBridge,
+    watchProjectForBridge,
+    unwatchProjectForBridge,
+  } = useProjects({
+    getProjectPaths: () => projectsRef.current.projects.map((p) => p.path),
+    onGitStatusChanged: () => syncProjectsToState(),
+  });
 
   // Mirror the projects state into app state so layouts can $ref it.
   // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
@@ -3792,97 +3798,6 @@ export default function App() {
     }
     syncProjectsToState();
   }
-
-  // Tell the bridge what `cwd` to use for new sessions on a given tab.
-  // The bridge accepts a `cwd` field on `tab_open`; on `set_project` it
-  // updates the per-tab record but doesn't tear down an in-flight session
-  // (changing cwd mid-flight is a user-visible footgun). Fire-and-forget.
-  function announceProjectToBridge(tabId: string, cwd: string | null) {
-    invoke("agent_command", {
-      payload: JSON.stringify({ type: "set_project", tabId, cwd }),
-    }).catch(() => {
-      /* bridge gone — next tab_open re-announces */
-    });
-  }
-
-  // Tell the Rust shell to watch (or stop watching) a project's
-  // `.aethon/extensions/` dir for changes. Edits to files in a watched
-  // dir trigger the same kill-and-respawn flow as `~/.aethon/extensions/`,
-  // so project extensions hot-reload without a manual app restart. Pairs
-  // with announceProjectToBridge — both fire whenever the active project
-  // changes, but they cover different things (cwd for new sessions vs.
-  // the file-watch list for hot-reload).
-  function watchProjectForBridge(path: string) {
-    invoke("watch_project_extensions", { projectPath: path }).catch(
-      (err: unknown) => {
-        console.warn("[aethon] watch_project_extensions failed:", err);
-      },
-    );
-  }
-  function unwatchProjectForBridge(path: string) {
-    invoke("unwatch_project_extensions", { projectPath: path }).catch(
-      (err: unknown) => {
-        console.warn("[aethon] unwatch_project_extensions failed:", err);
-      },
-    );
-  }
-
-  // Refresh the cached git status for one project path. Best-effort —
-  // a missing `git` binary or a non-repo path resolves to an empty
-  // entry and is treated as "no badge". Runs through the Tauri command
-  // (gated by debug-or-release; both expose `git_status`).
-  async function refreshGitStatusFor(path: string) {
-    try {
-      const status = await invoke<GitStatus | null>("git_status", { path });
-      if (status) {
-        gitStatusRef.current.set(path, status);
-      } else {
-        gitStatusRef.current.delete(path);
-      }
-      syncProjectsToState();
-    } catch {
-      // Tauri command threw — ignore so a transient git failure
-      // doesn't blank the chip on subsequent successful polls.
-    }
-  }
-  // Refresh every known project. Sequenced (not parallel) so a user with
-  // a long projects list doesn't fork N git processes at once. Cheap
-  // even at the upper bound (MAX_PROJECTS=16 in projects.ts).
-  async function refreshAllGitStatus() {
-    const list = projectsRef.current.projects.slice();
-    for (const p of list) {
-      await refreshGitStatusFor(p.path);
-    }
-  }
-
-  // Periodic + focus-driven git poller. Initial pass right after
-  // projects load; then every 30s, plus an immediate pass when the
-  // window regains focus (user came back from terminal / browser and
-  // likely committed something). Uses a guard ref so two overlapping
-  // refreshes never run.
-  const gitPollingRef = useRef(false);
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled || gitPollingRef.current) return;
-      gitPollingRef.current = true;
-      try {
-        await refreshAllGitStatus();
-      } finally {
-        gitPollingRef.current = false;
-      }
-    };
-    void tick();
-    const onFocus = () => void tick();
-    window.addEventListener("focus", onFocus);
-    const interval = window.setInterval(tick, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Load projects once at boot. Done in its own effect so a slow disk
   // doesn't push out the agent-start path. Mirrors into state on resolve
