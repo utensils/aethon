@@ -5,7 +5,7 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
-import { reconcileSkillModules } from "./skills/skillModuleLoader";
+import { reconcileFrontendModules } from "./skills/extensionFrontendLoader";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import {
@@ -3082,7 +3082,7 @@ export default function App() {
               payload: A2UIPayload;
             }[]
           | undefined) ?? [];
-        const extSkillModules = (data.extensionSkillModules as
+        const extFrontendModules = (data.extensionFrontendModules as
           | { name: string; code: string }[]
           | undefined) ?? [];
         const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
@@ -3103,7 +3103,7 @@ export default function App() {
         hydrateKeybindings(extKeys);
         hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
         hydrateExtensionLayouts(extLayouts);
-        hydrateSkillModules(extSkillModules);
+        hydrateFrontendModules(extFrontendModules);
         // Push the persisted menu list into Tauri so the native menu
         // is correct on first paint after webview reload. Errors are
         // logged but non-fatal — the menu falls back to built-ins-only.
@@ -3444,11 +3444,11 @@ export default function App() {
         ackMutation(data.mutationId, true);
         break;
       }
-      case "extension_skill_modules": {
+      case "extension_frontend_modules": {
         const list = (data.modules as
           | { name: string; code: string }[]
           | undefined) ?? [];
-        hydrateSkillModules(list);
+        hydrateFrontendModules(list);
         ackMutation(data.mutationId, true);
         break;
       }
@@ -4501,14 +4501,14 @@ export default function App() {
   const extensionKeybindingsRef = useRef<
     Map<string, { combo: string; action: string; description?: string }>
   >(new Map());
-  // name → code for skill-package modules whose `aethon.frontendEntry`
+  // name → code for extension-package modules whose `aethon.frontendEntry`
   // JS bodies have been evaluated and registered in the SkillRegistry.
   // Tracked so:
-  //   - dropped skills (name absent from a fresh delta) get unregistered
+  //   - dropped modules (name absent from a fresh delta) get unregistered
   //   - identical re-deliveries (same name + same code) skip re-eval,
   //     so the duplicate `ready` the bridge fires after the startup
   //     `report` doesn't run top-level side effects twice
-  const skillModulesRef = useRef<Map<string, string>>(new Map());
+  const frontendModulesRef = useRef<Map<string, string>>(new Map());
 
   // Built once — handlers close over App-scope helpers via the ctx passed at
   // dispatch time, so the registry itself doesn't need state in scope.
@@ -4646,24 +4646,24 @@ export default function App() {
 
   // Skill packages with `aethon.frontendEntry` ship a JS body to the
   // webview where it's wrapped with `new Function("React", "skill",
-  // code)` and executed. The skill API hooks the result into the
+  // code)` and executed. The module API hooks the result into the
   // SkillRegistry so the registered React components show up under
   // their declared A2UI types in any layout. Wholesale replacement on
-  // each delta — components from a removed skill go away, a re-eval'd
-  // skill replaces its prior bindings (so a hot reload picks up new
+  // each delta — components from a removed module go away, a re-eval'd
+  // module replaces its prior bindings (so a hot reload picks up new
   // code). Errors per module are caught and surfaced as a `notice` so
-  // one broken skill doesn't kill the others.
-  function hydrateSkillModules(list: { name: string; code: string }[]) {
-    const previous = skillModulesRef.current;
-    const { loaded, unregistered } = reconcileSkillModules(
+  // one broken module doesn't kill the others.
+  function hydrateFrontendModules(list: { name: string; code: string }[]) {
+    const previous = frontendModulesRef.current;
+    const { loaded, unregistered } = reconcileFrontendModules(
       previous,
       list,
       registry,
     );
-    skillModulesRef.current = new Map(list.map((m) => [m.name, m.code]));
+    frontendModulesRef.current = new Map(list.map((m) => [m.name, m.code]));
     for (const m of loaded) {
       if (m.error) {
-        appendSystem(`skill module ${m.name}: ${m.error}`);
+        appendSystem(`extension frontend module ${m.name}: ${m.error}`);
       }
     }
     if (loaded.length > 0 || unregistered.length > 0) {
@@ -4674,7 +4674,7 @@ export default function App() {
       // modules don't need a bump — their components are unchanged.
       setState((prev) => ({
         ...prev,
-        skillModulesGen: ((prev.skillModulesGen as number | undefined) ?? 0) + 1,
+        extensionModulesGen: ((prev.extensionModulesGen as number | undefined) ?? 0) + 1,
       }));
     }
   }
@@ -5257,9 +5257,9 @@ export default function App() {
       listThemes,
       setModel,
       resetLayout: () => setLayout(BOOT_LAYOUT),
-      listSkills: () => registry.list().map((s) => s.name),
-      installSkill: async (spec: string) => {
-        return await invoke<string>("install_aethon_skill", { spec });
+      listExtensions: () => registry.list().map((s) => s.name),
+      installExtension: async (spec: string) => {
+        return await invoke<string>("install_aethon_extension", { spec });
       },
       listModels: () => {
         const sidebar = (stateRef.current.sidebar as Record<string, unknown>) ?? {};

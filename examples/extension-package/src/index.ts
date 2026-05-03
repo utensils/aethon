@@ -1,8 +1,11 @@
 /**
- * Example Aethon skill distributed as an npm package.
+ * Example Aethon extension distributed as an npm package.
  *
  * Install:
  *   npm install --prefix ~/.aethon/skills /path/to/this/dir
+ *
+ * (The on-disk `skills/` directory name is retained for back-compat
+ * with existing installs; conceptually these are extension packages.)
  *
  * Aethon walks `~/.aethon/skills/node_modules/` on startup and on every
  * extension hot-reload, looking for any package.json with an `aethon`
@@ -11,13 +14,13 @@
  * based extension under `~/.aethon/extensions/`.
  *
  * What this demo registers:
- *   - A single sidebar section "Demo Skill" with two items.
+ *   - A single sidebar section "Demo Extension" with two items.
  *   - "Greet" click → `ctx.pi.notify`.
  *   - "Toast pulse-card" click → wraps the React component shipped by
  *     `frontendEntry` in a notification card so you can see it
  *     rendering. (`pulse-card` is registered on the frontend via the
- *     skill module loader; this skill's bridge-side code just emits an
- *     A2UI payload that references the type.)
+ *     extension frontend loader; this extension's bridge-side code just
+ *     emits an A2UI payload that references the type.)
  */
 
 /// <reference path="../../pi-extensions/aethon-types.d.ts" />
@@ -32,33 +35,33 @@ interface SidebarSelectEvent {
 export function register(api: typeof globalThis.aethon): void {
   if (!api) return;
   api.registerSidebarSection({
-    id: "skill-demo",
-    title: "Demo Skill",
+    id: "extension-demo",
+    title: "Demo Extension",
     items: [
-      { id: "skill-demo-greet", label: "Greet from npm skill" },
-      { id: "skill-demo-pulse", label: "Show pulse-card" },
+      { id: "extension-demo-greet", label: "Greet from npm extension" },
+      { id: "extension-demo-pulse", label: "Show pulse-card" },
     ],
   });
   api.onEvent(
     { componentType: "sidebar", eventType: "select" },
     (event: SidebarSelectEvent, ctx) => {
       const data = event.data;
-      if (data?.sectionId !== "skill-demo") return;
-      if (data.itemId === "skill-demo-greet") {
-        ctx.pi.notify("Hello from the demo npm skill 👋");
+      if (data?.sectionId !== "extension-demo") return;
+      if (data.itemId === "extension-demo-greet") {
+        ctx.pi.notify("Hello from the demo npm extension 👋");
         return;
       }
-      if (data.itemId === "skill-demo-pulse") {
+      if (data.itemId === "extension-demo-pulse") {
         // The `pulse-card` type is registered on the frontend by this
-        // skill's `aethon.frontendEntry`. Bridge-side code references
+        // extension's `aethon.frontendEntry`. Bridge-side code references
         // it like any built-in primitive; the renderer resolves it
         // through the SkillRegistry.
         api.setState("/canvas", {
           components: [
             {
-              id: "skill-demo-pulse-instance",
+              id: "extension-demo-pulse-instance",
               type: "pulse-card",
-              props: { title: "Skill demo", state: "ok" },
+              props: { title: "Extension demo", state: "ok" },
             },
           ],
         });

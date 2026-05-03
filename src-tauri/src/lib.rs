@@ -1219,9 +1219,10 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         if pi_ext.exists() {
             watch_paths.push(pi_ext);
         }
-        // ~/.aethon/skills/node_modules holds npm-distributed skill
-        // packages (manifest with `aethon` field). Pre-create so a
-        // first `npm install --prefix ~/.aethon/skills <pkg>` triggers
+        // ~/.aethon/skills/node_modules holds npm-distributed extension
+        // packages (manifest with `aethon` field). On-disk path is
+        // retained for back-compat with existing installs. Pre-create so
+        // a first `npm install --prefix ~/.aethon/skills <pkg>` triggers
         // a reload without needing to restart the app.
         let skills_modules = h.join(".aethon/skills/node_modules");
         let _ = std::fs::create_dir_all(&skills_modules);
@@ -1229,7 +1230,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
             watch_paths.push(skills_modules);
         }
         // ~/.aethon/themes holds loose-file JSON themes (no extension /
-        // skill packaging required). Pre-create so the first theme drop
+        // extension packaging required). Pre-create so the first theme drop
         // fires Create events and triggers an agent respawn that picks it
         // up via loadAethonThemeDirectory.
         let themes_dir = h.join(".aethon/themes");
@@ -1358,7 +1359,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
 /// fire the same kill-and-respawn flow as edits in `~/.aethon/extensions/`.
 /// Idempotent — re-adding a watched path is a no-op. Called by the frontend
 /// after the user opens or activates a project; without this the only
-/// hot-reloaded extension dirs are the user-level + skill ones, and a
+/// hot-reloaded extension dirs are the user-level + extension-package ones, and a
 /// project's `.aethon/extensions/` requires a manual agent restart.
 #[tauri::command]
 fn watch_project_extensions(
@@ -1589,19 +1590,19 @@ fn sanitize_filename_segment(input: &str) -> String {
     }
 }
 
-fn validate_skill_install_spec(spec: &str) -> Result<String, String> {
+fn validate_extension_install_spec(spec: &str) -> Result<String, String> {
     let trimmed = spec.trim();
     if trimmed.is_empty() {
-        return Err("skill install spec is required".to_string());
+        return Err("extension install spec is required".to_string());
     }
     if trimmed.len() > 512 {
-        return Err("skill install spec is too long".to_string());
+        return Err("extension install spec is too long".to_string());
     }
     if trimmed.starts_with('-') {
-        return Err("skill install spec cannot start with '-'".to_string());
+        return Err("extension install spec cannot start with '-'".to_string());
     }
     if trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        return Err("skill install spec must be a single package or git URL".to_string());
+        return Err("extension install spec must be a single package or git URL".to_string());
     }
     Ok(trimmed.to_string())
 }
@@ -1629,20 +1630,20 @@ fn output_tail(stdout: &[u8], stderr: &[u8]) -> String {
     }
 }
 
-/// Install an Aethon npm skill package from inside the app. The spec can be
-/// a normal npm package name, tarball URL, GitHub shorthand, or git URL —
+/// Install an Aethon npm extension package from inside the app. The spec can
+/// be a normal npm package name, tarball URL, GitHub shorthand, or git URL —
 /// exactly what `npm install <spec>` accepts. Running this in the Tauri shell
 /// avoids the agent sidecar being killed mid-install by the existing
 /// node_modules watcher. On success we still terminate the current agent so
 /// the next request respawns with the freshly installed package loaded.
 #[tauri::command]
-async fn install_aethon_skill(
+async fn install_aethon_extension(
     spec: String,
     app: AppHandle,
     state: State<'_, AgentProcess>,
     reload_flag: State<'_, AgentReloadFlag>,
 ) -> Result<String, String> {
-    let spec = validate_skill_install_spec(&spec)?;
+    let spec = validate_extension_install_spec(&spec)?;
     let home = app
         .path()
         .home_dir()
@@ -1691,7 +1692,7 @@ async fn install_aethon_skill(
         // Mark this kill as intentional BEFORE the actual kill — the
         // stdout reader's EOF handler reads this flag to decide whether
         // to fire `agent-crashed`. Without the flag, the EOF supervisor
-        // misclassifies the skill-install reload as a crash and the
+        // misclassifies the extension-install reload as a crash and the
         // user sees both a crash toast and the auto-restart on top of
         // the deliberate `agent-reloaded` flow.
         reload_flag
@@ -1700,7 +1701,7 @@ async fn install_aethon_skill(
         let _ = child.kill();
         let _ = child.wait();
         let _ = app.emit("agent-reloaded", "");
-        tracing::info!(target: "aethon::skill_install", "killed pid={pid}; will respawn with {spec}");
+        tracing::info!(target: "aethon::ext_install", "killed pid={pid}; will respawn with {spec}");
     }
 
     Ok(if install_output.trim().is_empty() {
@@ -2196,7 +2197,7 @@ pub fn run() {
             toggle_devtools,
             export_chat_markdown,
             save_paste_image,
-            install_aethon_skill,
+            install_aethon_extension,
             set_extension_menu_items,
             pick_project_directory,
             git_status,

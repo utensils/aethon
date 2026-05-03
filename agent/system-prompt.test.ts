@@ -50,7 +50,7 @@ describe("buildRuntimeSection failedExtensions", () => {
           },
           {
             name: "no-register",
-            source: "skill-package",
+            source: "extension-package",
             status: "skipped",
             error: "no register() export",
           },
@@ -61,7 +61,7 @@ describe("buildRuntimeSection failedExtensions", () => {
     expect(out).toContain("`git-worktree-manager` (directory, failed)");
     expect(out).toContain("/Users/me/.aethon/extensions/git-worktree-manager.ts");
     expect(out).toContain("entries");
-    expect(out).toContain("`no-register` (skill-package, skipped)");
+    expect(out).toContain("`no-register` (extension-package, skipped)");
     expect(out).toContain("no register() export");
   });
 

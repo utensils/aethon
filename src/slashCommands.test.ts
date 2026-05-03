@@ -58,7 +58,7 @@ describe("buildBuiltinSlashCommands", () => {
       "model",
       "reset",
       "terminal",
-      "skills",
+      "extensions",
     ]) {
       expect(names).toContain(expected);
     }
@@ -77,7 +77,7 @@ describe("buildBuiltinSlashCommands", () => {
     }
   });
 
-  it("/skills install invokes the in-app installer", async () => {
+  it("/extensions install invokes the in-app installer", async () => {
     const installed: string[] = [];
     const system: string[] = [];
     const notifications: string[] = [];
@@ -89,8 +89,8 @@ describe("buildBuiltinSlashCommands", () => {
       listThemes: () => [],
       setModel: async () => {},
       resetLayout: () => {},
-      listSkills: () => [],
-      installSkill: (spec) => {
+      listExtensions: () => [],
+      installExtension: (spec) => {
         installed.push(spec);
         return Promise.resolve("installed output");
       },
@@ -107,13 +107,13 @@ describe("buildBuiltinSlashCommands", () => {
       listProjects: () => [],
       activeProject: () => null,
     };
-    const skills = buildBuiltinSlashCommands().find((c) => c.name === "skills")!;
+    const extensions = buildBuiltinSlashCommands().find((c) => c.name === "extensions")!;
 
-    await skills.run("install github:utensils/aethon-demo-skill", ctx);
+    await extensions.run("install github:utensils/aethon-demo-extension", ctx);
 
-    expect(installed).toEqual(["github:utensils/aethon-demo-skill"]);
-    expect(notifications).toContain("Installing skill");
-    expect(system[0]).toContain("Skill install complete");
+    expect(installed).toEqual(["github:utensils/aethon-demo-extension"]);
+    expect(notifications).toContain("Installing extension");
+    expect(system[0]).toContain("Extension install complete");
     expect(system[0]).toContain("installed output");
   });
 });

@@ -76,10 +76,10 @@
                 ]
               },
               {
-                "id": "skills",
-                "title": "skills",
+                "id": "extensions",
+                "title": "extensions",
                 "items": [
-                  { "id": "skill-layout", "label": "default-layout", "hint": "core", "active": true }
+                  { "id": "extension-layout", "label": "default-layout", "hint": "core", "active": true }
                 ]
               },
               {
