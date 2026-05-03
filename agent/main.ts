@@ -2901,6 +2901,32 @@ async function main() {
     return def?.session.model ? modelKey(def.session.model) : "";
   }
 
+  // Ensure the picker contains `model`; if not, prepend it and push the
+  // updated list to the frontend so the picker can highlight it as active.
+  // Without this, models registered dynamically by an extension (e.g.
+  // user's ollama-host extension calling pi.registerProvider("ollama",…))
+  // can become a session's active model without ever appearing in the
+  // picker, leaving the chrome rendering "model" with no id selected
+  // (observed bug: new tabs auth'd to provider "ollama" while picker
+  // only knew about the static "ollama-localhost" entry).
+  function ensurePickerHasModel(model: Model<Api> | undefined): void {
+    if (!model) return;
+    const key = modelKey(model);
+    if (cachedModels.some((m) => m.id === key)) return;
+    logger.scope("picker").debug(`prepending ${key} to picker`);
+    cachedModels = [modelDescriptor(model), ...cachedModels];
+    // state_patch is the bridge→frontend channel for live state writes;
+    // the frontend's handler routes a /sidebar/* path to root state so
+    // the picker re-renders with the new entry. Active flag is left to
+    // the existing tab_ready / model_changed flow that calls
+    // recomputeModelPicker on the frontend.
+    send({
+      type: "state_patch",
+      path: "/sidebar/models",
+      value: cachedModels.map((m) => ({ id: m.id, label: m.label })),
+    });
+  }
+
   function emitReady() {
     send({
       type: "ready",
@@ -3072,6 +3098,12 @@ async function main() {
     // First tab: populate the global picker now that we have a model.
     if (cachedModels.length === 0) {
       cachedModels = buildPickerModels(session.model).map(modelDescriptor);
+    } else {
+      // Subsequent tabs may pick up a different default model than the
+      // first one (extensions like ollama-host call pi.setModel from
+      // within session_start, swapping the model under us). Make sure
+      // the picker can render whatever id the new tab ended up with.
+      ensurePickerHasModel(session.model ?? undefined);
     }
 
     // Per-tab subscriber. Closes over rec so increments / clears stay
@@ -3448,6 +3480,7 @@ async function main() {
             break;
           }
           await tab.session.setModel(next);
+          ensurePickerHasModel(next);
           send({ type: "model_changed", tabId, model: msg.id });
           break;
         }
