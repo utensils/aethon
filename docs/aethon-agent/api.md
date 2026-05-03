@@ -584,6 +584,35 @@ so handlers can read or drive shells without going through the global.
 Tools `listShells` / `readShell` / `writeShell` register automatically;
 the model can use them via the standard tool-use protocol.
 
+## Lifecycle
+
+### `onUnload(fn)`
+
+Register a teardown callback that fires when the extension is unloaded.
+For project-directory extensions (loaded from `<project>/.aethon/extensions/`)
+this fires when the active project changes — anything you spawned during
+`register()` (timers, file watchers, subprocesses, attached event listeners)
+must be torn down here or it will keep mutating shared state after the
+project boundary "unloaded" your component registry.
+
+User-level extensions (`~/.aethon/extensions/`) only unload when the bridge
+exits, so this is mostly relevant for project-scoped work.
+
+```ts
+export function register(api) {
+  const id = setInterval(refreshGallery, 2000);
+  const watcher = fs.watch("./images", refreshGallery);
+  api.onUnload(() => {
+    clearInterval(id);
+    watcher.close();
+  });
+}
+```
+
+Sync and async callbacks are both supported; async ones are not awaited
+(unload must not block the project switch). A throwing callback is logged
+under the `project-switch` scope and the remaining callbacks still run.
+
 ## Event Handling
 
 ### `onEvent(match, handler)`
