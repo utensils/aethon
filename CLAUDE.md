@@ -78,9 +78,12 @@ devshell exposes these helpers (defined in `flake.nix`):
 **1. Layout-as-payload.** The default UI is _not_ hardcoded React. It's
 `src/skills/default-layout/workstation.a2ui.json`, loaded as the boot payload
 and fed to the same `A2UIRenderer` that handles agent output. A skill is the
-extension primitive; the default-layout skill registers `workstation` (the
-boot default) plus three sibling variations (`command-deck`, `editorial`,
-`live-layout`) — switching is a sidebar/palette click that calls
+extension primitive; the default-layout skill currently registers only
+`workstation` while we focus polish on a single surface (the earlier
+`command-deck` / `editorial` / `live-layout` variations were dropped from
+the catalogue — the variation chrome components stay registered so their
+`.a2ui.json` payloads can be re-added when we want sibling layouts back).
+Switching layouts (when more exist) is a sidebar/palette click that calls
 `window.aethon.activateLayout(id)`. Don't add static chrome in `App.tsx` —
 extend the layout JSON or register a new skill. Layouts must conform to
 the slot contract in `src/skills/default-layout/slots.json` + `slots.ts`
@@ -119,8 +122,10 @@ console) can swap chrome at runtime:
 - `window.aethon.registerLayout({ id, name, payload })` — register a layout
   variation that appears in the sidebar's `layouts` section + palette.
   Also exposed agent-side as `aethon.registerLayout` (bridge in
-  `agent/main.ts`). Reserved ids: `workstation`, `command-deck`,
-  `editorial`, `live-layout`. Id pattern: `/^[A-Za-z][\w-]*$/`.
+  `agent/main.ts`). Reserved id: `workstation`
+  (`command-deck` / `editorial` / `live-layout` were trimmed from the
+  built-in catalogue and may be reintroduced later — keep the names
+  free). Id pattern: `/^[A-Za-z][\w-]*$/`.
 - `window.aethon.activateLayout(id)` — switch to a registered layout
 - `window.aethon.registerSkill(skill)` — register a skill; if it has a
   `layout`, also activate it
@@ -426,8 +431,9 @@ sessions, light theme, system tray + native menu, slash command picker,
 real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
 `composer` required, `slotMap` for non-canonical layouts), generic
 `extension_lifecycle` feedback channel, registerable slash commands /
-keybindings / menu items / event routes / layouts (4-layout catalogue
-via `aethon.registerLayout`), mutation-feedback channel (every mutation
+keybindings / menu items / event routes / layouts (workstation only in
+the built-in catalogue today; extensions can register more via
+`aethon.registerLayout`), mutation-feedback channel (every mutation
 returns `Promise<MutationResult>`), command palette (Cmd+P switcher /
 Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
 .deb/AppImage + Windows NSIS bundles via Nix overlay.

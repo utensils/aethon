@@ -41,9 +41,6 @@ import { SettingsPanel } from "./settings-panel";
 import { SearchPanel } from "./search-panel";
 import { ShareModeBadge } from "./share-mode-badge";
 import workstationPayload from "./workstation.a2ui.json";
-import editorialPayload from "./editorial.a2ui.json";
-import commandDeckPayload from "./command-deck.a2ui.json";
-import liveLayoutPayload from "./live-layout.a2ui.json";
 
 export {
   layoutSlots,
@@ -131,6 +128,10 @@ export interface LayoutCatalogueEntry {
   payload: A2UIPayload;
 }
 
+// Sibling layouts (live-layout / editorial / command-deck) were trimmed
+// while we focus polish on the workstation surface; their A2UI payloads
+// + chrome components stay deletable (no callers reference them via the
+// catalogue). Re-add entries here when reintroducing variations.
 export const builtinLayouts: LayoutCatalogueEntry[] = [
   {
     id: "workstation",
@@ -138,26 +139,5 @@ export const builtinLayouts: LayoutCatalogueEntry[] = [
     description:
       "Default — IDE-density sidebar, header pill, chrome tabs, terminal, composer, status bar.",
     payload: workstationPayload,
-  },
-  {
-    id: "live-layout",
-    name: "Live Layout",
-    description:
-      "Sidebar + canvas + inspector pane. Showcases the agent rearranging its own UI with a setLayout toast.",
-    payload: liveLayoutPayload,
-  },
-  {
-    id: "editorial",
-    name: "Editorial",
-    description:
-      "Brand-forward — vertical Æπ spine, Bodoni header with italic π, chapter-style tabs.",
-    payload: editorialPayload,
-  },
-  {
-    id: "command-deck",
-    name: "Command Deck",
-    description:
-      "Vertical session rail + persistent ⌘P command bar in the header. Best for many concurrent sessions.",
-    payload: commandDeckPayload,
   },
 ];
