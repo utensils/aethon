@@ -6044,19 +6044,16 @@ export default function App() {
         if (!sessionId) return true;
         promptDeleteSessionConfirmation(label).then((allowed) => {
           if (!allowed) return;
-          // If the session is currently open as a tab, close it first
-          // so the in-memory state goes away in lockstep with the
-          // on-disk delete. closeTab is a no-op for unknown ids.
           const isOpen = (stateRef.current.tabs as Tab[] | undefined)?.some(
             (t) => t.id === sessionId,
           );
-          if (isOpen) closeTab(sessionId);
+          // Delete first, then close. Doing the reverse leaves the user
+          // with a closed tab and a failure notification when the Tauri
+          // command refuses (e.g. the default session). codex P2 review
+          // feedback.
           invoke("delete_session", { tabId: sessionId })
             .then(() => {
-              // Drop the entry from the in-memory cache and re-derive
-              // both the recent-sessions list (palette) and the sidebar
-              // history section so the deleted row disappears
-              // immediately — no need to wait for the next bridge ready.
+              if (isOpen) closeTab(sessionId);
               allDiscoveredSessionsRef.current =
                 allDiscoveredSessionsRef.current.filter(
                   (s) => s.tabId !== sessionId,

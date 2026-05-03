@@ -90,18 +90,18 @@ describe("StickyScrollController", () => {
   });
 
   it("does NOT silently suppress real user scrolls when the programmatic scroll was a no-op (codex P2)", () => {
-    // Regression: if the consumer's scrollTop assignment didn't actually
-    // move the container (e.g. already at bottom, mutation didn't grow
-    // height), no synthesized scroll event fires. Setting
+    // Regression: when the container is already at the bottom, the hook
+    // writes `el.scrollTop = el.scrollHeight` but the browser clamps it
+    // to `scrollHeight - clientHeight` (the actual max), which is the
+    // current value — so no scroll event fires. Setting
     // programmaticPending unconditionally would leave the flag stale and
-    // the user's NEXT real scroll-away would be silently ignored.
-    // The hook avoids this by calling notifyProgrammaticScroll only
-    // when scrollTop actually changes — so the controller never sees
-    // a stale flag in this scenario.
+    // suppress the user's NEXT real scroll-away. The hook detects this
+    // by reading scrollTop after the assignment and only calls
+    // notifyProgrammaticScroll when it actually moved.
     const c = new StickyScrollController();
     c.onContentChanged(); // returns scrollToBottom: true
-    // Hook decides scrollTop is already at scrollHeight (no-op);
-    // does NOT call notifyProgrammaticScroll. User then scrolls away.
+    // Hook does the write, sees scrollTop didn't change, does NOT call
+    // notifyProgrammaticScroll. User then scrolls away.
     const follow = c.onScroll(M(0, 200, 1000));
     expect(follow).toBe(false);
   });

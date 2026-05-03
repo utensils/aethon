@@ -25,17 +25,21 @@ export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) 
   }
   const rafRef = useRef<number | null>(null);
 
-  // Assign scrollTop conditionally and tell the controller about the
-  // synthesized scroll event ONLY if the assignment will actually move
-  // the container — see notifyProgrammaticScroll for why.
+  // Assign scrollTop and tell the controller about the synthesized
+  // scroll event ONLY if the assignment actually moved the container.
+  // Don't try to predict whether a move will happen up front — browsers
+  // clamp `scrollTop` to `scrollHeight - clientHeight`, so writing
+  // `scrollHeight` no-ops when already at bottom and no event fires.
+  // Reading scrollTop *after* the write is the only reliable signal.
+  // (codex P2 review feedback.)
   const programmaticScrollTo = (
     el: HTMLDivElement,
     target: number,
     ctrl: StickyScrollController,
   ) => {
-    if (el.scrollTop === target) return;
-    ctrl.notifyProgrammaticScroll();
+    const before = el.scrollTop;
     el.scrollTop = target;
+    if (el.scrollTop !== before) ctrl.notifyProgrammaticScroll();
   };
 
   const handleContentChanged = useCallback(() => {
