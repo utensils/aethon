@@ -38,7 +38,6 @@ import { extractSessionId } from "./utils/sidebarHistory";
 import { deepMergeState, layoutPatch } from "./utils/stateMutation";
 import { applyUiScale } from "./utils/viewport";
 import { formatRelativeTime } from "./utils/time";
-import { canonicalCombo } from "./utils/keybindings";
 import { coerceChatMessages } from "./utils/messages";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
@@ -49,6 +48,7 @@ import {
   useExtensionsHydration,
   type ExtensionTheme,
 } from "./hooks/useExtensionsHydration";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { isFocusInTerminalPanel } from "./utils/focus";
 import {
   parseSlashCommand,
@@ -865,395 +865,38 @@ export default function App() {
     moveActiveShellSubTab,
   } = useTabNavigation({ stateRef, setState, setActiveTab, setActiveSubTab });
 
-  // Global keyboard shortcuts. Bound on the document so they fire regardless
-  // of focus; preventDefault + stopPropagation when handled so xterm
-  // doesn't also receive the keystroke as input data (otherwise pressing
-  // Cmd+` while focused in the terminal both toggles the panel AND types
-  // a backtick into the shell).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Skip auto-repeat (held key) so a brief hold doesn't double-fire.
-      if (e.repeat) return;
-      // Extension-registered keybindings are checked before built-ins so
-      // they can intentionally replace default chrome actions. Dispatch
-      // through the existing a2ui_event route as
-      // {componentType: "keybinding", componentId: "keybinding__tpl__<combo>",
-      //  data: {action, combo}} so a paired aethon.onEvent matcher fires.
-      const combo = canonicalCombo(e);
-      if (combo) {
-        const binding = extensionKeybindingsRef.current.get(combo);
-        if (binding) {
-          e.preventDefault();
-          e.stopPropagation();
-          invoke("dispatch_a2ui_event", {
-            event: JSON.stringify({
-              componentId: `keybinding__tpl__${combo}`,
-              componentType: "keybinding",
-              templateRootType: "keybinding",
-              eventType: "invoke",
-              data: { combo, action: binding.action },
-            }),
-            tabId: stateRef.current.activeTabId,
-          }).catch(() => {
-            /* ignore — bridge gone or webview reload mid-flight */
-          });
-          return;
-        }
-      }
-      const mod = e.metaKey || e.ctrlKey;
-      // Cmd+` toggles the bottom terminal panel AND moves focus there
-      // when opening (so the user can type immediately). Mirrors
-      // VS Code's Ctrl+` behavior. When closing, return focus to the
-      // chat composer so typing continues seamlessly.
-      if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleTerminalAndFocus();
-        return;
-      }
-      // Cmd+B toggles the sidebar. Mirrors the standard editor
-      // shortcut for showing/hiding sidebars.
-      if (e.key.toLowerCase() === "b" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSidebar();
-        return;
-      }
-      // Cmd+K → clear active chat. This is advertised in the Workstation
-      // panels section and mirrors the View > Clear Chat menu item.
-      if (e.key.toLowerCase() === "k" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        clearChat();
-        return;
-      }
-      // Cmd+. → stop the current prompt. Mirrors the native menu
-      // accelerator and the busy composer Stop button.
-      if (e.key === "." && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        void stopPrompt();
-        return;
-      }
-      // Cmd+Shift+T → explicit new shell sub-tab in the bottom panel
-      // (M6 restructure). Auto-opens the panel and makes the new shell
-      // the active sub-tab. Useful when the user wants a shell without
-      // having to focus the bottom panel first.
-      if (e.key.toLowerCase() === "t" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        newShellTab();
-        return;
-      }
-      // Cmd+T — focus-aware (M6 restructure):
-      //   - focus inside the bottom terminal panel → new shell sub-tab
-      //   - focus elsewhere → new agent tab (the pre-P1 default)
-      // Matches the user's mental model: "new tab" of whatever surface
-      // I'm currently using. Browsers, VS Code, and iTerm all key off
-      // the focused surface for "new"-style shortcuts.
-      if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Focus inside the bottom terminal panel always opens a shell —
-        // Cmd+T is "new tab of whatever surface I'm using". When focus
-        // is elsewhere, `[shortcuts] new_tab_kind` lets the user opt
-        // into "always open shell" by setting it to "shell"; default
-        // ("agent") preserves the focus-aware behaviour.
-        if (
-          isFocusInTerminalPanel() ||
-          shortcutsNewTabKindRef.current === "shell"
-        ) {
-          newShellTab();
-        } else {
-          newTab();
-        }
-        return;
-      }
-      // Cmd+] → next tab; Cmd+[ → previous. When focus is inside the
-      // bottom terminal panel, the same combo cycles between sub-tabs
-      // (agent-bash + each shell) so the user navigates the surface
-      // they're looking at. Outside the panel → top agent tab strip.
-      if (e.key === "]" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          nextShellSubTab(1);
-        } else {
-          nextTab(1);
-        }
-        return;
-      }
-      if (e.key === "[" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          nextShellSubTab(-1);
-        } else {
-          nextTab(-1);
-        }
-        return;
-      }
-      // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
-      // Matches Chrome/Firefox tab-reorder shortcut. Wraps at the ends.
-      // When focus is inside the bottom terminal panel, the same combo
-      // reorders shell sub-tabs instead so the user's mental model
-      // ("act on the surface I'm looking at") holds. agent-bash is
-      // pinned first and cannot be reordered.
-      if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          moveActiveShellSubTab(1);
-        } else {
-          moveActiveTab(1);
-        }
-        return;
-      }
-      if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          moveActiveShellSubTab(-1);
-        } else {
-          moveActiveTab(-1);
-        }
-        return;
-      }
-      // Cmd+1..8 → jump to tab N (1-indexed); Cmd+9 → jump to last.
-      // Universal across browsers (Chrome / Firefox / Safari) + iTerm2 /
-      // Windows Terminal. The first 8 use direct indexing so layouts
-      // with > 9 tabs still get keyboard access for the first few; the
-      // 9th key is the "last tab" affordance.
-      // Cmd+1..8 → jump to agent tab N; Cmd+9 → jump to last agent
-      // tab. Filter shells before counting so the indices line up with
-      // what the user actually sees in the top strip (codex P2 finding
-      // on PR #20: with [agent, agent, shell] the previous code passed
-      // index 2 to jumpToTab and no-op'd because the filtered array
-      // only has 2 items).
-      if (
-        mod &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key >= "1" &&
-        e.key <= "9"
-      ) {
-        // Focus inside the bottom terminal panel → jump between
-        // sub-tabs (idx 0 = agent-bash, 1..N = shell sub-tabs). 9 is
-        // "last sub-tab". Outside the panel → jump between agent tabs
-        // in the top strip.
-        if (isFocusInTerminalPanel()) {
-          const shellSubTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-            .filter((t) => t.kind === "shell");
-          // total = agent-bash + shellSubTabs.length
-          const total = 1 + shellSubTabs.length;
-          if (total === 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.key === "9") {
-            jumpToShellSubTab(total - 1);
-          } else {
-            jumpToShellSubTab(parseInt(e.key, 10) - 1);
-          }
-          return;
-        }
-        const agentTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-          .filter((t) => t.kind !== "shell");
-        if (agentTabs.length === 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.key === "9") {
-          jumpToTab(agentTabs.length - 1);
-        } else {
-          jumpToTab(parseInt(e.key, 10) - 1);
-        }
-        return;
-      }
-      // Cmd+Opt+T → reopen most-recently-closed tab. Matches iTerm2's
-      // restore-closed-window shortcut. macOS lets Option mutate the
-      // printable-key value (Opt+T arrives as `e.key === "†"`), so
-      // match the *physical* key via `e.code === "KeyT"` whenever Alt
-      // is part of the shortcut. Without this the advertised combo
-      // silently no-ops on Mac (codex P2 review of PR #17).
-      if (
-        mod &&
-        e.altKey &&
-        !e.shiftKey &&
-        (e.code === "KeyT" || e.key.toLowerCase() === "t")
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        reopenLastClosedTab();
-        return;
-      }
-      // Cmd+W → close active tab (no-op on the last/default tab).
-      if (e.key.toLowerCase() === "w" && mod && !e.shiftKey && !e.altKey) {
-        const activeId = stateRef.current.activeTabId as string | undefined;
-        if (!activeId) return;
-        e.preventDefault();
-        e.stopPropagation();
-        closeTab(activeId);
-        return;
-      }
-      // Cmd+Shift+F → cross-session search overlay (M6 P6). Searches
-      // every persisted JSONL session under ~/.aethon/sessions/<tabId>/
-      // via the Tauri search_sessions command. Click a result → restore
-      // the originating tab.
-      if (e.key.toLowerCase() === "f" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSessionSearch();
-        return;
-      }
-      // Cmd+Shift+P → command palette in "commands" mode (run an action,
-      // slash command, layout, theme, …). Checked before plain Cmd+P so
-      // shift takes precedence — otherwise the lowercase key match would
-      // route both to the switcher.
-      if (e.key.toLowerCase() === "p" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        openPalette("commands");
-        return;
-      }
-      // Cmd+P → command palette in "switcher" mode (jump to a tab,
-      // session, project, …). Mirrors VS Code's quick-open intuition
-      // but extended with the rest of Aethon's surfaces.
-      if (e.key.toLowerCase() === "p" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        openPalette("switcher");
-        return;
-      }
-      // Esc closes the palette when it's open. Stays a no-op otherwise
-      // so component-level Esc (chat-input cancel, etc.) keeps working.
-      if (e.key === "Escape") {
-        const palette = stateRef.current.palette as
-          | { open?: boolean }
-          | undefined;
-        if (palette?.open) {
-          e.preventDefault();
-          e.stopPropagation();
-          closePalette();
-          return;
-        }
-      }
-      // Cmd+= / Cmd++ zoom in. macOS reports `=` for the unshifted key
-      // and `+` for shift+=. Match both so users with either layout get
-      // the same behavior (Chrome, VS Code, Slack all do this). Cmd+-
-      // zooms out; Cmd+0 resets. Step is 10% per press.
-      if (mod && !e.altKey && (e.key === "=" || e.key === "+")) {
-        e.preventDefault();
-        e.stopPropagation();
-        adjustZoom(0.1);
-        return;
-      }
-      if (mod && !e.altKey && !e.shiftKey && e.key === "-") {
-        e.preventDefault();
-        e.stopPropagation();
-        adjustZoom(-0.1);
-        return;
-      }
-      // Cmd+Shift+0 → reset zoom. Moved off Cmd+0 so that combo can do
-      // composer ↔ terminal focus toggle (more discoverable than reset
-      // zoom, which is rare).
-      if (mod && !e.altKey && e.shiftKey && e.key === "0") {
-        e.preventDefault();
-        e.stopPropagation();
-        resetZoom();
-        return;
-      }
-      // Cmd+0 → toggle focus between the chat composer and the bottom
-      // terminal panel. Mirrors VS Code's Cmd+J / Cmd+1 split-pane
-      // focus-toggle pattern but bound to a more discoverable key. If
-      // the panel is closed, opens it first.
-      if (mod && !e.altKey && !e.shiftKey && e.key === "0") {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleFocusComposerTerminal();
-        return;
-      }
-      // Cmd+, → open Settings panel (M6 P3). macOS-native Preferences
-      // shortcut. Toggles closed if already open.
-      if (mod && !e.altKey && !e.shiftKey && e.key === ",") {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSettings();
-        return;
-      }
-      // Cmd+L → focus the active tab's primary input. Per-context jump
-      // (vs. Cmd+0's toggle): agent tab → composer, shell tab → that
-      // shell's xterm. When the active tab is an agent but focus is
-      // currently in the bottom panel, also opens the panel toggle so
-      // the user is never confused about where the cursor went.
-      if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        e.stopPropagation();
-        focusActiveContextInput();
-        return;
-      }
-      // Cmd+Ctrl+F (mac) / F11 (others) → toggle window fullscreen.
-      // The native menu also exposes the system fullscreen item; both
-      // funnel through the Rust `toggle_fullscreen` command so behaviour
-      // stays in sync. F11 is recognised by `e.key === "F11"`; on mac
-      // Cmd+Ctrl+F is the system convention.
-      if (e.key === "F11") {
-        e.preventDefault();
-        e.stopPropagation();
-        invoke("toggle_fullscreen").catch((err: unknown) => {
-          console.warn("toggle_fullscreen failed:", err);
-        });
-        return;
-      }
-      if (
-        mod &&
-        e.ctrlKey &&
-        e.metaKey &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === "f"
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        invoke("toggle_fullscreen").catch((err: unknown) => {
-          console.warn("toggle_fullscreen failed:", err);
-        });
-        return;
-      }
-      // Cmd+Shift+S → export active agent chat as Markdown to
-      // ~/Downloads/. No-op on shell tabs (chat history doesn't apply).
-      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        e.stopPropagation();
-        void exportActiveChatMarkdown();
-        return;
-      }
-      // F12 → toggle WebKit DevTools. Debug builds only — release
-      // builds get a "not available" toast from the Rust command. The
-      // function key is unmodified so it doesn't collide with text
-      // input; we only swallow it when the user is at the document
-      // level rather than typing into a contenteditable.
-      if (e.key === "F12") {
-        e.preventDefault();
-        e.stopPropagation();
-        invoke("toggle_devtools").catch((err: unknown) => {
-          // Surface the release-build "not available" path inline so
-          // the user knows why nothing happened.
-          pushNotification({
-            id: "ae-devtools-unavailable",
-            title: "DevTools unavailable",
-            message: err instanceof Error ? err.message : String(err),
-            kind: "info",
-            durationMs: 2000,
-          });
-        });
-        return;
-      }
-    };
-    // useCapture=true so we run BEFORE xterm's keydown listener;
-    // stopPropagation then keeps the keystroke out of the shell.
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Global keyboard shortcuts. Lives in useKeyboardShortcuts which
+  // binds a document-level keydown listener with useCapture so we run
+  // before xterm sees the keystroke.
+  useKeyboardShortcuts({
+    stateRef,
+    extensionKeybindingsRef,
+    shortcutsNewTabKindRef,
+    toggleTerminalAndFocus,
+    toggleSidebar,
+    clearChat,
+    stopPrompt,
+    newTab,
+    newShellTab,
+    nextTab,
+    nextShellSubTab,
+    moveActiveTab,
+    moveActiveShellSubTab,
+    jumpToTab,
+    jumpToShellSubTab,
+    reopenLastClosedTab,
+    closeTab,
+    toggleSessionSearch,
+    openPalette,
+    closePalette,
+    adjustZoom,
+    resetZoom,
+    toggleFocusComposerTerminal,
+    toggleSettings,
+    focusActiveContextInput,
+    exportActiveChatMarkdown,
+    pushNotification,
+  });
 
   useEffect(() => {
     const api = {
