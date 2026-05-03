@@ -1,15 +1,19 @@
 //! PTY-backed user shell tabs (M6 P1).
 //!
 //! One [`ShellSlot`] per tab id: a [`portable_pty`] master, a writer
-//! handle for keystrokes, an [`Arc<Mutex<Option<Box<dyn Child>>>>`] for
+//! handle for keystrokes, an `Arc<Mutex<Option<Box<dyn Child>>>>` for
 //! the child process, and a reader thread that streams stdout to the
 //! frontend as `shell-output {tabId, content}` events. When the child
-//! exits naturally the reader sees EOF, calls [`Child::wait`], and
-//! emits `shell-exit {tabId, code}` once. [`shell_close`] kills the
-//! child and drops the PTY so the reader unblocks for clean shutdown
-//! on tab close — no zombie processes.
+//! exits naturally the reader sees EOF, calls `Child::wait`, and emits
+//! `shell-exit {tabId, code}` once. [`shell_close`] kills the child
+//! and drops the PTY so the reader unblocks for clean shutdown on tab
+//! close — no zombie processes.
+//!
+//! This module also exposes the share-mode + scrollback API:
+//! [`shell_set_share_mode`], [`shell_read_scrollback`], [`shell_write`]
+//! (mode-gated agent keystroke injection), and [`shell_list_shareable`].
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -18,6 +22,9 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
+use super::scrollback::Scrollback;
+use super::sharemode::{ShareMode, ShareState};
+
 const READ_CHUNK_BYTES: usize = 4096;
 
 /// Per-tab scrollback ring cap. 1 MiB lands ~10–20k lines of typical
@@ -25,145 +32,8 @@ const READ_CHUNK_BYTES: usize = 4096;
 /// or a `git log`, bounded so a runaway process can't OOM us.
 const SCROLLBACK_BYTES: usize = 1024 * 1024;
 
-/// Agent ↔ shell sharing model. Default is `Private` — the agent sees
-/// nothing of the tab's contents until the user opts in. The four-value
-/// shape is intentional: `ReadWrite` is the same as `ReadWriteTrusted`
-/// with confirmation gating; merging them would erase the difference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ShareMode {
-    Private,
-    Read,
-    ReadWrite,
-    ReadWriteTrusted,
-}
-
-impl ShareMode {
-    pub fn is_shareable(self) -> bool {
-        !matches!(self, Self::Private)
-    }
-    /// Used by the (P2.2) write path to gate `aethon.shells.write` —
-    /// kept in P2.1 alongside `is_shareable` so the predicate set lives
-    /// in one place.
-    #[allow(dead_code)]
-    pub fn allows_write(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::ReadWriteTrusted)
-    }
-}
-
-/// Mode + privacy-floor pair. Held under a single mutex so transitions
-/// are atomic — flipping mode and bumping the floor must never tear,
-/// otherwise an agent read could land between the two writes and
-/// observe scrollback from before the user opted in.
-#[derive(Debug)]
-pub struct ShareState {
-    pub mode: ShareMode,
-    /// Byte index in [`Scrollback::total_appended`] space below which
-    /// reads are not allowed. Set on each transition into a shareable
-    /// mode from a non-shareable one. Stays put across shareable→shareable
-    /// transitions and across shareable→private→shareable round-trips
-    /// (so a user toggling read off then back on doesn't suddenly
-    /// re-expose the in-between window).
-    pub floor: u64,
-}
-
-impl ShareState {
-    pub fn new() -> Self {
-        Self {
-            mode: ShareMode::Private,
-            floor: 0,
-        }
-    }
-    /// Apply a mode change relative to the live scrollback cursor.
-    /// Bumps `floor` to `total_appended` whenever the new mode is
-    /// shareable AND was previously private — that's the moment the
-    /// agent first gains visibility, and only content from that point
-    /// on is in-bounds. Returns the resulting state.
-    pub fn transition(&mut self, next: ShareMode, total_appended: u64) -> &Self {
-        let was_private = !self.mode.is_shareable();
-        let now_shareable = next.is_shareable();
-        if was_private && now_shareable {
-            self.floor = total_appended;
-        }
-        self.mode = next;
-        self
-    }
-}
-
-impl Default for ShareState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Capped byte ring with a monotonic write cursor. The ring drops oldest
-/// bytes on overflow; `total_appended` keeps growing forever so callers
-/// can use it as a stable cursor for incremental reads ("give me bytes
-/// since N"). `oldest_total` is the smallest cursor still in the ring —
-/// reads with a cursor below that get clamped up to it.
-#[derive(Debug)]
-pub struct Scrollback {
-    bytes: VecDeque<u8>,
-    cap: usize,
-    total_appended: u64,
-}
-
-impl Scrollback {
-    pub fn new(cap: usize) -> Self {
-        Self {
-            bytes: VecDeque::with_capacity(cap.min(64 * 1024)),
-            cap,
-            total_appended: 0,
-        }
-    }
-    pub fn append(&mut self, chunk: &[u8]) {
-        self.bytes.extend(chunk.iter().copied());
-        self.total_appended = self.total_appended.saturating_add(chunk.len() as u64);
-        // Drop oldest bytes until back under cap. `drain` on VecDeque is
-        // O(n) but the cap is fixed so overflow drops are bounded per
-        // append — the worst case is the first chunk after the ring
-        // reaches cap, after which every subsequent chunk drops a
-        // chunk-sized slice.
-        if self.bytes.len() > self.cap {
-            let drop = self.bytes.len() - self.cap;
-            self.bytes.drain(..drop);
-        }
-    }
-    /// Smallest cursor still in the ring. Equal to
-    /// `total_appended - bytes.len()`.
-    pub fn oldest_total(&self) -> u64 {
-        self.total_appended - self.bytes.len() as u64
-    }
-    pub fn total_appended(&self) -> u64 {
-        self.total_appended
-    }
-    /// Forward-page from `since_total`: returns up to `max_bytes` bytes
-    /// starting at that cursor, plus the cursor of the slice's first
-    /// byte. Caller advances the cursor as `slice_total + content.len()`.
-    /// `since_total` below the live oldest is clamped up.
-    ///
-    /// Note: this is a *forward* read. To get the most recent N bytes
-    /// (cold-start "show me what's on screen"), pass
-    /// `since_total = total_appended - N` clamped to the privacy floor —
-    /// the call site in [`shell_read_scrollback`] does exactly that.
-    /// A previous version always returned the tail of `max_bytes` from
-    /// the after-skip window, which made paging skip bytes (codex P2):
-    /// `read(since=0, max=4)` on a 12-byte buffer returned the last 4
-    /// bytes and reported `total=8`, so the next cursor jumped past
-    /// bytes 0..8 forever.
-    pub fn read_from(&mut self, since_total: u64, max_bytes: usize) -> (Vec<u8>, u64) {
-        let oldest = self.oldest_total();
-        let from_total = since_total.max(oldest);
-        let skip = (from_total - oldest) as usize;
-        if skip >= self.bytes.len() {
-            return (Vec::new(), self.total_appended);
-        }
-        let after_skip = self.bytes.len() - skip;
-        let take = after_skip.min(max_bytes);
-        let contig = self.bytes.make_contiguous();
-        (contig[skip..skip + take].to_vec(), from_total)
-    }
-}
+const READ_DEFAULT_MAX: usize = 8 * 1024;
+const READ_HARD_CAP: usize = 64 * 1024;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -679,9 +549,6 @@ pub struct ShellReadArgs {
     pub max_bytes: Option<usize>,
 }
 
-const READ_DEFAULT_MAX: usize = 8 * 1024;
-const READ_HARD_CAP: usize = 64 * 1024;
-
 #[tauri::command]
 pub fn shell_read_scrollback(
     state: State<'_, ShellRegistry>,
@@ -803,10 +670,11 @@ pub fn shell_list_shareable(
 /// at the call site to replace them with U+FFFD.
 ///
 /// The truncation-vs-invalid distinction comes from
-/// [`Utf8Error::error_len`]: `None` means "not enough data to decide" —
-/// safe to hold and try again with the next read; `Some(_)` means "this
-/// byte is definitively wrong" — flush lossily so we don't stall output
-/// when a process emits Latin-1 (e.g. `\xE9!`) or other bad bytes.
+/// [`std::str::Utf8Error::error_len`]: `None` means "not enough data to
+/// decide" — safe to hold and try again with the next read; `Some(_)`
+/// means "this byte is definitively wrong" — flush lossily so we don't
+/// stall output when a process emits Latin-1 (e.g. `\xE9!`) or other
+/// bad bytes.
 fn utf8_safe_split(buf: &[u8]) -> usize {
     match std::str::from_utf8(buf) {
         Ok(_) => buf.len(),
@@ -1067,171 +935,6 @@ mod tests {
             emitted.push_str(&String::from_utf8_lossy(&carry));
         }
         assert_eq!(emitted, original);
-    }
-
-    // ----- ShareMode + ShareState -------------------------------------------
-
-    #[test]
-    fn share_mode_classification() {
-        assert!(!ShareMode::Private.is_shareable());
-        assert!(ShareMode::Read.is_shareable());
-        assert!(ShareMode::ReadWrite.is_shareable());
-        assert!(ShareMode::ReadWriteTrusted.is_shareable());
-        assert!(!ShareMode::Private.allows_write());
-        assert!(!ShareMode::Read.allows_write());
-        assert!(ShareMode::ReadWrite.allows_write());
-        assert!(ShareMode::ReadWriteTrusted.allows_write());
-    }
-
-    #[test]
-    fn share_state_floor_pins_at_first_shareable_transition() {
-        let mut s = ShareState::new();
-        assert_eq!(s.floor, 0);
-        s.transition(ShareMode::Read, 1024);
-        assert_eq!(s.floor, 1024);
-        // Shareable → shareable: floor stays put.
-        s.transition(ShareMode::ReadWrite, 2048);
-        assert_eq!(s.floor, 1024);
-        // Shareable → private: floor stays put.
-        s.transition(ShareMode::Private, 3072);
-        assert_eq!(s.floor, 1024);
-        // Private → shareable again: floor advances to *now*. No
-        // re-exposure of the in-between window.
-        s.transition(ShareMode::Read, 4096);
-        assert_eq!(s.floor, 4096);
-    }
-
-    #[test]
-    fn share_state_round_trip_through_private_does_not_leak_old_window() {
-        // Concrete attack scenario: user grants Read at byte 100, runs
-        // sensitive output to 500, flips to Private, runs more output to
-        // 1000, flips back to Read. The agent must not see the 500–1000
-        // window — the floor must advance to 1000.
-        let mut s = ShareState::new();
-        s.transition(ShareMode::Read, 100);
-        assert_eq!(s.floor, 100);
-        s.transition(ShareMode::Private, 500);
-        s.transition(ShareMode::Read, 1000);
-        assert_eq!(s.floor, 1000);
-    }
-
-    // ----- Scrollback --------------------------------------------------------
-
-    #[test]
-    fn scrollback_append_advances_total() {
-        let mut sb = Scrollback::new(1024);
-        sb.append(b"hello");
-        sb.append(b" world");
-        assert_eq!(sb.total_appended(), 11);
-        assert_eq!(sb.oldest_total(), 0);
-    }
-
-    #[test]
-    fn scrollback_drops_oldest_on_overflow() {
-        let mut sb = Scrollback::new(8);
-        sb.append(b"abcdefgh");
-        assert_eq!(sb.total_appended(), 8);
-        assert_eq!(sb.oldest_total(), 0);
-        sb.append(b"IJ");
-        assert_eq!(sb.total_appended(), 10);
-        assert_eq!(sb.oldest_total(), 2);
-        let (got, slice_total) = sb.read_from(0, 16);
-        assert_eq!(got, b"cdefghIJ");
-        assert_eq!(slice_total, 2);
-    }
-
-    #[test]
-    fn scrollback_read_from_clamps_below_oldest() {
-        let mut sb = Scrollback::new(4);
-        sb.append(b"WXYZ1234"); // oldest=4, total=8
-        let (got, slice_total) = sb.read_from(0, 16);
-        assert_eq!(got, b"1234");
-        assert_eq!(slice_total, 4);
-    }
-
-    #[test]
-    fn scrollback_read_from_returns_forward_window_not_tail() {
-        // Codex P2 regression: the previous read_since returned the
-        // *tail* of max_bytes regardless of the cursor, so paging from 0
-        // skipped the head. Verify forward semantics: read(since=0,max=4)
-        // on "0123456789" returns the head, not the tail.
-        let mut sb = Scrollback::new(64);
-        sb.append(b"0123456789");
-        let (got, slice_total) = sb.read_from(0, 4);
-        assert_eq!(got, b"0123");
-        assert_eq!(slice_total, 0);
-    }
-
-    #[test]
-    fn scrollback_read_from_at_or_past_total_is_empty() {
-        let mut sb = Scrollback::new(64);
-        sb.append(b"hi");
-        let (got, slice_total) = sb.read_from(2, 16);
-        assert!(got.is_empty());
-        assert_eq!(slice_total, 2);
-        let (got, _) = sb.read_from(99, 16);
-        assert!(got.is_empty());
-    }
-
-    #[test]
-    fn scrollback_incremental_cursor_walks_full_stream() {
-        let mut sb = Scrollback::new(64);
-        sb.append(b"hello ");
-        sb.append(b"world!");
-        // Drain incrementally with a tiny budget per call. With forward
-        // paging, every byte is observed exactly once.
-        let mut cursor = 0u64;
-        let mut acc: Vec<u8> = Vec::new();
-        for _ in 0..10 {
-            let (got, slice_total) = sb.read_from(cursor, 4);
-            if got.is_empty() {
-                break;
-            }
-            assert_eq!(
-                slice_total, cursor,
-                "slice_total must equal cursor (forward paging)"
-            );
-            acc.extend_from_slice(&got);
-            cursor = slice_total + got.len() as u64;
-        }
-        assert_eq!(&acc[..], b"hello world!");
-    }
-
-    #[test]
-    fn scrollback_floor_blocks_pre_consent_bytes() {
-        // End-to-end of the privacy contract: bytes appended *before* the
-        // floor must never appear in a read snapshot, even if since_total
-        // is 0 / unset.
-        let mut sb = Scrollback::new(64);
-        sb.append(b"SECRET-");
-        let floor = sb.total_appended();
-        sb.append(b"public");
-        let cursor = floor; // caller would pass since_total=floor
-        let (got, slice_total) = sb.read_from(cursor, 16);
-        assert_eq!(got, b"public");
-        assert_eq!(slice_total, floor);
-    }
-
-    #[test]
-    fn scrollback_paging_no_cursor_then_resume() {
-        // Mimics the cold-start use case: caller passes no cursor, gets
-        // the latest `max_bytes`, then pages forward from the returned
-        // cursor. This is the exact pattern shell_read_scrollback uses
-        // when args.since_total is None.
-        let mut sb = Scrollback::new(64);
-        sb.append(b"hello world!");
-        let max_bytes = 4usize;
-        // Cold start cursor = total - max_bytes (clamped to oldest).
-        let total = sb.total_appended();
-        let cold_cursor = total
-            .saturating_sub(max_bytes as u64)
-            .max(sb.oldest_total());
-        let (got, slice_total) = sb.read_from(cold_cursor, max_bytes);
-        assert_eq!(got, b"rld!");
-        assert_eq!(slice_total, 8);
-        // Resume from after the returned slice — should be empty (caught up).
-        let (got, _) = sb.read_from(slice_total + got.len() as u64, max_bytes);
-        assert!(got.is_empty());
     }
 
     // ----- shell_write gate (M6 P2.2) ----------------------------------------
