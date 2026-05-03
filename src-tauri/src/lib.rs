@@ -226,9 +226,7 @@ fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), String>
         let header = "# ~/.aethon/config.toml — managed by Aethon Settings.\n\
                       # Keys not exposed in the Settings UI are preserved verbatim;\n\
                       # the round-trip parser keeps your hand-edits intact on Save.\n\n";
-        header
-            .parse::<toml_edit::DocumentMut>()
-            .unwrap_or_default()
+        header.parse::<toml_edit::DocumentMut>().unwrap_or_default()
     } else {
         existing
             .parse::<toml_edit::DocumentMut>()
@@ -251,10 +249,7 @@ fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), String>
         set_or_clear_bool(ui_table, "notify_on_completion", notify_on_completion);
         match notify_min_duration {
             Some(n) => {
-                ui_table.insert(
-                    "notify_min_duration_seconds",
-                    toml_edit::value(n as i64),
-                );
+                ui_table.insert("notify_min_duration_seconds", toml_edit::value(n as i64));
             }
             None => {
                 ui_table.remove("notify_min_duration_seconds");
@@ -275,10 +270,7 @@ fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), String>
         // pins to it at shell_open time, so leaving it out and falling
         // back to the implicit Rust default would silently drop a
         // user-set value if the JSON payload lost the field.
-        shell_table.insert(
-            "default_share_mode",
-            toml_edit::value(default_share_mode),
-        );
+        shell_table.insert("default_share_mode", toml_edit::value(default_share_mode));
         set_or_clear_bool(shell_table, "auto_restart_agent", auto_restart_agent);
         set_or_clear_str(shell_table, "default_command", default_command);
         match default_args {
@@ -316,20 +308,15 @@ fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), String>
     // fully-written new one — never a half-state.
     let serialised = doc.to_string();
     let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, serialised)
-        .map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path)
-        .map_err(|e| format!("rename {}: {e}", path.display()))?;
+    std::fs::write(&tmp, serialised).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
     Ok(())
 }
 
 /// Get-or-create a `[section]` Table inside a toml_edit document. Used
 /// by `write_config` to keep round-trip preservation: an existing
 /// table's items + comments survive, a new one starts blank.
-fn ensure_table<'a>(
-    doc: &'a mut toml_edit::DocumentMut,
-    name: &str,
-) -> &'a mut toml_edit::Table {
+fn ensure_table<'a>(doc: &'a mut toml_edit::DocumentMut, name: &str) -> &'a mut toml_edit::Table {
     if !doc.contains_key(name) {
         doc.insert(name, toml_edit::Item::Table(toml_edit::Table::new()));
     }
@@ -977,7 +964,8 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
     // unexpectedly, the supervisor emits an `agent-crashed` event with
     // the last few lines so the frontend can surface a useful error
     // notice rather than a generic "process exited" toast.
-    let stderr_tail: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::with_capacity(32)));
+    let stderr_tail: Arc<Mutex<VecDeque<String>>> =
+        Arc::new(Mutex::new(VecDeque::with_capacity(32)));
     const STDERR_TAIL_CAP: usize = 32;
 
     let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
@@ -1459,7 +1447,9 @@ fn toggle_fullscreen(app: AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
-    let cur = win.is_fullscreen().map_err(|e| format!("is_fullscreen: {e}"))?;
+    let cur = win
+        .is_fullscreen()
+        .map_err(|e| format!("is_fullscreen: {e}"))?;
     win.set_fullscreen(!cur)
         .map_err(|e| format!("set_fullscreen: {e}"))?;
     Ok(())
@@ -1495,11 +1485,7 @@ fn toggle_devtools(_app: AppHandle) -> Result<(), String> {
 /// path resolution + atomic file write. Returns the absolute path so
 /// the caller can show it in a "Saved to …" toast.
 #[tauri::command]
-fn export_chat_markdown(
-    label: String,
-    content: String,
-    app: AppHandle,
-) -> Result<String, String> {
+fn export_chat_markdown(label: String, content: String, app: AppHandle) -> Result<String, String> {
     // Prefer the platform's user Downloads dir (XDG_DOWNLOAD_DIR on
     // Linux, ~/Downloads on macOS, %USERPROFILE%\Downloads on Windows),
     // fall back to ~/Downloads. Either way, create_dir_all is safe — if
@@ -1708,7 +1694,9 @@ async fn install_aethon_skill(
         // misclassifies the skill-install reload as a crash and the
         // user sees both a crash toast and the auto-restart on top of
         // the deliberate `agent-reloaded` flow.
-        reload_flag.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        reload_flag
+            .0
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let _ = child.kill();
         let _ = child.wait();
         let _ = app.emit("agent-reloaded", "");
@@ -2062,8 +2050,7 @@ fn install_tray(
 /// `init_tracing` returns, the local guard would be dropped and the
 /// background thread would exit before any non-trivial logging
 /// happens. Stash it here.
-static LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> =
-    OnceLock::new();
+static LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
 
 /// `~/.aethon/logs/` — same parent as state.json + projects.json so a
 /// user troubleshooting an issue finds everything in one place. Created
@@ -2084,9 +2071,9 @@ fn log_dir() -> Option<PathBuf> {
 /// same directory without touching them.
 const RETENTION_DAYS: u64 = 7;
 fn prune_old_logs(dir: &Path) {
-    let cutoff = match std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(RETENTION_DAYS * 24 * 60 * 60))
-    {
+    let cutoff = match std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(
+        RETENTION_DAYS * 24 * 60 * 60,
+    )) {
         Some(t) => t,
         None => return,
     };
@@ -2105,10 +2092,7 @@ fn prune_old_logs(dir: &Path) {
         if !name_str.starts_with("aethon.") {
             continue;
         }
-        let modified = entry
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok());
+        let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
         if let Some(t) = modified
             && t < cutoff
         {
@@ -2128,15 +2112,17 @@ fn prune_old_logs(dir: &Path) {
 /// release users have a paper trail for crashes / weird behavior).
 /// Files older than `RETENTION_DAYS` are pruned at startup.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    let default_level = if cfg!(debug_assertions) { "info" } else { "warn" };
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+    let default_level = if cfg!(debug_assertions) {
+        "info"
+    } else {
+        "warn"
+    };
     let filter = EnvFilter::try_from_env("AETHON_LOG")
         .or_else(|_| EnvFilter::try_from_default_env())
         .unwrap_or_else(|_| EnvFilter::new(default_level));
 
-    let stderr_layer = fmt::layer()
-        .with_target(true)
-        .with_writer(std::io::stderr);
+    let stderr_layer = fmt::layer().with_target(true).with_writer(std::io::stderr);
 
     // File layer is best-effort: if the home dir isn't reachable or the
     // appender fails to start, we still get stderr logging.

@@ -3,8 +3,9 @@
      Display (editorial). Inter + JetBrains Mono fall back gracefully when
      the network can't reach Google Fonts. */
   --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
-    Menlo, monospace;
+  --font-mono:
+    "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
   --font-editorial: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
   --text-2xs: 0.72rem;
   --text-xs: 0.78rem;
@@ -527,7 +528,9 @@ body.ae-resizing-sidebar * {
   font-size: var(--chrome-text);
   cursor: pointer;
   color: var(--text);
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
   user-select: none;
   border-left: 2px solid transparent;
   min-width: 0;
@@ -641,7 +644,9 @@ body.ae-resizing-sidebar * {
   cursor: pointer;
   text-align: center;
   letter-spacing: 0.02em;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease,
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease,
     border-color var(--motion-fast) ease;
 }
 
@@ -759,8 +764,13 @@ body.ae-resizing-sidebar * {
   animation: ae-pill-pulse 1.6s ease-in-out infinite;
 }
 @keyframes ae-pill-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* Header spacer — flex grow filler so chrome controls (model picker,
@@ -799,7 +809,10 @@ body.ae-resizing-sidebar * {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
   width: max-content;
   max-width: min(34ch, calc(var(--app-viewport-width) - 32px));
   min-width: 0;
@@ -915,7 +928,9 @@ body.ae-resizing-sidebar * {
   border-radius: 5px;
   cursor: pointer;
   color: var(--text);
-  transition: background 100ms ease, color 100ms ease;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
   min-width: 0;
 }
 .a2ui-dropdown-item:hover {
@@ -1070,7 +1085,9 @@ body.ae-resizing-sidebar * {
   font-size: var(--text-md);
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--motion-fast) ease, opacity var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
 }
 
 .a2ui-empty-state-primary:hover {
@@ -1102,7 +1119,9 @@ body.ae-resizing-sidebar * {
   font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
 }
 
 .a2ui-empty-state-secondary:hover {
@@ -1273,8 +1292,12 @@ body.ae-resizing-sidebar * {
   min-width: 0;
   max-width: 100%;
 }
-.a2ui-markdown > :first-child { margin-top: 0; }
-.a2ui-markdown > :last-child { margin-bottom: 0; }
+.a2ui-markdown > :first-child {
+  margin-top: 0;
+}
+.a2ui-markdown > :last-child {
+  margin-bottom: 0;
+}
 
 .a2ui-markdown p {
   margin: 0.4em 0;
@@ -1288,10 +1311,16 @@ body.ae-resizing-sidebar * {
   line-height: 1.25;
   font-weight: 700;
 }
-.a2ui-markdown h1 { font-size: 1.25rem; }
-.a2ui-markdown h2 { font-size: 1.1rem; }
+.a2ui-markdown h1 {
+  font-size: 1.25rem;
+}
+.a2ui-markdown h2 {
+  font-size: 1.1rem;
+}
 .a2ui-markdown h3,
-.a2ui-markdown h4 { font-size: 1rem; }
+.a2ui-markdown h4 {
+  font-size: 1rem;
+}
 
 .a2ui-markdown ul,
 .a2ui-markdown ol {
@@ -1613,7 +1642,9 @@ body.ae-resizing-sidebar * {
   font: inherit;
   outline: none;
   min-height: 44px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .a2ui-chat-input-field:focus {
@@ -1836,8 +1867,15 @@ body.ae-resizing-sidebar * {
   animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
 }
 @keyframes ae-tab-busy-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50%      { opacity: 1;   transform: scale(1.1); }
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
 
 /* Queue badge — small accent chip after the label when ≥1 follow-up
@@ -2096,8 +2134,12 @@ body.ae-resizing-sidebar * {
   min-width: 7rem;
   max-width: min(16rem, 28vw);
 }
-.ae-editorial-tab:hover { opacity: 0.85; }
-.ae-editorial-tab[data-active="true"] { opacity: 1; }
+.ae-editorial-tab:hover {
+  opacity: 0.85;
+}
+.ae-editorial-tab[data-active="true"] {
+  opacity: 1;
+}
 
 .ae-editorial-tab-meta {
   display: flex;
@@ -2244,8 +2286,14 @@ body.ae-resizing-sidebar * {
 }
 
 @keyframes ae-caret-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .ae-command-bar-shortcut {
@@ -2341,7 +2389,9 @@ body.ae-resizing-sidebar * {
   color: var(--text);
   cursor: pointer;
   border-radius: 6px;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 .ae-session-shelf-item:hover {
   background: var(--accent-hover-tint);
@@ -2533,8 +2583,12 @@ body.ae-resizing-sidebar * {
 }
 
 @keyframes ae-layout-pulse {
-  0% { box-shadow: 0 0 0 0 var(--accent-soft); }
-  100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
 }
 
 .ae-inspector {
@@ -2766,8 +2820,12 @@ body.ae-resizing-sidebar * {
   animation: ae-palette-fade 120ms ease-out;
 }
 @keyframes ae-palette-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .ae-palette-panel {
@@ -2785,8 +2843,14 @@ body.ae-resizing-sidebar * {
   animation: ae-palette-pop 140ms ease-out;
 }
 @keyframes ae-palette-pop {
-  from { transform: translateY(-6px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .ae-palette-header {
@@ -2962,10 +3026,18 @@ body.ae-resizing-sidebar * {
   min-width: 0;
 }
 @keyframes ae-notification-slide {
-  from { transform: translateX(8px); opacity: 0; }
-  to   { transform: translateX(0);   opacity: 1; }
+  from {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
-.ae-notification-info { border-left-color: var(--accent); }
+.ae-notification-info {
+  border-left-color: var(--accent);
+}
 .ae-notification-success {
   border-left-color: color-mix(in oklab, var(--accent) 30%, #34c759 70%);
 }
@@ -3411,7 +3483,9 @@ body.ae-resizing-sidebar * {
   color: var(--text-dim);
   font-size: 0.82rem;
   cursor: pointer;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 .ae-search-scope-tab:hover:not(:disabled) {
   background: var(--accent-hover-tint);
@@ -3434,8 +3508,12 @@ body.ae-resizing-sidebar * {
   animation: a2ui-chat-flash 1200ms ease-out;
 }
 @keyframes a2ui-chat-flash {
-  0% { background: var(--accent-soft); }
-  100% { background: transparent; }
+  0% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 .ae-search-footer {
@@ -3589,7 +3667,9 @@ body.ae-resizing-sidebar * {
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
+  transition:
+    background 80ms ease,
+    color 80ms ease;
 }
 .ae-share-badge:hover {
   background: color-mix(in oklab, currentColor 14%, transparent);

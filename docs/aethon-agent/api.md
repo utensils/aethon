@@ -22,6 +22,7 @@ if (!r.ok) console.error("setState failed:", r.error);
 ```
 
 Failure modes:
+
 - `"timeout"` — frontend didn't ack within 5 s (likely crashed or
   unreachable).
 - `"frontend_rejected: …"` — frontend received the message but applied
@@ -113,10 +114,7 @@ await globalThis.aethon.canvas.append({
 await globalThis.aethon.canvas.clear();
 
 // Patch a subpath. Leading `/` is optional; `/canvas` is always prefixed.
-await globalThis.aethon.canvas.patch(
-  "/components/0/props/state",
-  "ok",
-);
+await globalThis.aethon.canvas.patch("/components/0/props/state", "ok");
 ```
 
 Each method returns the same `Promise<MutationResult>` as `setState`.
@@ -129,18 +127,18 @@ extensions: the helper survives canvas-shape changes (e.g. if `/canvas`
 ever gains sibling fields beyond `components`).
 
 **Tab attribution differs from plain `setState`.** The canvas helper
-*always* attributes its writes to a concrete tab id:
+_always_ attributes its writes to a concrete tab id:
 
-  explicit > AsyncLocalStorage (per-turn) > current active turn >
-    frontend-active tab > "default"
+explicit > AsyncLocalStorage (per-turn) > current active turn >
+frontend-active tab > "default"
 
 Plain `aethon.setState("/canvas", …)` lets the frontend resolve the
 active tab at apply time when no `tabId` is sent. The canvas helper
-locks attribution at *call* time so the read scope inside `append` is
+locks attribution at _call_ time so the read scope inside `append` is
 deterministic — two synchronous appends compose instead of racing on
 "which tab will the frontend pick when this lands?". The trade-off:
 if you `aethon.canvas.emit(…)` from a setInterval after startup, the
-write targets the *current* active tab as of the call, not the active
+write targets the _current_ active tab as of the call, not the active
 tab at apply time. If the user switches tabs mid-call the result lands
 on the originally-selected tab.
 
@@ -156,10 +154,16 @@ globalThis.aethon.registerComponent("model-chip", {
   type: "container",
   props: { direction: "row", gap: 6, padding: 6, className: "chip" },
   children: [
-    { id: "chip-label", type: "text",
-      props: { content: "Model:", variant: "small" } },
-    { id: "chip-value", type: "text",
-      props: { content: { "$ref": "/model" }, variant: "small" } },
+    {
+      id: "chip-label",
+      type: "text",
+      props: { content: "Model:", variant: "small" },
+    },
+    {
+      id: "chip-value",
+      type: "text",
+      props: { content: { $ref: "/model" }, variant: "small" },
+    },
   ],
 });
 ```
@@ -265,8 +269,12 @@ and the sidebar Layouts section. Activation goes through
 
 ```ts
 const focusLayout = {
-  components: [/* ... your <layout> tree ... */],
-  state: { /* layout's state seeds — merged into live state on activate */ },
+  components: [
+    /* ... your <layout> tree ... */
+  ],
+  state: {
+    /* layout's state seeds — merged into live state on activate */
+  },
 };
 
 await globalThis.aethon.registerLayout({
@@ -311,7 +319,7 @@ the file as a string and ships it to the webview, where it's wrapped
 with:
 
 ```ts
-new Function("React", "skill", code)(React, skillApi)
+new Function("React", "skill", code)(React, skillApi);
 ```
 
 So write the body as if `React` and `skill` are in scope. `skill` is
@@ -402,18 +410,18 @@ Registered keybindings run before built-in shortcuts, so an extension can
 intentionally override a default chrome action. Unregistering restores the
 built-in behavior. Built-ins without an override are:
 
-| Combo            | Built-in action                       |
-| ---------------- | ------------------------------------- |
-| `Cmd+P`          | Open command palette (switcher mode)  |
-| `Cmd+Shift+P`    | Open command palette (commands mode)  |
-| `Cmd+T`          | New tab                               |
-| `Cmd+W`          | Close active tab                      |
-| `Cmd+]`          | Next tab                              |
-| `Cmd+[`          | Previous tab                          |
-| `Cmd+\``         | Toggle terminal                       |
-| `Cmd+K`          | Clear chat                            |
-| `Cmd+.`          | Stop current prompt                   |
-| `Cmd+=` / `Cmd+-` / `Cmd+0` | UI zoom controls             |
+| Combo                       | Built-in action                      |
+| --------------------------- | ------------------------------------ |
+| `Cmd+P`                     | Open command palette (switcher mode) |
+| `Cmd+Shift+P`               | Open command palette (commands mode) |
+| `Cmd+T`                     | New tab                              |
+| `Cmd+W`                     | Close active tab                     |
+| `Cmd+]`                     | Next tab                             |
+| `Cmd+[`                     | Previous tab                         |
+| `Cmd+\``                    | Toggle terminal                      |
+| `Cmd+K`                     | Clear chat                           |
+| `Cmd+.`                     | Stop current prompt                  |
+| `Cmd+=` / `Cmd+-` / `Cmd+0` | UI zoom controls                     |
 
 ```ts
 globalThis.aethon.registerKeybinding({
@@ -462,14 +470,14 @@ highlight a language Aethon doesn't ship by default (e.g. Lean, Coq, or
 an in-house DSL). The grammar is a TextMate JSON object — typically
 loaded from a `.tmLanguage.json` file shipped alongside the extension.
 
-```ts
+````ts
 import leanGrammar from "./lean.tmLanguage.json" assert { type: "json" };
 
 await globalThis.aethon.registerHighlightGrammar("lean", leanGrammar);
 
 // Now ```lean fences in chat (or `code` cards with language: "lean")
 // will highlight using your grammar.
-```
+````
 
 Idempotent — re-registering the same `lang` overwrites the previous
 grammar. Returns a `MutationResult` so you can confirm the worker
@@ -477,7 +485,7 @@ received it before issuing dependent renders.
 
 **Why not just override the `code` primitive?** Primitives are frozen
 on purpose — see CLAUDE.md and `extensions.md`. If you want a different
-highlighting *engine* entirely (highlight.js, codemirror, …), the
+highlighting _engine_ entirely (highlight.js, codemirror, …), the
 documented escape hatch is to register a custom component type via
 `registerComponent` and route layouts at it instead of `code`. This
 API is for the common case: keep the primitive, just teach it a new
@@ -489,14 +497,14 @@ Push a toast notification onto the App-root notification stack. Toasts
 are layout-agnostic and overlay every layout so feedback remains
 visible regardless of which chrome the user has active.
 
-| Field         | Type                                                | Default       |
-| ------------- | --------------------------------------------------- | ------------- |
-| `title`       | string (required)                                   | —             |
-| `message`     | string                                              | —             |
-| `kind`        | `"info" \| "success" \| "warning" \| "error"`       | `"info"`      |
-| `durationMs`  | number, or `null` for sticky                        | `4000`        |
-| `actions`     | `{ label: string, action: string }[]`               | `[]`          |
-| `id`          | string — pre-assign so you can dismiss later        | auto-uuid     |
+| Field        | Type                                          | Default   |
+| ------------ | --------------------------------------------- | --------- |
+| `title`      | string (required)                             | —         |
+| `message`    | string                                        | —         |
+| `kind`       | `"info" \| "success" \| "warning" \| "error"` | `"info"`  |
+| `durationMs` | number, or `null` for sticky                  | `4000`    |
+| `actions`    | `{ label: string, action: string }[]`         | `[]`      |
+| `id`         | string — pre-assign so you can dismiss later  | auto-uuid |
 
 ```ts
 // Transient success toast.
@@ -519,7 +527,9 @@ globalThis.aethon.onEvent(
   { componentType: "notification", eventType: "invoke" },
   (event) => {
     const data = event.data as { id?: string; action?: string };
-    if (data.action === "undo") { /* … */ }
+    if (data.action === "undo") {
+      /* … */
+    }
   },
 );
 
@@ -583,10 +593,10 @@ omitted field matches anything.
 
 ```ts
 type Match = {
-  templateRootType?: string;  // top-level type the renderer expanded
-  componentType?: string;     // type of the firing component
-  descendantId?: string;      // id portion after `__tpl__` separator
-  eventType?: string;         // "click", "submit", "change", …
+  templateRootType?: string; // top-level type the renderer expanded
+  componentType?: string; // type of the firing component
+  descendantId?: string; // id portion after `__tpl__` separator
+  eventType?: string; // "click", "submit", "change", …
 };
 ```
 
@@ -614,7 +624,9 @@ Handler signature:
 globalThis.aethon.onEvent(
   { componentType: "sidebar-item", descendantId: "open-readme" },
   async (_event, ctx) => {
-    await ctx.pi.prompt("Read README.md and summarize the project in 3 bullets.");
+    await ctx.pi.prompt(
+      "Read README.md and summarize the project in 3 bullets.",
+    );
   },
 );
 ```
@@ -623,8 +635,13 @@ globalThis.aethon.onEvent(
 
 ```ts
 globalThis.aethon.registerComponent("clock", {
-  components: [{ id: "clock-text", type: "text",
-    props: { content: { "$ref": "/clock/time" } } }],
+  components: [
+    {
+      id: "clock-text",
+      type: "text",
+      props: { content: { $ref: "/clock/time" } },
+    },
+  ],
 });
 setInterval(() => {
   globalThis.aethon.setState("/clock/time", new Date().toLocaleTimeString());
@@ -692,11 +709,11 @@ const models = globalThis.aethon.getFrontendState("/sidebar/models");
 // → [{id, label, active}, …]
 
 globalThis.aethon.getFrontendState("/connection"); // "connected" | "disconnected"
-globalThis.aethon.getFrontendState("/status");     // "ready" | "indexing…" | …
-globalThis.aethon.getFrontendState("/tabs");       // [{id, label, model, active}, …]
-globalThis.aethon.getFrontendState("/draft");      // active tab's composer text
+globalThis.aethon.getFrontendState("/status"); // "ready" | "indexing…" | …
+globalThis.aethon.getFrontendState("/tabs"); // [{id, label, model, active}, …]
+globalThis.aethon.getFrontendState("/draft"); // active tab's composer text
 globalThis.aethon.getFrontendState("/sidebar/themes"); // theme list
-globalThis.aethon.getFrontendState("/messagesCount");  // active tab message count
+globalThis.aethon.getFrontendState("/messagesCount"); // active tab message count
 ```
 
 The frontend pushes patches into the bridge whenever these slices change,
