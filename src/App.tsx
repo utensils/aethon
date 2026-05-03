@@ -5,11 +5,9 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
-import { reconcileFrontendModules } from "./skills/extensionFrontendLoader";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import {
-  builtinLayouts,
   defaultLayoutSkill,
   inspectLayoutSlotCoverage,
   layoutSlots,
@@ -40,18 +38,20 @@ import { extractSessionId } from "./utils/sidebarHistory";
 import { deepMergeState, layoutPatch } from "./utils/stateMutation";
 import { applyUiScale } from "./utils/viewport";
 import { formatRelativeTime } from "./utils/time";
-import { canonicalCombo, normalizeRegisteredCombo } from "./utils/keybindings";
+import { canonicalCombo } from "./utils/keybindings";
 import { coerceChatMessages } from "./utils/messages";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs, TAB_MIRROR_KEYS, TERMINAL_REPLAY_MAX } from "./hooks/useTabs";
+import {
+  useExtensionsHydration,
+  type ExtensionTheme,
+} from "./hooks/useExtensionsHydration";
 import { isFocusInTerminalPanel } from "./utils/focus";
 import {
-  buildBuiltinSlashCommands,
   parseSlashCommand,
-  type SlashCommand,
   type SlashCommandContext,
 } from "./slashCommands";
 import {
@@ -300,12 +300,6 @@ export default function App() {
   // up an id without a stale closure. The sidebar items list lives in
   // `/sidebar/themes` (see hydrateThemes below) so the existing $ref-bound
   // sidebar item path picks them up.
-  interface ExtensionTheme {
-    id: string;
-    label: string;
-    vars: Record<string, string>;
-  }
-  const themesRef = useRef<Map<string, ExtensionTheme>>(new Map());
   // [shell] default_share_mode resolved from ~/.aethon/config.toml. Read
   // once on boot (see the getConfig() effect below) and consulted by
   // newShellTab. Defaults to `"private"` until the config loads — the
@@ -347,11 +341,6 @@ export default function App() {
   const shortcutsNewTabKindRef = useRef<"agent" | "shell">("agent");
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
-  const BUILTIN_THEMES: { id: string; label: string }[] = [
-    { id: "ember", label: "Ember — warm dark" },
-    { id: "paper", label: "Paper — cream light" },
-    { id: "aether", label: "Æther — signature" },
-  ];
 
   // Inject (or replace) the <style> element holding an extension theme's
   // CSS custom properties. Keyed by id so re-registering replaces the
@@ -360,108 +349,16 @@ export default function App() {
   // containing `;` or `}` can't escape the declaration and inject
   // arbitrary rules — the parser silently rejects invalid values
   // instead of letting them leak into the stylesheet.
-  function injectThemeStyle(theme: ExtensionTheme) {
-    const styleId = `aethon-theme-${theme.id}`;
-    let el = document.getElementById(styleId) as HTMLStyleElement | null;
-    if (!el) {
-      el = document.createElement("style");
-      el.id = styleId;
-      document.head.appendChild(el);
-    }
-    // Quote-escape the id for use inside a CSS selector. CSS.escape is
-    // widely supported in webviews (Chromium 46+, WebKit 10+); the
-    // fallback strips to a slug-safe set when the runtime lacks it.
-    const safe = (window.CSS && window.CSS.escape)
-      ? window.CSS.escape(theme.id)
-      : theme.id.replace(/[^A-Za-z0-9_-]/g, "");
-    const sheet = el.sheet;
-    if (!sheet) {
-      // Stylesheet not attached yet (extremely rare — happens if the
-      // <style> is detached). Fall back to attribute writes; the next
-      // hydrate will succeed once the sheet is available.
-      el.textContent = "";
-      return;
-    }
-    // Replace any prior rules so re-registering with fewer vars drops
-    // the obsolete declarations.
-    while (sheet.cssRules.length > 0) sheet.deleteRule(0);
-    sheet.insertRule(`:root[data-theme="${safe}"] {}`);
-    const rule = sheet.cssRules[0] as CSSStyleRule;
-    rule.style.setProperty("color-scheme", "dark");
-    for (const [k, v] of Object.entries(theme.vars)) {
-      // setProperty silently no-ops on invalid values — can't break out.
-      rule.style.setProperty(k, v);
-    }
-  }
 
   // Apply a fresh themes list — replace the registry, inject CSS for each,
   // and mirror id/label pairs to /sidebar/themes so the sidebar updates.
   // Style tags whose ids no longer appear in the list are removed first so
   // a deleted/disabled extension stops bleeding stale CSS into the page.
-  function hydrateThemes(list: ExtensionTheme[]) {
-    themesRef.current = new Map(list.map((t) => [t.id, t]));
-    const keep = new Set(list.map((t) => `aethon-theme-${t.id}`));
-    for (const el of document.querySelectorAll('style[id^="aethon-theme-"]')) {
-      if (!keep.has(el.id)) el.remove();
-    }
-    for (const t of list) injectThemeStyle(t);
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
-      const currentTheme =
-        document.documentElement.dataset.theme || BUILTIN_THEMES[0]?.id;
-      const themes = [
-        ...BUILTIN_THEMES,
-        ...list.map((t) => ({ id: t.id, label: t.label })),
-      ].map((t) => ({ ...t, active: t.id === currentTheme }));
-      return {
-        ...prev,
-        sidebar: {
-          ...sidebar,
-          themes,
-        },
-      };
-    });
-  }
 
   // Hydrate the sidebar extensions list from the bridge's loaded/failed sets.
   // Called on `ready` (startup + project switch) so the list always reflects
   // what the current bridge process has actually loaded.
-  function hydrateExtensions(
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
-  ) {
-    const sourceLabel = (s: string) =>
-      s === "project-directory" ? "project"
-      : s === "global-directory" ? "user"
-      : s === "extension-package" ? "package"
-      : s;
-    const items = [
-      { id: "extension-layout", label: "default-layout", hint: "core", active: true },
-      ...loaded.map((e) => ({
-        id: `ext:${e.name}`,
-        label: e.name,
-        hint: sourceLabel(e.source),
-        active: true,
-      })),
-      ...failed.map((e) => ({
-        id: `ext-failed:${e.name}`,
-        label: e.name,
-        hint: `${sourceLabel(e.source)} · failed`,
-        active: false,
-      })),
-    ];
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
-      return { ...prev, sidebar: { ...sidebar, extensions: items } };
-    });
-  }
 
-  function listThemes(): { id: string; label: string }[] {
-    return [
-      ...BUILTIN_THEMES,
-      ...[...themesRef.current.values()].map((t) => ({ id: t.id, label: t.label })),
-    ];
-  }
 
   useEffect(() => {
     (async () => {
@@ -883,6 +780,38 @@ export default function App() {
   // `window.__AETHON_STATE__()` without going through React's state lifecycle.
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // ---------------------------------------------------------------------
+  // Extensions hydration: themes, sidebar entries, keybindings, event
+  // routes, layouts, frontend modules, slash commands. Each `hydrate*`
+  // is a wholesale replacement (every delta from the bridge replaces
+  // the prior set). Plus layout activation, layout component summary,
+  // and the lastExtensionStateKeysRef pruning ledger.
+  // ---------------------------------------------------------------------
+  const {
+    layoutCatalogueRef,
+    extensionEventRoutesRef,
+    extensionEventRoutingModeRef,
+    extensionKeybindingsRef,
+    slashCommandsRef,
+    lastExtensionStateKeysRef,
+    hydrateThemes,
+    hydrateExtensions,
+    hydrateEventRoutes,
+    hydrateKeybindings,
+    hydrateExtensionLayouts,
+    hydrateFrontendModules,
+    hydrateSlashCommands,
+    listThemes,
+    activateLayoutById,
+  } = useExtensionsHydration({
+    setState,
+    setLayout,
+    stateRef,
+    registry,
+    appendSystem,
+    layout,
+  });
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the
@@ -3010,10 +2939,6 @@ export default function App() {
     setState((prev) => ({ ...prev, ...flags }));
   }
 
-  // Layout catalogue — built-in entries plus anything an extension or
-  // skill has registered via window.aethon.registerLayout. Backed by a
-  // ref so the API surface above can mutate it without re-rendering.
-  const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
 
   // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
   // switches active project, we snapshot the current state.tabs +
@@ -3315,40 +3240,7 @@ export default function App() {
   // the entry shape sidebar items expect ({id, label, active}). Active is
   // set true for every type since the layout DOES contain it; clicking
   // does nothing today.
-  function summarizeLayoutComponents(payload: A2UIPayload): {
-    id: string;
-    label: string;
-    active: boolean;
-  }[] {
-    const types = new Set<string>();
-    function walk(node: unknown) {
-      if (!node || typeof node !== "object") return;
-      const n = node as { type?: string; children?: unknown[]; components?: unknown[] };
-      if (typeof n.type === "string") types.add(n.type);
-      if (Array.isArray(n.children)) n.children.forEach(walk);
-      if (Array.isArray(n.components)) n.components.forEach(walk);
-    }
-    walk(payload);
-    return [...types]
-      .sort()
-      .map((t) => ({ id: `c-${t}`, label: t, active: true }));
-  }
 
-  // Refresh /sidebar/components whenever the layout changes so any
-  // extension-registered inspector reflects what's actually rendered.
-  // setState here is the React → state-derived-from-prop pattern; the
-  // lint rule's blanket warning is the "avoid cascading renders"
-  // heuristic, and the alternative (computing on each render and
-  // injecting at $ref resolve time) would couple the sidebar component
-  // to the layout shape — exactly what the JSON-pointer indirection
-  // exists to avoid.
-  useEffect(() => {
-    const list = summarizeLayoutComponents(layout);
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      return { ...prev, sidebar: { ...sidebar, components: list } };
-    });
-  }, [layout]);
 
   // Layout activation helper — single path used by both
   // window.aethon.activateLayout and the /layout slash command. Seeds
@@ -3356,297 +3248,15 @@ export default function App() {
   // (live state wins on collisions) and rebuilds /sidebar/layouts from
   // the catalogue + current active id so layout JSONs don't have to
   // ship a hardcoded `active: true` flag.
-  function activateLayoutById(id: string): boolean {
-    const entry = layoutCatalogueRef.current.find((l) => l.id === id);
-    if (!entry) return false;
-    setLayout(entry.payload);
-    const seeds = entry.payload.state ?? {};
-    const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-      id: l.id,
-      label: l.id,
-      active: l.id === id,
-    }));
-    setState((prev) => {
-      const seeded =
-        seeds && Object.keys(seeds).length > 0
-          ? deepMergeState(seeds, prev)
-          : { ...prev };
-      // The new layout's `columns` seed is authoritative — different
-      // layouts may have different grid SHAPES, and deepMergeState keeps
-      // prev's columns, which would mean a 2-col grid carrying a
-      // 3-col-only cell has nowhere to render. So force-take the seed's
-      // columns, then patch the leading sidebar token with the user's
-      // persisted width so cross-layout resizing feels continuous.
-      const seedLayout =
-        (seeds.layout as Record<string, unknown> | undefined) ?? {};
-      const prevLayout =
-        (prev.layout as Record<string, unknown> | undefined) ?? {};
-      const seedCols = (seedLayout.columns as string | undefined) ?? "";
-      const prevCols = (prevLayout.columns as string | undefined) ?? "";
-      let nextCols = seedCols;
-      if (seedCols && prevCols) {
-        const seedTokens = seedCols.trim().split(/\s+/);
-        const prevTokens = prevCols.trim().split(/\s+/);
-        if (seedTokens.length > 0 && prevTokens[0]?.endsWith("px")) {
-          seedTokens[0] = prevTokens[0];
-          nextCols = seedTokens.join(" ");
-        }
-      }
-      const seededLayout = (seeded.layout as Record<string, unknown> | undefined) ?? {};
-      seeded.layout = nextCols
-        ? { ...seededLayout, columns: nextCols }
-        : seededLayout;
-      const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
-      seeded.sidebar = { ...sidebar, layouts: catalogueItems };
-      return seeded;
-    });
-    return true;
-  }
 
-  // Extension event-route intercepts. When a route matches an outbound
-  // event from the renderer, App's onEvent handler returns false so the
-  // event bypasses the built-in switch and goes through the standard
-  // a2ui_event channel — letting a paired aethon.onEvent handler on the
-  // bridge intercept chat submits / sidebar clicks / etc. without a
-  // React-side fork. Wildcard form: { eventType: "submit" } intercepts
-  // submits from any component; { componentId: "sidebar" } intercepts
-  // every sidebar event.
-  const extensionEventRoutesRef = useRef<
-    { componentId?: string; eventType?: string }[]
-  >([]);
-  const extensionEventRoutingModeRef = useRef<"builtin" | "extension">("builtin");
 
-  // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
-  // by the keydown handler; written by hydrateKeybindings on
-  // `extension_keybindings` deltas. The keydown handler checks this map
-  // before built-ins so extensions can intentionally override default
-  // chrome actions.
-  const extensionKeybindingsRef = useRef<
-    Map<string, { combo: string; action: string; description?: string }>
-  >(new Map());
-  // name → code for extension-package modules whose `aethon.frontendEntry`
-  // JS bodies have been evaluated and registered in the SkillRegistry.
-  // Tracked so:
-  //   - dropped modules (name absent from a fresh delta) get unregistered
-  //   - identical re-deliveries (same name + same code) skip re-eval,
-  //     so the duplicate `ready` the bridge fires after the startup
-  //     `report` doesn't run top-level side effects twice
-  const frontendModulesRef = useRef<Map<string, string>>(new Map());
 
-  // Built once — handlers close over App-scope helpers via the ctx passed at
-  // dispatch time, so the registry itself doesn't need state in scope.
-  const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
-  // Set of names registered via extension delta. Used to reset to
-  // built-ins when an `extension_slash_commands` event arrives with a
-  // smaller list (extension uninstall / hot-reload drop). Without this
-  // we'd never garbage-collect names removed from the bridge's map.
-  const extensionSlashNamesRef = useRef<Set<string>>(new Set());
-  // Set of JSON Pointer paths the bridge tracked as extension-owned in
-  // the LAST `ready` snapshot. On the next `ready`, we delete these from
-  // the live state before merging the new tree — so a deleted extension's
-  // sidebar section / canvas card / state slice goes away instead of
-  // lingering as a frozen artifact. The bridge's NEW snapshot replaces
-  // this ref after the merge, so the next ready prunes whatever's stale
-  // by then. Boots empty (no prior ready means no stale keys yet).
-  const lastExtensionStateKeysRef = useRef<Set<string>>(new Set());
 
-  // Surface the slash command list into layout state so the chat-input
-  // autocomplete can resolve it via `$ref:/slashCommands`. Done once on
-  // mount; subsequent updates flow through hydrateSlashCommands when
-  // extensions register / unregister commands via the bridge.
-  useEffect(() => {
-    setState((prev) => {
-      // Seed /sidebar/layouts from the live catalogue so the appearance
-      // pulldown + sidebar layout section both reflect the current
-      // active layout, regardless of what the boot JSON happened to
-      // ship. activateLayoutById keeps this in sync afterwards.
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const activeLayoutId = (() => {
-        const list = (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
-        return list.find((l) => l.active)?.id ?? layoutCatalogueRef.current[0]?.id;
-      })();
-      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-        id: l.id,
-        label: l.id,
-        active: l.id === activeLayoutId,
-      }));
-      return {
-        ...prev,
-        slashCommands: slashCommandsRef.current.map((c) => ({
-          name: c.name,
-          description: c.description,
-          usage: c.usage,
-          argSource: c.argSource,
-        })),
-        // Surface the layout catalogue so the slash-arg picker can resolve
-        // /layoutCatalogue when the user types `/layout `. Kept in sync
-        // with layoutCatalogueRef in registerLayout / activateLayout.
-        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
-          id: l.id,
-          label: l.name,
-          description: l.description,
-        })),
-        sidebar: { ...sidebar, layouts: catalogueItems },
-      };
-    });
-  }, []);
 
-  // Hydrate the extension event-route intercepts. The list is wholesale
-  // — every delta from the bridge replaces the prior set. Stored in a
-  // ref since the matching loop in onEvent reads it on every event.
-  function hydrateEventRoutes(
-    routes: { componentId?: string; eventType?: string }[],
-    mode: "builtin" | "extension" = extensionEventRoutingModeRef.current,
-  ) {
-    extensionEventRoutesRef.current = routes;
-    extensionEventRoutingModeRef.current = mode;
-  }
 
-  // Hydrate the extension-registered keybindings map from a bridge
-  // delta (or replayed `ready`). Combos arrive in any human-readable
-  // form ("Cmd+Shift+P", "ctrl+]") and are normalized for keydown
-  // matching via canonicalCombo / normalizeRegisteredCombo.
-  function hydrateKeybindings(
-    list: { combo: string; action: string; description?: string }[],
-  ) {
-    const next = new Map<string, { combo: string; action: string; description?: string }>();
-    for (const b of list) {
-      const canonical = normalizeRegisteredCombo(b.combo);
-      if (!canonical) continue;
-      next.set(canonical, { ...b, combo: canonical });
-    }
-    extensionKeybindingsRef.current = next;
-  }
 
-  // Hydrate the extension-registered layout catalogue from a bridge
-  // delta (or replayed `ready`). Wholesale replacement: any prior
-  // extension-registered entries are dropped, built-ins survive.
-  // Mirrors into `state.layoutCatalogue` and `state.sidebar.layouts`
-  // so the appearance menu / `/layout` picker / sidebar Layouts
-  // section all re-resolve via $ref.
-  function hydrateExtensionLayouts(
-    list: {
-      id: string;
-      name: string;
-      description?: string;
-      payload: A2UIPayload;
-    }[],
-  ) {
-    const builtinIds = new Set(builtinLayouts.map((l) => l.id));
-    const surviving = layoutCatalogueRef.current.filter((l) => builtinIds.has(l.id));
-    const incoming = list
-      .filter((l) => !builtinIds.has(l.id) && typeof l.id === "string" && l.payload)
-      .map((l) => ({
-        id: l.id,
-        name: l.name,
-        description: l.description,
-        payload: l.payload,
-      }));
-    layoutCatalogueRef.current = [...surviving, ...incoming];
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const prevLayoutItems =
-        (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
-      const activeId =
-        prevLayoutItems.find((l) => l.active)?.id ??
-        layoutCatalogueRef.current[0]?.id;
-      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-        id: l.id,
-        label: l.id,
-        active: l.id === activeId,
-      }));
-      return {
-        ...prev,
-        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
-          id: l.id,
-          label: l.name,
-          description: l.description,
-        })),
-        sidebar: { ...sidebar, layouts: catalogueItems },
-      };
-    });
-  }
 
-  // Skill packages with `aethon.frontendEntry` ship a JS body to the
-  // webview where it's wrapped with `new Function("React", "skill",
-  // code)` and executed. The module API hooks the result into the
-  // SkillRegistry so the registered React components show up under
-  // their declared A2UI types in any layout. Wholesale replacement on
-  // each delta — components from a removed module go away, a re-eval'd
-  // module replaces its prior bindings (so a hot reload picks up new
-  // code). Errors per module are caught and surfaced as a `notice` so
-  // one broken module doesn't kill the others.
-  function hydrateFrontendModules(list: { name: string; code: string }[]) {
-    const previous = frontendModulesRef.current;
-    const { loaded, unregistered } = reconcileFrontendModules(
-      previous,
-      list,
-      registry,
-    );
-    frontendModulesRef.current = new Map(list.map((m) => [m.name, m.code]));
-    for (const m of loaded) {
-      if (m.error) {
-        appendSystem(`extension frontend module ${m.name}: ${m.error}`);
-      }
-    }
-    if (loaded.length > 0 || unregistered.length > 0) {
-      // Bump a counter so any A2UIRenderer subtree using a now-changed
-      // component type re-resolves through the SkillRegistry on the
-      // next render. The registry itself doesn't trigger React updates;
-      // bumping a piece of state owned by App.tsx does. Skipped (no-op)
-      // modules don't need a bump — their components are unchanged.
-      setState((prev) => ({
-        ...prev,
-        extensionModulesGen: ((prev.extensionModulesGen as number | undefined) ?? 0) + 1,
-      }));
-    }
-  }
 
-  // Merge extension-registered slash commands with the built-ins.
-  // Extension commands dispatch through the existing onEvent pipeline
-  // as {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
-  // data: {args}} so a paired bridge-side aethon.onEvent matcher fires
-  // the handler with no bespoke dispatch path.
-  function hydrateSlashCommands(
-    list: { name: string; description: string; usage?: string }[],
-  ) {
-    const builtins = buildBuiltinSlashCommands();
-    const builtinNames = new Set(builtins.map((c) => c.name));
-    const dispatched: SlashCommand[] = list
-      .filter((c) => !builtinNames.has(c.name)) // bridge already rejects collisions; defense-in-depth
-      .map((c) => ({
-        name: c.name,
-        description: c.description,
-        usage: c.usage,
-        run: async (args: string) => {
-          // Wrap the agent dispatch so the chat-side path stays uniform.
-          // No local state mutation — the handler may call setState/
-          // pi.prompt/etc through the bridge's ctx.
-          await invoke("dispatch_a2ui_event", {
-            event: JSON.stringify({
-              componentId: `slash-command__tpl__${c.name}`,
-              componentType: "slash-command",
-              templateRootType: "slash-command",
-              eventType: "invoke",
-              data: { args },
-            }),
-            tabId: stateRef.current.activeTabId,
-          });
-        },
-      }));
-    extensionSlashNamesRef.current = new Set(dispatched.map((c) => c.name));
-    slashCommandsRef.current = [...builtins, ...dispatched];
-    // Refresh the layout's bound /slashCommands so the picker re-resolves.
-    setState((prev) => ({
-      ...prev,
-      slashCommands: slashCommandsRef.current.map((c) => ({
-        name: c.name,
-        description: c.description,
-        usage: c.usage,
-        argSource: c.argSource,
-      })),
-    }));
-  }
 
   function appendSystem(text: string) {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });
