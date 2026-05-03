@@ -24,6 +24,14 @@ import type {
 } from "./skills/default-layout/notifications";
 import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
+import {
+  NO_PROJECT_KEY,
+  makeEmptyTab,
+  projectBucketKey,
+  type ClosedTabEntry,
+  type ShellMeta,
+  type Tab,
+} from "./types/tab";
 import type { A2UISkill } from "./skills/types";
 import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
@@ -122,70 +130,9 @@ export default function App() {
   // layout JSON bindings keep working without a per-tab JSON Pointer
   // rewrite. On tab switch we re-mirror the new active tab's view; on
   // every per-tab update we write the tab record AND, if it's active,
-  // also write the root mirror.
+  // also write the root mirror. Tab/ShellMeta types live in
+  // src/types/tab.ts.
   // ---------------------------------------------------------------------
-  // M6 P1: shell-tab metadata. Present iff Tab.kind === "shell".
-  // Carried as an optional sibling field (rather than refactoring Tab to a
-  // discriminated union) so existing agent-tab code paths stay unchanged.
-  interface ShellMeta {
-    cwd: string;
-    command: string;
-    args: string[];
-    shareMode: "private" | "read" | "read-write" | "read-write-trusted";
-    shellState: "starting" | "running" | "exited";
-    exitCode?: number;
-  }
-  interface Tab {
-    id: string;
-    /** "agent" (chat session) or "shell" (interactive PTY). Default "agent"
-     *  for back-compat with persisted tab records that pre-date the field. */
-    kind: "agent" | "shell";
-    label: string;
-    messages: ChatMessage[];
-    draft: string;
-    waiting: boolean;
-    queueCount: number;
-    canvas: unknown;
-    model: string;
-    // Rolling buffer of bash output for this tab. The Terminal component
-    // writes to xterm directly for the active tab; this buffer survives
-    // tab switches so the panel can replay it when the user comes back.
-    // Capped client-side too (TERMINAL_REPLAY_MAX) to bound memory.
-    terminalBuffer: string;
-    // Project this tab belongs to. `null` means the no-project bucket
-    // (tabs created before any project was picked, or after
-    // clearActiveProject). Tabs are isolated per project — switching
-    // projects swaps `state.tabs` for the target project's bucket and
-    // hides everyone else.
-    projectId: string | null;
-    /** Present iff kind === "shell". */
-    shell?: ShellMeta;
-  }
-  // Sentinel key for the "no project" bucket. Project ids are UUIDs so
-  // a literal can't collide.
-  const NO_PROJECT_KEY = "__no_project__";
-  const projectBucketKey = (id: string | null | undefined) =>
-    id ?? NO_PROJECT_KEY;
-  function makeEmptyTab(
-    id: string,
-    label: string,
-    projectId: string | null = null,
-    kind: "agent" | "shell" = "agent",
-  ): Tab {
-    return {
-      id,
-      kind,
-      label,
-      messages: [],
-      draft: "",
-      waiting: false,
-      queueCount: 0,
-      canvas: null,
-      model: "",
-      terminalBuffer: "",
-      projectId,
-    };
-  }
   const buildSidebarHistory = useCallback((
     tabs: Tab[],
     activeTabId: string | undefined,
@@ -1669,26 +1616,12 @@ export default function App() {
     });
   }
 
-  /** In-memory stack of recently-closed tab metadata (most recent at end).
-   *  Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to
-   *  bound memory. Each entry preserves enough info to spawn an
-   *  equivalent tab via `reopenLastClosedTab` (Cmd/Ctrl+Opt+T). For
-   *  agent tabs the original tabId is preserved so the bridge's
-   *  SessionManager.continueRecent picks up the persisted JSONL
-   *  session — the user sees their previous conversation, not a
-   *  fresh chat. */
-  interface ClosedTabEntry {
-    /** Original tabId — used as restoreId on reopen so the bridge
-     *  resumes the session via SessionManager.continueRecent. */
-    id: string;
-    kind: "agent" | "shell";
-    label: string;
-    projectId: string | null;
-    /** Shell tabs only — passed back to newShellTab. */
-    cwd?: string;
-    command?: string;
-    args?: string[];
-  }
+  // In-memory stack of recently-closed tab metadata (most recent at end).
+  // Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to bound
+  // memory. ClosedTabEntry shape lives in src/types/tab.ts. For agent tabs
+  // the original tabId is preserved so the bridge's
+  // SessionManager.continueRecent picks up the persisted JSONL session —
+  // the user sees their previous conversation, not a fresh chat.
   const CLOSED_TAB_STACK_MAX = 10;
   const closedTabsRef = useRef<ClosedTabEntry[]>([]);
 
