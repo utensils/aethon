@@ -179,15 +179,16 @@ const LAYOUT_SLOTS_FILE = process.env.AETHON_LAYOUT_SLOTS_FILE;
 
 // Source attribution for the loaded-extension list. "directory" =
 // ~/.aethon/extensions/*.{ts,js,mjs}, "project-directory" =
-// <project>/.aethon/extensions/*.{ts,js,mjs}, "skill-package" =
-// npm-style install under ~/.aethon/skills/node_modules/, and
-// "pi-extension" = discovered in ~/.pi/agent/extensions/ and observed to
-// touch `globalThis.aethon`. Used to surface this in the state file and
-// the runtime snapshot.
+// <project>/.aethon/extensions/*.{ts,js,mjs}, "extension-package" =
+// npm-style install under ~/.aethon/skills/node_modules/ (path retained
+// for back-compat with existing installs), and "pi-extension" =
+// discovered in ~/.pi/agent/extensions/ and observed to touch
+// `globalThis.aethon`. Used to surface this in the state file and the
+// runtime snapshot.
 type ExtensionSource =
   | "directory"
   | "project-directory"
-  | "skill-package"
+  | "extension-package"
   | "pi-extension";
 
 // Per-turn tabId propagated through the async call chain that runs
@@ -509,14 +510,15 @@ interface AethonExtensionModule {
   default?: { register?: (api: AethonExtensionApi) => void | Promise<void> };
 }
 
-// Discover and load Aethon-shipped npm packages from ~/.aethon/skills/.
-// Each install root (Aethon walks ~/.aethon/skills/node_modules and
+// Discover and load Aethon-shipped npm packages from ~/.aethon/skills/
+// (path retained for back-compat with existing installs). Each install
+// root (Aethon walks ~/.aethon/skills/node_modules and
 // ~/.aethon/skills/node_modules/@scope/*) is a normal npm package whose
 // package.json declares an `aethon` field with at least an `entry`
 // pointing at the module to import. The module exports `register(api)`
 // (named or default), called with the same Aethon API surface as
 // directory-based extensions. Layout: same JSON shape, but resolvable
-// via `bun install` / `npm install` inside the skills dir, so users
+// via `bun install` / `npm install` inside the install dir, so users
 // can `npm install --prefix ~/.aethon/skills <pkg>` and Aethon picks
 // it up on next reload.
 //
@@ -525,7 +527,7 @@ interface AethonExtensionModule {
 //     "name": "@example/aethon-pretty-themes",
 //     "aethon": { "entry": "./dist/index.js" }
 //   }
-async function loadAethonSkillManifests(
+async function loadAethonExtensionPackages(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
   options?: {
@@ -537,7 +539,7 @@ async function loadAethonSkillManifests(
     onLoaded?: (name: string) => void;
     onFailure?: (failure: {
       name: string;
-      source: "skill-package";
+      source: "extension-package";
       status: "failed" | "skipped";
       error: string;
       path?: string;
@@ -573,7 +575,7 @@ async function loadAethonSkillManifests(
     entries = await readdir(skillsRoot);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger.scope("skill").warn(`readdir ${skillsRoot}: ${(err as Error).message}`);
+      logger.scope("ext-package").warn(`readdir ${skillsRoot}: ${(err as Error).message}`);
     }
     return;
   }
@@ -595,18 +597,18 @@ async function loadAethonSkillManifests(
   for (const c of candidates) {
     const entry = c.manifest.aethon?.entry;
     if (typeof entry !== "string" || entry.length === 0) {
-      logger.scope("skill").warn(`${c.name}: aethon.entry not set, skipping`);
+      logger.scope("ext-package").warn(`${c.name}: aethon.entry not set, skipping`);
       send({
         type: "extension_lifecycle",
         name: c.name,
-        source: "skill-package",
+        source: "extension-package",
         status: "skipped",
         error: "aethon.entry not set",
         path: c.dir,
       });
       options?.onFailure?.({
         name: c.name,
-        source: "skill-package",
+        source: "extension-package",
         status: "skipped",
         error: "aethon.entry not set",
         path: c.dir,
@@ -618,18 +620,18 @@ async function loadAethonSkillManifests(
       const mod: AethonExtensionModule = await import(pathToFileURL(filePath).href);
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
-        logger.scope("skill").warn(`${c.name}: no register() export, skipping`);
+        logger.scope("ext-package").warn(`${c.name}: no register() export, skipping`);
         send({
           type: "extension_lifecycle",
           name: c.name,
-          source: "skill-package",
+          source: "extension-package",
           status: "skipped",
           error: "no register() export",
           path: filePath,
         });
         options?.onFailure?.({
           name: c.name,
-          source: "skill-package",
+          source: "extension-package",
           status: "skipped",
           error: "no register() export",
           path: filePath,
@@ -637,13 +639,13 @@ async function loadAethonSkillManifests(
         continue;
       }
       await register(api);
-      registry.set(c.name, "skill-package");
+      registry.set(c.name, "extension-package");
       options?.onLoaded?.(c.name);
-      logger.scope("skill").info(`loaded ${c.name} from ${entry}`);
+      logger.scope("ext-package").info(`loaded ${c.name} from ${entry}`);
       send({
         type: "extension_lifecycle",
         name: c.name,
-        source: "skill-package",
+        source: "extension-package",
         status: "loaded",
         path: filePath,
       });
@@ -651,7 +653,7 @@ async function loadAethonSkillManifests(
       // React) => { … }`. Read and hand back through the callback so
       // the caller can ship it to the webview. Failures are logged
       // (`extension_lifecycle` with the bridge entry kept "loaded"
-      // since the bridge-side skill DID register; only the frontend
+      // since the bridge-side extension DID register; only the frontend
       // delivery channel failed).
       const frontendEntry = c.manifest.aethon?.frontendEntry;
       if (
@@ -668,24 +670,24 @@ async function loadAethonSkillManifests(
             code,
           });
           logger
-            .scope("skill")
+            .scope("ext-package")
             .info(`${c.name}: frontend module shipped (${code.length} bytes)`);
         } catch (feErr) {
           const feMessage = (feErr as Error).message;
           logger
-            .scope("skill")
+            .scope("ext-package")
             .warn(`${c.name}: failed to read frontendEntry ${fePath}: ${feMessage}`);
           send({
             type: "extension_lifecycle",
             name: `${c.name} (frontend)`,
-            source: "skill-package",
+            source: "extension-package",
             status: "failed",
             error: feMessage,
             path: fePath,
           });
           options?.onFailure?.({
             name: `${c.name} (frontend)`,
-            source: "skill-package",
+            source: "extension-package",
             status: "failed",
             error: feMessage,
             path: fePath,
@@ -694,18 +696,18 @@ async function loadAethonSkillManifests(
       }
     } catch (err) {
       const message = (err as Error).message;
-      logger.scope("skill").warn(`${c.name}: ${message}`);
+      logger.scope("ext-package").warn(`${c.name}: ${message}`);
       send({
         type: "extension_lifecycle",
         name: c.name,
-        source: "skill-package",
+        source: "extension-package",
         status: "failed",
         error: message,
         path: filePath,
       });
       options?.onFailure?.({
         name: c.name,
-        source: "skill-package",
+        source: "extension-package",
         status: "failed",
         error: message,
         path: filePath,
@@ -1207,7 +1209,7 @@ async function main() {
   }
 
   // Loaded extension registry. Populated by loadAethonExtensions and
-  // loadAethonSkillManifests at startup. Used by getRuntimeSnapshot and
+  // loadAethonExtensionPackages at startup. Used by getRuntimeSnapshot and
   // the listExtensions introspection method so the agent (and any user
   // querying the state file) can see what's actually been loaded —
   // previously the bridge had no record and the agent had to guess.
@@ -1219,7 +1221,7 @@ async function main() {
   // see what didn't load without scraping stderr or asking the user.
   type ExtensionFailureSource = Extract<
     ExtensionSource,
-    "directory" | "project-directory" | "skill-package"
+    "directory" | "project-directory" | "extension-package"
   >;
   interface ExtensionFailure {
     source: ExtensionFailureSource;
@@ -1245,7 +1247,7 @@ async function main() {
   let currentProjectCwd: string | null = null;
 
   // Baseline snapshots of every registry an extension can write into.
-  // Captured AFTER user-level + skill-package + pi-extension loaders run,
+  // Captured AFTER user-level + extension-package + pi-extension loaders run,
   // BEFORE any project-directory extension runs. `unloadProjectExtensions`
   // restores the live registries from these snapshots, then re-emits the
   // hydrate messages so the frontend drops the project's contributions.
@@ -1343,7 +1345,7 @@ async function main() {
       projectExtensionTeardowns.length = 0;
     }
     // Drop project-directory entries from the load registry + failure
-    // registry. User-level + skill-package + pi-extension entries stay.
+    // registry. User-level + extension-package + pi-extension entries stay.
     for (const [name, source] of loadedExtensions) {
       if (source === "project-directory") loadedExtensions.delete(name);
     }
@@ -1535,17 +1537,17 @@ async function main() {
     }
   >();
 
-  // Skill packages that ship a frontend module — `aethon.frontendEntry`
+  // Extension packages that ship a frontend module — `aethon.frontendEntry`
   // in package.json points at a JS file whose body registers React
   // components into the SkillRegistry on the webview side. The bridge
   // reads the file contents at boot and ships them to the frontend as
   // a string; the frontend wraps them with `new Function("React",
   // "skill", code)` and runs the result. This is the channel that lets
-  // skills ship genuine React components (charts, virtualized lists,
+  // extensions ship genuine React components (charts, virtualized lists,
   // third-party widgets) — A2UI templates remain available for the
-  // declarative cases. Same trust model as bridge-side skill code: the
+  // declarative cases. Same trust model as bridge-side extension code: the
   // user installed the package, they trust it; no sandbox.
-  const skillFrontendModules = new Map<
+  const extensionFrontendModules = new Map<
     string,
     { name: string; entryPath: string; code: string }
   >();
@@ -1708,11 +1710,11 @@ async function main() {
         name: l.name,
         ...(l.description ? { description: l.description } : {}),
       })),
-      // Skill packages whose `aethon.frontendEntry` shipped a React
+      // Extension packages whose `aethon.frontendEntry` shipped a React
       // module to the webview. Code body is omitted — it's on disk at
-      // entryPath; this is just enough to answer "which skills extend
-      // the UI with React components?" without scraping.
-      skillModules: [...skillFrontendModules.values()].map((m) => ({
+      // entryPath; this is just enough to answer "which extensions ship
+      // React components?" without scraping.
+      frontendModules: [...extensionFrontendModules.values()].map((m) => ({
         name: m.name,
         entryPath: m.entryPath,
         bytes: m.code.length,
@@ -2360,7 +2362,7 @@ async function main() {
     // shadow /clear, /help, etc. — built-in names checked here against
     // a hardcoded list to stay independent of frontend imports.
     const BUILTIN_SLASH_NAMES = new Set([
-      "clear", "help", "theme", "model", "reset", "terminal", "skills",
+      "clear", "help", "theme", "model", "reset", "terminal", "extensions",
       "sidebar", "layout", "project",
     ]);
     if (!/^[A-Za-z][\w-]*$/.test(name)) {
@@ -2390,7 +2392,7 @@ async function main() {
 
   // Register a named layout in the runtime catalogue. Mirrors the
   // frontend's `window.aethon.registerLayout` so agent-side extensions
-  // and skill packages can ship layouts without injecting them through
+  // and extension packages can ship layouts without injecting them through
   // the webview. Replaces an entry of the same id; a follow-up
   // `setLayout(payload)` activates it. Built-in layout ids
   // (workstation/editorial/command-deck/live-layout) are reserved.
@@ -2964,11 +2966,11 @@ async function main() {
       extensionEventRoutes: [...extensionEventRoutes.values()],
       extensionEventRoutingMode: eventRoutingMode,
       extensionLayouts: [...extensionLayouts.values()],
-      // Frontend skill modules — `aethon.frontendEntry` JS bodies that
+      // Extension frontend modules — `aethon.frontendEntry` JS bodies that
       // the webview wraps with `new Function("React", "skill", code)`
       // to register React components in the SkillRegistry. Replayed on
       // every ready so reload restores them.
-      extensionSkillModules: [...skillFrontendModules.values()].map((m) => ({
+      extensionFrontendModules: [...extensionFrontendModules.values()].map((m) => ({
         name: m.name,
         code: m.code,
       })),
@@ -3296,13 +3298,14 @@ async function main() {
     },
   };
   await loadAethonExtensions(aethonApi, loadedExtensions, loadHooks);
-  // Discover npm-distributed skill packages (manifest with `aethon` field
-  // in package.json) under ~/.aethon/skills/node_modules/. This lets users
+  // Discover npm-distributed extension packages (manifest with `aethon`
+  // field in package.json) under ~/.aethon/skills/node_modules/ (path
+  // retained for back-compat with existing installs). This lets users
   // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
-  // skills that bundle layouts, components, and themes.
-  await loadAethonSkillManifests(aethonApi, loadedExtensions, {
+  // extensions that bundle layouts, components, and themes.
+  await loadAethonExtensionPackages(aethonApi, loadedExtensions, {
     onFrontendEntry: ({ name, entryPath, code }) => {
-      skillFrontendModules.set(name, { name, entryPath, code });
+      extensionFrontendModules.set(name, { name, entryPath, code });
     },
     onLoaded: loadHooks.onLoaded,
     onFailure: loadHooks.onFailure,
@@ -3322,7 +3325,7 @@ async function main() {
   // extensions register lands ON TOP of this baseline; switching projects
   // (or unloading the current project) restores the registries from this
   // snapshot so project A's components / themes / slash commands / etc.
-  // don't leak into project B. User-level + skill-package + pi extensions
+  // don't leak into project B. User-level + extension-package + pi extensions
   // remain because they aren't project-scoped — they trigger an agent
   // respawn through the file watcher when they change.
   captureProjectExtensionBaseline();

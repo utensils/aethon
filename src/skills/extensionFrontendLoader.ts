@@ -1,27 +1,27 @@
 /**
- * Skill module loader — evaluates `aethon.frontendEntry` JS bodies
- * shipped by skill packages and registers the React components they
+ * Extension frontend loader — evaluates `aethon.frontendEntry` JS bodies
+ * shipped by extension packages and registers the React components they
  * produce in the SkillRegistry.
  *
  * Channel:
- *   bridge reads `<skill-package>/<frontendEntry>` and ships the file
- *   contents as a string in `extension_skill_modules`. The frontend
+ *   bridge reads `<extension-package>/<frontendEntry>` and ships the file
+ *   contents as a string in `extension_frontend_modules`. The frontend
  *   wraps the body with `new Function("React", "skill", code)` and
- *   runs it. The skill body uses `skill.registerComponent(type, fn)`
+ *   runs it. The module body uses `skill.registerComponent(type, fn)`
  *   to add a React component under a custom A2UI type. That type can
  *   then appear in any A2UI payload as `{type: "<type>", props: …}`
  *   and be resolved through the SkillRegistry like a built-in.
  *
- * Trust model: same as bridge-side skill code. The user installed the
+ * Trust model: same as bridge-side extension code. The user installed the
  * package; they trust it. No sandbox — `new Function` is essentially
  * eval. The threat model is "malicious npm package", which is
- * orthogonal to this channel (a malicious bridge-side skill could
+ * orthogonal to this channel (a malicious bridge-side extension could
  * already read disk, fork processes, etc).
  *
- * Re-evaluation: each `extension_skill_modules` delta is wholesale —
- * the full set of skills replaces the previous set. Components
- * registered by a removed skill are unregistered. Components from a
- * re-evaluated skill replace the previous binding (so a hot-reload
+ * Re-evaluation: each `extension_frontend_modules` delta is wholesale —
+ * the full set of modules replaces the previous set. Components
+ * registered by a removed module are unregistered. Components from a
+ * re-evaluated module replace the previous binding (so a hot-reload
  * picks up new code).
  */
 import * as React from "react";
@@ -31,16 +31,16 @@ import type { SkillRegistry } from "./SkillRegistry";
 
 type ReactExports = typeof React;
 
-export interface SkillModule {
+export interface ExtensionFrontendModule {
   name: string;
   code: string;
 }
 
-interface SkillEvalApi {
+interface FrontendModuleApi {
   /**
    * Register a React component under a custom A2UI type. Re-registering
-   * the same type within one skill replaces the previous binding;
-   * across skills, last write wins (consistent with the existing
+   * the same type within one module replaces the previous binding;
+   * across modules, last write wins (consistent with the existing
    * SkillRegistry semantics).
    */
   registerComponent(
@@ -49,33 +49,33 @@ interface SkillEvalApi {
   ): void;
 }
 
-export interface LoadedSkillModule {
+export interface LoadedFrontendModule {
   name: string;
   componentTypes: string[];
   error?: string;
 }
 
 /**
- * Evaluate a single skill module body in isolation. Returns the set of
- * component types it registered. Throws are caught and returned as the
- * `error` field so one broken skill doesn't abort the whole load.
+ * Evaluate a single extension frontend module body in isolation. Returns the
+ * set of component types it registered. Throws are caught and returned as the
+ * `error` field so one broken module doesn't abort the whole load.
  */
-export function evaluateSkillModule(
-  module: SkillModule,
+export function evaluateFrontendModule(
+  module: ExtensionFrontendModule,
   registry: SkillRegistry,
-): LoadedSkillModule {
+): LoadedFrontendModule {
   const componentTypes: string[] = [];
   const components: Record<string, ComponentType<BuiltinComponentProps>> = {};
-  const api: SkillEvalApi = {
+  const api: FrontendModuleApi = {
     registerComponent(type, component) {
       if (typeof type !== "string" || type.length === 0) {
         throw new Error(
-          `skill[${module.name}].registerComponent: type must be a non-empty string`,
+          `extension[${module.name}].registerComponent: type must be a non-empty string`,
         );
       }
       if (typeof component !== "function") {
         throw new Error(
-          `skill[${module.name}].registerComponent("${type}"): component must be a function`,
+          `extension[${module.name}].registerComponent("${type}"): component must be a function`,
         );
       }
       components[type] = component;
@@ -86,7 +86,7 @@ export function evaluateSkillModule(
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const factory = new Function("React", "skill", module.code) as (
       React: ReactExports,
-      skill: SkillEvalApi,
+      skill: FrontendModuleApi,
     ) => void;
     factory(React, api);
   } catch (err) {
@@ -97,56 +97,56 @@ export function evaluateSkillModule(
     };
   }
   // Synthesize an A2UISkill so the registry's existing register/unregister
-  // surface handles the lifecycle. Skill module names are namespaced by
-  // their npm package name, so collisions across modules are unlikely;
-  // an explicit second registration of the same skill name unregisters
-  // the prior set (handled by the caller via `unregister(name)` first).
-  registry.register({ name: skillRegistryName(module.name), components });
+  // surface handles the lifecycle. Module names are namespaced by their npm
+  // package name, so collisions across modules are unlikely; an explicit
+  // second registration of the same module name unregisters the prior set
+  // (handled by the caller via `unregister(name)` first).
+  registry.register({ name: frontendModuleKey(module.name), components });
   return { name: module.name, componentTypes };
 }
 
 /**
- * Stable registry-side name for a skill module. Prefixed so it can't
- * collide with a built-in skill (e.g. `default-layout`) or a skill the
+ * Stable registry-side key for an extension frontend module. Prefixed so it
+ * can't collide with a built-in skill (e.g. `default-layout`) or a skill the
  * webview might register through `window.aethon.registerSkill`.
  */
-export function skillRegistryName(moduleName: string): string {
-  return `frontend:${moduleName}`;
+export function frontendModuleKey(moduleName: string): string {
+  return `ext:${moduleName}`;
 }
 
 /**
- * Apply the full `extension_skill_modules` payload — wholesale replace,
+ * Apply the full `extension_frontend_modules` payload — wholesale replace,
  * but skip re-evaluating modules whose code hasn't changed since the
  * previous load.
  *
  * The startup path sends a `ready` followed by a `report` (which
- * triggers another `ready`), so the same skill list arrives twice in
+ * triggers another `ready`), so the same module list arrives twice in
  * one webview lifetime. Without the skip-on-unchanged path, every
- * top-level side effect in a skill module (timers, DOM listeners,
+ * top-level side effect in a module (timers, DOM listeners,
  * style injection) would run twice, and a failing module would emit
  * duplicate system notices. Caller passes a name → code map so we
  * can hash-compare without recomputing the previous set's source.
  *
  * @param previous — name → code from the prior load (so we know what
  *   to unregister AND what's unchanged). Use the `name` returned by
- *   `LoadedSkillModule` (NOT the registry name); this helper handles
+ *   `LoadedFrontendModule` (NOT the registry key); this helper handles
  *   the prefix.
  */
-export function reconcileSkillModules(
+export function reconcileFrontendModules(
   previous: ReadonlyMap<string, string>,
-  next: SkillModule[],
+  next: ExtensionFrontendModule[],
   registry: SkillRegistry,
-): { loaded: LoadedSkillModule[]; unregistered: string[]; skipped: string[] } {
+): { loaded: LoadedFrontendModule[]; unregistered: string[]; skipped: string[] } {
   const nextByName = new Map(next.map((m) => [m.name, m]));
   const unregistered: string[] = [];
   for (const name of previous.keys()) {
     if (!nextByName.has(name)) {
-      registry.unregister(skillRegistryName(name));
+      registry.unregister(frontendModuleKey(name));
       unregistered.push(name);
     }
   }
   const skipped: string[] = [];
-  const toEval: SkillModule[] = [];
+  const toEval: ExtensionFrontendModule[] = [];
   for (const m of next) {
     if (previous.get(m.name) === m.code) {
       // Same name, byte-identical code — components are still in the
@@ -156,11 +156,11 @@ export function reconcileSkillModules(
     }
     toEval.push(m);
   }
-  // Always unregister BEFORE re-registering so a re-evaluated skill's
+  // Always unregister BEFORE re-registering so a re-evaluated module's
   // old components don't linger if the new evaluation fails midway.
   for (const m of toEval) {
-    registry.unregister(skillRegistryName(m.name));
+    registry.unregister(frontendModuleKey(m.name));
   }
-  const loaded = toEval.map((m) => evaluateSkillModule(m, registry));
+  const loaded = toEval.map((m) => evaluateFrontendModule(m, registry));
   return { loaded, unregistered, skipped };
 }

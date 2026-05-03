@@ -193,7 +193,7 @@ Wire clicks via `onEvent` (see below).
 
 Add a slash command to the chat-input picker. `name` must match
 `/^[A-Za-z][\w-]*$/` and may not collide with built-ins (`clear`, `help`,
-`theme`, `model`, `reset`, `terminal`, `skills`).
+`theme`, `model`, `reset`, `terminal`, `extensions`).
 
 ```ts
 globalThis.aethon.registerSlashCommand({
@@ -299,17 +299,17 @@ caught by the registration validator.) The catalogue replays on
 carries the catalogue (id + name + description, payloads omitted to keep
 the snapshot small) so the agent's first-turn context sees it.
 
-### React-component skills (`aethon.frontendEntry`)
+### React-component extensions (`aethon.frontendEntry`)
 
 A2UI templates cover most extension UI cases, but some components
 need real React: charts, virtualized lists, third-party widgets that
 already ship as React components, components that need browser APIs
-the renderer doesn't expose. A skill package can opt in by adding a
-second field next to `aethon.entry`:
+the renderer doesn't expose. An extension package can opt in by
+adding a second field next to `aethon.entry`:
 
 ```json
 {
-  "name": "@you/aethon-skill-charts",
+  "name": "@you/aethon-charts",
   "aethon": {
     "entry": "src/index.ts",
     "frontendEntry": "src/frontend.js"
@@ -322,14 +322,16 @@ the file as a string and ships it to the webview, where it's wrapped
 with:
 
 ```ts
-new Function("React", "skill", code)(React, skillApi);
+new Function("React", "skill", code)(React, frontendModuleApi);
 ```
 
-So write the body as if `React` and `skill` are in scope. `skill` is
-a tiny API:
+So write the body as if `React` and `skill` are in scope (the second
+parameter is named `skill` for back-compat with existing `frontendEntry`
+bodies — it's just the local handle for the API object below). `skill`
+is a tiny API:
 
 ```ts
-interface SkillEvalApi {
+interface FrontendModuleApi {
   registerComponent(
     type: string,
     component: React.ComponentType<BuiltinComponentProps>,
@@ -347,7 +349,7 @@ payload by their declared `type`:
 ```
 
 The renderer resolves the type through the SkillRegistry just like
-any built-in. `examples/skill-package/src/frontend.js` ships a
+any built-in. `examples/extension-package/src/frontend.js` ships a
 minimal `pulse-card` demo (CSS-keyframe pulse, hooks via
 `React.useEffect`).
 
@@ -357,21 +359,21 @@ a bundler (esbuild / swc) over a real source file and emit the
 bundled output as `frontendEntry`. The result must execute as a
 function body — top-level `import` / `export` will fail.
 
-**Lifecycle.** Each `extension_skill_modules` delta is wholesale —
-the full set of skills replaces the previous set. Components from a
-removed skill are unregistered; components from a re-evaluated skill
+**Lifecycle.** Each `extension_frontend_modules` delta is wholesale —
+the full set of modules replaces the previous set. Components from a
+removed module are unregistered; components from a re-evaluated module
 replace their prior bindings (so `npm install --prefix
 ~/.aethon/skills <pkg>` hot-reloads cleanly). Errors per module are
-caught and surfaced as a system notice; one broken skill can't kill
+caught and surfaced as a system notice; one broken module can't kill
 the others.
 
-**Trust.** Same model as bridge-side skill code: the user installed
+**Trust.** Same model as bridge-side extension code: the user installed
 the package, they trust it. `new Function` is essentially eval — no
-sandbox. A malicious skill could already do worse from the bridge
+sandbox. A malicious extension could already do worse from the bridge
 side (read disk, fork processes); this channel doesn't widen the
 threat model.
 
-`RuntimeSnapshot.skillModules` lists `{ name, entryPath, bytes }`
+`RuntimeSnapshot.frontendModules` lists `{ name, entryPath, bytes }`
 for each shipped module — code body omitted (read it from
 `entryPath` if you need to inspect).
 
@@ -691,7 +693,7 @@ or before mutating something you didn't register yourself.
 [
   {
     name: "model-picker",
-    source: "directory" | "project-directory" | "skill-package" | "pi-extension",
+    source: "directory" | "project-directory" | "extension-package" | "pi-extension",
   },
   …
 ]

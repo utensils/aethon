@@ -481,6 +481,56 @@ fn search_sessions(
     Ok(hits)
 }
 
+/// Delete a persisted session directory at `~/.aethon/sessions/<tab_id>/`.
+/// `tab_id` must match the bridge's `discoverPersistedTabs` regex
+/// (`^[A-Za-z0-9_-]{1,128}$`) so a malicious caller can't path-traverse
+/// out of the sessions directory. The reserved name `default` is also
+/// rejected — it's the bridge's bootstrap-tab session and removing it
+/// would orphan the next bun respawn.
+#[tauri::command]
+fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
+    if tab_id.is_empty() || tab_id.len() > 128 {
+        return Err("tab_id must be 1..=128 chars".to_string());
+    }
+    if tab_id == "default" {
+        return Err("cannot delete the default session".to_string());
+    }
+    if !tab_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err("tab_id must match [A-Za-z0-9_-]".to_string());
+    }
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let sessions_root = home.join(".aethon").join("sessions");
+    let target = sessions_root.join(&tab_id);
+    // Defense in depth: even though the regex above forbids '/' and '..',
+    // canonicalize and verify the result still lives directly under
+    // sessions_root. A symlink replacing <tab_id>/ could otherwise
+    // redirect remove_dir_all elsewhere.
+    if !target.exists() {
+        return Ok(()); // already gone — treat as success
+    }
+    let canonical_root = match std::fs::canonicalize(&sessions_root) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("canonicalize sessions root: {e}")),
+    };
+    let canonical_target = match std::fs::canonicalize(&target) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("canonicalize target: {e}")),
+    };
+    if canonical_target.parent() != Some(canonical_root.as_path()) {
+        return Err("refusing to delete: target escapes sessions root".to_string());
+    }
+    std::fs::remove_dir_all(&canonical_target)
+        .map_err(|e| format!("remove_dir_all {}: {e}", canonical_target.display()))?;
+    tracing::info!(target: "aethon::session_delete", "deleted {}", canonical_target.display());
+    Ok(())
+}
+
 fn extract_text_from_content(v: &serde_json::Value) -> String {
     let content = match v.get("content") {
         Some(c) => c,
@@ -1219,9 +1269,10 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         if pi_ext.exists() {
             watch_paths.push(pi_ext);
         }
-        // ~/.aethon/skills/node_modules holds npm-distributed skill
-        // packages (manifest with `aethon` field). Pre-create so a
-        // first `npm install --prefix ~/.aethon/skills <pkg>` triggers
+        // ~/.aethon/skills/node_modules holds npm-distributed extension
+        // packages (manifest with `aethon` field). On-disk path is
+        // retained for back-compat with existing installs. Pre-create so
+        // a first `npm install --prefix ~/.aethon/skills <pkg>` triggers
         // a reload without needing to restart the app.
         let skills_modules = h.join(".aethon/skills/node_modules");
         let _ = std::fs::create_dir_all(&skills_modules);
@@ -1229,7 +1280,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
             watch_paths.push(skills_modules);
         }
         // ~/.aethon/themes holds loose-file JSON themes (no extension /
-        // skill packaging required). Pre-create so the first theme drop
+        // extension packaging required). Pre-create so the first theme drop
         // fires Create events and triggers an agent respawn that picks it
         // up via loadAethonThemeDirectory.
         let themes_dir = h.join(".aethon/themes");
@@ -1358,7 +1409,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
 /// fire the same kill-and-respawn flow as edits in `~/.aethon/extensions/`.
 /// Idempotent — re-adding a watched path is a no-op. Called by the frontend
 /// after the user opens or activates a project; without this the only
-/// hot-reloaded extension dirs are the user-level + skill ones, and a
+/// hot-reloaded extension dirs are the user-level + extension-package ones, and a
 /// project's `.aethon/extensions/` requires a manual agent restart.
 #[tauri::command]
 fn watch_project_extensions(
@@ -1589,19 +1640,19 @@ fn sanitize_filename_segment(input: &str) -> String {
     }
 }
 
-fn validate_skill_install_spec(spec: &str) -> Result<String, String> {
+fn validate_extension_install_spec(spec: &str) -> Result<String, String> {
     let trimmed = spec.trim();
     if trimmed.is_empty() {
-        return Err("skill install spec is required".to_string());
+        return Err("extension install spec is required".to_string());
     }
     if trimmed.len() > 512 {
-        return Err("skill install spec is too long".to_string());
+        return Err("extension install spec is too long".to_string());
     }
     if trimmed.starts_with('-') {
-        return Err("skill install spec cannot start with '-'".to_string());
+        return Err("extension install spec cannot start with '-'".to_string());
     }
     if trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        return Err("skill install spec must be a single package or git URL".to_string());
+        return Err("extension install spec must be a single package or git URL".to_string());
     }
     Ok(trimmed.to_string())
 }
@@ -1629,20 +1680,20 @@ fn output_tail(stdout: &[u8], stderr: &[u8]) -> String {
     }
 }
 
-/// Install an Aethon npm skill package from inside the app. The spec can be
-/// a normal npm package name, tarball URL, GitHub shorthand, or git URL —
+/// Install an Aethon npm extension package from inside the app. The spec can
+/// be a normal npm package name, tarball URL, GitHub shorthand, or git URL —
 /// exactly what `npm install <spec>` accepts. Running this in the Tauri shell
 /// avoids the agent sidecar being killed mid-install by the existing
 /// node_modules watcher. On success we still terminate the current agent so
 /// the next request respawns with the freshly installed package loaded.
 #[tauri::command]
-async fn install_aethon_skill(
+async fn install_aethon_extension(
     spec: String,
     app: AppHandle,
     state: State<'_, AgentProcess>,
     reload_flag: State<'_, AgentReloadFlag>,
 ) -> Result<String, String> {
-    let spec = validate_skill_install_spec(&spec)?;
+    let spec = validate_extension_install_spec(&spec)?;
     let home = app
         .path()
         .home_dir()
@@ -1691,7 +1742,7 @@ async fn install_aethon_skill(
         // Mark this kill as intentional BEFORE the actual kill — the
         // stdout reader's EOF handler reads this flag to decide whether
         // to fire `agent-crashed`. Without the flag, the EOF supervisor
-        // misclassifies the skill-install reload as a crash and the
+        // misclassifies the extension-install reload as a crash and the
         // user sees both a crash toast and the auto-restart on top of
         // the deliberate `agent-reloaded` flow.
         reload_flag
@@ -1700,7 +1751,7 @@ async fn install_aethon_skill(
         let _ = child.kill();
         let _ = child.wait();
         let _ = app.emit("agent-reloaded", "");
-        tracing::info!(target: "aethon::skill_install", "killed pid={pid}; will respawn with {spec}");
+        tracing::info!(target: "aethon::ext_install", "killed pid={pid}; will respawn with {spec}");
     }
 
     Ok(if install_output.trim().is_empty() {
@@ -2191,12 +2242,13 @@ pub fn run() {
             write_config,
             aethon_home_dir,
             search_sessions,
+            delete_session,
             updater_available,
             toggle_fullscreen,
             toggle_devtools,
             export_chat_markdown,
             save_paste_image,
-            install_aethon_skill,
+            install_aethon_extension,
             set_extension_menu_items,
             pick_project_directory,
             git_status,

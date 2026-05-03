@@ -58,11 +58,11 @@ The name comes from Greek mythology: _Αἴθων_, one of the horses that pulle
 
 **Extensibility**
 
-- Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed skill (manifest via `package.json#aethon`). Project-local extensions discovered from the active cwd up to its git root via `.aethon/extensions/`.
+- Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed extension package (manifest via `package.json#aethon`; the on-disk `skills/` directory name is retained for back-compat with existing installs). Project-local extensions discovered from the active cwd up to its git root via `.aethon/extensions/`.
 - Slash commands, keybindings, menu items, and event interceptors — all registerable from extensions, all reported back in the runtime snapshot so the agent knows what's wired.
 - Generic `extension_lifecycle` event channel — extensions get visible chat-side feedback when they load / fail / reload, and other layouts can intercept the window event to substitute a toast / sidebar pulse / status pill.
 
-**Slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/skills`, `/sidebar`, `/layout`, `/project`. Unknown commands fall through to pi.
+**Slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/extensions`, `/sidebar`, `/layout`, `/project`. Unknown commands fall through to pi.
 
 See [`SPEC.md`](SPEC.md) for the full status checklist and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
@@ -147,7 +147,7 @@ aethon/
 ├── src-tauri/           # Rust Tauri shell (lib + helpers + watcher)
 ├── agent/               # Pi agent bridge (run as a bun subprocess)
 ├── docs/aethon-agent/   # Bundled reference docs the agent reads
-├── examples/            # Pi extensions + skill packages (reference)
+├── examples/            # Pi extensions + extension packages (reference)
 ├── flake.nix            # Nix dev environment, package, and overlay
 ├── bun.lock             # Bun lockfile (used by `bun install` in the devshell)
 ├── package-lock.json    # npm dependency snapshot for reproducible Nix builds

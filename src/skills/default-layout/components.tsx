@@ -415,6 +415,11 @@ interface SidebarContextMenuState {
   sectionId: string;
   itemId: string;
   label: string;
+  // Discriminator so the rendered menu shows the right action. "project"
+  // prompts for "Remove from Projects"; "session" prompts for
+  // "Delete session". Set by `openItemContextMenu` based on the
+  // section + item id.
+  kind: "project" | "session";
 }
 
 function SearchableSidebarSection({
@@ -697,7 +702,16 @@ export function Sidebar({
     item,
     sectionId,
   ) => {
-    if (sectionId !== "projects") return;
+    // Projects → "Remove from Projects". History items prefixed `session:`
+    // → "Delete session". Open agent tabs (`tab:` prefix) and other
+    // sections have no context-menu actions yet.
+    let kind: SidebarContextMenuState["kind"] | null = null;
+    if (sectionId === "projects") {
+      kind = "project";
+    } else if (sectionId === "history" && item.id.startsWith("session:")) {
+      kind = "session";
+    }
+    if (!kind) return;
     e.preventDefault();
     e.stopPropagation();
     const viewportWidth = document.documentElement.clientWidth;
@@ -708,6 +722,7 @@ export function Sidebar({
       sectionId,
       itemId: item.id,
       label: item.label,
+      kind,
     });
   };
 
@@ -717,6 +732,22 @@ export function Sidebar({
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
+      label: contextMenu.label,
+    });
+    setContextMenu(null);
+  };
+
+  const deleteContextSession = () => {
+    if (!contextMenu) return;
+    // itemId is `session:<tabId>` — strip the prefix so App.tsx receives
+    // the raw tabId that the bridge / Tauri command both expect.
+    const sessionId = contextMenu.itemId.startsWith("session:")
+      ? contextMenu.itemId.slice("session:".length)
+      : contextMenu.itemId;
+    onEvent("delete-session", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      sessionId,
       label: contextMenu.label,
     });
     setContextMenu(null);
@@ -870,17 +901,35 @@ export function Sidebar({
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={removeContextProject}
-            >
-              Remove from Projects
-            </button>
-            <div className="a2ui-sidebar-context-menu-note">
-              Keeps files on disk
-            </div>
+            {contextMenu.kind === "project" ? (
+              <>
+                <button
+                  type="button"
+                  className="a2ui-sidebar-context-menu-item"
+                  role="menuitem"
+                  onClick={removeContextProject}
+                >
+                  Remove from Projects
+                </button>
+                <div className="a2ui-sidebar-context-menu-note">
+                  Keeps files on disk
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="a2ui-sidebar-context-menu-item"
+                  role="menuitem"
+                  onClick={deleteContextSession}
+                >
+                  Delete session…
+                </button>
+                <div className="a2ui-sidebar-context-menu-note">
+                  Removes saved transcript
+                </div>
+              </>
+            )}
           </div>,
           document.body,
         )}

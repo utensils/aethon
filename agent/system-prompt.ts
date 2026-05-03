@@ -31,7 +31,7 @@ export interface RuntimeSnapshot {
   stateFile: string;
   extensions: {
     name: string;
-    source: "directory" | "project-directory" | "skill-package" | "pi-extension";
+    source: "directory" | "project-directory" | "extension-package" | "pi-extension";
   }[];
   // Extensions that failed to load (parse / runtime error during import or
   // register()) or were skipped (missing register export, missing
@@ -43,7 +43,7 @@ export interface RuntimeSnapshot {
   // Cleared per-name when the same extension successfully loads later.
   failedExtensions: {
     name: string;
-    source: "directory" | "project-directory" | "skill-package";
+    source: "directory" | "project-directory" | "extension-package";
     status: "failed" | "skipped";
     error: string;
     path?: string;
@@ -64,7 +64,7 @@ export interface RuntimeSnapshot {
   // Extension-registered slash commands (name + description + optional
   // usage). Lets the agent answer "what slash commands are wired?"
   // without scraping. Built-ins (clear/help/theme/model/reset/terminal/
-  // skills) are NOT included here — they're in the frontend's static
+  // extensions) are NOT included here — they're in the frontend's static
   // catalog; this is the extension delta only.
   slashCommands: { name: string; description: string; usage?: string }[];
   // Extension-registered keyboard shortcuts (combo + action + optional
@@ -124,12 +124,12 @@ export interface RuntimeSnapshot {
   // Payloads are NOT included — they can be large; the agent calls
   // `getLayout()` after activation if it needs the structure.
   layouts: { id: string; name: string; description?: string }[];
-  // Skill packages whose `aethon.frontendEntry` shipped a React module
-  // to the webview (file body wrapped with `new Function("React",
+  // Extension packages whose `aethon.frontendEntry` shipped a React
+  // module to the webview (file body wrapped with `new Function("React",
   // "skill", code)` and run on the frontend). `bytes` is the source
   // size — useful for the agent to spot oversized modules; the actual
   // code body is NOT in the snapshot.
-  skillModules: { name: string; entryPath: string; bytes: number }[];
+  frontendModules: { name: string; entryPath: string; bytes: number }[];
 }
 
 // The static base prompt — describes the API surface and renderer
@@ -260,9 +260,11 @@ Four places can register Aethon UI via \`globalThis.aethon\`:
    extensions discovered from the selected cwd up to its nearest git root.
    Use this when the UI should travel with a repository.
 3. **\`$AETHON_USER_DIR/skills/node_modules/<pkg>/\`** — npm-distributed
-   Aethon skill packages with an \`aethon\` field in package.json.
-   Install in-app with \`/skills install <npm-package|git-url>\`, or from a
-   shell with \`npm install --prefix $AETHON_USER_DIR/skills <pkg>\`.
+   Aethon extension packages with an \`aethon\` field in package.json.
+   Install in-app with \`/extensions install <npm-package|git-url>\`, or
+   from a shell with \`npm install --prefix $AETHON_USER_DIR/skills <pkg>\`.
+   (The on-disk \`skills/\` path is retained for back-compat with existing
+   installs; conceptually these are extension packages.)
 4. **\`~/.pi/agent/extensions/<name>.ts\`** (or \`.pi/extensions/\`) —
    pi extensions, loaded by pi itself. They get a pi \`ExtensionAPI\`
    argument but \`globalThis.aethon\` is also available, so a pi

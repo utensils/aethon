@@ -1,18 +1,21 @@
 /**
- * Aethon skill frontend module (`aethon.frontendEntry`).
+ * Aethon extension frontend module (`aethon.frontendEntry`).
  *
  * This file's body is read by the bridge as a string and shipped to
  * the webview, where it's wrapped with:
  *
- *     new Function("React", "skill", code)(React, skillApi)
+ *     new Function("React", "skill", code)(React, frontendModuleApi)
  *
- * So write the body as if `React` and `skill` are in scope. No
- * imports — the file is evaluated, not module-loaded. (If you want
- * imports, run a bundler like esbuild over a real source file and
- * emit the bundled output here. JSX must be transformed to
- * `React.createElement` calls before the file is shipped.)
+ * So write the body as if `React` and `skill` are in scope (the
+ * second parameter is named `skill` for back-compat with existing
+ * `frontendEntry` bodies; it's just the local handle for the API
+ * object below). No imports — the file is evaluated, not
+ * module-loaded. (If you want imports, run a bundler like esbuild
+ * over a real source file and emit the bundled output here. JSX
+ * must be transformed to `React.createElement` calls before the
+ * file is shipped.)
  *
- * The skill API is intentionally tiny — `registerComponent(type, fn)`.
+ * The API is intentionally tiny — `registerComponent(type, fn)`.
  * Components are React function components receiving the same
  * `BuiltinComponentProps` shape (component, state, onEvent,
  * renderChildren, renderChildWithState) as built-in composites.

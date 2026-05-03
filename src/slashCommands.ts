@@ -8,7 +8,7 @@
 
 export interface SlashCommandContext {
   /** Append a chat-history bubble (system role). Use for output that
-   *  belongs in the conversation surface — `/help` listings, `/skills`
+   *  belongs in the conversation surface — `/help` listings, `/extensions`
    *  output, etc. Don't use for transient mutation feedback (use
    *  `notify` instead so the chat doesn't fill with bookkeeping). */
   appendSystem: (text: string) => void;
@@ -30,8 +30,8 @@ export interface SlashCommandContext {
   listThemes: () => { id: string; label: string }[];
   setModel: (id: string) => Promise<void>;
   resetLayout: () => void;
-  listSkills: () => string[];
-  installSkill: (spec: string) => Promise<string>;
+  listExtensions: () => string[];
+  installExtension: (spec: string) => Promise<string>;
   listModels: () => { id: string; label: string; active?: boolean }[];
   toggleTerminal: () => void;
   // Show / hide / toggle the sidebar. State changes propagate via the
@@ -198,8 +198,8 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       },
     },
     {
-      name: "skills",
-      description: "List registered skills, or install an Aethon skill package",
+      name: "extensions",
+      description: "List registered extensions, or install an Aethon extension package",
       usage: "[install <npm-package|git-url>]",
       run: async (args, ctx) => {
         const v = args.trim();
@@ -208,37 +208,37 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           const spec = rest.join(" ").trim();
           if (!spec) {
             ctx.notify({
-              title: "Missing skill package",
-              message: "Usage: /skills install <npm-package|git-url>",
+              title: "Missing extension package",
+              message: "Usage: /extensions install <npm-package|git-url>",
               kind: "error",
             });
             return;
           }
           ctx.notify({
-            title: "Installing skill",
+            title: "Installing extension",
             message: spec,
             kind: "info",
             durationMs: null,
           });
-          const output = await ctx.installSkill(spec);
+          const output = await ctx.installExtension(spec);
           ctx.appendSystem(
-            `Skill install complete: \`${spec}\`\n\n${output || "Agent will reload on next request."}`,
+            `Extension install complete: \`${spec}\`\n\n${output || "Agent will reload on next request."}`,
           );
           return;
         }
         if (v) {
           ctx.notify({
-            title: `Unknown skills command: ${subcommand}`,
-            message: "Usage: /skills install <npm-package|git-url>",
+            title: `Unknown extensions command: ${subcommand}`,
+            message: "Usage: /extensions install <npm-package|git-url>",
             kind: "error",
           });
           return;
         }
-        const list = ctx.listSkills();
+        const list = ctx.listExtensions();
         ctx.appendSystem(
           list.length > 0
-            ? `Registered skills:\n${list.map((s) => `- ${s}`).join("\n")}`
-            : "No skills registered.",
+            ? `Registered extensions:\n${list.map((s) => `- ${s}`).join("\n")}`
+            : "No extensions registered.",
         );
       },
     },
