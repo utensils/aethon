@@ -481,6 +481,56 @@ fn search_sessions(
     Ok(hits)
 }
 
+/// Delete a persisted session directory at `~/.aethon/sessions/<tab_id>/`.
+/// `tab_id` must match the bridge's `discoverPersistedTabs` regex
+/// (`^[A-Za-z0-9_-]{1,128}$`) so a malicious caller can't path-traverse
+/// out of the sessions directory. The reserved name `default` is also
+/// rejected — it's the bridge's bootstrap-tab session and removing it
+/// would orphan the next bun respawn.
+#[tauri::command]
+fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
+    if tab_id.is_empty() || tab_id.len() > 128 {
+        return Err("tab_id must be 1..=128 chars".to_string());
+    }
+    if tab_id == "default" {
+        return Err("cannot delete the default session".to_string());
+    }
+    if !tab_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err("tab_id must match [A-Za-z0-9_-]".to_string());
+    }
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let sessions_root = home.join(".aethon").join("sessions");
+    let target = sessions_root.join(&tab_id);
+    // Defense in depth: even though the regex above forbids '/' and '..',
+    // canonicalize and verify the result still lives directly under
+    // sessions_root. A symlink replacing <tab_id>/ could otherwise
+    // redirect remove_dir_all elsewhere.
+    if !target.exists() {
+        return Ok(()); // already gone — treat as success
+    }
+    let canonical_root = match std::fs::canonicalize(&sessions_root) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("canonicalize sessions root: {e}")),
+    };
+    let canonical_target = match std::fs::canonicalize(&target) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("canonicalize target: {e}")),
+    };
+    if canonical_target.parent() != Some(canonical_root.as_path()) {
+        return Err("refusing to delete: target escapes sessions root".to_string());
+    }
+    std::fs::remove_dir_all(&canonical_target)
+        .map_err(|e| format!("remove_dir_all {}: {e}", canonical_target.display()))?;
+    tracing::info!(target: "aethon::session_delete", "deleted {}", canonical_target.display());
+    Ok(())
+}
+
 fn extract_text_from_content(v: &serde_json::Value) -> String {
     let content = match v.get("content") {
         Some(c) => c,
@@ -2192,6 +2242,7 @@ pub fn run() {
             write_config,
             aethon_home_dir,
             search_sessions,
+            delete_session,
             updater_available,
             toggle_fullscreen,
             toggle_devtools,

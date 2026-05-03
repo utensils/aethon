@@ -1152,6 +1152,19 @@ export default function App() {
     resolve(allowed);
   }
 
+  /** Pending session-deletion confirmations keyed off notification id.
+   *  Same shape as the shell-close / shell-write consent refs — the
+   *  notification's Delete / Cancel action resolves the promise. */
+  const sessionDeleteConsentRef = useRef<
+    Map<string, (allowed: boolean) => void>
+  >(new Map());
+  function resolveSessionDeleteConsent(notifId: string, allowed: boolean) {
+    const resolve = sessionDeleteConsentRef.current.get(notifId);
+    if (!resolve) return;
+    sessionDeleteConsentRef.current.delete(notifId);
+    resolve(allowed);
+  }
+
   /** Mirror a share-mode change from the Rust source-of-truth into the
    *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
    *  shell tab. The Rust side enforces the actual privacy boundary —
@@ -1277,6 +1290,32 @@ export default function App() {
         actions: [
           { label: "Close", action: `shell-close-allow:${id}` },
           { label: "Cancel", action: `shell-close-deny:${id}` },
+        ],
+      });
+    });
+  }
+
+  /** Pop a Delete / Cancel notification before removing a saved session.
+   *  Resolves true → caller invokes the Tauri delete_session command and
+   *  refreshes the recent-sessions list; false → no-op. Sticky toast
+   *  (durationMs: null) so a destructive action requires a deliberate
+   *  click — auto-dismiss would let the prompt vanish before the user
+   *  can react. */
+  function promptDeleteSessionConfirmation(
+    label: string,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const id = `session-delete-${crypto.randomUUID().slice(0, 8)}`;
+      sessionDeleteConsentRef.current.set(id, resolve);
+      pushNotification({
+        id,
+        title: `Delete saved session?`,
+        message: `"${label}" — the on-disk transcript will be removed and cannot be recovered.`,
+        kind: "warning",
+        durationMs: null,
+        actions: [
+          { label: "Delete", action: `session-delete-allow:${id}` },
+          { label: "Cancel", action: `session-delete-deny:${id}` },
         ],
       });
     });
@@ -5443,6 +5482,31 @@ export default function App() {
           dismissNotification(id);
           return true;
         }
+        // Session-delete consent prompts. Same security shape as the
+        // shell-close path — narrowly filtered on the reserved
+        // `session-delete-` prefix + a dismiss of an id with a pending
+        // resolver. Must run before extension-route interception so a
+        // user's Delete / Cancel can't be hijacked by a registered
+        // notification handler.
+        const isSessionDeleteAction =
+          eventType === "action" &&
+          typeof action === "string" &&
+          action.startsWith("session-delete-");
+        const isSessionDeleteDismiss =
+          (eventType === "dismiss" || eventType === "expire") &&
+          typeof id === "string" &&
+          sessionDeleteConsentRef.current.has(id);
+        if (isSessionDeleteAction && id && action) {
+          const allowed = action.startsWith("session-delete-allow:");
+          resolveSessionDeleteConsent(id, allowed);
+          dismissNotification(id);
+          return true;
+        }
+        if (isSessionDeleteDismiss && id) {
+          resolveSessionDeleteConsent(id, false);
+          dismissNotification(id);
+          return true;
+        }
         // P5: agent-crashed notification actions. Restart respawns
         // the bridge; dismiss just closes the toast.
         if (
@@ -5588,25 +5652,29 @@ export default function App() {
       if (component.id === "notification-stack") {
         const id = (data as { id?: string } | undefined)?.id;
         if ((eventType === "dismiss" || eventType === "expire") && id) {
-          // Dismissing a pending shell-write OR shell-close confirmation
-          // = deny. Both resolvers fire on every dismiss/expire so a
-          // dropped notification can't dangle the originator's promise.
+          // Dismissing a pending shell-write / shell-close / session-delete
+          // confirmation = deny. All resolvers fire on every dismiss/expire
+          // so a dropped notification can't dangle the originator's promise.
           resolveShellWriteConsent(id, false);
           resolveShellCloseConsent(id, false);
+          resolveSessionDeleteConsent(id, false);
           dismissNotification(id);
           return true;
         }
         if (eventType === "action" && id) {
           const action = (data as { action?: string } | undefined)?.action;
-          // Built-in shell-write / shell-close Allow/Deny actions
-          // resolve pending consents without a bridge round-trip. Other
-          // actions get forwarded as a2ui events for extension matchers.
+          // Built-in shell-write / shell-close / session-delete Allow/Deny
+          // actions resolve pending consents without a bridge round-trip.
+          // Other actions get forwarded as a2ui events for extension matchers.
           if (action && action.startsWith("shell-write-")) {
             const allowed = action.startsWith("shell-write-allow:");
             resolveShellWriteConsent(id, allowed);
           } else if (action && action.startsWith("shell-close-")) {
             const allowed = action.startsWith("shell-close-allow:");
             resolveShellCloseConsent(id, allowed);
+          } else if (action && action.startsWith("session-delete-")) {
+            const allowed = action.startsWith("session-delete-allow:");
+            resolveSessionDeleteConsent(id, allowed);
           } else if (action) {
             invoke("dispatch_a2ui_event", {
               event: JSON.stringify({
@@ -5806,6 +5874,49 @@ export default function App() {
           | undefined;
         const projectId = selected?.projectId ?? selected?.itemId;
         return projectId ? removeProjectById(projectId) : true;
+      }
+      if (component.id === "sidebar" && eventType === "delete-session") {
+        const selected = data as
+          | { sessionId?: string; itemId?: string; label?: string }
+          | undefined;
+        // Strip the "session:" prefix as a defensive fallback in case a
+        // future caller forgets the split — the sidebar already strips
+        // it but we don't want a stray prefix to land in the Tauri
+        // command path validator.
+        const raw = selected?.sessionId ?? selected?.itemId ?? "";
+        const sessionId = raw.startsWith("session:")
+          ? raw.slice("session:".length)
+          : raw;
+        const label = selected?.label ?? sessionId;
+        if (!sessionId) return true;
+        promptDeleteSessionConfirmation(label).then((allowed) => {
+          if (!allowed) return;
+          invoke("delete_session", { tabId: sessionId })
+            .then(() => {
+              // Drop the entry from the in-memory cache and re-derive
+              // both the recent-sessions list (palette) and the sidebar
+              // history section so the deleted row disappears
+              // immediately — no need to wait for the next bridge ready.
+              allDiscoveredSessionsRef.current =
+                allDiscoveredSessionsRef.current.filter(
+                  (s) => s.tabId !== sessionId,
+                );
+              syncRecentSessionsToState();
+              pushNotification({
+                title: "Session deleted",
+                message: label,
+                kind: "success",
+              });
+            })
+            .catch((err: unknown) => {
+              pushNotification({
+                title: "Delete session failed",
+                message: String(err),
+                kind: "error",
+              });
+            });
+        });
+        return true;
       }
       // Sidebar select + dropdown chrome pickers (model-picker /
       // appearance-menu) all use the same `{sectionId, itemId}` event
