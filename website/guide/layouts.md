@@ -7,25 +7,19 @@ layouts is a runtime payload swap.
 
 This is the central insight: **the chrome is data**.
 
-## The four built-in layouts
+## The built-in layout
 
-All four ride on Aethon's signature Æther palette and ship as part of
-the default-layout skill.
+Aethon currently ships one layout while polish focuses on a single
+surface:
 
 | Layout | `id` | Vibe |
-|---|---|---|
-| **Workstation** | `workstation` | The default — chat-first, sidebar + canvas + composer + terminal. |
-| **Command Deck** | `command-deck` | Denser, dashboard-feel — multi-column with status grid. |
-| **Editorial** | `editorial` | Generous typography, long-form reading mode. |
-| **Live Layout** | `live-layout` | Animated demo layout showcasing transitions. |
+| --- | --- | --- |
+| **Workstation** | `workstation` | The default — chat-first, sidebar + canvas + composer + terminal panel. |
 
-Switch them with the `/layout <id>` slash command:
-
-```
-/layout editorial
-```
-
-…or via the **Command palette** (`Cmd+P`) → search "layout" → pick.
+Earlier sibling variations (`command-deck`, `editorial`, `live-layout`)
+were trimmed to keep the polish loop tight. They may return as official
+options later — until then, the same `aethon.registerLayout` API any
+extension uses can bring back equivalents.
 
 ## The slot contract
 
@@ -33,7 +27,7 @@ Layouts are interchangeable because they share a **slot contract**.
 Canonical area names:
 
 | Slot | What renders there |
-|---|---|
+| --- | --- |
 | `header` | Tab strip and window-level chrome. |
 | `sidebar` | Project list, skills, sessions, themes, layouts. |
 | `canvas` | The agent's main render surface (chat history). |
@@ -51,7 +45,7 @@ defaults.
 
 ## Switching layouts
 
-Three paths:
+Three paths (relevant once more than one layout is registered):
 
 1. **Slash command** — `/layout <id>`.
 2. **Command palette** — `Cmd+P`, search "layout".
@@ -74,8 +68,7 @@ aethon.registerLayout({
 });
 ```
 
-Reserved ids: `workstation`, `command-deck`, `editorial`, `live-layout`.
-Custom ids must match `^[A-Za-z][\w-]*$`.
+Reserved id: `workstation`. Custom ids must match `^[A-Za-z][\w-]*$`.
 
 A layout registered this way:
 

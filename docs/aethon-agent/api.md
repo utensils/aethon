@@ -289,12 +289,15 @@ await globalThis.aethon.registerLayout({
 await globalThis.aethon.setLayout(focusLayout);
 ```
 
-`id` must match `/^[A-Za-z][\w-]*$/` and cannot collide with the four
-built-in layouts (`workstation`, `editorial`, `command-deck`,
-`live-layout`). The catalogue replays on `ready` so registrations
-survive bridge respawns. `RuntimeSnapshot.layouts` carries the
-catalogue (id + name + description, payloads omitted to keep the
-snapshot small) so the agent's first-turn context sees it.
+`id` must match `/^[A-Za-z][\w-]*$/` and cannot collide with the
+built-in layout `workstation`. (Earlier siblings `editorial` /
+`command-deck` / `live-layout` were trimmed from the catalogue —
+those names are free to reuse; we may reintroduce them later as
+official variations, in which case re-using the same id will be
+caught by the registration validator.) The catalogue replays on
+`ready` so registrations survive bridge respawns. `RuntimeSnapshot.layouts`
+carries the catalogue (id + name + description, payloads omitted to keep
+the snapshot small) so the agent's first-turn context sees it.
 
 ### React-component skills (`aethon.frontendEntry`)
 

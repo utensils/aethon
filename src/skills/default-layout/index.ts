@@ -22,18 +22,9 @@ import {
   ToolCard,
 } from "./components";
 import {
-  AeMark,
   AgentStatusPill,
   AppearanceMenu,
-  CanvasOrnament,
-  CommandBar,
-  EditorialHeader,
-  EditorialSpine,
-  InspectorPane,
-  LayoutChangePill,
-  LayoutToast,
   ModelPicker,
-  VerticalTabRail,
 } from "./variation-components";
 import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
@@ -80,29 +71,12 @@ export const defaultLayoutSkill: A2UISkill = {
     // (replacing the plain `card` primitive in toolCardPayload).
     "tool-card": ToolCard,
     "empty-state": EmptyState,
-    // Layout-variation chrome — used by editorial / command-deck / live-layout.
-    // Registered alongside the standard composites so any layout payload can
-    // mix and match them.
-    //
-    // Canonical names match the design handoff
-    // (`aethon-handoff/handoff/component-contracts.md`); legacy aliases
-    // (`agent-status-pill`, `editorial-spine`, `canvas-ornament`,
-    // `layout-toast`) stay registered so existing layout payloads continue
-    // to render after the rename.
+    // Workstation header chrome — agent-status pill (canonical
+    // `agent-pulse`; legacy `agent-status-pill` alias kept so existing
+    // layout payloads continue to render after the rename) plus the
+    // model + appearance pickers.
     "agent-pulse": AgentStatusPill,
     "agent-status-pill": AgentStatusPill,
-    "brand-spine": EditorialSpine,
-    "editorial-spine": EditorialSpine,
-    "editorial-header": EditorialHeader,
-    "ae-ornament": CanvasOrnament,
-    "canvas-ornament": CanvasOrnament,
-    "ae-mark": AeMark,
-    "command-bar": CommandBar,
-    "vertical-tab-rail": VerticalTabRail,
-    "inspector-pane": InspectorPane,
-    "layout-change-pill": LayoutChangePill,
-    "layout-diff-toast": LayoutToast,
-    "layout-toast": LayoutToast,
     "model-picker": ModelPicker,
     "appearance-menu": AppearanceMenu,
     "command-palette": CommandPalette,

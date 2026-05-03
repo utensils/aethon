@@ -17,7 +17,7 @@ pi (the model), so model-side commands like `/think harder` keep working.
 | `/terminal` | Toggle the bottom terminal panel. Equivalent to `Cmd+\``. |
 | `/skills` | List every loaded extension and skill — built-in plus user-installed plus project-local — with their registered components, themes, slash commands, and last reload status. |
 | `/sidebar` | Toggle the sidebar. Equivalent to `Cmd+B`. |
-| `/layout <id>` | Switch layouts. Reserved built-in ids: `workstation`, `command-deck`, `editorial`, `live-layout`. Extensions register additional ones via `aethon.registerLayout`. |
+| `/layout <id>` | Switch layouts. The only built-in id today is `workstation`; extensions register additional ones via `aethon.registerLayout`. |
 | `/project <path>` | Add a project (or activate it if already in the list) and use it as the active project for new tabs. |
 
 ## Extension commands
