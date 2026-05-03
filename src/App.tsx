@@ -39,10 +39,11 @@ import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 import { extractSessionId } from "./utils/sidebarHistory";
 import { deepMergeState, layoutPatch } from "./utils/stateMutation";
-import { applyUiScale, readZoom, writeUiViewportVars } from "./utils/viewport";
+import { applyUiScale } from "./utils/viewport";
 import { formatRelativeTime } from "./utils/time";
 import { canonicalCombo, normalizeRegisteredCombo } from "./utils/keybindings";
 import { coerceChatMessages } from "./utils/messages";
+import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -72,8 +73,6 @@ import logoUrl from "./assets/aethon-logo.svg?url";
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
 
-const ZOOM_MIN = 0.7;
-const ZOOM_MAX = 1.6;
 /** Lifetime of an Allow/Deny prompt for `aethon.shells.write` in
  *  read-write mode. Set ~30 s under the bridge-side ack timeout
  *  (5 min) so a late click can never inject keystrokes after the
@@ -583,55 +582,14 @@ export default function App() {
   }, []);
 
   // ---------------------------------------------------------------------
-  // UI zoom — Cmd+/- / Cmd+0 to scale the entire chrome the way browsers
-  // and editors do. CSS zoom scales text + spacing together, while the
-  // --app-ui-scale token lets viewport-bound shells and portals divide
-  // their dimensions back down. Without that compensation, 100vw/100vh
-  // elements become wider/taller than the visible window at >100%.
+  // UI zoom + theme switching are owned by useZoomAndTheme. The hook
+  // also installs a window resize listener that re-syncs the viewport
+  // CSS vars so layout-sized children stay aligned at non-1.0 zoom.
   // ---------------------------------------------------------------------
-  function applyZoom(next: number) {
-    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
-    const rounded = Math.round(clamped * 100) / 100;
-    applyUiScale(rounded);
-    writeState("ui_zoom", String(rounded)).catch(() => {
-      /* best-effort */
-    });
-    pushNotification({
-      id: "ae-zoom",
-      title: `Zoom ${Math.round(rounded * 100)}%`,
-      kind: "info",
-      durationMs: 1200,
-    });
-  }
-  function adjustZoom(delta: number) {
-    applyZoom(readZoom() + delta);
-  }
-  function resetZoom() {
-    applyZoom(1);
-  }
-
-  useEffect(() => {
-    const onResize = () => writeUiViewportVars(readZoom());
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  function setTheme(id: string) {
-    document.documentElement.dataset.theme = id;
-    writeState("theme", id).catch(() => {
-      /* ignore */
-    });
-    // Update /sidebar/themes' active flag so the appearance pulldown +
-    // sidebar themes section both reflect the new selection without a
-    // separate hydrate pass.
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const themes = ((sidebar.themes as { id: string; label: string }[] | undefined) ?? [])
-        .map((t) => ({ ...t, active: t.id === id }));
-      return { ...prev, sidebar: { ...sidebar, themes } };
-    });
-  }
+  const { adjustZoom, resetZoom, setTheme } = useZoomAndTheme({
+    setState,
+    pushNotification,
+  });
 
   // Chat history is now persisted exclusively via pi's JSONL session files
   // under $AETHON_SESSIONS_DIR/<tabId>/. On startup the bridge emits a
