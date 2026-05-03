@@ -3527,9 +3527,14 @@ async function main() {
             // extension surface before layering the new one on top. See
             // tab_open above; same reasoning applies here.
             const projectChanged = cwd !== currentProjectCwd;
+            const t0 = projectChanged ? Date.now() : 0;
             if (projectChanged) {
               unloadProjectExtensions();
+              logger.scope("project-switch").info(
+                `set_project unload took ${Date.now() - t0}ms (cwd=${cwd})`,
+              );
             }
+            const tLoad = Date.now();
             const result = await loadProjectAethonExtensions(
               cwd,
               aethonApi,
@@ -3537,13 +3542,29 @@ async function main() {
               loadedProjectExtensionFiles,
               loadHooks,
             );
+            if (projectChanged) {
+              logger.scope("project-switch").info(
+                `set_project load took ${Date.now() - tLoad}ms (loaded=${result.loaded} failed=${result.failed})`,
+              );
+            }
             currentProjectCwd = cwd;
             // Reload on fresh loads, fresh failures, or just because the
             // project switched (the unload changed the prompt state).
             if (result.loaded > 0 || result.failed > 0 || projectChanged) {
+              const tReload = Date.now();
               await resourceLoader.reload();
+              if (projectChanged) {
+                logger.scope("project-switch").info(
+                  `set_project resourceLoader.reload took ${Date.now() - tReload}ms`,
+                );
+              }
               scheduleStateFileWrite();
               emitReady();
+              if (projectChanged) {
+                logger.scope("project-switch").info(
+                  `set_project total ${Date.now() - t0}ms (cwd=${cwd})`,
+                );
+              }
             }
           } else {
             send({ type: "error", message: "set_project: cwd must be string|null" });
