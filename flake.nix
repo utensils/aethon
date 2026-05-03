@@ -45,6 +45,7 @@
         {
           system,
           lib,
+          config,
           ...
         }:
         let
@@ -208,6 +209,10 @@
               pkgs.pkg-config
               pkgs.git
               pkgs.gh
+              # Wrapped treefmt with prettier/taplo/rustfmt/nixfmt baked in.
+              # The devshell `fmt` command shells out to whatever treefmt is on
+              # PATH, so without this the bare treefmt can't find its config.
+              config.treefmt.build.wrapper
             ]
             ++ linuxBuildInputs
             ++ darwinBuildInputs;
@@ -328,7 +333,7 @@
               {
                 category = "check";
                 name = "fmt";
-                help = "Format Rust + Nix";
+                help = "Format Rust + Nix + JSON/MD/YAML/CSS (prettier) + TOML (taplo)";
                 command = "treefmt \"$@\"";
               }
             ];
@@ -341,6 +346,39 @@
               enable = true;
               package = rustToolchain;
             };
+            # Prettier handles structured-doc files; TOML uses taplo. JS/TS/TSX
+            # are intentionally excluded — ESLint owns the source-code style
+            # there, and reformatting hand-tuned files (agent/main.ts, App.tsx,
+            # the layout JSONs) would churn unrelated diffs.
+            programs.prettier.enable = true;
+            programs.taplo.enable = true;
+            settings.formatter.prettier.excludes = [
+              "*.cjs"
+              "*.js"
+              "*.jsx"
+              "*.mjs"
+              "*.ts"
+              "*.tsx"
+              "*.vue"
+              # Hand-shaped layout payloads — element ordering is meaningful.
+              "src/skills/default-layout/*.a2ui.json"
+              "src/skills/default-layout/slots.json"
+              # Generated / vendored / out-of-tree.
+              "package-lock.json"
+              "bun.lock"
+              "node_modules/**"
+              "dist/**"
+              "coverage/**"
+              "src-tauri/target/**"
+              "src-tauri/binaries/**"
+              ".aethon/**"
+              ".claude/**"
+              "website/**"
+            ];
+            settings.formatter.taplo.excludes = [
+              "src-tauri/target/**"
+              "node_modules/**"
+            ];
           };
         };
     };

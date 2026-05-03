@@ -136,9 +136,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     } else {
         toml::from_str(input).unwrap_or_default()
     };
-    let default_share_mode = normalize_default_share_mode(
-        cfg.shell.default_share_mode.as_deref(),
-    );
+    let default_share_mode = normalize_default_share_mode(cfg.shell.default_share_mode.as_deref());
     let notify_on_completion = cfg.ui.notify_on_completion.unwrap_or(true);
     let notify_min_duration_seconds = cfg
         .ui
@@ -346,10 +344,7 @@ prompt_before_close = false
 "#,
         );
         assert_eq!(v["shell"]["defaultCommand"], "/bin/fish");
-        assert_eq!(
-            v["shell"]["defaultArgs"],
-            serde_json::json!(["-l"])
-        );
+        assert_eq!(v["shell"]["defaultArgs"], serde_json::json!(["-l"]));
         assert_eq!(v["shell"]["inheritEnv"], false);
         assert_eq!(v["shell"]["promptBeforeClose"], false);
     }
@@ -357,10 +352,7 @@ prompt_before_close = false
     #[test]
     fn parse_config_toml_extended_shell_keys_default() {
         let v = parse_config_toml("");
-        assert_eq!(
-            v["shell"]["defaultCommand"],
-            serde_json::Value::Null
-        );
+        assert_eq!(v["shell"]["defaultCommand"], serde_json::Value::Null);
         assert_eq!(v["shell"]["defaultArgs"], serde_json::json!([]));
         assert_eq!(v["shell"]["inheritEnv"], true);
         assert_eq!(v["shell"]["promptBeforeClose"], true);
@@ -371,10 +363,7 @@ prompt_before_close = false
         // Power users sometimes write `default_command = ""` to mean
         // "fall back to default". Treat empty string the same as omitted.
         let v = parse_config_toml("[shell]\ndefault_command = \"\"\n");
-        assert_eq!(
-            v["shell"]["defaultCommand"],
-            serde_json::Value::Null
-        );
+        assert_eq!(v["shell"]["defaultCommand"], serde_json::Value::Null);
     }
 
     #[test]

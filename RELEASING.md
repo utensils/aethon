@@ -29,10 +29,10 @@ pubkey will boot, but `check()` will refuse to validate downloads.
 Add two repository secrets in GitHub (Settings → Secrets and variables →
 Actions):
 
-| Name | Value |
-| --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | full contents of `aethon.key` (private file) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the passphrase you chose at generate time |
+| Name                                 | Value                                        |
+| ------------------------------------ | -------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | full contents of `aethon.key` (private file) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the passphrase you chose at generate time    |
 
 `cargo tauri build` reads these env vars and emits `*.sig` files alongside
 each platform bundle. Without them present, no signatures get generated and

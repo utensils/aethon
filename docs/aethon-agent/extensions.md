@@ -42,7 +42,9 @@ export default {
 You can also export `register` directly:
 
 ```ts
-export function register(api: AethonApi) { /* … */ }
+export function register(api: AethonApi) {
+  /* … */
+}
 ```
 
 Drop the file in `~/.aethon/extensions/` and reload (`/reset` in chat,
@@ -169,7 +171,9 @@ api.onEvent(
 api.onEvent(
   { componentType: "sidebar-item", descendantId: "git-summary" },
   async (_e, ctx) => {
-    await ctx.pi.prompt("Run `git log --oneline -20` and group commits by intent.");
+    await ctx.pi.prompt(
+      "Run `git log --oneline -20` and group commits by intent.",
+    );
   },
 );
 ```
@@ -178,22 +182,35 @@ api.onEvent(
 
 ```ts
 api.registerComponent("model-chip", {
-  components: [{
-    id: "chip",
-    type: "container",
-    props: { direction: "row", gap: 6, padding: 6, className: "chip" },
-    children: [
-      { id: "chip-label", type: "text",
-        props: { content: "model:", variant: "small", color: "var(--text-dim)" } },
-      { id: "chip-value", type: "text",
-        props: { content: { "$ref": "/model" }, variant: "small" } },
-    ],
-  }],
+  components: [
+    {
+      id: "chip",
+      type: "container",
+      props: { direction: "row", gap: 6, padding: 6, className: "chip" },
+      children: [
+        {
+          id: "chip-label",
+          type: "text",
+          props: {
+            content: "model:",
+            variant: "small",
+            color: "var(--text-dim)",
+          },
+        },
+        {
+          id: "chip-value",
+          type: "text",
+          props: { content: { $ref: "/model" }, variant: "small" },
+        },
+      ],
+    },
+  ],
 });
 
 // Insert it into the header row
 api.patchLayout("/components/0/children/0/children/2", {
-  id: "header-chip", type: "model-chip",
+  id: "header-chip",
+  type: "model-chip",
 });
 ```
 
@@ -211,15 +228,25 @@ async function pollWeather() {
 pollWeather().catch((e) => console.error("[weather] poller stopped:", e));
 
 api.registerComponent("weather-card", {
-  components: [{
-    id: "card", type: "card", props: { title: "Weather" },
-    children: [
-      { id: "temp", type: "text",
-        props: { content: { "$ref": "/weather/temp" }, variant: "large" } },
-      { id: "summary", type: "text",
-        props: { content: { "$ref": "/weather/summary" } } },
-    ],
-  }],
+  components: [
+    {
+      id: "card",
+      type: "card",
+      props: { title: "Weather" },
+      children: [
+        {
+          id: "temp",
+          type: "text",
+          props: { content: { $ref: "/weather/temp" }, variant: "large" },
+        },
+        {
+          id: "summary",
+          type: "text",
+          props: { content: { $ref: "/weather/summary" } },
+        },
+      ],
+    },
+  ],
 });
 ```
 
@@ -230,11 +257,11 @@ import defaultLayout from "./fallback-layout.json"; // ship a copy
 
 api.setLayout({
   components: [
-    { id: "root", type: "layout",
+    {
+      id: "root",
+      type: "layout",
       props: { columns: "1fr", rows: "1fr", areas: ["main"] },
-      children: [
-        { id: "main", type: "main-canvas", props: { area: "main" } },
-      ],
+      children: [{ id: "main", type: "main-canvas", props: { area: "main" } }],
     },
   ],
 });
@@ -254,7 +281,9 @@ api.onEvent(
   async (event, ctx) => {
     const shells = await ctx.shells.list();
     if (!shells.ok || !shells.data?.length) {
-      ctx.pi.notify("No shareable shells. Click the badge to flip one to 'read'.");
+      ctx.pi.notify(
+        "No shareable shells. Click the badge to flip one to 'read'.",
+      );
       return;
     }
     const tab = shells.data[0];
@@ -278,13 +307,16 @@ click to give the bridge handshake time to settle.
 
 ```ts
 api.registerComponent("info-card", {
-  components: [{
-    id: "ic", type: "card",
-    props: {
-      title: { "$ref": "/cards/0/title" },
-      description: { "$ref": "/cards/0/body" },
+  components: [
+    {
+      id: "ic",
+      type: "card",
+      props: {
+        title: { $ref: "/cards/0/title" },
+        description: { $ref: "/cards/0/body" },
+      },
     },
-  }],
+  ],
 });
 
 api.setState("/cards", [{ title: "Hello", body: "World" }]);

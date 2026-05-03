@@ -32,9 +32,7 @@
     "category": "DeveloperTool",
     "shortDescription": "pi with a face — agent-driven desktop shell.",
     "longDescription": "Aethon wraps the pi-coding-agent in a Tauri 2 desktop workspace where the agent renders its UI as A2UI components. The agent can mutate the layout in real time — registering sidebar sections, themes, and interactive panels via globalThis.aethon — making the entire window an extension surface, not just the chat.",
-    "externalBin": [
-      "binaries/aethon-agent"
-    ],
+    "externalBin": ["binaries/aethon-agent"],
     "resources": {
       "binaries/pi/package.json": "pi/package.json",
       "../docs/aethon-agent/README.md": "docs/aethon-agent/README.md",
@@ -42,9 +40,6 @@
       "../docs/aethon-agent/components.md": "docs/aethon-agent/components.md",
       "../docs/aethon-agent/extensions.md": "docs/aethon-agent/extensions.md",
       "../src/skills/default-layout/workstation.a2ui.json": "skills/default-layout/workstation.a2ui.json",
-      "../src/skills/default-layout/editorial.a2ui.json": "skills/default-layout/editorial.a2ui.json",
-      "../src/skills/default-layout/command-deck.a2ui.json": "skills/default-layout/command-deck.a2ui.json",
-      "../src/skills/default-layout/live-layout.a2ui.json": "skills/default-layout/live-layout.a2ui.json",
       "../src/skills/default-layout/slots.json": "skills/default-layout/slots.json"
     },
     "icon": [

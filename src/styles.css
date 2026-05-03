@@ -1,11 +1,12 @@
 :root {
-  /* Typography — design ships Geist (UI), Geist Mono (mono), Playfair
-     Display (editorial). Inter + JetBrains Mono fall back gracefully when
-     the network can't reach Google Fonts. */
+  /* Typography — design ships Geist (UI) + Geist Mono (mono); Inter and
+     JetBrains Mono fall back gracefully when the network can't reach
+     Google Fonts. Playfair Display is loaded too but used inline by the
+     AeMark monogram, not as a CSS variable. */
   --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
-    Menlo, monospace;
-  --font-editorial: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  --font-mono:
+    "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
   --text-2xs: 0.72rem;
   --text-xs: 0.78rem;
   --text-sm: 0.86rem;
@@ -227,7 +228,6 @@
     --motion-slow: 60ms;
   }
   .a2ui-terminal,
-  .ae-live-layout-pill,
   .ae-agent-pill-dot,
   .app-header-pill[data-state="thinking"]::before {
     animation: none !important;
@@ -527,7 +527,9 @@ body.ae-resizing-sidebar * {
   font-size: var(--chrome-text);
   cursor: pointer;
   color: var(--text);
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
   user-select: none;
   border-left: 2px solid transparent;
   min-width: 0;
@@ -641,7 +643,9 @@ body.ae-resizing-sidebar * {
   cursor: pointer;
   text-align: center;
   letter-spacing: 0.02em;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease,
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease,
     border-color var(--motion-fast) ease;
 }
 
@@ -759,8 +763,13 @@ body.ae-resizing-sidebar * {
   animation: ae-pill-pulse 1.6s ease-in-out infinite;
 }
 @keyframes ae-pill-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* Header spacer — flex grow filler so chrome controls (model picker,
@@ -799,7 +808,10 @@ body.ae-resizing-sidebar * {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
   width: max-content;
   max-width: min(34ch, calc(var(--app-viewport-width) - 32px));
   min-width: 0;
@@ -915,7 +927,9 @@ body.ae-resizing-sidebar * {
   border-radius: 5px;
   cursor: pointer;
   color: var(--text);
-  transition: background 100ms ease, color 100ms ease;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
   min-width: 0;
 }
 .a2ui-dropdown-item:hover {
@@ -953,23 +967,6 @@ body.ae-resizing-sidebar * {
   color: var(--text-dim);
   font-style: italic;
   text-align: center;
-}
-
-/* Editorial header row container — wraps the editorial-header composite
-   and any chrome controls (model picker, appearance menu) so they sit
-   on the same row inline with the title. */
-.ae-editorial-header-row {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0 18px;
-  gap: 12px;
-  min-width: 0;
-  overflow: hidden;
-}
-.ae-editorial-header-row .ae-editorial-header {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 /* ---- Main canvas / chat history ----------------------------------------- */
@@ -1070,7 +1067,9 @@ body.ae-resizing-sidebar * {
   font-size: var(--text-md);
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--motion-fast) ease, opacity var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
 }
 
 .a2ui-empty-state-primary:hover {
@@ -1102,7 +1101,9 @@ body.ae-resizing-sidebar * {
   font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
 }
 
 .a2ui-empty-state-secondary:hover {
@@ -1273,8 +1274,12 @@ body.ae-resizing-sidebar * {
   min-width: 0;
   max-width: 100%;
 }
-.a2ui-markdown > :first-child { margin-top: 0; }
-.a2ui-markdown > :last-child { margin-bottom: 0; }
+.a2ui-markdown > :first-child {
+  margin-top: 0;
+}
+.a2ui-markdown > :last-child {
+  margin-bottom: 0;
+}
 
 .a2ui-markdown p {
   margin: 0.4em 0;
@@ -1288,10 +1293,16 @@ body.ae-resizing-sidebar * {
   line-height: 1.25;
   font-weight: 700;
 }
-.a2ui-markdown h1 { font-size: 1.25rem; }
-.a2ui-markdown h2 { font-size: 1.1rem; }
+.a2ui-markdown h1 {
+  font-size: 1.25rem;
+}
+.a2ui-markdown h2 {
+  font-size: 1.1rem;
+}
 .a2ui-markdown h3,
-.a2ui-markdown h4 { font-size: 1rem; }
+.a2ui-markdown h4 {
+  font-size: 1rem;
+}
 
 .a2ui-markdown ul,
 .a2ui-markdown ol {
@@ -1499,9 +1510,33 @@ body.ae-resizing-sidebar * {
   background: var(--user-bubble);
 }
 
-.a2ui-chat-message.agent,
-.a2ui-chat-message.system {
+.a2ui-chat-message.agent {
   background: var(--agent-bubble);
+}
+
+/* System bubbles surface bridge stderr / lifecycle notices. They're
+   not conversation, so they shouldn't compete with user / agent
+   bubbles for attention — strip the chrome down to a faint inline
+   note, monospace for log readability, and let the role label do
+   double duty as the visual cue. */
+.a2ui-chat-message.system {
+  background: transparent;
+  border: 0;
+  padding: 2px 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+.a2ui-chat-message.system .a2ui-chat-text {
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.a2ui-chat-message.system .a2ui-chat-role {
+  display: none;
 }
 
 .a2ui-chat-role {
@@ -1613,7 +1648,9 @@ body.ae-resizing-sidebar * {
   font: inherit;
   outline: none;
   min-height: 44px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .a2ui-chat-input-field:focus {
@@ -1836,8 +1873,15 @@ body.ae-resizing-sidebar * {
   animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
 }
 @keyframes ae-tab-busy-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50%      { opacity: 1;   transform: scale(1.1); }
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
 
 /* Queue badge — small accent chip after the label when ≥1 follow-up
@@ -1949,317 +1993,6 @@ body.ae-resizing-sidebar * {
   width: 100%;
 }
 
-/* =========================================================================
-   Editorial layout — Æπ as system motif. Vertical brand spine on the left,
-   serif header with italic π, chapter-style tabs, ornamental Æ in canvas.
-   ========================================================================= */
-
-.ae-spine {
-  background: var(--bg-elev);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 0;
-  gap: 14px;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  flex-shrink: 0;
-}
-
-.ae-spine-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.ae-spine-title {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
-  font-size: var(--chrome-text-compact);
-  letter-spacing: 0.4em;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  margin-top: 8px;
-  white-space: nowrap;
-}
-
-.ae-spine-spacer {
-  flex: 1;
-}
-
-.ae-spine-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ae-spine-buttons button {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: 7px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-}
-
-.ae-spine-buttons button:hover {
-  background: var(--accent-hover-tint);
-  color: var(--accent);
-}
-
-.ae-spine-buttons button[data-active="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.ae-editorial-header {
-  border-bottom: 1px solid var(--border);
-  padding: 0 22px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  height: 100%;
-  background: var(--bg);
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.ae-editorial-title {
-  display: flex;
-  flex-direction: column;
-  line-height: 1;
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.ae-editorial-title-main {
-  font-family: var(--font-editorial);
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ae-editorial-title-pi {
-  font-style: italic;
-  color: var(--accent);
-  margin-left: 0.18em;
-}
-
-.ae-editorial-subtitle {
-  font-size: var(--chrome-text-muted);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  margin-top: 4px;
-  font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ae-editorial-tabs {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-left: auto;
-  overflow-x: auto;
-  min-width: 0;
-}
-
-.ae-editorial-tab {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  cursor: pointer;
-  opacity: 0.55;
-  transition: opacity var(--motion-fast) ease;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  flex: 0 1 12rem;
-  min-width: 7rem;
-  max-width: min(16rem, 28vw);
-}
-.ae-editorial-tab:hover { opacity: 0.85; }
-.ae-editorial-tab[data-active="true"] { opacity: 1; }
-
-.ae-editorial-tab-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--chrome-text-muted);
-  font-family: var(--font-mono);
-  color: var(--text-dim);
-  letter-spacing: 0.06em;
-  font-weight: 500;
-}
-
-.ae-editorial-tab-meta .ae-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 99px;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-
-.ae-editorial-tab-title {
-  font-family: var(--font-editorial);
-  font-style: italic;
-  font-size: var(--chrome-text);
-  color: var(--text-dim);
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-bottom: 1px solid transparent;
-  padding-bottom: 1px;
-}
-
-.ae-editorial-tab[data-active="true"] .ae-editorial-tab-title {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-
-.ae-editorial-tab-close {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font-size: var(--chrome-text);
-  line-height: 1;
-  padding: 0 4px;
-  margin-left: 4px;
-  cursor: pointer;
-  border-radius: 3px;
-}
-.ae-editorial-tab-close:hover {
-  background: var(--accent-hover-tint);
-  color: var(--text);
-}
-
-.ae-editorial-tab-new {
-  background: transparent;
-  border: 1px dashed var(--border);
-  color: var(--text-dim);
-  font-size: 1rem;
-  line-height: 1;
-  padding: 4px 10px;
-  cursor: pointer;
-  border-radius: 6px;
-  align-self: center;
-}
-.ae-editorial-tab-new:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* Big italic Æ ornament floating in the canvas */
-.ae-ornament {
-  position: absolute;
-  right: clamp(-60px, -8vw, -24px);
-  bottom: clamp(-40px, -6vh, -16px);
-  pointer-events: none;
-  font-family: "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
-  font-style: italic;
-  font-weight: 700;
-  font-size: clamp(12rem, 34vw, 26rem);
-  line-height: 1;
-  color: color-mix(in srgb, var(--accent) 5%, transparent);
-  user-select: none;
-}
-
-/* =========================================================================
-   Command-deck layout — vertical session rail + persistent ⌘ command bar
-   replaces the chrome tab strip.
-   ========================================================================= */
-
-.ae-command-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: var(--chrome-text-compact);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text-dim);
-  /* The header has both this bar and a sibling `.ae-header-spacer` with
-     `flex: 1 1 auto`. We want the spacer to be the sole grow filler so
-     `model-picker` / `appearance-menu` stay flushed right. `flex: 1`
-     (basis 0%) made the bar fight the spacer and lose, collapsing to
-     ~22px. `flex: 0 1 540px` (grow 0, basis 540) was closer but the bar
-     still shrank below its basis even when the row had room — so we use
-     `flex: 0 0 540px` and rely on `width:auto` + the row's intrinsic
-     overflow to handle very narrow windows (where this bar wraps to a
-     new row visually because the chrome dropdowns hold their width). */
-  flex: 0 0 540px;
-  min-width: 0;
-}
-
-.ae-command-bar-icon {
-  color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-}
-
-.ae-command-bar-text {
-  color: var(--text);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.ae-command-bar-placeholder {
-  color: var(--text-dim);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ae-command-bar-caret {
-  color: var(--text);
-  animation: ae-caret-blink 1s step-end infinite;
-}
-
-@keyframes ae-caret-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
-.ae-command-bar-shortcut {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--bg-elev);
-  font-size: var(--chrome-text-muted);
-  color: var(--text-dim);
-  flex-shrink: 0;
-}
-
 .ae-agent-pill {
   display: inline-flex;
   align-items: center;
@@ -2287,463 +2020,6 @@ body.ae-resizing-sidebar * {
   animation: ae-pill-pulse 1.6s ease-in-out infinite;
 }
 
-/* Vertical session rail — replaces sidebar in command-deck. Each tab
-   becomes a card with model + last-active hint. The rail is a flex column
-   with a fixed-height header row + a scrolling body so the brand mark and
-   "+" button stay pinned while the session list scrolls. */
-.ae-session-rail {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  background: var(--bg-elev);
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-}
-
-.ae-session-rail-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 6px 6px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ae-session-rail-section {
-  padding: 8px 8px 4px;
-  font-size: var(--chrome-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.ae-session-rail-header-version {
-  color: var(--text-dim);
-  font-size: var(--chrome-text-compact);
-  font-family: var(--font-mono);
-}
-
-/* Shelf entries — one-line items below the session cards (default-layout,
-   aethon-debug, terminal). */
-.ae-session-shelf-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  font-size: var(--chrome-text-compact);
-  color: var(--text);
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
-}
-.ae-session-shelf-item:hover {
-  background: var(--accent-hover-tint);
-  color: var(--accent);
-}
-.ae-session-shelf-icon {
-  color: var(--text-dim);
-  display: inline-flex;
-  width: 14px;
-}
-.ae-session-shelf-item-active {
-  background: var(--accent-hover-tint);
-  color: var(--accent);
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-}
-.ae-session-shelf-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.ae-session-shelf-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ae-session-shelf-hint {
-  font-family: var(--font-mono);
-  font-size: var(--chrome-text-muted);
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ae-session-card {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 10px;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  background: transparent;
-  color: var(--text);
-  min-width: 0;
-}
-.ae-session-card:hover {
-  background: var(--accent-hover-tint);
-}
-.ae-session-card[data-active="true"] {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-}
-
-.ae-session-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--chrome-text-muted);
-  color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.06em;
-}
-
-.ae-session-card-meta-dot {
-  margin-left: auto;
-  width: 5px;
-  height: 5px;
-  border-radius: 99px;
-  background: var(--accent);
-}
-
-.ae-session-card-title {
-  font-size: var(--chrome-text);
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 400;
-}
-.ae-session-card[data-active="true"] .ae-session-card-title {
-  font-weight: 600;
-}
-
-.ae-session-card-hint {
-  font-size: var(--chrome-text-muted);
-  color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ae-session-rail-close {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font-size: var(--chrome-text);
-  line-height: 1;
-  margin-left: auto;
-  cursor: pointer;
-  padding: 0 4px;
-  border-radius: 3px;
-}
-.ae-session-rail-close:hover {
-  background: var(--accent-hover-tint);
-  color: var(--text);
-}
-
-.ae-session-rail-new {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  line-height: 1;
-  margin-left: auto;
-}
-.ae-session-rail-new:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.ae-session-rail-header {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 14px;
-  height: 46px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  min-width: 0;
-}
-
-.ae-session-rail-header-title {
-  font-weight: 700;
-  font-size: var(--chrome-text);
-  letter-spacing: 0.01em;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* =========================================================================
-   Live-layout layout — agent rewrites its own UI live. 3-column grid with
-   inspector pane on the right + sticky setLayout toast at bottom of canvas.
-   ========================================================================= */
-
-.ae-live-layout-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-  font-size: var(--chrome-text-compact);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  animation: ae-layout-pulse 1.4s ease-out infinite;
-  flex: 0 1 auto;
-  margin-left: auto;
-  min-width: 0;
-  max-width: min(28ch, 40%);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ae-live-layout-pill[data-kind="user-applied"] {
-  animation: none;
-}
-.ae-live-layout-pill-icon {
-  font-style: normal;
-  line-height: 1;
-}
-.ae-live-layout-pill-label {
-  letter-spacing: 0.04em;
-}
-
-@keyframes ae-layout-pulse {
-  0% { box-shadow: 0 0 0 0 var(--accent-soft); }
-  100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
-}
-
-.ae-inspector {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  background: var(--bg-elev);
-  border-left: 1px solid var(--border);
-  overflow: hidden;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-}
-
-.ae-inspector-header {
-  height: 38px;
-  padding: 0 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  min-width: 0;
-}
-
-.ae-inspector-header-title {
-  font-weight: 700;
-  font-size: var(--chrome-text);
-  color: var(--text);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ae-inspector-header-icon {
-  color: var(--accent);
-  display: inline-flex;
-}
-
-.ae-inspector-badge {
-  margin-left: auto;
-  font-size: var(--chrome-text-muted);
-  color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 2px 6px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 99px;
-  letter-spacing: 0.08em;
-  flex-shrink: 0;
-}
-
-.ae-inspector-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ae-inspector-section-label {
-  font-size: var(--chrome-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.ae-inspector-pre {
-  margin: 0;
-  padding: 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  font-size: var(--chrome-text-compact);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
-  overflow: auto;
-  line-height: 1.5;
-  white-space: pre;
-  max-width: 100%;
-}
-
-.ae-inspector-kv {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: var(--chrome-text-compact);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
-}
-
-.ae-inspector-kv-row {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-}
-.ae-inspector-kv-row > span:first-child {
-  color: var(--text-dim);
-}
-
-.ae-inspector-op {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--chrome-text-compact);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  border-left: 2px solid var(--border);
-  padding-left: 8px;
-  color: var(--text);
-  min-width: 0;
-}
-.ae-inspector-op[data-recent="true"] {
-  border-left-color: var(--accent);
-  color: var(--accent);
-}
-.ae-inspector-op-when {
-  margin-left: auto;
-  color: var(--text-dim);
-  flex-shrink: 0;
-}
-
-/* Sticky setLayout toast — shows the diff with undo/keep buttons. */
-.ae-layout-toast {
-  position: sticky;
-  bottom: 12px;
-  margin: 12px 18px 0;
-  background: var(--bg-elev);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: var(--chrome-text-compact);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  max-width: calc(100% - 36px);
-  overflow-wrap: anywhere;
-}
-
-.ae-layout-toast-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  min-width: 0;
-}
-.ae-layout-toast-row-title {
-  font-weight: 700;
-  color: var(--accent);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ae-layout-toast-row-when {
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-}
-
-.ae-layout-toast-diff {
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  line-height: 1.5;
-}
-
-.ae-layout-toast-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  align-items: center;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.ae-layout-toast-btn {
-  padding: 3px 9px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  font-size: var(--chrome-text-compact);
-  cursor: pointer;
-  font-family: inherit;
-}
-.ae-layout-toast-btn[data-primary="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-}
-.ae-layout-toast-btn:hover {
-  background: var(--accent-hover-tint);
-}
-
-.ae-layout-toast-meta {
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------------------------------------------------------------------------
  * Command palette — modal opened by ⌘P / ⌘⇧P. Renders at App root so
  * it overlays every layout. Backdrop dims the workspace; panel is
@@ -2766,8 +2042,12 @@ body.ae-resizing-sidebar * {
   animation: ae-palette-fade 120ms ease-out;
 }
 @keyframes ae-palette-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .ae-palette-panel {
@@ -2785,8 +2065,14 @@ body.ae-resizing-sidebar * {
   animation: ae-palette-pop 140ms ease-out;
 }
 @keyframes ae-palette-pop {
-  from { transform: translateY(-6px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .ae-palette-header {
@@ -2962,10 +2248,18 @@ body.ae-resizing-sidebar * {
   min-width: 0;
 }
 @keyframes ae-notification-slide {
-  from { transform: translateX(8px); opacity: 0; }
-  to   { transform: translateX(0);   opacity: 1; }
+  from {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
-.ae-notification-info { border-left-color: var(--accent); }
+.ae-notification-info {
+  border-left-color: var(--accent);
+}
 .ae-notification-success {
   border-left-color: color-mix(in oklab, var(--accent) 30%, #34c759 70%);
 }
@@ -3411,7 +2705,9 @@ body.ae-resizing-sidebar * {
   color: var(--text-dim);
   font-size: 0.82rem;
   cursor: pointer;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 .ae-search-scope-tab:hover:not(:disabled) {
   background: var(--accent-hover-tint);
@@ -3434,8 +2730,12 @@ body.ae-resizing-sidebar * {
   animation: a2ui-chat-flash 1200ms ease-out;
 }
 @keyframes a2ui-chat-flash {
-  0% { background: var(--accent-soft); }
-  100% { background: transparent; }
+  0% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 .ae-search-footer {
@@ -3589,7 +2889,9 @@ body.ae-resizing-sidebar * {
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
+  transition:
+    background 80ms ease,
+    color 80ms ease;
 }
 .ae-share-badge:hover {
   background: color-mix(in oklab, currentColor 14%, transparent);

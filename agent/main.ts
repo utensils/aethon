@@ -453,7 +453,16 @@ interface AethonExtensionApi {
   registerComponent(componentType: string, template: unknown): void;
   setState(path: string, value: unknown): void;
   registerTheme?: (theme: unknown) => void;
+  onUnload?: (fn: () => void | Promise<void>) => void;
 }
+
+// Tracks which extension scope's register() is currently on the stack.
+// `_onUnload` reads this to bucket teardown callbacks: project-directory
+// teardowns fire when the active project changes; user-level (or out-of-
+// register()) teardowns persist for the lifetime of the bridge.
+let currentExtensionLoadScope: "user" | "project" | null = null;
+const projectExtensionTeardowns: Array<() => void | Promise<void>> = [];
+const userExtensionTeardowns: Array<() => void | Promise<void>> = [];
 
 interface ThemeRecord {
   id: string;
@@ -936,7 +945,16 @@ async function loadAethonExtensionDirectory(
         });
         continue;
       }
-      await register(api);
+      // Track which extension's register() is on the stack so onUnload()
+      // calls bind to the right teardown bucket. Project-directory
+      // teardowns fire on project switch; user-level teardowns persist.
+      const prevScope = currentExtensionLoadScope;
+      currentExtensionLoadScope = options.source === "project-directory" ? "project" : "user";
+      try {
+        await register(api);
+      } finally {
+        currentExtensionLoadScope = prevScope;
+      }
       options.loadedFiles?.add(file);
       registry.set(displayName, options.source);
       options.onLoaded?.(displayName);
@@ -1293,6 +1311,32 @@ async function main() {
    */
   function unloadProjectExtensions(): void {
     if (!projectBaseline) return;
+    // Run any teardown callbacks the extension scheduled via
+    // `aethon.onUnload(fn)`. This is the only path an extension has to
+    // clean up timers / watchers / subprocesses spawned during register;
+    // without it those keep mutating shared state after the project
+    // boundary "unloaded" the registries (observed: mold's image-gallery
+    // setInterval kept re-patching /layout/columns every 2s).
+    // Each callback runs in its own try/catch so a buggy teardown can't
+    // wedge the unload — log + continue. Async teardowns are not awaited
+    // (we don't want a slow cleanup to block the project switch); a
+    // teardown that needs to flush should kick that off and return.
+    if (projectExtensionTeardowns.length > 0) {
+      const log = logger.scope("project-switch");
+      for (const fn of projectExtensionTeardowns) {
+        try {
+          const result = fn();
+          if (result && typeof (result as Promise<unknown>).catch === "function") {
+            (result as Promise<unknown>).catch((err: unknown) => {
+              log.warn(`teardown async error: ${(err as Error).message}`);
+            });
+          }
+        } catch (err) {
+          log.warn(`teardown sync error: ${(err as Error).message}`);
+        }
+      }
+      projectExtensionTeardowns.length = 0;
+    }
     // Drop project-directory entries from the load registry + failure
     // registry. User-level + skill-package + pi-extension entries stay.
     for (const [name, source] of loadedExtensions) {
@@ -2719,10 +2763,31 @@ async function main() {
     write: _shellsWrite,
   };
 
+  // Extension-supplied teardown registration. Called from inside an
+  // extension's register() to schedule a callback that fires when the
+  // extension is unloaded — for project-directory extensions that means
+  // when the active project changes (or the bridge tears down).
+  // Without this, anything an extension spawns (setInterval, fs.watch,
+  // open subprocesses, attached event listeners) keeps running after
+  // unload and silently undoes the project boundary — observed bug
+  // where mold's image-gallery setInterval kept re-patching the layout
+  // after the user switched to latentforge.
+  function _onUnload(fn: () => void | Promise<void>): void {
+    if (typeof fn !== "function") return;
+    if (currentExtensionLoadScope === "project") {
+      projectExtensionTeardowns.push(fn);
+    } else {
+      // User-level extensions, or onUnload() called outside of register()
+      // (e.g. from a deferred handler). Persist until the bridge exits.
+      userExtensionTeardowns.push(fn);
+    }
+  }
+
   const aethonApi = {
     registerComponent: _registerComponent,
     setState: _setState,
     onEvent: _onEvent,
+    onUnload: _onUnload,
     setLayout: _setLayout,
     patchLayout: _patchLayout,
     registerSidebarSection: _registerSidebarSection,
@@ -2834,6 +2899,32 @@ async function main() {
   function defaultModelKey(): string {
     const def = tabs.get("default");
     return def?.session.model ? modelKey(def.session.model) : "";
+  }
+
+  // Ensure the picker contains `model`; if not, prepend it and push the
+  // updated list to the frontend so the picker can highlight it as active.
+  // Without this, models registered dynamically by an extension (e.g.
+  // user's ollama-host extension calling pi.registerProvider("ollama",…))
+  // can become a session's active model without ever appearing in the
+  // picker, leaving the chrome rendering "model" with no id selected
+  // (observed bug: new tabs auth'd to provider "ollama" while picker
+  // only knew about the static "ollama-localhost" entry).
+  function ensurePickerHasModel(model: Model<Api> | undefined): void {
+    if (!model) return;
+    const key = modelKey(model);
+    if (cachedModels.some((m) => m.id === key)) return;
+    logger.scope("picker").debug(`prepending ${key} to picker`);
+    cachedModels = [modelDescriptor(model), ...cachedModels];
+    // state_patch is the bridge→frontend channel for live state writes;
+    // the frontend's handler routes a /sidebar/* path to root state so
+    // the picker re-renders with the new entry. Active flag is left to
+    // the existing tab_ready / model_changed flow that calls
+    // recomputeModelPicker on the frontend.
+    send({
+      type: "state_patch",
+      path: "/sidebar/models",
+      value: cachedModels.map((m) => ({ id: m.id, label: m.label })),
+    });
   }
 
   function emitReady() {
@@ -3007,6 +3098,12 @@ async function main() {
     // First tab: populate the global picker now that we have a model.
     if (cachedModels.length === 0) {
       cachedModels = buildPickerModels(session.model).map(modelDescriptor);
+    } else {
+      // Subsequent tabs may pick up a different default model than the
+      // first one (extensions like ollama-host call pi.setModel from
+      // within session_start, swapping the model under us). Make sure
+      // the picker can render whatever id the new tab ended up with.
+      ensurePickerHasModel(session.model ?? undefined);
     }
 
     // Per-tab subscriber. Closes over rec so increments / clears stay
@@ -3383,6 +3480,7 @@ async function main() {
             break;
           }
           await tab.session.setModel(next);
+          ensurePickerHasModel(next);
           send({ type: "model_changed", tabId, model: msg.id });
           break;
         }
@@ -3527,9 +3625,31 @@ async function main() {
             // extension surface before layering the new one on top. See
             // tab_open above; same reasoning applies here.
             const projectChanged = cwd !== currentProjectCwd;
+            const t0 = projectChanged ? Date.now() : 0;
             if (projectChanged) {
               unloadProjectExtensions();
+              logger.scope("project-switch").info(
+                `set_project unload took ${Date.now() - t0}ms (cwd=${cwd})`,
+              );
             }
+            // Show a notification if the load takes longer than the user
+            // is likely to tolerate without explanation. The 500ms window
+            // is below the threshold where most users start to perceive
+            // lag, so quick switches stay quiet. Notification is dismissed
+            // on completion.
+            const projectName = cwd.split("/").pop() || cwd;
+            const loadingNoticeId = `aethon:loading-project-ext:${cwd}`;
+            const loadingNoticeTimer = projectChanged
+              ? setTimeout(() => {
+                  void _notify({
+                    id: loadingNoticeId,
+                    title: `Loading ${projectName} extensions…`,
+                    kind: "info",
+                    durationMs: null,
+                  });
+                }, 500)
+              : null;
+            const tLoad = Date.now();
             const result = await loadProjectAethonExtensions(
               cwd,
               aethonApi,
@@ -3537,13 +3657,33 @@ async function main() {
               loadedProjectExtensionFiles,
               loadHooks,
             );
+            if (loadingNoticeTimer !== null) {
+              clearTimeout(loadingNoticeTimer);
+              void _dismissNotification(loadingNoticeId);
+            }
+            if (projectChanged) {
+              logger.scope("project-switch").info(
+                `set_project load took ${Date.now() - tLoad}ms (loaded=${result.loaded} failed=${result.failed})`,
+              );
+            }
             currentProjectCwd = cwd;
             // Reload on fresh loads, fresh failures, or just because the
             // project switched (the unload changed the prompt state).
             if (result.loaded > 0 || result.failed > 0 || projectChanged) {
+              const tReload = Date.now();
               await resourceLoader.reload();
+              if (projectChanged) {
+                logger.scope("project-switch").info(
+                  `set_project resourceLoader.reload took ${Date.now() - tReload}ms`,
+                );
+              }
               scheduleStateFileWrite();
               emitReady();
+              if (projectChanged) {
+                logger.scope("project-switch").info(
+                  `set_project total ${Date.now() - t0}ms (cwd=${cwd})`,
+                );
+              }
             }
           } else {
             send({ type: "error", message: "set_project: cwd must be string|null" });

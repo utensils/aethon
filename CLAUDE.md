@@ -26,15 +26,15 @@ by the agent.
 Run inside `nix develop` (or via direnv — `.envrc` is `use flake`). The
 devshell exposes these helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                   |
-| ----------- | -------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment  |
-| `build-app` | `cargo tauri build` — release bundle                           |
-| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest      |
-| `lint`      | ESLint frontend + agent (no auto-fix)                          |
-| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)            |
-| `coverage`  | TS coverage report under `coverage/` (vitest v8)               |
-| `fmt`       | `treefmt` (rustfmt + nixfmt)                                   |
+| Command     | What it does                                                                  |
+| ----------- | ----------------------------------------------------------------------------- |
+| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                 |
+| `build-app` | `cargo tauri build` — release bundle                                          |
+| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                     |
+| `lint`      | ESLint frontend + agent (no auto-fix)                                         |
+| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                           |
+| `coverage`  | TS coverage report under `coverage/` (vitest v8)                              |
+| `fmt`       | `treefmt` (rustfmt + nixfmt + prettier for JSON/MD/YAML/CSS + taplo for TOML) |
 
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
@@ -75,12 +75,15 @@ devshell exposes these helpers (defined in `flake.nix`):
 
 ### Frontend model — three things to know
 
-**1. Layout-as-payload.** The default UI is *not* hardcoded React. It's
+**1. Layout-as-payload.** The default UI is _not_ hardcoded React. It's
 `src/skills/default-layout/workstation.a2ui.json`, loaded as the boot payload
 and fed to the same `A2UIRenderer` that handles agent output. A skill is the
-extension primitive; the default-layout skill registers `workstation` (the
-boot default) plus three sibling variations (`command-deck`, `editorial`,
-`live-layout`) — switching is a sidebar/palette click that calls
+extension primitive; the default-layout skill currently registers only
+`workstation` while we focus polish on a single surface (the earlier
+`command-deck` / `editorial` / `live-layout` variations were dropped from
+the catalogue — the variation chrome components stay registered so their
+`.a2ui.json` payloads can be re-added when we want sibling layouts back).
+Switching layouts (when more exist) is a sidebar/palette click that calls
 `window.aethon.activateLayout(id)`. Don't add static chrome in `App.tsx` —
 extend the layout JSON or register a new skill. Layouts must conform to
 the slot contract in `src/skills/default-layout/slots.json` + `slots.ts`
@@ -90,7 +93,7 @@ the slot contract in `src/skills/default-layout/slots.json` + `slots.ts`
 **2. Single state store, JSON Pointer addressed.** All app state lives in one
 object on `App` (`messages`, `draft`, `waiting`, `status`, `connection`,
 `canvas`, `terminal.open`, …). Components read it via `$ref` JSON Pointers
-(e.g. `{"value": {"$ref": "/draft"}}`). The renderer applies an *optimistic*
+(e.g. `{"value": {"$ref": "/draft"}}`). The renderer applies an _optimistic_
 write back to that path for `change`/`submit` events on inputs whose `value`
 is a `$ref` — see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. JSON Pointer
 helpers: `src/utils/jsonPointer.ts` and `src/utils/dataBinding.ts`.
@@ -119,8 +122,10 @@ console) can swap chrome at runtime:
 - `window.aethon.registerLayout({ id, name, payload })` — register a layout
   variation that appears in the sidebar's `layouts` section + palette.
   Also exposed agent-side as `aethon.registerLayout` (bridge in
-  `agent/main.ts`). Reserved ids: `workstation`, `command-deck`,
-  `editorial`, `live-layout`. Id pattern: `/^[A-Za-z][\w-]*$/`.
+  `agent/main.ts`). Reserved id: `workstation`
+  (`command-deck` / `editorial` / `live-layout` were trimmed from the
+  built-in catalogue and may be reintroduced later — keep the names
+  free). Id pattern: `/^[A-Za-z][\w-]*$/`.
 - `window.aethon.activateLayout(id)` — switch to a registered layout
 - `window.aethon.registerSkill(skill)` — register a skill; if it has a
   `layout`, also activate it
@@ -129,31 +134,31 @@ console) can swap chrome at runtime:
 
 ### Keyboard shortcuts (current set)
 
-| Combo | Action |
-|---|---|
-| `Cmd+T` | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. `[shortcuts] new_tab_kind = "shell"` flips this to "always shell". |
-| `Cmd+Shift+T` | New shell sub-tab (always — auto-opens the bottom panel) |
-| `Cmd+W` | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`). |
-| `Cmd+Opt+T` | Reopen most-recently-closed tab |
-| `Cmd+]` / `Cmd+[` | Next / previous *agent* tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. |
-| `Cmd+Shift+]` / `Cmd+Shift+[` | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead. |
-| `Cmd+1`..`Cmd+8` | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash). |
-| `Cmd+9` | Jump to last agent tab (or last shell sub-tab when focus is in panel). |
-| `Cmd+P` / `Cmd+Shift+P` | Command palette (switcher / commands) |
-| `Cmd+\`` | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab) |
-| `Cmd+B` | Toggle sidebar |
-| `Cmd+K` | Clear chat |
-| `Cmd+.` | Stop current prompt |
-| `Cmd+=` / `Cmd+-` | Zoom in / out |
-| `Cmd+0` | Toggle focus between composer and terminal panel |
-| `Cmd+Shift+0` | Reset zoom |
-| `Cmd+L` | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs) |
-| `Cmd+,` | Open Settings panel |
-| `Cmd+Shift+F` | Cross-session search overlay |
-| `Cmd+Shift+S` | Export active chat as Markdown to `~/Downloads/` (agent tabs only) |
-| `Cmd+Ctrl+F` (mac) / `F11` | Toggle fullscreen |
-| `F12` | Toggle WebKit DevTools (debug builds) |
-| `Esc` | Close palette / settings / search overlay (when open) |
+| Combo                         | Action                                                                                                                                                                                        |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cmd+T`                       | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. `[shortcuts] new_tab_kind = "shell"` flips this to "always shell". |
+| `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                      |
+| `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                         |
+| `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                               |
+| `Cmd+]` / `Cmd+[`             | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead.                               |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                   |
+| `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                  |
+| `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                        |
+| `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                         |
+| `Cmd+\``                      | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                              |
+| `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                |
+| `Cmd+K`                       | Clear chat                                                                                                                                                                                    |
+| `Cmd+.`                       | Stop current prompt                                                                                                                                                                           |
+| `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                 |
+| `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                              |
+| `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                    |
+| `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                           |
+| `Cmd+,`                       | Open Settings panel                                                                                                                                                                           |
+| `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                  |
+| `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                            |
+| `Cmd+Ctrl+F` (mac) / `F11`    | Toggle fullscreen                                                                                                                                                                             |
+| `F12`                         | Toggle WebKit DevTools (debug builds)                                                                                                                                                         |
+| `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                         |
 
 `metaKey || ctrlKey` for cross-platform — Linux/Windows users get the
 same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
@@ -248,14 +253,14 @@ cwd as immutable.
 
 The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 
-| Env var | Purpose |
-|---------|---------|
-| `AETHON_DOCS_DIR` | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
-| `AETHON_USER_DIR` | `~/.aethon/` — user extensions, skills, sessions, state file. |
-| `AETHON_STATE_FILE` | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration. |
-| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts. |
-| `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead. |
-| `AETHON_PROJECT_ROOT` | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work. |
+| Env var               | Purpose                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AETHON_DOCS_DIR`     | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
+| `AETHON_USER_DIR`     | `~/.aethon/` — user extensions, skills, sessions, state file.                                                                                                                                                                                                |
+| `AETHON_STATE_FILE`   | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                                    |
+| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts.                                                                                                                                    |
+| `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
+| `AETHON_PROJECT_ROOT` | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
 
 The bridge's `agent/system-prompt.ts` composes a layered prompt:
 DEFAULT (static API + primitives reference, mentioning the docs/state-file
@@ -279,7 +284,7 @@ without scraping the filesystem. The same data is also written to
 ### Event flow gotcha
 
 `A2UIRenderer` accepts an `onEvent` prop. Returning `true` from it marks the
-event as handled and *suppresses* the default Tauri `dispatch_a2ui_event`
+event as handled and _suppresses_ the default Tauri `dispatch_a2ui_event`
 forward. `App.tsx` uses this to short-circuit `chat-input` submits (calls
 `send_message` directly) and the sidebar's `toggle-terminal` item (mutates
 `/terminal/open` locally). New components that should drive native APIs go
@@ -354,12 +359,13 @@ simplest path is `touch agent/main.ts`.
 Both the Rust shell and the bridge (TS) use leveled, scoped loggers and
 write to two sinks:
 
-| Sink | What goes there | When to use |
-|---|---|---|
-| stderr | Live stream as the app runs | Watching `bun tauri dev` output, seeing what's happening right now |
+| Sink              | What goes there                       | When to use                                                          |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------- |
+| stderr            | Live stream as the app runs           | Watching `bun tauri dev` output, seeing what's happening right now   |
 | `~/.aethon/logs/` | Daily-rotating files, 7-day retention | Post-hoc investigation, release-build crashes, comparing across runs |
 
 Two file series share that directory:
+
 - `aethon.YYYY-MM-DD` — Rust shell (`tracing` crate), covers agent
   supervisor, file watcher, debug TCP server, Tauri commands.
 - `bridge.YYYY-MM-DD.log` — bun bridge (`agent/logger.ts`), covers
@@ -425,22 +431,23 @@ sessions, light theme, system tray + native menu, slash command picker,
 real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
 `composer` required, `slotMap` for non-canonical layouts), generic
 `extension_lifecycle` feedback channel, registerable slash commands /
-keybindings / menu items / event routes / layouts (4-layout catalogue
-via `aethon.registerLayout`), mutation-feedback channel (every mutation
+keybindings / menu items / event routes / layouts (workstation only in
+the built-in catalogue today; extensions can register more via
+`aethon.registerLayout`), mutation-feedback channel (every mutation
 returns `Promise<MutationResult>`), command palette (Cmd+P switcher /
 Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
 .deb/AppImage + Windows NSIS bundles via Nix overlay.
 
 ## Test coverage + linting
 
-| Tool | Scope | Devshell command |
-|---|---|---|
-| `cargo clippy -D warnings` | Rust shell + helpers | `check` |
-| `cargo test --lib` | Rust unit tests under `src-tauri/src/helpers.rs` | `test` |
-| `bunx tsc -b --noEmit` | TypeScript types (frontend + agent) | `check` |
-| `bunx eslint .` | TS + React lint, type-aware via tsconfig | `lint` |
-| `bunx vitest run` | TS unit tests (`src/**/*.test.ts`) | `test` |
-| `bunx vitest run --coverage` | TS coverage report (v8) | `coverage` |
+| Tool                         | Scope                                            | Devshell command |
+| ---------------------------- | ------------------------------------------------ | ---------------- |
+| `cargo clippy -D warnings`   | Rust shell + helpers                             | `check`          |
+| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers.rs` | `test`           |
+| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)              | `check`          |
+| `bunx eslint .`              | TS + React lint, type-aware via tsconfig         | `lint`           |
+| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts`)               | `test`           |
+| `bunx vitest run --coverage` | TS coverage report (v8)                          | `coverage`       |
 
 The `check` devshell command runs all of the above as a single CI gate.
 ESLint is configured for **0 errors and 0 warnings**. A handful of `react-hooks`

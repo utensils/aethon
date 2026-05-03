@@ -24,7 +24,7 @@
 
 Aethon embeds the [pi coding agent][pi] inside a Tauri 2 desktop shell and renders its output as live, interactive UI via the [A2UI][a2ui] protocol. The interface is not a fixed IDE layout — it's a **canvas the agent populates dynamically**. Skills bring their own components, themes control the look, the agent decides the layout.
 
-The name comes from Greek mythology: *Αἴθων*, one of the horses that pulled Helios's sun chariot. The blazing one that shapes what you see.
+The name comes from Greek mythology: _Αἴθων_, one of the horses that pulled Helios's sun chariot. The blazing one that shapes what you see.
 
 [pi]: https://github.com/mariozechner/pi-coding-agent
 [a2ui]: https://github.com/google/a2ui
@@ -48,7 +48,7 @@ The name comes from Greek mythology: *Αἴθων*, one of the horses that pulle
 - Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer. Templates registered via `aethon.registerComponent("<type>", …)` win over the default React component, so any built-in can be replaced declaratively.
 - App-root overlays (`command-palette`, `notification-stack`, `settings-panel`, `search-panel`, `share-mode-badge`) all mount through the registry — overridable from a skill without forking the chrome.
 - Layout slot contract — alternative layouts host the standard composites by adhering to canonical area names (`canvas`, `composer`, `sidebar`, `tabs`, `terminal`, `status`, `header`, `empty-state`) or by declaring a `slotMap` remap.
-- Four built-in layouts (`workstation`, `editorial`, `command-deck`, `live-layout`) on the Æther signature palette — swap with `/layout <id>`. Extensions register additional layouts via `aethon.registerLayout`.
+- One built-in layout (`workstation`) while we focus polish on a single surface; extensions register additional layouts via `aethon.registerLayout` and switch with `/layout <id>`.
 
 **Agent ↔ shell sharing (opt-in)**
 
@@ -99,15 +99,15 @@ input for Nix builds.
 
 ### Devshell commands
 
-| Command     | What it does                                                       |
-| ----------- | ------------------------------------------------------------------ |
-| `dev`       | Launch the app with hot reload (auto-increments Vite + debug ports if 1420/19433 are busy) |
+| Command     | What it does                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `dev`       | Launch the app with hot reload (auto-increments Vite + debug ports if 1420/19433 are busy)  |
 | `build-app` | Release bundle (`.app` / `.dmg` on macOS, `.deb` / `.rpm` on Linux, NSIS `.exe` on Windows) |
-| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest          |
-| `lint`      | ESLint frontend + agent (no auto-fix)                              |
-| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                |
-| `coverage`  | TS coverage report under `coverage/` (vitest v8)                   |
-| `fmt`       | Format Rust + Nix with treefmt                                     |
+| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                                   |
+| `lint`      | ESLint frontend + agent (no auto-fix)                                                       |
+| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                                         |
+| `coverage`  | TS coverage report under `coverage/` (vitest v8)                                            |
+| `fmt`       | Format Rust + Nix with treefmt                                                              |
 
 ---
 
@@ -139,13 +139,13 @@ input for Nix builds.
 └────────────────────────────────────────────────────────────┘
 ```
 
-| Layer | Owns | Doesn't own |
-|---|---|---|
-| **Tauri shell (Rust)** | OS surface — windows, tray, native menus, file watcher, spawning the agent subprocess | Any business logic, agent awareness, A2UI knowledge |
-| **Pi agent (Bun)** | LLM interaction, tool execution, session management, extension loading, A2UI emission | OS resources |
-| **React frontend** | Rendering A2UI payloads, dispatching events, persisting local state, hosting the chrome | The chrome is data — `default-layout` is itself an A2UI payload |
+| Layer                  | Owns                                                                                    | Doesn't own                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Tauri shell (Rust)** | OS surface — windows, tray, native menus, file watcher, spawning the agent subprocess   | Any business logic, agent awareness, A2UI knowledge             |
+| **Pi agent (Bun)**     | LLM interaction, tool execution, session management, extension loading, A2UI emission   | OS resources                                                    |
+| **React frontend**     | Rendering A2UI payloads, dispatching events, persisting local state, hosting the chrome | The chrome is data — `default-layout` is itself an A2UI payload |
 
-The default layout *is* a skill (`src/skills/default-layout/`). Replacing it requires no React changes — just register a different layout payload via `aethon.setLayout(...)`.
+The default layout _is_ a skill (`src/skills/default-layout/`). Replacing it requires no React changes — just register a different layout payload via `aethon.setLayout(...)`.
 
 ---
 

@@ -80,17 +80,16 @@ bottom panel for shells).
 
 See the full [keyboard shortcut reference](/reference/keyboard-shortcuts).
 
-## 6 — Try a layout
+## 6 — Layouts
 
-Aethon ships four built-in layouts. Switch them with:
-
-- `/layout workstation` — the default (chat-first).
-- `/layout command-deck` — denser, dashboard-feel.
-- `/layout editorial` — generous typography, long-form.
-- `/layout live-layout` — animated demo layout.
-
-Layouts are A2UI payloads, not React components. Skills can register more
-via `aethon.registerLayout`.
+Aethon currently ships one built-in layout, `workstation` — the
+chat-first IDE-density surface you're already in. Layouts are A2UI
+payloads, not React components, so skills can register their own and
+the user can swap with `/layout <id>` (or `Cmd+P` → "layout"). We
+trimmed the sibling variations (`command-deck`, `editorial`,
+`live-layout`) while polish focuses on a single surface; they may
+return later, but you can already build replacements with
+`aethon.registerLayout({ id, name, payload })`.
 
 ## 7 — Discover skills
 

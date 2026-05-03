@@ -1099,9 +1099,9 @@ export default function App() {
       // the same frame the sidebar cell hides. Without the
       // template swap the hidden sidebar would still reserve its
       // 220px column. Workstation hoists tabs into the header
-      // (5 rows total); other layouts (editorial / command-deck /
-      // live-layout) own their own area templates and don't bind
-      // /layout/areas, so this toggle stays workstation-shaped.
+      // (5 rows total); future layout variations may own their own
+      // area templates and not bind /layout/areas, so this toggle
+      // stays workstation-shaped.
       const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
       const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
       const columns = visible ? "220px minmax(0,1fr)" : "minmax(0,1fr)";
@@ -2460,11 +2460,10 @@ export default function App() {
         active: t.id === stateRef.current.activeTabId,
       })),
       // Layout catalogue. Lets the user / agent swap between named
-      // layouts (workstation, editorial, command-deck, live-layout)
-      // without having to ship a full setLayout payload. Extensions
-      // append more via
-      // registerLayout. Activation goes through setLayout so all the
-      // existing state-merge / layout-bound-state semantics apply.
+      // layouts (workstation only, today) without having to ship a full
+      // setLayout payload. Extensions append more via registerLayout.
+      // Activation goes through setLayout so all the existing
+      // state-merge / layout-bound-state semantics apply.
       listLayouts: (): LayoutCatalogueEntry[] =>
         layoutCatalogueRef.current.slice(),
       activateLayout: activateLayoutById,
@@ -2790,9 +2789,20 @@ export default function App() {
     const unlistenStderr = listen<string>("agent-stderr", (event) => {
       const text = event.payload?.toString().trim();
       if (!text) return;
-      // Cap noise — only surface lines that look like errors. Bun and pi-ai
-      // emit informational stderr (e.g. cache hits) we can ignore.
-      if (/error|throw|fatal|cannot|fail|exception/i.test(text)) {
+      // Surface only real failures. Two tiers:
+      //   1. Bridge log lines tagged WARN / ERROR / FATAL (the bun
+      //      logger writes `<ISO> LEVEL scope: msg`). We deliberately
+      //      ignore INFO/DEBUG so noisy progress lines like
+      //      `… load took 0ms (loaded=0 failed=0)` don't pop into chat
+      //      just because they contain the substring "fail".
+      //   2. Raw uncaught throws / panics / module-resolution errors
+      //      that escape the logger entirely (matched by anchor or
+      //      well-known prefixes, not loose substrings).
+      const isLeveledFailure = /\b(WARN|ERROR|FATAL)\b/.test(text);
+      const isRawCrash =
+        /^(Error|TypeError|ReferenceError|SyntaxError|RangeError|Uncaught|panic:)/i.test(text) ||
+        /\bthrow\s+new\s|\bCannot\s+find\s+(module|package)\b|\bEACCES\b|\bENOENT\b/i.test(text);
+      if (isLeveledFailure || isRawCrash) {
         appendMessage({
           id: crypto.randomUUID(),
           role: "system",
@@ -4065,8 +4075,8 @@ export default function App() {
 
   // Mirror the projects state into app state so layouts can $ref it.
   // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
-  // `/sessionLabel` (used by editorial header subtitle) and
-  // `/sidebar/projects` (sidebar item array). Called on every mutation
+  // `/sessionLabel` and `/sidebar/projects` (sidebar item array).
+  // Called on every mutation
   // so a single helper keeps the shape consistent. Carries the cached
   // git status from gitStatusRef so a sync triggered for non-git
   // reasons (lastUsed bump, label change) doesn't drop the badges.
@@ -4421,11 +4431,11 @@ export default function App() {
   }
 
   // Walk the layout tree and produce a deduped, sorted list of component
-  // types found in it. Lets the live-layout sidebar's "components in
-  // layout" section derive from the actual active payload instead of
-  // a hardcoded sample list. Keeps the entry shape sidebar items expect
-  // ({id, label, active}). Active is set true for every type since the
-  // layout DOES contain it; clicking does nothing today.
+  // types found in it. Lets a layout/extension inspect the active payload
+  // via `/sidebar/components` instead of needing a hardcoded list. Keeps
+  // the entry shape sidebar items expect ({id, label, active}). Active is
+  // set true for every type since the layout DOES contain it; clicking
+  // does nothing today.
   function summarizeLayoutComponents(payload: A2UIPayload): {
     id: string;
     label: string;
@@ -4445,8 +4455,8 @@ export default function App() {
       .map((t) => ({ id: `c-${t}`, label: t, active: true }));
   }
 
-  // Refresh /sidebar/components whenever the layout changes so the
-  // live-layout's inspector pane reflects what's actually rendered.
+  // Refresh /sidebar/components whenever the layout changes so any
+  // extension-registered inspector reflects what's actually rendered.
   // setState here is the React → state-derived-from-prop pattern; the
   // lint rule's blanket warning is the "avoid cascading renders"
   // heuristic, and the alternative (computing on each render and
@@ -4483,12 +4493,11 @@ export default function App() {
           ? deepMergeState(seeds, prev)
           : { ...prev };
       // The new layout's `columns` seed is authoritative — different
-      // layouts have different grid SHAPES (workstation: 2 cols,
-      // live-layout: 3 cols). deepMergeState keeps prev's columns,
-      // which would mean a 2-col grid carrying the inspector pane has
-      // nowhere to render. So force-take the seed's columns, then
-      // patch the leading sidebar token with the user's persisted
-      // width so cross-layout resizing feels continuous.
+      // layouts may have different grid SHAPES, and deepMergeState keeps
+      // prev's columns, which would mean a 2-col grid carrying a
+      // 3-col-only cell has nowhere to render. So force-take the seed's
+      // columns, then patch the leading sidebar token with the user's
+      // persisted width so cross-layout resizing feels continuous.
       const seedLayout =
         (seeds.layout as Record<string, unknown> | undefined) ?? {};
       const prevLayout =
@@ -5660,13 +5669,6 @@ export default function App() {
           return true;
         }
       }
-      // The header command-bar (used by command-deck layout) fires
-      // `invoke` on click/tap. Open the palette in switcher mode so
-      // the chrome affordance is now actually wired up.
-      if (component.id === "command-bar" && eventType === "invoke") {
-        openPalette("switcher");
-        return true;
-      }
       if (component.id === "chat-input" && eventType === "submit") {
         const value = (data as { value?: string } | undefined)?.value ?? "";
         await sendChat(value);
@@ -5686,10 +5688,9 @@ export default function App() {
         return true;
       }
       // Tab events route by component *type* — id may vary across layouts
-      // (workstation hoists the strip into the header as `header-tabs`,
-      // editorial uses `editorial-header`, command-deck uses
-      // `vertical-tab-rail`). Matching by type keeps the contract layout-
-      // agnostic so a new layout's tabs work without touching App.tsx.
+      // (workstation hoists the strip into the header as `header-tabs`).
+      // Matching by type keeps the contract layout-agnostic so a future
+      // layout's tabs work without touching App.tsx.
       const tabType = component.type;
 
       // Terminal panel sub-tab events (M6 restructure). The panel
@@ -5745,10 +5746,7 @@ export default function App() {
         return true;
       }
 
-      const isTabSurface =
-        tabType === "tab-strip" ||
-        tabType === "editorial-header" ||
-        tabType === "vertical-tab-rail";
+      const isTabSurface = tabType === "tab-strip";
       if (isTabSurface) {
         const sel = data as { tabId?: string; action?: string; id?: string } | undefined;
         if (eventType === "select" && sel?.tabId) {
@@ -5762,13 +5760,6 @@ export default function App() {
         if (eventType === "new") {
           newTab();
           return true;
-        }
-        // Vertical-tab-rail's project shelf — clicking a project row
-        // switches the active project. id matches a sidebar project id;
-        // unknown ids fall through (no-op) so other layouts can ride the
-        // same shelf channel without crashing.
-        if (eventType === "shelf" && sel?.id) {
-          if (setActiveProjectById(sel.id)) return true;
         }
       }
       if (component.id === "empty-state") {

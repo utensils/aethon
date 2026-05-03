@@ -156,11 +156,17 @@ expansion, three special state keys are available to nested `$ref`s:
     "key": "id"
   },
   "children": [
-    { "id": "row", "type": "container",
+    {
+      "id": "row",
+      "type": "container",
       "children": [
-        { "id": "label", "type": "text",
-          "props": { "content": { "$ref": "/$item/label" } } }
-      ] }
+        {
+          "id": "label",
+          "type": "text",
+          "props": { "content": { "$ref": "/$item/label" } }
+        }
+      ]
+    }
   ]
 }
 ```
@@ -180,7 +186,9 @@ bound array mutates.
 ### `paragraph`
 
 ```ts
-{ content: StringValue }
+{
+  content: StringValue;
+}
 ```
 
 ### `divider`
@@ -255,16 +263,29 @@ component's `children` are templates expanded per item with the same
 `/$item` / `/$index` / `/$parent` scope keys as `for-each`.
 
 ```json
-{ "type": "list", "props": { "items": { "$ref": "/files" } },
+{
+  "type": "list",
+  "props": { "items": { "$ref": "/files" } },
   "children": [
-    { "id": "row", "type": "container", "props": { "direction": "row", "gap": 6 },
+    {
+      "id": "row",
+      "type": "container",
+      "props": { "direction": "row", "gap": 6 },
       "children": [
-        { "id": "name", "type": "text",
-          "props": { "content": { "$ref": "/$item/name" } } },
-        { "id": "size", "type": "text",
-          "props": { "content": { "$ref": "/$item/size" }, "variant": "small" } }
-      ] }
-  ] }
+        {
+          "id": "name",
+          "type": "text",
+          "props": { "content": { "$ref": "/$item/name" } }
+        },
+        {
+          "id": "size",
+          "type": "text",
+          "props": { "content": { "$ref": "/$item/size" }, "variant": "small" }
+        }
+      ]
+    }
+  ]
+}
 ```
 
 ### `table`
@@ -406,16 +427,16 @@ The canonical slot catalogue ships at `skills/default-layout/slots.json`
 and is also surfaced by `globalThis.aethon.getLayoutSlots()` and
 `window.aethon.layoutSlots` (browser side):
 
-| Slot          | Required | Default composite | Purpose                                                                |
-| ------------- | -------- | ----------------- | ---------------------------------------------------------------------- |
-| `header`      | no       | `container`       | Top chrome — brand mark, status, navigation                            |
-| `sidebar`     | no       | `sidebar`         | Left navigation panel; toggleable via `/sidebar`                       |
-| `tabs`        | no       | `tab-strip`       | Horizontal tab strip                                                   |
-| `canvas`      | **yes**  | `main-canvas`     | Main content area — chat history, agent A2UI, tool cards               |
-| `terminal`    | no       | `terminal`        | Optional terminal panel; toggleable via `/terminal`                    |
-| `composer`    | **yes**  | `chat-input`      | User input area                                                        |
-| `status`      | no       | `status-bar`      | Bottom status bar                                                      |
-| `empty-state` | no       | `empty-state`     | Welcome screen when no tabs are open; conventionally shares `canvas`   |
+| Slot          | Required | Default composite | Purpose                                                              |
+| ------------- | -------- | ----------------- | -------------------------------------------------------------------- |
+| `header`      | no       | `container`       | Top chrome — brand mark, status, navigation                          |
+| `sidebar`     | no       | `sidebar`         | Left navigation panel; toggleable via `/sidebar`                     |
+| `tabs`        | no       | `tab-strip`       | Horizontal tab strip                                                 |
+| `canvas`      | **yes**  | `main-canvas`     | Main content area — chat history, agent A2UI, tool cards             |
+| `terminal`    | no       | `terminal`        | Optional terminal panel; toggleable via `/terminal`                  |
+| `composer`    | **yes**  | `chat-input`      | User input area                                                      |
+| `status`      | no       | `status-bar`      | Bottom status bar                                                    |
+| `empty-state` | no       | `empty-state`     | Welcome screen when no tabs are open; conventionally shares `canvas` |
 
 **Authoring an alternative layout.** Two paths:
 
@@ -438,16 +459,30 @@ and is also surfaced by `globalThis.aethon.getLayoutSlots()` and
        }
      },
      "children": [
-       { "id": "canvas", "type": "main-canvas",
-         "props": { "area": "canvas", "slot": "/canvas",
-                    "messages": { "$ref": "/messages" } } },
-       { "id": "input", "type": "chat-input",
-         "props": { "area": "composer", "value": { "$ref": "/draft" },
-                    "disabled": { "$ref": "/waiting" },
-                    "onSubmit": "chat:send" } },
-       { "id": "status-bar", "type": "status-bar",
-         "props": { "area": "status",
-                    "left": { "$ref": "/status" } } }
+       {
+         "id": "canvas",
+         "type": "main-canvas",
+         "props": {
+           "area": "canvas",
+           "slot": "/canvas",
+           "messages": { "$ref": "/messages" }
+         }
+       },
+       {
+         "id": "input",
+         "type": "chat-input",
+         "props": {
+           "area": "composer",
+           "value": { "$ref": "/draft" },
+           "disabled": { "$ref": "/waiting" },
+           "onSubmit": "chat:send"
+         }
+       },
+       {
+         "id": "status-bar",
+         "type": "status-bar",
+         "props": { "area": "status", "left": { "$ref": "/status" } }
+       }
      ]
    }
    ```
@@ -484,13 +519,16 @@ primitive.
 
 ```ts
 globalThis.aethon.registerComponent("my-model-row", {
-  id: "row", type: "container",
+  id: "row",
+  type: "container",
   props: { direction: "row", align: "center", gap: 8, padding: 8 },
   children: [
-    { id: "label", type: "text",
-      props: { content: { "$ref": "/$item/label" } } },
-    { id: "badge", type: "text",
-      props: { content: { "$ref": "/$item/badge" }, variant: "small" } },
+    { id: "label", type: "text", props: { content: { $ref: "/$item/label" } } },
+    {
+      id: "badge",
+      type: "text",
+      props: { content: { $ref: "/$item/badge" }, variant: "small" },
+    },
   ],
 });
 ```
@@ -620,8 +658,8 @@ in the workstation layout (M6 restructure).
 
 Active sub-tab is tracked at `/terminalPanel/activeSubId` (defaults to
 `"agent-bash"`). Skills can drive sub-tab selection via setState; the
-default user wiring is the `Cmd+\`` toggle, the `+` button to spawn a
-new shell sub-tab, and `Cmd+1..9` to jump between sub-tabs when focus
+default user wiring is the `Cmd+\`` toggle, the `+`button to spawn a
+new shell sub-tab, and`Cmd+1..9` to jump between sub-tabs when focus
 is in the panel.
 
 ### `shell-canvas`
@@ -676,12 +714,12 @@ matching message, briefly flash it.
 Renders inline inside the shell-canvas status line. Color-coded by
 mode:
 
-| Mode | Badge | Tooltip |
-|---|---|---|
-| `private` | gray | "Agent can't see this shell" |
-| `read` | accent | "Agent can read scrollback" |
-| `read-write` | warn | "Agent can read + write (each write needs Allow)" |
-| `read-write-trusted` | error | "Agent can drive this shell without prompting" |
+| Mode                 | Badge  | Tooltip                                           |
+| -------------------- | ------ | ------------------------------------------------- |
+| `private`            | gray   | "Agent can't see this shell"                      |
+| `read`               | accent | "Agent can read scrollback"                       |
+| `read-write`         | warn   | "Agent can read + write (each write needs Allow)" |
+| `read-write-trusted` | error  | "Agent can drive this shell without prompting"    |
 
 Clicking the badge cycles to the next mode. The cycle helper lives in
 `src/utils/shareMode.ts` and is shared between the badge, the palette,
@@ -808,11 +846,11 @@ areas:
 
 Common patches:
 
-| Goal | Patch |
-|------|-------|
-| Move sidebar right | `/components/0/props/columns` → `"1fr 240px"` and rewrite each area row to put `sidebar` second |
-| Hide sidebar | `/components/0/props/columns` → `"1fr"`, drop `sidebar` from each area row |
-| Add a row above the composer | extend `rows` and `areas`, add a new `container` child with `area: "your-area-name"` |
+| Goal                         | Patch                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| Move sidebar right           | `/components/0/props/columns` → `"1fr 240px"` and rewrite each area row to put `sidebar` second |
+| Hide sidebar                 | `/components/0/props/columns` → `"1fr"`, drop `sidebar` from each area row                      |
+| Add a row above the composer | extend `rows` and `areas`, add a new `container` child with `area: "your-area-name"`            |
 
 For deeper rewrites use `setLayout` with a fresh payload and copy what
 you need from `getLayout()`.
@@ -822,12 +860,12 @@ you need from `getLayout()`.
 The frontend exposes a small set of `window.addEventListener` channels
 extensions can hook for UI-level concerns:
 
-| Event | Detail | Fires when |
-|-------|--------|-----------|
-| `aethon:terminal` | `string` (raw text chunk) | Active tab gets new bash output |
-| `aethon:terminal-tap` | `{ tabId: string, content: string }` | Any tab gets bash output (multi-subscriber) |
-| `aethon:terminal-replay` | `string` (full buffer) | Tab switch — terminal needs to repaint |
-| `aethon:extension-lifecycle` | `{ name, source, status: "loaded"\|"failed"\|"skipped", error?, path }` | Extension loads, fails, or gets skipped |
+| Event                        | Detail                                                                  | Fires when                                  |
+| ---------------------------- | ----------------------------------------------------------------------- | ------------------------------------------- |
+| `aethon:terminal`            | `string` (raw text chunk)                                               | Active tab gets new bash output             |
+| `aethon:terminal-tap`        | `{ tabId: string, content: string }`                                    | Any tab gets bash output (multi-subscriber) |
+| `aethon:terminal-replay`     | `string` (full buffer)                                                  | Tab switch — terminal needs to repaint      |
+| `aethon:extension-lifecycle` | `{ name, source, status: "loaded"\|"failed"\|"skipped", error?, path }` | Extension loads, fails, or gets skipped     |
 
 The `extension-lifecycle` event is **cancelable** — call
 `event.preventDefault()` from your listener to suppress the default

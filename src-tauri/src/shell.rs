@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
@@ -495,10 +495,7 @@ pub fn shell_open<R: Runtime>(
     });
 
     let display_cwd = args.cwd.clone().unwrap_or_default();
-    let display_command = args
-        .command
-        .clone()
-        .unwrap_or_else(default_shell_label);
+    let display_command = args.command.clone().unwrap_or_else(default_shell_label);
     let slot = ShellSlot {
         writer,
         master: pair.master,
@@ -559,10 +556,7 @@ pub fn shell_resize(
 }
 
 #[tauri::command]
-pub fn shell_close(
-    state: State<'_, ShellRegistry>,
-    tab_id: String,
-) -> Result<(), String> {
+pub fn shell_close(state: State<'_, ShellRegistry>, tab_id: String) -> Result<(), String> {
     let slot = {
         let mut guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
         guard.remove(&tab_id)
@@ -666,10 +660,7 @@ pub fn shell_set_share_mode(
         .lock()
         .map_err(|e| format!("scrollback lock: {e}"))?
         .total_appended();
-    let mut share = slot
-        .share
-        .lock()
-        .map_err(|e| format!("share lock: {e}"))?;
+    let mut share = slot.share.lock().map_err(|e| format!("share lock: {e}"))?;
     share.transition(mode, total);
     Ok(share.mode)
 }
@@ -701,10 +692,7 @@ pub fn shell_read_scrollback(
         .get(&args.tab_id)
         .ok_or_else(|| format!("no shell for tab {}", args.tab_id))?;
     let share = {
-        let s = slot
-            .share
-            .lock()
-            .map_err(|e| format!("share lock: {e}"))?;
+        let s = slot.share.lock().map_err(|e| format!("share lock: {e}"))?;
         (s.mode, s.floor)
     };
     let (mode, floor) = share;
@@ -758,11 +746,7 @@ pub fn shell_write(
 
 /// The actual mode-gated write. Split out from the Tauri command so
 /// cargo tests can exercise it without a Tauri runtime.
-fn write_keystrokes(
-    state: &ShellRegistry,
-    tab_id: &str,
-    data: &[u8],
-) -> Result<(), String> {
+fn write_keystrokes(state: &ShellRegistry, tab_id: &str, data: &[u8]) -> Result<(), String> {
     let mut guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
     let slot = guard
         .get_mut(tab_id)
@@ -838,7 +822,6 @@ fn utf8_safe_split(buf: &[u8]) -> usize {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -899,13 +882,23 @@ mod tests {
         ShellRegistry::new()
     }
 
-    fn open_raw(reg: &ShellRegistry, tab_id: &str, command: &str, args: Vec<String>) -> Box<dyn Child + Send + Sync> {
+    fn open_raw(
+        reg: &ShellRegistry,
+        tab_id: &str,
+        command: &str,
+        args: Vec<String>,
+    ) -> Box<dyn Child + Send + Sync> {
         // Mirrors shell_open but skips the AppHandle so unit tests can
         // run without a Tauri runtime. The reader thread is omitted —
         // tests that need stdout drain the master directly.
         let pty_system = native_pty_system();
         let pair = pty_system
-            .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .expect("openpty");
         let mut cmd = CommandBuilder::new(command);
         for a in args {
@@ -947,7 +940,12 @@ mod tests {
             let guard = reg.slots.lock().unwrap();
             let slot = guard.get("t2").unwrap();
             slot.master
-                .resize(PtySize { cols: 132, rows: 50, pixel_width: 0, pixel_height: 0 })
+                .resize(PtySize {
+                    cols: 132,
+                    rows: 50,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
                 .expect("resize while alive");
         }
         let _ = child.wait();
@@ -966,7 +964,12 @@ mod tests {
         let reg = registry();
         let mut child = open_raw(&reg, "t3", "/bin/sleep", vec!["0.01".into()]);
         let _ = child.wait();
-        let mut slot = reg.slots.lock().unwrap().remove("t3").expect("slot present");
+        let mut slot = reg
+            .slots
+            .lock()
+            .unwrap()
+            .remove("t3")
+            .expect("slot present");
         drop(slot.writer);
         drop(slot.master);
         // No reader thread in test harness; just verify the slot was removable.
@@ -1184,7 +1187,10 @@ mod tests {
             if got.is_empty() {
                 break;
             }
-            assert_eq!(slice_total, cursor, "slice_total must equal cursor (forward paging)");
+            assert_eq!(
+                slice_total, cursor,
+                "slice_total must equal cursor (forward paging)"
+            );
             acc.extend_from_slice(&got);
             cursor = slice_total + got.len() as u64;
         }
@@ -1217,7 +1223,9 @@ mod tests {
         let max_bytes = 4usize;
         // Cold start cursor = total - max_bytes (clamped to oldest).
         let total = sb.total_appended();
-        let cold_cursor = total.saturating_sub(max_bytes as u64).max(sb.oldest_total());
+        let cold_cursor = total
+            .saturating_sub(max_bytes as u64)
+            .max(sb.oldest_total());
         let (got, slice_total) = sb.read_from(cold_cursor, max_bytes);
         assert_eq!(got, b"rld!");
         assert_eq!(slice_total, 8);

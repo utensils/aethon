@@ -7,9 +7,6 @@ import {
   layoutSlots,
 } from "./slots";
 import workstationPayload from "./workstation.a2ui.json";
-import editorialPayload from "./editorial.a2ui.json";
-import commandDeckPayload from "./command-deck.a2ui.json";
-import liveLayoutPayload from "./live-layout.a2ui.json";
 
 describe("layout-slot catalogue", () => {
   it("ships every documented canonical slot", () => {
@@ -64,36 +61,9 @@ describe("inspectLayoutSlotCoverage — built-in layouts", () => {
     expect(r.dynamicAreas).toBe(true);
   });
 
-  it("editorial covers required slots, hosts sidebar via the spine column", () => {
-    const r = inspectLayoutSlotCoverage(editorialPayload);
-    expect(r.missingRequired).toEqual([]);
-    expect(r.unknownAreasUsed).toEqual([]);
-    expect(r.filledSlots).toContain("canvas");
-    expect(r.filledSlots).toContain("composer");
-    expect(r.filledSlots).toContain("sidebar");
-    expect(r.filledSlots).toContain("status");
-  });
-
-  it("command-deck covers required slots and uses sidebar for the session rail", () => {
-    const r = inspectLayoutSlotCoverage(commandDeckPayload);
-    expect(r.missingRequired).toEqual([]);
-    expect(r.unknownAreasUsed).toEqual([]);
-    expect(r.filledSlots).toContain("canvas");
-    expect(r.filledSlots).toContain("composer");
-    expect(r.filledSlots).toContain("sidebar");
-    expect(r.filledSlots).toContain("header");
-  });
-
-  it("live-layout adds an inspector pane alongside the canonical slots", () => {
-    const r = inspectLayoutSlotCoverage(liveLayoutPayload);
-    expect(r.missingRequired).toEqual([]);
-    // The inspector slot is non-canonical, so the inspector lists it under
-    // unknownAreasUsed — that's expected and stable for this layout.
-    expect(r.unknownAreasUsed).toEqual(["inspector"]);
-    expect(r.filledSlots).toContain("canvas");
-    expect(r.filledSlots).toContain("composer");
-    expect(r.filledSlots).toContain("sidebar");
-  });
+  // Sibling layouts (editorial / command-deck / live-layout) were
+  // trimmed while the workstation surface gets focused polish. When
+  // they come back, restore their coverage assertions here.
 });
 
 describe("inspectLayoutSlotCoverage — edge cases", () => {

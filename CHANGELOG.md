@@ -71,7 +71,7 @@ All notable changes to Aethon. Format loosely follows
 
 - **Extension lifecycle feedback.** Bridge now emits a generic
   `extension_lifecycle` event for every extension load (`{name, source,
-  status: "loaded"|"failed"|"skipped", error?, path}`) from
+status: "loaded"|"failed"|"skipped", error?, path}`) from
   `loadAethonExtensions` and `loadAethonSkillManifests`. The frontend
   dispatches a cancellable `aethon:extension-lifecycle` CustomEvent on
   `window`, then (if not preventDefault'd) appends a system-notice chat
@@ -89,7 +89,7 @@ All notable changes to Aethon. Format loosely follows
   Composites slot via their existing `area` prop; the `Layout` component
   honors an optional `slotMap` on the root `<layout>` so a non-canonical
   layout can still host the standard composites (e.g. `slotMap:
-  { composer: "bottom-bar" }`). All three built-in layouts (default,
+{ composer: "bottom-bar" }`). All three built-in layouts (default,
   single-pane, focus-mode) updated to use the canonical slot names —
   `chat-input` area was renamed to `composer`. Catalogue exposed on
   `window.aethon.layoutSlots` (with `inspectLayoutSlotCoverage(payload?)`
@@ -102,9 +102,9 @@ All notable changes to Aethon. Format loosely follows
   `slotMap` example.
 
 - **Config file dead options wired up.** `~/.aethon/config.toml` `[ui]
-  font_size` now writes the `--app-font-size` CSS custom property
+font_size` now writes the `--app-font-size` CSS custom property
   (clamped 10–24 px) consumed by `body { font-size: var(--app-font-size,
-  14px); }`. `[agent] model` seeds the picker default when no per-session
+14px); }`. `[agent] model` seeds the picker default when no per-session
   model is saved (bridge's session model still wins on `ready`
   hydration).
 - **Pluggable `onEvent` routing — intercept built-in handlers.**
@@ -119,14 +119,14 @@ All notable changes to Aethon. Format loosely follows
   `aethon.listEventRoutes()` returns the registered intercepts.
   Replayed on `ready`. Surfaced in `RuntimeSnapshot.eventRoutes`.
 - **Registerable menu items.** New `aethon.registerMenuItem({label,
-  action, location?, id?, parent?})` and `unregisterMenuItem(id)`.
+action, location?, id?, parent?})` and `unregisterMenuItem(id)`.
   Bridge ships `extension_menu_items` events; the frontend forwards to
   a `set_extension_menu_items` Tauri command which rebuilds the native
   App menu (extension entries appear under an "Extensions" submenu)
   AND the tray menu. Click events emit `menu` events with id
   `ext:<action>` which the frontend dispatcher routes via `a2ui_event`
   so a paired `aethon.onEvent({componentType: "menu-item",
-  descendantId: "<action>"})` matcher fires. Replayed on `ready`.
+descendantId: "<action>"})` matcher fires. Replayed on `ready`.
 - **Vite-style port auto-increment for `dev`.** New `scripts/dev.sh`
   wrapper finds a free Vite port (starting 1420) and a free debug
   port (starting 19433), writes them to `~/.aethon/dev-info.json`,
@@ -159,10 +159,10 @@ All notable changes to Aethon. Format loosely follows
   - `default` — sidebar / header / canvas / terminal / chat / status
   - `single-pane` — no sidebar, header + canvas + chat across full width
   - `focus-mode` — just canvas + chat + status bar
-  New `window.aethon.listLayouts()`, `window.aethon.activateLayout(id)`,
-  and `window.aethon.registerLayout({id, name, payload})` form the
-  catalogue API. New `/layout <id>` slash command swaps to a registered
-  layout (`/layout` with no args lists available ids).
+    New `window.aethon.listLayouts()`, `window.aethon.activateLayout(id)`,
+    and `window.aethon.registerLayout({id, name, payload})` form the
+    catalogue API. New `/layout <id>` slash command swaps to a registered
+    layout (`/layout` with no args lists available ids).
 - **Sidebar opt-in via `/layout/sidebarVisible`.** The default layout
   binds the sidebar's `visible` flag plus `/layout/columns` and
   `/layout/areas` to state so the grid template-areas adapts when the
@@ -202,7 +202,7 @@ All notable changes to Aethon. Format loosely follows
   form (`Cmd+Shift+P`, `Ctrl+]`, `Alt+M`, `Meta+M`); frontend normalizes
   to a canonical lowercased "+"-joined key (`meta+shift+p`) for matching.
   Pair with `aethon.onEvent({componentType: "keybinding", descendantId:
-  "<canonical-combo>"}, handler)` to wire the action — the dispatched
+"<canonical-combo>"}, handler)` to wire the action — the dispatched
   event carries `data.action` and `data.combo`. Built-ins (Cmd+T /
   Cmd+] / Cmd+[ / Cmd+W / Cmd+\`) win on collision; extensions can ADD
   shortcuts but cannot override built-ins yet. Replayed on `ready` so
@@ -211,7 +211,7 @@ All notable changes to Aethon. Format loosely follows
 - **Registerable slash commands.** New
   `aethon.registerSlashCommand({name, description, usage?})` records
   command metadata; pair with `aethon.onEvent({componentType:
-  "slash-command", descendantId: "<name>"}, handler)` to wire the
+"slash-command", descendantId: "<name>"}, handler)` to wire the
   action (handler receives `event.data.args`). Names must match
   `/^[A-Za-z][\w-]*$/` and may not collide with built-ins
   (`clear`, `help`, `theme`, `model`, `reset`, `terminal`, `skills`).
@@ -223,7 +223,7 @@ All notable changes to Aethon. Format loosely follows
 - **Loose-file theme directory.** `~/.aethon/themes/*.json` files are now
   loaded at boot via the same `normalizeTheme` validation path as
   extension-supplied themes. Each file is `{ id, label?, vars: { "--bg":
-  "...", ... } }`. Watcher pre-creates the directory and watches it for
+"...", ... } }`. Watcher pre-creates the directory and watches it for
   hot reload — drop a JSON file and it appears in the sidebar Themes
   section without restarting. Lowest-friction way for end users to ship
   a theme.
@@ -285,7 +285,7 @@ All notable changes to Aethon. Format loosely follows
   (`aethon.setState`, `aethon.setLayout`, `aethon.patchLayout`,
   `aethon.registerComponent`, `aethon.registerTheme`,
   `aethon.registerSidebarSection`) returns `Promise<{ok: boolean,
-  error?: string}>`. Backwards compatible: sync callers ignore the
+error?: string}>`. Backwards compatible: sync callers ignore the
   Promise and behave exactly as before. Failure modes: `timeout` (5 s
   no ack), `frontend_rejected: <detail>`, bridge-side validation. Calls
   made before the frontend has reported `ready` resolve immediately
@@ -377,7 +377,7 @@ All notable changes to Aethon. Format loosely follows
   agent `read` calls reach them in any build mode.
 - **`~/.aethon/state.json` live snapshot.** Bridge writes the full
   runtime registry (extensions, themes, components, layout summary,
-  tabs) to disk debounced 200 ms on every register* call. The system
+  tabs) to disk debounced 200 ms on every register\* call. The system
   prompt instructs the agent to `cat $AETHON_STATE_FILE` for an
   always-fresh view.
 - **Introspection methods on `globalThis.aethon`.** `listExtensions`,
@@ -455,10 +455,10 @@ All notable changes to Aethon. Format loosely follows
   rather than touching source files that aren't shipped with the
   bundle.
 - **Agent now knows what extensions are loaded.** Static system prompt
-  + per-session runtime snapshot + on-disk state file + introspection
-  API combine so "list loaded extensions" / "what themes are
-  registered?" answers correctly on the first turn instead of
-  filesystem-scraping or hallucinating.
+  - per-session runtime snapshot + on-disk state file + introspection
+    API combine so "list loaded extensions" / "what themes are
+    registered?" answers correctly on the first turn instead of
+    filesystem-scraping or hallucinating.
 
 ### Changed
 
