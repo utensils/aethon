@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Aethon debug eval helper — sends JS to the running Aethon debug server.
+# Auto-starts the dev build if it is not running.
+#
 # Usage: debug-eval.sh 'return 1 + 1'
 #        echo 'return document.title' | debug-eval.sh
 #
@@ -7,41 +9,132 @@
 #   1. $AETHON_DEBUG_PORT — explicit override
 #   2. ~/.aethon/dev-info.json — written by scripts/dev.sh on each launch.
 #      Lets the skill find the port even when the wrapper auto-incremented
-#      because 19433 was busy. The file is removed when the dev session
-#      exits, so a stale file from a crashed run just falls through to
-#      the default.
+#      because 19433 was busy.
 #   3. 19433 — built-in default (matches src-tauri's DEFAULT_DEBUG_PORT)
-#
-# The dev build must be running (`bun tauri dev` or the devshell `dev` helper).
-# Release builds have no debug server (gated by #[cfg(debug_assertions)]).
 set -euo pipefail
 
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_DIR="$(cd "${SKILL_DIR}/../.." && pwd)"
 HOST="127.0.0.1"
 DEV_INFO="${HOME}/.aethon/dev-info.json"
-TIMEOUT=12
+EVAL_TIMEOUT=12
+START_TIMEOUT=240   # seconds to wait for app to start / compile
+DEV_LOG="${TMPDIR:-/tmp}/aethon-dev.log"
 
-if [[ -n "${AETHON_DEBUG_PORT:-}" ]]; then
-  PORT="${AETHON_DEBUG_PORT}"
-elif [[ -f "${DEV_INFO}" ]]; then
-  # Pull debugPort from dev-info.json. python3 is already a dependency
-  # of this script for the TCP I/O below, so reuse it instead of jq.
-  PORT="$(python3 -c "
+# ---------------------------------------------------------------------------
+# Port resolution
+# ---------------------------------------------------------------------------
+resolve_port() {
+  if [[ -n "${AETHON_DEBUG_PORT:-}" ]]; then
+    echo "${AETHON_DEBUG_PORT}"
+    return
+  fi
+  if [[ -f "${DEV_INFO}" ]]; then
+    python3 -c "
 import json, sys
 try:
     with open('${DEV_INFO}') as f:
         info = json.load(f)
     p = info.get('debugPort')
     if isinstance(p, int) and p > 0:
-        print(p)
-        sys.exit(0)
+        print(p); sys.exit(0)
 except Exception:
     pass
 print(19433)
-" 2>/dev/null || echo 19433)"
-else
-  PORT=19433
-fi
+" 2>/dev/null || echo 19433
+  else
+    echo 19433
+  fi
+}
 
+# ---------------------------------------------------------------------------
+# Check if the debug server is reachable on a given port
+# ---------------------------------------------------------------------------
+server_up() {
+  local port="$1"
+  python3 -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(1)
+try:
+    s.connect(('${HOST}', ${port}))
+    s.close()
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# Start dev build in the background if not already running
+# ---------------------------------------------------------------------------
+ensure_app_running() {
+  local port
+  port="$(resolve_port)"
+
+  if server_up "${port}"; then
+    echo "${port}"
+    return
+  fi
+
+  # Check if existing dev-info.json points to a live PID
+  if [[ -f "${DEV_INFO}" ]]; then
+    local pid
+    pid="$(python3 -c "
+import json, sys
+try:
+    with open('${DEV_INFO}') as f:
+        info = json.load(f)
+    p = info.get('pid')
+    if isinstance(p, int) and p > 0:
+        print(p); sys.exit(0)
+except Exception:
+    pass
+sys.exit(1)
+" 2>/dev/null)" && kill -0 "${pid}" 2>/dev/null && {
+      # PID is alive but server not yet ready — it might still be compiling
+      echo "INFO: Dev process (PID ${pid}) is alive but debug server not up yet — waiting..." >&2
+    } || true
+  fi
+
+  if ! server_up "${port}"; then
+    echo "INFO: Aethon dev build not running — starting it (output: ${DEV_LOG})" >&2
+    echo "INFO: This may take up to a few minutes on first compile." >&2
+
+    # Prefer the devshell entry point; fall back to bun directly
+    if command -v dev &>/dev/null; then
+      nohup bash -c "cd '${REPO_DIR}' && dev" >"${DEV_LOG}" 2>&1 &
+    else
+      nohup bash -c "cd '${REPO_DIR}' && bun tauri dev" >"${DEV_LOG}" 2>&1 &
+    fi
+  fi
+
+  # Wait for the server to come up
+  local elapsed=0
+  local dot_interval=10
+  local last_dot=0
+  while ! server_up "$(resolve_port)"; do
+    if (( elapsed >= START_TIMEOUT )); then
+      echo "" >&2
+      echo "ERROR: Timed out after ${START_TIMEOUT}s waiting for debug server." >&2
+      echo "       Check dev build output: tail ${DEV_LOG}" >&2
+      exit 1
+    fi
+    if (( elapsed - last_dot >= dot_interval )); then
+      printf "  waiting (%ds)...\n" "${elapsed}" >&2
+      last_dot=${elapsed}
+    fi
+    sleep 2
+    (( elapsed += 2 ))
+  done
+  echo "INFO: Debug server ready." >&2
+
+  resolve_port
+}
+
+# ---------------------------------------------------------------------------
+# Read JS from args or stdin
+# ---------------------------------------------------------------------------
 if [[ $# -gt 0 ]]; then
   JS="$*"
 else
@@ -54,16 +147,16 @@ if [[ -z "${JS}" ]]; then
   exit 1
 fi
 
+PORT="$(ensure_app_running)"
+
 python3 -c "
 import socket, sys
 s = socket.socket()
-s.settimeout(${TIMEOUT})
+s.settimeout(${EVAL_TIMEOUT})
 try:
     s.connect(('${HOST}', ${PORT}))
 except ConnectionRefusedError:
     sys.stderr.write('ERROR: cannot connect to debug server on ${HOST}:${PORT}\n')
-    sys.stderr.write('Start the dev build with \`bun tauri dev\` (or the devshell \`dev\` helper).\n')
-    sys.stderr.write('Release builds have no debug server.\n')
     sys.exit(1)
 s.sendall(sys.stdin.buffer.read())
 s.shutdown(socket.SHUT_WR)

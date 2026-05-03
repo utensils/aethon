@@ -18,7 +18,9 @@ by the agent.
 - **Agent**: TypeScript via `@mariozechner/pi-coding-agent`, run as a `bun`
   subprocess spawned from the Rust shell
 - **Dev env**: Nix flake (flake-parts + numtide/devshell + treefmt-nix +
-  rust-overlay), Rust toolchain pinned at **1.92.0**
+  rust-overlay), Rust toolchain pinned at **1.92.0** in `flake.nix` (via
+  rust-overlay); `rust-toolchain.toml` says `channel = "stable"` for non-Nix
+  builds — the Nix pin takes precedence inside the devshell
 - **Targets**: macOS (aarch64), Linux (x86_64 / aarch64), Windows (later)
 
 ## Common Commands
@@ -38,6 +40,10 @@ devshell exposes these helpers (defined in `flake.nix`):
 
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
+
+To run a single test file: `bunx vitest run agent/terminal-stream.test.ts`.
+To run tests matching a name: `bunx vitest run -t "test name pattern"`.
+To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
 
 ## Architecture
 
@@ -70,6 +76,12 @@ devshell exposes these helpers (defined in `flake.nix`):
      history on restart.
    - `agent/terminal-stream.ts` — buffers `bash`-tool output as an A2UI
      terminal stream (the `BashTerminalStreamState` snapshot type).
+   - `agent/canvas.ts` — helpers for building and patching A2UI canvas payloads.
+   - `agent/agent-errors.ts` — extracts structured error info from pi agent
+     end-of-run errors (wraps `AgentEndError` classification).
+   - `agent/shell-tools.ts` — pi tool implementations for
+     `listShells`/`readShell`/`writeShell` (bridge-side counterpart to the
+     Rust `shell_query` Tauri command).
 3. **React frontend** (`src/`) — see below. Listens for `agent-response`
    events, parses each line, and routes it into the chat history or canvas.
 
@@ -222,9 +234,8 @@ read clamp + privacy floor have to live where the PTY does. Most code paths spec
 composite (`ShellCanvas` in `components.tsx`) replaces the agent
 `main-canvas` + `chat-input` cells when a shell tab is active —
 controlled by the `/agentTabActive` / `/shellTabActive` `$ref` visibility
-flags in `workstation.a2ui.json`. Keybindings: `Cmd+T` = new shell tab,
-`Cmd+Shift+T` = new agent tab (Terminal.app convention; configurable via
-`[shortcuts] new_tab_kind` once that setting lands).
+flags in `workstation.a2ui.json`. Keybindings: `Cmd+T` = new agent tab (focus-aware — new shell sub-tab when
+focus is inside the bottom panel), `Cmd+Shift+T` = new shell sub-tab (always).
 
 ### Command palette
 
@@ -415,17 +426,14 @@ The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
 keyed against milestones M1–M5). Update both that checklist and any
 relevant notes here when capabilities land.
 
-**Quick highlights as of writing:** M1–M5 complete + M6 P1 shipped
-(interactive PTY-backed user shell tabs via `portable-pty`, `Tab.kind`
-discriminator, `Cmd+T` = shell / `Cmd+Shift+T` = agent, theme-agnostic
-xterm) + M6 P2 shipped (per-tab `ShareMode` 4-value enum with
-privacy-floor guardrail, `aethon.shells.{list, read, write}` bridge
-API with per-write Allow/Deny user confirmation in `read-write` mode,
-clickable share-mode badge in the shell status line, `[shell]
-default_share_mode` config seeded inside `shell_open` so the floor
-pins at byte 0). Pi-tool registration of `listShells`/`readShell`/
-`writeShell` is the next phase — the API is already reachable via
-`globalThis.aethon.shells.*` from extensions today.
+**Quick highlights as of writing:** M1–M6 complete. M6 shipped: interactive
+PTY-backed user shell tabs (`portable-pty`, `Tab.kind` discriminator,
+theme-agnostic xterm), per-tab `ShareMode` 4-value enum with privacy-floor
+guardrail, `aethon.shells.{list, read, write}` bridge API with per-write
+Allow/Deny user confirmation, pi-tool registration of
+`listShells`/`readShell`/`writeShell` (in `agent/shell-tools.ts`), Settings
+UI overlay, fullscreen, search overlay, drag-and-drop into composer, bridge
+crash recovery, OS notifications.
 Tool execution surfaces as A2UI cards, multi-tab persistent
 sessions, light theme, system tray + native menu, slash command picker,
 real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
@@ -446,7 +454,7 @@ Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
 | `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers.rs` | `test`           |
 | `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)              | `check`          |
 | `bunx eslint .`              | TS + React lint, type-aware via tsconfig         | `lint`           |
-| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts`)               | `test`           |
+| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`) | `test`    |
 | `bunx vitest run --coverage` | TS coverage report (v8)                          | `coverage`       |
 
 The `check` devshell command runs all of the above as a single CI gate.

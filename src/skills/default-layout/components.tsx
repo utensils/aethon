@@ -42,6 +42,7 @@ import type {
   A2UIEventHandler,
   BuiltinComponentProps,
 } from "../../components/A2UIRenderer";
+import { useStickyScroll } from "../../utils/useStickyScroll";
 
 // Adapter: react-markdown invokes `code` for both inline AND fenced code
 // blocks. We split on whether the parent is `<pre>` (fenced) and route
@@ -888,9 +889,39 @@ export function Sidebar({
 }
 
 // ---------------------------------------------------------------------------
-// ChatHistory — scrollable message feed. Messages can be plain text or
-// embedded A2UI subtrees (rendered recursively).
+// ScrollToBottomPill — shown when the user has scrolled up. Uses position:sticky
+// so it sits inside the scrollable flex container without absolute positioning.
 // ---------------------------------------------------------------------------
+
+function ScrollToBottomPill({
+  visible,
+  onClick,
+}: {
+  visible: boolean;
+  onClick: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <button
+      className="a2ui-scroll-to-bottom"
+      onClick={onClick}
+      aria-label="Scroll to latest message"
+    >
+      ↓ latest
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ChatHistory — scrollable message feed with sticky-follow auto-scroll.
+// Messages can be plain text or embedded A2UI subtrees (rendered recursively).
+// ---------------------------------------------------------------------------
+
+function roleBadge(role: string): string {
+  if (role === "user") return "YOU";
+  if (role === "agent") return "AI";
+  return "SYS";
+}
 
 export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
@@ -899,49 +930,49 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
   };
 
   const listRef = useRef<HTMLDivElement>(null);
+  const { isAtBottom, scrollToBottom, handleContentChanged } = useStickyScroll(listRef);
+
   const messages = (resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [];
   const emptyHint = props.emptyHint
     ? resolveString(props.emptyHint, state)
-    : "Send a message to start a conversation.";
-  // M6 P6 search refinement: when reopening a tab from a search hit,
-  // scroll to the first message containing the matched substring
-  // instead of the bottom. Driven by `state.scrollToMatchByTab[tabId]`
-  // — App.tsx populates this from the search-hit click and clears it
-  // after one render so subsequent message arrivals scroll-to-bottom
-  // again as usual.
+    : "Start a conversation.";
+
+  // Search-hit restore: scroll to the matching message and flash it.
+  // Driven by `state.scrollToMatchByTab[tabId]` — App.tsx populates
+  // this on search-result click and clears it after 5 s.
   const scrollToMatchByTab =
     (state.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
   const scrollToMatch = tabId ? scrollToMatchByTab[tabId] : undefined;
 
+  const prevScrollToMatch = useRef<string | undefined>(undefined);
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return;
-    if (scrollToMatch && messages.length > 0) {
-      const needle = scrollToMatch.toLowerCase();
-      const idx = messages.findIndex((m) =>
-        (m.text ?? "").toLowerCase().includes(needle),
-      );
-      if (idx >= 0) {
-        const row = el.querySelectorAll(".a2ui-chat-message")[idx];
-        if (row instanceof HTMLElement) {
-          row.scrollIntoView({ block: "center", behavior: "auto" });
-          row.classList.add("a2ui-chat-message-flash");
-          window.setTimeout(
-            () => row.classList.remove("a2ui-chat-message-flash"),
-            1200,
-          );
-          return;
-        }
+    if (!el || !scrollToMatch || scrollToMatch === prevScrollToMatch.current) return;
+    prevScrollToMatch.current = scrollToMatch;
+    const needle = scrollToMatch.toLowerCase();
+    const idx = messages.findIndex((m) =>
+      (m.text ?? "").toLowerCase().includes(needle),
+    );
+    if (idx >= 0) {
+      const row = el.querySelectorAll(".a2ui-chat-message")[idx];
+      if (row instanceof HTMLElement) {
+        row.scrollIntoView({ block: "center", behavior: "auto" });
+        row.classList.add("a2ui-chat-message-flash");
+        window.setTimeout(() => row.classList.remove("a2ui-chat-message-flash"), 1200);
       }
     }
-    el.scrollTop = el.scrollHeight;
-    // `messages.length` + `scrollToMatch` capture the cases that should
-    // re-run scroll: a new message arrived OR a search hit just landed.
-    // The closure also reads each message's text inside `findIndex`,
-    // but adding `messages` to deps would re-fire on every text-stream
-    // chunk and yank the user back to the match every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, scrollToMatch]);
+  }, [scrollToMatch]);
+
+  // Notify the sticky-scroll hook when new messages arrive so it can
+  // auto-scroll if the user is already at the bottom.
+  const prevLength = useRef(messages.length);
+  useEffect(() => {
+    if (messages.length !== prevLength.current) {
+      prevLength.current = messages.length;
+      handleContentChanged();
+    }
+  }, [messages.length, handleContentChanged]);
 
   return (
     <div className="a2ui-chat-history" ref={listRef}>
@@ -950,7 +981,7 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
       ) : (
         messages.map((m) => (
           <div key={m.id} className={`a2ui-chat-message ${m.role}`}>
-            <span className="a2ui-chat-role">{m.role}</span>
+            <span className="a2ui-chat-role">{roleBadge(m.role)}</span>
             {m.text && (
               <div className="a2ui-chat-text a2ui-markdown">
                 <ReactMarkdown components={MARKDOWN_COMPONENTS}>{m.text}</ReactMarkdown>
@@ -962,6 +993,7 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
           </div>
         ))
       )}
+      <ScrollToBottomPill visible={!isAtBottom && messages.length > 0} onClick={scrollToBottom} />
     </div>
   );
 }
@@ -996,10 +1028,17 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
     : "The agent's canvas is empty. Send a message to populate it.";
 
   const listRef = useRef<HTMLDivElement>(null);
+  const { isAtBottom, scrollToBottom, handleContentChanged } = useStickyScroll(listRef);
+
+  const prevLength = useRef(messages.length);
+  const prevLive = useRef(liveSubtree);
   useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, liveSubtree]);
+    const lengthChanged = messages.length !== prevLength.current;
+    const liveChanged = liveSubtree !== prevLive.current;
+    prevLength.current = messages.length;
+    prevLive.current = liveSubtree;
+    if (lengthChanged || liveChanged) handleContentChanged();
+  }, [messages.length, liveSubtree, handleContentChanged]);
 
   return (
     <main className="a2ui-canvas" ref={listRef}>
@@ -1008,7 +1047,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
       )}
       {messages.map((m) => (
         <div key={m.id} className={`a2ui-canvas-message ${m.role}`}>
-          <span className="a2ui-canvas-role">{m.role}</span>
+          <span className="a2ui-canvas-role">{roleBadge(m.role)}</span>
           {m.text && (
             <div className="a2ui-canvas-text a2ui-markdown">
               <ReactMarkdown>{m.text}</ReactMarkdown>
@@ -1022,6 +1061,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
+      <ScrollToBottomPill visible={!isAtBottom && (messages.length > 0 || !!liveSubtree)} onClick={scrollToBottom} />
     </main>
   );
 }

@@ -788,7 +788,12 @@ async function discoverPersistedTabs(): Promise<
     }
     return [];
   }
-  const results: { tabId: string; lastModified: number; cwd?: string }[] = [];
+  const results: {
+    tabId: string;
+    lastModified: number;
+    cwd?: string;
+    firstUserMessage?: string;
+  }[] = [];
   for (const name of entries) {
     if (name === "default") continue;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
@@ -2894,7 +2899,12 @@ async function main() {
   // in `ready` so the frontend can offer "Recent sessions" in the
   // empty-state composite. Excludes "default" (which the frontend
   // pre-creates anyway). Sorted descending by lastModified.
-  let discoveredTabs: { tabId: string; lastModified: number; cwd?: string }[] = [];
+  let discoveredTabs: {
+    tabId: string;
+    lastModified: number;
+    cwd?: string;
+    firstUserMessage?: string;
+  }[] = [];
 
   function defaultModelKey(): string {
     const def = tabs.get("default");
@@ -3355,6 +3365,20 @@ async function main() {
   scheduleStateFileWrite();
 
   emitReady();
+
+  // Replay the default tab's persisted pi session history to the frontend
+  // so all tabs use the same session_history IPC path. This replaces the
+  // frontend's messages.json read, making pi's JSONL the single source of
+  // truth for all tabs (not just non-default ones).
+  readSessionTranscript(tabSessionDir("default"))
+    .then((messages) => {
+      if (messages.length > 0) {
+        send({ type: "session_history", tabId: "default", messages });
+      }
+    })
+    .catch((err) => {
+      logger.scope("session").warn(`default tab history replay failed: ${(err as Error).message}`);
+    });
 
   const rl = createInterface({ input: process.stdin });
 
