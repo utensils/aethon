@@ -26,6 +26,7 @@ import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import type { A2UISkill } from "./skills/types";
 import { deletePointer, setPointer } from "./utils/jsonPointer";
+import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
@@ -502,6 +503,11 @@ export default function App() {
     return {
       ...(BOOT_LAYOUT.state ?? {}),
       logoUrl,
+      // App version surfaced as a state slice so layout JSON can $ref it
+      // (e.g. sidebar's `version` prop). Single source of truth is
+      // package.json — vite injects __APP_VERSION__ at build time. The
+      // "v" prefix matches the human-friendly format the UI used before.
+      appVersion: `v${__APP_VERSION__}`,
       tabs: [tab0],
       activeTabId: tab0.id,
       // Mirror keys point at the active tab's empty view so layout bindings
@@ -2505,6 +2511,17 @@ export default function App() {
       removeProject: removeProjectById,
       listProjects: () => projectsRef.current.projects.slice(),
       activeProject: () => activeProject(projectsRef.current),
+      // Extension surface for the `code` primitive's syntax highlighter.
+      // Mirrors the bridge-side aethon.registerHighlightGrammar so a
+      // frontend skill module (loaded via skill `frontendEntry`) can
+      // teach Shiki a new language without an IPC round-trip. Bridge
+      // extensions go through `register_highlight_grammar` IPC instead.
+      registerHighlightGrammar: (lang: string, grammar: unknown): boolean => {
+        if (typeof lang !== "string" || lang.trim().length === 0) return false;
+        if (!grammar || typeof grammar !== "object") return false;
+        registerHighlightGrammar(lang.trim(), grammar);
+        return true;
+      },
     };
     (window as unknown as { aethon: typeof api }).aethon = api;
 
@@ -3341,6 +3358,24 @@ export default function App() {
               pendingTabOpens.current.delete(t.id);
             });
         }
+        // Post-respawn project re-announce. The bridge boots with
+        // process.cwd() — which is whatever directory bun was launched
+        // from, NOT necessarily the user's active project. If we don't
+        // re-announce, a hot-reload triggered while a non-cwd project
+        // is active leaves the wrong project's extensions loaded. The
+        // loop above only sends tab_open for non-default tabs, so when
+        // the active tab IS "default" (common: single-tab session)
+        // nothing announces. Send an explicit set_project for the
+        // active tab so the bridge swaps to the right project. The
+        // bridge short-circuits when cwd matches its currentProjectCwd
+        // so this is harmless on a fresh boot where the boot effect
+        // already announced.
+        const activeProj = activeProject(projectsRef.current);
+        if (activeProj) {
+          const activeTabId =
+            (stateRef.current.activeTabId as string | undefined) ?? "default";
+          announceProjectToBridge(activeTabId, activeProj.path);
+        }
         break;
       }
       case "extension_components": {
@@ -3387,6 +3422,22 @@ export default function App() {
         const themes = (data.themes as ExtensionTheme[] | undefined) ?? [];
         hydrateThemes(themes);
         ackMutation(data.mutationId, true);
+        break;
+      }
+      case "register_highlight_grammar": {
+        // Extension surface for the `code` primitive: a TextMate grammar
+        // for a language Shiki doesn't ship by default. Forward to the
+        // worker; it overwrites any prior grammar for the same lang and
+        // a follow-up highlight request picks it up. Bridge already
+        // validated lang + grammar shape, so we trust the payload here.
+        const lang = data.lang as string | undefined;
+        const grammar = data.grammar;
+        if (typeof lang === "string" && grammar) {
+          registerHighlightGrammar(lang, grammar);
+          ackMutation(data.mutationId, true);
+        } else {
+          ackMutation(data.mutationId, false, "register_highlight_grammar: bad payload");
+        }
         break;
       }
       case "extension_slash_commands": {
@@ -4080,6 +4131,28 @@ export default function App() {
     });
   }
 
+  // Tell the Rust shell to watch (or stop watching) a project's
+  // `.aethon/extensions/` dir for changes. Edits to files in a watched
+  // dir trigger the same kill-and-respawn flow as `~/.aethon/extensions/`,
+  // so project extensions hot-reload without a manual app restart. Pairs
+  // with announceProjectToBridge — both fire whenever the active project
+  // changes, but they cover different things (cwd for new sessions vs.
+  // the file-watch list for hot-reload).
+  function watchProjectForBridge(path: string) {
+    invoke("watch_project_extensions", { projectPath: path }).catch(
+      (err: unknown) => {
+        console.warn("[aethon] watch_project_extensions failed:", err);
+      },
+    );
+  }
+  function unwatchProjectForBridge(path: string) {
+    invoke("unwatch_project_extensions", { projectPath: path }).catch(
+      (err: unknown) => {
+        console.warn("[aethon] unwatch_project_extensions failed:", err);
+      },
+    );
+  }
+
   // Refresh the cached git status for one project path. Best-effort —
   // a missing `git` binary or a non-repo path resolves to an empty
   // entry and is treated as "no badge". Runs through the Tauri command
@@ -4157,6 +4230,9 @@ export default function App() {
         (stateRef.current.activeTabId as string | undefined) ?? "default";
       if (active) {
         announceProjectToBridge(tabId, active.path);
+        // Hot-reload the active project's `.aethon/extensions/` from
+        // boot, not just from the next setActiveProjectById call.
+        watchProjectForBridge(active.path);
         // Retag any pre-load tabs (default boot tab + bridge replays) so
         // they live in the active project's bucket from now on. Without
         // this they'd stay in NO_PROJECT_KEY and silently disappear the
@@ -4277,6 +4353,7 @@ export default function App() {
     if (!target) return false;
     const fromKey = projectBucketKey(ps.activeId);
     const toKey = projectBucketKey(id);
+    const previousActive = activeProject(ps);
     projectsRef.current = {
       projects: ps.projects.map((p) =>
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
@@ -4289,11 +4366,19 @@ export default function App() {
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, target.path);
+    // Swap the file-watcher's project ext dir so edits in the new
+    // project's `.aethon/extensions/` hot-reload, and edits in the old
+    // one stop firing.
+    if (previousActive && previousActive.path !== target.path) {
+      unwatchProjectForBridge(previousActive.path);
+    }
+    watchProjectForBridge(target.path);
     return true;
   }
 
   function clearActiveProject() {
     const fromKey = projectBucketKey(projectsRef.current.activeId);
+    const previousActive = activeProject(projectsRef.current);
     projectsRef.current = { ...projectsRef.current, activeId: null };
     persistProjects();
     switchProjectBucket(fromKey, NO_PROJECT_KEY);
@@ -4301,6 +4386,7 @@ export default function App() {
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
     announceProjectToBridge(tabId, null);
+    if (previousActive) unwatchProjectForBridge(previousActive.path);
   }
 
   function removeProjectById(id: string): boolean {
@@ -4310,8 +4396,9 @@ export default function App() {
     const result = removeProject(projectsRef.current, id);
     if (!result.removed) return false;
 
+    const removedPath = result.removed.path;
     projectsRef.current = result.state;
-    gitStatusRef.current.delete(result.removed.path);
+    gitStatusRef.current.delete(removedPath);
     persistProjects();
 
     if (wasActive) {
@@ -4325,6 +4412,10 @@ export default function App() {
       tabBucketsRef.current.delete(removedKey);
       syncRecentSessionsToState();
     }
+    // Always unwatch — the project may have been active or just on the
+    // recents list with its ext dir watched eagerly. Idempotent on the
+    // Rust side, so calling for a never-watched path is harmless.
+    unwatchProjectForBridge(removedPath);
 
     return true;
   }

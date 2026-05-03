@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -83,13 +83,13 @@ fn read_config(app: AppHandle) -> Result<serde_json::Value, String> {
         Ok(file) => {
             // Cap the read so a runaway config can't pull a huge file into memory.
             if let Err(e) = file.take(MAX_BYTES).read_to_string(&mut buf) {
-                eprintln!("[config] read {}: {e}; using defaults", path.display());
+                tracing::warn!(target: "aethon::config", "read {}: {e}; using defaults", path.display());
                 buf.clear();
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => { /* defaults */ }
         Err(e) => {
-            eprintln!("[config] open {}: {e}; using defaults", path.display());
+            tracing::warn!(target: "aethon::config", "open {}: {e}; using defaults", path.display());
         }
     }
     let mut value = parse_config_toml(&buf);
@@ -106,8 +106,9 @@ fn read_config(app: AppHandle) -> Result<serde_json::Value, String> {
         // Surface a warning if the user's value was outside the supported
         // range — easier to discover than silently rewriting it.
         if u64::from(clamped) != n {
-            eprintln!(
-                "[config] font_size {n} outside [{FONT_SIZE_MIN}, {FONT_SIZE_MAX}]; using {clamped}"
+            tracing::warn!(
+                target: "aethon::config",
+                "font_size {n} outside [{FONT_SIZE_MIN}, {FONT_SIZE_MAX}]; using {clamped}"
             );
         }
     }
@@ -880,7 +881,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
     if let Some(child) = guard.as_mut()
         && let Ok(Some(status)) = child.try_wait()
     {
-        eprintln!("[agent] previous child exited with {status:?}; respawning");
+        tracing::info!(target: "aethon::agent", "previous child exited with {status:?}; respawning");
         *guard = None;
     }
 
@@ -970,7 +971,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         .map_err(|e| format!("failed to spawn agent: {e}"))?;
 
     let pid = child.id();
-    eprintln!("[agent] spawned pid={pid}");
+    tracing::info!(target: "aethon::agent", "spawned pid={pid}");
 
     // Tail-buffer of recent stderr lines. When the bun child crashes
     // unexpectedly, the supervisor emits an `agent-crashed` event with
@@ -993,7 +994,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
                 Err(_) => break,
             }
         }
-        eprintln!("[agent] stdout reader for pid={pid} exited");
+        tracing::debug!(target: "aethon::agent", "stdout reader for pid={pid} exited");
         // Stdout reader exits when the child closes stdout — i.e. the
         // child has died. Distinguish intentional kills (hot-reload via
         // the file watcher, which sets `agent_reload_in_progress` first)
@@ -1030,7 +1031,10 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         for line in reader.lines() {
             match line {
                 Ok(text) => {
-                    eprintln!("[agent stderr pid={pid}] {text}");
+                    // Bridge stderr — already prefixed by the bridge's logger
+                    // since it now emits structured `LEVEL scope: msg` lines.
+                    // We forward at info level and let the env filter throttle.
+                    tracing::info!(target: "aethon::agent::stderr", pid = pid, "{text}");
                     if let Ok(mut g) = stderr_tail_writer.lock() {
                         if g.len() >= STDERR_TAIL_CAP {
                             g.pop_front();
@@ -1042,7 +1046,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
                 Err(_) => break,
             }
         }
-        eprintln!("[agent] stderr reader for pid={pid} exited");
+        tracing::debug!(target: "aethon::agent", "stderr reader for pid={pid} exited");
     });
 
     *guard = Some(child);
@@ -1134,7 +1138,15 @@ fn dispatch_a2ui_event(
 ///     resourceLoader on session create)
 ///   - `<project>/agent/` — bridge source, dev only
 struct AgentWatcher {
-    _watcher: notify::RecommendedWatcher,
+    /// The notify watcher itself. Held in `Arc<Mutex<>>` because the
+    /// watch list is mutable post-construction — `watch_project_extensions`
+    /// adds the active project's `.aethon/extensions/` dir on the fly so a
+    /// project the user opens after boot still gets hot-reload.
+    watcher: Arc<Mutex<notify::RecommendedWatcher>>,
+    /// Currently-watched paths. Exists so `watch_project_extensions` is
+    /// idempotent (never double-registers a path) and so unwatch can
+    /// dedupe. Bookkeeping mirror of what's actually in the watcher.
+    watched: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 struct DebounceMsg {
@@ -1183,8 +1195,9 @@ fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandl
             let _ = child.kill();
             let _ = child.wait();
             let _ = app.emit("agent-reloaded", "");
-            eprintln!(
-                "[agent-watch] killed pid={pid} after {settle}ms settle; will respawn on next request (last paths={last_paths:?})",
+            tracing::info!(
+                target: "aethon::agent_watch",
+                "killed pid={pid} after {settle}ms settle; will respawn on next request (last paths={last_paths:?})",
             );
         }
     }
@@ -1246,7 +1259,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         }
     }
     if watch_paths.is_empty() {
-        eprintln!("[agent-watch] nothing to watch — hot reload disabled");
+        tracing::warn!(target: "aethon::agent_watch", "nothing to watch — hot reload disabled");
         return None;
     }
 
@@ -1266,7 +1279,7 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
             let event = match res {
                 Ok(ev) => ev,
                 Err(err) => {
-                    eprintln!("[agent-watch] error: {err}");
+                    tracing::warn!(target: "aethon::agent_watch", "error: {err}");
                     return;
                 }
             };
@@ -1320,25 +1333,26 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         }) {
             Ok(w) => w,
             Err(err) => {
-                eprintln!("[agent-watch] failed to create watcher: {err}");
+                tracing::error!(target: "aethon::agent_watch", "failed to create watcher: {err}");
                 return None;
             }
         };
 
-    let mut watching: Vec<PathBuf> = Vec::new();
+    let mut watching: HashSet<PathBuf> = HashSet::new();
     for path in &watch_paths {
         if let Err(err) = watcher.watch(path, RecursiveMode::Recursive) {
-            eprintln!("[agent-watch] failed to watch {}: {err}", path.display());
+            tracing::warn!(target: "aethon::agent_watch", "failed to watch {}: {err}", path.display());
         } else {
-            watching.push(path.clone());
+            watching.insert(path.clone());
         }
     }
     if watching.is_empty() {
         return None;
     }
 
-    eprintln!(
-        "[agent-watch] watching {} dir(s) for changes: {}",
+    tracing::info!(
+        target: "aethon::agent_watch",
+        "watching {} dir(s) for changes: {}",
         watching.len(),
         watching
             .iter()
@@ -1346,7 +1360,68 @@ fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
             .collect::<Vec<_>>()
             .join(", "),
     );
-    Some(AgentWatcher { _watcher: watcher })
+    Some(AgentWatcher {
+        watcher: Arc::new(Mutex::new(watcher)),
+        watched: Arc::new(Mutex::new(watching)),
+    })
+}
+
+/// Add a project's `.aethon/extensions/` dir to the watch list so edits
+/// fire the same kill-and-respawn flow as edits in `~/.aethon/extensions/`.
+/// Idempotent — re-adding a watched path is a no-op. Called by the frontend
+/// after the user opens or activates a project; without this the only
+/// hot-reloaded extension dirs are the user-level + skill ones, and a
+/// project's `.aethon/extensions/` requires a manual agent restart.
+#[tauri::command]
+fn watch_project_extensions(
+    state: State<'_, AgentWatcher>,
+    project_path: String,
+) -> Result<(), String> {
+    use notify::{RecursiveMode, Watcher};
+    let project = PathBuf::from(&project_path);
+    let ext_dir = project.join(".aethon").join("extensions");
+    if !ext_dir.exists() {
+        // Pre-create so the first extension drop fires Create events
+        // and the watcher already has the path in scope. Same logic as
+        // ~/.aethon/extensions at boot.
+        let _ = std::fs::create_dir_all(&ext_dir);
+    }
+    if !ext_dir.exists() {
+        return Err(format!("cannot watch {}: dir missing", ext_dir.display()));
+    }
+    let mut watched = state.watched.lock().map_err(|e| e.to_string())?;
+    if watched.contains(&ext_dir) {
+        return Ok(()); // already watching
+    }
+    let mut watcher = state.watcher.lock().map_err(|e| e.to_string())?;
+    watcher
+        .watch(&ext_dir, RecursiveMode::Recursive)
+        .map_err(|e| format!("watch {}: {e}", ext_dir.display()))?;
+    watched.insert(ext_dir.clone());
+    tracing::info!(target: "aethon::agent_watch", "now watching project ext dir {}", ext_dir.display());
+    Ok(())
+}
+
+/// Drop a previously-watched project extensions dir. Called by the
+/// frontend when the user removes a project or switches to a different
+/// active project. Missing paths are silently ignored.
+#[tauri::command]
+fn unwatch_project_extensions(
+    state: State<'_, AgentWatcher>,
+    project_path: String,
+) -> Result<(), String> {
+    use notify::Watcher;
+    let project = PathBuf::from(&project_path);
+    let ext_dir = project.join(".aethon").join("extensions");
+    let mut watched = state.watched.lock().map_err(|e| e.to_string())?;
+    if !watched.contains(&ext_dir) {
+        return Ok(());
+    }
+    let mut watcher = state.watcher.lock().map_err(|e| e.to_string())?;
+    let _ = watcher.unwatch(&ext_dir);
+    watched.remove(&ext_dir);
+    tracing::info!(target: "aethon::agent_watch", "stopped watching project ext dir {}", ext_dir.display());
+    Ok(())
 }
 
 /// True when the updater plugin has a usable pubkey configured.
@@ -1637,7 +1712,7 @@ async fn install_aethon_skill(
         let _ = child.kill();
         let _ = child.wait();
         let _ = app.emit("agent-reloaded", "");
-        eprintln!("[skill-install] killed pid={pid}; will respawn with {spec}");
+        tracing::info!(target: "aethon::skill_install", "killed pid={pid}; will respawn with {spec}");
     }
 
     Ok(if install_output.trim().is_empty() {
@@ -1867,6 +1942,12 @@ fn install_app_menu(
 /// `extension_items` carries any `aethon.registerMenuItem` entries
 /// from extensions tagged `location: "tray"`. They appear after the
 /// built-in items and dispatch `menu` events with id `ext:<action>`.
+///
+/// The tray's `with_id` / `remove_tray_by_id` keys must match — they
+/// share `TRAY_ID` so a refactor renaming one doesn't silently break
+/// the idempotency contract.
+const TRAY_ID: &str = "main-tray";
+
 fn install_tray(
     app: &AppHandle,
     extension_items: &[ExtensionMenuItem],
@@ -1915,7 +1996,16 @@ fn install_tray(
         .ok_or("no default_window_icon — bundle.icon missing?")?
         .clone();
 
-    TrayIconBuilder::with_id("main-tray")
+    // Idempotent: remove any prior tray with this id before building.
+    // `install_tray` runs at boot AND every time the frontend pushes
+    // `extension_menu_items` via `set_extension_menu_items` (so an
+    // extension-registered tray entry actually appears in the menu).
+    // Without this remove, `TrayIconBuilder.build()` registers a NEW
+    // tray each call — and macOS happily shows BOTH icons in the menu
+    // bar, which is the user-reported "two Æ icons" bug.
+    let _ = app.remove_tray_by_id(TRAY_ID);
+
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         // Show Aethon's full-color logo in the tray rather than a
         // monochrome template. The brand mark (cream Æ + orange π) is
@@ -1967,8 +2057,116 @@ fn install_tray(
     Ok(())
 }
 
+/// Keep the non-blocking file appender's WorkerGuard alive for the
+/// process lifetime. Dropping the guard flushes pending writes; when
+/// `init_tracing` returns, the local guard would be dropped and the
+/// background thread would exit before any non-trivial logging
+/// happens. Stash it here.
+static LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> =
+    OnceLock::new();
+
+/// `~/.aethon/logs/` — same parent as state.json + projects.json so a
+/// user troubleshooting an issue finds everything in one place. Created
+/// at boot so the appender doesn't fail on a fresh install.
+fn log_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    let dir = home.join(".aethon").join("logs");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[init_tracing] mkdir {}: {e}", dir.display());
+        return None;
+    }
+    Some(dir)
+}
+
+/// Prune log files older than `RETENTION_DAYS`. `tracing-appender`'s
+/// daily rotation produces files named `aethon.YYYY-MM-DD`; matching by
+/// that prefix lets us coexist with the bridge's own log files in the
+/// same directory without touching them.
+const RETENTION_DAYS: u64 = 7;
+fn prune_old_logs(dir: &Path) {
+    let cutoff = match std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(RETENTION_DAYS * 24 * 60 * 60))
+    {
+        Some(t) => t,
+        None => return,
+    };
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = match name.to_str() {
+            Some(s) => s,
+            None => continue,
+        };
+        // Only prune our own log files — leave bridge logs and anything
+        // else alone.
+        if !name_str.starts_with("aethon.") {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok());
+        if let Some(t) = modified
+            && t < cutoff
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Initialize the `tracing` subscriber. Called from `run()` before any
+/// log call so module-load output is captured. Honors `AETHON_LOG`
+/// (preferred — keeps the namespace ours) and falls back to `RUST_LOG`.
+/// Default level is `info` in dev and `warn` in release so noisy
+/// `[agent-watch]` chatter doesn't show in shipped binaries.
+///
+/// Logs go to BOTH stderr (so the dev terminal sees them in real time)
+/// AND a daily-rotating file at `~/.aethon/logs/aethon.YYYY-MM-DD` (so
+/// release users have a paper trail for crashes / weird behavior).
+/// Files older than `RETENTION_DAYS` are pruned at startup.
+fn init_tracing() {
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    let default_level = if cfg!(debug_assertions) { "info" } else { "warn" };
+    let filter = EnvFilter::try_from_env("AETHON_LOG")
+        .or_else(|_| EnvFilter::try_from_default_env())
+        .unwrap_or_else(|_| EnvFilter::new(default_level));
+
+    let stderr_layer = fmt::layer()
+        .with_target(true)
+        .with_writer(std::io::stderr);
+
+    // File layer is best-effort: if the home dir isn't reachable or the
+    // appender fails to start, we still get stderr logging.
+    let file_layer = log_dir().and_then(|dir| {
+        prune_old_logs(&dir);
+        let file_appender = tracing_appender::rolling::daily(&dir, "aethon");
+        let (writer, guard) = tracing_appender::non_blocking(file_appender);
+        // Stash the guard so writes don't get lost on shutdown.
+        LOG_GUARD.set(guard).ok()?;
+        Some(
+            fmt::layer()
+                .with_target(true)
+                .with_ansi(false) // No color codes in the file
+                .with_writer(writer),
+        )
+    });
+
+    let subscriber = tracing_subscriber::registry()
+        .with(filter)
+        .with(stderr_layer);
+    let _ = if let Some(file) = file_layer {
+        subscriber.with(file).try_init()
+    } else {
+        subscriber.try_init()
+    };
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_tracing();
     let mut builder = tauri::Builder::default();
     builder = builder.plugin(tauri_plugin_process::init());
     builder = builder.plugin(tauri_plugin_opener::init());
@@ -1985,8 +2183,9 @@ pub fn run() {
         if updater_pubkey_configured() {
             builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
         } else {
-            eprintln!(
-                "[updater] skipping plugin registration — no pubkey set in tauri.conf.json. \
+            tracing::warn!(
+                target: "aethon::updater",
+                "skipping plugin registration — no pubkey set in tauri.conf.json. \
                 See RELEASING.md to generate signing keys."
             );
         }
@@ -2015,6 +2214,8 @@ pub fn run() {
             set_extension_menu_items,
             pick_project_directory,
             git_status,
+            watch_project_extensions,
+            unwatch_project_extensions,
             shell::shell_open,
             shell::shell_input,
             shell::shell_resize,
@@ -2055,4 +2256,92 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    //! Source-level regression tests for code paths whose behavior is
+    //! easier to assert by structure than by spinning up a Tauri runtime.
+    //! For full behavioral coverage of tray idempotency we'd need
+    //! `tauri::test::mock_app` (not currently wired into the crate's
+    //! test feature), so we lock the contract via shape: the source
+    //! must contain the `remove_tray_by_id` call before the build.
+
+    use super::TRAY_ID;
+
+    /// The tray id is a single source of truth shared by the build
+    /// and the cleanup. If someone changes one without the other, the
+    /// idempotency call becomes a no-op and the double-icon bug
+    /// returns silently. This test asserts the value hasn't drifted —
+    /// any rename should land in both call sites.
+    #[test]
+    fn tray_id_is_main_tray() {
+        assert_eq!(TRAY_ID, "main-tray");
+    }
+
+    /// Regression for the "two Æ tray icons" bug.
+    ///
+    /// `install_tray` is called at boot AND every time the frontend
+    /// pushes `extension_menu_items` via `set_extension_menu_items`,
+    /// because an extension that registers a `location: "tray"` item
+    /// needs the tray rebuilt to appear. Without removing the prior
+    /// tray with the same id, `TrayIconBuilder.build` registers a
+    /// SECOND OS-level tray (NSStatusItem on macOS) — both icons
+    /// stay visible in the menu bar.
+    ///
+    /// The fix is `app.remove_tray_by_id(TRAY_ID)` before the
+    /// builder runs. We assert it's still there: deleting the line
+    /// would silently re-introduce the regression and a unit test
+    /// catches that at `cargo test --lib` time.
+    #[test]
+    fn install_tray_calls_remove_tray_by_id_for_idempotency() {
+        let src = include_str!("lib.rs");
+        let needle = "remove_tray_by_id(TRAY_ID)";
+        assert!(
+            src.contains(needle),
+            "install_tray must remove the prior tray before rebuilding so calling it twice doesn't leave two OS-level tray icons. Looking for `{needle}` in lib.rs.",
+        );
+        // Also assert the call ORDER: the remove must precede the
+        // build, not follow it.
+        let remove_pos = src.find(needle).unwrap();
+        let build_pos = src.find("TrayIconBuilder::with_id(TRAY_ID)").unwrap();
+        assert!(
+            remove_pos < build_pos,
+            "remove_tray_by_id must run BEFORE TrayIconBuilder::with_id, otherwise the new tray gets removed instead of the old one.",
+        );
+    }
+
+    /// `set_extension_menu_items` is the frontend → Rust path that
+    /// rebuilds the menu + tray when an extension registers a menu
+    /// item. If it stops calling `install_tray`, the extension item
+    /// silently never shows up. If it stops being wired into
+    /// `invoke_handler!`, the frontend invoke fails. Either failure
+    /// mode is loud at runtime but easy to introduce in a refactor.
+    #[test]
+    fn set_extension_menu_items_calls_install_tray_and_is_wired_to_handler() {
+        let src = include_str!("lib.rs");
+        assert!(
+            src.contains("fn set_extension_menu_items("),
+            "the Tauri command must exist",
+        );
+        // The handler invocation list registers the command — without
+        // this entry, the frontend's invoke('set_extension_menu_items')
+        // returns "command not found".
+        assert!(
+            src.contains("set_extension_menu_items,"),
+            "set_extension_menu_items must be registered in the invoke_handler list",
+        );
+        // And it must call install_tray so the rebuild path covers
+        // tray entries (location: "tray"), not just the app menu.
+        let body_start = src.find("fn set_extension_menu_items(").unwrap();
+        let body_end = src[body_start..]
+            .find("\nfn ")
+            .map(|n| body_start + n)
+            .unwrap_or(src.len());
+        let body = &src[body_start..body_end];
+        assert!(
+            body.contains("install_tray("),
+            "set_extension_menu_items must call install_tray so location: \"tray\" extension items appear",
+        );
+    }
 }

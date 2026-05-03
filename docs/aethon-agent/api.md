@@ -454,6 +454,35 @@ globalThis.aethon.registerTheme({
 
 The theme appears in the sidebar's Themes section automatically.
 
+### `registerHighlightGrammar(lang, grammar)`
+
+Register an additional TextMate grammar with the syntax-highlight worker
+that backs the `code` primitive. Use this when an extension needs to
+highlight a language Aethon doesn't ship by default (e.g. Lean, Coq, or
+an in-house DSL). The grammar is a TextMate JSON object — typically
+loaded from a `.tmLanguage.json` file shipped alongside the extension.
+
+```ts
+import leanGrammar from "./lean.tmLanguage.json" assert { type: "json" };
+
+await globalThis.aethon.registerHighlightGrammar("lean", leanGrammar);
+
+// Now ```lean fences in chat (or `code` cards with language: "lean")
+// will highlight using your grammar.
+```
+
+Idempotent — re-registering the same `lang` overwrites the previous
+grammar. Returns a `MutationResult` so you can confirm the worker
+received it before issuing dependent renders.
+
+**Why not just override the `code` primitive?** Primitives are frozen
+on purpose — see CLAUDE.md and `extensions.md`. If you want a different
+highlighting *engine* entirely (highlight.js, codemirror, …), the
+documented escape hatch is to register a custom component type via
+`registerComponent` and route layouts at it instead of `code`. This
+API is for the common case: keep the primitive, just teach it a new
+language.
+
 ### `notify({ title, message?, kind?, durationMs?, actions?, id? })` / `dismissNotification(id)`
 
 Push a toast notification onto the App-root notification stack. Toasts

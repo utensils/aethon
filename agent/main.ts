@@ -140,6 +140,8 @@ import { basename, dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { findProjectExtensionDirs } from "./project-extensions";
+import { extractAgentEndError } from "./agent-errors";
+import { logger } from "./logger";
 import {
   makeCanvasApi as buildCanvasApi,
   readCanvasComponentsFromTabState,
@@ -523,6 +525,14 @@ async function loadAethonSkillManifests(
       entryPath: string;
       code: string;
     }) => void;
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: "skill-package";
+      status: "failed" | "skipped";
+      error: string;
+      path?: string;
+    }) => void;
   },
 ): Promise<void> {
   const skillsRoot = join(USER_DIR, "skills", "node_modules");
@@ -554,7 +564,7 @@ async function loadAethonSkillManifests(
     entries = await readdir(skillsRoot);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-skill] readdir ${skillsRoot}: ${(err as Error).message}`);
+      logger.scope("skill").warn(`readdir ${skillsRoot}: ${(err as Error).message}`);
     }
     return;
   }
@@ -576,9 +586,16 @@ async function loadAethonSkillManifests(
   for (const c of candidates) {
     const entry = c.manifest.aethon?.entry;
     if (typeof entry !== "string" || entry.length === 0) {
-      console.error(`[aethon-skill] ${c.name}: aethon.entry not set, skipping`);
+      logger.scope("skill").warn(`${c.name}: aethon.entry not set, skipping`);
       send({
         type: "extension_lifecycle",
+        name: c.name,
+        source: "skill-package",
+        status: "skipped",
+        error: "aethon.entry not set",
+        path: c.dir,
+      });
+      options?.onFailure?.({
         name: c.name,
         source: "skill-package",
         status: "skipped",
@@ -592,9 +609,16 @@ async function loadAethonSkillManifests(
       const mod: AethonExtensionModule = await import(pathToFileURL(filePath).href);
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
-        console.error(`[aethon-skill] ${c.name}: no register() export, skipping`);
+        logger.scope("skill").warn(`${c.name}: no register() export, skipping`);
         send({
           type: "extension_lifecycle",
+          name: c.name,
+          source: "skill-package",
+          status: "skipped",
+          error: "no register() export",
+          path: filePath,
+        });
+        options?.onFailure?.({
           name: c.name,
           source: "skill-package",
           status: "skipped",
@@ -605,7 +629,8 @@ async function loadAethonSkillManifests(
       }
       await register(api);
       registry.set(c.name, "skill-package");
-      console.error(`[aethon-skill] loaded ${c.name} from ${entry}`);
+      options?.onLoaded?.(c.name);
+      logger.scope("skill").info(`loaded ${c.name} from ${entry}`);
       send({
         type: "extension_lifecycle",
         name: c.name,
@@ -633,16 +658,23 @@ async function loadAethonSkillManifests(
             entryPath: fePath,
             code,
           });
-          console.error(
-            `[aethon-skill] ${c.name}: frontend module shipped (${code.length} bytes)`,
-          );
+          logger
+            .scope("skill")
+            .info(`${c.name}: frontend module shipped (${code.length} bytes)`);
         } catch (feErr) {
           const feMessage = (feErr as Error).message;
-          console.error(
-            `[aethon-skill] ${c.name}: failed to read frontendEntry ${fePath}: ${feMessage}`,
-          );
+          logger
+            .scope("skill")
+            .warn(`${c.name}: failed to read frontendEntry ${fePath}: ${feMessage}`);
           send({
             type: "extension_lifecycle",
+            name: `${c.name} (frontend)`,
+            source: "skill-package",
+            status: "failed",
+            error: feMessage,
+            path: fePath,
+          });
+          options?.onFailure?.({
             name: `${c.name} (frontend)`,
             source: "skill-package",
             status: "failed",
@@ -653,9 +685,16 @@ async function loadAethonSkillManifests(
       }
     } catch (err) {
       const message = (err as Error).message;
-      console.error(`[aethon-skill] ${c.name}: ${message}`);
+      logger.scope("skill").warn(`${c.name}: ${message}`);
       send({
         type: "extension_lifecycle",
+        name: c.name,
+        source: "skill-package",
+        status: "failed",
+        error: message,
+        path: filePath,
+      });
+      options?.onFailure?.({
         name: c.name,
         source: "skill-package",
         status: "failed",
@@ -688,7 +727,7 @@ async function discoverPiAethonExtensions(
     entries = await readdir(dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-pi] readdir ${dir}: ${(err as Error).message}`);
+      logger.scope("pi-discover").warn(`readdir ${dir}: ${(err as Error).message}`);
     }
     return;
   }
@@ -734,9 +773,9 @@ async function discoverPersistedTabs(): Promise<
     entries = await readdir(SESSIONS_DIR);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(
-        `[aethon-tabs] readdir ${SESSIONS_DIR}: ${(err as Error).message}`,
-      );
+      logger
+        .scope("tabs")
+        .warn(`readdir ${SESSIONS_DIR}: ${(err as Error).message}`);
     }
     return [];
   }
@@ -772,7 +811,7 @@ async function loadAethonThemeDirectory(
     entries = await readdir(dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`[aethon-themes] readdir ${dir}: ${(err as Error).message}`);
+      logger.scope("themes").warn(`readdir ${dir}: ${(err as Error).message}`);
     }
     return;
   }
@@ -785,9 +824,9 @@ async function loadAethonThemeDirectory(
       // registerTheme handles validation internally — invalid input emits
       // a notice and resolves with {ok:false}.
       api.registerTheme(parsed);
-      console.error(`[aethon-themes] loaded ${name}`);
+      logger.scope("themes").info(`loaded ${name}`);
     } catch (err) {
-      console.error(`[aethon-themes] ${name}: ${(err as Error).message}`);
+      logger.scope("themes").warn(`${name}: ${(err as Error).message}`);
     }
   }
 }
@@ -815,31 +854,67 @@ async function loadAethonExtensionDirectory(
     logPrefix: string;
     displayName?: (fileName: string) => string;
     loadedFiles?: Set<string>;
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: Extract<ExtensionSource, "directory" | "project-directory">;
+      status: "failed" | "skipped";
+      error: string;
+      path: string;
+    }) => void;
   },
 ): Promise<void> {
+  const log = logger.scope(options.logPrefix);
   let entries: string[];
   try {
     entries = await readdir(options.dir);
   } catch (err) {
     // Missing dir is the common case — extensions are optional.
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(
-        `[${options.logPrefix}] readdir ${options.dir}: ${(err as Error).message}`,
-      );
+      log.warn(`readdir ${options.dir}: ${(err as Error).message}`);
     }
     return;
   }
-  for (const name of entries) {
-    if (!/\.(ts|js|mjs)$/.test(name)) continue;
-    const file = join(options.dir, name);
-    if (options.loadedFiles?.has(file)) continue;
-    const displayName =
-      options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, "");
+  // Filter to extension files we haven't loaded yet, and resolve their
+  // display names once. The previous implementation walked entries in a
+  // sequential `for…of` with `await import(...)` per file, which is
+  // O(N × import_time). Bun pays a transpile cost on the first import
+  // of each .ts file, so in projects with many extensions this stacked
+  // up to multiple seconds (the user-reported "ages" complaint). Now we
+  // parallelize the import phase via Promise.allSettled and keep the
+  // register() phase sequential so registrations against shared maps
+  // (handler dedupe, theme/component registries) stay deterministic.
+  const candidates = entries
+    .filter((name) => /\.(ts|js|mjs)$/.test(name))
+    .map((name) => ({
+      name,
+      file: join(options.dir, name),
+      displayName:
+        options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, ""),
+    }))
+    .filter((c) => !options.loadedFiles?.has(c.file));
+
+  const imports = await Promise.allSettled(
+    candidates.map(
+      (c) => import(pathToFileURL(c.file).href) as Promise<AethonExtensionModule>,
+    ),
+  );
+
+  for (let i = 0; i < candidates.length; i++) {
+    const { name, file, displayName } = candidates[i];
+    const result = imports[i];
     try {
-      const mod: AethonExtensionModule = await import(pathToFileURL(file).href);
+      if (result.status === "rejected") {
+        // Re-throw into the catch below so failure-emission stays in one
+        // place.
+        throw result.reason instanceof Error
+          ? result.reason
+          : new Error(String(result.reason));
+      }
+      const mod = result.value;
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
-        console.error(`[${options.logPrefix}] ${name}: no register() export, skipping`);
+        log.warn(`${name}: no register() export, skipping`);
         // Lifecycle event — abstract feedback channel. Default-layout
         // surfaces this as a chat-side system notice; other layouts /
         // extensions can listen on `aethon:extension-lifecycle` and
@@ -852,12 +927,20 @@ async function loadAethonExtensionDirectory(
           error: "no register() export",
           path: file,
         });
+        options.onFailure?.({
+          name: displayName,
+          source: options.source,
+          status: "skipped",
+          error: "no register() export",
+          path: file,
+        });
         continue;
       }
       await register(api);
       options.loadedFiles?.add(file);
       registry.set(displayName, options.source);
-      console.error(`[${options.logPrefix}] loaded ${name}`);
+      options.onLoaded?.(displayName);
+      log.info(`loaded ${name}`);
       send({
         type: "extension_lifecycle",
         name: displayName,
@@ -867,9 +950,16 @@ async function loadAethonExtensionDirectory(
       });
     } catch (err) {
       const message = (err as Error).message;
-      console.error(`[${options.logPrefix}] ${name}: ${message}`);
+      log.warn(`${name}: ${message}`);
       send({
         type: "extension_lifecycle",
+        name: displayName,
+        source: options.source,
+        status: "failed",
+        error: message,
+        path: file,
+      });
+      options.onFailure?.({
         name: displayName,
         source: options.source,
         status: "failed",
@@ -886,11 +976,23 @@ async function loadAethonExtensionDirectory(
 async function loadAethonExtensions(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
+  hooks?: {
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: Extract<ExtensionSource, "directory" | "project-directory">;
+      status: "failed" | "skipped";
+      error: string;
+      path: string;
+    }) => void;
+  },
 ): Promise<void> {
   await loadAethonExtensionDirectory(api, registry, {
     dir: join(USER_DIR, "extensions"),
     source: "directory",
     logPrefix: "aethon-ext",
+    onLoaded: hooks?.onLoaded,
+    onFailure: hooks?.onFailure,
   });
 }
 
@@ -899,9 +1001,37 @@ async function loadProjectAethonExtensions(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
   loadedFiles: Set<string>,
-): Promise<number> {
+  hooks?: {
+    onLoaded?: (name: string) => void;
+    onFailure?: (failure: {
+      name: string;
+      source: Extract<ExtensionSource, "directory" | "project-directory">;
+      status: "failed" | "skipped";
+      error: string;
+      path: string;
+    }) => void;
+  },
+): Promise<{ loaded: number; failed: number }> {
   const dirs = await findProjectExtensionDirs(cwd);
   const before = loadedFiles.size;
+  // Count failures observed in THIS call so the caller can reload prompt
+  // resources even when zero extensions loaded — without this, a project
+  // whose only extensions broke would update `loadFailures` but the
+  // session's system prompt would not see the new failedExtensions list,
+  // defeating the whole point of the failure-surfacing path. The user's
+  // own onFailure hook (if any) still runs.
+  let failedThisCall = 0;
+  const wrappedHooks = {
+    onLoaded: hooks?.onLoaded,
+    onFailure: hooks?.onFailure
+      ? (f: Parameters<NonNullable<typeof hooks.onFailure>>[0]) => {
+          failedThisCall += 1;
+          hooks.onFailure?.(f);
+        }
+      : (() => {
+          failedThisCall += 1;
+        }),
+  };
   for (const { projectRoot, extensionDir } of dirs) {
     await loadAethonExtensionDirectory(api, registry, {
       dir: extensionDir,
@@ -909,9 +1039,11 @@ async function loadProjectAethonExtensions(
       logPrefix: "aethon-project-ext",
       loadedFiles,
       displayName: (name) => projectExtensionDisplayName(projectRoot, extensionDir, name),
+      onLoaded: wrappedHooks.onLoaded,
+      onFailure: wrappedHooks.onFailure,
     });
   }
-  return loadedFiles.size - before;
+  return { loaded: loadedFiles.size - before, failed: failedThisCall };
 }
 
 async function main() {
@@ -1013,9 +1145,9 @@ async function main() {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
-        console.error(
-          `[aethon-boot] read ${BOOT_LAYOUT_FILE}: ${(err as Error).message}`,
-        );
+        logger
+          .scope("boot")
+          .warn(`read ${BOOT_LAYOUT_FILE}: ${(err as Error).message}`);
       }
       // ENOENT is fine outside Tauri-spawned dev; getLayout() falls
       // back to null and the system prompt still tells the agent to
@@ -1044,9 +1176,9 @@ async function main() {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
-        console.error(
-          `[aethon-slots] read ${LAYOUT_SLOTS_FILE}: ${(err as Error).message}`,
-        );
+        logger
+          .scope("slots")
+          .warn(`read ${LAYOUT_SLOTS_FILE}: ${(err as Error).message}`);
       }
     }
   }
@@ -1057,10 +1189,229 @@ async function main() {
   // querying the state file) can see what's actually been loaded —
   // previously the bridge had no record and the agent had to guess.
   const loadedExtensions = new Map<string, ExtensionSource>();
+  // Per-extension failure registry. Mirrors the `extension_lifecycle` events
+  // the bridge already emits — populated when status is "failed" or
+  // "skipped", cleared when the same display-name later loads cleanly.
+  // Surfaced to the agent via `RuntimeSnapshot.failedExtensions` so it can
+  // see what didn't load without scraping stderr or asking the user.
+  type ExtensionFailureSource = Extract<
+    ExtensionSource,
+    "directory" | "project-directory" | "skill-package"
+  >;
+  interface ExtensionFailure {
+    source: ExtensionFailureSource;
+    status: "failed" | "skipped";
+    error: string;
+    path?: string;
+  }
+  const loadFailures = new Map<string, ExtensionFailure>();
   // Project-local extension discovery can run on startup, tab_open, and
   // set_project. Track absolute files so switching back to the same project
-  // doesn't duplicate event handlers or repeated UI mutations.
+  // doesn't duplicate event handlers or repeated UI mutations. Cleared on
+  // every project-extension unload so reloading the same project re-runs
+  // the register() call chain from a clean baseline.
   const loadedProjectExtensionFiles = new Set<string>();
+
+  // Cwd we last loaded project extensions for, so a re-load with the same
+  // cwd can short-circuit (avoid the unload + reload churn). Null until
+  // the first project-load. The initial null is load-bearing — set_project
+  // / tab_open compare against it to decide whether the project changed —
+  // even though boot synchronously reassigns it before any inbound message
+  // is processed.
+  // eslint-disable-next-line no-useless-assignment
+  let currentProjectCwd: string | null = null;
+
+  // Baseline snapshots of every registry an extension can write into.
+  // Captured AFTER user-level + skill-package + pi-extension loaders run,
+  // BEFORE any project-directory extension runs. `unloadProjectExtensions`
+  // restores the live registries from these snapshots, then re-emits the
+  // hydrate messages so the frontend drops the project's contributions.
+  // Keyed by registry name to keep the snapshot/restore loop terse.
+  interface ProjectBaselineSnapshot {
+    components: Map<string, unknown>;
+    themes: Map<string, ThemeRecord>;
+    slashCommands: typeof extensionSlashCommands;
+    keybindings: typeof extensionKeybindings;
+    menuItems: typeof extensionMenuItems;
+    layouts: typeof extensionLayouts;
+    eventRoutes: typeof extensionEventRoutes;
+    eventRoutingMode: "builtin" | "extension";
+    eventHandlerCount: number;
+    // Insertion-ordered snapshot of the dedupe set used by `_onEvent`.
+    // Without restoring this, switching back to a project causes its
+    // `register()` to silently no-op on every onEvent call (the key is
+    // still in the set even though the handler was trimmed).
+    handlerDedupeKeys: string[];
+    stateTree: Record<string, unknown>;
+    // Active extension-supplied layout (full replacement). Cloned so a
+    // later patchLayout doesn't mutate the snapshot in place.
+    extensionLayout: unknown;
+    // Pending patches against the boot layout (what's queued when no
+    // setLayout has been called). Cloned for the same reason.
+    pendingLayoutPatches: { path: string; value: unknown }[];
+  }
+  let projectBaseline: ProjectBaselineSnapshot | null = null;
+  function captureProjectExtensionBaseline(): void {
+    projectBaseline = {
+      components: new Map(extensionComponents),
+      themes: new Map(extensionThemes),
+      slashCommands: new Map(extensionSlashCommands),
+      keybindings: new Map(extensionKeybindings),
+      menuItems: new Map(extensionMenuItems),
+      layouts: new Map(extensionLayouts),
+      eventRoutes: new Map(extensionEventRoutes),
+      eventRoutingMode,
+      eventHandlerCount: a2uiEventHandlers.length,
+      handlerDedupeKeys: [...registeredHandlerKeys],
+      // Deep clone the state tree so subsequent setState mutations don't
+      // mutate the snapshot. JSON round-trip is fine here — extension
+      // state is JSON-serializable by contract (it ends up in
+      // $AETHON_STATE_FILE) and the tree stays small in practice.
+      stateTree: JSON.parse(JSON.stringify(extensionStateTree)) as Record<
+        string,
+        unknown
+      >,
+      // Layout overrides — cloned via JSON so a project's later
+      // patchLayout doesn't reach into the snapshot.
+      extensionLayout:
+        extensionLayout === undefined
+          ? undefined
+          : JSON.parse(JSON.stringify(extensionLayout)),
+      pendingLayoutPatches: pendingLayoutPatches.map((p) => ({
+        path: p.path,
+        value: p.value,
+      })),
+    };
+  }
+  /**
+   * Restore every registry to the post-non-project-load baseline. Used
+   * before loading a different project's extensions so we don't leak
+   * project A's components / themes / slash commands into project B.
+   * Re-emits the corresponding hydrate messages so the frontend drops
+   * the unloaded surface immediately. No-op when no baseline has been
+   * captured yet (means we haven't reached the post-boot point yet).
+   */
+  function unloadProjectExtensions(): void {
+    if (!projectBaseline) return;
+    // Drop project-directory entries from the load registry + failure
+    // registry. User-level + skill-package + pi-extension entries stay.
+    for (const [name, source] of loadedExtensions) {
+      if (source === "project-directory") loadedExtensions.delete(name);
+    }
+    for (const [name, info] of loadFailures) {
+      if (info.source === "project-directory") loadFailures.delete(name);
+    }
+    loadedProjectExtensionFiles.clear();
+
+    // Restore each Map registry from the snapshot.
+    extensionComponents.clear();
+    for (const [k, v] of projectBaseline.components) extensionComponents.set(k, v);
+    extensionThemes.clear();
+    for (const [k, v] of projectBaseline.themes) extensionThemes.set(k, v);
+    extensionSlashCommands.clear();
+    for (const [k, v] of projectBaseline.slashCommands) {
+      extensionSlashCommands.set(k, v);
+    }
+    extensionKeybindings.clear();
+    for (const [k, v] of projectBaseline.keybindings) {
+      extensionKeybindings.set(k, v);
+    }
+    extensionMenuItems.clear();
+    for (const [k, v] of projectBaseline.menuItems) extensionMenuItems.set(k, v);
+    extensionLayouts.clear();
+    for (const [k, v] of projectBaseline.layouts) extensionLayouts.set(k, v);
+    extensionEventRoutes.clear();
+    for (const [k, v] of projectBaseline.eventRoutes) {
+      extensionEventRoutes.set(k, v);
+    }
+    // Trim event handlers back to the baseline length. New handlers always
+    // append, so anything past the baseline length came from project
+    // extensions.
+    a2uiEventHandlers.length = projectBaseline.eventHandlerCount;
+    // Reset the dedupe set to its baseline snapshot. Without this, a
+    // switch back to the same project would silently no-op every
+    // `aethon.onEvent` call because the keys were already in the set.
+    registeredHandlerKeys.clear();
+    for (const k of projectBaseline.handlerDedupeKeys) {
+      registeredHandlerKeys.add(k);
+    }
+    // Restore the routing mode. A project that switched to "extension"
+    // mode would otherwise leak that mode into the next project.
+    eventRoutingMode = projectBaseline.eventRoutingMode;
+    // Restore extensionStateTree from the deep clone.
+    extensionStateTree = JSON.parse(
+      JSON.stringify(projectBaseline.stateTree),
+    ) as Record<string, unknown>;
+    // Restore layout overrides. Clone again so the live values don't
+    // share structure with the snapshot.
+    extensionLayout =
+      projectBaseline.extensionLayout === undefined
+        ? undefined
+        : JSON.parse(JSON.stringify(projectBaseline.extensionLayout));
+    pendingLayoutPatches = projectBaseline.pendingLayoutPatches.map((p) => ({
+      path: p.path,
+      value: p.value,
+    }));
+
+    // Re-emit hydrate messages so the frontend drops the project's
+    // contributions. mutationId omitted — these are server-initiated
+    // refreshes, not requested mutations.
+    send({
+      type: "extension_components",
+      components: Object.fromEntries(extensionComponents),
+    });
+    send({
+      type: "extension_themes",
+      themes: [...extensionThemes.values()].map((t) => ({
+        id: t.id,
+        label: t.label,
+        vars: t.vars,
+      })),
+    });
+    send({
+      type: "extension_slash_commands",
+      commands: [...extensionSlashCommands.values()],
+    });
+    send({
+      type: "extension_keybindings",
+      bindings: [...extensionKeybindings.values()],
+    });
+    send({
+      type: "extension_menu_items",
+      items: [...extensionMenuItems.values()],
+    });
+    send({
+      type: "extension_layouts",
+      layouts: [...extensionLayouts.values()],
+    });
+    send({
+      type: "extension_event_routes",
+      routes: [...extensionEventRoutes.values()],
+      mode: eventRoutingMode,
+    });
+    // Push the restored layout to the frontend. Compute the same
+    // effective tree _getLayout would return: extensionLayout if set,
+    // else bootLayout with pendingLayoutPatches folded in. When that
+    // resolves to a concrete tree we send `layout_set`; the frontend
+    // applies it and a project's setLayout-overridden chrome goes away.
+    // Falling back to bootLayout matters most — the common case is a
+    // project that never set a layout, where we need to undo whatever
+    // the previous project did.
+    const effective = (() => {
+      if (extensionLayout) return extensionLayout;
+      if (!bootLayout) return null;
+      if (pendingLayoutPatches.length === 0) return bootLayout;
+      let tree = bootLayout;
+      for (const { path, value } of pendingLayoutPatches) {
+        tree = patchLayoutTree(tree, path, value);
+      }
+      return tree;
+    })();
+    if (effective) {
+      send({ type: "layout_set", payload: effective });
+    }
+    scheduleStateFileWrite();
+  }
 
   // Event routes registered by extensions. Keyed by
   // `<componentId>:<eventType>` (where empty fields match everything).
@@ -1263,6 +1614,13 @@ async function main() {
         name,
         source,
       })),
+      failedExtensions: [...loadFailures.entries()].map(([name, info]) => ({
+        name,
+        source: info.source,
+        status: info.status,
+        error: info.error,
+        ...(info.path ? { path: info.path } : {}),
+      })),
       themes: [...extensionThemes.values()].map((t) => ({
         id: t.id,
         label: t.label,
@@ -1338,7 +1696,7 @@ async function main() {
             JSON.stringify(getRuntimeSnapshot(), null, 2),
           );
         } catch (err) {
-          console.error(`[aethon-state] write ${STATE_FILE}: ${(err as Error).message}`);
+          logger.scope("state").warn(`write ${STATE_FILE}: ${(err as Error).message}`);
         } finally {
           stateFileWriting = false;
         }
@@ -2163,6 +2521,30 @@ async function main() {
     return promise;
   }
 
+  function _registerHighlightGrammar(
+    lang: unknown,
+    grammar: unknown,
+  ): Promise<MutationResult> {
+    if (typeof lang !== "string" || lang.trim().length === 0) {
+      const errorMsg = "registerHighlightGrammar: lang must be a non-empty string";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    if (!grammar || typeof grammar !== "object") {
+      const errorMsg = "registerHighlightGrammar: grammar must be a TextMate grammar object";
+      send({ type: "notice", message: errorMsg });
+      return Promise.resolve({ ok: false, error: errorMsg });
+    }
+    const { id: mid, promise } = trackMutation();
+    send({
+      type: "register_highlight_grammar",
+      mutationId: mid,
+      lang: lang.trim(),
+      grammar,
+    });
+    return promise;
+  }
+
   function _registerTheme(theme: unknown): Promise<MutationResult> {
     const normalized = normalizeTheme(theme);
     if (!normalized) {
@@ -2345,6 +2727,7 @@ async function main() {
     patchLayout: _patchLayout,
     registerSidebarSection: _registerSidebarSection,
     registerTheme: _registerTheme,
+    registerHighlightGrammar: _registerHighlightGrammar,
     registerSlashCommand: _registerSlashCommand,
     registerLayout: _registerLayout,
     unregisterLayout: _unregisterLayout,
@@ -2586,11 +2969,13 @@ async function main() {
       mkdirSync(dir, { recursive: true });
       sessionManager = SessionManager.continueRecent(resolvedCwd, dir);
     } catch (err) {
-      console.error(
-        `[aethon-session] persistent setup for tab ${tabId} failed (${
-          (err as Error).message
-        }); falling back to in-memory`,
-      );
+      logger
+        .scope("session")
+        .warn(
+          `persistent setup for tab ${tabId} failed (${
+            (err as Error).message
+          }); falling back to in-memory`,
+        );
       sessionManager = SessionManager.inMemory();
     }
 
@@ -2725,10 +3110,40 @@ async function main() {
           break;
         }
         case "agent_end": {
+          // Pi swallows API errors (credit-balance 400, auth, network, …)
+          // inside `handleRunFailure`: it pushes a synthetic assistant
+          // message with `stopReason: "error"` + `errorMessage` and emits
+          // a normal `agent_end` rather than rejecting the prompt promise.
+          // Without surfacing the errorMessage here the UI just sat
+          // silent — no error bubble, status pulse stuck on "live".
+          // Aborts (Cmd+.) come through with `stopReason: "aborted"` and
+          // are NOT user-facing errors; skip those (extractAgentEndError
+          // filters them out).
+          const failedMessage = extractAgentEndError(event.messages);
+          if (failedMessage) {
+            send({ type: "error", tabId, message: failedMessage });
+          }
           rec.agentEndFired = true;
           rec.promptInFlight = false;
           if (currentAgentTabId === tabId) currentAgentTabId = undefined;
           send({ type: "response_end", tabId });
+          break;
+        }
+        case "auto_retry_end": {
+          // Pi's auto-retry path (transient 5xx, rate-limit) — when retries
+          // are exhausted with no success, surface the final error so the
+          // user sees what's wrong instead of a silent failure. agent_end
+          // also fires with the failure message, so this is a belt-and-
+          // braces channel that's safe to coexist (the frontend renders
+          // both as separate chat lines, and "exhausted" + the actual
+          // 4xx is more useful than just the 4xx).
+          if (!event.success && event.finalError) {
+            send({
+              type: "error",
+              tabId,
+              message: `auto-retry exhausted: ${event.finalError}`,
+            });
+          }
           break;
         }
       }
@@ -2752,17 +3167,28 @@ async function main() {
   // give wrong answers to "what extensions are loaded?" on its very
   // first turn (the exact failure the user reported). Failures in one
   // extension don't block others.
-  await loadAethonExtensions(aethonApi, loadedExtensions);
-  // Project-local Aethon extensions mirror pi's project-local extension
-  // pattern. At startup this covers the bridge cwd; later tab_open /
-  // set_project messages load extensions for user-selected project cwd values
-  // before new sessions are created.
-  await loadProjectAethonExtensions(
-    process.cwd(),
-    aethonApi,
-    loadedExtensions,
-    loadedProjectExtensionFiles,
-  );
+  // Hooks shared by every loader: a clean load clears any prior failure
+  // entry for that name (extension was fixed), a fresh failure replaces it.
+  // Captures the data we surface in `RuntimeSnapshot.failedExtensions` so
+  // the agent's system prompt + state file see what didn't load.
+  const loadHooks = {
+    onLoaded: (name: string) => {
+      loadFailures.delete(name);
+      scheduleStateFileWrite();
+    },
+    onFailure: (
+      f: ExtensionFailure & { name: string },
+    ) => {
+      loadFailures.set(f.name, {
+        source: f.source,
+        status: f.status,
+        error: f.error,
+        path: f.path,
+      });
+      scheduleStateFileWrite();
+    },
+  };
+  await loadAethonExtensions(aethonApi, loadedExtensions, loadHooks);
   // Discover npm-distributed skill packages (manifest with `aethon` field
   // in package.json) under ~/.aethon/skills/node_modules/. This lets users
   // `npm install --prefix ~/.aethon/skills <pkg>` to install third-party
@@ -2771,6 +3197,8 @@ async function main() {
     onFrontendEntry: ({ name, entryPath, code }) => {
       skillFrontendModules.set(name, { name, entryPath, code });
     },
+    onLoaded: loadHooks.onLoaded,
+    onFailure: loadHooks.onFailure,
   });
   // Loose-file themes — JSON in ~/.aethon/themes/*.json registered via the
   // same normalizeTheme path as extension-supplied ones. Lets non-coders
@@ -2782,6 +3210,28 @@ async function main() {
   // existence so the runtime snapshot covers all UI-driving extensions
   // regardless of source.
   await discoverPiAethonExtensions(loadedExtensions);
+
+  // Snapshot the post-non-project-load state. Anything project-directory
+  // extensions register lands ON TOP of this baseline; switching projects
+  // (or unloading the current project) restores the registries from this
+  // snapshot so project A's components / themes / slash commands / etc.
+  // don't leak into project B. User-level + skill-package + pi extensions
+  // remain because they aren't project-scoped — they trigger an agent
+  // respawn through the file watcher when they change.
+  captureProjectExtensionBaseline();
+
+  // Project-local Aethon extensions mirror pi's project-local extension
+  // pattern. At startup this covers the bridge cwd; later tab_open /
+  // set_project messages load extensions for user-selected project cwd
+  // values, unloading whatever the previous project had loaded first.
+  await loadProjectAethonExtensions(
+    process.cwd(),
+    aethonApi,
+    loadedExtensions,
+    loadedProjectExtensionFiles,
+    loadHooks,
+  );
+  currentProjectCwd = process.cwd();
 
   // Refresh the resource loader so the appendSystemPromptOverride
   // callback re-runs against the now-populated extension state. The
@@ -2995,13 +3445,28 @@ async function main() {
               ? cwdField
               : undefined;
           if (cwdOverride) {
-            const loaded = await loadProjectAethonExtensions(
+            // Unload the previous project's extensions before loading the
+            // new project's. Skipping this caused project A's slash
+            // commands / themes / etc. to leak into project B (the user-
+            // reported bug). When the new cwd matches the one we loaded
+            // last, the unload+reload is wasted churn — short-circuit.
+            const projectChanged = cwdOverride !== currentProjectCwd;
+            if (projectChanged) {
+              unloadProjectExtensions();
+            }
+            const result = await loadProjectAethonExtensions(
               cwdOverride,
               aethonApi,
               loadedExtensions,
               loadedProjectExtensionFiles,
+              loadHooks,
             );
-            if (loaded > 0) {
+            currentProjectCwd = cwdOverride;
+            // Reload on successful loads OR fresh failures (so the new
+            // tab's system prompt picks up failedExtensions) OR when the
+            // project just changed (so the prompt reflects the cleared
+            // state even if the new project has zero extensions).
+            if (result.loaded > 0 || result.failed > 0 || projectChanged) {
               await resourceLoader.reload();
               scheduleStateFileWrite();
               emitReady();
@@ -3043,15 +3508,39 @@ async function main() {
           }
           if (cwd === null) {
             tabProjectCwds.delete(tabId);
+            // Mirror the cwd-changed branch below: clearing the active
+            // project must also unload that project's extensions.
+            // Otherwise its components, themes, slash commands, layout
+            // overrides, and `failedExtensions` keep showing in the
+            // no-project workspace until the user picks another project
+            // or the agent restarts. Skip if no project was ever loaded.
+            if (currentProjectCwd !== null) {
+              unloadProjectExtensions();
+              currentProjectCwd = null;
+              await resourceLoader.reload();
+              scheduleStateFileWrite();
+              emitReady();
+            }
           } else if (typeof cwd === "string" && cwd.length > 0) {
             tabProjectCwds.set(tabId, cwd);
-            const loaded = await loadProjectAethonExtensions(
+            // Strict project scoping: tear down the previous project's
+            // extension surface before layering the new one on top. See
+            // tab_open above; same reasoning applies here.
+            const projectChanged = cwd !== currentProjectCwd;
+            if (projectChanged) {
+              unloadProjectExtensions();
+            }
+            const result = await loadProjectAethonExtensions(
               cwd,
               aethonApi,
               loadedExtensions,
               loadedProjectExtensionFiles,
+              loadHooks,
             );
-            if (loaded > 0) {
+            currentProjectCwd = cwd;
+            // Reload on fresh loads, fresh failures, or just because the
+            // project switched (the unload changed the prompt state).
+            if (result.loaded > 0 || result.failed > 0 || projectChanged) {
               await resourceLoader.reload();
               scheduleStateFileWrite();
               emitReady();

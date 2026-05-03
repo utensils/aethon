@@ -29,6 +29,10 @@ Or via the slash-command form, which reads from `${CLAUDE_SKILL_DIR}/scripts/`:
 /aethon-debug set-model <id>        # switch model by id
 /aethon-debug screenshot            # capture for visual review
 /aethon-debug eval 'return ...'     # arbitrary JS
+/aethon-debug logs                  # tail recent on-disk logs
+/aethon-debug logs --grep ext-loader      # filter today's logs
+/aethon-debug logs --follow               # live tail (Ctrl+C to stop)
+/aethon-debug logs --source bridge --since 2026-05-01
 ```
 
 ## Prerequisites
@@ -172,6 +176,36 @@ ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return window.__AETHON_STATE__()'
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return window.__AETHON_STATE__().messages'
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return window.__AETHON_STATE__().terminal'
 ```
+
+### `logs` — tail / grep on-disk logs
+
+Both the Rust shell (`tracing` crate) and the bun bridge (`agent/logger.ts`)
+write daily-rotating log files to `~/.aethon/logs/`. This action wraps
+`tail` + `grep` over the right files for the requested day and source.
+
+```bash
+# Last 50 lines from today, both Rust and bridge
+${CLAUDE_SKILL_DIR}/scripts/debug-logs.sh
+
+# Filter by scope (matches the scope column in each line)
+${CLAUDE_SKILL_DIR}/scripts/debug-logs.sh --grep ext-loader
+
+# Live tail
+${CLAUDE_SKILL_DIR}/scripts/debug-logs.sh --follow
+
+# Pick a source: rust | bridge | all (default)
+${CLAUDE_SKILL_DIR}/scripts/debug-logs.sh --source bridge
+
+# Look at a specific day (YYYY-MM-DD) — useful after a rotation
+${CLAUDE_SKILL_DIR}/scripts/debug-logs.sh --since 2026-05-01
+
+# More lines than the default 50
+${CLAUDE_SKILL_DIR}/scripts/debug-logs.sh --lines 500
+```
+
+Files older than 7 days are pruned at app startup. Each line is
+`ISO_TS LEVEL scope: message` so `grep '^.* ERROR'` works for
+quick triage.
 
 ### `eval <js>` — arbitrary JS
 

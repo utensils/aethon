@@ -764,9 +764,14 @@ body.ae-resizing-sidebar * {
 }
 
 /* Header spacer — flex grow filler so chrome controls (model picker,
-   appearance menu) right-align even when the rest of the row is short. */
+   appearance menu) right-align even when the rest of the row is short.
+   Basis MUST be 0 (not auto): with `auto`, WebKit resolves the empty
+   div's basis from container free space, swallowing ~1000px before the
+   grow phase even runs and squeezing the sibling tab-strip down to its
+   shrink minimum. With basis 0, strip + spacer split free space cleanly
+   by their grow factors, which is the original intent. */
 .ae-header-spacer {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -1383,6 +1388,50 @@ body.ae-resizing-sidebar * {
   font-family: var(--font-mono);
 }
 
+/*
+ * Shiki dual-theme highlighting.
+ *
+ * The Shiki worker emits each token span with both `--shiki-light` and
+ * `--shiki-dark` CSS variables and no inline `color`. The rule below picks
+ * the right one via the modern `light-dark()` function, which resolves
+ * against the element's effective `color-scheme`. Aethon's themes set
+ * `color-scheme: light|dark` on `:root[data-theme="..."]` (see top of
+ * this file), so each theme automatically picks the matching shade.
+ *
+ * Targets only token spans (those carrying the `--shiki-light` custom
+ * property inline) — the `.line` wrapper spans Shiki also emits don't
+ * carry that property and harmlessly inherit currentColor.
+ */
+.a2ui-code code [style*="--shiki-light"],
+.a2ui-code-inline[style*="--shiki-light"],
+.a2ui-code-inline [style*="--shiki-light"] {
+  color: light-dark(var(--shiki-light), var(--shiki-dark));
+}
+
+/* Shiki emits per-line `<span class="line">` wrappers. Make them block
+   so each line stacks like the previous Prism `.a2ui-code-line` rule. */
+.a2ui-code code .line {
+  display: block;
+}
+
+/* Optional line numbers — opt-in via data-show-lineno on the `<pre>`.
+   CSS counters increment per `.line`, rendered as a 2.25em gutter
+   matching the previous Prism layout. */
+.a2ui-code[data-show-lineno="true"] code {
+  counter-reset: a2ui-line;
+}
+.a2ui-code[data-show-lineno="true"] code .line::before {
+  counter-increment: a2ui-line;
+  content: counter(a2ui-line);
+  display: inline-block;
+  width: 2.25em;
+  margin-right: 0.75em;
+  text-align: right;
+  color: var(--text-dim);
+  opacity: 0.6;
+  user-select: none;
+}
+
 .a2ui-markdown blockquote {
   margin: 0.5em 0;
   padding-left: 12px;
@@ -1694,11 +1743,30 @@ body.ae-resizing-sidebar * {
   padding: 0 8px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
+  /* Tabs shrink to fit (label has ellipsis), so a scrollbar is rare —
+     only appears when a user opens enough tabs to exceed the strip's
+     `min-inline-size: 4rem` floor × N (≈10+ in a typical workspace).
+     Hide the scrollbar visually so the row stays clean at common
+     widths, but keep `overflow-x: auto` so trackpad / shift-wheel /
+     keyboard navigation can still reach tabs that overflowed; without
+     this, those tabs are clipped and become unreachable. `overflow-y`
+     is hidden because nothing in the strip is meant to scroll
+     vertically. */
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
   min-height: 38px;
   height: 38px;
   min-width: 0;
   flex: 1 1 auto;
+}
+.a2ui-tab-strip::-webkit-scrollbar {
+  /* WebKit (the only browser engine the Tauri webview uses on macOS,
+     and one of the engines on Linux) needs an explicit zero-size rule
+     to suppress the scrollbar — `scrollbar-width: none` is Firefox-only. */
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .a2ui-tab {
@@ -1718,9 +1786,14 @@ body.ae-resizing-sidebar * {
   position: relative;
   top: 1px; /* sits flush with the tab-strip's bottom border when active */
   margin-bottom: -1px;
-  min-inline-size: clamp(7.5rem, 18vw, 12rem);
+  /* Tabs share the strip evenly: `flex: 1 1 0` distributes remaining
+     space by grow factor with no per-item basis claim, so 1 tab takes
+     the whole strip (clamped by max-inline-size below) and 12 tabs each
+     get 1/12. min-inline-size keeps the close button reachable even
+     when squeezed; the label inside has overflow: hidden + ellipsis. */
+  min-inline-size: 4rem;
   max-inline-size: min(18rem, 36vw);
-  flex: 0 1 12rem;
+  flex: 1 1 0;
 }
 
 .a2ui-tab:hover {

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App.tsx";
+import { prewarmHighlighter } from "./utils/highlight";
 import "./styles.css";
 
 // Expose Tauri's invoke globally in dev so the aethon-debug skill's TCP eval
@@ -10,6 +11,11 @@ import "./styles.css";
 if (import.meta.env.DEV) {
   (window as unknown as { __AETHON_INVOKE__: typeof invoke }).__AETHON_INVOKE__ = invoke;
 }
+
+// Spawn the Shiki highlight worker eagerly so the first user-visible code
+// block doesn't pay the cold-start cost (Oniguruma WASM + theme parse).
+// Idempotent; safe to call here.
+prewarmHighlighter();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

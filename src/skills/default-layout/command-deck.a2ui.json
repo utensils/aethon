@@ -21,7 +21,7 @@
           "props": {
             "area": "sidebar",
             "title": "aethon",
-            "version": "v0.3",
+            "version": { "$ref": "/appVersion" },
             "sectionTitle": "sessions",
             "shelfTitle": "projects",
             "shelfItems": { "$ref": "/sidebar/projects" },
