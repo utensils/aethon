@@ -167,6 +167,9 @@ interface DiscoveredSession {
   tabId: string;
   lastModified: number;
   cwd?: string;
+  /** First user message text, trimmed to 60 chars by the bridge. Used to
+   *  label sidebar history items meaningfully instead of UUID slices. */
+  firstUserMessage?: string;
 }
 
 interface SidebarHistoryItem {
@@ -417,21 +420,26 @@ export default function App() {
     recentSessions: RecentSessionItem[],
   ): SidebarHistoryItem[] => {
     const openIds = new Set(tabs.map((t) => t.id));
-    const previewText = (messages: ChatMessage[]) => {
-      const last = [...messages]
-        .reverse()
-        .find((m) => typeof m.text === "string" && m.text.trim().length > 0);
-      return last?.text?.replace(/\s+/g, " ").trim() ?? "";
+    const firstUserText = (messages: ChatMessage[]): string => {
+      const first = messages.find(
+        (m) => m.role === "user" && typeof m.text === "string" && m.text.trim().length > 0,
+      );
+      return first?.text?.replace(/\s+/g, " ").trim().slice(0, 48) ?? "";
     };
     const openHistory = tabs
       .filter((t) => t.messages.length > 0)
       .map((t) => {
-        const preview = previewText(t.messages);
+        const firstMsg = firstUserText(t.messages);
+        // Use first user message as the display label when the tab still has
+        // a generic sequential name (Tab 1, Tab 2, …). Explicit renames keep
+        // their name.
+        const label = /^Tab \d+$/.test(t.label) && firstMsg ? firstMsg : t.label;
+        const hint = t.id === activeTabId ? "active" : `${t.messages.length} msg`;
         return {
           id: `tab:${t.id}`,
-          label: t.label,
-          hint: t.id === activeTabId ? "active" : `${t.messages.length} msg`,
-          tooltip: preview || t.label,
+          label,
+          hint,
+          tooltip: firstMsg || label,
           active: t.id === activeTabId,
         };
       });
@@ -441,7 +449,7 @@ export default function App() {
         id: `session:${s.id}`,
         label: s.label,
         hint: s.lastModified,
-        tooltip: "Restore session",
+        tooltip: s.cwd ? s.cwd : "Restore session",
       }));
     return [...openHistory, ...restoredHistory].slice(0, 16);
   }, []);
@@ -474,12 +482,24 @@ export default function App() {
     return discovered
       .filter((d) => !openIds.has(d.tabId))
       .slice(0, 8)
-      .map((d) => ({
-        id: d.tabId,
-        label: `Session ${d.tabId.slice(0, 8)}`,
-        lastModified: formatRelativeTime(d.lastModified),
-        ...(d.cwd ? { cwd: d.cwd } : {}),
-      }));
+      .map((d) => {
+        // Derive a human-readable label in priority order:
+        //   1. First user message text (most descriptive)
+        //   2. Project directory basename
+        //   3. Fallback UUID prefix
+        const cwdBasename = d.cwd
+          ? d.cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? ""
+          : "";
+        const label = d.firstUserMessage
+          ? d.firstUserMessage.replace(/\s+/g, " ").trim()
+          : cwdBasename || `Session ${d.tabId.slice(0, 8)}`;
+        return {
+          id: d.tabId,
+          label,
+          lastModified: formatRelativeTime(d.lastModified),
+          ...(d.cwd ? { cwd: d.cwd } : {}),
+        };
+      });
   }
 
   function syncRecentSessionsToState() {
@@ -541,6 +561,10 @@ export default function App() {
   const autoRestoredSessionIdsRef = useRef(new Set<string>());
   const allDiscoveredSessionsRef = useRef<DiscoveredSession[]>([]);
   const projectsLoadedRef = useRef(false);
+  // Pi's default model from the last `ready` event. Used to seed new tabs
+  // before ready fires (or when the active tab has no model yet), so the
+  // picker never shows a blank "model ▼" label.
+  const piDefaultModelRef = useRef<string>("");
 
   // Themes — three built-in palettes (ember/paper/aether) plus
   // extension-registered ones. Persisted to `~/.aethon/theme` so the choice
@@ -838,99 +862,19 @@ export default function App() {
     });
   }
 
-  // Persistent chat history — restore on mount, write debounced on change.
-  // Cap at 200 messages and 8KB per text field. Storage is `~/.aethon/messages.json`
-  // via Tauri commands; the previous localStorage key is migrated on first read.
-  const PERSIST_FILE = "messages.json";
-  const LEGACY_LS_KEY = "aethon-messages";
-  const MAX_MESSAGES = 200;
-
-  // Restore on mount. First read disk; if empty, migrate any legacy
-  // localStorage value the first build wrote. Tracked as state (not a ref)
-  // so the persistence effect re-runs once restore completes — otherwise a
-  // message that arrived during the async read window would never trigger
-  // a disk write on a fresh install.
-  const [restored, setRestored] = useState(false);
-  useEffect(() => {
-    (async () => {
-      const raw = await readStateWithLocalStorageFallback(
-        PERSIST_FILE,
-        LEGACY_LS_KEY,
-      );
-      try {
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // Restore into the default tab. Prepend before any messages
-            // that landed during the async read window (agent-stderr,
-            // an early send, …) and dedupe by id so a re-mount doesn't
-            // double up. Multi-tab persistence is per-default-tab only
-            // for now; per-tab restore is a follow-up.
-            setState((prev) => {
-              const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-              const idx = tabs.findIndex((t) => t.id === "default");
-              if (idx < 0) return prev;
-              const live = tabs[idx].messages;
-              const seen = new Set(live.map((m) => m.id));
-              const merged = [
-                ...(parsed as ChatMessage[]).filter((m) => !seen.has(m.id)),
-                ...live,
-              ];
-              tabs[idx] = { ...tabs[idx], messages: merged };
-              const result: Record<string, unknown> = { ...prev, tabs };
-              if (prev.activeTabId === "default") result.messages = merged;
-              return result;
-            });
-          }
-        }
-      } catch {
-        /* corrupt — ignore */
-      } finally {
-        setRestored(true);
-      }
-    })();
-  }, []);
-
-  // Debounced write of the default tab's messages. Skipped until the
-  // initial restore completes so we don't overwrite the on-disk file
-  // with the empty boot state. Other tabs aren't persisted yet — they
-  // exist only for the lifetime of the app session.
-  const persistTimerRef = useRef<number | null>(null);
-  const defaultTabMessages = useMemo(() => {
-    const tabs = (state.tabs as Tab[] | undefined) ?? [];
-    return tabs.find((t) => t.id === "default")?.messages ?? [];
-  }, [state.tabs]);
-  useEffect(() => {
-    if (!restored) return;
-    if (persistTimerRef.current !== null) {
-      window.clearTimeout(persistTimerRef.current);
-    }
-    persistTimerRef.current = window.setTimeout(() => {
-      const slim = defaultTabMessages.slice(-MAX_MESSAGES).map(trimMessage);
-      writeState(PERSIST_FILE, JSON.stringify(slim)).catch(() => {
-        /* surfaced via console.warn in persist.ts */
-      });
-    }, 400);
-    return () => {
-      if (persistTimerRef.current !== null) {
-        window.clearTimeout(persistTimerRef.current);
-      }
-    };
-  }, [defaultTabMessages, restored]);
+  // Chat history is now persisted exclusively via pi's JSONL session files
+  // under $AETHON_SESSIONS_DIR/<tabId>/. On startup the bridge emits a
+  // `session_history` event for every tab (including "default") so all tabs
+  // use the same restore path — no separate messages.json needed.
 
   function clearChat() {
-    // Clear only the active tab's messages. Only flush the persisted
-    // history file when the active tab IS the default — non-default tabs
-    // aren't persisted, so writing `[]` here would wipe the saved
-    // default-tab history that's still showing under another tab.
-    const wasDefault =
-      (stateRef.current.activeTabId as string | undefined) === "default";
+    // Clears the active tab's in-memory message list. Pi's JSONL file is
+    // managed by the session itself; clearing chat here only affects the UI
+    // view for this session slot. The agent will continue writing new turns
+    // to the same session file, so a restart still sees prior history — this
+    // is intentional (Cmd+K is a "clean view" action, not a "delete history"
+    // action). If the user wants to start fresh, they open a new tab.
     updateActiveTab((tab) => ({ ...tab, messages: [] }));
-    if (wasDefault) {
-      writeState(PERSIST_FILE, "[]").catch(() => {
-        /* ignore */
-      });
-    }
   }
 
   function toggleTerminal() {
@@ -1492,12 +1436,13 @@ export default function App() {
       }, 5000);
     }
     // Inherit the previously-active tab's model so the picker stays
-    // consistent. Without this, the new tab's pi session would default
-    // to whatever ~/.pi/agent/settings.json declares — which is often
-    // outside the user's enabledModels glob and would leave the picker
-    // showing nothing highlighted.
-    const inheritedModel =
-      ((stateRef.current.model as string | undefined) ?? "").trim();
+    // consistent. Fall back to piDefaultModelRef (populated when `ready`
+    // fires) so tabs opened before ready still get a valid model, preventing
+    // the blank "model ▼" display seen when tab creation races agent startup.
+    const inheritedModel = (
+      (stateRef.current.model as string | undefined) ||
+      piDefaultModelRef.current
+    ).trim();
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       // Use the restoreLabel when restoring a persisted session so the
@@ -3090,6 +3035,10 @@ export default function App() {
     switch (data.type) {
       case "ready": {
         const model = (data.model as string) || "";
+        // Cache pi's default model so new tabs created before `ready` fires
+        // (or before a session's model initialises) can inherit it immediately
+        // instead of showing blank "model ▼".
+        if (model) piDefaultModelRef.current = model;
         const models = (data.models as ModelDescriptor[]) ?? [];
         // Hydrate any extension-registered component templates the bridge
         // discovered at boot. setTemplates is wholesale (bridge is the
@@ -3256,6 +3205,13 @@ export default function App() {
             const dIdx = localTabs.findIndex((t) => t.id === "default");
             if (dIdx >= 0) {
               localTabs[dIdx] = { ...localTabs[dIdx], model };
+            }
+            // Backfill any tab that has no model yet (e.g. opened before
+            // ready fired) with pi's default so the picker is never blank.
+            for (let i = 0; i < localTabs.length; i++) {
+              if (!localTabs[i].model && model) {
+                localTabs[i] = { ...localTabs[i], model };
+              }
             }
             for (const bt of bridgeTabs) {
               if (bt.id === "default") continue;

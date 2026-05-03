@@ -19,6 +19,9 @@ interface LatestSessionLog {
 export interface SessionLogMetadata {
   cwd?: string;
   lastModified: number;
+  /** First user-turn text, trimmed to 60 chars. Used to label sessions
+   *  meaningfully in the sidebar instead of showing raw UUID slices. */
+  firstUserMessage?: string;
 }
 
 function textFromContent(content: unknown): string {
@@ -122,7 +125,15 @@ async function latestSessionLog(sessionDir: string): Promise<LatestSessionLog | 
   return latest;
 }
 
-function cwdFromSessionLines(lines: Iterable<string>): string | undefined {
+const MAX_LABEL_CHARS = 60;
+
+function metaFromSessionLines(lines: Iterable<string>): {
+  cwd?: string;
+  firstUserMessage?: string;
+} {
+  let cwd: string | undefined;
+  let firstUserMessage: string | undefined;
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -135,12 +146,31 @@ function cwdFromSessionLines(lines: Iterable<string>): string | undefined {
     }
     if (!entry || typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
-    if (record.type !== "session") continue;
-    return typeof record.cwd === "string" && record.cwd.length > 0
-      ? record.cwd
-      : undefined;
+
+    if (!cwd && record.type === "session") {
+      cwd =
+        typeof record.cwd === "string" && record.cwd.length > 0
+          ? record.cwd
+          : undefined;
+    }
+
+    if (!firstUserMessage && record.type === "message") {
+      const msg = record.message as Record<string, unknown> | undefined;
+      if (msg?.role === "user") {
+        const text = textFromContent(msg.content);
+        if (text) {
+          firstUserMessage =
+            text.length > MAX_LABEL_CHARS
+              ? `${text.slice(0, MAX_LABEL_CHARS - 1)}…`
+              : text;
+        }
+      }
+    }
+
+    if (cwd && firstUserMessage) break;
   }
-  return undefined;
+
+  return { cwd, firstUserMessage };
 }
 
 export async function readSessionMetadata(
@@ -150,10 +180,11 @@ export async function readSessionMetadata(
   if (!latest) return null;
 
   const raw = await readFile(latest.path, "utf8");
-  const cwd = cwdFromSessionLines(raw.split(/\r?\n/));
+  const { cwd, firstUserMessage } = metaFromSessionLines(raw.split(/\r?\n/));
   return {
     lastModified: latest.mtimeMs,
     ...(cwd ? { cwd } : {}),
+    ...(firstUserMessage ? { firstUserMessage } : {}),
   };
 }
 

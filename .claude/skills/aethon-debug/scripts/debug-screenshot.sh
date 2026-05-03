@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Capture a screenshot of the desktop. Returns the path on stdout.
+# Capture a screenshot of the Aethon dev app window.
+# Auto-starts the dev build if it is not running, then focuses the window
+# via the debug server before capturing.
+#
+# Returns the path to the PNG on stdout.
 # Default save location: ${TMPDIR:-/tmp}/aethon-debug/aethon-<timestamp>.png
 # Override with --output PATH.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="${TMPDIR:-/tmp}/aethon-debug/aethon-$(date +%Y%m%d-%H%M%S).png"
+FOCUS_TIMEOUT=3
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,9 +31,16 @@ done
 
 mkdir -p "$(dirname "$OUT")"
 
+# Ensure the app is running (auto-starts if needed) and focus the window
+# so the screenshot captures the actual Aethon UI, not whatever is on top.
+"${SCRIPT_DIR}/debug-eval.sh" 'window.focus(); return "focused"' >/dev/null 2>&1 || true
+
+# Give the window manager a moment to bring the window forward.
+sleep "${FOCUS_TIMEOUT}"
+
 case "$(uname -s)" in
   Darwin)
-    # -x silences the shutter sound, default capture is the full main display.
+    # -x silences the shutter sound; captures the full main display.
     screencapture -x "$OUT"
     ;;
   Linux)

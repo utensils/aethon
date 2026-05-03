@@ -336,6 +336,12 @@
                 help = "Format Rust + Nix + JSON/MD/YAML/CSS (prettier) + TOML (taplo)";
                 command = "treefmt \"$@\"";
               }
+              {
+                category = "build";
+                name = "clean";
+                help = "Remove Rust build artifacts (src-tauri/target/)";
+                command = "cargo clean --manifest-path src-tauri/Cargo.toml \"$@\"";
+              }
             ];
           };
 
