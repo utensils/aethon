@@ -115,7 +115,7 @@ input for Nix builds.
 
 ```mermaid
 graph TD
-    subgraph aethon["Aethon (.app / .deb)"]
+    subgraph aethon["Aethon"]
         TS["Tauri Shell (Rust)\nwindows · tray + menu · file watch · spawn agent"]
         PA["Pi Agent (bun bin)\npi-ai · tools · skills · exts"]
         subgraph react["React Frontend (Vite)"]
