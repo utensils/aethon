@@ -1528,9 +1528,33 @@ body.ae-resizing-sidebar * {
   background: var(--user-bubble);
 }
 
-.a2ui-chat-message.agent,
-.a2ui-chat-message.system {
+.a2ui-chat-message.agent {
   background: var(--agent-bubble);
+}
+
+/* System bubbles surface bridge stderr / lifecycle notices. They're
+   not conversation, so they shouldn't compete with user / agent
+   bubbles for attention — strip the chrome down to a faint inline
+   note, monospace for log readability, and let the role label do
+   double duty as the visual cue. */
+.a2ui-chat-message.system {
+  background: transparent;
+  border: 0;
+  padding: 2px 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+.a2ui-chat-message.system .a2ui-chat-text {
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.a2ui-chat-message.system .a2ui-chat-role {
+  display: none;
 }
 
 .a2ui-chat-role {

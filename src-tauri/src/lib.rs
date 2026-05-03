@@ -2238,6 +2238,16 @@ pub fn run() {
             // frontend forwards to `set_extension_menu_items`, which
             // re-runs both installers with the persisted list.
             app.manage(ExtensionMenuStore::default());
+            // tauri.conf.json `"maximized": true` is unreliable on macOS —
+            // the window manifest applies before the WindowController has
+            // a chance to zoom and the flag silently no-ops. Force it
+            // here after setup so the dev/release window opens at the
+            // user's screen size instead of the 1200x800 manifest default.
+            if let Some(w) = app.get_webview_window("main")
+                && let Err(err) = w.maximize()
+            {
+                tracing::warn!(target: "aethon", "maximize main window failed: {err}");
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

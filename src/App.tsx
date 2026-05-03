@@ -2790,9 +2790,20 @@ export default function App() {
     const unlistenStderr = listen<string>("agent-stderr", (event) => {
       const text = event.payload?.toString().trim();
       if (!text) return;
-      // Cap noise — only surface lines that look like errors. Bun and pi-ai
-      // emit informational stderr (e.g. cache hits) we can ignore.
-      if (/error|throw|fatal|cannot|fail|exception/i.test(text)) {
+      // Surface only real failures. Two tiers:
+      //   1. Bridge log lines tagged WARN / ERROR / FATAL (the bun
+      //      logger writes `<ISO> LEVEL scope: msg`). We deliberately
+      //      ignore INFO/DEBUG so noisy progress lines like
+      //      `… load took 0ms (loaded=0 failed=0)` don't pop into chat
+      //      just because they contain the substring "fail".
+      //   2. Raw uncaught throws / panics / module-resolution errors
+      //      that escape the logger entirely (matched by anchor or
+      //      well-known prefixes, not loose substrings).
+      const isLeveledFailure = /\b(WARN|ERROR|FATAL)\b/.test(text);
+      const isRawCrash =
+        /^(Error|TypeError|ReferenceError|SyntaxError|RangeError|Uncaught|panic:)/i.test(text) ||
+        /\bthrow\s+new\s|\bCannot\s+find\s+(module|package)\b|\bEACCES\b|\bENOENT\b/i.test(text);
+      if (isLeveledFailure || isRawCrash) {
         appendMessage({
           id: crypto.randomUUID(),
           role: "system",
