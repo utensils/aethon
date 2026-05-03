@@ -78,9 +78,7 @@
               {
                 "id": "extensions",
                 "title": "extensions",
-                "items": [
-                  { "id": "extension-layout", "label": "default-layout", "hint": "core", "active": true }
-                ]
+                "items": { "$ref": "/sidebar/extensions" }
               },
               {
                 "id": "panels",

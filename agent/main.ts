@@ -225,6 +225,11 @@ export interface MutationResult {
   data?: unknown;
 }
 const MUTATION_ACK_TIMEOUT_MS = 5_000;
+// setState size guards. Extensions writing large blobs (e.g. base64 images)
+// to state can block the stdout pipe and freeze the event loop. Warn at 64 KB
+// so authors notice; reject hard at 512 KB so the bridge never stalls.
+const STATE_PAYLOAD_WARN_BYTES = 64 * 1024;   // 64 KB — log WARN
+const STATE_PAYLOAD_HARD_BYTES = 512 * 1024;  // 512 KB — reject
 let _mutationCounter = 0;
 function nextMutationId(): string {
   _mutationCounter += 1;
@@ -462,6 +467,17 @@ interface AethonExtensionApi {
 // teardowns fire when the active project changes; user-level (or out-of-
 // register()) teardowns persist for the lifetime of the bridge.
 let currentExtensionLoadScope: "user" | "project" | null = null;
+// Display name of the extension whose register() is currently on the stack.
+// Set for the duration of register() — same lifetime as currentExtensionLoadScope.
+// Used by _setState's size guard so the WARN names the offending extension.
+let currentExtensionName: string | null = null;
+// Scoped logger for LLM turn lifecycle. Fills the silent gap between user
+// message and LLM response — exactly the window where hangs are hardest to
+// diagnose.
+const turnLog = logger.scope("turn");
+// Per-tab wall-clock turn start times. Set in agent_start, consumed in
+// agent_end to compute durationMs.
+const turnStartTimes = new Map<string, number>();
 const projectExtensionTeardowns: Array<() => void | Promise<void>> = [];
 const userExtensionTeardowns: Array<() => void | Promise<void>> = [];
 
@@ -956,11 +972,14 @@ async function loadAethonExtensionDirectory(
       // calls bind to the right teardown bucket. Project-directory
       // teardowns fire on project switch; user-level teardowns persist.
       const prevScope = currentExtensionLoadScope;
+      const prevExtName = currentExtensionName;
       currentExtensionLoadScope = options.source === "project-directory" ? "project" : "user";
+      currentExtensionName = displayName;
       try {
         await register(api);
       } finally {
         currentExtensionLoadScope = prevScope;
+        currentExtensionName = prevExtName;
       }
       options.loadedFiles?.add(file);
       registry.set(displayName, options.source);
@@ -1947,6 +1966,36 @@ async function main() {
   ): Promise<MutationResult> {
     if (!path || typeof path !== "string") {
       return Promise.resolve({ ok: false, error: "path required" });
+    }
+    // Size guard: measure the serialized payload before it hits stdout.
+    // A 180 MB write blocks the Node event loop (pipe backpressure) and
+    // prevents the bridge from processing LLM responses or stdin commands.
+    {
+      const extStateLog = logger.scope("ext-state");
+      let serialized: string | undefined;
+      try {
+        serialized = JSON.stringify(value);
+      } catch {
+        // Non-serializable values will fail naturally in send() below.
+      }
+      if (serialized !== undefined) {
+        const bytes = Buffer.byteLength(serialized, "utf8");
+        const who = currentExtensionName ? ` (${currentExtensionName})` : "";
+        if (bytes > STATE_PAYLOAD_HARD_BYTES) {
+          const kb = Math.round(bytes / 1024);
+          extStateLog.warn(
+            `setState rejected: path=${path} size=${kb}KB exceeds 512KB limit${who} — store file paths, not content`,
+          );
+          return Promise.resolve({
+            ok: false,
+            error: "payload exceeds 512 KB limit — store file paths, not content",
+          });
+        }
+        if (bytes > STATE_PAYLOAD_WARN_BYTES) {
+          const kb = Math.round(bytes / 1024);
+          extStateLog.warn(`setState large payload: path=${path} size=${kb}KB${who}`);
+        }
+      }
     }
     // tabId attribution priority:
     //   1. explicit sourceTabId (handler-scoped ctx.setState)
@@ -2974,6 +3023,20 @@ async function main() {
         name: m.name,
         code: m.code,
       })),
+      // Full extensions list for the sidebar display. Mirrors what
+      // getRuntimeSnapshot() exposes to the agent, but sent on every ready
+      // so the frontend can hydrate /sidebar/extensions without reading the
+      // state file.
+      extensionsList: [...loadedExtensions.entries()].map(([name, source]) => ({
+        name,
+        source,
+      })),
+      failedExtensionsList: [...loadFailures.entries()].map(([name, info]) => ({
+        name,
+        source: info.source,
+        error: info.error,
+        ...(info.path ? { path: info.path } : {}),
+      })),
       discoveredTabs,
     });
   }
@@ -3127,6 +3190,8 @@ async function main() {
           // set currentAgentTabId so any setStates the agent triggers
           // route correctly. Cleared in agent_end below.
           currentAgentTabId = tabId;
+          turnStartTimes.set(tabId, Date.now());
+          turnLog.info(`start model=${session.model ? modelKey(session.model) : "unknown"} tabId=${tabId}`);
           if (rec.queuedCount > 0) {
             rec.queuedCount -= 1;
             // The previous agent_end cleared promptInFlight, but pi has
@@ -3231,6 +3296,21 @@ async function main() {
           const failedMessage = extractAgentEndError(event.messages);
           if (failedMessage) {
             send({ type: "error", tabId, message: failedMessage });
+          }
+          {
+            const startMs = turnStartTimes.get(tabId);
+            turnStartTimes.delete(tabId);
+            const durationMs = startMs !== undefined ? Date.now() - startMs : -1;
+            const modelStr = session.model ? modelKey(session.model) : "unknown";
+            const lastAssistant = [...(event.messages ?? [])].reverse().find(
+              (m) => (m as { role?: string }).role === "assistant",
+            ) as { stopReason?: string } | undefined;
+            const reason = lastAssistant?.stopReason ?? "unknown";
+            if (reason === "error") {
+              turnLog.warn(`end model=${modelStr} tabId=${tabId} durationMs=${durationMs} stopReason=${reason}`);
+            } else {
+              turnLog.info(`end model=${modelStr} tabId=${tabId} durationMs=${durationMs} stopReason=${reason}`);
+            }
           }
           rec.agentEndFired = true;
           rec.promptInFlight = false;

@@ -1122,8 +1122,33 @@ fn send_message(
 }
 
 /// Forward an arbitrary JSON command (e.g. `{"type":"set_model","id":"..."}`)
-/// to the agent's stdin. Used by the model picker and any future runtime
-/// controls that aren't wrapped in `dispatch_a2ui_event`.
+/// Hard-kill the running agent child. Called by the frontend's hang-warn
+/// notification "Force restart" button. Unlike the file-watcher kill (which
+/// sets `agent_reload_in_progress` so EOF emits `agent-reloaded`), we
+/// intentionally let the crash path fire: the existing `agent-crashed`
+/// handler in App.tsx clears waiting state and (if auto_restart_agent = true)
+/// respawns automatically.
+///
+/// This bypasses blocked stdin — even if the Node event loop is frozen by
+/// backpressured stdout writes, Rust can still kill the child OS process.
+#[tauri::command]
+fn force_restart_agent(state: State<'_, AgentProcess>) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = guard.take() {
+        let pid = child.id();
+        tracing::warn!(target: "aethon::agent", "force_restart_agent: killing pid={pid}");
+        let _ = child.kill();
+        // Reap the child so it doesn't become a zombie while we wait for
+        // the stdout reader thread to detect EOF and emit agent-crashed.
+        let _ = child.wait();
+    }
+    // If guard is None the agent wasn't running — no-op is correct.
+    Ok(())
+}
+
+/// Forward an arbitrary JSON payload to the agent's stdin. Used by the model
+/// picker and any future runtime controls that aren't wrapped in
+/// `dispatch_a2ui_event`.
 #[tauri::command]
 fn agent_command(
     payload: String,
@@ -2235,6 +2260,7 @@ pub fn run() {
             start_agent,
             send_message,
             agent_command,
+            force_restart_agent,
             dispatch_a2ui_event,
             read_state,
             write_state,

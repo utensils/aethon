@@ -542,6 +542,15 @@ export default function App() {
       // shapes are documented on the components themselves.
       palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
       notifications: [],
+      // Seed /sidebar/extensions so the $ref-bound sidebar section renders
+      // the built-in entry immediately — hydrateExtensions() fills in
+      // dynamically-loaded extensions once `ready` arrives.
+      sidebar: {
+        ...(BOOT_LAYOUT.state?.sidebar as Record<string, unknown> | undefined),
+        extensions: [
+          { id: "extension-layout", label: "default-layout", hint: "core", active: true },
+        ],
+      },
     };
   });
 
@@ -593,6 +602,11 @@ export default function App() {
   // on `response_end`. Used to compute turn duration for the OS
   // completion notification gate.
   const turnStartedAtRef = useRef<Map<string, number>>(new Map());
+  // Hang-warn: push a sticky "Still working…" notification if the active tab
+  // stays waiting longer than HANG_WARN_MS. Per-tab timers keyed by tabId.
+  const HANG_WARN_MS = 30_000;
+  const HANG_WARN_NOTIF_ID = "ae-hang-warn";
+  const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // P4: live config for OS notifications. Mirrors `config.ui.notifyOnCompletion`
   // / `notifyMinDurationSeconds` and is updated in the boot config effect.
   // Held in a ref (not state) so the response_end handler reads the
@@ -688,6 +702,39 @@ export default function App() {
           themes,
         },
       };
+    });
+  }
+
+  // Hydrate the sidebar extensions list from the bridge's loaded/failed sets.
+  // Called on `ready` (startup + project switch) so the list always reflects
+  // what the current bridge process has actually loaded.
+  function hydrateExtensions(
+    loaded: { name: string; source: string }[],
+    failed: { name: string; source: string; error?: string }[],
+  ) {
+    const sourceLabel = (s: string) =>
+      s === "project-directory" ? "project"
+      : s === "global-directory" ? "user"
+      : s === "extension-package" ? "package"
+      : s;
+    const items = [
+      { id: "extension-layout", label: "default-layout", hint: "core", active: true },
+      ...loaded.map((e) => ({
+        id: `ext:${e.name}`,
+        label: e.name,
+        hint: sourceLabel(e.source),
+        active: true,
+      })),
+      ...failed.map((e) => ({
+        id: `ext-failed:${e.name}`,
+        label: e.name,
+        hint: `${sourceLabel(e.source)} · failed`,
+        active: false,
+      })),
+    ];
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+      return { ...prev, sidebar: { ...sidebar, extensions: items } };
     });
   }
 
@@ -2704,6 +2751,9 @@ export default function App() {
 
     const unlistenReload = listen<string>("agent-reloaded", () => {
       activeResponseIdRef.current = null;
+      for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
+      hangWarnTimersRef.current.clear();
+      dismissNotification(HANG_WARN_NOTIF_ID);
       setStatusFlags({ waiting: false, status: "agent reloaded" });
       // Re-prime the agent so we get a fresh `ready` event with the new code.
       invoke("start_agent").catch(() => {
@@ -2721,6 +2771,9 @@ export default function App() {
         const tail = event.payload?.stderrTail ?? [];
         const lastLine = tail.length > 0 ? tail[tail.length - 1] : "no stderr";
         activeResponseIdRef.current = null;
+        for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
+        hangWarnTimersRef.current.clear();
+        dismissNotification(HANG_WARN_NOTIF_ID);
         // Clear waiting/queue across every tab — pi sessions are gone.
         setState((prev) => {
           const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => ({
@@ -3132,6 +3185,10 @@ export default function App() {
         // when the merge runs. hydrateThemes also injects the CSS so a
         // saved choice has the rule available before data-theme is read.
         hydrateThemes(extThemes);
+        hydrateExtensions(
+          (data.extensionsList as { name: string; source: string }[] | undefined) ?? [],
+          (data.failedExtensionsList as { name: string; source: string; error?: string }[] | undefined) ?? [],
+        );
         registry.setTemplates(extComponents);
         // Restore extension-registered slash commands so the picker shows
         // them on first paint (no need to wait for an extension_slash_commands
@@ -3727,6 +3784,32 @@ export default function App() {
         if (stateRef.current.activeTabId === tabId) {
           setState((prev) => ({ ...prev, status: "thinking…" }));
         }
+        // Start hang-warn timer. Reset if a queue-drained prompt_started
+        // fires for the same tab (the 30s clock restarts on each new turn).
+        {
+          const prev = hangWarnTimersRef.current.get(tabId);
+          if (prev !== undefined) clearTimeout(prev);
+          const handle = setTimeout(() => {
+            hangWarnTimersRef.current.delete(tabId);
+            const cur = stateRef.current;
+            if ((cur.activeTabId as string | undefined) !== tabId) return;
+            const tabs = (cur.tabs as Tab[] | undefined) ?? [];
+            const tab = tabs.find((t) => t.id === tabId);
+            if (!tab?.waiting) return;
+            pushNotification({
+              id: HANG_WARN_NOTIF_ID,
+              title: "Still working…",
+              message: "The agent is taking longer than expected.",
+              kind: "warning",
+              durationMs: null,
+              actions: [
+                { label: "Stop", action: "hang-warn:stop" },
+                { label: "Force restart", action: "hang-warn:force-restart" },
+              ],
+            });
+          }, HANG_WARN_MS);
+          hangWarnTimersRef.current.set(tabId, handle);
+        }
         break;
       }
       case "queued": {
@@ -3762,6 +3845,13 @@ export default function App() {
             if (q > 0) return prev;
             return { ...prev, status: "ready" };
           });
+        }
+        // Clear the hang-warn timer and dismiss the notification (if it
+        // appeared) now that the turn resolved normally.
+        {
+          const h = hangWarnTimersRef.current.get(tabId);
+          if (h !== undefined) { clearTimeout(h); hangWarnTimersRef.current.delete(tabId); }
+          dismissNotification(HANG_WARN_NOTIF_ID);
         }
         // P4: fire native OS notification when an agent turn completes
         // while the window is unfocused (or the originating tab isn't
@@ -5517,6 +5607,25 @@ export default function App() {
           if (action === "ae-agent-crashed:restart") {
             invoke("start_agent").catch((err: unknown) => {
               console.warn("agent restart failed:", err);
+            });
+          }
+          if (id) dismissNotification(id);
+          return true;
+        }
+        // Hang-warn notification actions.
+        if (
+          eventType === "action" &&
+          typeof action === "string" &&
+          action.startsWith("hang-warn:")
+        ) {
+          if (action === "hang-warn:stop") {
+            void stopPrompt();
+          } else if (action === "hang-warn:force-restart") {
+            // force_restart_agent SIGKILLs the bun child from Rust, bypassing
+            // blocked stdin. The existing agent-crashed handler then fires,
+            // clearing waiting state and (if auto_restart_agent) respawning.
+            invoke("force_restart_agent").catch((err: unknown) => {
+              console.warn("force_restart_agent failed:", err);
             });
           }
           if (id) dismissNotification(id);
