@@ -40,6 +40,60 @@ const KEY_GLYPHS: Record<string, string> = {
   backtick: "`",
 };
 
+// Normalize a keyboard event to the same canonical combo string the bridge
+// stores (lowercased, sorted modifiers, "+"-joined). Returns null when no
+// printable key was involved (modifier keys alone don't match a combo).
+//
+//   Cmd+Shift+P   →  "meta+shift+p"
+//   Ctrl+]        →  "ctrl+]"
+//   Alt+M         →  "alt+m"
+export function canonicalCombo(e: KeyboardEvent): string | null {
+  const k = e.key;
+  if (!k || k.length === 0) return null;
+  // Skip modifier-only events (pressing just Shift/Cmd/etc.)
+  if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return null;
+  const parts: string[] = [];
+  if (e.metaKey) parts.push("meta");
+  if (e.ctrlKey) parts.push("ctrl");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  parts.push(k.toLowerCase());
+  return parts.join("+");
+}
+
+// Bridge accepts a wide variety of human-readable combo formats
+// ("Cmd+Shift+P", "ctrl+]", "Meta+M") and we normalize on the frontend
+// for matching. Keep the modifier order stable so equivalent combos
+// hash to the same canonical form.
+export function normalizeRegisteredCombo(combo: string): string {
+  const parts = combo
+    .split("+")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+  // Aliases: cmd → meta, command → meta, control → ctrl, option → alt.
+  const aliased = parts.map((p) =>
+    p === "cmd" || p === "command"
+      ? "meta"
+      : p === "control"
+        ? "ctrl"
+        : p === "option"
+          ? "alt"
+          : p,
+  );
+  const mods = new Set<string>();
+  let key = "";
+  for (const p of aliased) {
+    if (p === "meta" || p === "ctrl" || p === "alt" || p === "shift") {
+      mods.add(p);
+    } else {
+      key = p;
+    }
+  }
+  // Stable ordering matches canonicalCombo above (meta/ctrl/alt/shift).
+  const ordered = ["meta", "ctrl", "alt", "shift"].filter((m) => mods.has(m));
+  return [...ordered, key].filter(Boolean).join("+");
+}
+
 export function formatCombo(canonical: string): string {
   if (!canonical) return "";
   const parts = canonical.split("+").filter(Boolean);

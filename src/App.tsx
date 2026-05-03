@@ -5,14 +5,10 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
-import { reconcileFrontendModules } from "./skills/extensionFrontendLoader";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import {
-  builtinLayouts,
   defaultLayoutSkill,
-  inspectLayoutSlotCoverage,
-  layoutSlots,
 } from "./skills/default-layout";
 import type {
   PaletteItem,
@@ -22,82 +18,37 @@ import type {
   NotificationEntry,
   NotificationKind,
 } from "./skills/default-layout/notifications";
-import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
-import type { A2UIPayload, ChatMessage } from "./types/a2ui";
-import type { A2UISkill } from "./skills/types";
-import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
+import type { A2UIPayload, ChatMessage } from "./types/a2ui";
+import {
+  NO_PROJECT_KEY,
+  makeEmptyTab,
+  projectBucketKey,
+  type ShellMeta,
+  type Tab,
+} from "./types/tab";
+import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 import { extractSessionId } from "./utils/sidebarHistory";
-// Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
-// the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
-// instead of hardcoding a path that might 404 in a production bundle.
-import logoUrl from "./assets/aethon-logo.svg?url";
-
-// Immutable JSON Pointer write that preserves arrays. The generic
-// setPointer in utils/jsonPointer turns `{...arr}` into a plain object,
-// which breaks the renderer when a layout's `components`/`children`
-// arrays get traversed. This walker spreads with `[...arr]` for arrays
-// so the layout shape is preserved end-to-end.
-function decodeToken(t: string): string {
-  return t.replace(/~1/g, "/").replace(/~0/g, "~");
-}
-function layoutPatch<T>(payload: T, pointer: string, value: unknown): T {
-  if (!pointer || pointer === "" || pointer === "/") return payload;
-  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
-  const tokens = path.split("/").map(decodeToken);
-  const cloneNode = (node: unknown): unknown => {
-    if (Array.isArray(node)) return [...node];
-    if (node && typeof node === "object") return { ...(node as Record<string, unknown>) };
-    return {};
-  };
-  const root = cloneNode(payload) as Record<string, unknown> | unknown[];
-  let cursor: Record<string, unknown> | unknown[] = root;
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const key = tokens[i];
-    const idx = Array.isArray(cursor) ? Number(key) : key;
-    const existing = (cursor as Record<string | number, unknown>)[idx as never];
-    const child = cloneNode(existing);
-    (cursor as Record<string | number, unknown>)[idx as never] = child;
-    cursor = child as Record<string, unknown> | unknown[];
-  }
-  const lastKey = tokens[tokens.length - 1];
-  const lastIdx = Array.isArray(cursor) ? Number(lastKey) : lastKey;
-  (cursor as Record<string | number, unknown>)[lastIdx as never] = value;
-  return root as T;
-}
-
-// Recursive structural merge. Plain objects recurse; arrays and primitives
-// replace. Used when folding the bridge's extension state snapshot into
-// app state so an extension's nested key doesn't wipe siblings.
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    !Array.isArray(v) &&
-    Object.getPrototypeOf(v) === Object.prototype
-  );
-}
-function deepMergeState(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...target };
-  for (const [k, v] of Object.entries(source)) {
-    const existing = out[k];
-    if (isPlainObject(existing) && isPlainObject(v)) {
-      out[k] = deepMergeState(existing, v);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
+import { deepMergeState, layoutPatch } from "./utils/stateMutation";
+import { applyUiScale } from "./utils/viewport";
+import { formatRelativeTime } from "./utils/time";
+import { coerceChatMessages } from "./utils/messages";
+import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
+import { useShellConsent } from "./hooks/useShellConsent";
+import { useProjects } from "./hooks/useProjects";
+import { useTabNavigation } from "./hooks/useTabNavigation";
+import { useTabs, TAB_MIRROR_KEYS, TERMINAL_REPLAY_MAX } from "./hooks/useTabs";
 import {
-  buildBuiltinSlashCommands,
+  useExtensionsHydration,
+  type ExtensionTheme,
+} from "./hooks/useExtensionsHydration";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useWindowApi } from "./runtime/windowApi";
+import { isFocusInTerminalPanel } from "./utils/focus";
+import {
   parseSlashCommand,
-  type SlashCommand,
   type SlashCommandContext,
 } from "./slashCommands";
 import {
@@ -115,41 +66,13 @@ import {
   upsertProject,
   type ProjectsState,
 } from "./projects";
+// Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
+// the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
+// instead of hardcoding a path that might 404 in a production bundle.
+import logoUrl from "./assets/aethon-logo.svg?url";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
-
-const ZOOM_MIN = 0.7;
-const ZOOM_MAX = 1.6;
-/** Lifetime of an Allow/Deny prompt for `aethon.shells.write` in
- *  read-write mode. Set ~30 s under the bridge-side ack timeout
- *  (5 min) so a late click can never inject keystrokes after the
- *  caller's promise has already failed with `timeout`. The auto-
- *  expire flows through the existing notification dismiss path,
- *  which resolves the consent as deny. */
-const SHELL_WRITE_PROMPT_TTL_MS = 4 * 60 * 1000 + 30 * 1000;
-
-function writeUiViewportVars(scale: number) {
-  const root = document.documentElement;
-  root.style.setProperty("--app-viewport-width", `${window.innerWidth / scale}px`);
-  root.style.setProperty("--app-viewport-height", `${window.innerHeight / scale}px`);
-}
-
-function applyUiScale(scale: number) {
-  const root = document.documentElement;
-  root.style.setProperty("--app-ui-scale", String(scale));
-  writeUiViewportVars(scale);
-  root.style.zoom = String(scale);
-}
-
-function readZoom(): number {
-  const cur = parseFloat(
-    document.documentElement.style.getPropertyValue("--app-ui-scale") ||
-      document.documentElement.style.zoom ||
-      "1",
-  );
-  return Number.isFinite(cur) ? cur : 1;
-}
 
 interface ModelDescriptor {
   id: string;
@@ -181,158 +104,6 @@ interface SidebarHistoryItem {
   active?: boolean;
 }
 
-// Format a millisecond timestamp into a compact relative-time label like
-// "2m ago" / "3h ago" / "yesterday" / "Apr 22". Used by the empty-state's
-// recent-sessions list — full timestamps are too noisy and "12345678 ms"
-// is meaningless to a user.
-function formatRelativeTime(ms: number): string {
-  if (!ms) return "";
-  const now = Date.now();
-  const diff = Math.max(0, now - ms);
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.floor(hr / 24);
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days}d ago`;
-  return new Date(ms).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-// Normalize a keyboard event to the same canonical combo string the bridge
-// stores (lowercased, sorted modifiers, "+"-joined). Returns null when no
-// printable key was involved (modifier keys alone don't match a combo).
-//
-//   Cmd+Shift+P   →  "meta+shift+p"
-//   Ctrl+]        →  "ctrl+]"
-//   Alt+M         →  "alt+m"
-function canonicalCombo(e: KeyboardEvent): string | null {
-  const k = e.key;
-  if (!k || k.length === 0) return null;
-  // Skip modifier-only events (pressing just Shift/Cmd/etc.)
-  if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return null;
-  const parts: string[] = [];
-  if (e.metaKey) parts.push("meta");
-  if (e.ctrlKey) parts.push("ctrl");
-  if (e.altKey) parts.push("alt");
-  if (e.shiftKey) parts.push("shift");
-  parts.push(k.toLowerCase());
-  return parts.join("+");
-}
-
-// Bridge accepts a wide variety of human-readable combo formats
-// ("Cmd+Shift+P", "ctrl+]", "Meta+M") and we normalize on the frontend
-// for matching. Keep the modifier order stable so equivalent combos
-// hash to the same canonical form.
-function normalizeRegisteredCombo(combo: string): string {
-  const parts = combo
-    .split("+")
-    .map((p) => p.trim().toLowerCase())
-    .filter(Boolean);
-  // Aliases: cmd → meta, command → meta, control → ctrl, option → alt.
-  const aliased = parts.map((p) =>
-    p === "cmd" || p === "command"
-      ? "meta"
-      : p === "control"
-        ? "ctrl"
-        : p === "option"
-          ? "alt"
-          : p,
-  );
-  const mods = new Set<string>();
-  let key = "";
-  for (const p of aliased) {
-    if (p === "meta" || p === "ctrl" || p === "alt" || p === "shift") {
-      mods.add(p);
-    } else {
-      key = p;
-    }
-  }
-  // Stable ordering matches canonicalCombo above (meta/ctrl/alt/shift).
-  const ordered = ["meta", "ctrl", "alt", "shift"].filter((m) => mods.has(m));
-  return [...ordered, key].filter(Boolean).join("+");
-}
-
-// Replace `image` component data URLs with a placeholder so persisted history
-// doesn't blow past the localStorage quota. The in-memory message keeps the
-// full data URL — only the persisted copy is slimmed.
-function stripImageDataUrls(component: unknown): unknown {
-  if (!component || typeof component !== "object") return component;
-  const c = component as {
-    type?: string;
-    props?: Record<string, unknown>;
-    children?: unknown[];
-  };
-  let next = c;
-  if (
-    c.type === "image" &&
-    typeof c.props?.src === "string" &&
-    c.props.src.startsWith("data:")
-  ) {
-    next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
-  }
-  if (Array.isArray(c.children) && c.children.length > 0) {
-    next = { ...next, children: c.children.map(stripImageDataUrls) };
-  }
-  return next;
-}
-
-const MAX_TEXT_BYTES = 8 * 1024;
-
-function trimMessage(m: ChatMessage): ChatMessage {
-  let out = m;
-  if (m.text && m.text.length > MAX_TEXT_BYTES) {
-    out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
-  }
-  if (m.a2ui && Array.isArray(m.a2ui.components)) {
-    out = {
-      ...out,
-      a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
-    };
-  }
-  return out;
-}
-
-function coerceChatMessages(value: unknown): ChatMessage[] {
-  if (!Array.isArray(value)) return [];
-  const messages: ChatMessage[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    const role =
-      record.role === "user" ||
-      record.role === "agent" ||
-      record.role === "system"
-        ? record.role
-        : null;
-    if (!role) continue;
-    const text = typeof record.text === "string" ? record.text : undefined;
-    const a2ui =
-      record.a2ui &&
-      typeof record.a2ui === "object" &&
-      Array.isArray((record.a2ui as { components?: unknown }).components)
-        ? (record.a2ui as A2UIPayload)
-        : undefined;
-    if (!text && !a2ui) continue;
-    messages.push(
-      trimMessage({
-        id:
-          typeof record.id === "string" && record.id.length > 0
-            ? record.id
-            : crypto.randomUUID(),
-        role,
-        ...(text ? { text } : {}),
-        ...(a2ui ? { a2ui } : {}),
-      }),
-    );
-  }
-  return messages;
-}
-
 export default function App() {
   // The registry is created once and shared across the app via context.
   // Skills register their components/layouts here; the renderer resolves
@@ -351,70 +122,9 @@ export default function App() {
   // layout JSON bindings keep working without a per-tab JSON Pointer
   // rewrite. On tab switch we re-mirror the new active tab's view; on
   // every per-tab update we write the tab record AND, if it's active,
-  // also write the root mirror.
+  // also write the root mirror. Tab/ShellMeta types live in
+  // src/types/tab.ts.
   // ---------------------------------------------------------------------
-  // M6 P1: shell-tab metadata. Present iff Tab.kind === "shell".
-  // Carried as an optional sibling field (rather than refactoring Tab to a
-  // discriminated union) so existing agent-tab code paths stay unchanged.
-  interface ShellMeta {
-    cwd: string;
-    command: string;
-    args: string[];
-    shareMode: "private" | "read" | "read-write" | "read-write-trusted";
-    shellState: "starting" | "running" | "exited";
-    exitCode?: number;
-  }
-  interface Tab {
-    id: string;
-    /** "agent" (chat session) or "shell" (interactive PTY). Default "agent"
-     *  for back-compat with persisted tab records that pre-date the field. */
-    kind: "agent" | "shell";
-    label: string;
-    messages: ChatMessage[];
-    draft: string;
-    waiting: boolean;
-    queueCount: number;
-    canvas: unknown;
-    model: string;
-    // Rolling buffer of bash output for this tab. The Terminal component
-    // writes to xterm directly for the active tab; this buffer survives
-    // tab switches so the panel can replay it when the user comes back.
-    // Capped client-side too (TERMINAL_REPLAY_MAX) to bound memory.
-    terminalBuffer: string;
-    // Project this tab belongs to. `null` means the no-project bucket
-    // (tabs created before any project was picked, or after
-    // clearActiveProject). Tabs are isolated per project — switching
-    // projects swaps `state.tabs` for the target project's bucket and
-    // hides everyone else.
-    projectId: string | null;
-    /** Present iff kind === "shell". */
-    shell?: ShellMeta;
-  }
-  // Sentinel key for the "no project" bucket. Project ids are UUIDs so
-  // a literal can't collide.
-  const NO_PROJECT_KEY = "__no_project__";
-  const projectBucketKey = (id: string | null | undefined) =>
-    id ?? NO_PROJECT_KEY;
-  function makeEmptyTab(
-    id: string,
-    label: string,
-    projectId: string | null = null,
-    kind: "agent" | "shell" = "agent",
-  ): Tab {
-    return {
-      id,
-      kind,
-      label,
-      messages: [],
-      draft: "",
-      waiting: false,
-      queueCount: 0,
-      canvas: null,
-      model: "",
-      terminalBuffer: "",
-      projectId,
-    };
-  }
   const buildSidebarHistory = useCallback((
     tabs: Tab[],
     activeTabId: string | undefined,
@@ -510,11 +220,6 @@ export default function App() {
     );
     setState((prev) => ({ ...prev, recentSessions: sessions }));
   }
-  // Per-tab terminal buffer cap. Bash output bursts can be huge; without
-  // a ceiling the buffer would grow forever and slow tab switches as the
-  // replay payload grows.
-  const TERMINAL_REPLAY_MAX = 256 * 1024;
-
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
@@ -565,12 +270,16 @@ export default function App() {
   // deltas after a tool card still land in the original bubble; this ref
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
-  // Per app session, remember persisted sessions we auto-opened from
-  // `[ui] restore_tabs = true` so repeated ready/report events don't
-  // duplicate tabs.
-  const autoRestoredSessionIdsRef = useRef(new Set<string>());
+  // autoRestoredSessionIdsRef now lives in useTabs (the hook owns
+  // restore-tab dedup). Other tab refs likewise.
   const allDiscoveredSessionsRef = useRef<DiscoveredSession[]>([]);
   const projectsLoadedRef = useRef(false);
+  // Projects (working directories the agent operates in). Persisted to
+  // ~/.aethon/projects.json. The active project's path travels with each
+  // new tab as `cwd` on `tab_open` so pi's SessionManager scopes the
+  // session to that directory. Existing tabs keep their original cwd —
+  // switching project doesn't retroactively change live sessions.
+  const projectsRef = useRef<ProjectsState>(emptyProjectsState());
   // Pi's default model from the last `ready` event. Used to seed new tabs
   // before ready fires (or when the active tab has no model yet), so the
   // picker never shows a blank "model ▼" label.
@@ -588,12 +297,6 @@ export default function App() {
   // up an id without a stale closure. The sidebar items list lives in
   // `/sidebar/themes` (see hydrateThemes below) so the existing $ref-bound
   // sidebar item path picks them up.
-  interface ExtensionTheme {
-    id: string;
-    label: string;
-    vars: Record<string, string>;
-  }
-  const themesRef = useRef<Map<string, ExtensionTheme>>(new Map());
   // [shell] default_share_mode resolved from ~/.aethon/config.toml. Read
   // once on boot (see the getConfig() effect below) and consulted by
   // newShellTab. Defaults to `"private"` until the config loads — the
@@ -635,11 +338,6 @@ export default function App() {
   const shortcutsNewTabKindRef = useRef<"agent" | "shell">("agent");
   // Built-in themes always available. CSS for these lives in styles.css —
   // we don't inject a <style> tag for them.
-  const BUILTIN_THEMES: { id: string; label: string }[] = [
-    { id: "ember", label: "Ember — warm dark" },
-    { id: "paper", label: "Paper — cream light" },
-    { id: "aether", label: "Æther — signature" },
-  ];
 
   // Inject (or replace) the <style> element holding an extension theme's
   // CSS custom properties. Keyed by id so re-registering replaces the
@@ -648,108 +346,16 @@ export default function App() {
   // containing `;` or `}` can't escape the declaration and inject
   // arbitrary rules — the parser silently rejects invalid values
   // instead of letting them leak into the stylesheet.
-  function injectThemeStyle(theme: ExtensionTheme) {
-    const styleId = `aethon-theme-${theme.id}`;
-    let el = document.getElementById(styleId) as HTMLStyleElement | null;
-    if (!el) {
-      el = document.createElement("style");
-      el.id = styleId;
-      document.head.appendChild(el);
-    }
-    // Quote-escape the id for use inside a CSS selector. CSS.escape is
-    // widely supported in webviews (Chromium 46+, WebKit 10+); the
-    // fallback strips to a slug-safe set when the runtime lacks it.
-    const safe = (window.CSS && window.CSS.escape)
-      ? window.CSS.escape(theme.id)
-      : theme.id.replace(/[^A-Za-z0-9_-]/g, "");
-    const sheet = el.sheet;
-    if (!sheet) {
-      // Stylesheet not attached yet (extremely rare — happens if the
-      // <style> is detached). Fall back to attribute writes; the next
-      // hydrate will succeed once the sheet is available.
-      el.textContent = "";
-      return;
-    }
-    // Replace any prior rules so re-registering with fewer vars drops
-    // the obsolete declarations.
-    while (sheet.cssRules.length > 0) sheet.deleteRule(0);
-    sheet.insertRule(`:root[data-theme="${safe}"] {}`);
-    const rule = sheet.cssRules[0] as CSSStyleRule;
-    rule.style.setProperty("color-scheme", "dark");
-    for (const [k, v] of Object.entries(theme.vars)) {
-      // setProperty silently no-ops on invalid values — can't break out.
-      rule.style.setProperty(k, v);
-    }
-  }
 
   // Apply a fresh themes list — replace the registry, inject CSS for each,
   // and mirror id/label pairs to /sidebar/themes so the sidebar updates.
   // Style tags whose ids no longer appear in the list are removed first so
   // a deleted/disabled extension stops bleeding stale CSS into the page.
-  function hydrateThemes(list: ExtensionTheme[]) {
-    themesRef.current = new Map(list.map((t) => [t.id, t]));
-    const keep = new Set(list.map((t) => `aethon-theme-${t.id}`));
-    for (const el of document.querySelectorAll('style[id^="aethon-theme-"]')) {
-      if (!keep.has(el.id)) el.remove();
-    }
-    for (const t of list) injectThemeStyle(t);
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
-      const currentTheme =
-        document.documentElement.dataset.theme || BUILTIN_THEMES[0]?.id;
-      const themes = [
-        ...BUILTIN_THEMES,
-        ...list.map((t) => ({ id: t.id, label: t.label })),
-      ].map((t) => ({ ...t, active: t.id === currentTheme }));
-      return {
-        ...prev,
-        sidebar: {
-          ...sidebar,
-          themes,
-        },
-      };
-    });
-  }
 
   // Hydrate the sidebar extensions list from the bridge's loaded/failed sets.
   // Called on `ready` (startup + project switch) so the list always reflects
   // what the current bridge process has actually loaded.
-  function hydrateExtensions(
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
-  ) {
-    const sourceLabel = (s: string) =>
-      s === "project-directory" ? "project"
-      : s === "global-directory" ? "user"
-      : s === "extension-package" ? "package"
-      : s;
-    const items = [
-      { id: "extension-layout", label: "default-layout", hint: "core", active: true },
-      ...loaded.map((e) => ({
-        id: `ext:${e.name}`,
-        label: e.name,
-        hint: sourceLabel(e.source),
-        active: true,
-      })),
-      ...failed.map((e) => ({
-        id: `ext-failed:${e.name}`,
-        label: e.name,
-        hint: `${sourceLabel(e.source)} · failed`,
-        active: false,
-      })),
-    ];
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
-      return { ...prev, sidebar: { ...sidebar, extensions: items } };
-    });
-  }
 
-  function listThemes(): { id: string; label: string }[] {
-    return [
-      ...BUILTIN_THEMES,
-      ...[...themesRef.current.values()].map((t) => ({ id: t.id, label: t.label })),
-    ];
-  }
 
   useEffect(() => {
     (async () => {
@@ -865,55 +471,14 @@ export default function App() {
   }, []);
 
   // ---------------------------------------------------------------------
-  // UI zoom — Cmd+/- / Cmd+0 to scale the entire chrome the way browsers
-  // and editors do. CSS zoom scales text + spacing together, while the
-  // --app-ui-scale token lets viewport-bound shells and portals divide
-  // their dimensions back down. Without that compensation, 100vw/100vh
-  // elements become wider/taller than the visible window at >100%.
+  // UI zoom + theme switching are owned by useZoomAndTheme. The hook
+  // also installs a window resize listener that re-syncs the viewport
+  // CSS vars so layout-sized children stay aligned at non-1.0 zoom.
   // ---------------------------------------------------------------------
-  function applyZoom(next: number) {
-    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
-    const rounded = Math.round(clamped * 100) / 100;
-    applyUiScale(rounded);
-    writeState("ui_zoom", String(rounded)).catch(() => {
-      /* best-effort */
-    });
-    pushNotification({
-      id: "ae-zoom",
-      title: `Zoom ${Math.round(rounded * 100)}%`,
-      kind: "info",
-      durationMs: 1200,
-    });
-  }
-  function adjustZoom(delta: number) {
-    applyZoom(readZoom() + delta);
-  }
-  function resetZoom() {
-    applyZoom(1);
-  }
-
-  useEffect(() => {
-    const onResize = () => writeUiViewportVars(readZoom());
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  function setTheme(id: string) {
-    document.documentElement.dataset.theme = id;
-    writeState("theme", id).catch(() => {
-      /* ignore */
-    });
-    // Update /sidebar/themes' active flag so the appearance pulldown +
-    // sidebar themes section both reflect the new selection without a
-    // separate hydrate pass.
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const themes = ((sidebar.themes as { id: string; label: string }[] | undefined) ?? [])
-        .map((t) => ({ ...t, active: t.id === id }));
-      return { ...prev, sidebar: { ...sidebar, themes } };
-    });
-  }
+  const { adjustZoom, resetZoom, setTheme } = useZoomAndTheme({
+    setState,
+    pushNotification,
+  });
 
   // Chat history is now persisted exclusively via pi's JSONL session files
   // under $AETHON_SESSIONS_DIR/<tabId>/. On startup the bridge emits a
@@ -1138,112 +703,21 @@ export default function App() {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Tab update helpers. `updateTab` writes into one tab record; if that
-  // tab is currently active, it ALSO updates the root mirror keys so the
-  // layout sees the change. `updateActiveTab` is a thin wrapper that
-  // resolves the active id from the latest state. `mirrorKeys` lists the
-  // tab fields that ride along on the root state.
-  // ---------------------------------------------------------------------
-  const TAB_MIRROR_KEYS: (keyof Tab)[] = [
-    "messages",
-    "draft",
-    "waiting",
-    "queueCount",
-    "canvas",
-    "model",
-    // M6 P1: shell-tab fields. The "kind" + "shell" mirror lets layouts
-    // bind `visible: { $ref: "/kind" }`-style toggles without running a
-    // full /tabs/<idx> lookup on every render.
-    "kind",
-    "shell",
-  ];
-
-  function updateTab(tabId: string, mutator: (tab: Tab) => Tab) {
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const idx = tabs.findIndex((t) => t.id === tabId);
-      if (idx < 0) return prev;
-      const next = mutator(tabs[idx]);
-      tabs[idx] = next;
-      const result: Record<string, unknown> = { ...prev, tabs };
-      if (prev.activeTabId === tabId) {
-        const nextRec = next as unknown as Record<string, unknown>;
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = nextRec[key as string];
-        }
-      }
-      return result;
-    });
-  }
-
-  /** Pending agent-write confirmations keyed by notification id. The
-   *  resolver fires when the user clicks Allow/Deny or dismisses the
-   *  notification. Cleared as soon as the resolver fires so a stale
-   *  duplicate click is a no-op. Module-scoped via a ref so the
-   *  notification action handler (defined far below) can reach it
-   *  without dragging it through closures. */
-  const shellWriteConsentRef = useRef<Map<string, (allowed: boolean) => void>>(
-    new Map(),
-  );
-  function resolveShellWriteConsent(notifId: string, allowed: boolean) {
-    const resolve = shellWriteConsentRef.current.get(notifId);
-    if (!resolve) return;
-    shellWriteConsentRef.current.delete(notifId);
-    resolve(allowed);
-  }
-
-  /** Pending close-shell-tab confirmations keyed off notification id.
-   *  Same shape as `shellWriteConsentRef` — the action route below
-   *  resolves the corresponding promise on Close / Cancel. */
-  const shellCloseConsentRef = useRef<
-    Map<string, (allowed: boolean) => void>
-  >(new Map());
-  function resolveShellCloseConsent(notifId: string, allowed: boolean) {
-    const resolve = shellCloseConsentRef.current.get(notifId);
-    if (!resolve) return;
-    shellCloseConsentRef.current.delete(notifId);
-    resolve(allowed);
-  }
-
-  /** Pending session-deletion confirmations keyed off notification id.
-   *  Same shape as the shell-close / shell-write consent refs — the
-   *  notification's Delete / Cancel action resolves the promise. */
-  const sessionDeleteConsentRef = useRef<
-    Map<string, (allowed: boolean) => void>
-  >(new Map());
-  function resolveSessionDeleteConsent(notifId: string, allowed: boolean) {
-    const resolve = sessionDeleteConsentRef.current.get(notifId);
-    if (!resolve) return;
-    sessionDeleteConsentRef.current.delete(notifId);
-    resolve(allowed);
-  }
-
-  /** Mirror a share-mode change from the Rust source-of-truth into the
-   *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
-   *  shell tab. The Rust side enforces the actual privacy boundary —
-   *  this just keeps the badge UI honest. */
-  function applyShareModeToTab(tabId: string, mode: string) {
-    if (!tabId) return;
-    const validModes: ShellMeta["shareMode"][] = [
-      "private",
-      "read",
-      "read-write",
-      "read-write-trusted",
-    ];
-    if (!validModes.includes(mode as ShellMeta["shareMode"])) return;
-    updateTab(tabId, (t) => {
-      if (t.kind !== "shell" || !t.shell) return t;
-      if (t.shell.shareMode === mode) return t;
-      return {
-        ...t,
-        shell: {
-          ...t.shell,
-          shareMode: mode as ShellMeta["shareMode"],
-        },
-      };
-    });
-  }
+  // Shell consent flow (Allow/Deny prompts for agent shell writes,
+  // close-shell confirmations, and session deletions) lives in
+  // useShellConsent. Each prompt resolves its Promise via an action
+  // route handler on the notification. See src/hooks/useShellConsent.ts.
+  const {
+    resolveShellWriteConsent,
+    resolveShellCloseConsent,
+    resolveSessionDeleteConsent,
+    hasPendingShellWriteConsent,
+    hasPendingShellCloseConsent,
+    hasPendingSessionDeleteConsent,
+    promptShellWriteConfirmation,
+    promptCloseShellTabConfirmation,
+    promptDeleteSessionConfirmation,
+  } = useShellConsent({ pushNotification });
 
   /** Route an `aethon.shells.write` request through the share-mode gate.
    *  - private / read       → reject (Rust would too; we early-out)
@@ -1285,114 +759,6 @@ export default function App() {
     return { ok: true };
   }
 
-  /** Push a Allow/Deny notification and resolve with the user's choice
-   *  (or `false` on dismiss / auto-expire). The pending choice is
-   *  keyed off the notification id and stored in
-   *  `shellWriteConsentRef` so the existing notification action route
-   *  can hand back the resolution. */
-  function promptShellWriteConfirmation(input: {
-    tabId: string;
-    text: string;
-    tabLabel: string;
-  }): Promise<boolean> {
-    return new Promise((resolve) => {
-      const id = `shell-write-${crypto.randomUUID().slice(0, 8)}`;
-      shellWriteConsentRef.current.set(id, resolve);
-      // Truncate the preview — agents can ask for long pastes; we want
-      // the notification to stay scannable. The full text still goes
-      // to the PTY on Allow.
-      const preview = input.text.length > 80
-        ? `${input.text.slice(0, 80).replace(/\n/g, "⏎")}…`
-        : input.text.replace(/\n/g, "⏎");
-      pushNotification({
-        id,
-        title: `Agent wants to type in "${input.tabLabel}"`,
-        message: preview,
-        kind: "warning",
-        // Auto-expire ~30 s before the bridge's 5-min ack timeout so a
-        // late Allow click can never invoke `shell_write` after the
-        // caller's promise has already resolved as timed-out. The
-        // notification's `expire` event flows through the existing
-        // dismiss path → `resolveShellWriteConsent(id, false)` →
-        // bridge sees a denied result and the prompt vanishes.
-        durationMs: SHELL_WRITE_PROMPT_TTL_MS,
-        actions: [
-          { label: "Allow", action: `shell-write-allow:${id}` },
-          { label: "Deny", action: `shell-write-deny:${id}` },
-        ],
-      });
-    });
-  }
-
-  /** Pop a Close / Cancel notification before tearing down a running
-   *  shell tab. Resolves true → caller proceeds with `closeTabNow`,
-   *  false → caller bails. Notifications use the existing `actions`
-   *  primitive so styling and dismissal flow through one code path. */
-  function promptCloseShellTabConfirmation(
-    tabLabel: string,
-  ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const id = `shell-close-${crypto.randomUUID().slice(0, 8)}`;
-      shellCloseConsentRef.current.set(id, resolve);
-      pushNotification({
-        id,
-        title: `Close "${tabLabel}"?`,
-        message:
-          "The shell is still running. Closing terminates it (SIGTERM, then SIGKILL after 5s).",
-        kind: "warning",
-        durationMs: null,
-        actions: [
-          { label: "Close", action: `shell-close-allow:${id}` },
-          { label: "Cancel", action: `shell-close-deny:${id}` },
-        ],
-      });
-    });
-  }
-
-  /** Pop a Delete / Cancel notification before removing a saved session.
-   *  Resolves true → caller invokes the Tauri delete_session command and
-   *  refreshes the recent-sessions list; false → no-op. Sticky toast
-   *  (durationMs: null) so a destructive action requires a deliberate
-   *  click — auto-dismiss would let the prompt vanish before the user
-   *  can react. */
-  function promptDeleteSessionConfirmation(
-    label: string,
-  ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const id = `session-delete-${crypto.randomUUID().slice(0, 8)}`;
-      sessionDeleteConsentRef.current.set(id, resolve);
-      pushNotification({
-        id,
-        title: `Delete saved session?`,
-        message: `"${label}" — the on-disk transcript will be removed and cannot be recovered.`,
-        kind: "warning",
-        durationMs: null,
-        actions: [
-          { label: "Delete", action: `session-delete-allow:${id}` },
-          { label: "Cancel", action: `session-delete-deny:${id}` },
-        ],
-      });
-    });
-  }
-
-  function updateActiveTab(mutator: (tab: Tab) => Tab) {
-    setState((prev) => {
-      const activeId = prev.activeTabId as string | undefined;
-      if (!activeId) return prev;
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const idx = tabs.findIndex((t) => t.id === activeId);
-      if (idx < 0) return prev;
-      const next = mutator(tabs[idx]);
-      tabs[idx] = next;
-      const result: Record<string, unknown> = { ...prev, tabs };
-      const nextRec = next as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = nextRec[key as string];
-      }
-      return result;
-    });
-  }
-
   // Recompute the global model picker's `active` flag against `model`.
   // Called whenever the active tab changes (switch / new / close) so the
   // sidebar highlight tracks the active session's chosen model. Returns
@@ -1407,1178 +773,149 @@ export default function App() {
     return { ...(sidebar ?? {}), models: items };
   }
 
-  // Tell the shared xterm panel to clear and replay a tab's terminal
-  // buffer. Used by every code path that changes the active tab — switch,
-  // close, or the bridge's tab_closed forwarding — so the panel never
-  // shows stale content from a tab that's no longer visible.
-  function dispatchTerminalReplay(buffer: string) {
-    // Microtask so xterm's mount-once useEffect has resolved before we
-    // try to write to it (matters on the very first tab switch after
-    // boot when the layout is rendering for the first time).
-    Promise.resolve().then(() => {
-      window.dispatchEvent(
-        new CustomEvent("aethon:terminal-replay", { detail: buffer }),
-      );
-    });
-  }
-
-  // Switch the active tab. Re-mirrors the new tab's view to the root keys
-  // so layout bindings update without needing a per-key refresh. Also
-  // dispatches a replay event so the shared xterm panel clears and
-  // re-writes the new tab's buffered output (the buffer survives switches
-  // even though there's only one xterm instance on screen).
-  function setActiveTab(tabId: string) {
-    let nextBuffer = "";
-    setState((prev) => {
-      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-      const target = tabs.find((t) => t.id === tabId);
-      if (!target) return prev;
-      nextBuffer = target.terminalBuffer ?? "";
-      const result: Record<string, unknown> = { ...prev, activeTabId: tabId };
-      const targetRec = target as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = targetRec[key as string];
-      }
-      result.sidebar = recomputeModelPicker(
-        prev.sidebar as Record<string, unknown> | undefined,
-        target.model,
-      );
-      return result;
-    });
-    dispatchTerminalReplay(nextBuffer);
-  }
-
   // Latest state, kept in a ref so the aethon-debug skill can read it via
   // `window.__AETHON_STATE__()` without going through React's state lifecycle.
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // M6 P1: derive boolean flags from the active tab's kind so layout
-  // payloads can bind `visible: { $ref: "/shellTabActive" }` /
-  // `/agentTabActive` without computing equality at the renderer.
-  // Both flags require /hasTabs — when no tab exists, neither is true
-  // (the empty-state composite owns the canvas area instead).
-  const hasTabsForKind = !!state.hasTabs;
-  const tabKind = (state.kind as string | undefined) ?? "agent";
-  useEffect(() => {
-    const isShell = hasTabsForKind && tabKind === "shell";
-    const isAgent = hasTabsForKind && tabKind !== "shell";
-    setState((prev) => {
-      if (prev.shellTabActive === isShell && prev.agentTabActive === isAgent) {
-        return prev;
-      }
-      return {
-        ...prev,
-        shellTabActive: isShell,
-        agentTabActive: isAgent,
-      };
-    });
-  }, [hasTabsForKind, tabKind]);
+  // ---------------------------------------------------------------------
+  // Extensions hydration: themes, sidebar entries, keybindings, event
+  // routes, layouts, frontend modules, slash commands. Each `hydrate*`
+  // is a wholesale replacement (every delta from the bridge replaces
+  // the prior set). Plus layout activation, layout component summary,
+  // and the lastExtensionStateKeysRef pruning ledger.
+  // ---------------------------------------------------------------------
+  const {
+    layoutCatalogueRef,
+    extensionEventRoutesRef,
+    extensionEventRoutingModeRef,
+    extensionKeybindingsRef,
+    slashCommandsRef,
+    lastExtensionStateKeysRef,
+    hydrateThemes,
+    hydrateExtensions,
+    hydrateEventRoutes,
+    hydrateKeybindings,
+    hydrateExtensionLayouts,
+    hydrateFrontendModules,
+    hydrateSlashCommands,
+    listThemes,
+    activateLayoutById,
+  } = useExtensionsHydration({
+    setState,
+    setLayout,
+    stateRef,
+    registry,
+    appendSystem,
+    layout,
+  });
 
   // ---------------------------------------------------------------------
-  // Tab actions. Each one updates local state AND tells the bridge so the
-  // pi session map stays in sync. Used by both the keyboard shortcuts
-  // below and the tab-strip UI's click handlers.
+  // Tab lifecycle (create / switch / update / close / undo-close), the
+  // sub-tab switcher, the shell-/agent-tab-active mirror effect, and the
+  // terminal replay dispatch all live in useTabs. The hook keeps closed-
+  // tab + auto-restore + pending-tab-open state internally; the orchestration-
+  // level wiring (chat-input dispatch, sidebar history, keyboard
+  // shortcuts) stays here and reaches in via the destructured actions.
   // ---------------------------------------------------------------------
-  // Per-tab promise that resolves once the bridge has accepted tab_open.
-  // sendChat awaits this before invoking send_message so the bridge can't
-  // race-create the tab via the chat path with the wrong model.
-  // Map of tab id → in-flight tab_open Promise. Tracks pending so a
-  // fast first chat on the new tab can await registration before sending.
-  // The Promise's resolved value is unused (Tauri invoke returns
-  // Promise<unknown>); we only care about completion.
-  const pendingTabOpens = useRef(new Map<string, Promise<unknown>>());
+  const {
+    pendingTabOpens,
+    updateTab,
+    updateActiveTab,
+    applyShareModeToTab,
+    dispatchTerminalReplay,
+    setActiveTab,
+    setActiveSubTab,
+    newTab,
+    newShellTab,
+    autoRestoreDiscoveredSessions,
+    reopenLastClosedTab,
+    closeTab,
+  } = useTabs({
+    setState,
+    stateRef,
+    pushNotification,
+    appendSystem,
+    promptCloseShellTabConfirmation,
+    recomputeModelPicker,
+    projectsRef,
+    piDefaultModelRef,
+    clearActiveProject,
+    setActiveProjectById,
+    defaultShareModeRef,
+    shellDefaultCommandRef,
+    shellDefaultArgsRef,
+    shellInheritEnvRef,
+    shellPromptBeforeCloseRef,
+  });
 
-  function newTab(
-    restoreId?: string,
-    restoreLabel?: string,
-    options?: {
-      restoredSession?: boolean;
-      cwd?: string;
-      scrollToMatch?: string;
-    },
-  ) {
-    // restoreId lets the caller open a tab with a specific tabId so the
-    // bridge's SessionManager.continueRecent picks up the persisted
-    // session for that id. Used by the empty-state's "Recent sessions"
-    // list. Omitted for normal new-tab gestures (Cmd+T, +, menu).
-    const id = restoreId ?? crypto.randomUUID();
-    // Search-hit scroll target. Stored in /scrollToMatchByTab/<id> so
-    // ChatHistory picks it up once the bridge replays messages. Null
-    // out the entry after a few seconds so a user who scrolls away
-    // doesn't keep getting yanked back.
-    const scrollToMatch = options?.scrollToMatch;
-    if (scrollToMatch) {
-      setState((prev) => {
-        const cur =
-          (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
-        return {
-          ...prev,
-          scrollToMatchByTab: { ...cur, [id]: scrollToMatch },
-        };
-      });
-      window.setTimeout(() => {
-        setState((prev) => {
-          const cur =
-            (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
-          if (!(id in cur)) return prev;
-          const next = { ...cur };
-          delete next[id];
-          return { ...prev, scrollToMatchByTab: next };
-        });
-      }, 5000);
-    }
-    // Inherit the previously-active tab's model so the picker stays
-    // consistent. Fall back to piDefaultModelRef (populated when `ready`
-    // fires) so tabs opened before ready still get a valid model, preventing
-    // the blank "model ▼" display seen when tab creation races agent startup.
-    const inheritedModel = (
-      (stateRef.current.model as string | undefined) ||
-      piDefaultModelRef.current
-    ).trim();
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      // Use the restoreLabel when restoring a persisted session so the
-      // user sees a meaningful name; otherwise fall back to the
-      // sequential "Tab N" naming the empty-tab path has used.
-      const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      const projectId = projectsRef.current.activeId;
-      const tab: Tab = {
-        ...makeEmptyTab(id, label, projectId),
-        model: inheritedModel,
-      };
-      tabs.push(tab);
-      const result: Record<string, unknown> = {
-        ...prev,
-        tabs,
-        activeTabId: id,
-        // We're back from the empty-state — flip the layout's $ref-driven
-        // visibility flags so the canvas/composer/tab-strip reappear and
-        // the empty-state composite hides itself.
-        empty: false,
-        hasTabs: true,
-      };
-      const tabRec = tab as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = tabRec[key as string];
-      }
-      result.sidebar = recomputeModelPicker(
-        prev.sidebar as Record<string, unknown> | undefined,
-        tab.model,
-      );
-      return result;
-    });
-    // Pass `model` with tab_open so the bridge spins up the pi session
-    // with the inherited model from the start. Without this, a fast
-    // first prompt can land before a follow-up set_model finishes —
-    // the prompt would run on pi's default and lock the tab there
-    // (set_model is rejected while a prompt is in flight).
-    // The new tab starts with an empty terminal buffer — clear the
-    // shared xterm so it doesn't keep showing the previous tab's
-    // scrollback until the next switch / output event.
-    dispatchTerminalReplay("");
-    // The active project (if any) supplies the cwd for the new tab's pi
-    // session. Tabs created before a project is picked use the bridge's
-    // default cwd (the spawn directory). Existing tabs keep their original
-    // cwd — switching project doesn't retroactively rebase live sessions.
-    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
-    const opening = invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "tab_open",
-        tabId: id,
-        ...(inheritedModel ? { model: inheritedModel } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        ...(options?.restoredSession ? { restoreHistory: true } : {}),
-      }),
-    });
-    // Track until done so a fast first chat on the new tab can wait
-    // for the bridge to register the tab + initial model before send.
-    // Otherwise send_message would race tab_open and the bridge would
-    // lazily create the tab session with pi's default model.
-    pendingTabOpens.current.set(id, opening);
-    opening
-      .catch((err) => {
-        appendSystem(`Failed to open tab: ${err}`);
-      })
-      .finally(() => {
-        pendingTabOpens.current.delete(id);
-      });
-  }
+  // Tab/sub-tab navigation (next/jump/move for both agent tabs and
+  // shell sub-tabs) lives in useTabNavigation. The hook computes the
+  // target id and delegates to setActiveTab / setActiveSubTab — the
+  // heavy lifecycle (state mirroring, terminal replay) stays here.
+  const {
+    nextTab,
+    jumpToTab,
+    moveActiveTab,
+    nextShellSubTab,
+    jumpToShellSubTab,
+    moveActiveShellSubTab,
+  } = useTabNavigation({ stateRef, setState, setActiveTab, setActiveSubTab });
 
-  // M6 P1: open a new shell tab — interactive PTY-backed user shell.
-  // Symmetric to newTab() but skips the bridge/agent IPC entirely; the
-  // tab's kind = "shell", no pi session is created, and the Rust shell
-  // command spawns a portable_pty child whose stdout streams via
-  // `shell-output` events (handled below) and whose keystrokes flow
-  // through `shell_input` (driven by the shell-canvas composite).
-  function newShellTab(options?: { command?: string; args?: string[]; cwd?: string }) {
-    const id = crypto.randomUUID();
-    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
-    const seedShareMode = defaultShareModeRef.current;
-    // Resolve command + args precedence: explicit options.* always wins;
-    // otherwise fall through to `[shell] default_command` / `default_args`
-    // (refs hydrated from getConfig). Empty strings / empty arrays mean
-    // "use the platform default" — Rust falls back to $SHELL when command
-    // is omitted from the IPC payload.
-    const resolvedCommand =
-      options?.command ?? shellDefaultCommandRef.current ?? undefined;
-    const resolvedArgs =
-      options?.args ??
-      (shellDefaultArgsRef.current.length > 0
-        ? shellDefaultArgsRef.current
-        : undefined);
-    const inheritEnv = shellInheritEnvRef.current;
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
-      const projectId = projectsRef.current.activeId;
-      const tab: Tab = {
-        ...makeEmptyTab(id, label, projectId, "shell"),
-        shell: {
-          cwd: inheritedCwd ?? "",
-          command: resolvedCommand ?? "",
-          args: resolvedArgs ?? [],
-          shareMode: seedShareMode,
-          shellState: "starting",
-        },
-      };
-      tabs.push(tab);
-      // M6 restructure: shells live in the bottom panel as sub-tabs,
-      // not the top tab strip. Don't promote to /activeTabId — that
-      // stays on the user's agent tab. Instead, open the panel and
-      // make this shell the active sub-tab so the user sees it.
-      const panel =
-        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
-      const term =
-        (prev.terminal as { open?: boolean } | undefined) ?? {};
-      return {
-        ...prev,
-        tabs,
-        terminalPanel: { ...panel, activeSubId: id },
-        terminal: { ...term, open: true },
-        // hasTabs / empty unchanged — those track the AGENT tab strip,
-        // and shells don't affect that surface.
-      };
-    });
-    invoke("shell_open", {
-      args: {
-        tabId: id,
-        ...(resolvedCommand ? { command: resolvedCommand } : {}),
-        ...(resolvedArgs ? { args: resolvedArgs } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        // Seed the share mode atomically inside shell_open so the
-        // privacy floor pins at total_appended=0 — every byte from the
-        // first prompt forward is visible to the agent when the user
-        // configured a non-private default. Applying the mode post-open
-        // would race the login banner and pin it below the floor.
-        ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
-        // Forward `[shell] inherit_env`. Default true on Rust side too,
-        // so only send when the user opted out — keeps the IPC payload
-        // tight and reads identically across config presence.
-        ...(inheritEnv === false ? { inheritEnv: false } : {}),
-      },
-    })
-      .then(() => {
-        updateTab(id, (t) => ({
-          ...t,
-          shell: t.shell ? { ...t.shell, shellState: "running" } : t.shell,
-        }));
-      })
-      .catch((err: unknown) => {
-        appendSystem(`Failed to open shell tab: ${String(err)}`);
-        updateTab(id, (t) => ({
-          ...t,
-          shell: t.shell
-            ? { ...t.shell, shellState: "exited", exitCode: -1 }
-            : t.shell,
-        }));
-      });
-  }
+  // Global keyboard shortcuts. Lives in useKeyboardShortcuts which
+  // binds a document-level keydown listener with useCapture so we run
+  // before xterm sees the keystroke.
+  useKeyboardShortcuts({
+    stateRef,
+    extensionKeybindingsRef,
+    shortcutsNewTabKindRef,
+    toggleTerminalAndFocus,
+    toggleSidebar,
+    clearChat,
+    stopPrompt,
+    newTab,
+    newShellTab,
+    nextTab,
+    nextShellSubTab,
+    moveActiveTab,
+    moveActiveShellSubTab,
+    jumpToTab,
+    jumpToShellSubTab,
+    reopenLastClosedTab,
+    closeTab,
+    toggleSessionSearch,
+    openPalette,
+    closePalette,
+    adjustZoom,
+    resetZoom,
+    toggleFocusComposerTerminal,
+    toggleSettings,
+    focusActiveContextInput,
+    exportActiveChatMarkdown,
+    pushNotification,
+  });
 
-  function autoRestoreDiscoveredSessions(
-    discovered: DiscoveredSession[],
-    knownIds: Set<string>,
-  ) {
-    if (discovered.length === 0) return;
-    getConfig()
-      .then((config) => {
-        if (!config.ui.restoreTabs) return;
-        const liveIds = new Set([
-          ...knownIds,
-          ...(((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id)),
-        ]);
-        const toRestore = discovered
-          .filter((d) => !liveIds.has(d.tabId))
-          .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
-          .slice(0, 8);
-        if (toRestore.length === 0) return;
-        // Open oldest first so the most recent session ends up active.
-        for (const session of [...toRestore].reverse()) {
-          autoRestoredSessionIdsRef.current.add(session.tabId);
-          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`, {
-            restoredSession: true,
-            ...(session.cwd ? { cwd: session.cwd } : {}),
-          });
-        }
-        pushNotification({
-          id: "ae-auto-restore-tabs",
-          title: `Restored ${toRestore.length} session${toRestore.length === 1 ? "" : "s"}`,
-          kind: "success",
-          durationMs: 3000,
-        });
-      })
-      .catch(() => {
-        /* config read already logs; manual restore remains available */
-      });
-  }
-
-  function nextTab(direction: 1 | -1) {
-    const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-      .filter((t) => t.kind !== "shell");
-    if (tabs.length <= 1) return;
-    const activeId = stateRef.current.activeTabId as string | undefined;
-    const idx = tabs.findIndex((t) => t.id === activeId);
-    if (idx < 0) {
-      // Active tab is no longer an agent (or not in /tabs). Jump to
-      // the first agent tab in the requested direction.
-      setActiveTab(direction > 0 ? tabs[0].id : tabs[tabs.length - 1].id);
-      return;
-    }
-    const nextIdx = (idx + direction + tabs.length) % tabs.length;
-    setActiveTab(tabs[nextIdx].id);
-  }
-
-  /** True when keyboard focus is anywhere inside the bottom terminal
-   *  panel (the agent-bash xterm or any shell sub-tab). Drives the
-   *  focus-aware Cmd+T routing: focus in the panel → new shell sub-tab,
-   *  otherwise → new agent tab. Falls back to false outside Tauri
-   *  (no DOM) so unit tests don't have to mock `document`. */
-  function isFocusInTerminalPanel(): boolean {
-    if (typeof document === "undefined") return false;
-    const focused = document.activeElement;
-    if (!focused) return false;
-    const panel = document.querySelector(".ae-terminal-panel");
-    return !!panel?.contains(focused);
-  }
-
-  /** Switch which sub-tab is active in the bottom terminal panel
-   *  (M6 restructure). Sub-tab id is either the special string
-   *  "agent-bash" (the always-present read-only view) or a shell tab
-   *  id from `/tabs`. Auto-opens the panel if it was hidden so the
-   *  user can see the result of their click.
-   *
-   *  When switching BACK to agent-bash, dispatch a replay of the
-   *  active agent tab's `terminalBuffer` so the freshly-mounted
-   *  Terminal composite re-renders the previously-buffered output.
-   *  Without this, sub-tab switching loses everything the agent
-   *  printed while a shell sub-tab was active (codex P2 finding on
-   *  PR #20).
-   */
-  function setActiveSubTab(subId: string) {
-    setState((prev) => {
-      const panel =
-        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
-      const term = (prev.terminal as { open?: boolean } | undefined) ?? {};
-      if (panel.activeSubId === subId && term.open === true) {
-        return prev;
-      }
-      return {
-        ...prev,
-        terminalPanel: { ...panel, activeSubId: subId },
-        terminal: { ...term, open: true },
-      };
-    });
-    if (subId === "agent-bash") {
-      // Replay the active agent tab's terminal buffer on next paint so
-      // the Terminal composite (which just (re)mounted via the sub-tab
-      // selection) sees its content.
-      requestAnimationFrame(() => {
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const activeId = stateRef.current.activeTabId as string | undefined;
-        const active = activeId ? tabs.find((t) => t.id === activeId) : undefined;
-        const buffer = active?.terminalBuffer ?? "";
-        dispatchTerminalReplay(buffer);
-      });
-    }
-  }
-
-  /** Jump to tab at zero-based index, clamped to the live tab list.
-   *  No-op when out of range so a Cmd+5 with only 3 tabs is silent
-   *  rather than throwing. Used by Cmd/Ctrl+1..9 keybindings (browser
-   *  + iTerm convention). Filters to agent tabs only — shell tabs live
-   *  in the bottom panel and have their own selection. */
-  function jumpToTab(idx: number) {
-    const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-      .filter((t) => t.kind !== "shell");
-    if (tabs.length === 0) return;
-    if (idx < 0 || idx >= tabs.length) return;
-    setActiveTab(tabs[idx].id);
-  }
-
-  /** Sub-tab variant of jumpToTab: idx 0 selects agent-bash, idx 1+
-   *  selects the corresponding shell sub-tab in `/tabs` (filtered to
-   *  kind === "shell"). Out-of-range no-ops so a Cmd+5 with two shells
-   *  open is silent. */
-  function jumpToShellSubTab(idx: number) {
-    if (idx === 0) {
-      setActiveSubTab("agent-bash");
-      return;
-    }
-    const shellTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-      .filter((t) => t.kind === "shell");
-    const shellIdx = idx - 1;
-    if (shellIdx < 0 || shellIdx >= shellTabs.length) return;
-    setActiveSubTab(shellTabs[shellIdx].id);
-  }
-
-  /** Cycle the active sub-tab in the bottom terminal panel. Order is
-   *  agent-bash first, then each shell sub-tab in `/tabs` order; wraps
-   *  at the ends. Used by Cmd+]/[ when focus is in the panel so the
-   *  user navigates the surface they're looking at. */
-  function nextShellSubTab(direction: 1 | -1) {
-    const subIds = ["agent-bash" as string].concat(
-      ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-        .filter((t) => t.kind === "shell")
-        .map((t) => t.id),
-    );
-    if (subIds.length <= 1) return;
-    const cur = (stateRef.current.terminalPanel as
-      | { activeSubId?: string }
-      | undefined)?.activeSubId ?? "agent-bash";
-    const idx = Math.max(0, subIds.indexOf(cur));
-    const nextIdx = (idx + direction + subIds.length) % subIds.length;
-    setActiveSubTab(subIds[nextIdx]);
-  }
-
-  /** Reorder the active *shell sub-tab* one slot left (-1) or right
-   *  (+1) within the bottom panel. Swaps positions with the next/prev
-   *  shell tab in `/tabs` so non-shell entries stay in place — agents
-   *  in the top strip don't shuffle when the user reorders shells.
-   *  agent-bash is pinned first; trying to move it is a no-op. */
-  function moveActiveShellSubTab(direction: 1 | -1) {
-    const activeSub = (stateRef.current.terminalPanel as
-      | { activeSubId?: string }
-      | undefined)?.activeSubId;
-    if (!activeSub || activeSub === "agent-bash") return;
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const shellPositions = tabs
-        .map((t, i) => (t.kind === "shell" ? i : -1))
-        .filter((i) => i >= 0);
-      if (shellPositions.length <= 1) return prev;
-      const idx = tabs.findIndex((t) => t.id === activeSub);
-      if (idx < 0) return prev;
-      const subPos = shellPositions.indexOf(idx);
-      if (subPos < 0) return prev;
-      const swapSubPos =
-        (subPos + direction + shellPositions.length) % shellPositions.length;
-      const swapIdx = shellPositions[swapSubPos];
-      const tmp = tabs[idx];
-      tabs[idx] = tabs[swapIdx];
-      tabs[swapIdx] = tmp;
-      return { ...prev, tabs };
-    });
-  }
-
-  /** Move the active tab one slot left (-1) or right (+1) within the
-   *  current project's bucket. Wraps at the ends so a "move right" on
-   *  the last tab puts it first — matches Chrome's Cmd+Shift+]/[. */
-  function moveActiveTab(direction: 1 | -1) {
-    const activeId = stateRef.current.activeTabId as string | undefined;
-    if (!activeId) return;
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      if (tabs.length <= 1) return prev;
-      const idx = tabs.findIndex((t) => t.id === activeId);
-      if (idx < 0) return prev;
-      const nextIdx = (idx + direction + tabs.length) % tabs.length;
-      const [moved] = tabs.splice(idx, 1);
-      tabs.splice(nextIdx, 0, moved);
-      return { ...prev, tabs };
-    });
-  }
-
-  /** In-memory stack of recently-closed tab metadata (most recent at end).
-   *  Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to
-   *  bound memory. Each entry preserves enough info to spawn an
-   *  equivalent tab via `reopenLastClosedTab` (Cmd/Ctrl+Opt+T). For
-   *  agent tabs the original tabId is preserved so the bridge's
-   *  SessionManager.continueRecent picks up the persisted JSONL
-   *  session — the user sees their previous conversation, not a
-   *  fresh chat. */
-  interface ClosedTabEntry {
-    /** Original tabId — used as restoreId on reopen so the bridge
-     *  resumes the session via SessionManager.continueRecent. */
-    id: string;
-    kind: "agent" | "shell";
-    label: string;
-    projectId: string | null;
-    /** Shell tabs only — passed back to newShellTab. */
-    cwd?: string;
-    command?: string;
-    args?: string[];
-  }
-  const CLOSED_TAB_STACK_MAX = 10;
-  const closedTabsRef = useRef<ClosedTabEntry[]>([]);
-
-  function pushClosedTab(tab: Tab) {
-    const entry: ClosedTabEntry = {
-      id: tab.id,
-      kind: tab.kind,
-      label: tab.label,
-      projectId: tab.projectId,
-      ...(tab.kind === "shell" && tab.shell
-        ? {
-            cwd: tab.shell.cwd,
-            command: tab.shell.command,
-            args: tab.shell.args,
-          }
-        : {}),
-    };
-    closedTabsRef.current.push(entry);
-    if (closedTabsRef.current.length > CLOSED_TAB_STACK_MAX) {
-      closedTabsRef.current.splice(
-        0,
-        closedTabsRef.current.length - CLOSED_TAB_STACK_MAX,
-      );
-    }
-  }
-
-  /** Reopen the most-recently-closed tab.
-   *
-   *  Agent tabs reopen with the *original* tabId — that's the cue for
-   *  the bridge's SessionManager.continueRecent to pick up the
-   *  persisted JSONL session under `~/.aethon/sessions/<tabId>/`.
-   *  The frontend's session-history replay path then renders the
-   *  previous transcript. Result: the user sees their conversation
-   *  exactly as they left it.
-   *
-   *  Shell tabs spawn a fresh PTY at the original cwd — scrollback
-   *  isn't persisted so a "fresh shell at the right place" is the
-   *  closest we can get. No-op on empty stack. */
-  function reopenLastClosedTab() {
-    const entry = closedTabsRef.current.pop();
-    if (!entry) return;
-    // If the closed tab belongs to a different project bucket than
-    // the active one, switch to that bucket first. This fixes two
-    // symptoms codex flagged on the previous fix attempt:
-    //   1. The new tab now actually lands in its original project's
-    //      tab list (was visually appearing under the active project
-    //      but tagged with the original projectId — a tear that
-    //      flipped on next switch).
-    //   2. cwd resolution flows through the live active-project
-    //      lookup, so unscoped tabs (projectId === null) reopened
-    //      while a project is active correctly fall back to the
-    //      bridge's default cwd instead of borrowing the active one.
-    const activeId = projectsRef.current.activeId;
-    if (entry.projectId !== activeId) {
-      if (entry.projectId === null) {
-        clearActiveProject();
-      } else {
-        setActiveProjectById(entry.projectId);
-      }
-    }
-    if (entry.kind === "shell") {
-      newShellTab({
-        ...(entry.command ? { command: entry.command } : {}),
-        ...(entry.args ? { args: entry.args } : {}),
-        ...(entry.cwd ? { cwd: entry.cwd } : {}),
-      });
-    } else {
-      newTab(entry.id, entry.label, { restoredSession: true });
-    }
-  }
-
-  /** Close a tab, prompting for confirmation when closing a running
-   *  shell tab and `[shell] prompt_before_close` is true. The user can
-   *  disable the prompt entirely via Settings → Shell. Foreground-job
-   *  detection (vim/htop/ssh vs. just the shell) is tracked separately
-   *  and not yet wired — for v1 the prompt fires for any running shell. */
-  function closeTab(tabId: string) {
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    const closing = tabs.find((t) => t.id === tabId);
-    if (
-      closing?.kind === "shell" &&
-      closing.shell?.shellState === "running" &&
-      shellPromptBeforeCloseRef.current
-    ) {
-      void promptCloseShellTabConfirmation(closing.label).then((allowed) => {
-        if (!allowed) return;
-        closeTabNow(tabId);
-      });
-      return;
-    }
-    closeTabNow(tabId);
-  }
-
-  function closeTabNow(tabId: string) {
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    if (tabs.length === 0) return; // already empty — nothing to close
-    // Capture the kind before setState removes the tab, so we know
-    // whether to also tear down the PTY in the Rust shell registry.
-    const closing = tabs.find((t) => t.id === tabId);
-    const closedKind = closing?.kind;
-    // Push to the reopen stack so Cmd/Ctrl+Opt+T can resurrect it.
-    if (closing) pushClosedTab(closing);
-    let nextBuffer = "";
-    let switched = false;
-    let becameEmpty = false;
-    setState((prev) => {
-      const list = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
-      let activeTabId = prev.activeTabId as string | undefined;
-      // Choose a new active tab. When list is empty, we drop into the
-      // empty-state composite (no active tab; layout swaps via /empty).
-      if (activeTabId === tabId) {
-        activeTabId = list.length > 0 ? list[list.length - 1].id : undefined;
-        switched = true;
-      }
-      const result: Record<string, unknown> = { ...prev, tabs: list, activeTabId };
-      if (list.length === 0) {
-        becameEmpty = true;
-        // Clear mirrored keys so stale per-tab state doesn't bleed
-        // through the empty-state view (the composer's value, the
-        // canvas, etc. shouldn't render any prior tab's data).
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = undefined;
-        }
-        result.empty = true;
-        result.hasTabs = false;
-      } else {
-        const target = list.find((t) => t.id === activeTabId)!;
-        nextBuffer = target.terminalBuffer ?? "";
-        const targetRec = target as unknown as Record<string, unknown>;
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = targetRec[key as string];
-        }
-        result.sidebar = recomputeModelPicker(
-          prev.sidebar as Record<string, unknown> | undefined,
-          target.model,
-        );
-        result.empty = false;
-        result.hasTabs = true;
-      }
-      return result;
-    });
-    // If the closed tab was the active one, the visible terminal was
-    // showing its buffer — replay the new active tab's buffer (or empty
-    // string when no tabs remain) so the shared xterm doesn't keep
-    // displaying the dead tab's output.
-    if (switched) dispatchTerminalReplay(nextBuffer);
-    if (becameEmpty) {
-      // Tell the bridge to tear down the session too. tab_close on an
-      // empty Map is a no-op on the bridge side; gracefully handled.
-      invoke("agent_command", {
-        payload: JSON.stringify({ type: "tab_close", tabId }),
-      }).catch(() => {
-        /* ignore — UI already closed */
-      });
-    } else {
-      invoke("agent_command", {
-        payload: JSON.stringify({ type: "tab_close", tabId }),
-      }).catch(() => {
-        /* ignore — UI already closed */
-      });
-    }
-    // M6 P1: shell tabs own a PTY in the Rust shell registry. Close
-    // it too so the child process is reaped and the reader thread
-    // joins (no zombies on tab close).
-    if (closedKind === "shell") {
-      invoke("shell_close", { tabId }).catch(() => {
-        /* idempotent — already torn down by natural exit */
-      });
-    }
-  }
-
-  // Global keyboard shortcuts. Bound on the document so they fire regardless
-  // of focus; preventDefault + stopPropagation when handled so xterm
-  // doesn't also receive the keystroke as input data (otherwise pressing
-  // Cmd+` while focused in the terminal both toggles the panel AND types
-  // a backtick into the shell).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Skip auto-repeat (held key) so a brief hold doesn't double-fire.
-      if (e.repeat) return;
-      // Extension-registered keybindings are checked before built-ins so
-      // they can intentionally replace default chrome actions. Dispatch
-      // through the existing a2ui_event route as
-      // {componentType: "keybinding", componentId: "keybinding__tpl__<combo>",
-      //  data: {action, combo}} so a paired aethon.onEvent matcher fires.
-      const combo = canonicalCombo(e);
-      if (combo) {
-        const binding = extensionKeybindingsRef.current.get(combo);
-        if (binding) {
-          e.preventDefault();
-          e.stopPropagation();
-          invoke("dispatch_a2ui_event", {
-            event: JSON.stringify({
-              componentId: `keybinding__tpl__${combo}`,
-              componentType: "keybinding",
-              templateRootType: "keybinding",
-              eventType: "invoke",
-              data: { combo, action: binding.action },
-            }),
-            tabId: stateRef.current.activeTabId,
-          }).catch(() => {
-            /* ignore — bridge gone or webview reload mid-flight */
-          });
-          return;
-        }
-      }
-      const mod = e.metaKey || e.ctrlKey;
-      // Cmd+` toggles the bottom terminal panel AND moves focus there
-      // when opening (so the user can type immediately). Mirrors
-      // VS Code's Ctrl+` behavior. When closing, return focus to the
-      // chat composer so typing continues seamlessly.
-      if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleTerminalAndFocus();
-        return;
-      }
-      // Cmd+B toggles the sidebar. Mirrors the standard editor
-      // shortcut for showing/hiding sidebars.
-      if (e.key.toLowerCase() === "b" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSidebar();
-        return;
-      }
-      // Cmd+K → clear active chat. This is advertised in the Workstation
-      // panels section and mirrors the View > Clear Chat menu item.
-      if (e.key.toLowerCase() === "k" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        clearChat();
-        return;
-      }
-      // Cmd+. → stop the current prompt. Mirrors the native menu
-      // accelerator and the busy composer Stop button.
-      if (e.key === "." && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        void stopPrompt();
-        return;
-      }
-      // Cmd+Shift+T → explicit new shell sub-tab in the bottom panel
-      // (M6 restructure). Auto-opens the panel and makes the new shell
-      // the active sub-tab. Useful when the user wants a shell without
-      // having to focus the bottom panel first.
-      if (e.key.toLowerCase() === "t" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        newShellTab();
-        return;
-      }
-      // Cmd+T — focus-aware (M6 restructure):
-      //   - focus inside the bottom terminal panel → new shell sub-tab
-      //   - focus elsewhere → new agent tab (the pre-P1 default)
-      // Matches the user's mental model: "new tab" of whatever surface
-      // I'm currently using. Browsers, VS Code, and iTerm all key off
-      // the focused surface for "new"-style shortcuts.
-      if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Focus inside the bottom terminal panel always opens a shell —
-        // Cmd+T is "new tab of whatever surface I'm using". When focus
-        // is elsewhere, `[shortcuts] new_tab_kind` lets the user opt
-        // into "always open shell" by setting it to "shell"; default
-        // ("agent") preserves the focus-aware behaviour.
-        if (
-          isFocusInTerminalPanel() ||
-          shortcutsNewTabKindRef.current === "shell"
-        ) {
-          newShellTab();
-        } else {
-          newTab();
-        }
-        return;
-      }
-      // Cmd+] → next tab; Cmd+[ → previous. When focus is inside the
-      // bottom terminal panel, the same combo cycles between sub-tabs
-      // (agent-bash + each shell) so the user navigates the surface
-      // they're looking at. Outside the panel → top agent tab strip.
-      if (e.key === "]" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          nextShellSubTab(1);
-        } else {
-          nextTab(1);
-        }
-        return;
-      }
-      if (e.key === "[" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          nextShellSubTab(-1);
-        } else {
-          nextTab(-1);
-        }
-        return;
-      }
-      // Cmd+Shift+] / Cmd+Shift+[ → move active tab right / left.
-      // Matches Chrome/Firefox tab-reorder shortcut. Wraps at the ends.
-      // When focus is inside the bottom terminal panel, the same combo
-      // reorders shell sub-tabs instead so the user's mental model
-      // ("act on the surface I'm looking at") holds. agent-bash is
-      // pinned first and cannot be reordered.
-      if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          moveActiveShellSubTab(1);
-        } else {
-          moveActiveTab(1);
-        }
-        return;
-      }
-      if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isFocusInTerminalPanel()) {
-          moveActiveShellSubTab(-1);
-        } else {
-          moveActiveTab(-1);
-        }
-        return;
-      }
-      // Cmd+1..8 → jump to tab N (1-indexed); Cmd+9 → jump to last.
-      // Universal across browsers (Chrome / Firefox / Safari) + iTerm2 /
-      // Windows Terminal. The first 8 use direct indexing so layouts
-      // with > 9 tabs still get keyboard access for the first few; the
-      // 9th key is the "last tab" affordance.
-      // Cmd+1..8 → jump to agent tab N; Cmd+9 → jump to last agent
-      // tab. Filter shells before counting so the indices line up with
-      // what the user actually sees in the top strip (codex P2 finding
-      // on PR #20: with [agent, agent, shell] the previous code passed
-      // index 2 to jumpToTab and no-op'd because the filtered array
-      // only has 2 items).
-      if (
-        mod &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key >= "1" &&
-        e.key <= "9"
-      ) {
-        // Focus inside the bottom terminal panel → jump between
-        // sub-tabs (idx 0 = agent-bash, 1..N = shell sub-tabs). 9 is
-        // "last sub-tab". Outside the panel → jump between agent tabs
-        // in the top strip.
-        if (isFocusInTerminalPanel()) {
-          const shellSubTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-            .filter((t) => t.kind === "shell");
-          // total = agent-bash + shellSubTabs.length
-          const total = 1 + shellSubTabs.length;
-          if (total === 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.key === "9") {
-            jumpToShellSubTab(total - 1);
-          } else {
-            jumpToShellSubTab(parseInt(e.key, 10) - 1);
-          }
-          return;
-        }
-        const agentTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-          .filter((t) => t.kind !== "shell");
-        if (agentTabs.length === 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.key === "9") {
-          jumpToTab(agentTabs.length - 1);
-        } else {
-          jumpToTab(parseInt(e.key, 10) - 1);
-        }
-        return;
-      }
-      // Cmd+Opt+T → reopen most-recently-closed tab. Matches iTerm2's
-      // restore-closed-window shortcut. macOS lets Option mutate the
-      // printable-key value (Opt+T arrives as `e.key === "†"`), so
-      // match the *physical* key via `e.code === "KeyT"` whenever Alt
-      // is part of the shortcut. Without this the advertised combo
-      // silently no-ops on Mac (codex P2 review of PR #17).
-      if (
-        mod &&
-        e.altKey &&
-        !e.shiftKey &&
-        (e.code === "KeyT" || e.key.toLowerCase() === "t")
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        reopenLastClosedTab();
-        return;
-      }
-      // Cmd+W → close active tab (no-op on the last/default tab).
-      if (e.key.toLowerCase() === "w" && mod && !e.shiftKey && !e.altKey) {
-        const activeId = stateRef.current.activeTabId as string | undefined;
-        if (!activeId) return;
-        e.preventDefault();
-        e.stopPropagation();
-        closeTab(activeId);
-        return;
-      }
-      // Cmd+Shift+F → cross-session search overlay (M6 P6). Searches
-      // every persisted JSONL session under ~/.aethon/sessions/<tabId>/
-      // via the Tauri search_sessions command. Click a result → restore
-      // the originating tab.
-      if (e.key.toLowerCase() === "f" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSessionSearch();
-        return;
-      }
-      // Cmd+Shift+P → command palette in "commands" mode (run an action,
-      // slash command, layout, theme, …). Checked before plain Cmd+P so
-      // shift takes precedence — otherwise the lowercase key match would
-      // route both to the switcher.
-      if (e.key.toLowerCase() === "p" && mod && e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        openPalette("commands");
-        return;
-      }
-      // Cmd+P → command palette in "switcher" mode (jump to a tab,
-      // session, project, …). Mirrors VS Code's quick-open intuition
-      // but extended with the rest of Aethon's surfaces.
-      if (e.key.toLowerCase() === "p" && mod && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        openPalette("switcher");
-        return;
-      }
-      // Esc closes the palette when it's open. Stays a no-op otherwise
-      // so component-level Esc (chat-input cancel, etc.) keeps working.
-      if (e.key === "Escape") {
-        const palette = stateRef.current.palette as
-          | { open?: boolean }
-          | undefined;
-        if (palette?.open) {
-          e.preventDefault();
-          e.stopPropagation();
-          closePalette();
-          return;
-        }
-      }
-      // Cmd+= / Cmd++ zoom in. macOS reports `=` for the unshifted key
-      // and `+` for shift+=. Match both so users with either layout get
-      // the same behavior (Chrome, VS Code, Slack all do this). Cmd+-
-      // zooms out; Cmd+0 resets. Step is 10% per press.
-      if (mod && !e.altKey && (e.key === "=" || e.key === "+")) {
-        e.preventDefault();
-        e.stopPropagation();
-        adjustZoom(0.1);
-        return;
-      }
-      if (mod && !e.altKey && !e.shiftKey && e.key === "-") {
-        e.preventDefault();
-        e.stopPropagation();
-        adjustZoom(-0.1);
-        return;
-      }
-      // Cmd+Shift+0 → reset zoom. Moved off Cmd+0 so that combo can do
-      // composer ↔ terminal focus toggle (more discoverable than reset
-      // zoom, which is rare).
-      if (mod && !e.altKey && e.shiftKey && e.key === "0") {
-        e.preventDefault();
-        e.stopPropagation();
-        resetZoom();
-        return;
-      }
-      // Cmd+0 → toggle focus between the chat composer and the bottom
-      // terminal panel. Mirrors VS Code's Cmd+J / Cmd+1 split-pane
-      // focus-toggle pattern but bound to a more discoverable key. If
-      // the panel is closed, opens it first.
-      if (mod && !e.altKey && !e.shiftKey && e.key === "0") {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleFocusComposerTerminal();
-        return;
-      }
-      // Cmd+, → open Settings panel (M6 P3). macOS-native Preferences
-      // shortcut. Toggles closed if already open.
-      if (mod && !e.altKey && !e.shiftKey && e.key === ",") {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSettings();
-        return;
-      }
-      // Cmd+L → focus the active tab's primary input. Per-context jump
-      // (vs. Cmd+0's toggle): agent tab → composer, shell tab → that
-      // shell's xterm. When the active tab is an agent but focus is
-      // currently in the bottom panel, also opens the panel toggle so
-      // the user is never confused about where the cursor went.
-      if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        e.stopPropagation();
-        focusActiveContextInput();
-        return;
-      }
-      // Cmd+Ctrl+F (mac) / F11 (others) → toggle window fullscreen.
-      // The native menu also exposes the system fullscreen item; both
-      // funnel through the Rust `toggle_fullscreen` command so behaviour
-      // stays in sync. F11 is recognised by `e.key === "F11"`; on mac
-      // Cmd+Ctrl+F is the system convention.
-      if (e.key === "F11") {
-        e.preventDefault();
-        e.stopPropagation();
-        invoke("toggle_fullscreen").catch((err: unknown) => {
-          console.warn("toggle_fullscreen failed:", err);
-        });
-        return;
-      }
-      if (
-        mod &&
-        e.ctrlKey &&
-        e.metaKey &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === "f"
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        invoke("toggle_fullscreen").catch((err: unknown) => {
-          console.warn("toggle_fullscreen failed:", err);
-        });
-        return;
-      }
-      // Cmd+Shift+S → export active agent chat as Markdown to
-      // ~/Downloads/. No-op on shell tabs (chat history doesn't apply).
-      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        e.stopPropagation();
-        void exportActiveChatMarkdown();
-        return;
-      }
-      // F12 → toggle WebKit DevTools. Debug builds only — release
-      // builds get a "not available" toast from the Rust command. The
-      // function key is unmodified so it doesn't collide with text
-      // input; we only swallow it when the user is at the document
-      // level rather than typing into a contenteditable.
-      if (e.key === "F12") {
-        e.preventDefault();
-        e.stopPropagation();
-        invoke("toggle_devtools").catch((err: unknown) => {
-          // Surface the release-build "not available" path inline so
-          // the user knows why nothing happened.
-          pushNotification({
-            id: "ae-devtools-unavailable",
-            title: "DevTools unavailable",
-            message: err instanceof Error ? err.message : String(err),
-            kind: "info",
-            durationMs: 2000,
-          });
-        });
-        return;
-      }
-    };
-    // useCapture=true so we run BEFORE xterm's keydown listener;
-    // stopPropagation then keeps the keystroke out of the shell.
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const api = {
-      setLayout,
-      resetLayout: () => setLayout(BOOT_LAYOUT),
-      getLayout: () => layout,
-      registerSkill: (skill: A2UISkill) => {
-        registry.register(skill);
-        if (skill.layout) setLayout(skill.layout);
-      },
-      listSkills: () => registry.list().map((s) => s.name),
-      newTab,
-      closeTab,
-      switchTab: setActiveTab,
-      listTabs: () => ((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => ({
-        id: t.id,
-        label: t.label,
-        active: t.id === stateRef.current.activeTabId,
-      })),
-      // Layout catalogue. Lets the user / agent swap between named
-      // layouts (workstation only, today) without having to ship a full
-      // setLayout payload. Extensions append more via registerLayout.
-      // Activation goes through setLayout so all the existing
-      // state-merge / layout-bound-state semantics apply.
-      listLayouts: (): LayoutCatalogueEntry[] =>
-        layoutCatalogueRef.current.slice(),
-      activateLayout: activateLayoutById,
-      registerLayout: (entry: LayoutCatalogueEntry): boolean => {
-        if (!entry || typeof entry.id !== "string" || !entry.payload) return false;
-        const idx = layoutCatalogueRef.current.findIndex((l) => l.id === entry.id);
-        if (idx >= 0) {
-          layoutCatalogueRef.current[idx] = entry;
-        } else {
-          layoutCatalogueRef.current.push(entry);
-        }
-        // Mirror into state so /layout's argSource picker re-resolves.
-        setState((prev) => ({
-          ...prev,
-          layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
-            id: l.id,
-            label: l.name,
-            description: l.description,
-          })),
-        }));
-        return true;
-      },
-      // Layout-slot catalogue. The contract (canonical slot names + which
-      // composite typically fills each) is `src/skills/default-layout/slots.json`.
-      // A composite uses `area: "<slot>"` to declare placement; an alternative
-      // layout that wants to host the standard composites needs to either
-      // call its grid areas by these names, or provide a `slotMap` prop on
-      // its root <layout>.
-      layoutSlots,
-      inspectLayoutSlotCoverage: (payload?: A2UIPayload): SlotCoverageReport =>
-        inspectLayoutSlotCoverage(payload ?? layout),
-      // Projects — directories the agent works in. `pickProject` opens a
-      // native folder picker; the resolved path is persisted, made
-      // active, and announced to the bridge as the new tab cwd. Returns
-      // null on cancel. `openProject(path)` skips the picker for paths
-      // that are already known (e.g. the empty-state "Recent projects"
-      // list). `setActiveProject(id)` switches the active project for
-      // future tabs without opening one. `clearProject()` reverts to
-      // bridge-default cwd.
-      pickProject: openProjectFromPicker,
-      openProject: (path: string, label?: string) => openProjectByPath(path, label),
-      setActiveProject: setActiveProjectById,
-      clearProject: clearActiveProject,
-      removeProject: removeProjectById,
-      listProjects: () => projectsRef.current.projects.slice(),
-      activeProject: () => activeProject(projectsRef.current),
-      // Extension surface for the `code` primitive's syntax highlighter.
-      // Mirrors the bridge-side aethon.registerHighlightGrammar so a
-      // frontend skill module (loaded via skill `frontendEntry`) can
-      // teach Shiki a new language without an IPC round-trip. Bridge
-      // extensions go through `register_highlight_grammar` IPC instead.
-      registerHighlightGrammar: (lang: string, grammar: unknown): boolean => {
-        if (typeof lang !== "string" || lang.trim().length === 0) return false;
-        if (!grammar || typeof grammar !== "object") return false;
-        registerHighlightGrammar(lang.trim(), grammar);
-        return true;
-      },
-    };
-    (window as unknown as { aethon: typeof api }).aethon = api;
-
-    if (import.meta.env.DEV) {
-      const win = window as unknown as {
-        __AETHON_STATE__: () => Record<string, unknown>;
-        __AETHON_REGISTRY__: SkillRegistry;
-        __AETHON_SET_STATE__: (next: Record<string, unknown>) => void;
-      };
-      win.__AETHON_STATE__ = () => stateRef.current;
-      win.__AETHON_REGISTRY__ = registry;
-      win.__AETHON_SET_STATE__ = setState;
-    }
-    // The api closures intentionally read live state via stateRef /
-    // setState callbacks, so a stale reference inside `api` doesn't
-    // produce stale data. Adding the function deps would re-build this
-    // effect every render and churn `window.aethon` for no behavioral
-    // gain.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, registry]);
+  // window.aethon runtime API + dev-only __AETHON_* debug hooks.
+  // Lives in src/runtime/windowApi.ts; mounts via useWindowApi.
+  useWindowApi({
+    layout,
+    bootLayout: BOOT_LAYOUT,
+    setLayout,
+    setState,
+    stateRef,
+    registry,
+    layoutCatalogueRef,
+    projectsRef,
+    newTab,
+    closeTab,
+    setActiveTab,
+    activateLayoutById,
+    openProjectFromPicker,
+    openProjectByPath,
+    setActiveProjectById,
+    clearActiveProject,
+    removeProjectById,
+  });
 
   // Mirror an allowlisted set of frontend state slices back to the bridge
   // so extensions can introspect them via `aethon.getFrontendState(path)`.
@@ -4163,30 +2500,6 @@ export default function App() {
     setState((prev) => ({ ...prev, ...flags }));
   }
 
-  // Layout catalogue — built-in entries plus anything an extension or
-  // skill has registered via window.aethon.registerLayout. Backed by a
-  // ref so the API surface above can mutate it without re-rendering.
-  const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
-
-  // Projects (working directories the agent operates in). Persisted to
-  // ~/.aethon/projects.json. The active project's path travels with each
-  // new tab as `cwd` on `tab_open` so pi's SessionManager scopes the
-  // session to that directory. Existing tabs keep their original cwd —
-  // switching project doesn't retroactively change live sessions.
-  const projectsRef = useRef<ProjectsState>(emptyProjectsState());
-
-  // Cached git status keyed by absolute project path. Populated by the
-  // poller below (refreshGitStatusFor) and read by syncProjectsToState
-  // when mirroring projects into /sidebar/projects. Kept in a ref so
-  // a status update can re-trigger sync without re-scheduling all the
-  // other project work.
-  interface GitStatus {
-    branch?: string;
-    dirty?: boolean;
-    ahead?: number;
-    behind?: number;
-  }
-  const gitStatusRef = useRef<Map<string, GitStatus>>(new Map());
 
   // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
   // switches active project, we snapshot the current state.tabs +
@@ -4197,6 +2510,24 @@ export default function App() {
   const tabBucketsRef = useRef<
     Map<string, { tabs: Tab[]; activeTabId: string | undefined }>
   >(new Map());
+
+  // Project I/O (git status polling, bridge IPC for cwd + extension
+  // watching). The hook owns the gitStatusRef cache, the 30s poll
+  // effect, and announce/watch/unwatch invokes; orchestrators
+  // (openProjectByPath et al.) stay inline because they mutate
+  // tabBucketsRef and trigger terminal replay — they'll move when
+  // useTabs is extracted.
+  const {
+    gitStatusRef,
+    refreshGitStatusFor,
+    refreshAllGitStatus,
+    announceProjectToBridge,
+    watchProjectForBridge,
+    unwatchProjectForBridge,
+  } = useProjects({
+    getProjectPaths: () => projectsRef.current.projects.map((p) => p.path),
+    onGitStatusChanged: () => syncProjectsToState(),
+  });
 
   // Mirror the projects state into app state so layouts can $ref it.
   // Bumps `/projects`, `/activeProjectId`, `/project/{label,path,id}`,
@@ -4253,97 +2584,6 @@ export default function App() {
     }
     syncProjectsToState();
   }
-
-  // Tell the bridge what `cwd` to use for new sessions on a given tab.
-  // The bridge accepts a `cwd` field on `tab_open`; on `set_project` it
-  // updates the per-tab record but doesn't tear down an in-flight session
-  // (changing cwd mid-flight is a user-visible footgun). Fire-and-forget.
-  function announceProjectToBridge(tabId: string, cwd: string | null) {
-    invoke("agent_command", {
-      payload: JSON.stringify({ type: "set_project", tabId, cwd }),
-    }).catch(() => {
-      /* bridge gone — next tab_open re-announces */
-    });
-  }
-
-  // Tell the Rust shell to watch (or stop watching) a project's
-  // `.aethon/extensions/` dir for changes. Edits to files in a watched
-  // dir trigger the same kill-and-respawn flow as `~/.aethon/extensions/`,
-  // so project extensions hot-reload without a manual app restart. Pairs
-  // with announceProjectToBridge — both fire whenever the active project
-  // changes, but they cover different things (cwd for new sessions vs.
-  // the file-watch list for hot-reload).
-  function watchProjectForBridge(path: string) {
-    invoke("watch_project_extensions", { projectPath: path }).catch(
-      (err: unknown) => {
-        console.warn("[aethon] watch_project_extensions failed:", err);
-      },
-    );
-  }
-  function unwatchProjectForBridge(path: string) {
-    invoke("unwatch_project_extensions", { projectPath: path }).catch(
-      (err: unknown) => {
-        console.warn("[aethon] unwatch_project_extensions failed:", err);
-      },
-    );
-  }
-
-  // Refresh the cached git status for one project path. Best-effort —
-  // a missing `git` binary or a non-repo path resolves to an empty
-  // entry and is treated as "no badge". Runs through the Tauri command
-  // (gated by debug-or-release; both expose `git_status`).
-  async function refreshGitStatusFor(path: string) {
-    try {
-      const status = await invoke<GitStatus | null>("git_status", { path });
-      if (status) {
-        gitStatusRef.current.set(path, status);
-      } else {
-        gitStatusRef.current.delete(path);
-      }
-      syncProjectsToState();
-    } catch {
-      // Tauri command threw — ignore so a transient git failure
-      // doesn't blank the chip on subsequent successful polls.
-    }
-  }
-  // Refresh every known project. Sequenced (not parallel) so a user with
-  // a long projects list doesn't fork N git processes at once. Cheap
-  // even at the upper bound (MAX_PROJECTS=16 in projects.ts).
-  async function refreshAllGitStatus() {
-    const list = projectsRef.current.projects.slice();
-    for (const p of list) {
-      await refreshGitStatusFor(p.path);
-    }
-  }
-
-  // Periodic + focus-driven git poller. Initial pass right after
-  // projects load; then every 30s, plus an immediate pass when the
-  // window regains focus (user came back from terminal / browser and
-  // likely committed something). Uses a guard ref so two overlapping
-  // refreshes never run.
-  const gitPollingRef = useRef(false);
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled || gitPollingRef.current) return;
-      gitPollingRef.current = true;
-      try {
-        await refreshAllGitStatus();
-      } finally {
-        gitPollingRef.current = false;
-      }
-    };
-    void tick();
-    const onFocus = () => void tick();
-    window.addEventListener("focus", onFocus);
-    const interval = window.setInterval(tick, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Load projects once at boot. Done in its own effect so a slow disk
   // doesn't push out the agent-start path. Mirrors into state on resolve
@@ -4561,40 +2801,7 @@ export default function App() {
   // the entry shape sidebar items expect ({id, label, active}). Active is
   // set true for every type since the layout DOES contain it; clicking
   // does nothing today.
-  function summarizeLayoutComponents(payload: A2UIPayload): {
-    id: string;
-    label: string;
-    active: boolean;
-  }[] {
-    const types = new Set<string>();
-    function walk(node: unknown) {
-      if (!node || typeof node !== "object") return;
-      const n = node as { type?: string; children?: unknown[]; components?: unknown[] };
-      if (typeof n.type === "string") types.add(n.type);
-      if (Array.isArray(n.children)) n.children.forEach(walk);
-      if (Array.isArray(n.components)) n.components.forEach(walk);
-    }
-    walk(payload);
-    return [...types]
-      .sort()
-      .map((t) => ({ id: `c-${t}`, label: t, active: true }));
-  }
 
-  // Refresh /sidebar/components whenever the layout changes so any
-  // extension-registered inspector reflects what's actually rendered.
-  // setState here is the React → state-derived-from-prop pattern; the
-  // lint rule's blanket warning is the "avoid cascading renders"
-  // heuristic, and the alternative (computing on each render and
-  // injecting at $ref resolve time) would couple the sidebar component
-  // to the layout shape — exactly what the JSON-pointer indirection
-  // exists to avoid.
-  useEffect(() => {
-    const list = summarizeLayoutComponents(layout);
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      return { ...prev, sidebar: { ...sidebar, components: list } };
-    });
-  }, [layout]);
 
   // Layout activation helper — single path used by both
   // window.aethon.activateLayout and the /layout slash command. Seeds
@@ -4602,297 +2809,15 @@ export default function App() {
   // (live state wins on collisions) and rebuilds /sidebar/layouts from
   // the catalogue + current active id so layout JSONs don't have to
   // ship a hardcoded `active: true` flag.
-  function activateLayoutById(id: string): boolean {
-    const entry = layoutCatalogueRef.current.find((l) => l.id === id);
-    if (!entry) return false;
-    setLayout(entry.payload);
-    const seeds = entry.payload.state ?? {};
-    const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-      id: l.id,
-      label: l.id,
-      active: l.id === id,
-    }));
-    setState((prev) => {
-      const seeded =
-        seeds && Object.keys(seeds).length > 0
-          ? deepMergeState(seeds, prev)
-          : { ...prev };
-      // The new layout's `columns` seed is authoritative — different
-      // layouts may have different grid SHAPES, and deepMergeState keeps
-      // prev's columns, which would mean a 2-col grid carrying a
-      // 3-col-only cell has nowhere to render. So force-take the seed's
-      // columns, then patch the leading sidebar token with the user's
-      // persisted width so cross-layout resizing feels continuous.
-      const seedLayout =
-        (seeds.layout as Record<string, unknown> | undefined) ?? {};
-      const prevLayout =
-        (prev.layout as Record<string, unknown> | undefined) ?? {};
-      const seedCols = (seedLayout.columns as string | undefined) ?? "";
-      const prevCols = (prevLayout.columns as string | undefined) ?? "";
-      let nextCols = seedCols;
-      if (seedCols && prevCols) {
-        const seedTokens = seedCols.trim().split(/\s+/);
-        const prevTokens = prevCols.trim().split(/\s+/);
-        if (seedTokens.length > 0 && prevTokens[0]?.endsWith("px")) {
-          seedTokens[0] = prevTokens[0];
-          nextCols = seedTokens.join(" ");
-        }
-      }
-      const seededLayout = (seeded.layout as Record<string, unknown> | undefined) ?? {};
-      seeded.layout = nextCols
-        ? { ...seededLayout, columns: nextCols }
-        : seededLayout;
-      const sidebar = (seeded.sidebar as Record<string, unknown> | undefined) ?? {};
-      seeded.sidebar = { ...sidebar, layouts: catalogueItems };
-      return seeded;
-    });
-    return true;
-  }
 
-  // Extension event-route intercepts. When a route matches an outbound
-  // event from the renderer, App's onEvent handler returns false so the
-  // event bypasses the built-in switch and goes through the standard
-  // a2ui_event channel — letting a paired aethon.onEvent handler on the
-  // bridge intercept chat submits / sidebar clicks / etc. without a
-  // React-side fork. Wildcard form: { eventType: "submit" } intercepts
-  // submits from any component; { componentId: "sidebar" } intercepts
-  // every sidebar event.
-  const extensionEventRoutesRef = useRef<
-    { componentId?: string; eventType?: string }[]
-  >([]);
-  const extensionEventRoutingModeRef = useRef<"builtin" | "extension">("builtin");
 
-  // Extension keybindings keyed by canonical combo ("meta+shift+p"). Read
-  // by the keydown handler; written by hydrateKeybindings on
-  // `extension_keybindings` deltas. The keydown handler checks this map
-  // before built-ins so extensions can intentionally override default
-  // chrome actions.
-  const extensionKeybindingsRef = useRef<
-    Map<string, { combo: string; action: string; description?: string }>
-  >(new Map());
-  // name → code for extension-package modules whose `aethon.frontendEntry`
-  // JS bodies have been evaluated and registered in the SkillRegistry.
-  // Tracked so:
-  //   - dropped modules (name absent from a fresh delta) get unregistered
-  //   - identical re-deliveries (same name + same code) skip re-eval,
-  //     so the duplicate `ready` the bridge fires after the startup
-  //     `report` doesn't run top-level side effects twice
-  const frontendModulesRef = useRef<Map<string, string>>(new Map());
 
-  // Built once — handlers close over App-scope helpers via the ctx passed at
-  // dispatch time, so the registry itself doesn't need state in scope.
-  const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
-  // Set of names registered via extension delta. Used to reset to
-  // built-ins when an `extension_slash_commands` event arrives with a
-  // smaller list (extension uninstall / hot-reload drop). Without this
-  // we'd never garbage-collect names removed from the bridge's map.
-  const extensionSlashNamesRef = useRef<Set<string>>(new Set());
-  // Set of JSON Pointer paths the bridge tracked as extension-owned in
-  // the LAST `ready` snapshot. On the next `ready`, we delete these from
-  // the live state before merging the new tree — so a deleted extension's
-  // sidebar section / canvas card / state slice goes away instead of
-  // lingering as a frozen artifact. The bridge's NEW snapshot replaces
-  // this ref after the merge, so the next ready prunes whatever's stale
-  // by then. Boots empty (no prior ready means no stale keys yet).
-  const lastExtensionStateKeysRef = useRef<Set<string>>(new Set());
 
-  // Surface the slash command list into layout state so the chat-input
-  // autocomplete can resolve it via `$ref:/slashCommands`. Done once on
-  // mount; subsequent updates flow through hydrateSlashCommands when
-  // extensions register / unregister commands via the bridge.
-  useEffect(() => {
-    setState((prev) => {
-      // Seed /sidebar/layouts from the live catalogue so the appearance
-      // pulldown + sidebar layout section both reflect the current
-      // active layout, regardless of what the boot JSON happened to
-      // ship. activateLayoutById keeps this in sync afterwards.
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const activeLayoutId = (() => {
-        const list = (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
-        return list.find((l) => l.active)?.id ?? layoutCatalogueRef.current[0]?.id;
-      })();
-      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-        id: l.id,
-        label: l.id,
-        active: l.id === activeLayoutId,
-      }));
-      return {
-        ...prev,
-        slashCommands: slashCommandsRef.current.map((c) => ({
-          name: c.name,
-          description: c.description,
-          usage: c.usage,
-          argSource: c.argSource,
-        })),
-        // Surface the layout catalogue so the slash-arg picker can resolve
-        // /layoutCatalogue when the user types `/layout `. Kept in sync
-        // with layoutCatalogueRef in registerLayout / activateLayout.
-        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
-          id: l.id,
-          label: l.name,
-          description: l.description,
-        })),
-        sidebar: { ...sidebar, layouts: catalogueItems },
-      };
-    });
-  }, []);
 
-  // Hydrate the extension event-route intercepts. The list is wholesale
-  // — every delta from the bridge replaces the prior set. Stored in a
-  // ref since the matching loop in onEvent reads it on every event.
-  function hydrateEventRoutes(
-    routes: { componentId?: string; eventType?: string }[],
-    mode: "builtin" | "extension" = extensionEventRoutingModeRef.current,
-  ) {
-    extensionEventRoutesRef.current = routes;
-    extensionEventRoutingModeRef.current = mode;
-  }
 
-  // Hydrate the extension-registered keybindings map from a bridge
-  // delta (or replayed `ready`). Combos arrive in any human-readable
-  // form ("Cmd+Shift+P", "ctrl+]") and are normalized for keydown
-  // matching via canonicalCombo / normalizeRegisteredCombo.
-  function hydrateKeybindings(
-    list: { combo: string; action: string; description?: string }[],
-  ) {
-    const next = new Map<string, { combo: string; action: string; description?: string }>();
-    for (const b of list) {
-      const canonical = normalizeRegisteredCombo(b.combo);
-      if (!canonical) continue;
-      next.set(canonical, { ...b, combo: canonical });
-    }
-    extensionKeybindingsRef.current = next;
-  }
 
-  // Hydrate the extension-registered layout catalogue from a bridge
-  // delta (or replayed `ready`). Wholesale replacement: any prior
-  // extension-registered entries are dropped, built-ins survive.
-  // Mirrors into `state.layoutCatalogue` and `state.sidebar.layouts`
-  // so the appearance menu / `/layout` picker / sidebar Layouts
-  // section all re-resolve via $ref.
-  function hydrateExtensionLayouts(
-    list: {
-      id: string;
-      name: string;
-      description?: string;
-      payload: A2UIPayload;
-    }[],
-  ) {
-    const builtinIds = new Set(builtinLayouts.map((l) => l.id));
-    const surviving = layoutCatalogueRef.current.filter((l) => builtinIds.has(l.id));
-    const incoming = list
-      .filter((l) => !builtinIds.has(l.id) && typeof l.id === "string" && l.payload)
-      .map((l) => ({
-        id: l.id,
-        name: l.name,
-        description: l.description,
-        payload: l.payload,
-      }));
-    layoutCatalogueRef.current = [...surviving, ...incoming];
-    setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const prevLayoutItems =
-        (sidebar.layouts as { id: string; active?: boolean }[] | undefined) ?? [];
-      const activeId =
-        prevLayoutItems.find((l) => l.active)?.id ??
-        layoutCatalogueRef.current[0]?.id;
-      const catalogueItems = layoutCatalogueRef.current.map((l) => ({
-        id: l.id,
-        label: l.id,
-        active: l.id === activeId,
-      }));
-      return {
-        ...prev,
-        layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
-          id: l.id,
-          label: l.name,
-          description: l.description,
-        })),
-        sidebar: { ...sidebar, layouts: catalogueItems },
-      };
-    });
-  }
 
-  // Skill packages with `aethon.frontendEntry` ship a JS body to the
-  // webview where it's wrapped with `new Function("React", "skill",
-  // code)` and executed. The module API hooks the result into the
-  // SkillRegistry so the registered React components show up under
-  // their declared A2UI types in any layout. Wholesale replacement on
-  // each delta — components from a removed module go away, a re-eval'd
-  // module replaces its prior bindings (so a hot reload picks up new
-  // code). Errors per module are caught and surfaced as a `notice` so
-  // one broken module doesn't kill the others.
-  function hydrateFrontendModules(list: { name: string; code: string }[]) {
-    const previous = frontendModulesRef.current;
-    const { loaded, unregistered } = reconcileFrontendModules(
-      previous,
-      list,
-      registry,
-    );
-    frontendModulesRef.current = new Map(list.map((m) => [m.name, m.code]));
-    for (const m of loaded) {
-      if (m.error) {
-        appendSystem(`extension frontend module ${m.name}: ${m.error}`);
-      }
-    }
-    if (loaded.length > 0 || unregistered.length > 0) {
-      // Bump a counter so any A2UIRenderer subtree using a now-changed
-      // component type re-resolves through the SkillRegistry on the
-      // next render. The registry itself doesn't trigger React updates;
-      // bumping a piece of state owned by App.tsx does. Skipped (no-op)
-      // modules don't need a bump — their components are unchanged.
-      setState((prev) => ({
-        ...prev,
-        extensionModulesGen: ((prev.extensionModulesGen as number | undefined) ?? 0) + 1,
-      }));
-    }
-  }
 
-  // Merge extension-registered slash commands with the built-ins.
-  // Extension commands dispatch through the existing onEvent pipeline
-  // as {componentType: "slash-command", componentId: "slash-command__tpl__<name>",
-  // data: {args}} so a paired bridge-side aethon.onEvent matcher fires
-  // the handler with no bespoke dispatch path.
-  function hydrateSlashCommands(
-    list: { name: string; description: string; usage?: string }[],
-  ) {
-    const builtins = buildBuiltinSlashCommands();
-    const builtinNames = new Set(builtins.map((c) => c.name));
-    const dispatched: SlashCommand[] = list
-      .filter((c) => !builtinNames.has(c.name)) // bridge already rejects collisions; defense-in-depth
-      .map((c) => ({
-        name: c.name,
-        description: c.description,
-        usage: c.usage,
-        run: async (args: string) => {
-          // Wrap the agent dispatch so the chat-side path stays uniform.
-          // No local state mutation — the handler may call setState/
-          // pi.prompt/etc through the bridge's ctx.
-          await invoke("dispatch_a2ui_event", {
-            event: JSON.stringify({
-              componentId: `slash-command__tpl__${c.name}`,
-              componentType: "slash-command",
-              templateRootType: "slash-command",
-              eventType: "invoke",
-              data: { args },
-            }),
-            tabId: stateRef.current.activeTabId,
-          });
-        },
-      }));
-    extensionSlashNamesRef.current = new Set(dispatched.map((c) => c.name));
-    slashCommandsRef.current = [...builtins, ...dispatched];
-    // Refresh the layout's bound /slashCommands so the picker re-resolves.
-    setState((prev) => ({
-      ...prev,
-      slashCommands: slashCommandsRef.current.map((c) => ({
-        name: c.name,
-        description: c.description,
-        usage: c.usage,
-        argSource: c.argSource,
-      })),
-    }));
-  }
 
   function appendSystem(text: string) {
     appendMessage({ id: crypto.randomUUID(), role: "system", text });
@@ -5576,7 +3501,7 @@ export default function App() {
         const isShellWriteDismiss =
           (eventType === "dismiss" || eventType === "expire") &&
           typeof id === "string" &&
-          shellWriteConsentRef.current.has(id);
+          hasPendingShellWriteConsent(id);
         if (isShellWriteAction && id && action) {
           const allowed = action.startsWith("shell-write-allow:");
           resolveShellWriteConsent(id, allowed);
@@ -5600,7 +3525,7 @@ export default function App() {
         const isShellCloseDismiss =
           (eventType === "dismiss" || eventType === "expire") &&
           typeof id === "string" &&
-          shellCloseConsentRef.current.has(id);
+          hasPendingShellCloseConsent(id);
         if (isShellCloseAction && id && action) {
           const allowed = action.startsWith("shell-close-allow:");
           resolveShellCloseConsent(id, allowed);
@@ -5625,7 +3550,7 @@ export default function App() {
         const isSessionDeleteDismiss =
           (eventType === "dismiss" || eventType === "expire") &&
           typeof id === "string" &&
-          sessionDeleteConsentRef.current.has(id);
+          hasPendingSessionDeleteConsent(id);
         if (isSessionDeleteAction && id && action) {
           const allowed = action.startsWith("session-delete-allow:");
           resolveSessionDeleteConsent(id, allowed);
