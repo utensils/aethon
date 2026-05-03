@@ -29,6 +29,7 @@ import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
+import { extractSessionId } from "./utils/sidebarHistory";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -542,6 +543,15 @@ export default function App() {
       // shapes are documented on the components themselves.
       palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
       notifications: [],
+      // Seed /sidebar/extensions so the $ref-bound sidebar section renders
+      // the built-in entry immediately — hydrateExtensions() fills in
+      // dynamically-loaded extensions once `ready` arrives.
+      sidebar: {
+        ...(BOOT_LAYOUT.state?.sidebar as Record<string, unknown> | undefined),
+        extensions: [
+          { id: "extension-layout", label: "default-layout", hint: "core", active: true },
+        ],
+      },
     };
   });
 
@@ -593,6 +603,16 @@ export default function App() {
   // on `response_end`. Used to compute turn duration for the OS
   // completion notification gate.
   const turnStartedAtRef = useRef<Map<string, number>>(new Map());
+  // Hang-warn: push a sticky "Still working…" notification if the active tab
+  // stays waiting longer than HANG_WARN_MS. Per-tab timers keyed by tabId.
+  const HANG_WARN_MS = 30_000;
+  // Per-tab notification id so a `response_end` for tab B doesn't dismiss
+  // tab A's still-hung warning (codex P2 review feedback).
+  const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
+  // Track which tabs currently have a hang notification surfaced so the
+  // crash/reload paths can dismiss them all without scanning.
+  const hangWarnActiveRef = useRef<Set<string>>(new Set());
+  const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // P4: live config for OS notifications. Mirrors `config.ui.notifyOnCompletion`
   // / `notifyMinDurationSeconds` and is updated in the boot config effect.
   // Held in a ref (not state) so the response_end handler reads the
@@ -688,6 +708,39 @@ export default function App() {
           themes,
         },
       };
+    });
+  }
+
+  // Hydrate the sidebar extensions list from the bridge's loaded/failed sets.
+  // Called on `ready` (startup + project switch) so the list always reflects
+  // what the current bridge process has actually loaded.
+  function hydrateExtensions(
+    loaded: { name: string; source: string }[],
+    failed: { name: string; source: string; error?: string }[],
+  ) {
+    const sourceLabel = (s: string) =>
+      s === "project-directory" ? "project"
+      : s === "global-directory" ? "user"
+      : s === "extension-package" ? "package"
+      : s;
+    const items = [
+      { id: "extension-layout", label: "default-layout", hint: "core", active: true },
+      ...loaded.map((e) => ({
+        id: `ext:${e.name}`,
+        label: e.name,
+        hint: sourceLabel(e.source),
+        active: true,
+      })),
+      ...failed.map((e) => ({
+        id: `ext-failed:${e.name}`,
+        label: e.name,
+        hint: `${sourceLabel(e.source)} · failed`,
+        active: false,
+      })),
+    ];
+    setState((prev) => {
+      const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
+      return { ...prev, sidebar: { ...sidebar, extensions: items } };
     });
   }
 
@@ -1065,8 +1118,9 @@ export default function App() {
     });
   }
 
-  async function stopPrompt() {
-    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+  async function stopPrompt(explicitTabId?: string) {
+    const tabId =
+      explicitTabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "stop", tabId }),
@@ -2704,6 +2758,10 @@ export default function App() {
 
     const unlistenReload = listen<string>("agent-reloaded", () => {
       activeResponseIdRef.current = null;
+      for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
+      hangWarnTimersRef.current.clear();
+      for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
+      hangWarnActiveRef.current.clear();
       setStatusFlags({ waiting: false, status: "agent reloaded" });
       // Re-prime the agent so we get a fresh `ready` event with the new code.
       invoke("start_agent").catch(() => {
@@ -2721,6 +2779,10 @@ export default function App() {
         const tail = event.payload?.stderrTail ?? [];
         const lastLine = tail.length > 0 ? tail[tail.length - 1] : "no stderr";
         activeResponseIdRef.current = null;
+        for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
+        hangWarnTimersRef.current.clear();
+        for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
+        hangWarnActiveRef.current.clear();
         // Clear waiting/queue across every tab — pi sessions are gone.
         setState((prev) => {
           const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => ({
@@ -2786,7 +2848,11 @@ export default function App() {
       const isRawCrash =
         /^(Error|TypeError|ReferenceError|SyntaxError|RangeError|Uncaught|panic:)/i.test(text) ||
         /\bthrow\s+new\s|\bCannot\s+find\s+(module|package)\b|\bEACCES\b|\bENOENT\b/i.test(text);
-      if (isLeveledFailure || isRawCrash) {
+      // Routine extension feedback (size-guard rejections, etc.) goes to bridge
+      // logs only — surfacing it to chat would spam the feed when an extension
+      // misbehaves on a setInterval.
+      const isExtensionNoise = /\b(WARN|INFO)\s+ext-state:/.test(text);
+      if ((isLeveledFailure || isRawCrash) && !isExtensionNoise) {
         appendMessage({
           id: crypto.randomUUID(),
           role: "system",
@@ -3132,6 +3198,10 @@ export default function App() {
         // when the merge runs. hydrateThemes also injects the CSS so a
         // saved choice has the rule available before data-theme is read.
         hydrateThemes(extThemes);
+        hydrateExtensions(
+          (data.extensionsList as { name: string; source: string }[] | undefined) ?? [],
+          (data.failedExtensionsList as { name: string; source: string; error?: string }[] | undefined) ?? [],
+        );
         registry.setTemplates(extComponents);
         // Restore extension-registered slash commands so the picker shows
         // them on first paint (no need to wait for an extension_slash_commands
@@ -3727,6 +3797,33 @@ export default function App() {
         if (stateRef.current.activeTabId === tabId) {
           setState((prev) => ({ ...prev, status: "thinking…" }));
         }
+        // Start hang-warn timer. Reset if a queue-drained prompt_started
+        // fires for the same tab (the 30s clock restarts on each new turn).
+        {
+          const prev = hangWarnTimersRef.current.get(tabId);
+          if (prev !== undefined) clearTimeout(prev);
+          const handle = setTimeout(() => {
+            hangWarnTimersRef.current.delete(tabId);
+            const cur = stateRef.current;
+            if ((cur.activeTabId as string | undefined) !== tabId) return;
+            const tabs = (cur.tabs as Tab[] | undefined) ?? [];
+            const tab = tabs.find((t) => t.id === tabId);
+            if (!tab?.waiting) return;
+            hangWarnActiveRef.current.add(tabId);
+            pushNotification({
+              id: hangWarnNotifId(tabId),
+              title: "Still working…",
+              message: "The agent is taking longer than expected.",
+              kind: "warning",
+              durationMs: null,
+              actions: [
+                { label: "Stop", action: `hang-warn:stop:${tabId}` },
+                { label: "Force restart", action: "hang-warn:force-restart" },
+              ],
+            });
+          }, HANG_WARN_MS);
+          hangWarnTimersRef.current.set(tabId, handle);
+        }
         break;
       }
       case "queued": {
@@ -3762,6 +3859,16 @@ export default function App() {
             if (q > 0) return prev;
             return { ...prev, status: "ready" };
           });
+        }
+        // Clear the hang-warn timer and dismiss this tab's notification
+        // (if it appeared). Per-tab id so an unrelated tab's response_end
+        // doesn't dismiss a still-hung tab's warning.
+        {
+          const h = hangWarnTimersRef.current.get(tabId);
+          if (h !== undefined) { clearTimeout(h); hangWarnTimersRef.current.delete(tabId); }
+          if (hangWarnActiveRef.current.delete(tabId)) {
+            dismissNotification(hangWarnNotifId(tabId));
+          }
         }
         // P4: fire native OS notification when an agent turn completes
         // while the window is unfocused (or the originating tab isn't
@@ -3877,6 +3984,29 @@ export default function App() {
             tabId,
           );
         }
+        break;
+      }
+      case "extension_runtime_error": {
+        // Sticky, deduped notification per extension. Bridge already
+        // rate-limits the underlying log line, so we get one notification
+        // when the misbehavior starts (or resumes after the suppression
+        // window) — not one every 2s.
+        const name = (data.name as string | undefined) ?? "(unknown)";
+        const kind = (data.kind as string | undefined) ?? "error";
+        const path = (data.path as string | undefined) ?? "";
+        const sizeKB = data.sizeKB as number | undefined;
+        const limitKB = data.limitKB as number | undefined;
+        const message =
+          kind === "state-too-large" && sizeKB !== undefined && limitKB !== undefined
+            ? `setState ${path} rejected — ${sizeKB} KB exceeds ${limitKB} KB limit. Store file paths, not content.`
+            : `Extension reported a runtime error.`;
+        pushNotification({
+          id: `ext-runtime-error:${name}`,
+          title: `Extension \`${name}\` is misbehaving`,
+          message,
+          kind: "warning",
+          durationMs: null,
+        });
         break;
       }
       // Legacy single-shot response (kept so old bridge builds still render).
@@ -5522,6 +5652,31 @@ export default function App() {
           if (id) dismissNotification(id);
           return true;
         }
+        // Hang-warn notification actions.
+        if (
+          eventType === "action" &&
+          typeof action === "string" &&
+          action.startsWith("hang-warn:")
+        ) {
+          if (action.startsWith("hang-warn:stop")) {
+            // Stop carries the tabId of the hung tab (set when the
+            // notification was pushed) so the right session is stopped
+            // even if the user is on a different tab when they click.
+            const targetTabId = action.startsWith("hang-warn:stop:")
+              ? action.slice("hang-warn:stop:".length)
+              : undefined;
+            void stopPrompt(targetTabId);
+          } else if (action === "hang-warn:force-restart") {
+            // force_restart_agent SIGKILLs the bun child from Rust, bypassing
+            // blocked stdin. The existing agent-crashed handler then fires,
+            // clearing waiting state and (if auto_restart_agent) respawning.
+            invoke("force_restart_agent").catch((err: unknown) => {
+              console.warn("force_restart_agent failed:", err);
+            });
+          }
+          if (id) dismissNotification(id);
+          return true;
+        }
       }
       // Extensions can register event-route intercepts via
       // aethon.registerEventRoute. When an event matches a registered
@@ -5879,24 +6034,26 @@ export default function App() {
         const selected = data as
           | { sessionId?: string; itemId?: string; label?: string }
           | undefined;
-        // Strip the "session:" prefix as a defensive fallback in case a
+        // Strip the "session:" or "tab:" prefix defensively in case a
         // future caller forgets the split — the sidebar already strips
         // it but we don't want a stray prefix to land in the Tauri
         // command path validator.
         const raw = selected?.sessionId ?? selected?.itemId ?? "";
-        const sessionId = raw.startsWith("session:")
-          ? raw.slice("session:".length)
-          : raw;
+        const sessionId = extractSessionId(raw);
         const label = selected?.label ?? sessionId;
         if (!sessionId) return true;
         promptDeleteSessionConfirmation(label).then((allowed) => {
           if (!allowed) return;
+          const isOpen = (stateRef.current.tabs as Tab[] | undefined)?.some(
+            (t) => t.id === sessionId,
+          );
+          // Delete first, then close. Doing the reverse leaves the user
+          // with a closed tab and a failure notification when the Tauri
+          // command refuses (e.g. the default session). codex P2 review
+          // feedback.
           invoke("delete_session", { tabId: sessionId })
             .then(() => {
-              // Drop the entry from the in-memory cache and re-derive
-              // both the recent-sessions list (palette) and the sidebar
-              // history section so the deleted row disappears
-              // immediately — no need to wait for the next bridge ready.
+              if (isOpen) closeTab(sessionId);
               allDiscoveredSessionsRef.current =
                 allDiscoveredSessionsRef.current.filter(
                   (s) => s.tabId !== sessionId,

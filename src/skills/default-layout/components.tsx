@@ -43,6 +43,7 @@ import type {
   BuiltinComponentProps,
 } from "../../components/A2UIRenderer";
 import { useStickyScroll } from "../../utils/useStickyScroll";
+import { canDeleteHistoryItem, extractSessionId } from "../../utils/sidebarHistory";
 
 // Adapter: react-markdown invokes `code` for both inline AND fenced code
 // blocks. We split on whether the parent is `<pre>` (fenced) and route
@@ -702,13 +703,15 @@ export function Sidebar({
     item,
     sectionId,
   ) => {
-    // Projects → "Remove from Projects". History items prefixed `session:`
-    // → "Delete session". Open agent tabs (`tab:` prefix) and other
-    // sections have no context-menu actions yet.
+    // Projects → "Remove from Projects". History items prefixed
+    // `session:` (closed) or `tab:` (currently open) → "Delete session".
+    // For an open tab, the App-side handler closes the tab first, then
+    // deletes the on-disk session — symmetric with the X close button +
+    // explicit delete, just collapsed into one action.
     let kind: SidebarContextMenuState["kind"] | null = null;
     if (sectionId === "projects") {
       kind = "project";
-    } else if (sectionId === "history" && item.id.startsWith("session:")) {
+    } else if (sectionId === "history" && canDeleteHistoryItem(item.id)) {
       kind = "session";
     }
     if (!kind) return;
@@ -739,15 +742,13 @@ export function Sidebar({
 
   const deleteContextSession = () => {
     if (!contextMenu) return;
-    // itemId is `session:<tabId>` — strip the prefix so App.tsx receives
-    // the raw tabId that the bridge / Tauri command both expect.
-    const sessionId = contextMenu.itemId.startsWith("session:")
-      ? contextMenu.itemId.slice("session:".length)
-      : contextMenu.itemId;
+    // itemId is `session:<tabId>` (closed) or `tab:<tabId>` (open) —
+    // strip whichever prefix is present so App.tsx receives the raw
+    // tabId the bridge / Tauri command both expect.
     onEvent("delete-session", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
-      sessionId,
+      sessionId: extractSessionId(contextMenu.itemId),
       label: contextMenu.label,
     });
     setContextMenu(null);
