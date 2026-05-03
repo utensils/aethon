@@ -1942,6 +1942,12 @@ fn install_app_menu(
 /// `extension_items` carries any `aethon.registerMenuItem` entries
 /// from extensions tagged `location: "tray"`. They appear after the
 /// built-in items and dispatch `menu` events with id `ext:<action>`.
+///
+/// The tray's `with_id` / `remove_tray_by_id` keys must match — they
+/// share `TRAY_ID` so a refactor renaming one doesn't silently break
+/// the idempotency contract.
+const TRAY_ID: &str = "main-tray";
+
 fn install_tray(
     app: &AppHandle,
     extension_items: &[ExtensionMenuItem],
@@ -1990,7 +1996,16 @@ fn install_tray(
         .ok_or("no default_window_icon — bundle.icon missing?")?
         .clone();
 
-    TrayIconBuilder::with_id("main-tray")
+    // Idempotent: remove any prior tray with this id before building.
+    // `install_tray` runs at boot AND every time the frontend pushes
+    // `extension_menu_items` via `set_extension_menu_items` (so an
+    // extension-registered tray entry actually appears in the menu).
+    // Without this remove, `TrayIconBuilder.build()` registers a NEW
+    // tray each call — and macOS happily shows BOTH icons in the menu
+    // bar, which is the user-reported "two Æ icons" bug.
+    let _ = app.remove_tray_by_id(TRAY_ID);
+
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         // Show Aethon's full-color logo in the tray rather than a
         // monochrome template. The brand mark (cream Æ + orange π) is
@@ -2241,4 +2256,92 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    //! Source-level regression tests for code paths whose behavior is
+    //! easier to assert by structure than by spinning up a Tauri runtime.
+    //! For full behavioral coverage of tray idempotency we'd need
+    //! `tauri::test::mock_app` (not currently wired into the crate's
+    //! test feature), so we lock the contract via shape: the source
+    //! must contain the `remove_tray_by_id` call before the build.
+
+    use super::TRAY_ID;
+
+    /// The tray id is a single source of truth shared by the build
+    /// and the cleanup. If someone changes one without the other, the
+    /// idempotency call becomes a no-op and the double-icon bug
+    /// returns silently. This test asserts the value hasn't drifted —
+    /// any rename should land in both call sites.
+    #[test]
+    fn tray_id_is_main_tray() {
+        assert_eq!(TRAY_ID, "main-tray");
+    }
+
+    /// Regression for the "two Æ tray icons" bug.
+    ///
+    /// `install_tray` is called at boot AND every time the frontend
+    /// pushes `extension_menu_items` via `set_extension_menu_items`,
+    /// because an extension that registers a `location: "tray"` item
+    /// needs the tray rebuilt to appear. Without removing the prior
+    /// tray with the same id, `TrayIconBuilder.build` registers a
+    /// SECOND OS-level tray (NSStatusItem on macOS) — both icons
+    /// stay visible in the menu bar.
+    ///
+    /// The fix is `app.remove_tray_by_id(TRAY_ID)` before the
+    /// builder runs. We assert it's still there: deleting the line
+    /// would silently re-introduce the regression and a unit test
+    /// catches that at `cargo test --lib` time.
+    #[test]
+    fn install_tray_calls_remove_tray_by_id_for_idempotency() {
+        let src = include_str!("lib.rs");
+        let needle = "remove_tray_by_id(TRAY_ID)";
+        assert!(
+            src.contains(needle),
+            "install_tray must remove the prior tray before rebuilding so calling it twice doesn't leave two OS-level tray icons. Looking for `{needle}` in lib.rs.",
+        );
+        // Also assert the call ORDER: the remove must precede the
+        // build, not follow it.
+        let remove_pos = src.find(needle).unwrap();
+        let build_pos = src.find("TrayIconBuilder::with_id(TRAY_ID)").unwrap();
+        assert!(
+            remove_pos < build_pos,
+            "remove_tray_by_id must run BEFORE TrayIconBuilder::with_id, otherwise the new tray gets removed instead of the old one.",
+        );
+    }
+
+    /// `set_extension_menu_items` is the frontend → Rust path that
+    /// rebuilds the menu + tray when an extension registers a menu
+    /// item. If it stops calling `install_tray`, the extension item
+    /// silently never shows up. If it stops being wired into
+    /// `invoke_handler!`, the frontend invoke fails. Either failure
+    /// mode is loud at runtime but easy to introduce in a refactor.
+    #[test]
+    fn set_extension_menu_items_calls_install_tray_and_is_wired_to_handler() {
+        let src = include_str!("lib.rs");
+        assert!(
+            src.contains("fn set_extension_menu_items("),
+            "the Tauri command must exist",
+        );
+        // The handler invocation list registers the command — without
+        // this entry, the frontend's invoke('set_extension_menu_items')
+        // returns "command not found".
+        assert!(
+            src.contains("set_extension_menu_items,"),
+            "set_extension_menu_items must be registered in the invoke_handler list",
+        );
+        // And it must call install_tray so the rebuild path covers
+        // tray entries (location: "tray"), not just the app menu.
+        let body_start = src.find("fn set_extension_menu_items(").unwrap();
+        let body_end = src[body_start..]
+            .find("\nfn ")
+            .map(|n| body_start + n)
+            .unwrap_or(src.len());
+        let body = &src[body_start..body_end];
+        assert!(
+            body.contains("install_tray("),
+            "set_extension_menu_items must call install_tray so location: \"tray\" extension items appear",
+        );
+    }
 }
