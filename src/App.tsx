@@ -30,70 +30,11 @@ import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 import { extractSessionId } from "./utils/sidebarHistory";
-// Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
-// the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
-// instead of hardcoding a path that might 404 in a production bundle.
-import logoUrl from "./assets/aethon-logo.svg?url";
-
-// Immutable JSON Pointer write that preserves arrays. The generic
-// setPointer in utils/jsonPointer turns `{...arr}` into a plain object,
-// which breaks the renderer when a layout's `components`/`children`
-// arrays get traversed. This walker spreads with `[...arr]` for arrays
-// so the layout shape is preserved end-to-end.
-function decodeToken(t: string): string {
-  return t.replace(/~1/g, "/").replace(/~0/g, "~");
-}
-function layoutPatch<T>(payload: T, pointer: string, value: unknown): T {
-  if (!pointer || pointer === "" || pointer === "/") return payload;
-  const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
-  const tokens = path.split("/").map(decodeToken);
-  const cloneNode = (node: unknown): unknown => {
-    if (Array.isArray(node)) return [...node];
-    if (node && typeof node === "object") return { ...(node as Record<string, unknown>) };
-    return {};
-  };
-  const root = cloneNode(payload) as Record<string, unknown> | unknown[];
-  let cursor: Record<string, unknown> | unknown[] = root;
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const key = tokens[i];
-    const idx = Array.isArray(cursor) ? Number(key) : key;
-    const existing = (cursor as Record<string | number, unknown>)[idx as never];
-    const child = cloneNode(existing);
-    (cursor as Record<string | number, unknown>)[idx as never] = child;
-    cursor = child as Record<string, unknown> | unknown[];
-  }
-  const lastKey = tokens[tokens.length - 1];
-  const lastIdx = Array.isArray(cursor) ? Number(lastKey) : lastKey;
-  (cursor as Record<string | number, unknown>)[lastIdx as never] = value;
-  return root as T;
-}
-
-// Recursive structural merge. Plain objects recurse; arrays and primitives
-// replace. Used when folding the bridge's extension state snapshot into
-// app state so an extension's nested key doesn't wipe siblings.
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    !Array.isArray(v) &&
-    Object.getPrototypeOf(v) === Object.prototype
-  );
-}
-function deepMergeState(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...target };
-  for (const [k, v] of Object.entries(source)) {
-    const existing = out[k];
-    if (isPlainObject(existing) && isPlainObject(v)) {
-      out[k] = deepMergeState(existing, v);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
+import { deepMergeState, layoutPatch } from "./utils/stateMutation";
+import { applyUiScale, readZoom, writeUiViewportVars } from "./utils/viewport";
+import { formatRelativeTime } from "./utils/time";
+import { canonicalCombo, normalizeRegisteredCombo } from "./utils/keybindings";
+import { coerceChatMessages } from "./utils/messages";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -115,6 +56,10 @@ import {
   upsertProject,
   type ProjectsState,
 } from "./projects";
+// Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
+// the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
+// instead of hardcoding a path that might 404 in a production bundle.
+import logoUrl from "./assets/aethon-logo.svg?url";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
@@ -128,28 +73,6 @@ const ZOOM_MAX = 1.6;
  *  expire flows through the existing notification dismiss path,
  *  which resolves the consent as deny. */
 const SHELL_WRITE_PROMPT_TTL_MS = 4 * 60 * 1000 + 30 * 1000;
-
-function writeUiViewportVars(scale: number) {
-  const root = document.documentElement;
-  root.style.setProperty("--app-viewport-width", `${window.innerWidth / scale}px`);
-  root.style.setProperty("--app-viewport-height", `${window.innerHeight / scale}px`);
-}
-
-function applyUiScale(scale: number) {
-  const root = document.documentElement;
-  root.style.setProperty("--app-ui-scale", String(scale));
-  writeUiViewportVars(scale);
-  root.style.zoom = String(scale);
-}
-
-function readZoom(): number {
-  const cur = parseFloat(
-    document.documentElement.style.getPropertyValue("--app-ui-scale") ||
-      document.documentElement.style.zoom ||
-      "1",
-  );
-  return Number.isFinite(cur) ? cur : 1;
-}
 
 interface ModelDescriptor {
   id: string;
@@ -179,158 +102,6 @@ interface SidebarHistoryItem {
   hint?: string;
   tooltip?: string;
   active?: boolean;
-}
-
-// Format a millisecond timestamp into a compact relative-time label like
-// "2m ago" / "3h ago" / "yesterday" / "Apr 22". Used by the empty-state's
-// recent-sessions list — full timestamps are too noisy and "12345678 ms"
-// is meaningless to a user.
-function formatRelativeTime(ms: number): string {
-  if (!ms) return "";
-  const now = Date.now();
-  const diff = Math.max(0, now - ms);
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.floor(hr / 24);
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days}d ago`;
-  return new Date(ms).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-// Normalize a keyboard event to the same canonical combo string the bridge
-// stores (lowercased, sorted modifiers, "+"-joined). Returns null when no
-// printable key was involved (modifier keys alone don't match a combo).
-//
-//   Cmd+Shift+P   →  "meta+shift+p"
-//   Ctrl+]        →  "ctrl+]"
-//   Alt+M         →  "alt+m"
-function canonicalCombo(e: KeyboardEvent): string | null {
-  const k = e.key;
-  if (!k || k.length === 0) return null;
-  // Skip modifier-only events (pressing just Shift/Cmd/etc.)
-  if (k === "Shift" || k === "Control" || k === "Meta" || k === "Alt") return null;
-  const parts: string[] = [];
-  if (e.metaKey) parts.push("meta");
-  if (e.ctrlKey) parts.push("ctrl");
-  if (e.altKey) parts.push("alt");
-  if (e.shiftKey) parts.push("shift");
-  parts.push(k.toLowerCase());
-  return parts.join("+");
-}
-
-// Bridge accepts a wide variety of human-readable combo formats
-// ("Cmd+Shift+P", "ctrl+]", "Meta+M") and we normalize on the frontend
-// for matching. Keep the modifier order stable so equivalent combos
-// hash to the same canonical form.
-function normalizeRegisteredCombo(combo: string): string {
-  const parts = combo
-    .split("+")
-    .map((p) => p.trim().toLowerCase())
-    .filter(Boolean);
-  // Aliases: cmd → meta, command → meta, control → ctrl, option → alt.
-  const aliased = parts.map((p) =>
-    p === "cmd" || p === "command"
-      ? "meta"
-      : p === "control"
-        ? "ctrl"
-        : p === "option"
-          ? "alt"
-          : p,
-  );
-  const mods = new Set<string>();
-  let key = "";
-  for (const p of aliased) {
-    if (p === "meta" || p === "ctrl" || p === "alt" || p === "shift") {
-      mods.add(p);
-    } else {
-      key = p;
-    }
-  }
-  // Stable ordering matches canonicalCombo above (meta/ctrl/alt/shift).
-  const ordered = ["meta", "ctrl", "alt", "shift"].filter((m) => mods.has(m));
-  return [...ordered, key].filter(Boolean).join("+");
-}
-
-// Replace `image` component data URLs with a placeholder so persisted history
-// doesn't blow past the localStorage quota. The in-memory message keeps the
-// full data URL — only the persisted copy is slimmed.
-function stripImageDataUrls(component: unknown): unknown {
-  if (!component || typeof component !== "object") return component;
-  const c = component as {
-    type?: string;
-    props?: Record<string, unknown>;
-    children?: unknown[];
-  };
-  let next = c;
-  if (
-    c.type === "image" &&
-    typeof c.props?.src === "string" &&
-    c.props.src.startsWith("data:")
-  ) {
-    next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
-  }
-  if (Array.isArray(c.children) && c.children.length > 0) {
-    next = { ...next, children: c.children.map(stripImageDataUrls) };
-  }
-  return next;
-}
-
-const MAX_TEXT_BYTES = 8 * 1024;
-
-function trimMessage(m: ChatMessage): ChatMessage {
-  let out = m;
-  if (m.text && m.text.length > MAX_TEXT_BYTES) {
-    out = { ...out, text: m.text.slice(0, MAX_TEXT_BYTES - 1) + "…" };
-  }
-  if (m.a2ui && Array.isArray(m.a2ui.components)) {
-    out = {
-      ...out,
-      a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
-    };
-  }
-  return out;
-}
-
-function coerceChatMessages(value: unknown): ChatMessage[] {
-  if (!Array.isArray(value)) return [];
-  const messages: ChatMessage[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    const role =
-      record.role === "user" ||
-      record.role === "agent" ||
-      record.role === "system"
-        ? record.role
-        : null;
-    if (!role) continue;
-    const text = typeof record.text === "string" ? record.text : undefined;
-    const a2ui =
-      record.a2ui &&
-      typeof record.a2ui === "object" &&
-      Array.isArray((record.a2ui as { components?: unknown }).components)
-        ? (record.a2ui as A2UIPayload)
-        : undefined;
-    if (!text && !a2ui) continue;
-    messages.push(
-      trimMessage({
-        id:
-          typeof record.id === "string" && record.id.length > 0
-            ? record.id
-            : crypto.randomUUID(),
-        role,
-        ...(text ? { text } : {}),
-        ...(a2ui ? { a2ui } : {}),
-      }),
-    );
-  }
-  return messages;
 }
 
 export default function App() {

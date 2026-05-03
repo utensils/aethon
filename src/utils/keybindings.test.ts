@@ -1,5 +1,81 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { formatCombo } from "./keybindings";
+import {
+  canonicalCombo,
+  formatCombo,
+  normalizeRegisteredCombo,
+} from "./keybindings";
+
+function ke(init: Partial<KeyboardEventInit & { key: string }>): KeyboardEvent {
+  // Vitest runs in node; KeyboardEvent isn't globally available unless jsdom
+  // is loaded. Construct a plain object that satisfies the duck-typed shape
+  // canonicalCombo() reads from (key + modifier flags).
+  return {
+    key: init.key ?? "",
+    metaKey: init.metaKey ?? false,
+    ctrlKey: init.ctrlKey ?? false,
+    altKey: init.altKey ?? false,
+    shiftKey: init.shiftKey ?? false,
+  } as unknown as KeyboardEvent;
+}
+
+describe("canonicalCombo", () => {
+  it("returns null for empty key", () => {
+    expect(canonicalCombo(ke({ key: "" }))).toBeNull();
+  });
+
+  it("returns null for modifier-only events", () => {
+    expect(canonicalCombo(ke({ key: "Shift", shiftKey: true }))).toBeNull();
+    expect(canonicalCombo(ke({ key: "Meta", metaKey: true }))).toBeNull();
+    expect(canonicalCombo(ke({ key: "Control", ctrlKey: true }))).toBeNull();
+    expect(canonicalCombo(ke({ key: "Alt", altKey: true }))).toBeNull();
+  });
+
+  it("emits stable modifier ordering meta/ctrl/alt/shift", () => {
+    expect(
+      canonicalCombo(
+        ke({ key: "P", metaKey: true, shiftKey: true, ctrlKey: true, altKey: true }),
+      ),
+    ).toBe("meta+ctrl+alt+shift+p");
+  });
+
+  it("lowercases printable keys", () => {
+    expect(canonicalCombo(ke({ key: "P", metaKey: true, shiftKey: true }))).toBe(
+      "meta+shift+p",
+    );
+  });
+
+  it("preserves non-letter keys", () => {
+    expect(canonicalCombo(ke({ key: "]", ctrlKey: true }))).toBe("ctrl+]");
+  });
+});
+
+describe("normalizeRegisteredCombo", () => {
+  it("returns the canonical form for already-canonical input", () => {
+    expect(normalizeRegisteredCombo("meta+shift+p")).toBe("meta+shift+p");
+  });
+
+  it("aliases cmd/command to meta", () => {
+    expect(normalizeRegisteredCombo("Cmd+Shift+P")).toBe("meta+shift+p");
+    expect(normalizeRegisteredCombo("Command+P")).toBe("meta+p");
+  });
+
+  it("aliases control to ctrl and option to alt", () => {
+    expect(normalizeRegisteredCombo("Control+]")).toBe("ctrl+]");
+    expect(normalizeRegisteredCombo("Option+M")).toBe("alt+m");
+  });
+
+  it("orders modifiers stably regardless of input order", () => {
+    expect(normalizeRegisteredCombo("shift+meta+P")).toBe("meta+shift+p");
+    expect(normalizeRegisteredCombo("alt+ctrl+meta+shift+x")).toBe(
+      "meta+ctrl+alt+shift+x",
+    );
+  });
+
+  it("trims whitespace and ignores empty segments", () => {
+    expect(normalizeRegisteredCombo(" Cmd + Shift + P ")).toBe("meta+shift+p");
+    expect(normalizeRegisteredCombo("Cmd++P")).toBe("meta+p");
+  });
+});
 
 describe("formatCombo (mac)", () => {
   beforeEach(() => {
