@@ -29,6 +29,7 @@ import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
+import { extractSessionId } from "./utils/sidebarHistory";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -2839,7 +2840,11 @@ export default function App() {
       const isRawCrash =
         /^(Error|TypeError|ReferenceError|SyntaxError|RangeError|Uncaught|panic:)/i.test(text) ||
         /\bthrow\s+new\s|\bCannot\s+find\s+(module|package)\b|\bEACCES\b|\bENOENT\b/i.test(text);
-      if (isLeveledFailure || isRawCrash) {
+      // Routine extension feedback (size-guard rejections, etc.) goes to bridge
+      // logs only — surfacing it to chat would spam the feed when an extension
+      // misbehaves on a setInterval.
+      const isExtensionNoise = /\b(WARN|INFO)\s+ext-state:/.test(text);
+      if ((isLeveledFailure || isRawCrash) && !isExtensionNoise) {
         appendMessage({
           id: crypto.randomUUID(),
           role: "system",
@@ -3967,6 +3972,29 @@ export default function App() {
             tabId,
           );
         }
+        break;
+      }
+      case "extension_runtime_error": {
+        // Sticky, deduped notification per extension. Bridge already
+        // rate-limits the underlying log line, so we get one notification
+        // when the misbehavior starts (or resumes after the suppression
+        // window) — not one every 2s.
+        const name = (data.name as string | undefined) ?? "(unknown)";
+        const kind = (data.kind as string | undefined) ?? "error";
+        const path = (data.path as string | undefined) ?? "";
+        const sizeKB = data.sizeKB as number | undefined;
+        const limitKB = data.limitKB as number | undefined;
+        const message =
+          kind === "state-too-large" && sizeKB !== undefined && limitKB !== undefined
+            ? `setState ${path} rejected — ${sizeKB} KB exceeds ${limitKB} KB limit. Store file paths, not content.`
+            : `Extension reported a runtime error.`;
+        pushNotification({
+          id: `ext-runtime-error:${name}`,
+          title: `Extension \`${name}\` is misbehaving`,
+          message,
+          kind: "warning",
+          durationMs: null,
+        });
         break;
       }
       // Legacy single-shot response (kept so old bridge builds still render).
@@ -5988,18 +6016,23 @@ export default function App() {
         const selected = data as
           | { sessionId?: string; itemId?: string; label?: string }
           | undefined;
-        // Strip the "session:" prefix as a defensive fallback in case a
+        // Strip the "session:" or "tab:" prefix defensively in case a
         // future caller forgets the split — the sidebar already strips
         // it but we don't want a stray prefix to land in the Tauri
         // command path validator.
         const raw = selected?.sessionId ?? selected?.itemId ?? "";
-        const sessionId = raw.startsWith("session:")
-          ? raw.slice("session:".length)
-          : raw;
+        const sessionId = extractSessionId(raw);
         const label = selected?.label ?? sessionId;
         if (!sessionId) return true;
         promptDeleteSessionConfirmation(label).then((allowed) => {
           if (!allowed) return;
+          // If the session is currently open as a tab, close it first
+          // so the in-memory state goes away in lockstep with the
+          // on-disk delete. closeTab is a no-op for unknown ids.
+          const isOpen = (stateRef.current.tabs as Tab[] | undefined)?.some(
+            (t) => t.id === sessionId,
+          );
+          if (isOpen) closeTab(sessionId);
           invoke("delete_session", { tabId: sessionId })
             .then(() => {
               // Drop the entry from the in-memory cache and re-derive

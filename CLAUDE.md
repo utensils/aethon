@@ -237,6 +237,36 @@ controlled by the `/agentTabActive` / `/shellTabActive` `$ref` visibility
 flags in `workstation.a2ui.json`. Keybindings: `Cmd+T` = new agent tab (focus-aware — new shell sub-tab when
 focus is inside the bottom panel), `Cmd+Shift+T` = new shell sub-tab (always).
 
+### Slash commands (client-side)
+
+`src/slashCommands.ts` registers frontend-only slash commands that run
+without an LLM round-trip (e.g. `/clear`, `/theme`, `/extensions`). They
+receive a `SlashCommandContext` with `appendSystem`, `notify`, `clearChat`,
+`setTheme`, etc. These are distinct from pi's server-side slash commands
+(extension/skill-registered, dispatched through the bridge) — pi's
+`getCommands()`/handler API is not yet plumbed through. When adding a purely
+UI action, prefer the client-side registry; only go through the bridge when
+the agent needs to observe or act on the command.
+
+### Extension frontend loading
+
+Extensions can ship React components by setting `aethon.frontendEntry` in
+their `package.json` to a relative JS file path. The bridge reads that file
+and sends its contents as a string in `extension_frontend_modules` events.
+`src/skills/extensionFrontendLoader.ts` receives these events, wraps each
+body in `new Function("React", "skill", code)`, and calls the result with
+`React` + a `{ registerComponent(type, fn) }` API object. Components
+registered this way land in the `SkillRegistry` and are resolved alongside
+built-in skill components. A delta payload replaces the full previous set —
+re-evaluated modules hot-swap their components; removed modules unregister
+theirs. The trust model is identical to bridge-side extension code (user
+installed it, no sandbox).
+
+`SkillRegistry` also has a `.registerTemplate(type, payload)` path for
+declarative A2UI subtree templates — used when an extension provides a
+component as an A2UI JSON fragment rather than a React function. The
+renderer prefers React components when both exist for the same type.
+
 ### Command palette
 
 `Cmd+P` opens the switcher (tabs / sessions / projects / layouts /
@@ -445,6 +475,24 @@ the built-in catalogue today; extensions can register more via
 returns `Promise<MutationResult>`), command palette (Cmd+P switcher /
 Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
 .deb/AppImage + Windows NSIS bundles via Nix overlay.
+
+## State persistence
+
+`src/persist.ts` is the disk I/O layer for frontend state. It wraps Tauri
+`read_state` / `write_state` commands with a graceful no-op fallback when
+running outside Tauri (unit tests, plain browser). One-time migration: on
+first read it checks `localStorage` for the same key so users upgrading from
+the pre-Tauri build keep their history. All tab/canvas state serialisation
+goes through here; don't invoke Tauri storage commands directly from
+components.
+
+## Releases
+
+See `RELEASING.md` for the full release workflow: keypair generation,
+wiring the public key into `tauri.conf.json`, CI secrets, and how to cut a
+tag. Summary: push a `v*.*.*` tag → GitHub Actions builds signed macOS DMGs,
+Linux `.deb`/`.rpm`, and Windows NSIS, uploads `latest.json` for the
+in-app updater.
 
 ## Test coverage + linting
 

@@ -91,6 +91,21 @@ pub struct ShortcutsConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct ExtensionsConfig {
+    /// Soft warning threshold (KB) for an extension's `setState` payload.
+    /// Above this, the bridge logs a WARN naming the extension and path.
+    /// Default 64. Range clamped to [1, EXT_STATE_MAX_KB].
+    pub state_warn_kb: Option<u32>,
+    /// Hard rejection threshold (KB) for an extension's `setState`
+    /// payload. Above this the write is rejected before it hits stdout
+    /// and the extension's mutation Promise resolves to
+    /// `{ ok:false, error }`. Default 512. Range clamped to
+    /// [1, EXT_STATE_MAX_KB]. The cap exists because a single very
+    /// large stdout write can block the bridge's Node event loop.
+    pub state_hard_kb: Option<u32>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct AethonConfig {
     #[serde(default)]
     pub ui: UiConfig,
@@ -100,6 +115,8 @@ pub struct AethonConfig {
     pub shell: ShellConfig,
     #[serde(default)]
     pub shortcuts: ShortcutsConfig,
+    #[serde(default)]
+    pub extensions: ExtensionsConfig,
 }
 
 /// Validate-and-normalize the configured default share mode. Unknown
@@ -126,6 +143,27 @@ pub fn normalize_new_tab_kind(input: Option<&str>) -> &'static str {
     }
 }
 
+/// Hard ceiling on the configurable state-payload limits (KB). The bridge
+/// writes setState payloads to stdout; a single very large write can block
+/// the Node event loop. 8 MiB is well above any sensible UI state but
+/// still keeps the bridge responsive on a slow consumer.
+pub const EXT_STATE_MAX_KB: u32 = 8 * 1024;
+pub const EXT_STATE_WARN_KB_DEFAULT: u32 = 64;
+pub const EXT_STATE_HARD_KB_DEFAULT: u32 = 512;
+
+/// Resolve the (warn, hard) state-size limits in KB. Applies defaults for
+/// missing values, clamps each to [1, EXT_STATE_MAX_KB], then guarantees
+/// `warn <= hard` by raising hard if a user picks a hard < warn (otherwise
+/// the WARN tier could never fire). Returns the canonical pair the bridge
+/// should use.
+pub fn resolve_ext_state_limits(warn: Option<u32>, hard: Option<u32>) -> (u32, u32) {
+    let clamp = |n: u32| n.clamp(1, EXT_STATE_MAX_KB);
+    let warn_kb = clamp(warn.unwrap_or(EXT_STATE_WARN_KB_DEFAULT));
+    let hard_kb_raw = clamp(hard.unwrap_or(EXT_STATE_HARD_KB_DEFAULT));
+    let hard_kb = hard_kb_raw.max(warn_kb);
+    (warn_kb, hard_kb)
+}
+
 /// Parse a TOML config string into the canonical JSON shape the frontend
 /// consumes. Falls back to defaults on parse error so a malformed user
 /// file never blocks app boot. Returns the same shape regardless of what
@@ -150,6 +188,8 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .as_deref()
         .filter(|s| !s.is_empty());
     let default_args: Vec<String> = cfg.shell.default_args.unwrap_or_default();
+    let (state_warn_kb, state_hard_kb) =
+        resolve_ext_state_limits(cfg.extensions.state_warn_kb, cfg.extensions.state_hard_kb);
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
@@ -171,6 +211,10 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "shortcuts": {
             "newTabKind": new_tab_kind,
+        },
+        "extensions": {
+            "stateWarnKb": state_warn_kb,
+            "stateHardKb": state_hard_kb,
         },
     })
 }
@@ -373,11 +417,99 @@ prompt_before_close = false
             let v = parse_config_toml(input);
             assert!(v["ui"].is_object());
             assert!(v["agent"].is_object());
+            assert!(v["extensions"].is_object());
             assert!(v["ui"].as_object().unwrap().contains_key("theme"));
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
             assert!(v["agent"].as_object().unwrap().contains_key("model"));
+            assert!(v["extensions"]
+                .as_object()
+                .unwrap()
+                .contains_key("stateWarnKb"));
+            assert!(v["extensions"]
+                .as_object()
+                .unwrap()
+                .contains_key("stateHardKb"));
         }
+    }
+
+    // ── resolve_ext_state_limits ───────────────────────────────────────────
+
+    #[test]
+    fn resolve_ext_state_limits_uses_defaults_when_absent() {
+        let (warn, hard) = resolve_ext_state_limits(None, None);
+        assert_eq!(warn, EXT_STATE_WARN_KB_DEFAULT);
+        assert_eq!(hard, EXT_STATE_HARD_KB_DEFAULT);
+    }
+
+    #[test]
+    fn resolve_ext_state_limits_clamps_min_and_max() {
+        // 0 is not a meaningful threshold — clamp up to 1.
+        let (warn, hard) = resolve_ext_state_limits(Some(0), Some(0));
+        assert_eq!(warn, 1);
+        assert_eq!(hard, 1);
+        // Above the ceiling clamps down. EXT_STATE_MAX_KB caps a runaway
+        // user value so a single stdout write can't OOM the bridge.
+        let (warn, hard) = resolve_ext_state_limits(Some(u32::MAX), Some(u32::MAX));
+        assert_eq!(warn, EXT_STATE_MAX_KB);
+        assert_eq!(hard, EXT_STATE_MAX_KB);
+    }
+
+    #[test]
+    fn resolve_ext_state_limits_raises_hard_to_warn_floor() {
+        // Inverted user input: hard < warn would mean WARN never fires
+        // (every WARN-tier write exceeds the HARD-tier reject first).
+        // Resolve by raising hard up to warn, keeping warn untouched.
+        let (warn, hard) = resolve_ext_state_limits(Some(200), Some(100));
+        assert_eq!(warn, 200);
+        assert_eq!(hard, 200);
+    }
+
+    #[test]
+    fn resolve_ext_state_limits_passthrough_valid_pair() {
+        let (warn, hard) = resolve_ext_state_limits(Some(32), Some(256));
+        assert_eq!(warn, 32);
+        assert_eq!(hard, 256);
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_extensions_section() {
+        let v = parse_config_toml(
+            r#"[extensions]
+state_warn_kb = 128
+state_hard_kb = 1024
+"#,
+        );
+        assert_eq!(v["extensions"]["stateWarnKb"], 128);
+        assert_eq!(v["extensions"]["stateHardKb"], 1024);
+    }
+
+    #[test]
+    fn parse_config_toml_extensions_defaults_when_omitted() {
+        let v = parse_config_toml("");
+        assert_eq!(v["extensions"]["stateWarnKb"], EXT_STATE_WARN_KB_DEFAULT);
+        assert_eq!(v["extensions"]["stateHardKb"], EXT_STATE_HARD_KB_DEFAULT);
+    }
+
+    #[test]
+    fn parse_config_toml_extensions_partial_section_uses_defaults() {
+        // Only one key present — the other should fall back to its default.
+        let v = parse_config_toml("[extensions]\nstate_hard_kb = 2048\n");
+        assert_eq!(v["extensions"]["stateWarnKb"], EXT_STATE_WARN_KB_DEFAULT);
+        assert_eq!(v["extensions"]["stateHardKb"], 2048);
+    }
+
+    #[test]
+    fn parse_config_toml_extensions_inverted_pair_normalized() {
+        // hard < warn is normalized so WARN remains reachable.
+        let v = parse_config_toml(
+            r#"[extensions]
+state_warn_kb = 500
+state_hard_kb = 100
+"#,
+        );
+        assert_eq!(v["extensions"]["stateWarnKb"], 500);
+        assert_eq!(v["extensions"]["stateHardKb"], 500);
     }
 
     // ── clamp_font_size ────────────────────────────────────────────────────

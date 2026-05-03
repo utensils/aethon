@@ -998,6 +998,17 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         command.env("AETHON_USER_DIR", &user_dir);
         command.env("AETHON_STATE_FILE", &state_file);
         command.env("AETHON_SESSIONS_DIR", &sessions_dir);
+        // Read [extensions] state_warn_kb / state_hard_kb from
+        // ~/.aethon/config.toml and pass to the bridge as env vars. We
+        // re-parse on every spawn so a config edit picks up on next
+        // bridge restart without a full app reboot.
+        let cfg_path = user_dir.join("config.toml");
+        let raw = std::fs::read_to_string(&cfg_path).unwrap_or_default();
+        let cfg_json = parse_config_toml(&raw);
+        let warn_kb = cfg_json["extensions"]["stateWarnKb"].as_u64().unwrap_or(64);
+        let hard_kb = cfg_json["extensions"]["stateHardKb"].as_u64().unwrap_or(512);
+        command.env("AETHON_STATE_WARN_KB", warn_kb.to_string());
+        command.env("AETHON_STATE_HARD_KB", hard_kb.to_string());
     }
 
     let mut child = command
@@ -1822,7 +1833,6 @@ fn install_app_menu(
     app: &AppHandle,
     extension_items: &[ExtensionMenuItem],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use tauri::Emitter;
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
     // M6 restructure: Cmd+T is focus-aware in the webview keydown
@@ -1986,13 +1996,11 @@ fn install_app_menu(
 
     app.set_menu(menu)?;
 
-    app.on_menu_event(|app, event| {
-        let id = event.id().0.as_str();
-        // Forward as a Tauri event so the React side's centralized
-        // dispatcher (mirror of the Cmd+T / Cmd+] / Cmd+W keydown
-        // handlers) fires the same code path.
-        let _ = app.emit("menu", id);
-    });
+    // NOTE: `app.on_menu_event` is registered once in `setup()` because
+    // Tauri's handler list is additive — calling it here would stack a
+    // new closure on every `set_extension_menu_items` invocation, so a
+    // single click would fire the React handler N times (the cause of
+    // the "Help → Aethon Documentation opens N tabs" bug).
 
     Ok(())
 }
@@ -2310,6 +2318,15 @@ pub fn run() {
             // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
             // get native NS actions for free, no event handler needed.
             install_app_menu(app.handle(), &[])?;
+            // Register the menu-click → "menu" event forwarder ONCE here.
+            // install_app_menu rebuilds and re-attaches the NSMenu whenever
+            // extension menu items change, but Tauri's `on_menu_event`
+            // handlers are additive — registering inside that function
+            // would stack a new closure per rebuild and emit duplicates.
+            app.handle().on_menu_event(|app, event| {
+                let id = event.id().0.as_str();
+                let _ = app.emit("menu", id);
+            });
             install_tray(app.handle(), &[])?;
             // Initialize the extension menu store empty; the bridge
             // ships items via `extension_menu_items` events that the
