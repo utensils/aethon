@@ -44,6 +44,7 @@ import { formatRelativeTime } from "./utils/time";
 import { canonicalCombo, normalizeRegisteredCombo } from "./utils/keybindings";
 import { coerceChatMessages } from "./utils/messages";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
+import { useShellConsent } from "./hooks/useShellConsent";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -72,14 +73,6 @@ import logoUrl from "./assets/aethon-logo.svg?url";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
-
-/** Lifetime of an Allow/Deny prompt for `aethon.shells.write` in
- *  read-write mode. Set ~30 s under the bridge-side ack timeout
- *  (5 min) so a late click can never inject keystrokes after the
- *  caller's promise has already failed with `timeout`. The auto-
- *  expire flows through the existing notification dismiss path,
- *  which resolves the consent as deny. */
-const SHELL_WRITE_PROMPT_TTL_MS = 4 * 60 * 1000 + 30 * 1000;
 
 interface ModelDescriptor {
   id: string;
@@ -853,47 +846,21 @@ export default function App() {
     });
   }
 
-  /** Pending agent-write confirmations keyed by notification id. The
-   *  resolver fires when the user clicks Allow/Deny or dismisses the
-   *  notification. Cleared as soon as the resolver fires so a stale
-   *  duplicate click is a no-op. Module-scoped via a ref so the
-   *  notification action handler (defined far below) can reach it
-   *  without dragging it through closures. */
-  const shellWriteConsentRef = useRef<Map<string, (allowed: boolean) => void>>(
-    new Map(),
-  );
-  function resolveShellWriteConsent(notifId: string, allowed: boolean) {
-    const resolve = shellWriteConsentRef.current.get(notifId);
-    if (!resolve) return;
-    shellWriteConsentRef.current.delete(notifId);
-    resolve(allowed);
-  }
-
-  /** Pending close-shell-tab confirmations keyed off notification id.
-   *  Same shape as `shellWriteConsentRef` — the action route below
-   *  resolves the corresponding promise on Close / Cancel. */
-  const shellCloseConsentRef = useRef<
-    Map<string, (allowed: boolean) => void>
-  >(new Map());
-  function resolveShellCloseConsent(notifId: string, allowed: boolean) {
-    const resolve = shellCloseConsentRef.current.get(notifId);
-    if (!resolve) return;
-    shellCloseConsentRef.current.delete(notifId);
-    resolve(allowed);
-  }
-
-  /** Pending session-deletion confirmations keyed off notification id.
-   *  Same shape as the shell-close / shell-write consent refs — the
-   *  notification's Delete / Cancel action resolves the promise. */
-  const sessionDeleteConsentRef = useRef<
-    Map<string, (allowed: boolean) => void>
-  >(new Map());
-  function resolveSessionDeleteConsent(notifId: string, allowed: boolean) {
-    const resolve = sessionDeleteConsentRef.current.get(notifId);
-    if (!resolve) return;
-    sessionDeleteConsentRef.current.delete(notifId);
-    resolve(allowed);
-  }
+  // Shell consent flow (Allow/Deny prompts for agent shell writes,
+  // close-shell confirmations, and session deletions) lives in
+  // useShellConsent. Each prompt resolves its Promise via an action
+  // route handler on the notification. See src/hooks/useShellConsent.ts.
+  const {
+    resolveShellWriteConsent,
+    resolveShellCloseConsent,
+    resolveSessionDeleteConsent,
+    hasPendingShellWriteConsent,
+    hasPendingShellCloseConsent,
+    hasPendingSessionDeleteConsent,
+    promptShellWriteConfirmation,
+    promptCloseShellTabConfirmation,
+    promptDeleteSessionConfirmation,
+  } = useShellConsent({ pushNotification });
 
   /** Mirror a share-mode change from the Rust source-of-truth into the
    *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
@@ -959,96 +926,6 @@ export default function App() {
     }
     await invoke("shell_write", { tabId, data: text });
     return { ok: true };
-  }
-
-  /** Push a Allow/Deny notification and resolve with the user's choice
-   *  (or `false` on dismiss / auto-expire). The pending choice is
-   *  keyed off the notification id and stored in
-   *  `shellWriteConsentRef` so the existing notification action route
-   *  can hand back the resolution. */
-  function promptShellWriteConfirmation(input: {
-    tabId: string;
-    text: string;
-    tabLabel: string;
-  }): Promise<boolean> {
-    return new Promise((resolve) => {
-      const id = `shell-write-${crypto.randomUUID().slice(0, 8)}`;
-      shellWriteConsentRef.current.set(id, resolve);
-      // Truncate the preview — agents can ask for long pastes; we want
-      // the notification to stay scannable. The full text still goes
-      // to the PTY on Allow.
-      const preview = input.text.length > 80
-        ? `${input.text.slice(0, 80).replace(/\n/g, "⏎")}…`
-        : input.text.replace(/\n/g, "⏎");
-      pushNotification({
-        id,
-        title: `Agent wants to type in "${input.tabLabel}"`,
-        message: preview,
-        kind: "warning",
-        // Auto-expire ~30 s before the bridge's 5-min ack timeout so a
-        // late Allow click can never invoke `shell_write` after the
-        // caller's promise has already resolved as timed-out. The
-        // notification's `expire` event flows through the existing
-        // dismiss path → `resolveShellWriteConsent(id, false)` →
-        // bridge sees a denied result and the prompt vanishes.
-        durationMs: SHELL_WRITE_PROMPT_TTL_MS,
-        actions: [
-          { label: "Allow", action: `shell-write-allow:${id}` },
-          { label: "Deny", action: `shell-write-deny:${id}` },
-        ],
-      });
-    });
-  }
-
-  /** Pop a Close / Cancel notification before tearing down a running
-   *  shell tab. Resolves true → caller proceeds with `closeTabNow`,
-   *  false → caller bails. Notifications use the existing `actions`
-   *  primitive so styling and dismissal flow through one code path. */
-  function promptCloseShellTabConfirmation(
-    tabLabel: string,
-  ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const id = `shell-close-${crypto.randomUUID().slice(0, 8)}`;
-      shellCloseConsentRef.current.set(id, resolve);
-      pushNotification({
-        id,
-        title: `Close "${tabLabel}"?`,
-        message:
-          "The shell is still running. Closing terminates it (SIGTERM, then SIGKILL after 5s).",
-        kind: "warning",
-        durationMs: null,
-        actions: [
-          { label: "Close", action: `shell-close-allow:${id}` },
-          { label: "Cancel", action: `shell-close-deny:${id}` },
-        ],
-      });
-    });
-  }
-
-  /** Pop a Delete / Cancel notification before removing a saved session.
-   *  Resolves true → caller invokes the Tauri delete_session command and
-   *  refreshes the recent-sessions list; false → no-op. Sticky toast
-   *  (durationMs: null) so a destructive action requires a deliberate
-   *  click — auto-dismiss would let the prompt vanish before the user
-   *  can react. */
-  function promptDeleteSessionConfirmation(
-    label: string,
-  ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const id = `session-delete-${crypto.randomUUID().slice(0, 8)}`;
-      sessionDeleteConsentRef.current.set(id, resolve);
-      pushNotification({
-        id,
-        title: `Delete saved session?`,
-        message: `"${label}" — the on-disk transcript will be removed and cannot be recovered.`,
-        kind: "warning",
-        durationMs: null,
-        actions: [
-          { label: "Delete", action: `session-delete-allow:${id}` },
-          { label: "Cancel", action: `session-delete-deny:${id}` },
-        ],
-      });
-    });
   }
 
   function updateActiveTab(mutator: (tab: Tab) => Tab) {
@@ -5238,7 +5115,7 @@ export default function App() {
         const isShellWriteDismiss =
           (eventType === "dismiss" || eventType === "expire") &&
           typeof id === "string" &&
-          shellWriteConsentRef.current.has(id);
+          hasPendingShellWriteConsent(id);
         if (isShellWriteAction && id && action) {
           const allowed = action.startsWith("shell-write-allow:");
           resolveShellWriteConsent(id, allowed);
@@ -5262,7 +5139,7 @@ export default function App() {
         const isShellCloseDismiss =
           (eventType === "dismiss" || eventType === "expire") &&
           typeof id === "string" &&
-          shellCloseConsentRef.current.has(id);
+          hasPendingShellCloseConsent(id);
         if (isShellCloseAction && id && action) {
           const allowed = action.startsWith("shell-close-allow:");
           resolveShellCloseConsent(id, allowed);
@@ -5287,7 +5164,7 @@ export default function App() {
         const isSessionDeleteDismiss =
           (eventType === "dismiss" || eventType === "expire") &&
           typeof id === "string" &&
-          sessionDeleteConsentRef.current.has(id);
+          hasPendingSessionDeleteConsent(id);
         if (isSessionDeleteAction && id && action) {
           const allowed = action.startsWith("session-delete-allow:");
           resolveSessionDeleteConsent(id, allowed);
