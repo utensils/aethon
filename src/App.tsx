@@ -9,8 +9,6 @@ import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import {
   defaultLayoutSkill,
-  inspectLayoutSlotCoverage,
-  layoutSlots,
 } from "./skills/default-layout";
 import type {
   PaletteItem,
@@ -20,7 +18,7 @@ import type {
   NotificationEntry,
   NotificationKind,
 } from "./skills/default-layout/notifications";
-import type { LayoutCatalogueEntry, SlotCoverageReport } from "./skills/default-layout";
+import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import {
   NO_PROJECT_KEY,
@@ -29,9 +27,7 @@ import {
   type ShellMeta,
   type Tab,
 } from "./types/tab";
-import type { A2UISkill } from "./skills/types";
 import { deletePointer, setPointer } from "./utils/jsonPointer";
-import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 import { extractSessionId } from "./utils/sidebarHistory";
@@ -49,6 +45,7 @@ import {
   type ExtensionTheme,
 } from "./hooks/useExtensionsHydration";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useWindowApi } from "./runtime/windowApi";
 import { isFocusInTerminalPanel } from "./utils/focus";
 import {
   parseSlashCommand,
@@ -898,106 +895,27 @@ export default function App() {
     pushNotification,
   });
 
-  useEffect(() => {
-    const api = {
-      setLayout,
-      resetLayout: () => setLayout(BOOT_LAYOUT),
-      getLayout: () => layout,
-      registerSkill: (skill: A2UISkill) => {
-        registry.register(skill);
-        if (skill.layout) setLayout(skill.layout);
-      },
-      listSkills: () => registry.list().map((s) => s.name),
-      newTab,
-      closeTab,
-      switchTab: setActiveTab,
-      listTabs: () => ((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => ({
-        id: t.id,
-        label: t.label,
-        active: t.id === stateRef.current.activeTabId,
-      })),
-      // Layout catalogue. Lets the user / agent swap between named
-      // layouts (workstation only, today) without having to ship a full
-      // setLayout payload. Extensions append more via registerLayout.
-      // Activation goes through setLayout so all the existing
-      // state-merge / layout-bound-state semantics apply.
-      listLayouts: (): LayoutCatalogueEntry[] =>
-        layoutCatalogueRef.current.slice(),
-      activateLayout: activateLayoutById,
-      registerLayout: (entry: LayoutCatalogueEntry): boolean => {
-        if (!entry || typeof entry.id !== "string" || !entry.payload) return false;
-        const idx = layoutCatalogueRef.current.findIndex((l) => l.id === entry.id);
-        if (idx >= 0) {
-          layoutCatalogueRef.current[idx] = entry;
-        } else {
-          layoutCatalogueRef.current.push(entry);
-        }
-        // Mirror into state so /layout's argSource picker re-resolves.
-        setState((prev) => ({
-          ...prev,
-          layoutCatalogue: layoutCatalogueRef.current.map((l) => ({
-            id: l.id,
-            label: l.name,
-            description: l.description,
-          })),
-        }));
-        return true;
-      },
-      // Layout-slot catalogue. The contract (canonical slot names + which
-      // composite typically fills each) is `src/skills/default-layout/slots.json`.
-      // A composite uses `area: "<slot>"` to declare placement; an alternative
-      // layout that wants to host the standard composites needs to either
-      // call its grid areas by these names, or provide a `slotMap` prop on
-      // its root <layout>.
-      layoutSlots,
-      inspectLayoutSlotCoverage: (payload?: A2UIPayload): SlotCoverageReport =>
-        inspectLayoutSlotCoverage(payload ?? layout),
-      // Projects — directories the agent works in. `pickProject` opens a
-      // native folder picker; the resolved path is persisted, made
-      // active, and announced to the bridge as the new tab cwd. Returns
-      // null on cancel. `openProject(path)` skips the picker for paths
-      // that are already known (e.g. the empty-state "Recent projects"
-      // list). `setActiveProject(id)` switches the active project for
-      // future tabs without opening one. `clearProject()` reverts to
-      // bridge-default cwd.
-      pickProject: openProjectFromPicker,
-      openProject: (path: string, label?: string) => openProjectByPath(path, label),
-      setActiveProject: setActiveProjectById,
-      clearProject: clearActiveProject,
-      removeProject: removeProjectById,
-      listProjects: () => projectsRef.current.projects.slice(),
-      activeProject: () => activeProject(projectsRef.current),
-      // Extension surface for the `code` primitive's syntax highlighter.
-      // Mirrors the bridge-side aethon.registerHighlightGrammar so a
-      // frontend skill module (loaded via skill `frontendEntry`) can
-      // teach Shiki a new language without an IPC round-trip. Bridge
-      // extensions go through `register_highlight_grammar` IPC instead.
-      registerHighlightGrammar: (lang: string, grammar: unknown): boolean => {
-        if (typeof lang !== "string" || lang.trim().length === 0) return false;
-        if (!grammar || typeof grammar !== "object") return false;
-        registerHighlightGrammar(lang.trim(), grammar);
-        return true;
-      },
-    };
-    (window as unknown as { aethon: typeof api }).aethon = api;
-
-    if (import.meta.env.DEV) {
-      const win = window as unknown as {
-        __AETHON_STATE__: () => Record<string, unknown>;
-        __AETHON_REGISTRY__: SkillRegistry;
-        __AETHON_SET_STATE__: (next: Record<string, unknown>) => void;
-      };
-      win.__AETHON_STATE__ = () => stateRef.current;
-      win.__AETHON_REGISTRY__ = registry;
-      win.__AETHON_SET_STATE__ = setState;
-    }
-    // The api closures intentionally read live state via stateRef /
-    // setState callbacks, so a stale reference inside `api` doesn't
-    // produce stale data. Adding the function deps would re-build this
-    // effect every render and churn `window.aethon` for no behavioral
-    // gain.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, registry]);
+  // window.aethon runtime API + dev-only __AETHON_* debug hooks.
+  // Lives in src/runtime/windowApi.ts; mounts via useWindowApi.
+  useWindowApi({
+    layout,
+    bootLayout: BOOT_LAYOUT,
+    setLayout,
+    setState,
+    stateRef,
+    registry,
+    layoutCatalogueRef,
+    projectsRef,
+    newTab,
+    closeTab,
+    setActiveTab,
+    activateLayoutById,
+    openProjectFromPicker,
+    openProjectByPath,
+    setActiveProjectById,
+    clearActiveProject,
+    removeProjectById,
+  });
 
   // Mirror an allowlisted set of frontend state slices back to the bridge
   // so extensions can introspect them via `aethon.getFrontendState(path)`.
