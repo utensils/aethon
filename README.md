@@ -113,30 +113,20 @@ input for Nix builds.
 
 ## Architecture
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                     Aethon (.app / .deb)                    │
-│                                                            │
-│  ┌────────────────┐    stdio (JSON lines)   ┌────────────┐ │
-│  │  Tauri Shell    │◄─────────────────────►│  Pi Agent  │ │
-│  │  (Rust)         │                        │  (bun bin) │ │
-│  │                 │                        │            │ │
-│  │  • windows      │   A2UI components      │  • pi-ai   │ │
-│  │  • tray + menu  │◄───────────────────────│  • tools   │ │
-│  │  • file watch   │                        │  • skills  │ │
-│  │  • spawn agent  │   user / UI events     │  • exts    │ │
-│  └────────┬────────┘──────────────────────► └────────────┘ │
-│           │ Tauri IPC                                       │
-│           ▼                                                 │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │             React Frontend (Vite)                    │  │
-│  │  ┌─────────────────────┐  ┌──────────────────────┐  │  │
-│  │  │  A2UI Renderer       │  │  default-layout     │  │  │
-│  │  │  (19 primitives +    │  │  (sidebar, canvas,  │  │  │
-│  │  │  scoped templates)   │  │  terminal, ...)     │  │  │
-│  │  └─────────────────────┘  └──────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph aethon["Aethon (.app / .deb)"]
+        TS["Tauri Shell (Rust)\nwindows · tray + menu · file watch · spawn agent"]
+        PA["Pi Agent (bun bin)\npi-ai · tools · skills · exts"]
+        subgraph react["React Frontend (Vite)"]
+            R["A2UI Renderer\n19 primitives + scoped templates"]
+            L["default-layout\nsidebar · canvas · terminal · …"]
+        end
+
+        TS -- "stdin JSON lines\nuser / UI events" --> PA
+        PA -- "stdout JSON lines\nA2UI components + responses" --> TS
+        TS <-- "Tauri IPC" --> react
+    end
 ```
 
 | Layer                  | Owns                                                                                    | Doesn't own                                                     |
