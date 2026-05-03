@@ -46,6 +46,8 @@ import { coerceChatMessages } from "./utils/messages";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useProjects } from "./hooks/useProjects";
+import { useTabNavigation } from "./hooks/useTabNavigation";
+import { isFocusInTerminalPanel } from "./utils/focus";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
@@ -1286,35 +1288,6 @@ export default function App() {
       });
   }
 
-  function nextTab(direction: 1 | -1) {
-    const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-      .filter((t) => t.kind !== "shell");
-    if (tabs.length <= 1) return;
-    const activeId = stateRef.current.activeTabId as string | undefined;
-    const idx = tabs.findIndex((t) => t.id === activeId);
-    if (idx < 0) {
-      // Active tab is no longer an agent (or not in /tabs). Jump to
-      // the first agent tab in the requested direction.
-      setActiveTab(direction > 0 ? tabs[0].id : tabs[tabs.length - 1].id);
-      return;
-    }
-    const nextIdx = (idx + direction + tabs.length) % tabs.length;
-    setActiveTab(tabs[nextIdx].id);
-  }
-
-  /** True when keyboard focus is anywhere inside the bottom terminal
-   *  panel (the agent-bash xterm or any shell sub-tab). Drives the
-   *  focus-aware Cmd+T routing: focus in the panel → new shell sub-tab,
-   *  otherwise → new agent tab. Falls back to false outside Tauri
-   *  (no DOM) so unit tests don't have to mock `document`. */
-  function isFocusInTerminalPanel(): boolean {
-    if (typeof document === "undefined") return false;
-    const focused = document.activeElement;
-    if (!focused) return false;
-    const panel = document.querySelector(".ae-terminal-panel");
-    return !!panel?.contains(focused);
-  }
-
   /** Switch which sub-tab is active in the bottom terminal panel
    *  (M6 restructure). Sub-tab id is either the special string
    *  "agent-bash" (the always-present read-only view) or a shell tab
@@ -1356,101 +1329,18 @@ export default function App() {
     }
   }
 
-  /** Jump to tab at zero-based index, clamped to the live tab list.
-   *  No-op when out of range so a Cmd+5 with only 3 tabs is silent
-   *  rather than throwing. Used by Cmd/Ctrl+1..9 keybindings (browser
-   *  + iTerm convention). Filters to agent tabs only — shell tabs live
-   *  in the bottom panel and have their own selection. */
-  function jumpToTab(idx: number) {
-    const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-      .filter((t) => t.kind !== "shell");
-    if (tabs.length === 0) return;
-    if (idx < 0 || idx >= tabs.length) return;
-    setActiveTab(tabs[idx].id);
-  }
-
-  /** Sub-tab variant of jumpToTab: idx 0 selects agent-bash, idx 1+
-   *  selects the corresponding shell sub-tab in `/tabs` (filtered to
-   *  kind === "shell"). Out-of-range no-ops so a Cmd+5 with two shells
-   *  open is silent. */
-  function jumpToShellSubTab(idx: number) {
-    if (idx === 0) {
-      setActiveSubTab("agent-bash");
-      return;
-    }
-    const shellTabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-      .filter((t) => t.kind === "shell");
-    const shellIdx = idx - 1;
-    if (shellIdx < 0 || shellIdx >= shellTabs.length) return;
-    setActiveSubTab(shellTabs[shellIdx].id);
-  }
-
-  /** Cycle the active sub-tab in the bottom terminal panel. Order is
-   *  agent-bash first, then each shell sub-tab in `/tabs` order; wraps
-   *  at the ends. Used by Cmd+]/[ when focus is in the panel so the
-   *  user navigates the surface they're looking at. */
-  function nextShellSubTab(direction: 1 | -1) {
-    const subIds = ["agent-bash" as string].concat(
-      ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-        .filter((t) => t.kind === "shell")
-        .map((t) => t.id),
-    );
-    if (subIds.length <= 1) return;
-    const cur = (stateRef.current.terminalPanel as
-      | { activeSubId?: string }
-      | undefined)?.activeSubId ?? "agent-bash";
-    const idx = Math.max(0, subIds.indexOf(cur));
-    const nextIdx = (idx + direction + subIds.length) % subIds.length;
-    setActiveSubTab(subIds[nextIdx]);
-  }
-
-  /** Reorder the active *shell sub-tab* one slot left (-1) or right
-   *  (+1) within the bottom panel. Swaps positions with the next/prev
-   *  shell tab in `/tabs` so non-shell entries stay in place — agents
-   *  in the top strip don't shuffle when the user reorders shells.
-   *  agent-bash is pinned first; trying to move it is a no-op. */
-  function moveActiveShellSubTab(direction: 1 | -1) {
-    const activeSub = (stateRef.current.terminalPanel as
-      | { activeSubId?: string }
-      | undefined)?.activeSubId;
-    if (!activeSub || activeSub === "agent-bash") return;
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const shellPositions = tabs
-        .map((t, i) => (t.kind === "shell" ? i : -1))
-        .filter((i) => i >= 0);
-      if (shellPositions.length <= 1) return prev;
-      const idx = tabs.findIndex((t) => t.id === activeSub);
-      if (idx < 0) return prev;
-      const subPos = shellPositions.indexOf(idx);
-      if (subPos < 0) return prev;
-      const swapSubPos =
-        (subPos + direction + shellPositions.length) % shellPositions.length;
-      const swapIdx = shellPositions[swapSubPos];
-      const tmp = tabs[idx];
-      tabs[idx] = tabs[swapIdx];
-      tabs[swapIdx] = tmp;
-      return { ...prev, tabs };
-    });
-  }
-
-  /** Move the active tab one slot left (-1) or right (+1) within the
-   *  current project's bucket. Wraps at the ends so a "move right" on
-   *  the last tab puts it first — matches Chrome's Cmd+Shift+]/[. */
-  function moveActiveTab(direction: 1 | -1) {
-    const activeId = stateRef.current.activeTabId as string | undefined;
-    if (!activeId) return;
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      if (tabs.length <= 1) return prev;
-      const idx = tabs.findIndex((t) => t.id === activeId);
-      if (idx < 0) return prev;
-      const nextIdx = (idx + direction + tabs.length) % tabs.length;
-      const [moved] = tabs.splice(idx, 1);
-      tabs.splice(nextIdx, 0, moved);
-      return { ...prev, tabs };
-    });
-  }
+  // Tab/sub-tab navigation (next/jump/move for both agent tabs and
+  // shell sub-tabs) lives in useTabNavigation. The hook computes the
+  // target id and delegates to setActiveTab / setActiveSubTab — the
+  // heavy lifecycle (state mirroring, terminal replay) stays here.
+  const {
+    nextTab,
+    jumpToTab,
+    moveActiveTab,
+    nextShellSubTab,
+    jumpToShellSubTab,
+    moveActiveShellSubTab,
+  } = useTabNavigation({ stateRef, setState, setActiveTab, setActiveSubTab });
 
   // In-memory stack of recently-closed tab metadata (most recent at end).
   // Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to bound
