@@ -44,18 +44,18 @@ export function installTauriMocks(): TauriMockHarness {
 
   const reset = () => {
     invoke.mockReset();
-    invoke.mockImplementation(async () => undefined);
+    invoke.mockImplementation(() => Promise.resolve(undefined));
     listen.mockReset();
-    listen.mockImplementation(async (name: string, cb: ListenCallback) => {
+    listen.mockImplementation((name: string, cb: ListenCallback) => {
       let bucket = handlers.get(name);
       if (!bucket) {
         bucket = new Set();
         handlers.set(name, bucket);
       }
       bucket.add(cb);
-      return () => {
+      return Promise.resolve(() => {
         bucket?.delete(cb);
-      };
+      });
     });
     handlers.clear();
   };
@@ -79,6 +79,6 @@ export function clearTauriMocks(): void {
   vi.restoreAllMocks();
   // Re-install the default no-ops so other mocks layered on top of the
   // setup mock module don't crash when subsequent tests import `invoke`.
-  (realInvoke as unknown as Mock).mockImplementation(async () => undefined);
-  (realListen as unknown as Mock).mockImplementation(async () => () => {});
+  (realInvoke as unknown as Mock).mockImplementation(() => Promise.resolve(undefined));
+  (realListen as unknown as Mock).mockImplementation(() => Promise.resolve(() => {}));
 }
