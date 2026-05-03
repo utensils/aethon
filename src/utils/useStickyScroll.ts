@@ -25,6 +25,19 @@ export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) 
   }
   const rafRef = useRef<number | null>(null);
 
+  // Assign scrollTop conditionally and tell the controller about the
+  // synthesized scroll event ONLY if the assignment will actually move
+  // the container — see notifyProgrammaticScroll for why.
+  const programmaticScrollTo = (
+    el: HTMLDivElement,
+    target: number,
+    ctrl: StickyScrollController,
+  ) => {
+    if (el.scrollTop === target) return;
+    ctrl.notifyProgrammaticScroll();
+    el.scrollTop = target;
+  };
+
   const handleContentChanged = useCallback(() => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -33,7 +46,7 @@ export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) 
       const ctrl = controllerRef.current;
       if (!el || !ctrl) return;
       const decision = ctrl.onContentChanged();
-      if (decision.scrollToBottom) el.scrollTop = el.scrollHeight;
+      if (decision.scrollToBottom) programmaticScrollTo(el, el.scrollHeight, ctrl);
     });
   }, [containerRef]);
 
@@ -42,7 +55,7 @@ export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) 
     const ctrl = controllerRef.current;
     if (!el || !ctrl) return;
     const decision = ctrl.resume();
-    if (decision.scrollToBottom) el.scrollTop = el.scrollHeight;
+    if (decision.scrollToBottom) programmaticScrollTo(el, el.scrollHeight, ctrl);
     setIsAtBottom(true);
   }, [containerRef]);
 
@@ -69,7 +82,7 @@ export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) 
 
     requestAnimationFrame(() => {
       const elNow = containerRef.current;
-      if (elNow && ctrl.follow) elNow.scrollTop = elNow.scrollHeight;
+      if (elNow && ctrl.follow) programmaticScrollTo(elNow, elNow.scrollHeight, ctrl);
     });
 
     return () => {

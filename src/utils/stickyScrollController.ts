@@ -67,7 +67,6 @@ export class StickyScrollController {
    */
   onContentChanged(): StickyDecision {
     if (this.followFlag) {
-      this.programmaticPending = true;
       return { scrollToBottom: true, follow: true };
     }
     return { scrollToBottom: false, follow: false };
@@ -76,7 +75,16 @@ export class StickyScrollController {
   /** User clicked the "scroll to bottom" pill. Re-enable follow. */
   resume(): StickyDecision {
     this.followFlag = true;
-    this.programmaticPending = true;
     return { scrollToBottom: true, follow: true };
+  }
+
+  /** Tell the controller a programmatic scroll just happened and the
+   *  next scroll event should be ignored. The hook calls this only
+   *  when the assignment to `scrollTop` will actually move the
+   *  container — otherwise no scroll event fires and a stale
+   *  `programmaticPending` would silently swallow the user's NEXT
+   *  scroll-away (codex P2 review feedback). */
+  notifyProgrammaticScroll(): void {
+    this.programmaticPending = true;
   }
 }

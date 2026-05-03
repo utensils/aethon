@@ -81,19 +81,29 @@ describe("StickyScrollController", () => {
 
   it("ignores the synthesized scroll event from its own programmatic scroll", () => {
     const c = new StickyScrollController();
-    // Suppose scrollHeight just grew. Controller will scroll-to-bottom,
-    // and the consumer reports that scroll back via onScroll. The new
-    // metrics show the user is at the new bottom — but the controller
-    // should NOT treat this as a fresh user gesture (that would be
-    // benign here, but the symmetric case — user briefly above bottom
-    // when our scroll fires — would mistakenly disable follow).
-    c.onContentChanged(); // programmatic scroll requested
-    // Pretend the consumer's scroll handler fires WHILE the user is
-    // momentarily not at the bottom (e.g. between the scroll request
-    // and the actual scroll completing). The controller must not flip
-    // follow off based on this synthesized event.
+    c.onContentChanged(); // decision says scroll
+    // Hook tells the controller it actually moved the container.
+    c.notifyProgrammaticScroll();
+    // First scroll event after a programmatic scroll is consumed.
     const followAfter = c.onScroll(M(500, 200, 1100));
     expect(followAfter).toBe(true);
+  });
+
+  it("does NOT silently suppress real user scrolls when the programmatic scroll was a no-op (codex P2)", () => {
+    // Regression: if the consumer's scrollTop assignment didn't actually
+    // move the container (e.g. already at bottom, mutation didn't grow
+    // height), no synthesized scroll event fires. Setting
+    // programmaticPending unconditionally would leave the flag stale and
+    // the user's NEXT real scroll-away would be silently ignored.
+    // The hook avoids this by calling notifyProgrammaticScroll only
+    // when scrollTop actually changes — so the controller never sees
+    // a stale flag in this scenario.
+    const c = new StickyScrollController();
+    c.onContentChanged(); // returns scrollToBottom: true
+    // Hook decides scrollTop is already at scrollHeight (no-op);
+    // does NOT call notifyProgrammaticScroll. User then scrolls away.
+    const follow = c.onScroll(M(0, 200, 1000));
+    expect(follow).toBe(false);
   });
 
   it("resume() forces follow on regardless of prior scroll-away", () => {
@@ -107,7 +117,8 @@ describe("StickyScrollController", () => {
 
   it("a real user scroll after a programmatic scroll still updates follow", () => {
     const c = new StickyScrollController();
-    c.onContentChanged(); // programmatic-pending = true
+    c.onContentChanged();
+    c.notifyProgrammaticScroll();
     c.onScroll(M(900, 200, 1100)); // consumes the programmatic flag
     expect(c.follow).toBe(true);
     // Now a genuine user scroll should be honoured.

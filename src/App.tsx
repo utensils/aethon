@@ -606,7 +606,12 @@ export default function App() {
   // Hang-warn: push a sticky "Still working…" notification if the active tab
   // stays waiting longer than HANG_WARN_MS. Per-tab timers keyed by tabId.
   const HANG_WARN_MS = 30_000;
-  const HANG_WARN_NOTIF_ID = "ae-hang-warn";
+  // Per-tab notification id so a `response_end` for tab B doesn't dismiss
+  // tab A's still-hung warning (codex P2 review feedback).
+  const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
+  // Track which tabs currently have a hang notification surfaced so the
+  // crash/reload paths can dismiss them all without scanning.
+  const hangWarnActiveRef = useRef<Set<string>>(new Set());
   const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // P4: live config for OS notifications. Mirrors `config.ui.notifyOnCompletion`
   // / `notifyMinDurationSeconds` and is updated in the boot config effect.
@@ -1113,8 +1118,9 @@ export default function App() {
     });
   }
 
-  async function stopPrompt() {
-    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+  async function stopPrompt(explicitTabId?: string) {
+    const tabId =
+      explicitTabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "stop", tabId }),
@@ -2754,7 +2760,8 @@ export default function App() {
       activeResponseIdRef.current = null;
       for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
       hangWarnTimersRef.current.clear();
-      dismissNotification(HANG_WARN_NOTIF_ID);
+      for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
+      hangWarnActiveRef.current.clear();
       setStatusFlags({ waiting: false, status: "agent reloaded" });
       // Re-prime the agent so we get a fresh `ready` event with the new code.
       invoke("start_agent").catch(() => {
@@ -2774,7 +2781,8 @@ export default function App() {
         activeResponseIdRef.current = null;
         for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
         hangWarnTimersRef.current.clear();
-        dismissNotification(HANG_WARN_NOTIF_ID);
+        for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
+        hangWarnActiveRef.current.clear();
         // Clear waiting/queue across every tab — pi sessions are gone.
         setState((prev) => {
           const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => ({
@@ -3801,14 +3809,15 @@ export default function App() {
             const tabs = (cur.tabs as Tab[] | undefined) ?? [];
             const tab = tabs.find((t) => t.id === tabId);
             if (!tab?.waiting) return;
+            hangWarnActiveRef.current.add(tabId);
             pushNotification({
-              id: HANG_WARN_NOTIF_ID,
+              id: hangWarnNotifId(tabId),
               title: "Still working…",
               message: "The agent is taking longer than expected.",
               kind: "warning",
               durationMs: null,
               actions: [
-                { label: "Stop", action: "hang-warn:stop" },
+                { label: "Stop", action: `hang-warn:stop:${tabId}` },
                 { label: "Force restart", action: "hang-warn:force-restart" },
               ],
             });
@@ -3851,12 +3860,15 @@ export default function App() {
             return { ...prev, status: "ready" };
           });
         }
-        // Clear the hang-warn timer and dismiss the notification (if it
-        // appeared) now that the turn resolved normally.
+        // Clear the hang-warn timer and dismiss this tab's notification
+        // (if it appeared). Per-tab id so an unrelated tab's response_end
+        // doesn't dismiss a still-hung tab's warning.
         {
           const h = hangWarnTimersRef.current.get(tabId);
           if (h !== undefined) { clearTimeout(h); hangWarnTimersRef.current.delete(tabId); }
-          dismissNotification(HANG_WARN_NOTIF_ID);
+          if (hangWarnActiveRef.current.delete(tabId)) {
+            dismissNotification(hangWarnNotifId(tabId));
+          }
         }
         // P4: fire native OS notification when an agent turn completes
         // while the window is unfocused (or the originating tab isn't
@@ -5646,8 +5658,14 @@ export default function App() {
           typeof action === "string" &&
           action.startsWith("hang-warn:")
         ) {
-          if (action === "hang-warn:stop") {
-            void stopPrompt();
+          if (action.startsWith("hang-warn:stop")) {
+            // Stop carries the tabId of the hung tab (set when the
+            // notification was pushed) so the right session is stopped
+            // even if the user is on a different tab when they click.
+            const targetTabId = action.startsWith("hang-warn:stop:")
+              ? action.slice("hang-warn:stop:".length)
+              : undefined;
+            void stopPrompt(targetTabId);
           } else if (action === "hang-warn:force-restart") {
             // force_restart_agent SIGKILLs the bun child from Rust, bypassing
             // blocked stdin. The existing agent-crashed handler then fires,
