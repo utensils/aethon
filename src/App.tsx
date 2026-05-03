@@ -28,7 +28,6 @@ import {
   NO_PROJECT_KEY,
   makeEmptyTab,
   projectBucketKey,
-  type ClosedTabEntry,
   type ShellMeta,
   type Tab,
 } from "./types/tab";
@@ -47,6 +46,7 @@ import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
+import { useTabs, TAB_MIRROR_KEYS, TERMINAL_REPLAY_MAX } from "./hooks/useTabs";
 import { isFocusInTerminalPanel } from "./utils/focus";
 import {
   buildBuiltinSlashCommands,
@@ -223,11 +223,6 @@ export default function App() {
     );
     setState((prev) => ({ ...prev, recentSessions: sessions }));
   }
-  // Per-tab terminal buffer cap. Bash output bursts can be huge; without
-  // a ceiling the buffer would grow forever and slow tab switches as the
-  // replay payload grows.
-  const TERMINAL_REPLAY_MAX = 256 * 1024;
-
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
@@ -278,12 +273,16 @@ export default function App() {
   // deltas after a tool card still land in the original bubble; this ref
   // only matters for old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
-  // Per app session, remember persisted sessions we auto-opened from
-  // `[ui] restore_tabs = true` so repeated ready/report events don't
-  // duplicate tabs.
-  const autoRestoredSessionIdsRef = useRef(new Set<string>());
+  // autoRestoredSessionIdsRef now lives in useTabs (the hook owns
+  // restore-tab dedup). Other tab refs likewise.
   const allDiscoveredSessionsRef = useRef<DiscoveredSession[]>([]);
   const projectsLoadedRef = useRef(false);
+  // Projects (working directories the agent operates in). Persisted to
+  // ~/.aethon/projects.json. The active project's path travels with each
+  // new tab as `cwd` on `tab_open` so pi's SessionManager scopes the
+  // session to that directory. Existing tabs keep their original cwd —
+  // switching project doesn't retroactively change live sessions.
+  const projectsRef = useRef<ProjectsState>(emptyProjectsState());
   // Pi's default model from the last `ready` event. Used to seed new tabs
   // before ready fires (or when the active tab has no model yet), so the
   // picker never shows a blank "model ▼" label.
@@ -810,45 +809,6 @@ export default function App() {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Tab update helpers. `updateTab` writes into one tab record; if that
-  // tab is currently active, it ALSO updates the root mirror keys so the
-  // layout sees the change. `updateActiveTab` is a thin wrapper that
-  // resolves the active id from the latest state. `mirrorKeys` lists the
-  // tab fields that ride along on the root state.
-  // ---------------------------------------------------------------------
-  const TAB_MIRROR_KEYS: (keyof Tab)[] = [
-    "messages",
-    "draft",
-    "waiting",
-    "queueCount",
-    "canvas",
-    "model",
-    // M6 P1: shell-tab fields. The "kind" + "shell" mirror lets layouts
-    // bind `visible: { $ref: "/kind" }`-style toggles without running a
-    // full /tabs/<idx> lookup on every render.
-    "kind",
-    "shell",
-  ];
-
-  function updateTab(tabId: string, mutator: (tab: Tab) => Tab) {
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const idx = tabs.findIndex((t) => t.id === tabId);
-      if (idx < 0) return prev;
-      const next = mutator(tabs[idx]);
-      tabs[idx] = next;
-      const result: Record<string, unknown> = { ...prev, tabs };
-      if (prev.activeTabId === tabId) {
-        const nextRec = next as unknown as Record<string, unknown>;
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = nextRec[key as string];
-        }
-      }
-      return result;
-    });
-  }
-
   // Shell consent flow (Allow/Deny prompts for agent shell writes,
   // close-shell confirmations, and session deletions) lives in
   // useShellConsent. Each prompt resolves its Promise via an action
@@ -864,32 +824,6 @@ export default function App() {
     promptCloseShellTabConfirmation,
     promptDeleteSessionConfirmation,
   } = useShellConsent({ pushNotification });
-
-  /** Mirror a share-mode change from the Rust source-of-truth into the
-   *  React Tab record. Cheap no-op if the tab doesn't exist or isn't a
-   *  shell tab. The Rust side enforces the actual privacy boundary —
-   *  this just keeps the badge UI honest. */
-  function applyShareModeToTab(tabId: string, mode: string) {
-    if (!tabId) return;
-    const validModes: ShellMeta["shareMode"][] = [
-      "private",
-      "read",
-      "read-write",
-      "read-write-trusted",
-    ];
-    if (!validModes.includes(mode as ShellMeta["shareMode"])) return;
-    updateTab(tabId, (t) => {
-      if (t.kind !== "shell" || !t.shell) return t;
-      if (t.shell.shareMode === mode) return t;
-      return {
-        ...t,
-        shell: {
-          ...t.shell,
-          shareMode: mode as ShellMeta["shareMode"],
-        },
-      };
-    });
-  }
 
   /** Route an `aethon.shells.write` request through the share-mode gate.
    *  - private / read       → reject (Rust would too; we early-out)
@@ -931,24 +865,6 @@ export default function App() {
     return { ok: true };
   }
 
-  function updateActiveTab(mutator: (tab: Tab) => Tab) {
-    setState((prev) => {
-      const activeId = prev.activeTabId as string | undefined;
-      if (!activeId) return prev;
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const idx = tabs.findIndex((t) => t.id === activeId);
-      if (idx < 0) return prev;
-      const next = mutator(tabs[idx]);
-      tabs[idx] = next;
-      const result: Record<string, unknown> = { ...prev, tabs };
-      const nextRec = next as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = nextRec[key as string];
-      }
-      return result;
-    });
-  }
-
   // Recompute the global model picker's `active` flag against `model`.
   // Called whenever the active tab changes (switch / new / close) so the
   // sidebar highlight tracks the active session's chosen model. Returns
@@ -963,371 +879,49 @@ export default function App() {
     return { ...(sidebar ?? {}), models: items };
   }
 
-  // Tell the shared xterm panel to clear and replay a tab's terminal
-  // buffer. Used by every code path that changes the active tab — switch,
-  // close, or the bridge's tab_closed forwarding — so the panel never
-  // shows stale content from a tab that's no longer visible.
-  function dispatchTerminalReplay(buffer: string) {
-    // Microtask so xterm's mount-once useEffect has resolved before we
-    // try to write to it (matters on the very first tab switch after
-    // boot when the layout is rendering for the first time).
-    Promise.resolve().then(() => {
-      window.dispatchEvent(
-        new CustomEvent("aethon:terminal-replay", { detail: buffer }),
-      );
-    });
-  }
-
-  // Switch the active tab. Re-mirrors the new tab's view to the root keys
-  // so layout bindings update without needing a per-key refresh. Also
-  // dispatches a replay event so the shared xterm panel clears and
-  // re-writes the new tab's buffered output (the buffer survives switches
-  // even though there's only one xterm instance on screen).
-  function setActiveTab(tabId: string) {
-    let nextBuffer = "";
-    setState((prev) => {
-      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-      const target = tabs.find((t) => t.id === tabId);
-      if (!target) return prev;
-      nextBuffer = target.terminalBuffer ?? "";
-      const result: Record<string, unknown> = { ...prev, activeTabId: tabId };
-      const targetRec = target as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = targetRec[key as string];
-      }
-      result.sidebar = recomputeModelPicker(
-        prev.sidebar as Record<string, unknown> | undefined,
-        target.model,
-      );
-      return result;
-    });
-    dispatchTerminalReplay(nextBuffer);
-  }
-
   // Latest state, kept in a ref so the aethon-debug skill can read it via
   // `window.__AETHON_STATE__()` without going through React's state lifecycle.
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // M6 P1: derive boolean flags from the active tab's kind so layout
-  // payloads can bind `visible: { $ref: "/shellTabActive" }` /
-  // `/agentTabActive` without computing equality at the renderer.
-  // Both flags require /hasTabs — when no tab exists, neither is true
-  // (the empty-state composite owns the canvas area instead).
-  const hasTabsForKind = !!state.hasTabs;
-  const tabKind = (state.kind as string | undefined) ?? "agent";
-  useEffect(() => {
-    const isShell = hasTabsForKind && tabKind === "shell";
-    const isAgent = hasTabsForKind && tabKind !== "shell";
-    setState((prev) => {
-      if (prev.shellTabActive === isShell && prev.agentTabActive === isAgent) {
-        return prev;
-      }
-      return {
-        ...prev,
-        shellTabActive: isShell,
-        agentTabActive: isAgent,
-      };
-    });
-  }, [hasTabsForKind, tabKind]);
-
   // ---------------------------------------------------------------------
-  // Tab actions. Each one updates local state AND tells the bridge so the
-  // pi session map stays in sync. Used by both the keyboard shortcuts
-  // below and the tab-strip UI's click handlers.
+  // Tab lifecycle (create / switch / update / close / undo-close), the
+  // sub-tab switcher, the shell-/agent-tab-active mirror effect, and the
+  // terminal replay dispatch all live in useTabs. The hook keeps closed-
+  // tab + auto-restore + pending-tab-open state internally; the orchestration-
+  // level wiring (chat-input dispatch, sidebar history, keyboard
+  // shortcuts) stays here and reaches in via the destructured actions.
   // ---------------------------------------------------------------------
-  // Per-tab promise that resolves once the bridge has accepted tab_open.
-  // sendChat awaits this before invoking send_message so the bridge can't
-  // race-create the tab via the chat path with the wrong model.
-  // Map of tab id → in-flight tab_open Promise. Tracks pending so a
-  // fast first chat on the new tab can await registration before sending.
-  // The Promise's resolved value is unused (Tauri invoke returns
-  // Promise<unknown>); we only care about completion.
-  const pendingTabOpens = useRef(new Map<string, Promise<unknown>>());
-
-  function newTab(
-    restoreId?: string,
-    restoreLabel?: string,
-    options?: {
-      restoredSession?: boolean;
-      cwd?: string;
-      scrollToMatch?: string;
-    },
-  ) {
-    // restoreId lets the caller open a tab with a specific tabId so the
-    // bridge's SessionManager.continueRecent picks up the persisted
-    // session for that id. Used by the empty-state's "Recent sessions"
-    // list. Omitted for normal new-tab gestures (Cmd+T, +, menu).
-    const id = restoreId ?? crypto.randomUUID();
-    // Search-hit scroll target. Stored in /scrollToMatchByTab/<id> so
-    // ChatHistory picks it up once the bridge replays messages. Null
-    // out the entry after a few seconds so a user who scrolls away
-    // doesn't keep getting yanked back.
-    const scrollToMatch = options?.scrollToMatch;
-    if (scrollToMatch) {
-      setState((prev) => {
-        const cur =
-          (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
-        return {
-          ...prev,
-          scrollToMatchByTab: { ...cur, [id]: scrollToMatch },
-        };
-      });
-      window.setTimeout(() => {
-        setState((prev) => {
-          const cur =
-            (prev.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
-          if (!(id in cur)) return prev;
-          const next = { ...cur };
-          delete next[id];
-          return { ...prev, scrollToMatchByTab: next };
-        });
-      }, 5000);
-    }
-    // Inherit the previously-active tab's model so the picker stays
-    // consistent. Fall back to piDefaultModelRef (populated when `ready`
-    // fires) so tabs opened before ready still get a valid model, preventing
-    // the blank "model ▼" display seen when tab creation races agent startup.
-    const inheritedModel = (
-      (stateRef.current.model as string | undefined) ||
-      piDefaultModelRef.current
-    ).trim();
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      // Use the restoreLabel when restoring a persisted session so the
-      // user sees a meaningful name; otherwise fall back to the
-      // sequential "Tab N" naming the empty-tab path has used.
-      const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      const projectId = projectsRef.current.activeId;
-      const tab: Tab = {
-        ...makeEmptyTab(id, label, projectId),
-        model: inheritedModel,
-      };
-      tabs.push(tab);
-      const result: Record<string, unknown> = {
-        ...prev,
-        tabs,
-        activeTabId: id,
-        // We're back from the empty-state — flip the layout's $ref-driven
-        // visibility flags so the canvas/composer/tab-strip reappear and
-        // the empty-state composite hides itself.
-        empty: false,
-        hasTabs: true,
-      };
-      const tabRec = tab as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = tabRec[key as string];
-      }
-      result.sidebar = recomputeModelPicker(
-        prev.sidebar as Record<string, unknown> | undefined,
-        tab.model,
-      );
-      return result;
-    });
-    // Pass `model` with tab_open so the bridge spins up the pi session
-    // with the inherited model from the start. Without this, a fast
-    // first prompt can land before a follow-up set_model finishes —
-    // the prompt would run on pi's default and lock the tab there
-    // (set_model is rejected while a prompt is in flight).
-    // The new tab starts with an empty terminal buffer — clear the
-    // shared xterm so it doesn't keep showing the previous tab's
-    // scrollback until the next switch / output event.
-    dispatchTerminalReplay("");
-    // The active project (if any) supplies the cwd for the new tab's pi
-    // session. Tabs created before a project is picked use the bridge's
-    // default cwd (the spawn directory). Existing tabs keep their original
-    // cwd — switching project doesn't retroactively rebase live sessions.
-    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
-    const opening = invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "tab_open",
-        tabId: id,
-        ...(inheritedModel ? { model: inheritedModel } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        ...(options?.restoredSession ? { restoreHistory: true } : {}),
-      }),
-    });
-    // Track until done so a fast first chat on the new tab can wait
-    // for the bridge to register the tab + initial model before send.
-    // Otherwise send_message would race tab_open and the bridge would
-    // lazily create the tab session with pi's default model.
-    pendingTabOpens.current.set(id, opening);
-    opening
-      .catch((err) => {
-        appendSystem(`Failed to open tab: ${err}`);
-      })
-      .finally(() => {
-        pendingTabOpens.current.delete(id);
-      });
-  }
-
-  // M6 P1: open a new shell tab — interactive PTY-backed user shell.
-  // Symmetric to newTab() but skips the bridge/agent IPC entirely; the
-  // tab's kind = "shell", no pi session is created, and the Rust shell
-  // command spawns a portable_pty child whose stdout streams via
-  // `shell-output` events (handled below) and whose keystrokes flow
-  // through `shell_input` (driven by the shell-canvas composite).
-  function newShellTab(options?: { command?: string; args?: string[]; cwd?: string }) {
-    const id = crypto.randomUUID();
-    const inheritedCwd = options?.cwd ?? activeProject(projectsRef.current)?.path;
-    const seedShareMode = defaultShareModeRef.current;
-    // Resolve command + args precedence: explicit options.* always wins;
-    // otherwise fall through to `[shell] default_command` / `default_args`
-    // (refs hydrated from getConfig). Empty strings / empty arrays mean
-    // "use the platform default" — Rust falls back to $SHELL when command
-    // is omitted from the IPC payload.
-    const resolvedCommand =
-      options?.command ?? shellDefaultCommandRef.current ?? undefined;
-    const resolvedArgs =
-      options?.args ??
-      (shellDefaultArgsRef.current.length > 0
-        ? shellDefaultArgsRef.current
-        : undefined);
-    const inheritEnv = shellInheritEnvRef.current;
-    setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
-      const projectId = projectsRef.current.activeId;
-      const tab: Tab = {
-        ...makeEmptyTab(id, label, projectId, "shell"),
-        shell: {
-          cwd: inheritedCwd ?? "",
-          command: resolvedCommand ?? "",
-          args: resolvedArgs ?? [],
-          shareMode: seedShareMode,
-          shellState: "starting",
-        },
-      };
-      tabs.push(tab);
-      // M6 restructure: shells live in the bottom panel as sub-tabs,
-      // not the top tab strip. Don't promote to /activeTabId — that
-      // stays on the user's agent tab. Instead, open the panel and
-      // make this shell the active sub-tab so the user sees it.
-      const panel =
-        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
-      const term =
-        (prev.terminal as { open?: boolean } | undefined) ?? {};
-      return {
-        ...prev,
-        tabs,
-        terminalPanel: { ...panel, activeSubId: id },
-        terminal: { ...term, open: true },
-        // hasTabs / empty unchanged — those track the AGENT tab strip,
-        // and shells don't affect that surface.
-      };
-    });
-    invoke("shell_open", {
-      args: {
-        tabId: id,
-        ...(resolvedCommand ? { command: resolvedCommand } : {}),
-        ...(resolvedArgs ? { args: resolvedArgs } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        // Seed the share mode atomically inside shell_open so the
-        // privacy floor pins at total_appended=0 — every byte from the
-        // first prompt forward is visible to the agent when the user
-        // configured a non-private default. Applying the mode post-open
-        // would race the login banner and pin it below the floor.
-        ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
-        // Forward `[shell] inherit_env`. Default true on Rust side too,
-        // so only send when the user opted out — keeps the IPC payload
-        // tight and reads identically across config presence.
-        ...(inheritEnv === false ? { inheritEnv: false } : {}),
-      },
-    })
-      .then(() => {
-        updateTab(id, (t) => ({
-          ...t,
-          shell: t.shell ? { ...t.shell, shellState: "running" } : t.shell,
-        }));
-      })
-      .catch((err: unknown) => {
-        appendSystem(`Failed to open shell tab: ${String(err)}`);
-        updateTab(id, (t) => ({
-          ...t,
-          shell: t.shell
-            ? { ...t.shell, shellState: "exited", exitCode: -1 }
-            : t.shell,
-        }));
-      });
-  }
-
-  function autoRestoreDiscoveredSessions(
-    discovered: DiscoveredSession[],
-    knownIds: Set<string>,
-  ) {
-    if (discovered.length === 0) return;
-    getConfig()
-      .then((config) => {
-        if (!config.ui.restoreTabs) return;
-        const liveIds = new Set([
-          ...knownIds,
-          ...(((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id)),
-        ]);
-        const toRestore = discovered
-          .filter((d) => !liveIds.has(d.tabId))
-          .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
-          .slice(0, 8);
-        if (toRestore.length === 0) return;
-        // Open oldest first so the most recent session ends up active.
-        for (const session of [...toRestore].reverse()) {
-          autoRestoredSessionIdsRef.current.add(session.tabId);
-          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`, {
-            restoredSession: true,
-            ...(session.cwd ? { cwd: session.cwd } : {}),
-          });
-        }
-        pushNotification({
-          id: "ae-auto-restore-tabs",
-          title: `Restored ${toRestore.length} session${toRestore.length === 1 ? "" : "s"}`,
-          kind: "success",
-          durationMs: 3000,
-        });
-      })
-      .catch(() => {
-        /* config read already logs; manual restore remains available */
-      });
-  }
-
-  /** Switch which sub-tab is active in the bottom terminal panel
-   *  (M6 restructure). Sub-tab id is either the special string
-   *  "agent-bash" (the always-present read-only view) or a shell tab
-   *  id from `/tabs`. Auto-opens the panel if it was hidden so the
-   *  user can see the result of their click.
-   *
-   *  When switching BACK to agent-bash, dispatch a replay of the
-   *  active agent tab's `terminalBuffer` so the freshly-mounted
-   *  Terminal composite re-renders the previously-buffered output.
-   *  Without this, sub-tab switching loses everything the agent
-   *  printed while a shell sub-tab was active (codex P2 finding on
-   *  PR #20).
-   */
-  function setActiveSubTab(subId: string) {
-    setState((prev) => {
-      const panel =
-        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
-      const term = (prev.terminal as { open?: boolean } | undefined) ?? {};
-      if (panel.activeSubId === subId && term.open === true) {
-        return prev;
-      }
-      return {
-        ...prev,
-        terminalPanel: { ...panel, activeSubId: subId },
-        terminal: { ...term, open: true },
-      };
-    });
-    if (subId === "agent-bash") {
-      // Replay the active agent tab's terminal buffer on next paint so
-      // the Terminal composite (which just (re)mounted via the sub-tab
-      // selection) sees its content.
-      requestAnimationFrame(() => {
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const activeId = stateRef.current.activeTabId as string | undefined;
-        const active = activeId ? tabs.find((t) => t.id === activeId) : undefined;
-        const buffer = active?.terminalBuffer ?? "";
-        dispatchTerminalReplay(buffer);
-      });
-    }
-  }
+  const {
+    pendingTabOpens,
+    updateTab,
+    updateActiveTab,
+    applyShareModeToTab,
+    dispatchTerminalReplay,
+    setActiveTab,
+    setActiveSubTab,
+    newTab,
+    newShellTab,
+    autoRestoreDiscoveredSessions,
+    reopenLastClosedTab,
+    closeTab,
+  } = useTabs({
+    setState,
+    stateRef,
+    pushNotification,
+    appendSystem,
+    promptCloseShellTabConfirmation,
+    recomputeModelPicker,
+    projectsRef,
+    piDefaultModelRef,
+    clearActiveProject,
+    setActiveProjectById,
+    defaultShareModeRef,
+    shellDefaultCommandRef,
+    shellDefaultArgsRef,
+    shellInheritEnvRef,
+    shellPromptBeforeCloseRef,
+  });
 
   // Tab/sub-tab navigation (next/jump/move for both agent tabs and
   // shell sub-tabs) lives in useTabNavigation. The hook computes the
@@ -1341,183 +935,6 @@ export default function App() {
     jumpToShellSubTab,
     moveActiveShellSubTab,
   } = useTabNavigation({ stateRef, setState, setActiveTab, setActiveSubTab });
-
-  // In-memory stack of recently-closed tab metadata (most recent at end).
-  // Capped at CLOSED_TAB_STACK_MAX — older entries drop silently to bound
-  // memory. ClosedTabEntry shape lives in src/types/tab.ts. For agent tabs
-  // the original tabId is preserved so the bridge's
-  // SessionManager.continueRecent picks up the persisted JSONL session —
-  // the user sees their previous conversation, not a fresh chat.
-  const CLOSED_TAB_STACK_MAX = 10;
-  const closedTabsRef = useRef<ClosedTabEntry[]>([]);
-
-  function pushClosedTab(tab: Tab) {
-    const entry: ClosedTabEntry = {
-      id: tab.id,
-      kind: tab.kind,
-      label: tab.label,
-      projectId: tab.projectId,
-      ...(tab.kind === "shell" && tab.shell
-        ? {
-            cwd: tab.shell.cwd,
-            command: tab.shell.command,
-            args: tab.shell.args,
-          }
-        : {}),
-    };
-    closedTabsRef.current.push(entry);
-    if (closedTabsRef.current.length > CLOSED_TAB_STACK_MAX) {
-      closedTabsRef.current.splice(
-        0,
-        closedTabsRef.current.length - CLOSED_TAB_STACK_MAX,
-      );
-    }
-  }
-
-  /** Reopen the most-recently-closed tab.
-   *
-   *  Agent tabs reopen with the *original* tabId — that's the cue for
-   *  the bridge's SessionManager.continueRecent to pick up the
-   *  persisted JSONL session under `~/.aethon/sessions/<tabId>/`.
-   *  The frontend's session-history replay path then renders the
-   *  previous transcript. Result: the user sees their conversation
-   *  exactly as they left it.
-   *
-   *  Shell tabs spawn a fresh PTY at the original cwd — scrollback
-   *  isn't persisted so a "fresh shell at the right place" is the
-   *  closest we can get. No-op on empty stack. */
-  function reopenLastClosedTab() {
-    const entry = closedTabsRef.current.pop();
-    if (!entry) return;
-    // If the closed tab belongs to a different project bucket than
-    // the active one, switch to that bucket first. This fixes two
-    // symptoms codex flagged on the previous fix attempt:
-    //   1. The new tab now actually lands in its original project's
-    //      tab list (was visually appearing under the active project
-    //      but tagged with the original projectId — a tear that
-    //      flipped on next switch).
-    //   2. cwd resolution flows through the live active-project
-    //      lookup, so unscoped tabs (projectId === null) reopened
-    //      while a project is active correctly fall back to the
-    //      bridge's default cwd instead of borrowing the active one.
-    const activeId = projectsRef.current.activeId;
-    if (entry.projectId !== activeId) {
-      if (entry.projectId === null) {
-        clearActiveProject();
-      } else {
-        setActiveProjectById(entry.projectId);
-      }
-    }
-    if (entry.kind === "shell") {
-      newShellTab({
-        ...(entry.command ? { command: entry.command } : {}),
-        ...(entry.args ? { args: entry.args } : {}),
-        ...(entry.cwd ? { cwd: entry.cwd } : {}),
-      });
-    } else {
-      newTab(entry.id, entry.label, { restoredSession: true });
-    }
-  }
-
-  /** Close a tab, prompting for confirmation when closing a running
-   *  shell tab and `[shell] prompt_before_close` is true. The user can
-   *  disable the prompt entirely via Settings → Shell. Foreground-job
-   *  detection (vim/htop/ssh vs. just the shell) is tracked separately
-   *  and not yet wired — for v1 the prompt fires for any running shell. */
-  function closeTab(tabId: string) {
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    const closing = tabs.find((t) => t.id === tabId);
-    if (
-      closing?.kind === "shell" &&
-      closing.shell?.shellState === "running" &&
-      shellPromptBeforeCloseRef.current
-    ) {
-      void promptCloseShellTabConfirmation(closing.label).then((allowed) => {
-        if (!allowed) return;
-        closeTabNow(tabId);
-      });
-      return;
-    }
-    closeTabNow(tabId);
-  }
-
-  function closeTabNow(tabId: string) {
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    if (tabs.length === 0) return; // already empty — nothing to close
-    // Capture the kind before setState removes the tab, so we know
-    // whether to also tear down the PTY in the Rust shell registry.
-    const closing = tabs.find((t) => t.id === tabId);
-    const closedKind = closing?.kind;
-    // Push to the reopen stack so Cmd/Ctrl+Opt+T can resurrect it.
-    if (closing) pushClosedTab(closing);
-    let nextBuffer = "";
-    let switched = false;
-    let becameEmpty = false;
-    setState((prev) => {
-      const list = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
-      let activeTabId = prev.activeTabId as string | undefined;
-      // Choose a new active tab. When list is empty, we drop into the
-      // empty-state composite (no active tab; layout swaps via /empty).
-      if (activeTabId === tabId) {
-        activeTabId = list.length > 0 ? list[list.length - 1].id : undefined;
-        switched = true;
-      }
-      const result: Record<string, unknown> = { ...prev, tabs: list, activeTabId };
-      if (list.length === 0) {
-        becameEmpty = true;
-        // Clear mirrored keys so stale per-tab state doesn't bleed
-        // through the empty-state view (the composer's value, the
-        // canvas, etc. shouldn't render any prior tab's data).
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = undefined;
-        }
-        result.empty = true;
-        result.hasTabs = false;
-      } else {
-        const target = list.find((t) => t.id === activeTabId)!;
-        nextBuffer = target.terminalBuffer ?? "";
-        const targetRec = target as unknown as Record<string, unknown>;
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = targetRec[key as string];
-        }
-        result.sidebar = recomputeModelPicker(
-          prev.sidebar as Record<string, unknown> | undefined,
-          target.model,
-        );
-        result.empty = false;
-        result.hasTabs = true;
-      }
-      return result;
-    });
-    // If the closed tab was the active one, the visible terminal was
-    // showing its buffer — replay the new active tab's buffer (or empty
-    // string when no tabs remain) so the shared xterm doesn't keep
-    // displaying the dead tab's output.
-    if (switched) dispatchTerminalReplay(nextBuffer);
-    if (becameEmpty) {
-      // Tell the bridge to tear down the session too. tab_close on an
-      // empty Map is a no-op on the bridge side; gracefully handled.
-      invoke("agent_command", {
-        payload: JSON.stringify({ type: "tab_close", tabId }),
-      }).catch(() => {
-        /* ignore — UI already closed */
-      });
-    } else {
-      invoke("agent_command", {
-        payload: JSON.stringify({ type: "tab_close", tabId }),
-      }).catch(() => {
-        /* ignore — UI already closed */
-      });
-    }
-    // M6 P1: shell tabs own a PTY in the Rust shell registry. Close
-    // it too so the child process is reaped and the reader thread
-    // joins (no zombies on tab close).
-    if (closedKind === "shell") {
-      invoke("shell_close", { tabId }).catch(() => {
-        /* idempotent — already torn down by natural exit */
-      });
-    }
-  }
 
   // Global keyboard shortcuts. Bound on the document so they fire regardless
   // of focus; preventDefault + stopPropagation when handled so xterm
@@ -3597,13 +3014,6 @@ export default function App() {
   // skill has registered via window.aethon.registerLayout. Backed by a
   // ref so the API surface above can mutate it without re-rendering.
   const layoutCatalogueRef = useRef<LayoutCatalogueEntry[]>([...builtinLayouts]);
-
-  // Projects (working directories the agent operates in). Persisted to
-  // ~/.aethon/projects.json. The active project's path travels with each
-  // new tab as `cwd` on `tab_open` so pi's SessionManager scopes the
-  // session to that directory. Existing tabs keep their original cwd —
-  // switching project doesn't retroactively change live sessions.
-  const projectsRef = useRef<ProjectsState>(emptyProjectsState());
 
   // Tab buckets keyed by project (or NO_PROJECT_KEY). When the user
   // switches active project, we snapshot the current state.tabs +
