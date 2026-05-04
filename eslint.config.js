@@ -40,7 +40,7 @@ export default tseslint.config(
       parserOptions: {
         projectService: {
           allowDefaultProject: ["agent/*.ts", "eslint.config.js", "*.{js,mjs,cjs}"],
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 32,
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 64,
         },
         tsconfigRootDir: import.meta.dirname,
       },
