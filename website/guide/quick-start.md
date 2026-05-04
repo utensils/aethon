@@ -93,7 +93,7 @@ return later, but you can already build replacements with
 
 ## 7 — Discover skills
 
-`/skills` lists every loaded extension and skill — built-in plus
+`/extensions` lists every loaded extension — built-in plus
 user-installed plus project-local. Drop a `.ts` file into
 `~/.aethon/extensions/` and Aethon hot-reloads it.
 

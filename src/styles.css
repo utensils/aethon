@@ -1620,7 +1620,9 @@ body.ae-resizing-sidebar * {
   gap: 8px;
   padding: 10px 14px 12px;
   border-top: none;
-  box-shadow: 0 -1px 0 var(--border), 0 -4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 -1px 0 var(--border),
+    0 -4px 12px rgba(0, 0, 0, 0.12);
   background: var(--bg-elev);
   width: 100%;
   align-items: stretch;

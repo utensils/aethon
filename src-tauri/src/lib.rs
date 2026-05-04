@@ -270,7 +270,9 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         let raw = std::fs::read_to_string(&cfg_path).unwrap_or_default();
         let cfg_json = parse_config_toml(&raw);
         let warn_kb = cfg_json["extensions"]["stateWarnKb"].as_u64().unwrap_or(64);
-        let hard_kb = cfg_json["extensions"]["stateHardKb"].as_u64().unwrap_or(512);
+        let hard_kb = cfg_json["extensions"]["stateHardKb"]
+            .as_u64()
+            .unwrap_or(512);
         command.env("AETHON_STATE_WARN_KB", warn_kb.to_string());
         command.env("AETHON_STATE_HARD_KB", hard_kb.to_string());
     }

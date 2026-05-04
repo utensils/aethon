@@ -1,9 +1,11 @@
 # Slash commands
 
 Slash commands are recognised when the chat composer starts with `/`.
-Aethon ships ten built-ins; extensions register additional commands
-via `aethon.registerSlashCommand`. Unknown `/<word>` falls through to
-pi (the model), so model-side commands like `/think harder` keep working.
+Aethon ships ten built-ins (`/clear`, `/help`, `/theme`, `/model`,
+`/reset`, `/terminal`, `/extensions`, `/sidebar`, `/layout`,
+`/project`); extensions register additional commands via
+`aethon.registerSlashCommand`. Unknown `/<word>` falls through to pi
+(the model), so model-side commands like `/think harder` keep working.
 
 ## Built-in commands
 
@@ -15,15 +17,16 @@ pi (the model), so model-side commands like `/think harder` keep working.
 | `/model [<name>]` | Open the model picker or activate a specific model directly (`/model anthropic/claude-sonnet-4-6`). |
 | `/reset` | Hard-reset the active tab's pi session — clears history *and* discards on-disk session state. The next message starts a fresh conversation. |
 | `/terminal` | Toggle the bottom terminal panel. Equivalent to `Cmd+\``. |
-| `/skills` | List every loaded extension and skill — built-in plus user-installed plus project-local — with their registered components, themes, slash commands, and last reload status. |
+| `/extensions` | List every loaded extension. With `install <npm-package\|git-url>` (or `add`), runs `npm install --prefix ~/.aethon/skills` and reloads the agent so the new package is picked up. |
 | `/sidebar` | Toggle the sidebar. Equivalent to `Cmd+B`. |
 | `/layout <id>` | Switch layouts. The only built-in id today is `workstation`; extensions register additional ones via `aethon.registerLayout`. |
-| `/project <path>` | Add a project (or activate it if already in the list) and use it as the active project for new tabs. |
+| `/project [id\|path]` | Open or switch the active project directory. No argument shows a folder picker; an id or path switches to that project for new tabs. |
 
 ## Extension commands
 
-The `/skills` output lists every extension-registered command alongside
-its description. Reach them the same way: `/<name> [args…]`.
+The `/extensions` output lists every loaded extension; `/help` lists every
+registered command (built-in plus extension-registered) with its
+description. Reach extension commands the same way: `/<name> [args…]`.
 
 A skill registers a command in two halves: a metadata record and a
 paired event handler.
@@ -53,18 +56,18 @@ command name. Use `ctx.pi.notify` / `ctx.pi.prompt` to push messages
 or fire LLM turns.
 
 Built-in command names are reserved (`clear`, `help`, `theme`,
-`model`, `reset`, `terminal`, `sidebar`, `layout`, `skills`,
+`model`, `reset`, `terminal`, `sidebar`, `layout`, `extensions`,
 `project`); registering one is rejected with a notice.
 
-## Installing skills
+## Installing extensions
 
-`/skills` lists what's loaded; `/skills install <npm-package|git-url>`
-installs new ones. Examples:
+`/extensions` lists what's loaded; `/extensions install <npm-package|git-url>`
+installs new ones (`add` works as an alias). Examples:
 
 ```
-/skills install @my-org/aethon-team-skills
-/skills install github:my-org/aethon-skills
-/skills install https://github.com/my-org/aethon-skills.git
+/extensions install @my-org/aethon-team-skills
+/extensions install github:my-org/aethon-skills
+/extensions install https://github.com/my-org/aethon-skills.git
 ```
 
 The Tauri shell runs the equivalent of
@@ -76,7 +79,8 @@ whitespace input is rejected.
 ## Tips
 
 - `/help` is the source of truth for what commands are *currently*
-  loaded. Extensions can come and go — the running set is what counts.
+  loaded (built-ins + extension-registered). `/extensions` is the
+  source of truth for which extension packages are loaded.
 - Type `/` and pause to surface the **slash-command picker** — it
   ranks built-ins and extension-registered commands and accepts arrow-key
   navigation. The command palette (`Cmd+Shift+P`) covers the same ground

@@ -49,41 +49,70 @@ To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
 
 ### Layer responsibilities
 
-1. **Tauri shell** (`src-tauri/src/lib.rs`, helpers in `helpers.rs`,
-   debug-only commands + TCP eval server in `debug.rs` gated by
-   `#[cfg(debug_assertions)]`, PTY shell-tab module in `shell.rs`) —
-   owns the OS boundary. Core agent commands: `send_message` (forwards
-   a chat string to the agent's stdin) and `dispatch_a2ui_event`
-   (forwards a structured event). On the first `send_message` it spawns
-   `bun run agent/main.ts` and starts a reader thread that emits each
-   stdout line as a Tauri `agent-response` event. Shell-tab commands
-   (`shell_open`, `shell_input`, `shell_resize`, `shell_close`) live in
-   `shell.rs` behind a `ShellRegistry` (per-tab `portable-pty` PTY +
-   reader thread; emits `shell-output` / `shell-exit` events). UTF-8
-   chunk boundaries are preserved across reader-thread reads via a
-   carry buffer + `Utf8Error::error_len()` truncation/invalid split —
-   don't replace this with per-chunk `from_utf8_lossy`, multi-byte
-   sequences will corrupt.
-2. **Agent bridge** (`agent/main.ts` + helpers) — JSON-lines over stdio.
-   Reads `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
-   with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes from
-   env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …); pi-ai picks one up.
-   Helpers (each with a colocated `*.test.ts`):
-   - `agent/project-extensions.ts` — discovers project-local extensions
-     (walks up from the active cwd looking for `.aethon/extensions/`).
-   - `agent/session-history.ts` — reads pi session transcripts under
-     `$AETHON_SESSIONS_DIR/<tabId>/` so the frontend can rehydrate visible
-     history on restart.
-   - `agent/terminal-stream.ts` — buffers `bash`-tool output as an A2UI
+1. **Tauri shell** (`src-tauri/src/lib.rs` is now a thin entry — agent
+   supervisor + child IPC + `run()` builder; concern-grouped IPC commands
+   live under `src-tauri/src/commands/` (`config.rs`, `session.rs`,
+   `extensions.rs`, `git.rs`, `window.rs`); shell-tab PTY logic lives
+   under `src-tauri/src/shell/` (`lifecycle.rs`, `scrollback.rs`,
+   `sharemode.rs`); pure helpers in `helpers.rs`; debug-only commands
+   - TCP eval server in `debug.rs` gated by `#[cfg(debug_assertions)]`)
+     — owns the OS boundary. Core agent commands: `send_message`
+     (forwards a chat string to the agent's stdin) and
+     `dispatch_a2ui_event` (forwards a structured event). On the first
+     `send_message` it spawns `bun run agent/main.ts` and starts a reader
+     thread that emits each stdout line as a Tauri `agent-response`
+     event. Shell-tab commands (`shell_open`, `shell_input`,
+     `shell_resize`, `shell_close`) sit behind a `ShellRegistry` (per-tab
+     `portable-pty` PTY + reader thread; emits `shell-output` /
+     `shell-exit` events). UTF-8 chunk boundaries are preserved across
+     reader-thread reads via a carry buffer + `Utf8Error::error_len()`
+     truncation/invalid split — don't replace this with per-chunk
+     `from_utf8_lossy`, multi-byte sequences will corrupt.
+2. **Agent bridge** (`agent/main.ts` is a thin entry-point — env wiring
+   - boot order; the readline loop and 14-case dispatcher live in
+     `agent/dispatcher.ts`) — JSON-lines over stdio. Reads
+     `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
+     with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes
+     from env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …); pi-ai
+     picks one up. Modules (each with a colocated `*.test.ts`):
+   * `state.ts` — the `AethonAgentState` data class (registries, tabs,
+     pending mutations, layout, themes).
+   * `aethon-api.ts` — `buildAethonApi` factory exposed on `globalThis`.
+   * `dispatcher.ts` — readline loop + per-message-type dispatch.
+   * `tab-lifecycle.ts` — `ensureTab` + the pi session subscriber +
+     `emitReady`.
+   * `extension-loader.ts` — discovers + loads extensions from four
+     sources + theme directories.
+   * `project-extensions.ts` — walks up from the active cwd looking
+     for `.aethon/extensions/`.
+   * `system-prompt.ts` — composes the layered system prompt.
+   * `runtime-snapshot.ts` — `getRuntimeSnapshot` + `$AETHON_STATE_FILE`
+     persistence.
+   * `layout-manager.ts` — `setLayout` / `patchLayout` /
+     `registerLayout` + summarize helpers.
+   * `state-mutation.ts` — extension `setState` (size guard + per-tab
+     mirror).
+   * `mutation-ack.ts` — Promise/timeout handshake for mutation acks.
+   * `event-routes.ts` — extension `onEvent` route table.
+   * `keybindings.ts` — extension keybinding registration.
+   * `notifications.ts` — agent-pushed toasts.
+   * `session-history.ts` — reads pi session transcripts under
+     `$AETHON_SESSIONS_DIR/<tabId>/` so the frontend can rehydrate
+     visible history on restart.
+   * `terminal-stream.ts` — buffers `bash`-tool output as an A2UI
      terminal stream (the `BashTerminalStreamState` snapshot type).
-   - `agent/canvas.ts` — helpers for building and patching A2UI canvas payloads.
-   - `agent/agent-errors.ts` — extracts structured error info from pi agent
+   * `canvas.ts` — helpers for building and patching A2UI canvas
+     payloads.
+   * `agent-errors.ts` — extracts structured error info from pi agent
      end-of-run errors (wraps `AgentEndError` classification).
-   - `agent/shell-tools.ts` — pi tool implementations for
-     `listShells`/`readShell`/`writeShell` (bridge-side counterpart to the
-     Rust `shell_query` Tauri command).
-3. **React frontend** (`src/`) — see below. Listens for `agent-response`
-   events, parses each line, and routes it into the chat history or canvas.
+   * `shell-tools.ts` — pi tool implementations for
+     `listShells`/`readShell`/`writeShell` (bridge-side counterpart to
+     the Rust `shell_query` Tauri command).
+3. **React frontend** (`src/`) — `App.tsx` is a thin shell of `useX()`
+   hooks (`src/hooks/`); event-routing logic lives in `src/eventRoutes/`
+   (one file per prefix family); `src/runtime/windowApi.ts` builds the
+   `window.aethon` runtime API. Listens for `agent-response` events,
+   parses each line, and routes it into the chat history or canvas.
 
 ### Frontend model — three things to know
 
@@ -110,11 +139,20 @@ write back to that path for `change`/`submit` events on inputs whose `value`
 is a `$ref` — see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. JSON Pointer
 helpers: `src/utils/jsonPointer.ts` and `src/utils/dataBinding.ts`.
 
-**3. Two registries.** `A2UIRenderer.tsx` has a hardcoded `PRIMITIVE_REGISTRY`
-of 19 input/layout primitives (`text`, `heading`, `paragraph`, `code`, `card`,
-`button`, `container`, `divider`, `image`, `icon`, `text-input`,
-`date-picker`, `select`, `checkbox`, `slider`, `form`, `form-field`, `list`,
-`table`) — these can't be overridden. Everything else (`layout`, `sidebar`,
+**3. Two registries.** Primitive React components live in
+`src/components/primitives/` (`text.tsx`, `controls.tsx`, `form.tsx`,
+`layout.tsx`, `media.tsx`); the registry that wires them is built in
+`src/components/builtins.tsx` and consumed by `A2UIRenderer.tsx` as a
+hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout primitives (`text`,
+`heading`, `paragraph`, `code`, `card`, `button`, `container`,
+`divider`, `image`, `icon`, `text-input`, `date-picker`, `select`,
+`checkbox`, `slider`, `form`, `form-field`, `list`, `table`) — these
+can't be overridden. Default-layout skill components are split per
+family under `src/skills/default-layout/` (`chat.tsx`, `terminal.tsx`,
+`command-palette.tsx`, `settings-panel.tsx`, `search-panel.tsx`,
+`notifications.tsx`, `share-mode-badge.tsx`, `variation-components.tsx`,
+plus `shell/` and `sidebar/` sub-directories); `components.tsx` itself
+is the registration aggregator only. Everything else (`layout`, `sidebar`,
 `chat-history`, `chat-input`, `status-bar`, `terminal-panel`, `main-canvas`,
 `shell-canvas`, `tool-card`, `command-palette`, `notification-stack`,
 `settings-panel`, `search-panel`, `share-mode-badge`, …) comes from the
@@ -231,7 +269,7 @@ fast-path that lets the bridge invoke Tauri commands directly — the
 read clamp + privacy floor have to live where the PTY does. Most code paths special-case via
 `tab.kind === "shell"` checks (see `closeTab`, `newShellTab`,
 `/agentTabActive` + `/shellTabActive` derived flags). The shell-canvas
-composite (`ShellCanvas` in `components.tsx`) replaces the agent
+composite (`ShellCanvas` in `default-layout/shell/canvas.tsx`) replaces the agent
 `main-canvas` + `chat-input` cells when a shell tab is active —
 controlled by the `/agentTabActive` / `/shellTabActive` `$ref` visibility
 flags in `workstation.a2ui.json`. Keybindings: `Cmd+T` = new agent tab (focus-aware — new shell sub-tab when
@@ -326,10 +364,15 @@ without scraping the filesystem. The same data is also written to
 
 `A2UIRenderer` accepts an `onEvent` prop. Returning `true` from it marks the
 event as handled and _suppresses_ the default Tauri `dispatch_a2ui_event`
-forward. `App.tsx` uses this to short-circuit `chat-input` submits (calls
-`send_message` directly) and the sidebar's `toggle-terminal` item (mutates
-`/terminal/open` locally). New components that should drive native APIs go
-through this path.
+forward. `App.tsx` delegates to `dispatchEvent` in `src/eventRoutes/` — a
+per-prefix route table with three precedence layers enforced in
+`eventRoutes/index.ts`: (1) shell-consent reserved prefixes
+(`shell-write` / `shell-close` / `session-delete`) MUST resolve before
+extension matchers; (2) extension-registered routes (returning `false`
+forwards to the bridge); (3) built-in routes keyed by `id:<componentId>`
+or `type:<componentType>`. New built-in handlers go in
+`eventRoutes/<name>.ts` + a happy-path test, then registered under the
+matching key(s) in `BUILTIN_ROUTE_TABLE`.
 
 ## Conventions
 
@@ -496,14 +539,14 @@ in-app updater.
 
 ## Test coverage + linting
 
-| Tool                         | Scope                                            | Devshell command |
-| ---------------------------- | ------------------------------------------------ | ---------------- |
-| `cargo clippy -D warnings`   | Rust shell + helpers                             | `check`          |
-| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers.rs` | `test`           |
-| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)              | `check`          |
-| `bunx eslint .`              | TS + React lint, type-aware via tsconfig         | `lint`           |
-| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`) | `test`    |
-| `bunx vitest run --coverage` | TS coverage report (v8)                          | `coverage`       |
+| Tool                         | Scope                                                     | Devshell command |
+| ---------------------------- | --------------------------------------------------------- | ---------------- |
+| `cargo clippy -D warnings`   | Rust shell + helpers                                      | `check`          |
+| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers.rs`          | `test`           |
+| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                       | `check`          |
+| `bunx eslint .`              | TS + React lint, type-aware via tsconfig                  | `lint`           |
+| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`) | `test`           |
+| `bunx vitest run --coverage` | TS coverage report (v8)                                   | `coverage`       |
 
 The `check` devshell command runs all of the above as a single CI gate.
 ESLint is configured for **0 errors and 0 warnings**. A handful of `react-hooks`

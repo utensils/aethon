@@ -64,7 +64,7 @@ Project-local extensions can register components, themes, slash
 commands, layouts — anything user extensions can.
 
 ::: tip Discoverability
-Run `/skills` to see every loaded extension and where it came from
+Run `/extensions` to see every loaded extension and where it came from
 (user / project / npm package).
 :::
 

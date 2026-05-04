@@ -65,7 +65,7 @@ The composer lives at the bottom of the canvas:
 | `Cmd+Shift+S` | Export the chat as Markdown to `~/Downloads/` (agent tabs only). |
 
 Slash commands like `/clear`, `/help`, `/theme`, `/model`, `/reset`,
-`/terminal`, `/skills`, `/sidebar`, `/layout`, `/project` are recognised
+`/terminal`, `/extensions`, `/sidebar`, `/layout`, `/project` are recognised
 when typed at the start of the composer. Unknown `/<word>` falls
 through to the model — useful when an extension registers its own.
 

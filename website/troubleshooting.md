@@ -39,8 +39,8 @@ A tab whose agent hasn't run any bash yet shows the placeholder text.
 If a tab *has* run bash and the panel is still blank:
 
 - Toggle the panel (`Cmd+\``) to force a re-render.
-- Confirm the agent process is healthy — `/skills` should list at
-  least the default-layout skill.
+- Confirm the agent process is healthy — `/extensions` should list
+  at least the default-layout skill.
 - Check stderr for bridge errors.
 
 ## A shell tab's PTY won't open
@@ -79,8 +79,8 @@ the source path and the error. Common causes:
 - **Permission error** — the file is readable by the user running
   Aethon? Check `ls -l`.
 
-`/skills` shows the failed extension with its error so you don't have
-to dig through logs.
+`/extensions` shows the failed extension with its error so you don't
+have to dig through logs.
 
 ## The terminal panel renders blank or with bad colors
 

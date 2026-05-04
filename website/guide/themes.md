@@ -120,8 +120,8 @@ Anything you don't set falls through to the **Ember** palette.
 
 ## Listing registered themes
 
-`/skills` shows every loaded extension and its registered themes.
-The Settings panel and the sidebar **Themes** section also enumerate them.
+`/extensions` shows every loaded extension; the Settings panel and the
+sidebar **Themes** section enumerate every registered theme.
 
 ## Where to next
 

@@ -15,7 +15,7 @@ inside the running app at `Cmd+P` → "Open agent docs").
 |---|---|---|
 | A2UI components | `aethon.registerComponent(type, template)` | Replace `chat-history`, add `team-status`. |
 | Themes | `aethon.registerTheme({ id, label?, vars })` | Drop-in palette. |
-| Layouts | `aethon.registerLayout({ id, name, description?, payload })` | Sibling to `workstation` / `editorial`. |
+| Layouts | `aethon.registerLayout({ id, name, description?, payload })` | Sibling to `workstation` (the only built-in). |
 | Slash commands | `aethon.registerSlashCommand({ name, description, usage? })` paired with `onEvent` | `/team-deploy`, `/standup`. |
 | Keybindings | `aethon.registerKeybinding({ combo, action?, description? })` paired with `onEvent` | Override or add. |
 | Menu items | `aethon.registerMenuItem({ label, action, location?, id?, parent? })` paired with `onEvent` | Native menu entries. |
@@ -65,9 +65,9 @@ Install them with the in-app slash command — runs from the Tauri shell
 (not the agent sidecar, so the install can't kill itself mid-flight):
 
 ```
-/skills install @my-org/aethon-team-skills
-/skills install github:my-org/aethon-team-skills
-/skills install https://github.com/my-org/aethon-team-skills.git
+/extensions install @my-org/aethon-team-skills
+/extensions install github:my-org/aethon-team-skills
+/extensions install https://github.com/my-org/aethon-team-skills.git
 ```
 
 The command runs the equivalent of
@@ -110,7 +110,7 @@ Discovery is a *walk* — Aethon starts at the active tab's cwd and walks
 
 ## Listing what's loaded
 
-The `/skills` slash command lists every loaded extension with:
+The `/extensions` slash command lists every loaded extension with:
 
 - Source (`user`, `project`, `npm`).
 - Registered components, themes, slash commands, keybindings, layouts.

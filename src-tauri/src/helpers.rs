@@ -449,14 +449,18 @@ prompt_before_close = false
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
             assert!(v["agent"].as_object().unwrap().contains_key("model"));
-            assert!(v["extensions"]
-                .as_object()
-                .unwrap()
-                .contains_key("stateWarnKb"));
-            assert!(v["extensions"]
-                .as_object()
-                .unwrap()
-                .contains_key("stateHardKb"));
+            assert!(
+                v["extensions"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("stateWarnKb")
+            );
+            assert!(
+                v["extensions"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("stateHardKb")
+            );
         }
     }
 

@@ -33,36 +33,12 @@ The name comes from Greek mythology: _Αἴθων_, one of the horses that pulle
 
 ## What it can do
 
-**Workspace**
-
-- Multi-tab sessions — top-strip agent tabs (each owning a pi conversation, model, draft, and bash buffer) and bottom-panel shell sub-tabs (interactive PTY-backed terminals). `⌘T` is focus-aware: shell sub-tab when focus is in the bottom panel, agent tab elsewhere; `⌘⇧T` flips the default; `⌘1`–`⌘9` jump, `⌘W` closes, `⌘⌥T` reopens the most-recently-closed.
-- Native macOS menu + system tray — built-ins (Quit, Hide, Cut/Copy/Paste, Minimize) for free, plus app-specific items (New Tab, Toggle Terminal, Stop Prompt, Check for Updates) that route through the same dispatcher as the keyboard shortcuts.
-- Tabbed terminal panel (`⌘\``) — xterm.js with the WebGL renderer. Hosts a read-only "Agent bash" sub-tab streaming the active agent's bash output, plus zero or more interactive shell sub-tabs. Full TUI support (vim, htop, fzf), 256-color and true-color, theme-aware ANSI palette via CSS variables.
-- Settings panel (`⌘,`) and cross-session search (`⌘⇧F`) — both registered builtins; an extension can replace either via `aethon.registerComponent`.
-- Auto-updater wired via `tauri-plugin-updater` — checks the GitHub Releases manifest, downloads with progress, and relaunches.
-- Persistent state — chat history, tabs (agent + shell), themes, projects, and `~/.aethon/config.toml` settings survive relaunch. Pi LLM context persists per tab via pi's session manager.
-
-**Agent-controlled UI**
-
-- Themes registered live via `aethon.registerTheme({ id, vars })` or dropped as `~/.aethon/themes/*.json`. Themes drive the entire palette — including the terminal's ANSI swatches.
-- Custom A2UI components shipped from extensions — visible alongside the built-ins inside the same renderer. Templates registered via `aethon.registerComponent("<type>", …)` win over the default React component, so any built-in can be replaced declaratively.
-- App-root overlays (`command-palette`, `notification-stack`, `settings-panel`, `search-panel`, `share-mode-badge`) all mount through the registry — overridable from a skill without forking the chrome.
-- Layout slot contract — alternative layouts host the standard composites by adhering to canonical area names (`canvas`, `composer`, `sidebar`, `tabs`, `terminal`, `status`, `header`, `empty-state`) or by declaring a `slotMap` remap.
-- One built-in layout (`workstation`) while we focus polish on a single surface; extensions register additional layouts via `aethon.registerLayout` and switch with `/layout <id>`.
-
-**Agent ↔ shell sharing (opt-in)**
-
-- Each shell tab carries a four-value `shareMode` (`private` / `read` / `read-write` / `read-write-trusted`) and a clickable badge in the status line cycles through them. Default is `private` (configurable per-tab and globally via `[shell] default_share_mode`).
-- The bridge surface is `aethon.shells.{list, read, write}` — extensions and the agent can enumerate shareable tabs, page scrollback (forward-cursor, no rewind past the privacy floor), and inject keystrokes (each `read-write` write needs an Allow/Deny user prompt; `read-write-trusted` skips it).
-- Privacy floor is enforced Rust-side in `shell.rs`; agents cannot see scrollback from before the user opted in, and `setShareMode` is intentionally absent from the agent surface.
-
-**Extensibility**
-
-- Drop a `.ts` into `~/.aethon/extensions/` — the bridge hot-reloads. Or `npm install --prefix ~/.aethon/skills <pkg>` to install an npm-distributed extension package (manifest via `package.json#aethon`; the on-disk `skills/` directory name is retained for back-compat with existing installs). Project-local extensions discovered from the active cwd up to its git root via `.aethon/extensions/`.
-- Slash commands, keybindings, menu items, and event interceptors — all registerable from extensions, all reported back in the runtime snapshot so the agent knows what's wired.
-- Generic `extension_lifecycle` event channel — extensions get visible chat-side feedback when they load / fail / reload, and other layouts can intercept the window event to substitute a toast / sidebar pulse / status pill.
-
-**Slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/extensions`, `/sidebar`, `/layout`, `/project`. Unknown commands fall through to pi.
+- **Multi-tab workspace** — top-strip agent tabs (one pi conversation each) plus a bottom-panel terminal with sub-tabs: a read-only "Agent bash" stream and zero-or-more interactive PTY shells (xterm.js + WebGL, full TUI / 256-color / true-color). Focus-aware `⌘T`, `⌘1`–`⌘9` jump, `⌘W` close, `⌘⌥T` reopen.
+- **Native shell integration** — system tray + macOS menu, auto-updater (`tauri-plugin-updater` against GitHub Releases), persistent chat history / tabs / themes / projects / `~/.aethon/config.toml`, per-tab pi session continuity.
+- **Agent-controlled UI** — themes (`aethon.registerTheme` or `~/.aethon/themes/*.json`) drive the whole palette including terminal ANSI; any A2UI built-in (composites or app-root overlays like `command-palette`, `notification-stack`, `settings-panel`, `search-panel`) is overridable via `aethon.registerComponent`. One built-in layout (`workstation`); extensions register more via `aethon.registerLayout`.
+- **Agent ↔ shell sharing** — four-value `shareMode` (`private` / `read` / `read-write` / `read-write-trusted`) per shell, clickable badge to cycle. Bridge surface `aethon.shells.{list, read, write}` exposes scrollback (forward-only, privacy floor enforced Rust-side) and keystroke injection (Allow/Deny prompt per write unless trusted).
+- **Extensibility** — drop a `.ts` into `~/.aethon/extensions/` for hot-reload, or `npm install --prefix ~/.aethon/skills <pkg>` for npm-distributed extensions (manifest via `package.json#aethon`); project-local extensions discovered from cwd up to its git root. Extensions register slash commands, keybindings, menu items, event routes, layouts, A2UI components, and themes — all reported back in the runtime snapshot.
+- **Built-in slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/extensions`, `/sidebar`, `/layout`, `/project`. Unknown commands fall through to pi.
 
 See [`SPEC.md`](SPEC.md) for the full status checklist and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 

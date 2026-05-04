@@ -30,7 +30,9 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::{AgentProcess, AgentReloadFlag, agent_reload_in_progress, project_root, resolved_login_path};
+use crate::{
+    AgentProcess, AgentReloadFlag, agent_reload_in_progress, project_root, resolved_login_path,
+};
 
 // ─────────────────────────── menu items ────────────────────────────
 
