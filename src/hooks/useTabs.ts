@@ -17,6 +17,7 @@ import {
   type ProjectsState,
 } from "../projects";
 import { getConfig } from "../config";
+import { recomputeModelPicker } from "../utils/modelPicker";
 
 /** Per-tab terminal buffer cap. Bash output bursts can be huge; without
  *  a ceiling the buffer would grow forever and slow tab switches as the
@@ -72,13 +73,6 @@ export interface UseTabsContext {
   /** Resolves true on Allow / false on Cancel|dismiss. Drives the
    *  prompt-before-close gate for running shell tabs. */
   promptCloseShellTabConfirmation: (tabLabel: string) => Promise<boolean>;
-  /** Recompute the global model picker's `active` flag against `model`.
-   *  Caller-owned because the sidebar shape is broader than tabs (themes,
-   *  projects, etc.). */
-  recomputeModelPicker: (
-    sidebar: Record<string, unknown> | undefined,
-    model: string,
-  ) => Record<string, unknown>;
   /** Live ref to projects state so newTab/newShellTab inherit the active
    *  project's path as cwd. Project bucket swap stays in App.tsx. */
   projectsRef: MutableRefObject<ProjectsState>;
@@ -157,7 +151,6 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     pushNotification,
     appendSystem,
     promptCloseShellTabConfirmation,
-    recomputeModelPicker,
     projectsRef,
     piDefaultModelRef,
     clearActiveProject,

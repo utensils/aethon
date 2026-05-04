@@ -143,10 +143,6 @@ export interface BridgeMessageContext {
   syncRecentSessionsToState: () => void;
 
   // ─── Misc helpers (defined on App) ──────────────────────────────────
-  recomputeModelPicker: (
-    sidebar: Record<string, unknown> | undefined,
-    model: string,
-  ) => Record<string, unknown>;
   routeShellWrite: (args: Record<string, unknown>) => Promise<{ ok: true }>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────
