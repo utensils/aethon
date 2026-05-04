@@ -229,6 +229,33 @@ pub fn clamp_font_size(size: u32) -> u32 {
     size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX)
 }
 
+/// POSIX-friendly filename sanitiser: keeps `[A-Za-z0-9_-]+`, replaces
+/// runs of unsafe chars with `_`, trims leading/trailing dots/dashes/
+/// underscores, and clamps to 64 chars. Empty input → empty output (the
+/// caller substitutes a default stem).
+pub fn sanitize_filename_segment(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut last_was_underscore = false;
+    for c in input.chars() {
+        let ok = c.is_ascii_alphanumeric() || c == '-' || c == '_';
+        if ok {
+            out.push(c);
+            last_was_underscore = false;
+        } else if !last_was_underscore && !out.is_empty() {
+            out.push('_');
+            last_was_underscore = true;
+        }
+    }
+    let trimmed = out
+        .trim_matches(|c: char| c == '_' || c == '-' || c == '.')
+        .to_string();
+    if trimmed.len() > 64 {
+        trimmed.chars().take(64).collect()
+    } else {
+        trimmed
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
