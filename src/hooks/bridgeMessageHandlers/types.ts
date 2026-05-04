@@ -1,0 +1,173 @@
+import type {
+  Dispatch,
+  MutableRefObject,
+  SetStateAction,
+} from "react";
+import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
+import type { Tab } from "../../types/tab";
+import type { SkillRegistry } from "../../skills/SkillRegistry";
+import type {
+  ExtensionTheme,
+} from "../useExtensionsHydration";
+import type {
+  NotificationEntry,
+  NotificationKind,
+} from "../../skills/default-layout/notifications";
+import type { ProjectsState } from "../../projects";
+
+/** A bridge-to-frontend message. The `type` discriminator routes to a
+ *  handler in the registry; other keys are payload-specific and typed
+ *  per-handler with narrowing assertions inside the handler body. */
+export interface BridgeMessage {
+  type?: string;
+  [k: string]: unknown;
+}
+
+export interface ModelDescriptor {
+  id: string;
+  label: string;
+  provider: string;
+}
+
+export interface DiscoveredSession {
+  tabId: string;
+  lastModified: number;
+  cwd?: string;
+  /** First user message text, trimmed to 60 chars by the bridge. */
+  firstUserMessage?: string;
+}
+
+export interface RecentSessionItem {
+  id: string;
+  label: string;
+  lastModified?: string;
+  cwd?: string;
+}
+
+/** Everything a handler may close over. Flat by design — every handler
+ *  imports the same context type, so adding a new handler doesn't require
+ *  a context-shape decision. The fields are grouped by source (refs,
+ *  setters, app actions, hydrators, helpers) to make audits readable. */
+export interface BridgeMessageContext {
+  // ─── React state setters ─────────────────────────────────────────────
+  setState: Dispatch<SetStateAction<Record<string, unknown>>>;
+  setLayout: Dispatch<SetStateAction<A2UIPayload>>;
+
+  // ─── Live refs ──────────────────────────────────────────────────────
+  stateRef: MutableRefObject<Record<string, unknown>>;
+  registry: SkillRegistry;
+  piDefaultModelRef: MutableRefObject<string>;
+  allDiscoveredSessionsRef: MutableRefObject<DiscoveredSession[]>;
+  projectsRef: MutableRefObject<ProjectsState>;
+  projectsLoadedRef: MutableRefObject<boolean>;
+  activeResponseIdRef: MutableRefObject<string | null>;
+  hangWarnTimersRef: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+  hangWarnActiveRef: MutableRefObject<Set<string>>;
+  turnStartedAtRef: MutableRefObject<Map<string, number>>;
+  lastExtensionStateKeysRef: MutableRefObject<Set<string>>;
+  pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
+
+  // ─── Tab actions (from useTabs) ─────────────────────────────────────
+  updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
+  updateActiveTab: (updater: (tab: Tab) => Tab) => void;
+  dispatchTerminalReplay: (buffer: string) => void;
+  autoRestoreDiscoveredSessions: (
+    discovered: DiscoveredSession[],
+    knownIds: Set<string>,
+  ) => void;
+
+  // ─── Extension hydration (from useExtensionsHydration) ──────────────
+  hydrateThemes: (list: ExtensionTheme[]) => void;
+  hydrateExtensions: (
+    loaded: { name: string; source: string }[],
+    failed: { name: string; source: string; error?: string }[],
+  ) => void;
+  hydrateSlashCommands: (
+    list: { name: string; description: string; usage?: string }[],
+  ) => void;
+  hydrateKeybindings: (
+    list: { combo: string; action: string; description?: string }[],
+  ) => void;
+  hydrateEventRoutes: (
+    routes: { componentId?: string; eventType?: string }[],
+    mode?: "builtin" | "extension",
+  ) => void;
+  hydrateExtensionLayouts: (
+    list: {
+      id: string;
+      name: string;
+      description?: string;
+      payload: A2UIPayload;
+    }[],
+  ) => void;
+  hydrateFrontendModules: (list: { name: string; code: string }[]) => void;
+
+  // ─── Project I/O (from useProjects + App) ───────────────────────────
+  announceProjectToBridge: (tabId: string, path: string) => void;
+
+  // ─── Chat / status helpers (defined on App) ─────────────────────────
+  appendMessage: (msg: ChatMessage, tabId?: string) => void;
+  appendOrAmendAgentText: (
+    delta: string,
+    messageId?: string,
+    tabId?: string,
+  ) => void;
+  setStatusFlags: (
+    flags: Partial<{ waiting: boolean; status: string; connection: string }>,
+  ) => void;
+
+  // ─── Notification helpers (defined on App) ──────────────────────────
+  pushNotification: (input: {
+    id?: string;
+    title: string;
+    message?: string;
+    kind?: NotificationKind;
+    durationMs?: number | null;
+    actions?: NotificationEntry["actions"];
+  }) => void;
+  dismissNotification: (id: string) => void;
+  maybeFireCompletionNotification: (input: {
+    tabId: string;
+    turnDurationMs: number;
+  }) => Promise<void>;
+
+  // ─── Session-list helpers (defined on App) ──────────────────────────
+  knownTabIds: (extraTabs?: { id: string }[]) => Set<string>;
+  scopedDiscoveredSessions: (
+    discovered: DiscoveredSession[],
+  ) => DiscoveredSession[];
+  recentSessionItems: (
+    discovered: DiscoveredSession[],
+    openIds: Set<string>,
+  ) => RecentSessionItem[];
+  syncRecentSessionsToState: () => void;
+
+  // ─── Misc helpers (defined on App) ──────────────────────────────────
+  recomputeModelPicker: (
+    sidebar: Record<string, unknown> | undefined,
+    model: string,
+  ) => Record<string, unknown>;
+  routeShellWrite: (args: Record<string, unknown>) => Promise<{ ok: true }>;
+
+  // ─── Hook-owned ────────────────────────────────────────────────────
+  /** Ack a mutation back to the bridge. Provided by useBridgeMessages so
+   *  handlers don't have to know about the IPC channel. */
+  ackMutation: (
+    mutationId: unknown,
+    success: boolean,
+    error?: string,
+    data?: unknown,
+  ) => void;
+  /** Hang-warn notification id helper. */
+  hangWarnNotifId: (tabId: string) => string;
+  /** Hang-warn timeout in ms. */
+  hangWarnMs: number;
+  /** The boot layout payload. Used by `ready` to compute the fallback
+   *  layout when an extension hasn't supplied one. */
+  bootLayout: A2UIPayload;
+}
+
+export type BridgeMessageHandler = (
+  message: BridgeMessage,
+  ctx: BridgeMessageContext,
+) => void;

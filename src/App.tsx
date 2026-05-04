@@ -18,7 +18,6 @@ import type {
   NotificationEntry,
   NotificationKind,
 } from "./skills/default-layout/notifications";
-import { registerGrammar as registerHighlightGrammar } from "./utils/highlight";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import {
   NO_PROJECT_KEY,
@@ -27,23 +26,18 @@ import {
   type ShellMeta,
   type Tab,
 } from "./types/tab";
-import { deletePointer, setPointer } from "./utils/jsonPointer";
 import { cycleShareMode } from "./utils/shareMode";
 import { shellQuoteAll } from "./utils/shellQuote";
 import { extractSessionId } from "./utils/sidebarHistory";
-import { deepMergeState, layoutPatch } from "./utils/stateMutation";
 import { applyUiScale } from "./utils/viewport";
 import { formatRelativeTime } from "./utils/time";
-import { coerceChatMessages } from "./utils/messages";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs, TAB_MIRROR_KEYS, TERMINAL_REPLAY_MAX } from "./hooks/useTabs";
-import {
-  useExtensionsHydration,
-  type ExtensionTheme,
-} from "./hooks/useExtensionsHydration";
+import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
+import { useBridgeMessages } from "./hooks/useBridgeMessages";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
 import { isFocusInTerminalPanel } from "./utils/focus";
@@ -73,12 +67,6 @@ import logoUrl from "./assets/aethon-logo.svg?url";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
-
-interface ModelDescriptor {
-  id: string;
-  label: string;
-  provider: string;
-}
 
 interface RecentSessionItem {
   id: string;
@@ -306,14 +294,10 @@ export default function App() {
   // on `response_end`. Used to compute turn duration for the OS
   // completion notification gate.
   const turnStartedAtRef = useRef<Map<string, number>>(new Map());
-  // Hang-warn: push a sticky "Still working…" notification if the active tab
-  // stays waiting longer than HANG_WARN_MS. Per-tab timers keyed by tabId.
-  const HANG_WARN_MS = 30_000;
-  // Per-tab notification id so a `response_end` for tab B doesn't dismiss
-  // tab A's still-hung warning (codex P2 review feedback).
+  // Hang-warn: useBridgeMessages owns the timer scheduling + notification
+  // id. We expose these refs so the agent-reloaded / agent-crashed paths
+  // can clear timers + dismiss any pending warnings on supervisor signals.
   const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
-  // Track which tabs currently have a hang notification surfaced so the
-  // crash/reload paths can dismiss them all without scanning.
   const hangWarnActiveRef = useRef<Set<string>>(new Set());
   const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // P4: live config for OS notifications. Mirrors `config.ui.notifyOnCompletion`
@@ -990,42 +974,12 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        await invoke("start_agent");
-        // Tell the bridge what layout we actually booted with so extensions
-        // calling api.getLayout() at register-time see a meaningful tree
-        // instead of null. The bridge stores it as `bootLayout` and
-        // _getLayout() folds it with any pending patches. Sent before
-        // `report` so the snapshot the bridge ships back includes it.
-        await invoke("agent_command", {
-          payload: JSON.stringify({ type: "boot_layout", payload: BOOT_LAYOUT }),
-        });
-        // Request a fresh `ready` event in case the agent process was already
-        // running before this React tree mounted (e.g. after a webview
-        // hot-reload). Newly-spawned agents emit ready unconditionally, so
-        // the duplicate is harmless.
-        await invoke("agent_command", {
-          payload: JSON.stringify({ type: "report" }),
-        });
-      } catch (err) {
-        appendMessage({
-          id: crypto.randomUUID(),
-          role: "agent",
-          text: `Failed to start agent: ${err}`,
-        });
-        setStatusFlags({ status: "error" });
-      }
-    })();
-
-    const unlistenResponse = listen<string>("agent-response", (event) => {
-      try {
-        const data = JSON.parse(event.payload);
-        handleAgentMessage(data);
-      } catch {
-        // Non-JSON line from the bridge — ignore.
-      }
-    });
+    // The boot sequence (start_agent → boot_layout → report) and the
+    // `agent-response` listener live in `useBridgeMessages` — see the
+    // call site near the bottom of this component. The remaining
+    // listeners below own OS-edge events (PTY streams, agent supervisor
+    // signals, native menu, drag-drop, paste) that aren't bridge
+    // messages, so they stay in this effect.
 
     // M6 P1: shell-output streams a PTY chunk. Append to the originating
     // shell-tab's terminalBuffer and dispatch a per-tab window event so
@@ -1434,7 +1388,6 @@ export default function App() {
     document.addEventListener("paste", onClipboardPaste, true);
 
     return () => {
-      unlistenResponse.then((fn) => fn());
       unlistenReload.then((fn) => fn());
       unlistenCrashed.then((fn) => fn());
       unlistenStderr.then((fn) => fn());
@@ -1447,994 +1400,6 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Ack a mutation back to the bridge so the awaiting Promise resolves.
-  // Called from every mutation case in handleAgentMessage that successfully
-  // applied (or rejected) the change. Fire-and-forget — we don't await the
-  // ack-send because the bridge ack channel is independent of any other
-  // outgoing message.
-  function ackMutation(
-    mutationId: unknown,
-    success: boolean,
-    error?: string,
-    data?: unknown,
-  ) {
-    if (typeof mutationId !== "string" || mutationId.length === 0) return;
-    invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "mutation_ack",
-        mutationId,
-        success,
-        ...(error ? { error } : {}),
-        ...(data !== undefined ? { data } : {}),
-      }),
-    }).catch(() => {
-      /* bridge gone — extension's awaiter will hit the timeout instead */
-    });
-  }
-
-  function handleAgentMessage(data: { type?: string; [k: string]: unknown }) {
-    switch (data.type) {
-      case "ready": {
-        const model = (data.model as string) || "";
-        // Cache pi's default model so new tabs created before `ready` fires
-        // (or before a session's model initialises) can inherit it immediately
-        // instead of showing blank "model ▼".
-        if (model) piDefaultModelRef.current = model;
-        const models = (data.models as ModelDescriptor[]) ?? [];
-        // Hydrate any extension-registered component templates the bridge
-        // discovered at boot. setTemplates is wholesale (bridge is the
-        // source of truth) so reload-after-restart picks up the same set.
-        const extComponents = (data.extensionComponents as
-          | Record<string, unknown>
-          | undefined) ?? {};
-        const extState = (data.extensionState as
-          | Record<string, unknown>
-          | undefined) ?? {};
-        const extLayout = data.extensionLayout as A2UIPayload | undefined;
-        const extPatches = (data.extensionLayoutPatches as
-          | { path: string; value: unknown }[]
-          | undefined) ?? [];
-        const extThemes = (data.extensionThemes as ExtensionTheme[] | undefined) ?? [];
-        const extSlash = (data.extensionSlashCommands as
-          | { name: string; description: string; usage?: string }[]
-          | undefined) ?? [];
-        const extKeys = (data.extensionKeybindings as
-          | { combo: string; action: string; description?: string }[]
-          | undefined) ?? [];
-        const extMenu = (data.extensionMenuItems as
-          | {
-              id: string;
-              label: string;
-              action: string;
-              location: "app" | "tray";
-              parent?: string;
-            }[]
-          | undefined) ?? [];
-        const extEventRoutes = (data.extensionEventRoutes as
-          | { componentId?: string; eventType?: string }[]
-          | undefined) ?? [];
-        const extEventRoutingMode =
-          data.extensionEventRoutingMode === "extension" ? "extension" : "builtin";
-        const extLayouts = (data.extensionLayouts as
-          | {
-              id: string;
-              name: string;
-              description?: string;
-              payload: A2UIPayload;
-            }[]
-          | undefined) ?? [];
-        const extFrontendModules = (data.extensionFrontendModules as
-          | { name: string; code: string }[]
-          | undefined) ?? [];
-        const extStateKeys = ((data.extensionStateKeys as string[] | undefined) ?? []);
-        const discTabs = (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
-        allDiscoveredSessionsRef.current = discTabs;
-        // Hydrate extension themes BEFORE the layout state merge below so
-        // /sidebar/themes carries the full list (built-ins + extension)
-        // when the merge runs. hydrateThemes also injects the CSS so a
-        // saved choice has the rule available before data-theme is read.
-        hydrateThemes(extThemes);
-        hydrateExtensions(
-          (data.extensionsList as { name: string; source: string }[] | undefined) ?? [],
-          (data.failedExtensionsList as { name: string; source: string; error?: string }[] | undefined) ?? [],
-        );
-        registry.setTemplates(extComponents);
-        // Restore extension-registered slash commands so the picker shows
-        // them on first paint (no need to wait for an extension_slash_commands
-        // delta after reload). hydrateSlashCommands rewrites the merged
-        // catalog (built-ins + extensions), updates the picker state ref,
-        // and bumps /slashCommands so the picker re-resolves via $ref.
-        hydrateSlashCommands(extSlash);
-        hydrateKeybindings(extKeys);
-        hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
-        hydrateExtensionLayouts(extLayouts);
-        hydrateFrontendModules(extFrontendModules);
-        // Push the persisted menu list into Tauri so the native menu
-        // is correct on first paint after webview reload. Errors are
-        // logged but non-fatal — the menu falls back to built-ins-only.
-        if (extMenu.length > 0) {
-          invoke("set_extension_menu_items", { items: extMenu }).catch(
-            (err: unknown) => {
-              console.warn("[menu] set_extension_menu_items failed:", err);
-            },
-          );
-        }
-        // Surface discovered persistent sessions in the empty-state's
-        // recent-sessions list. Filter out tabIds we already have local
-        // records for so the same session isn't listed twice (open AND
-        // restorable). Format the lastModified into a "10m ago"-style
-        // label for the row's right-hand meta.
-        const knownIds = knownTabIds((data.tabs as { id: string }[] | undefined) ?? []);
-        const scopedDiscTabs = scopedDiscoveredSessions(discTabs);
-        const recentSessions = recentSessionItems(scopedDiscTabs, knownIds);
-        if (projectsLoadedRef.current) {
-          autoRestoreDiscoveredSessions(scopedDiscTabs, knownIds);
-        }
-        // Restore any extension-supplied layout, then replay queued
-        // patches. Falls back to the boot layout when none is reported
-        // so a removed/disabled extension stops bleeding stale chrome
-        // across agent reloads. The layout's own `state` hydrates below
-        // alongside extensionState — same semantics as the live
-        // `layout_set` path so replay matches.
-        const baseLayout: A2UIPayload =
-          extLayout &&
-          typeof extLayout === "object" &&
-          Array.isArray(extLayout.components)
-            ? extLayout
-            : BOOT_LAYOUT;
-        const patchedLayout = extPatches.reduce<A2UIPayload>(
-          (acc, p) => layoutPatch(acc, p.path, p.value),
-          baseLayout,
-        );
-        setLayout(patchedLayout);
-        // Snapshot the prune set BEFORE the setState callback so the side
-        // effect of updating lastExtensionStateKeysRef can stay outside
-        // setState — otherwise concurrent-mode re-runs of the callback
-        // would update the ref multiple times and race with the next
-        // ready's read. Compute willPrune (= prev set − new set) here
-        // and freeze it for the duration of this handler.
-        const willPruneKeys: string[] = [];
-        for (const stale of lastExtensionStateKeysRef.current) {
-          if (!extStateKeys.includes(stale)) willPruneKeys.push(stale);
-        }
-        // Update the ref BEFORE calling setState so the next ready (which
-        // may arrive in the same React batch) sees the new "previous" set.
-        lastExtensionStateKeysRef.current = new Set(extStateKeys);
-        setState((prev) => {
-          // Three-layer hydration in priority order (lowest → highest):
-          //   1. extension layout state — TREATED AS BOOT DEFAULTS
-          //      (only fills keys not already set; existing live state
-          //      like `messages` / `canvas` wins to avoid wiping
-          //      restored history when ready replays after a reload)
-          //   2. extension setState patches (last-write-wins overrides)
-          //   3. ready-owned runtime fields (model picker, status, etc.)
-          //
-          // Stale-key pruning: drop paths the previous ready tracked but
-          // this ready dropped (an extension was uninstalled). Without
-          // this, `prev` keeps the leftover slice forever (deepMerge
-          // doesn't remove keys, only adds/updates). The willPruneKeys
-          // diff was captured outside this callback so it's stable
-          // across concurrent-mode re-runs.
-          let next: Record<string, unknown> = { ...prev };
-          for (const stale of willPruneKeys) {
-            next = deletePointer(next, stale);
-          }
-          if (extLayout && extLayout.state) {
-            // Defaults semantics: deep-merge layout into a fresh object
-            // and let prev win for any overlapping keys.
-            next = deepMergeState(
-              extLayout.state,
-              next,
-            );
-          }
-          next = deepMergeState(next, extState);
-          // Reconcile our local tabs with the bridge's reported tabs.
-          // Two cases:
-          //   (a) webview reload while bridge is alive — bridge has tabs
-          //       we don't know about; create local records for them so
-          //       the user can re-access those sessions.
-          //   (b) bridge restart — local has tabs the bridge doesn't;
-          //       the post-ready replay below re-establishes them.
-          //
-          // Also hydrate per-tab mirrored state from extensionTabState
-          // — those values are the bridge's record of what extensions /
-          // agents wrote to /canvas, /messages, etc. for each tab. On a
-          // webview reload they're the only way to restore tab UI state
-          // that was driven by the agent (React state didn't survive).
-          {
-            const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
-            const bridgeTabs =
-              (data.tabs as { id: string; model: string }[] | undefined) ?? [];
-            const tabReplay =
-              (data.extensionTabState as Record<string, Record<string, unknown>> | undefined) ?? {};
-            const dIdx = localTabs.findIndex((t) => t.id === "default");
-            if (dIdx >= 0) {
-              localTabs[dIdx] = { ...localTabs[dIdx], model };
-            }
-            // Backfill any tab that has no model yet (e.g. opened before
-            // ready fired) with pi's default so the picker is never blank.
-            for (let i = 0; i < localTabs.length; i++) {
-              if (!localTabs[i].model && model) {
-                localTabs[i] = { ...localTabs[i], model };
-              }
-            }
-            for (const bt of bridgeTabs) {
-              if (bt.id === "default") continue;
-              const exists = localTabs.find((t) => t.id === bt.id);
-              if (exists) {
-                if (!exists.model && bt.model) {
-                  const idx = localTabs.indexOf(exists);
-                  localTabs[idx] = { ...exists, model: bt.model };
-                }
-                continue;
-              }
-              const label = `Tab ${localTabs.length + 1}`;
-              localTabs.push({
-                ...makeEmptyTab(bt.id, label, projectsRef.current.activeId),
-                model: bt.model,
-              });
-            }
-            // Apply the bridge's per-tab replay over each tab record.
-            // prev wins for keys the React side already restored (e.g.
-            // local-only message history) — agent-driven canvas /
-            // model fills the gaps.
-            for (let i = 0; i < localTabs.length; i++) {
-              const replay = tabReplay[localTabs[i].id];
-              if (!replay) continue;
-              const merged = { ...localTabs[i] } as unknown as Record<string, unknown>;
-              for (const [k, v] of Object.entries(replay)) {
-                // Only fill keys that aren't already populated locally,
-                // so a real local update beats a possibly-stale replay.
-                if (merged[k] === undefined || merged[k] === null ||
-                    (Array.isArray(merged[k]) && (merged[k] as unknown[]).length === 0) ||
-                    merged[k] === "") {
-                  merged[k] = v;
-                }
-              }
-              localTabs[i] = merged as unknown as Tab;
-            }
-            next.tabs = localTabs;
-          }
-          // The model + sidebar mirror tracks the ACTIVE tab, not the
-          // default — so a `ready` arriving while a non-default tab is
-          // active doesn't clobber the visible selection. Look up the
-          // active tab's model in the just-updated tabs array; fall
-          // back to data.model on first boot when no tab record exists.
-          const activeId = (next.activeTabId as string | undefined) ?? "default";
-          const tabsList = (next.tabs as Tab[] | undefined) ?? [];
-          const activeTab = tabsList.find((t) => t.id === activeId);
-          const activeModel = activeTab?.model || model;
-          next = {
-            ...next,
-            model: activeModel,
-            status: "ready",
-            connection: "connected",
-            recentSessions,
-            sidebar: {
-              ...((next.sidebar) ?? {}),
-              models: models.map((m) => ({
-                id: m.id,
-                label: m.label,
-                active: m.id === activeModel,
-              })),
-            },
-          };
-          // Re-mirror the active tab's full state to the root keys.
-          // Without this, ready-replayed values for /messages, /canvas,
-          // etc. live only on the tab record but the layout binds via
-          // the root mirror, so the user wouldn't see the restored
-          // state until they switched tabs and back.
-          if (activeTab) {
-            const tabRec = activeTab as unknown as Record<string, unknown>;
-            for (const key of TAB_MIRROR_KEYS) {
-              next[key as string] = tabRec[key as string];
-            }
-          }
-          return next;
-        });
-        // Re-establish bridge sessions for any non-default local tabs the
-        // user created before the agent reloaded. The bridge starts fresh
-        // each spawn — without this, prompts on those tabs would hit a
-        // tab the bridge has never seen and fail. After the session is
-        // open, also restore the tab's previously-selected model so the
-        // user doesn't silently send the next prompt to pi's default.
-        const localTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        for (const t of localTabs) {
-          if (t.id === "default") continue;
-          // Pass `model` so the new bridge session boots with the same
-          // model the user previously selected — no race window.
-          // Track in pendingTabOpens so a fast first chat on the
-          // restored tab waits for the bridge to register the session
-          // (otherwise send_message would race tab_open and lazily
-          // create the tab without the inherited model).
-          // Same cwd inheritance as newTab — restored sessions land in the
-          // currently-active project unless they were opened before any
-          // project was set. The bridge dedupes paths internally, so a
-          // re-announce on existing tabs with the same cwd is a no-op.
-          const restoredCwd = activeProject(projectsRef.current)?.path;
-          const opening = invoke("agent_command", {
-            payload: JSON.stringify({
-              type: "tab_open",
-              tabId: t.id,
-              ...(t.model ? { model: t.model } : {}),
-              ...(restoredCwd ? { cwd: restoredCwd } : {}),
-            }),
-          });
-          pendingTabOpens.current.set(t.id, opening);
-          opening
-            .catch(() => {
-              /* surfaced on next chat send */
-            })
-            .finally(() => {
-              pendingTabOpens.current.delete(t.id);
-            });
-        }
-        // Post-respawn project re-announce. The bridge boots with
-        // process.cwd() — which is whatever directory bun was launched
-        // from, NOT necessarily the user's active project. If we don't
-        // re-announce, a hot-reload triggered while a non-cwd project
-        // is active leaves the wrong project's extensions loaded. The
-        // loop above only sends tab_open for non-default tabs, so when
-        // the active tab IS "default" (common: single-tab session)
-        // nothing announces. Send an explicit set_project for the
-        // active tab so the bridge swaps to the right project. The
-        // bridge short-circuits when cwd matches its currentProjectCwd
-        // so this is harmless on a fresh boot where the boot effect
-        // already announced.
-        const activeProj = activeProject(projectsRef.current);
-        if (activeProj) {
-          const activeTabId =
-            (stateRef.current.activeTabId as string | undefined) ?? "default";
-          announceProjectToBridge(activeTabId, activeProj.path);
-        }
-        break;
-      }
-      case "extension_components": {
-        const components = (data.components as Record<string, unknown>) ?? {};
-        registry.setTemplates(components);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "shell_query": {
-        // Bridge proxy for `aethon.shells.{list, read, write}`. Mode
-        // changes go through the status-bar badge (frontend invokes
-        // `shell_set_share_mode` directly), never through the agent
-        // surface; otherwise an extension could flip a private tab into
-        // sharing without a user gesture and bypass the opt-in boundary.
-        //
-        // For write: we check share mode here (read-write → overlay
-        // confirm; read-write-trusted → write directly; private/read →
-        // refuse), then invoke the Rust shell_write which gates again
-        // as defense-in-depth.
-        const op = data.op as string | undefined;
-        const args = (data.args as Record<string, unknown> | undefined) ?? {};
-        const mid = data.mutationId;
-        const route = async (): Promise<unknown> => {
-          if (op === "list") {
-            return await invoke("shell_list_shareable");
-          }
-          if (op === "read") {
-            return await invoke("shell_read_scrollback", { args });
-          }
-          if (op === "write") {
-            return await routeShellWrite(args);
-          }
-          throw new Error(`unknown shell_query op: ${op}`);
-        };
-        route()
-          .then((result) => ackMutation(mid, true, undefined, result))
-          .catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            ackMutation(mid, false, msg);
-          });
-        break;
-      }
-      case "extension_themes": {
-        const themes = (data.themes as ExtensionTheme[] | undefined) ?? [];
-        hydrateThemes(themes);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "register_highlight_grammar": {
-        // Extension surface for the `code` primitive: a TextMate grammar
-        // for a language Shiki doesn't ship by default. Forward to the
-        // worker; it overwrites any prior grammar for the same lang and
-        // a follow-up highlight request picks it up. Bridge already
-        // validated lang + grammar shape, so we trust the payload here.
-        const lang = data.lang as string | undefined;
-        const grammar = data.grammar;
-        if (typeof lang === "string" && grammar) {
-          registerHighlightGrammar(lang, grammar);
-          ackMutation(data.mutationId, true);
-        } else {
-          ackMutation(data.mutationId, false, "register_highlight_grammar: bad payload");
-        }
-        break;
-      }
-      case "extension_slash_commands": {
-        const list = (data.commands as
-          | { name: string; description: string; usage?: string }[]
-          | undefined) ?? [];
-        hydrateSlashCommands(list);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "extension_keybindings": {
-        const list = (data.bindings as
-          | { combo: string; action: string; description?: string }[]
-          | undefined) ?? [];
-        hydrateKeybindings(list);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "extension_event_routes": {
-        const list = (data.routes as
-          | { componentId?: string; eventType?: string }[]
-          | undefined) ?? [];
-        const mode = data.mode === "extension" ? "extension" : "builtin";
-        hydrateEventRoutes(list, mode);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "extension_layouts": {
-        const list = (data.layouts as
-          | {
-              id: string;
-              name: string;
-              description?: string;
-              payload: A2UIPayload;
-            }[]
-          | undefined) ?? [];
-        hydrateExtensionLayouts(list);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "extension_frontend_modules": {
-        const list = (data.modules as
-          | { name: string; code: string }[]
-          | undefined) ?? [];
-        hydrateFrontendModules(list);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "extension_menu_items": {
-        const list = (data.items as
-          | {
-              id: string;
-              label: string;
-              action: string;
-              location: "app" | "tray";
-              parent?: string;
-            }[]
-          | undefined) ?? [];
-        // Forward to Tauri so the native menu rebuilds. Ack on success
-        // (rebuild) or failure (rare — usually means a malformed item
-        // slipped through validation).
-        invoke("set_extension_menu_items", { items: list })
-          .then(() => ackMutation(data.mutationId, true))
-          .catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
-            ackMutation(
-              data.mutationId,
-              false,
-              `frontend_rejected: set_extension_menu_items ${message}`,
-            );
-          });
-        break;
-      }
-      case "state_patch": {
-        // An extension pushed a state mutation. Two cases:
-        //
-        //   1. Path is a per-tab mirrored key (messages / draft / waiting
-        //      / queueCount / canvas / model):
-        //      - With data.tabId: route ONLY to that tab. updateTab will
-        //        also write to root if it happens to be the active tab.
-        //        Don't pre-mirror to root — that would briefly clobber
-        //        the active tab's view with a background tab's state.
-        //      - Without data.tabId: global setState with no tab context
-        //        (clock interval, polling extension). Apply to the active
-        //        tab so the layout sees it and a switch-back re-mirrors.
-        //   2. Path is global (anything else, e.g. /sidebar/...,
-        //      /counter/value, /custom): write directly to root state.
-        //      No tab-scoping needed — these aren't mirrored.
-        const path = data.path as string | undefined;
-        if (!path) {
-          ackMutation(data.mutationId, false, "missing path");
-          break;
-        }
-        const segs = path.split("/").filter(Boolean);
-        const top = segs[0] as keyof Tab | undefined;
-        const isMirrored = top !== undefined && TAB_MIRROR_KEYS.includes(top);
-        if (isMirrored) {
-          const writeIntoTab = (tab: Tab): Tab => {
-            const tabRec = { ...tab } as unknown as Record<string, unknown>;
-            if (segs.length === 1) {
-              tabRec[top as string] = data.value;
-            } else {
-              const before = tabRec[top as string];
-              const baseObj =
-                typeof before === "object" && before !== null
-                  ? (before as Record<string, unknown>)
-                  : {};
-              const nested = setPointer(baseObj, "/" + segs.slice(1).join("/"), data.value);
-              tabRec[top as string] = nested;
-            }
-            return tabRec as unknown as Tab;
-          };
-          const sourceTabId = data.tabId as string | undefined;
-          if (sourceTabId) {
-            updateTab(sourceTabId, writeIntoTab);
-          } else {
-            updateActiveTab(writeIntoTab);
-          }
-        } else {
-          setState((prev) => setPointer(prev, path, data.value));
-          // Track this path as extension-owned so the next `ready` knows
-          // to prune it if the extension that wrote it is gone. Without
-          // this, paths written via setState AFTER the last ready would
-          // never appear in lastExtensionStateKeysRef and would survive
-          // an extension uninstall as stale UI. (Codex review.)
-          lastExtensionStateKeysRef.current.add(path);
-        }
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "layout_set": {
-        // Extension swapped the active layout wholesale. Goes through
-        // the same path window.aethon.setLayout uses so the new payload
-        // hydrates state and renders identically to a default-layout boot.
-        const next = data.payload as A2UIPayload | undefined;
-        if (!next || typeof next !== "object" || !Array.isArray(next.components)) {
-          ackMutation(data.mutationId, false, "payload missing components[]");
-          break;
-        }
-        setLayout(next);
-        if (next.state) {
-          // Layout state contributes BOOT DEFAULTS — only fills keys
-          // that aren't already set in live state. Existing runtime
-          // fields (status, model, connection, sidebar.models, …) win.
-          // Achieved by deep-merging with prev as the override layer.
-          setState((prev) =>
-            deepMergeState(next.state as Record<string, unknown>, prev),
-          );
-        }
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "layout_patch": {
-        // Extension mutated a path inside the active layout (e.g. add a
-        // sidebar section, swap a child). Immutable patch that preserves
-        // arrays — the generic setPointer collapses arrays into plain
-        // objects on traversal because it spreads with `{...existing}`,
-        // which would crash the renderer on `components.map()`. Walk
-        // manually here so arrays stay arrays.
-        const path = data.path as string | undefined;
-        if (!path) {
-          ackMutation(data.mutationId, false, "missing path");
-          break;
-        }
-        setLayout((prev) => layoutPatch(prev, path, data.value));
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "model_changed": {
-        // Per-tab model change. Bridge tags with tabId; default for legacy.
-        const model = (data.model as string) || "";
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        updateTab(tabId, (tab) => ({ ...tab, model }));
-        // Sidebar model picker is global — reflects the active tab's model.
-        // (When a non-active tab changes model, we leave the picker alone
-        // so the user's currently visible context isn't surprised by it.)
-        if (stateRef.current.activeTabId === tabId) {
-          setState((prev) => {
-            const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
-            const items =
-              (sidebar.models as { id: string; label: string }[] | undefined) ?? [];
-            return {
-              ...prev,
-              status: `switched to ${model}`,
-              sidebar: {
-                ...sidebar,
-                models: items.map((m) => ({
-                  id: m.id,
-                  label: m.label,
-                  active: m.id === model,
-                })),
-              },
-            };
-          });
-        }
-        break;
-      }
-      case "tab_ready": {
-        // Bridge confirms a per-tab pi session is up and tells us its
-        // chosen model. Update the tab record so the sidebar can reflect
-        // it on next switch. If the tab is currently active, also refresh
-        // the model picker's `active` flag now (otherwise it'd lag until
-        // the user manually switched).
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        const model = (data.model as string) ?? "";
-        updateTab(tabId, (tab) => ({ ...tab, model }));
-        if (stateRef.current.activeTabId === tabId) {
-          setState((prev) => ({
-            ...prev,
-            sidebar: recomputeModelPicker(
-              prev.sidebar as Record<string, unknown> | undefined,
-              model,
-            ),
-          }));
-        }
-        break;
-      }
-      case "session_history": {
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        const messages = coerceChatMessages(data.messages);
-        updateTab(tabId, (tab) => ({ ...tab, messages }));
-        syncRecentSessionsToState();
-        break;
-      }
-      case "tab_closed": {
-        // Bridge confirms a tab session was torn down. We may have already
-        // removed it from local state in the close handler; this is just a
-        // signal in case some other path triggered the close.
-        const tabId = data.tabId as string | undefined;
-        if (!tabId) break;
-        let nextBuffer = "";
-        let switched = false;
-        setState((prev) => {
-          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).filter((t) => t.id !== tabId);
-          if (tabs.length === 0) return prev; // shouldn't happen — bridge refuses to close default
-          let activeTabId = prev.activeTabId as string | undefined;
-          if (activeTabId === tabId) {
-            activeTabId = tabs[tabs.length - 1].id;
-            switched = true;
-          }
-          const result: Record<string, unknown> = { ...prev, tabs, activeTabId };
-          const target = tabs.find((t) => t.id === activeTabId)!;
-          nextBuffer = target.terminalBuffer ?? "";
-          const targetRec = target as unknown as Record<string, unknown>;
-          for (const key of TAB_MIRROR_KEYS) {
-            result[key as string] = targetRec[key as string];
-          }
-          result.sidebar = recomputeModelPicker(
-            prev.sidebar as Record<string, unknown> | undefined,
-            target.model,
-          );
-          return result;
-        });
-        if (switched) dispatchTerminalReplay(nextBuffer);
-        break;
-      }
-      case "response_delta": {
-        const delta = (data.content as string) ?? "";
-        if (!delta) break;
-        const messageId = (data.messageId as string) || undefined;
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        appendOrAmendAgentText(delta, messageId, tabId);
-        break;
-      }
-      case "prompt_started": {
-        // Bridge tells us a prompt has begun. Sent for handler-driven
-        // ctx.pi.prompt AND every queue-drained turn (source: "queue")
-        // so Stop stays visible across followUp boundaries instead of
-        // flashing back to Send between turns. The remaining queue count
-        // rides along so the input badge stays accurate. tabId routes
-        // status to one tab; status bar text only flips for the active.
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        const remaining = (data.queued as number | undefined) ?? undefined;
-        // Record turn start so response_end can compute duration and
-        // decide whether to fire the OS completion notification (P4).
-        turnStartedAtRef.current.set(tabId, Date.now());
-        updateTab(tabId, (tab) => ({
-          ...tab,
-          waiting: true,
-          ...(remaining !== undefined ? { queueCount: remaining } : {}),
-        }));
-        if (stateRef.current.activeTabId === tabId) {
-          setState((prev) => ({ ...prev, status: "thinking…" }));
-        }
-        // Start hang-warn timer. Reset if a queue-drained prompt_started
-        // fires for the same tab (the 30s clock restarts on each new turn).
-        {
-          const prev = hangWarnTimersRef.current.get(tabId);
-          if (prev !== undefined) clearTimeout(prev);
-          const handle = setTimeout(() => {
-            hangWarnTimersRef.current.delete(tabId);
-            const cur = stateRef.current;
-            if ((cur.activeTabId as string | undefined) !== tabId) return;
-            const tabs = (cur.tabs as Tab[] | undefined) ?? [];
-            const tab = tabs.find((t) => t.id === tabId);
-            if (!tab?.waiting) return;
-            hangWarnActiveRef.current.add(tabId);
-            pushNotification({
-              id: hangWarnNotifId(tabId),
-              title: "Still working…",
-              message: "The agent is taking longer than expected.",
-              kind: "warning",
-              durationMs: null,
-              actions: [
-                { label: "Stop", action: `hang-warn:stop:${tabId}` },
-                { label: "Force restart", action: "hang-warn:force-restart" },
-              ],
-            });
-          }, HANG_WARN_MS);
-          hangWarnTimersRef.current.set(tabId, handle);
-        }
-        break;
-      }
-      case "queued": {
-        // A new chat IPC arrived while a prompt was in flight; pi
-        // accepted it into the followUp queue. Bump the per-tab counter.
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        updateTab(tabId, (tab) => ({ ...tab, queueCount: tab.queueCount + 1 }));
-        break;
-      }
-      case "queue_reset": {
-        // Bridge dropped this tab's pi follow-up queue (typically on
-        // Stop). Mirror by zeroing the local queueCount so the next
-        // response_end clears `waiting` instead of staying stuck on
-        // the "queue > 0 keeps Stop" gate.
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        updateTab(tabId, (tab) => ({ ...tab, queueCount: 0 }));
-        break;
-      }
-      case "response_end": {
-        activeResponseIdRef.current = null;
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        // Only clear waiting when the queue is actually empty. If pi has
-        // a followUp queued, it will fire agent_start → prompt_started
-        // immediately after this and re-flip waiting; clearing here
-        // would cause a Send-flash.
-        updateTab(tabId, (tab) => {
-          if (tab.queueCount > 0) return tab;
-          return { ...tab, waiting: false };
-        });
-        if (stateRef.current.activeTabId === tabId) {
-          setState((prev) => {
-            const q = (prev.queueCount as number) ?? 0;
-            if (q > 0) return prev;
-            return { ...prev, status: "ready" };
-          });
-        }
-        // Clear the hang-warn timer and dismiss this tab's notification
-        // (if it appeared). Per-tab id so an unrelated tab's response_end
-        // doesn't dismiss a still-hung tab's warning.
-        {
-          const h = hangWarnTimersRef.current.get(tabId);
-          if (h !== undefined) { clearTimeout(h); hangWarnTimersRef.current.delete(tabId); }
-          if (hangWarnActiveRef.current.delete(tabId)) {
-            dismissNotification(hangWarnNotifId(tabId));
-          }
-        }
-        // P4: fire native OS notification when an agent turn completes
-        // while the window is unfocused (or the originating tab isn't
-        // active). Only for "real" turns (≥ notifyMinDurationSeconds)
-        // and only if the user hasn't disabled via [ui] notify_on_completion.
-        const startedAt = turnStartedAtRef.current.get(tabId);
-        turnStartedAtRef.current.delete(tabId);
-        if (startedAt !== undefined) {
-          const turnDurationMs = Date.now() - startedAt;
-          void maybeFireCompletionNotification({
-            tabId,
-            turnDurationMs,
-          });
-        }
-        break;
-      }
-      case "error": {
-        const message = (data.message as string) ?? "unknown error";
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        activeResponseIdRef.current = null;
-        appendMessage(
-          { id: crypto.randomUUID(), role: "agent", text: `Error: ${message}` },
-          tabId,
-        );
-        updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
-        if (stateRef.current.activeTabId === tabId) {
-          setStatusFlags({ status: "error" });
-        }
-        break;
-      }
-      case "notice": {
-        // Non-terminal — surface as a system message but DO NOT touch
-        // waiting/status. Used e.g. when a second chat IPC arrives while a
-        // prompt is in-flight: the user sees the rejection but the Stop
-        // button and waiting state for the original prompt persist.
-        // Also surface as a warning toast so a notice that arrives
-        // while the user isn't looking at chat doesn't get missed.
-        const message = (data.message as string) ?? "";
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        if (message) {
-          appendMessage(
-            { id: crypto.randomUUID(), role: "system", text: message },
-            tabId,
-          );
-          pushNotification({ title: message, kind: "warning" });
-        }
-        break;
-      }
-      case "notification": {
-        // Agent-pushed notification. Bridge supplies a stable id (so
-        // dismiss can reference it from agent code), title, optional
-        // message + kind + actions + durationMs. Auto-expiry runs on
-        // the frontend timer; the bridge doesn't track lifecycle.
-        const n = (data.notification as Partial<NotificationEntry> | undefined) ?? {};
-        if (typeof n.title === "string" && n.title) {
-          pushNotification({
-            ...(typeof n.id === "string" ? { id: n.id } : {}),
-            title: n.title,
-            ...(typeof n.message === "string" ? { message: n.message } : {}),
-            ...(n.kind ? { kind: n.kind } : {}),
-            ...(n.durationMs !== undefined ? { durationMs: n.durationMs } : {}),
-            ...(Array.isArray(n.actions) ? { actions: n.actions } : {}),
-          });
-        }
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "notification_dismiss": {
-        const id = data.id as string | undefined;
-        if (id) dismissNotification(id);
-        ackMutation(data.mutationId, true);
-        break;
-      }
-      case "extension_lifecycle": {
-        // Generic feedback channel — abstract on purpose so layouts /
-        // extensions can decide how (or whether) to surface it.
-        //
-        // Default behavior in default-layout: dispatch a cancellable
-        // `aethon:extension-lifecycle` CustomEvent on window, then (if
-        // not preventDefault'd) append a system-notice chat bubble. A
-        // custom layout can listen on the event and call
-        // `e.preventDefault()` to swap a toast / sidebar pulse / status
-        // pill for the default chat-bubble — no source patches required.
-        const detail = {
-          name: (data.name as string) ?? "(unknown)",
-          source: (data.source as string) ?? "directory",
-          status: (data.status as "loaded" | "failed" | "skipped") ?? "loaded",
-          error: data.error as string | undefined,
-          path: data.path as string | undefined,
-        };
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        const ev = new CustomEvent("aethon:extension-lifecycle", {
-          detail,
-          cancelable: true,
-        });
-        const proceed = window.dispatchEvent(ev);
-        if (proceed) {
-          // Default rendering — terse one-liner the user can recognize
-          // even when the agent's chat reply was eaten by a respawn.
-          const verb =
-            detail.status === "loaded"
-              ? "loaded"
-              : detail.status === "failed"
-                ? "failed to load"
-                : "skipped";
-          const suffix = detail.error ? ` — ${detail.error}` : "";
-          appendMessage(
-            {
-              id: crypto.randomUUID(),
-              role: "system",
-              text: `Extension \`${detail.name}\` ${verb}${suffix}.`,
-            },
-            tabId,
-          );
-        }
-        break;
-      }
-      case "extension_runtime_error": {
-        // Sticky, deduped notification per extension. Bridge already
-        // rate-limits the underlying log line, so we get one notification
-        // when the misbehavior starts (or resumes after the suppression
-        // window) — not one every 2s.
-        const name = (data.name as string | undefined) ?? "(unknown)";
-        const kind = (data.kind as string | undefined) ?? "error";
-        const path = (data.path as string | undefined) ?? "";
-        const sizeKB = data.sizeKB as number | undefined;
-        const limitKB = data.limitKB as number | undefined;
-        const message =
-          kind === "state-too-large" && sizeKB !== undefined && limitKB !== undefined
-            ? `setState ${path} rejected — ${sizeKB} KB exceeds ${limitKB} KB limit. Store file paths, not content.`
-            : `Extension reported a runtime error.`;
-        pushNotification({
-          id: `ext-runtime-error:${name}`,
-          title: `Extension \`${name}\` is misbehaving`,
-          message,
-          kind: "warning",
-          durationMs: null,
-        });
-        break;
-      }
-      // Legacy single-shot response (kept so old bridge builds still render).
-      case "response": {
-        const content = (data.content as string) ?? "";
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        if (content) {
-          appendMessage(
-            { id: crypto.randomUUID(), role: "agent", text: content },
-            tabId,
-          );
-        }
-        if (data.done) {
-          updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
-          if (stateRef.current.activeTabId === tabId) setStatusFlags({ status: "ready" });
-        }
-        break;
-      }
-      case "a2ui": {
-        const payload = data.payload as A2UIPayload | undefined;
-        const id = (data.id as string) || crypto.randomUUID();
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        if (payload) {
-          appendMessage({ id, role: "agent", a2ui: payload }, tabId);
-        }
-        if (data.done) {
-          updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
-          if (stateRef.current.activeTabId === tabId) setStatusFlags({ status: "ready" });
-        }
-        break;
-      }
-      case "terminal_output": {
-        const content = (data.content as string) ?? "";
-        if (!content) break;
-        const tabId = (data.tabId as string | undefined) ?? "default";
-        // Append to the originating tab's buffer (cap from the right so
-        // older content rotates out first). Three sinks now consume each
-        // chunk:
-        //   1. Per-tab Tab.terminalBuffer — the React record carrying
-        //      the rolling scrollback. Used by tab-switch replay.
-        //   2. Layout state at /terminal/buffer/<tabId> — bound by $ref
-        //      from any A2UI component that wants the live stream
-        //      (logging skills, alternative renderers).
-        //   3. window CustomEvents — `aethon:terminal` (active tab only,
-        //      drives xterm) and `aethon:terminal-tap` (every chunk
-        //      regardless of active tab, for multi-subscriber listeners
-        //      that need the full stream).
-        updateTab(tabId, (tab) => {
-          const next = (tab.terminalBuffer ?? "") + content;
-          const trimmed = next.length > TERMINAL_REPLAY_MAX
-            ? next.slice(next.length - TERMINAL_REPLAY_MAX)
-            : next;
-          return { ...tab, terminalBuffer: trimmed };
-        });
-        // Mirror the rolling buffer into shared layout state under
-        // /terminal/buffer/<tabId>. A2UI components can $ref it; the
-        // bridge sees it via getFrontendState. Path-based so an extension
-        // bound to ONE tab doesn't pick up every tab's stream.
-        setState((prev) => {
-          const term = (prev.terminal as Record<string, unknown> | undefined) ?? {};
-          const buffers = (term.buffer as Record<string, string> | undefined) ?? {};
-          const next = (buffers[tabId] ?? "") + content;
-          const trimmed = next.length > TERMINAL_REPLAY_MAX
-            ? next.slice(next.length - TERMINAL_REPLAY_MAX)
-            : next;
-          return {
-            ...prev,
-            terminal: {
-              ...term,
-              buffer: { ...buffers, [tabId]: trimmed },
-            },
-          };
-        });
-        if ((stateRef.current.activeTabId as string | undefined) === tabId) {
-          window.dispatchEvent(
-            new CustomEvent("aethon:terminal", { detail: content }),
-          );
-        }
-        // Tap event always fires (every tab, including background ones)
-        // so multi-subscriber listeners can attach without monkey-patching
-        // the existing single-subscriber pattern. detail carries tabId so
-        // the listener can filter.
-        window.dispatchEvent(
-          new CustomEvent("aethon:terminal-tap", {
-            detail: { tabId, content },
-          }),
-        );
-        break;
-      }
-    }
-  }
 
   // Append a chat message, or replace in place if a message with the same
   // id already exists. This is what lets the bridge stream "running…" tool
@@ -2584,6 +1549,64 @@ export default function App() {
     }
     syncProjectsToState();
   }
+
+  // Bridge IPC: spawns the agent on mount, runs the boot handshake
+  // (start_agent → boot_layout → report), and routes every
+  // `agent-response` event through the per-type handler registry under
+  // src/hooks/bridgeMessageHandlers/. Returns `ackMutation` for callers
+  // (none today, but kept on the public API) that need to settle a
+  // bridge promise outside the response path.
+  useBridgeMessages({
+    bootLayout: BOOT_LAYOUT,
+    onBootError: (err) => {
+      appendMessage({
+        id: crypto.randomUUID(),
+        role: "agent",
+        text: `Failed to start agent: ${err}`,
+      });
+      setStatusFlags({ status: "error" });
+    },
+    ctx: {
+      setState,
+      setLayout,
+      stateRef,
+      registry,
+      piDefaultModelRef,
+      allDiscoveredSessionsRef,
+      projectsRef,
+      projectsLoadedRef,
+      activeResponseIdRef,
+      hangWarnTimersRef,
+      hangWarnActiveRef,
+      turnStartedAtRef,
+      lastExtensionStateKeysRef,
+      pendingTabOpens,
+      updateTab,
+      updateActiveTab,
+      dispatchTerminalReplay,
+      autoRestoreDiscoveredSessions,
+      hydrateThemes,
+      hydrateExtensions,
+      hydrateSlashCommands,
+      hydrateKeybindings,
+      hydrateEventRoutes,
+      hydrateExtensionLayouts,
+      hydrateFrontendModules,
+      announceProjectToBridge,
+      appendMessage,
+      appendOrAmendAgentText,
+      setStatusFlags,
+      pushNotification,
+      dismissNotification,
+      maybeFireCompletionNotification,
+      knownTabIds,
+      scopedDiscoveredSessions,
+      recentSessionItems,
+      syncRecentSessionsToState,
+      recomputeModelPicker,
+      routeShellWrite,
+    },
+  });
 
   // Load projects once at boot. Done in its own effect so a slow disk
   // doesn't push out the agent-start path. Mirrors into state on resolve

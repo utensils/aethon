@@ -32,11 +32,13 @@ export default defineConfig({
     target: "es2022",
   },
   test: {
-    // Pure-logic unit tests live next to the source as `*.test.ts`.
-    // jsdom is reserved for the renderer when we add component tests;
-    // current suite is utility code only so node is faster.
+    // Pure-logic unit tests live next to the source as `*.test.ts` and
+    // run under node for speed. React/hook tests opt into jsdom on a
+    // per-file basis with `// @vitest-environment jsdom` at the top —
+    // vitest 4 dropped environmentMatchGlobs in favor of the directive.
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "agent/**/*.test.ts"],
+    setupFiles: ["src/test/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
