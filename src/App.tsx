@@ -26,9 +26,8 @@ import {
   type ShellMeta,
   type Tab,
 } from "./types/tab";
-import { cycleShareMode } from "./utils/shareMode";
+import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
 import { shellQuoteAll } from "./utils/shellQuote";
-import { extractSessionId } from "./utils/sidebarHistory";
 import { applyUiScale } from "./utils/viewport";
 import { formatRelativeTime } from "./utils/time";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
@@ -2498,604 +2497,76 @@ export default function App() {
     }
   }
 
-  // Intercept events from layout-level components before they reach the agent.
-  // The layout speaks A2UI, but a few interactions need to drive native APIs
-  // (Tauri IPC for chat send, model picker) — this is where the renderer
-  // hands off control.
-  const onEvent = useMemo(
-    () => async (component: { id: string; type?: string }, eventType: string, data?: unknown) => {
-      // Reserved system notifications: shell-write consent prompts
-      // (M6 P2.2) MUST run before extension-route interception so a
-      // user-driven Allow/Deny / dismiss can never be hijacked by an
-      // extension. Same-name event matches on `notification-stack`
-      // would otherwise route to the bridge and the user's click
-      // becomes a silent no-op while `aethon.shells.write` waits for
-      // its 5-min timeout. Filter narrowly: only events whose action
-      // string starts with the reserved `shell-write-` prefix, plus
-      // `dismiss`/`expire` of an id that has a pending resolver. Any
-      // other notification-stack event still flows through routing.
-      if (component.id === "notification-stack") {
-        const id = (data as { id?: string } | undefined)?.id;
-        const action = (data as { action?: string } | undefined)?.action;
-        const isShellWriteAction =
-          eventType === "action" &&
-          typeof action === "string" &&
-          action.startsWith("shell-write-");
-        const isShellWriteDismiss =
-          (eventType === "dismiss" || eventType === "expire") &&
-          typeof id === "string" &&
-          hasPendingShellWriteConsent(id);
-        if (isShellWriteAction && id && action) {
-          const allowed = action.startsWith("shell-write-allow:");
-          resolveShellWriteConsent(id, allowed);
-          dismissNotification(id);
-          return true;
-        }
-        if (isShellWriteDismiss && id) {
-          resolveShellWriteConsent(id, false);
-          dismissNotification(id);
-          return true;
-        }
-        // Close-shell-tab consent prompts. Same security shape as
-        // shell-write — must run before extension-route interception
-        // so a user's Close / Cancel can't be hijacked. Filter
-        // narrowly on the reserved `shell-close-` prefix + a dismiss
-        // of an id with a pending resolver.
-        const isShellCloseAction =
-          eventType === "action" &&
-          typeof action === "string" &&
-          action.startsWith("shell-close-");
-        const isShellCloseDismiss =
-          (eventType === "dismiss" || eventType === "expire") &&
-          typeof id === "string" &&
-          hasPendingShellCloseConsent(id);
-        if (isShellCloseAction && id && action) {
-          const allowed = action.startsWith("shell-close-allow:");
-          resolveShellCloseConsent(id, allowed);
-          dismissNotification(id);
-          return true;
-        }
-        if (isShellCloseDismiss && id) {
-          resolveShellCloseConsent(id, false);
-          dismissNotification(id);
-          return true;
-        }
-        // Session-delete consent prompts. Same security shape as the
-        // shell-close path — narrowly filtered on the reserved
-        // `session-delete-` prefix + a dismiss of an id with a pending
-        // resolver. Must run before extension-route interception so a
-        // user's Delete / Cancel can't be hijacked by a registered
-        // notification handler.
-        const isSessionDeleteAction =
-          eventType === "action" &&
-          typeof action === "string" &&
-          action.startsWith("session-delete-");
-        const isSessionDeleteDismiss =
-          (eventType === "dismiss" || eventType === "expire") &&
-          typeof id === "string" &&
-          hasPendingSessionDeleteConsent(id);
-        if (isSessionDeleteAction && id && action) {
-          const allowed = action.startsWith("session-delete-allow:");
-          resolveSessionDeleteConsent(id, allowed);
-          dismissNotification(id);
-          return true;
-        }
-        if (isSessionDeleteDismiss && id) {
-          resolveSessionDeleteConsent(id, false);
-          dismissNotification(id);
-          return true;
-        }
-        // P5: agent-crashed notification actions. Restart respawns
-        // the bridge; dismiss just closes the toast.
-        if (
-          eventType === "action" &&
-          typeof action === "string" &&
-          action.startsWith("ae-agent-crashed:")
-        ) {
-          if (action === "ae-agent-crashed:restart") {
-            invoke("start_agent").catch((err: unknown) => {
-              console.warn("agent restart failed:", err);
-            });
-          }
-          if (id) dismissNotification(id);
-          return true;
-        }
-        // Hang-warn notification actions.
-        if (
-          eventType === "action" &&
-          typeof action === "string" &&
-          action.startsWith("hang-warn:")
-        ) {
-          if (action.startsWith("hang-warn:stop")) {
-            // Stop carries the tabId of the hung tab (set when the
-            // notification was pushed) so the right session is stopped
-            // even if the user is on a different tab when they click.
-            const targetTabId = action.startsWith("hang-warn:stop:")
-              ? action.slice("hang-warn:stop:".length)
-              : undefined;
-            void stopPrompt(targetTabId);
-          } else if (action === "hang-warn:force-restart") {
-            // force_restart_agent SIGKILLs the bun child from Rust, bypassing
-            // blocked stdin. The existing agent-crashed handler then fires,
-            // clearing waiting state and (if auto_restart_agent) respawning.
-            invoke("force_restart_agent").catch((err: unknown) => {
-              console.warn("force_restart_agent failed:", err);
-            });
-          }
-          if (id) dismissNotification(id);
-          return true;
-        }
-      }
-      // Extensions can register event-route intercepts via
-      // aethon.registerEventRoute. When an event matches a registered
-      // route, we return false here so the renderer falls through to
-      // the default dispatch (a2ui_event → bridge), letting the
-      // extension's aethon.onEvent({componentType, descendantId})
-      // handler run instead of the built-in switch below. Wildcards:
-      // a route with only `componentId` matches any eventType for
-      // that component; only `eventType` matches every component.
-      if (extensionEventRoutingModeRef.current === "extension") {
-        return false;
-      }
-      const routes = extensionEventRoutesRef.current;
-      if (routes.length > 0) {
-        const matched = routes.some((r) => {
-          const cidOk = !r.componentId || r.componentId === component.id;
-          const evtOk = !r.eventType || r.eventType === eventType;
-          return cidOk && evtOk;
-        });
-        if (matched) {
-          // Suppress optimistic UI: the renderer always applies an
-          // optimistic update for change/submit on $ref-bound inputs
-          // before this callback runs, but for an intercepted submit
-          // we still want the bridge to get the event so a paired
-          // handler on the bridge can decide what to do (e.g. preprocess
-          // the prompt before sendChat).
-          // Returning false lets the renderer's invoke('dispatch_a2ui_event')
-          // fire normally. `data` (which carries `value` for submits)
-          // rides along intact.
-          // Suppress sendChat side effect for chat-input submits — the
-          // bridge handler is now the source of truth for that event.
-          // For other intercepted events (sidebar select, tab close)
-          // returning false here is sufficient.
-          // (We don't filter by component.id; the test above did that.)
-          return false;
-        }
-      }
-      // Settings panel events (M6 P3). Renders at App root like the
-      // palette. Update applies a partial AethonConfig to the pending
-      // overlay; save commits via write_config; close discards.
-      if (component.id === "settings-panel") {
-        if (eventType === "close") {
-          closeSettings();
-          return true;
-        }
-        if (eventType === "update") {
-          const patch = (data as { patch?: Record<string, unknown> } | undefined)?.patch;
-          if (patch) applySettingsPatch(patch);
-          return true;
-        }
-        if (eventType === "save") {
-          void saveSettings();
-          return true;
-        }
-      }
-
-      // Cross-session search panel events (M6 P6). Like the palette,
-      // renders at App root and never goes through the bridge —
-      // search results land via the Tauri search_sessions command.
-      if (component.id === "search-panel") {
-        if (eventType === "close") {
-          closeSessionSearch();
-          return true;
-        }
-        if (eventType === "query") {
-          const value = (data as { value?: string } | undefined)?.value ?? "";
-          setSearchQuery(value);
-          return true;
-        }
-        if (eventType === "scope") {
-          const scope = (data as { scope?: "all" | "current" } | undefined)
-            ?.scope;
-          if (scope === "all" || scope === "current") {
-            setSearchScope(scope);
-          }
-          return true;
-        }
-        if (eventType === "select") {
-          const hit = (data as
-            | {
-                hit?: {
-                  tabId?: string;
-                  snippetMatch?: string;
-                };
-              }
-            | undefined)?.hit;
-          if (hit) openSearchHit(hit);
-          return true;
-        }
-      }
-
-      // Command palette events. Palette renders at App root; events
-      // route here directly (it never goes through the dispatch_a2ui
-      // bridge because there's no agent counterpart to invoke).
-      if (component.id === "command-palette") {
-        if (eventType === "close") {
-          closePalette();
-          return true;
-        }
-        if (eventType === "query") {
-          const value = (data as { value?: string } | undefined)?.value ?? "";
-          setState((prev) => ({
-            ...prev,
-            palette: { ...(prev.palette ?? {}), query: value, selectedIndex: 0 },
-          }));
-          return true;
-        }
-        if (eventType === "navigate") {
-          const idx = (data as { index?: number } | undefined)?.index ?? 0;
-          setState((prev) => ({
-            ...prev,
-            palette: { ...(prev.palette ?? {}), selectedIndex: idx },
-          }));
-          return true;
-        }
-        if (eventType === "select") {
-          const item = (data as { item?: PaletteItem } | undefined)?.item;
-          if (item) {
-            // Close FIRST so a slow handler doesn't leave the palette
-            // open over the result. Then run async.
-            closePalette();
-            void runPaletteItem(item);
-          }
-          return true;
-        }
-      }
-      // Notification stack events.
-      if (component.id === "notification-stack") {
-        const id = (data as { id?: string } | undefined)?.id;
-        if ((eventType === "dismiss" || eventType === "expire") && id) {
-          // Dismissing a pending shell-write / shell-close / session-delete
-          // confirmation = deny. All resolvers fire on every dismiss/expire
-          // so a dropped notification can't dangle the originator's promise.
-          resolveShellWriteConsent(id, false);
-          resolveShellCloseConsent(id, false);
-          resolveSessionDeleteConsent(id, false);
-          dismissNotification(id);
-          return true;
-        }
-        if (eventType === "action" && id) {
-          const action = (data as { action?: string } | undefined)?.action;
-          // Built-in shell-write / shell-close / session-delete Allow/Deny
-          // actions resolve pending consents without a bridge round-trip.
-          // Other actions get forwarded as a2ui events for extension matchers.
-          if (action && action.startsWith("shell-write-")) {
-            const allowed = action.startsWith("shell-write-allow:");
-            resolveShellWriteConsent(id, allowed);
-          } else if (action && action.startsWith("shell-close-")) {
-            const allowed = action.startsWith("shell-close-allow:");
-            resolveShellCloseConsent(id, allowed);
-          } else if (action && action.startsWith("session-delete-")) {
-            const allowed = action.startsWith("session-delete-allow:");
-            resolveSessionDeleteConsent(id, allowed);
-          } else if (action) {
-            invoke("dispatch_a2ui_event", {
-              event: JSON.stringify({
-                componentId: `notification__tpl__${id}`,
-                componentType: "notification",
-                templateRootType: "notification",
-                eventType: "invoke",
-                data: { id, action },
-              }),
-              tabId: stateRef.current.activeTabId,
-            }).catch(() => {
-              /* ignore — bridge gone */
-            });
-          }
-          dismissNotification(id);
-          return true;
-        }
-      }
-      if (component.id === "chat-input" && eventType === "submit") {
-        const value = (data as { value?: string } | undefined)?.value ?? "";
-        await sendChat(value);
-        return true;
-      }
-      if (component.id === "chat-input" && eventType === "change") {
-        // The renderer's optimistic update wrote /draft (the active-tab
-        // mirror); also write into the active tab record so an unsent
-        // draft survives a tab switch and isn't clobbered when the
-        // tab is re-mirrored to root on switch-back.
-        const value = (data as { value?: string } | undefined)?.value ?? "";
-        updateActiveTab((tab) => ({ ...tab, draft: value }));
-        return true;
-      }
-      if (component.id === "chat-input" && eventType === "cancel") {
-        await stopPrompt();
-        return true;
-      }
-      // Tab events route by component *type* — id may vary across layouts
-      // (workstation hoists the strip into the header as `header-tabs`).
-      // Matching by type keeps the contract layout-agnostic so a future
-      // layout's tabs work without touching App.tsx.
-      const tabType = component.type;
-
-      // Terminal panel sub-tab events (M6 restructure). The panel
-      // hosts the read-only agent-bash sub-tab plus every shell as a
-      // separate sub-tab; selection / close / new-shell live here.
-      if (component.type === "terminal-panel") {
-        const sel = data as { subTabId?: string } | undefined;
-        if (eventType === "select-sub-tab" && sel?.subTabId) {
-          setActiveSubTab(sel.subTabId);
-          return true;
-        }
-        if (eventType === "close-sub-tab" && sel?.subTabId) {
-          // Closing a shell sub-tab is just closing its underlying tab.
-          // The agent-bash sub-tab can't be closed (no X button rendered).
-          if (sel.subTabId !== "agent-bash") {
-            closeTab(sel.subTabId);
-          }
-          return true;
-        }
-        if (eventType === "new-shell-sub-tab") {
-          newShellTab();
-          return true;
-        }
-      }
-
-      // Share-mode cycle. Match either source: the inline badge inside
-      // ShellCanvas re-emits on the shell-canvas channel; a standalone
-      // `<share-mode-badge>` placed directly in a custom layout emits
-      // on its own component type. Either path runs the same effect:
-      // look up the current mode, advance via the cycle helper, persist
-      // through the Rust side AND mirror locally so the badge label
-      // refreshes immediately.
-      if (
-        eventType === "cycle-share-mode" &&
-        (component.type === "shell-canvas" ||
-          component.type === "share-mode-badge")
-      ) {
-        const sel = data as { tabId?: string } | undefined;
-        const id = sel?.tabId;
-        if (typeof id !== "string" || !id) return true;
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const tab = tabs.find((t) => t.id === id);
-        if (!tab || tab.kind !== "shell" || !tab.shell) return true;
-        const next = cycleShareMode(tab.shell.shareMode);
-        invoke("shell_set_share_mode", { tabId: id, mode: next })
-          .then(() => {
-            applyShareModeToTab(id, next);
-          })
-          .catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.warn("shell_set_share_mode failed:", msg);
-          });
-        return true;
-      }
-
-      const isTabSurface = tabType === "tab-strip";
-      if (isTabSurface) {
-        const sel = data as { tabId?: string; action?: string; id?: string } | undefined;
-        if (eventType === "select" && sel?.tabId) {
-          setActiveTab(sel.tabId);
-          return true;
-        }
-        if (eventType === "close" && sel?.tabId) {
-          closeTab(sel.tabId);
-          return true;
-        }
-        if (eventType === "new") {
-          newTab();
-          return true;
-        }
-      }
-      if (component.id === "empty-state") {
-        if (eventType === "new-tab") {
-          newTab();
-          return true;
-        }
-        if (eventType === "open-project") {
-          // Pop the native folder picker. On a successful pick we've
-          // already persisted + announced the new project — open a
-          // fresh tab in it so the user lands ready-to-chat. If they
-          // cancel, leave the empty state visible.
-          openProjectFromPicker().then((id) => {
-            if (id) newTab();
-          });
-          return true;
-        }
-        if (eventType === "select-project") {
-          const sel = data as
-            | { projectId?: string; label?: string; path?: string }
-            | undefined;
-          if (sel?.projectId) {
-            setActiveProjectById(sel.projectId);
-            // Only seed a fresh tab when the project's bucket is empty.
-            // If the user already has tabs in this project, the bucket
-            // load above restored them — popping a new tab on top would
-            // be jarring.
-            const tabsAfter =
-              (stateRef.current.tabs as Tab[] | undefined) ?? [];
-            if (tabsAfter.length === 0) newTab();
-          }
-          return true;
-        }
-        if (eventType === "restore-session") {
-          const sel = data as
-            | { sessionId?: string; label?: string; cwd?: string }
-            | undefined;
-          if (sel?.sessionId) {
-            // Re-open the persisted session by reusing the same tabId.
-            // The bridge's SessionManager.continueRecent reads the
-            // existing JSONL files so the LLM history is restored too.
-            newTab(sel.sessionId, sel.label ?? "Restored Session", {
-              restoredSession: true,
-              ...(sel.cwd ? { cwd: sel.cwd } : {}),
-            });
-          } else {
-            newTab();
-          }
-          return true;
-        }
-      }
-      if (component.id === "sidebar" && eventType === "resize") {
-        const next = (data as { width?: number } | undefined)?.width;
-        if (typeof next === "number") {
-          // Patch the leading width token in /layout/columns. Layouts
-          // shape their grid columns as either "${SIDEBAR}px minmax(0,1fr)"
-          // or "${SIDEBAR}px minmax(0,1fr) ${INSPECTOR}px" — replace just the first
-          // token so non-sidebar columns survive the rewrite.
-          setState((prev) => {
-            const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
-            const current =
-              (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
-            const tokens = current.trim().split(/\s+/);
-            tokens[0] = `${next}px`;
-            return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
-          });
-        }
-        return true;
-      }
-      if (component.id === "sidebar" && eventType === "resize-end") {
-        // Persist the final width so the next boot opens at the same
-        // size. Read from state.layout.columns (the in-flight value the
-        // resize listener just wrote) so a single source of truth wins.
-        const layout = (stateRef.current.layout as Record<string, unknown> | undefined) ?? {};
-        const cols = (layout.columns as string | undefined) ?? "";
-        const lead = cols.trim().split(/\s+/)[0] ?? "";
-        const px = parseInt(lead, 10);
-        if (Number.isFinite(px) && px > 0) {
-          writeState("sidebar_width", String(px)).catch(() => {
-            /* ignore — best-effort */
-          });
-        }
-        return true;
-      }
-      if (component.id === "sidebar" && eventType === "remove-project") {
-        const selected = data as
-          | { projectId?: string; itemId?: string }
-          | undefined;
-        const projectId = selected?.projectId ?? selected?.itemId;
-        return projectId ? removeProjectById(projectId) : true;
-      }
-      if (component.id === "sidebar" && eventType === "delete-session") {
-        const selected = data as
-          | { sessionId?: string; itemId?: string; label?: string }
-          | undefined;
-        // Strip the "session:" or "tab:" prefix defensively in case a
-        // future caller forgets the split — the sidebar already strips
-        // it but we don't want a stray prefix to land in the Tauri
-        // command path validator.
-        const raw = selected?.sessionId ?? selected?.itemId ?? "";
-        const sessionId = extractSessionId(raw);
-        const label = selected?.label ?? sessionId;
-        if (!sessionId) return true;
-        promptDeleteSessionConfirmation(label).then((allowed) => {
-          if (!allowed) return;
-          const isOpen = (stateRef.current.tabs as Tab[] | undefined)?.some(
-            (t) => t.id === sessionId,
-          );
-          // Delete first, then close. Doing the reverse leaves the user
-          // with a closed tab and a failure notification when the Tauri
-          // command refuses (e.g. the default session). codex P2 review
-          // feedback.
-          invoke("delete_session", { tabId: sessionId })
-            .then(() => {
-              if (isOpen) closeTab(sessionId);
-              allDiscoveredSessionsRef.current =
-                allDiscoveredSessionsRef.current.filter(
-                  (s) => s.tabId !== sessionId,
-                );
-              syncRecentSessionsToState();
-              pushNotification({
-                title: "Session deleted",
-                message: label,
-                kind: "success",
-              });
-            })
-            .catch((err: unknown) => {
-              pushNotification({
-                title: "Delete session failed",
-                message: String(err),
-                kind: "error",
-              });
-            });
-        });
-        return true;
-      }
-      // Sidebar select + dropdown chrome pickers (model-picker /
-      // appearance-menu) all use the same `{sectionId, itemId}` event
-      // shape. Route by section so a chrome dropdown and a sidebar row
-      // converge on the same backing action.
-      const isSectionedSelect =
-        eventType === "select" &&
-        (component.id === "sidebar" ||
-          component.id === "model-picker" ||
-          component.id === "appearance-menu");
-      if (isSectionedSelect) {
-        const selected = data as { sectionId?: string; itemId?: string } | undefined;
-        if (selected?.itemId === "toggle-terminal") {
-          toggleTerminal();
-          return true;
-        }
-        if (selected?.itemId === "clear-chat") {
-          clearChat();
-          return true;
-        }
-        if (selected?.sectionId === "models" && selected.itemId) {
-          await setModel(selected.itemId);
-          return true;
-        }
-        if (selected?.sectionId === "themes" && selected.itemId) {
-          // Accept any registered theme id (built-ins + extension themes).
-          // The CSS for built-ins lives in styles.css; extension themes
-          // had their <style> tag injected on hydrateThemes().
-          setTheme(selected.itemId);
-          return true;
-        }
-        if (selected?.sectionId === "layouts" && selected.itemId) {
-          activateLayoutById(selected.itemId);
-          return true;
-        }
-        if (selected?.sectionId === "projects" && selected.itemId) {
-          // The sidebar's projects section also surfaces an "Open
-          // project…" action item; intercept it here so we don't try
-          // to look it up as a project id.
-          if (selected.itemId === "open-project") {
-            openProjectFromPicker();
-            return true;
-          }
-          setActiveProjectById(selected.itemId);
-          return true;
-        }
-        if (selected?.sectionId === "history" && selected.itemId) {
-          if (selected.itemId.startsWith("tab:")) {
-            setActiveTab(selected.itemId.slice(4));
-            return true;
-          }
-          if (selected.itemId.startsWith("session:")) {
-            const sessionId = selected.itemId.slice(8);
-            const recentSessions =
-              (stateRef.current.recentSessions as RecentSessionItem[] | undefined) ?? [];
-            const item = recentSessions.find((s) => s.id === sessionId);
-            newTab(sessionId, item?.label ?? `Session ${sessionId.slice(0, 8)}`, {
-              restoredSession: true,
-              ...(item?.cwd ? { cwd: item.cwd } : {}),
-            });
-            return true;
-          }
-          return true;
-        }
-      }
-      return false;
-    },
-    // The closures inside this onEvent dispatch (newTab, closeTab,
-    // sendChat, etc.) read live state via stateRef / setState callbacks.
-    // Adding them as deps would force the memo to re-build every render
-    // — losing any consumer-side memoization keyed on its identity —
-    // without changing observed behavior.
+  // Intercept events from layout-level components before they reach
+  // the agent. The layout speaks A2UI, but a few interactions need to
+  // drive native APIs (Tauri IPC for chat send, model picker) — the
+  // dispatcher lives in `src/eventRoutes/` and is wired here. Three
+  // precedence layers, in order: shell-consent reserved prefixes
+  // (security boundary), extension event-routes (extensibility),
+  // built-in route table.
+  const eventRouteCtx = useMemo<EventRouteContext>(
+    () => ({
+      setState,
+      stateRef,
+      extensionEventRoutesRef,
+      extensionEventRoutingModeRef,
+      allDiscoveredSessionsRef,
+      hasPendingShellWriteConsent,
+      resolveShellWriteConsent,
+      hasPendingShellCloseConsent,
+      resolveShellCloseConsent,
+      hasPendingSessionDeleteConsent,
+      resolveSessionDeleteConsent,
+      promptDeleteSessionConfirmation,
+      pushNotification,
+      dismissNotification,
+      sendChat,
+      stopPrompt,
+      updateActiveTab,
+      newTab,
+      newShellTab,
+      closeTab,
+      setActiveTab,
+      setActiveSubTab,
+      applyShareModeToTab,
+      closeSettings,
+      applySettingsPatch,
+      saveSettings,
+      closeSessionSearch,
+      setSearchQuery,
+      setSearchScope,
+      openSearchHit,
+      closePalette,
+      runPaletteItem,
+      toggleTerminal,
+      clearChat,
+      setModel,
+      setTheme,
+      activateLayoutById,
+      openProjectFromPicker,
+      setActiveProjectById,
+      removeProjectById,
+      syncRecentSessionsToState,
+      invoke,
+      writeState,
+    }),
+    // Built once and reused across renders. Every closure inside
+    // (sendChat, newTab, …) reads live state via stateRef / setState
+    // callbacks; adding them as deps would force the memo to re-build
+    // every render — losing any consumer-side memoization keyed on its
+    // identity — without changing observed behavior.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
+  );
+
+  const onEvent = useMemo(
+    () =>
+      (
+        component: { id: string; type?: string },
+        eventType: string,
+        data?: unknown,
+      ) => dispatchEvent({ component, eventType, data }, eventRouteCtx),
+    [eventRouteCtx],
   );
 
   const renderState = useMemo(() => {
