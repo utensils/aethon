@@ -1,4 +1,5 @@
 import type { BridgeMessageHandler } from "./types";
+import { recomputeModelPicker } from "../../utils/modelPicker";
 
 /** Bridge confirms a per-tab pi session is up and tells us its chosen
  *  model. Update the tab record so the sidebar can reflect it on next
@@ -12,7 +13,7 @@ export const handleTabReady: BridgeMessageHandler = (data, ctx) => {
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({
       ...prev,
-      sidebar: ctx.recomputeModelPicker(
+      sidebar: recomputeModelPicker(
         prev.sidebar as Record<string, unknown> | undefined,
         model,
       ),

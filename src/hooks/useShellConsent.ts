@@ -1,4 +1,6 @@
-import { useRef } from "react";
+import { useRef, type MutableRefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { Tab } from "../types/tab";
 
 /** Lifetime of an Allow/Deny prompt for `aethon.shells.write` in
  *  read-write mode. Set ~30 s under the bridge-side ack timeout
@@ -24,6 +26,9 @@ interface NotificationInput {
 
 export interface UseShellConsentContext {
   pushNotification: (n: NotificationInput) => void;
+  /** Live state — routeShellWrite reads /tabs to look up the target tab's
+   *  share mode + label before pushing a confirmation prompt. */
+  stateRef: MutableRefObject<Record<string, unknown>>;
 }
 
 export interface UseShellConsentActions {
@@ -40,6 +45,15 @@ export interface UseShellConsentActions {
   }) => Promise<boolean>;
   promptCloseShellTabConfirmation: (tabLabel: string) => Promise<boolean>;
   promptDeleteSessionConfirmation: (label: string) => Promise<boolean>;
+  /** Route an `aethon.shells.write` request through the share-mode gate.
+   *  - private / read       → reject (Rust would too; we early-out)
+   *  - read-write           → push a confirmation notification.
+   *  - read-write-trusted   → invoke shell_write directly.
+   *  Defense-in-depth: the Rust `shell_write` Tauri command re-checks
+   *  the mode, so a frontend bug can't bypass the gate. */
+  routeShellWrite: (
+    args: Record<string, unknown>,
+  ) => Promise<{ ok: true }>;
 }
 
 /**
@@ -186,6 +200,38 @@ export function useShellConsent(
     });
   }
 
+  async function routeShellWrite(
+    args: Record<string, unknown>,
+  ): Promise<{ ok: true }> {
+    const tabId = String(args.tabId ?? "");
+    const text = String(args.text ?? "");
+    if (!tabId) throw new Error("tabId required");
+    if (text.length === 0) throw new Error("text must be non-empty");
+    const tabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || tab.kind !== "shell" || !tab.shell) {
+      throw new Error(`no shell tab with id ${tabId}`);
+    }
+    const mode = tab.shell.shareMode;
+    if (mode === "private" || mode === "read") {
+      throw new Error(`share mode "${mode}" does not allow agent writes`);
+    }
+    if (mode === "read-write-trusted") {
+      await invoke("shell_write", { tabId, data: text });
+      return { ok: true };
+    }
+    const allowed = await promptShellWriteConfirmation({
+      tabId,
+      text,
+      tabLabel: tab.label,
+    });
+    if (!allowed) {
+      throw new Error("user denied agent write");
+    }
+    await invoke("shell_write", { tabId, data: text });
+    return { ok: true };
+  }
+
   return {
     resolveShellWriteConsent,
     resolveShellCloseConsent,
@@ -196,5 +242,6 @@ export function useShellConsent(
     promptShellWriteConfirmation,
     promptCloseShellTabConfirmation,
     promptDeleteSessionConfirmation,
+    routeShellWrite,
   };
 }

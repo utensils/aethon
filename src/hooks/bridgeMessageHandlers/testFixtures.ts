@@ -47,7 +47,6 @@ export interface HandlerFixture {
     announceProjectToBridge: Mock;
     routeShellWrite: Mock;
     ackMutation: Mock;
-    recomputeModelPicker: Mock;
     knownTabIds: Mock;
     scopedDiscoveredSessions: Mock;
     recentSessionItems: Mock;
@@ -66,9 +65,9 @@ export function buildHandlerFixture(
   registry.register(defaultLayoutSkill);
 
   // setState applies the reducer against stateRef so side-effects inside
-  // the reducer body (recomputeModelPicker, dispatch helpers etc.) run
-  // the same way they would in the live React app. The mock still
-  // records every call so tests can introspect the original argument.
+  // the reducer body run the same way they would in the live React app.
+  // The mock still records every call so tests can introspect the
+  // original argument.
   const setState = vi.fn((arg: unknown) => {
     if (typeof arg === "function") {
       stateRef.current = (arg as (
@@ -100,12 +99,6 @@ export function buildHandlerFixture(
   const announceProjectToBridge = vi.fn();
   const routeShellWrite = vi.fn(() => Promise.resolve({ ok: true as const }));
   const ackMutation = vi.fn();
-  const recomputeModelPicker = vi.fn(
-    (sidebar: Record<string, unknown> | undefined, model: string) => ({
-      ...(sidebar ?? {}),
-      __model: model,
-    }),
-  );
   const knownTabIds = vi.fn(() => new Set<string>(["default"]));
   const scopedDiscoveredSessions = vi.fn(
     (d: DiscoveredSession[]) => d,
@@ -156,7 +149,6 @@ export function buildHandlerFixture(
     recentSessionItems,
     syncRecentSessionsToState,
 
-    recomputeModelPicker,
     routeShellWrite,
 
     ackMutation,
@@ -210,7 +202,6 @@ export function buildHandlerFixture(
       announceProjectToBridge,
       routeShellWrite,
       ackMutation,
-      recomputeModelPicker,
       knownTabIds,
       scopedDiscoveredSessions,
       recentSessionItems,

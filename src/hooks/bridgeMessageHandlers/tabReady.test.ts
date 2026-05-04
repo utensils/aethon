@@ -12,7 +12,6 @@ describe("handleTabReady", () => {
       ctx,
     );
     expect(mocks.updateTab).toHaveBeenCalledTimes(1);
-    expect(mocks.recomputeModelPicker).toHaveBeenCalled();
     expect(mocks.setState).toHaveBeenCalledTimes(1);
   });
 

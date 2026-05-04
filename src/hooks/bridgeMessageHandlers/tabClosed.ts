@@ -1,6 +1,7 @@
 import { TAB_MIRROR_KEYS } from "../useTabs";
 import type { Tab } from "../../types/tab";
 import type { BridgeMessageHandler } from "./types";
+import { recomputeModelPicker } from "../../utils/modelPicker";
 
 /** Bridge confirms a tab session was torn down. We may have already
  *  removed it from local state in the close handler; this is just a
@@ -27,7 +28,7 @@ export const handleTabClosed: BridgeMessageHandler = (data, ctx) => {
     for (const key of TAB_MIRROR_KEYS) {
       result[key as string] = targetRec[key as string];
     }
-    result.sidebar = ctx.recomputeModelPicker(
+    result.sidebar = recomputeModelPicker(
       prev.sidebar as Record<string, unknown> | undefined,
       target.model,
     );
