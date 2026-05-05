@@ -23,6 +23,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "./shell-tools";
 import { logger } from "./logger";
 import { extractAgentEndError } from "./agent-errors";
+import { findSessionFileMatchingCwd } from "./session-history";
 import { consumeBashTerminalSnapshot } from "./terminal-stream";
 import type {
   AethonAgentState,
@@ -372,7 +373,17 @@ export async function ensureTab(
   try {
     const dir = tabSessionDir(state, tabId);
     mkdirSync(dir, { recursive: true });
-    sessionManager = SessionManager.continueRecent(resolvedCwd, dir);
+    // Sessions are stored per-tabId, but `default` is shared across
+    // every project bucket — a plain `continueRecent` would resume
+    // whichever project last wrote there, leaking the wrong chat into
+    // a freshly-opened project. Open the most-recent session whose
+    // header cwd matches the active project; if none matches, start
+    // fresh under the same dir rather than picking up an unrelated
+    // project's history (`continueRecent` would).
+    const matching = await findSessionFileMatchingCwd(dir, resolvedCwd);
+    sessionManager = matching
+      ? SessionManager.open(matching, dir)
+      : SessionManager.create(resolvedCwd, dir);
   } catch (err) {
     logger
       .scope("session")

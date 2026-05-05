@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  findSessionFileMatchingCwd,
   parseSessionHistoryLines,
   readSessionLabel,
   readSessionMetadata,
@@ -147,5 +148,149 @@ describe("readSessionTranscript", () => {
     // Empty label clears the file.
     await writeSessionLabel(dir, "");
     expect(await readSessionLabel(dir)).toBeUndefined();
+  });
+});
+
+describe("readSessionTranscript with expectedCwd", () => {
+  // Helper: write a minimal one-message session for a given cwd.
+  async function writeMiniSession(
+    dir: string,
+    name: string,
+    cwd: string,
+    text: string,
+    mtimeSec: number,
+  ): Promise<void> {
+    const path = join(dir, name);
+    const lines = [
+      JSON.stringify({ type: "session", id: name, cwd }),
+      JSON.stringify({
+        type: "message",
+        id: `${name}-u`,
+        message: { role: "user", content: [{ type: "text", text }] },
+      }),
+    ];
+    await writeFile(path, `${lines.join("\n")}\n`);
+    await utimes(path, new Date(mtimeSec * 1000), new Date(mtimeSec * 1000));
+  }
+
+  it("returns the matching project's session, not the latest by mtime", async () => {
+    const dir = await tempRoot();
+    await writeMiniSession(dir, "old.jsonl", "/tmp/target", "from target", 1_000);
+    await writeMiniSession(dir, "leak.jsonl", "/tmp/other", "from other", 9_000);
+    // Without the cwd filter the latest mtime ("leak.jsonl") wins.
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "leak.jsonl-u", role: "user", text: "from other" },
+    ]);
+    // With the cwd filter, the older matching session is returned.
+    await expect(
+      readSessionTranscript(dir, "/tmp/target"),
+    ).resolves.toEqual([
+      { id: "old.jsonl-u", role: "user", text: "from target" },
+    ]);
+  });
+
+  it("returns no messages when no session matches the requested cwd", async () => {
+    const dir = await tempRoot();
+    await writeMiniSession(dir, "other.jsonl", "/tmp/other", "from other", 1_000);
+    await expect(
+      readSessionTranscript(dir, "/tmp/target"),
+    ).resolves.toEqual([]);
+  });
+
+  it("does not diverge from ensureTab when no active project is set", async () => {
+    // Regression — codex peer review of the cwd-scoped session fix:
+    // when the bridge boots without an active project, `ensureTab`
+    // filters persisted files by `process.cwd()` and creates a fresh
+    // session if none match. The boot replay must scope the transcript
+    // read by the same cwd; otherwise the UI displays the latest JSONL
+    // from any project while the agent session is empty, and the user's
+    // next prompt loses the displayed context. Caller in main.ts now
+    // passes `process.cwd()` (not `undefined`) when no project is set.
+    const dir = await tempRoot();
+    await writeMiniSession(dir, "other.jsonl", "/tmp/other", "from other", 9_000);
+    // Caller's no-project fallback (== `activeProjectCwd ?? process.cwd()`).
+    await expect(
+      readSessionTranscript(dir, process.cwd()),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("findSessionFileMatchingCwd", () => {
+  // Helper: write a session file with a given header.cwd at a given mtime.
+  async function writeSession(
+    dir: string,
+    name: string,
+    cwd: string | undefined,
+    mtimeSec: number,
+  ): Promise<string> {
+    const path = join(dir, name);
+    const header: Record<string, unknown> = {
+      type: "session",
+      id: name.replace(/\.jsonl$/, ""),
+    };
+    if (cwd !== undefined) header.cwd = cwd;
+    await writeFile(path, `${JSON.stringify(header)}\n`);
+    await utimes(path, new Date(mtimeSec * 1000), new Date(mtimeSec * 1000));
+    return path;
+  }
+
+  it("returns undefined when the directory does not exist", async () => {
+    const root = await tempRoot();
+    await expect(
+      findSessionFileMatchingCwd(join(root, "nope"), "/tmp/project"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("returns undefined when no session header matches the requested cwd", async () => {
+    const dir = await tempRoot();
+    await writeSession(dir, "a.jsonl", "/tmp/other-project", 1_000);
+    await writeSession(dir, "b.jsonl", "/tmp/another-project", 2_000);
+    await expect(
+      findSessionFileMatchingCwd(dir, "/tmp/target"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("returns the most recent session whose cwd matches", async () => {
+    const dir = await tempRoot();
+    await writeSession(dir, "old.jsonl", "/tmp/target", 1_000);
+    const newer = await writeSession(dir, "new.jsonl", "/tmp/target", 3_000);
+    // A more recent session for a *different* cwd must not be picked.
+    await writeSession(dir, "leak.jsonl", "/tmp/other-project", 9_000);
+    await expect(
+      findSessionFileMatchingCwd(dir, "/tmp/target"),
+    ).resolves.toBe(newer);
+  });
+
+  it("ignores trailing slashes when comparing cwds", async () => {
+    const dir = await tempRoot();
+    const path = await writeSession(dir, "a.jsonl", "/tmp/project/", 1_000);
+    await expect(
+      findSessionFileMatchingCwd(dir, "/tmp/project"),
+    ).resolves.toBe(path);
+  });
+
+  it("skips legacy session files that have no cwd in the header", async () => {
+    const dir = await tempRoot();
+    // Legacy session: no cwd field. Must not be matched as if cwd were "".
+    await writeSession(dir, "legacy.jsonl", undefined, 5_000);
+    await expect(findSessionFileMatchingCwd(dir, "")).resolves.toBeUndefined();
+    const fresh = await writeSession(dir, "fresh.jsonl", "/tmp/target", 1_000);
+    await expect(
+      findSessionFileMatchingCwd(dir, "/tmp/target"),
+    ).resolves.toBe(fresh);
+  });
+
+  it("does not leak the most-recent session from another project (regression)", async () => {
+    // Reproduces the "default tab loads the wrong project's chat" bug:
+    // the user worked on project B last, switched to project A, and on
+    // cold start the bridge resumed the latest-by-mtime session — which
+    // belonged to B. ensureTab now passes the result of this helper to
+    // SessionManager.open; an undefined return forces a fresh session
+    // instead of opening the leaked one.
+    const dir = await tempRoot();
+    await writeSession(dir, "project-b-session.jsonl", "/tmp/project-b", 9_000);
+    await expect(
+      findSessionFileMatchingCwd(dir, "/tmp/project-a"),
+    ).resolves.toBeUndefined();
   });
 });

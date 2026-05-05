@@ -142,6 +142,83 @@ export function parseSessionHistoryLines(lines: Iterable<string>): RestoredChatM
   return messages.slice(-MAX_RESTORED_MESSAGES);
 }
 
+async function readSessionHeaderCwd(path: string): Promise<string | undefined> {
+  // The session header (`{type:"session", cwd: "..."}`) is always the
+  // first line of the .jsonl. Read just enough to parse it — full-file
+  // reads add up when this is called for every file in a session dir.
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  const newline = raw.indexOf("\n");
+  const firstLine = (newline === -1 ? raw : raw.slice(0, newline)).trim();
+  if (!firstLine) return undefined;
+  let entry: unknown;
+  try {
+    entry = JSON.parse(firstLine);
+  } catch {
+    return undefined;
+  }
+  if (!entry || typeof entry !== "object") return undefined;
+  const record = entry as Record<string, unknown>;
+  if (record.type !== "session") return undefined;
+  return typeof record.cwd === "string" && record.cwd.length > 0
+    ? record.cwd
+    : undefined;
+}
+
+/**
+ * Find the most-recently-modified `.jsonl` session file in `sessionDir`
+ * whose header `cwd` matches `expectedCwd`. Returns the absolute path,
+ * or `undefined` when no matching file exists.
+ *
+ * Used by `ensureTab` to resume the right project's session for the
+ * shared `default` tab id — a project-agnostic `continueRecent` would
+ * pick whichever session was touched last regardless of project, which
+ * leaks one project's chat into another on cold start.
+ *
+ * Trailing slashes on the cwd are normalised; case-sensitivity follows
+ * the host filesystem (we only compare strings — pi's session header
+ * stores whatever `process.cwd()` returned, so an exact match is fine
+ * on the platforms we ship).
+ */
+export async function findSessionFileMatchingCwd(
+  sessionDir: string,
+  expectedCwd: string,
+): Promise<string | undefined> {
+  let entries: string[];
+  try {
+    entries = await readdir(sessionDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    return undefined;
+  }
+  const target = expectedCwd.replace(/[/\\]+$/, "");
+  const matches: LatestSessionLog[] = [];
+  for (const name of entries) {
+    if (!name.endsWith(".jsonl")) continue;
+    const path = join(sessionDir, name);
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await stat(path)).mtimeMs;
+    } catch {
+      continue;
+    }
+    const cwd = await readSessionHeaderCwd(path);
+    if (!cwd) continue;
+    if (cwd.replace(/[/\\]+$/, "") !== target) continue;
+    matches.push({ path, mtimeMs, name });
+  }
+  if (matches.length === 0) return undefined;
+  matches.sort((a, b) => {
+    if (b.mtimeMs !== a.mtimeMs) return b.mtimeMs - a.mtimeMs;
+    return b.name.localeCompare(a.name);
+  });
+  return matches[0].path;
+}
+
 async function latestSessionLog(sessionDir: string): Promise<LatestSessionLog | null> {
   let entries: string[];
   try {
@@ -239,10 +316,23 @@ export async function readSessionMetadata(
 
 export async function readSessionTranscript(
   sessionDir: string,
+  expectedCwd?: string,
 ): Promise<RestoredChatMessage[]> {
-  const latest = await latestSessionLog(sessionDir);
-  if (!latest) return [];
+  // When `expectedCwd` is provided, only restore from a session whose
+  // header cwd matches — the shared `default` tab dir collects sessions
+  // from every project the user worked in, and the latest by mtime can
+  // belong to a different project than the one currently active. The
+  // unscoped path (no expectedCwd) keeps the prior behaviour for callers
+  // that already know the dir maps 1:1 to the requested context (e.g.
+  // UUID-keyed restored tabs whose dir is project-private by construction).
+  let path: string | undefined;
+  if (expectedCwd !== undefined) {
+    path = await findSessionFileMatchingCwd(sessionDir, expectedCwd);
+  } else {
+    path = (await latestSessionLog(sessionDir))?.path;
+  }
+  if (!path) return [];
 
-  const raw = await readFile(latest.path, "utf8");
+  const raw = await readFile(path, "utf8");
   return parseSessionHistoryLines(raw.split(/\r?\n/));
 }

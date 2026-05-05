@@ -5,7 +5,7 @@ import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload } from "./types/a2ui";
-import { makeEmptyTab, type Tab } from "./types/tab";
+import { deriveTabActiveFlags, makeEmptyTab, type Tab } from "./types/tab";
 import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
@@ -778,10 +778,19 @@ export default function App() {
     // (the orphan-active-id case in switchProjectBucket fallthrough) —
     // the visible UI stays consistent.
     const hasTabs = tabs.length > 0;
+    // Derive /agentTabActive + /shellTabActive from the active tab's kind
+    // so layout `visible: { $ref: "/agentTabActive" }` bindings can never
+    // lag behind the tabs/activeTabId mutation that produced them.
+    const { agentTabActive, shellTabActive } = deriveTabActiveFlags(
+      tabs,
+      state.activeTabId as string | undefined,
+    );
     return {
       ...state,
       hasTabs,
       empty: !hasTabs,
+      agentTabActive,
+      shellTabActive,
       sidebar: {
         ...sidebar,
         history,
