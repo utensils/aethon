@@ -340,6 +340,7 @@ export function emitReady(
         ...(info.path ? { path: info.path } : {}),
       }),
     ),
+    disabledExtensionsList: [...state.disabledExtensions].sort(),
     discoveredTabs: state.discoveredTabs,
   });
 }

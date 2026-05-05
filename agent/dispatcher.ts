@@ -43,6 +43,7 @@ import {
 } from "./extension-loader";
 import { patchLayoutTree } from "./layout-manager";
 import { readSessionTranscript } from "./session-history";
+import { saveDisabledExtensions } from "./disabled-extensions";
 
 export interface DispatcherDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -386,6 +387,10 @@ export async function runDispatcher(
           state.bootLayout = msg.payload;
           break;
         }
+        case "set_extension_disabled": {
+          await handleSetExtensionDisabled(state, deps, notifDeps, msg);
+          break;
+        }
         default: {
           deps.send({
             type: "error",
@@ -690,6 +695,70 @@ export async function runDispatcher(
       state.currentAgentTabId = undefined;
     }
     deps.send({ type: "tab_closed", tabId });
+  }
+
+  async function handleSetExtensionDisabled(
+    state: AethonAgentState,
+    deps: DispatcherDeps,
+    notifDeps: { send: (m: Record<string, unknown>) => void },
+    msg: InboundMessage,
+  ): Promise<void> {
+    const name = (msg as { name?: unknown }).name;
+    const disabled = (msg as { disabled?: unknown }).disabled;
+    if (typeof name !== "string" || !name) {
+      deps.send({
+        type: "error",
+        message: "set_extension_disabled: name required",
+      });
+      return;
+    }
+    if (typeof disabled !== "boolean") {
+      deps.send({
+        type: "error",
+        message: "set_extension_disabled: disabled must be boolean",
+      });
+      return;
+    }
+    const wasDisabled = state.disabledExtensions.has(name);
+    if (disabled === wasDisabled) return; // no-op
+    if (disabled) state.disabledExtensions.add(name);
+    else state.disabledExtensions.delete(name);
+    await saveDisabledExtensions(state.userDir, state.disabledExtensions);
+    // Surface the change to the frontend immediately. The loaded set
+    // doesn't change until restart; the sidebar shows a `(disabled)` row
+    // by deriving from `loadedExtensions ∩ ¬disabledExtensions` plus the
+    // explicit disabled list. We re-emit the lifecycle event so the
+    // hydration handler can move the row to the right bucket.
+    deps.send({
+      type: "extension_lifecycle",
+      name,
+      source: "directory",
+      status: disabled ? "disabled" : "enabled",
+    });
+    // Notify the user before signalling the bridge restart so the toast
+    // is rendered before agent-reloaded clears the in-flight UI state.
+    void notify(state, notifDeps, {
+      id: `aethon:extension-toggle:${name}`,
+      title: disabled
+        ? `Disabled \`${name}\``
+        : `Enabled \`${name}\``,
+      message: disabled
+        ? "Reloading bridge to fully unload…"
+        : "Reloading bridge to load…",
+      kind: "info",
+      durationMs: 4000,
+    });
+    // Ask the frontend to force-restart the bridge. We can't restart
+    // ourselves from inside the bridge (the Tauri shell owns the child
+    // and needs to flip its `agent_reload_in_progress` flag so the
+    // supervisor emits `agent-reloaded` instead of `agent-crashed`).
+    // The frontend's reload-required handler invokes `force_restart_agent`
+    // — on respawn, the new bridge reads disabled-extensions.json on boot
+    // and the loader honors it.
+    deps.send({
+      type: "reload_required",
+      reason: `extension-toggle:${name}`,
+    });
   }
 
   async function handleA2UIEvent(

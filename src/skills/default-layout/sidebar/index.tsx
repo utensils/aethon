@@ -48,9 +48,13 @@ interface SidebarContextMenuState {
   label: string;
   // Discriminator so the rendered menu shows the right action. "project"
   // prompts for "Remove from Projects"; "session" prompts for
-  // "Delete session". Set by `openItemContextMenu` based on the
+  // "Delete session". "extension-enabled" / "extension-disabled" prompt
+  // for Disable / Enable. Set by `openItemContextMenu` based on the
   // section + item id.
-  kind: "project" | "session";
+  kind: "project" | "session" | "extension-enabled" | "extension-disabled";
+  /** For `extension-*` kinds, the extension's display name (item id
+   *  minus the `ext:` / `ext-failed:` / `ext-disabled:` prefix). */
+  extensionName?: string;
 }
 
 export function Sidebar({
@@ -106,12 +110,28 @@ export function Sidebar({
     // `session:` (closed) or `tab:` (currently open) → "Delete session".
     // For an open tab, the App-side handler closes the tab first, then
     // deletes the on-disk session — symmetric with the X close button +
-    // explicit delete, just collapsed into one action.
+    // explicit delete, just collapsed into one action. Extensions
+    // (sidebar section "extensions", item ids `ext:` / `ext-failed:` /
+    // `ext-disabled:`) → Disable / Enable.
     let kind: SidebarContextMenuState["kind"] | null = null;
+    let extensionName: string | undefined;
     if (sectionId === "projects") {
       kind = "project";
     } else if (sectionId === "history" && canDeleteHistoryItem(item.id)) {
       kind = "session";
+    } else if (sectionId === "extensions") {
+      if (item.id.startsWith("ext:")) {
+        kind = "extension-enabled";
+        extensionName = item.id.slice("ext:".length);
+      } else if (item.id.startsWith("ext-failed:")) {
+        kind = "extension-enabled";
+        extensionName = item.id.slice("ext-failed:".length);
+      } else if (item.id.startsWith("ext-disabled:")) {
+        kind = "extension-disabled";
+        extensionName = item.id.slice("ext-disabled:".length);
+      }
+      // Hard-coded built-ins (default-layout) have id "extension-layout"
+      // and no toggle — the sidebar core lives in the binary.
     }
     if (!kind) return;
     e.preventDefault();
@@ -125,6 +145,7 @@ export function Sidebar({
       itemId: item.id,
       label: item.label,
       kind,
+      extensionName,
     });
   };
 
@@ -149,6 +170,17 @@ export function Sidebar({
       itemId: contextMenu.itemId,
       sessionId: extractSessionId(contextMenu.itemId),
       label: contextMenu.label,
+    });
+    setContextMenu(null);
+  };
+
+  const toggleContextExtension = (disabled: boolean) => {
+    if (!contextMenu || !contextMenu.extensionName) return;
+    onEvent("toggle-extension", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      name: contextMenu.extensionName,
+      disabled,
     });
     setContextMenu(null);
   };
@@ -315,7 +347,7 @@ export function Sidebar({
                   Keeps files on disk
                 </div>
               </>
-            ) : (
+            ) : contextMenu.kind === "session" ? (
               <>
                 <button
                   type="button"
@@ -327,6 +359,34 @@ export function Sidebar({
                 </button>
                 <div className="a2ui-sidebar-context-menu-note">
                   Removes saved transcript
+                </div>
+              </>
+            ) : contextMenu.kind === "extension-enabled" ? (
+              <>
+                <button
+                  type="button"
+                  className="a2ui-sidebar-context-menu-item"
+                  role="menuitem"
+                  onClick={() => toggleContextExtension(true)}
+                >
+                  Disable extension
+                </button>
+                <div className="a2ui-sidebar-context-menu-note">
+                  Restart Aethon to fully unload
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="a2ui-sidebar-context-menu-item"
+                  role="menuitem"
+                  onClick={() => toggleContextExtension(false)}
+                >
+                  Enable extension
+                </button>
+                <div className="a2ui-sidebar-context-menu-note">
+                  Restart Aethon (or /reload) to load
                 </div>
               </>
             )}

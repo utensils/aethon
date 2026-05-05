@@ -48,6 +48,7 @@ describe("handleReady", () => {
     expect(mocks.hydrateExtensions).toHaveBeenCalledWith(
       [{ name: "ext-a", source: "directory" }],
       [],
+      [],
     );
     expect(mocks.setLayout).toHaveBeenCalledTimes(1);
     const next = applySetState({

@@ -81,6 +81,7 @@ export interface BridgeMessageContext {
   hydrateExtensions: (
     loaded: { name: string; source: string }[],
     failed: { name: string; source: string; error?: string }[],
+    disabled?: string[],
   ) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],

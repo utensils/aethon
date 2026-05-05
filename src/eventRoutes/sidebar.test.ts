@@ -4,6 +4,7 @@ import {
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
   handleSidebarDeleteSession,
+  handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
 import { buildRouteFixture } from "./testFixtures";
@@ -92,6 +93,42 @@ describe("handleSidebarDeleteSession", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.promptDeleteSessionConfirmation).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleSidebarToggleExtension", () => {
+  it("forwards a set_extension_disabled command to the bridge", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarToggleExtension(
+      {
+        component: { id: "sidebar" },
+        eventType: "toggle-extension",
+        data: { name: "mold:image-gallery", disabled: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_extension_disabled",
+        name: "mold:image-gallery",
+        disabled: true,
+      }),
+    });
+  });
+
+  it("ignores non-toggle events for the sidebar", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarToggleExtension(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { name: "x", disabled: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(false);
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });
 

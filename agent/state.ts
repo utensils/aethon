@@ -371,6 +371,11 @@ export class AethonAgentState {
   // -- Loading state -------------------------------------------------------
   readonly loadedExtensions = new Map<string, ExtensionSource>();
   readonly loadFailures = new Map<string, ExtensionFailure>();
+  /** Extension display-names the user has explicitly disabled. Persisted
+   *  on disk at `<userDir>/disabled-extensions.json` and consulted by
+   *  the loader to skip imports. The displayName is the same string the
+   *  sidebar shows (e.g. `mold:image-gallery`, `my-user-ext`). */
+  readonly disabledExtensions = new Set<string>();
   readonly loadedProjectExtensionFiles = new Set<string>();
   /** Project extension files we already tried to load and that errored.
    *  Tracked separately from `loadedProjectExtensionFiles` so we don't

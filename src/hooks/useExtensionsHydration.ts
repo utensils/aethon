@@ -56,6 +56,7 @@ export interface UseExtensionsHydrationActions {
   hydrateExtensions: (
     loaded: { name: string; source: string }[],
     failed: { name: string; source: string; error?: string }[],
+    disabled?: string[],
   ) => void;
   hydrateEventRoutes: (
     routes: { componentId?: string; eventType?: string }[],
@@ -187,6 +188,7 @@ export function useExtensionsHydration(
   function hydrateExtensions(
     loaded: { name: string; source: string }[],
     failed: { name: string; source: string; error?: string }[],
+    disabled: string[] = [],
   ) {
     const sourceLabel = (s: string) =>
       s === "project-directory"
@@ -196,6 +198,12 @@ export function useExtensionsHydration(
           : s === "extension-package"
             ? "package"
             : s;
+    const disabledSet = new Set(disabled);
+    // An extension may appear in `loaded` (live this run) but also be
+    // marked disabled (toggle landed mid-session, takes effect after
+    // restart). Show it in the disabled bucket so the user sees their
+    // pending intent, with a hint that a restart is needed to fully
+    // unload it.
     const items = [
       {
         id: "extension-layout",
@@ -203,18 +211,31 @@ export function useExtensionsHydration(
         hint: "core",
         active: true,
       },
-      ...loaded.map((e) => ({
-        id: `ext:${e.name}`,
-        label: e.name,
-        hint: sourceLabel(e.source),
-        active: true,
-      })),
-      ...failed.map((e) => ({
-        id: `ext-failed:${e.name}`,
-        label: e.name,
-        hint: `${sourceLabel(e.source)} · failed`,
-        active: false,
-      })),
+      ...loaded
+        .filter((e) => !disabledSet.has(e.name))
+        .map((e) => ({
+          id: `ext:${e.name}`,
+          label: e.name,
+          hint: sourceLabel(e.source),
+          active: true,
+        })),
+      ...failed
+        .filter((e) => !disabledSet.has(e.name))
+        .map((e) => ({
+          id: `ext-failed:${e.name}`,
+          label: e.name,
+          hint: `${sourceLabel(e.source)} · failed`,
+          active: false,
+        })),
+      ...disabled.map((name) => {
+        const stillLoaded = loaded.some((e) => e.name === name);
+        return {
+          id: `ext-disabled:${name}`,
+          label: name,
+          hint: stillLoaded ? "disabled · restart" : "disabled",
+          active: false,
+        };
+      }),
     ];
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};

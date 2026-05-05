@@ -81,6 +81,7 @@ import {
   emitReady,
   tabSessionDir,
 } from "./tab-lifecycle";
+import { loadDisabledExtensions } from "./disabled-extensions";
 import {
   captureProjectExtensionBaseline,
   runDispatcher,
@@ -126,6 +127,11 @@ async function main(): Promise<void> {
   state.authStorage = AuthStorage.create();
   state.modelRegistry = ModelRegistry.create(state.authStorage);
   state.settingsManager = SettingsManager.create(process.cwd());
+
+  // -- User's persisted "disabled extensions" list -----------------------
+  // Read before any extension load so the loader honors it on first pass.
+  const disabled = await loadDisabledExtensions(state.userDir);
+  for (const name of disabled) state.disabledExtensions.add(name);
 
   // -- Bundled boot resources read synchronously --------------------------
   if (bootLayoutFile) {

@@ -219,6 +219,33 @@ describe("loadAethonExtensions", () => {
     }
   });
 
+  it("skips disabled extensions and emits a `disabled` lifecycle event", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-ext-"));
+    try {
+      const extDir = join(root, "extensions");
+      mkdirSync(extDir, { recursive: true });
+      writeFileSync(
+        join(extDir, "muted.mjs"),
+        `export function register(api) { api.registerComponent("muted", null); }`,
+      );
+      const f = makeFixture(root);
+      f.state.disabledExtensions.add("muted");
+      const api = {
+        registerComponent() {},
+        setState() {},
+      } as unknown as AethonExtensionApi;
+      const registry = new Map<string, ExtensionSource>();
+      await loadAethonExtensions(f.state, f.deps, api, registry);
+      expect(registry.size).toBe(0);
+      const lifecycle = f.sent.find(
+        (m) => m.type === "extension_lifecycle" && m.status === "disabled",
+      );
+      expect(lifecycle).toMatchObject({ name: "muted", status: "disabled" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not retry a failed extension file on the next load pass", async () => {
     const root = mkdtempSync(join(tmpdir(), "aethon-ext-"));
     try {

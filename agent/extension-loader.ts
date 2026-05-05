@@ -138,7 +138,7 @@ export async function loadAethonExtensionDirectory(
   // Parallelize import; keep register() sequential so registrations against
   // shared maps (handler dedupe, theme/component registries) stay
   // deterministic.
-  const candidates = entries
+  const allCandidates = entries
     .filter((name) => /\.(ts|js|mjs)$/.test(name))
     .map((name) => ({
       name,
@@ -151,6 +151,27 @@ export async function loadAethonExtensionDirectory(
         !options.loadedFiles?.has(c.file) &&
         !options.failedFiles?.has(c.file),
     );
+
+  // Honor the user's "disabled" list: emit a `disabled` lifecycle event
+  // (so the sidebar can surface the row + the failure registry knows
+  // the extension is intentionally not loaded) and skip the import.
+  // Don't add to failedFiles — the user can re-enable, at which point
+  // we want a fresh load attempt.
+  const candidates: typeof allCandidates = [];
+  for (const c of allCandidates) {
+    if (state.disabledExtensions.has(c.displayName)) {
+      log.info(`${c.name}: disabled by user, skipping`);
+      deps.send({
+        type: "extension_lifecycle",
+        name: c.displayName,
+        source: options.source,
+        status: "disabled",
+        path: c.file,
+      });
+      continue;
+    }
+    candidates.push(c);
+  }
 
   const imports = await Promise.allSettled(
     candidates.map(
@@ -378,6 +399,17 @@ export async function loadAethonExtensionPackages(
     }
   }
   for (const c of candidates) {
+    if (state.disabledExtensions.has(c.name)) {
+      logger.scope("ext-package").info(`${c.name}: disabled by user, skipping`);
+      deps.send({
+        type: "extension_lifecycle",
+        name: c.name,
+        source: "extension-package",
+        status: "disabled",
+        path: c.dir,
+      });
+      continue;
+    }
     const entry = c.manifest.aethon?.entry;
     if (typeof entry !== "string" || entry.length === 0) {
       logger.scope("ext-package").warn(`${c.name}: aethon.entry not set, skipping`);
