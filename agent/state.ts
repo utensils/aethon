@@ -116,6 +116,12 @@ export interface RegisteredSlashCommand {
   usage?: string;
 }
 
+export interface RegisteredPiSkill {
+  name: string;
+  description: string;
+  usage?: string;
+}
+
 export interface RegisteredLayout {
   id: string;
   name: string;
@@ -361,6 +367,7 @@ export class AethonAgentState {
   readonly extensionMenuItems = new Map<string, RegisteredMenuItem>();
   readonly extensionKeybindings = new Map<string, RegisteredKeybinding>();
   readonly extensionSlashCommands = new Map<string, RegisteredSlashCommand>();
+  piSkills: RegisteredPiSkill[] = [];
   readonly extensionLayouts = new Map<string, RegisteredLayout>();
   readonly extensionFrontendModules = new Map<string, FrontendModule>();
   readonly a2uiEventHandlers: {

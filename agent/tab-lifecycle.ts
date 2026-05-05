@@ -389,6 +389,7 @@ export function emitReady(
     extensionLayoutPatches: state.pendingLayoutPatches,
     extensionThemes: [...state.extensionThemes.values()],
     extensionSlashCommands: [...state.extensionSlashCommands.values()],
+    piSkills: state.piSkills,
     extensionKeybindings: [...state.extensionKeybindings.values()],
     extensionMenuItems: [...state.extensionMenuItems.values()],
     extensionEventRoutes: [...state.extensionEventRoutes.values()],

@@ -75,6 +75,7 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       ...(match.eventType ? { eventType: match.eventType } : {}),
     })),
     slashCommands: [...state.extensionSlashCommands.values()],
+    piSkills: state.piSkills,
     keybindings: [...state.extensionKeybindings.values()],
     menuItems: [...state.extensionMenuItems.values()],
     eventRoutes: [...state.extensionEventRoutes.values()],

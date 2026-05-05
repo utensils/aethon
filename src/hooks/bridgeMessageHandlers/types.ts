@@ -86,6 +86,7 @@ export interface BridgeMessageContext {
   ) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],
+    piSkills?: { name: string; description: string; usage?: string }[],
   ) => void;
   hydrateKeybindings: (
     list: { combo: string; action: string; description?: string }[],

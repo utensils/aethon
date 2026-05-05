@@ -532,6 +532,14 @@ pub fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         if pi_ext.exists() {
             watch_paths.push(pi_ext);
         }
+        // ~/.pi/agent/skills holds pi skills that users expect to invoke
+        // as slash commands. Watch it too so installing a SKILL.md refreshes
+        // the bridge's ready payload and the composer autocomplete.
+        let pi_skills = h.join(".pi/agent/skills");
+        let _ = std::fs::create_dir_all(&pi_skills);
+        if pi_skills.exists() {
+            watch_paths.push(pi_skills);
+        }
         // ~/.aethon/skills/node_modules holds npm-distributed extension
         // packages (manifest with `aethon` field). On-disk path is
         // retained for back-compat with existing installs. Pre-create so

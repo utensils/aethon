@@ -31,6 +31,7 @@ describe("handleReady", () => {
         failedExtensionsList: [],
         extensionThemes: [],
         extensionSlashCommands: [],
+        piSkills: [{ name: "claudex", description: "Query sessions" }],
         extensionKeybindings: [],
         extensionEventRoutes: [],
         extensionLayouts: [],
@@ -49,6 +50,10 @@ describe("handleReady", () => {
       [{ name: "ext-a", source: "directory" }],
       [],
       [],
+    );
+    expect(mocks.hydrateSlashCommands).toHaveBeenCalledWith(
+      [],
+      [{ name: "claudex", description: "Query sessions" }],
     );
     expect(mocks.setLayout).toHaveBeenCalledTimes(1);
     const next = applySetState({

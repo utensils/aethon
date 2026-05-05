@@ -86,6 +86,7 @@ import {
   captureProjectExtensionBaseline,
   runDispatcher,
 } from "./dispatcher";
+import { discoverPiSkills } from "./pi-skills";
 
 function send(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -222,6 +223,7 @@ async function main(): Promise<void> {
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),
     ],
   });
+  state.piSkills = await discoverPiSkills();
   await state.resourceLoader.reload();
 
   // -- Extension loaders --------------------------------------------------
