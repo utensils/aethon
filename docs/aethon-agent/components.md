@@ -17,6 +17,32 @@ Every component looks like:
 
 `children` is optional. `id` MUST be unique within the tree.
 
+## Override identity — type, not id
+
+When you replace a chrome composite via
+`aethon.registerComponent("<type>", custom)`, the override is keyed by
+**component type**, not instance id. The built-in event-route table
+dispatches under `type:<componentType>` for every chrome composite
+(`sidebar`, `command-palette`, `settings-panel`, `search-panel`,
+`notification-stack`, `chat-input`, `empty-state`, `terminal-panel`,
+`tab-strip`, `model-picker`, `appearance-menu`, `share-mode-badge`,
+`shell-canvas`), so a custom layout payload may rename the instance:
+
+```json
+{ "id": "primary-side-rail", "type": "sidebar", "props": { … } }
+```
+
+Events from `primary-side-rail` still route to the built-in sidebar
+handler because the dispatcher matches `type: "sidebar"`. The same
+holds for any registered override — preserve the canonical type and
+the wiring works; the id is yours to choose.
+
+The 19 primitives (`text`, `heading`, `paragraph`, `code`, `card`,
+`container`, `divider`, `button`, `text-input`, `date-picker`,
+`select`, `checkbox`, `slider`, `table`, `list`, `image`, `icon`,
+`form`, `form-field`) are intentionally NOT overridable — they are the
+substrate composites are built from.
+
 ## Data Binding via `$ref`
 
 Anywhere a prop accepts a value, you can substitute a JSON-Pointer
@@ -758,7 +784,7 @@ events for extension handlers to observe.
 {
   area?: string,
   slot?: string,                    // pointer to live A2UI subtree
-  messages?: { $ref: string },      // chat history binding
+  messages?: { $ref: string },      // chat history binding (optional)
   emptyHint?: StringValue,          // shown when no messages + no live subtree
   components?: ComponentTree[],
 }
@@ -768,6 +794,13 @@ The default chat canvas. Most extensions don't need to touch this — to
 add ad-hoc UI, return a per-message A2UI payload from the agent or set
 state on a bound `$ref`. Override `emptyHint` to show a different
 welcome line when the canvas is empty.
+
+**Chat mode is opt-in.** If you bind `messages`, the canvas renders
+the chat history, the empty hint, and the "↓ latest" sticky-scroll
+pill. If you OMIT `messages` and bind only `slot`, the canvas is a
+pure scroll viewport — no chat chrome, no pill. That's the right
+shape for non-chat hosts (image galleries, dashboards, custom panes)
+that just need a scroll container.
 
 For progressive UI, seed the canvas slot with an A2UI payload and patch
 nested paths as work completes:

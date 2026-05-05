@@ -37,12 +37,8 @@ describe("handleSettings", () => {
     expect(mocks.saveSettings).toHaveBeenCalledTimes(1);
   });
 
-  it("returns false for other components", async () => {
-    const { ctx } = buildRouteFixture();
-    const handled = await handleSettings(
-      { component: { id: "search-panel" }, eventType: "close" },
-      ctx,
-    );
-    expect(handled).toBe(false);
-  });
+  // Wrong-component rejection is no longer this handler's job — the
+  // route table dispatches by `type:settings-panel`, so an event for a
+  // different type never reaches handleSettings. See index.test.ts for
+  // the type-keyed routing contract.
 });

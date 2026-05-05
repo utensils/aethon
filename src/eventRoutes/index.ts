@@ -48,18 +48,23 @@ import {
 /** Lookup table for built-in routes. Keys are `id:<componentId>` or
  *  `type:<componentType>`. The dispatcher computes both keys for an
  *  event and concatenates the matched handler lists. Order within a
- *  list is the order of declaration here. */
+ *  list is the order of declaration here.
+ *
+ *  Chrome composites are keyed by **type** so a custom layout payload
+ *  (or a `aethon.registerComponent(<type>, …)` override) that renames
+ *  the instance still routes correctly. `id:<…>` is reserved for true
+ *  instance-specific routing — none today. */
 export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler[]> =
   new Map<string, readonly EventRouteHandler[]>([
     // notification-stack: `handleShellConsent` is run separately as the
     // top-precedence gate; the general handler runs here.
-    ["id:notification-stack", [handleNotifications]],
-    ["id:settings-panel", [handleSettings]],
-    ["id:search-panel", [handleSearch]],
-    ["id:command-palette", [handlePalette]],
-    ["id:chat-input", [handleChatInput]],
-    ["id:empty-state", [handleEmptyState]],
-    ["id:sidebar", [
+    ["type:notification-stack", [handleNotifications]],
+    ["type:settings-panel", [handleSettings]],
+    ["type:search-panel", [handleSearch]],
+    ["type:command-palette", [handlePalette]],
+    ["type:chat-input", [handleChatInput]],
+    ["type:empty-state", [handleEmptyState]],
+    ["type:sidebar", [
       handleSidebarResize,
       handleSidebarResizeEnd,
       handleSidebarRemoveProject,
@@ -68,8 +73,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
       handleSidebarToggleExtension,
       handleSectionedSelect,
     ]],
-    ["id:model-picker", [handleSectionedSelect]],
-    ["id:appearance-menu", [handleSectionedSelect]],
+    ["type:model-picker", [handleSectionedSelect]],
+    ["type:appearance-menu", [handleSectionedSelect]],
     ["type:terminal-panel", [handleTerminalPanel]],
     ["type:tab-strip", [handleTabStrip]],
     ["type:shell-canvas", [handleShareModeCycle]],

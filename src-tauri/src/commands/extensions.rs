@@ -423,11 +423,21 @@ struct DebounceMsg {
 }
 
 /// Single-thread debounce worker — collapses bursts of file events
-/// into one agent kill after the channel goes quiet for `settle_ms`.
+/// into one reload request after the channel goes quiet for `settle_ms`.
 /// Each new message resets the timeout; the largest settle requested
 /// across the burst wins (so a node_modules event that arrives during
 /// an extension burst doesn't get prematurely fired).
+///
+/// Reload mechanism (changed 2026-05): instead of SIGKILLing the bun
+/// child mid-prompt — which loses the user's in-flight LLM turn — we
+/// send a `{"type":"reload_request"}` line over stdin. The bridge
+/// drains active prompts, writes a `_reload_done` sentinel to stdout,
+/// and exits cleanly. The supervisor's stdout reader watches for the
+/// sentinel and flags the upcoming EOF as an intentional reload so
+/// the frontend gets `agent-reloaded` (not `agent-crashed`). The next
+/// IPC call lazily respawns with fresh extension state.
 fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandle) {
+    use std::io::Write;
     use std::sync::mpsc::RecvTimeoutError;
 
     loop {
@@ -449,24 +459,47 @@ fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandl
                 Err(RecvTimeoutError::Disconnected) => return,
             }
         }
-        // Quiet — fire the kill once.
+        // Quiet — ask the bridge to drain & respawn. Holds the child
+        // alive (`as_mut`, not `take`) so an in-flight prompt's stdin
+        // pipe stays open while pi finishes the turn.
         let state: State<'_, AgentProcess> = app.state();
         if let Ok(mut guard) = state.0.lock()
-            && let Some(mut child) = guard.take()
+            && let Some(child) = guard.as_mut()
         {
+            // Capture pid before the mutable borrow on `child.stdin`
+            // so we can log it without the borrow-checker complaining
+            // about overlapping immutable + mutable borrows of `child`.
             let pid = child.id();
-            // Mark this kill as intentional so the stdout reader
-            // doesn't surface it as a crash. The reader resets the
-            // flag on EOF.
-            let reload_flag = agent_reload_in_progress(&app);
-            reload_flag.store(true, std::sync::atomic::Ordering::Release);
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = app.emit("agent-reloaded", "");
-            tracing::info!(
-                target: "aethon::agent_watch",
-                "killed pid={pid} after {settle}ms settle; will respawn on next request (last paths={last_paths:?})",
-            );
+            let write_result = match child.stdin.as_mut() {
+                Some(stdin) => writeln!(stdin, "{{\"type\":\"reload_request\"}}")
+                    .and_then(|_| stdin.flush()),
+                None => Err(std::io::Error::other("agent stdin closed")),
+            };
+            match write_result {
+                Ok(()) => {
+                    tracing::info!(
+                        target: "aethon::agent_watch",
+                        "asked pid={pid} to reload after {settle}ms settle (last paths={last_paths:?})",
+                    );
+                }
+                Err(err) => {
+                    // Stdin is closed — child is gone or wedged. Fall
+                    // back to the legacy hard-kill so the next request
+                    // lazily respawns. Mark intentional so the stdout
+                    // reader emits agent-reloaded, not agent-crashed.
+                    tracing::warn!(
+                        target: "aethon::agent_watch",
+                        "reload_request write failed for pid={pid}: {err}; falling back to kill",
+                    );
+                    let reload_flag = agent_reload_in_progress(&app);
+                    reload_flag.store(true, std::sync::atomic::Ordering::Release);
+                    if let Some(mut dead) = guard.take() {
+                        let _ = dead.kill();
+                        let _ = dead.wait();
+                    }
+                    let _ = app.emit("agent-reloaded", "");
+                }
+            }
         }
     }
 }

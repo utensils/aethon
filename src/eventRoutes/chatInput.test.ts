@@ -41,12 +41,8 @@ describe("handleChatInput", () => {
     expect(mocks.stopPrompt).toHaveBeenCalledTimes(1);
   });
 
-  it("returns false for non-chat-input components", async () => {
-    const { ctx } = buildRouteFixture();
-    const handled = await handleChatInput(
-      { component: { id: "sidebar" }, eventType: "submit" },
-      ctx,
-    );
-    expect(handled).toBe(false);
-  });
+  // Wrong-id rejection is no longer the handler's responsibility — the
+  // route table dispatches by `type:chat-input`, so a non-chat-input
+  // event simply never reaches this handler. See index.test.ts for the
+  // type-keyed routing contract.
 });

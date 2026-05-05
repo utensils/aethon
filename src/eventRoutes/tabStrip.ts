@@ -31,12 +31,13 @@ export const handleTabStrip: EventRouteHandler = (
 
 /** empty-state CTA buttons: new-tab, open-project, select-project,
  *  restore-session. Renders when the active project has no open tabs;
- *  selection events here seed a fresh tab in the chosen project. */
+ *  selection events here seed a fresh tab in the chosen project.
+ *
+ *  Routed by `type:empty-state` (registry override key). */
 export const handleEmptyState: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "empty-state") return false;
   if (eventType === "new-tab") {
     ctx.newTab();
     return true;

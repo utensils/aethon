@@ -1,12 +1,15 @@
 import type { EventRouteHandler } from "./types";
 
 /** settings-panel renders at App root and never goes through the
- *  bridge — events drive the panel's pending overlay directly. */
+ *  bridge — events drive the panel's pending overlay directly.
+ *
+ *  Routed by `type:settings-panel` so an extension's
+ *  `aethon.registerComponent("settings-panel", custom)` override still
+ *  receives events even when the layout payload renames the instance. */
 export const handleSettings: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "settings-panel") return false;
   if (eventType === "close") {
     ctx.closeSettings();
     return true;

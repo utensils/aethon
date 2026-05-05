@@ -90,12 +90,8 @@ describe("handleNotifications", () => {
     expect((args as { tabId: string }).tabId).toBe("tab-active");
   });
 
-  it("returns false for non-notification-stack components", async () => {
-    const { ctx } = buildRouteFixture();
-    const handled = await handleNotifications(
-      { component: { id: "settings-panel" }, eventType: "action" },
-      ctx,
-    );
-    expect(handled).toBe(false);
-  });
+  // Wrong-component rejection is no longer this handler's job — the
+  // route table dispatches by `type:notification-stack`, so an event
+  // for a different type never reaches handleNotifications. See
+  // index.test.ts for the type-keyed routing contract.
 });

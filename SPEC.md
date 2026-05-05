@@ -310,12 +310,40 @@ then sharing, then polish.
 #### Abstraction integrity
 
 - [x] **App-root overlays go through the registry** — `command-palette`,
-      `notification-stack`, `settings-panel`, `search-panel`, and the
-      `share-mode-badge` are mounted via `<RegistryComponent type="…">` (or
-      `useSkillRegistry().resolve(…)` inside their host) so a skill can
-      replace any of them with `aethon.registerComponent("<type>", custom)`.
-      Previously these were direct-imported in `App.tsx`, silently defeating
-      the documented override path.
+      `notification-stack`, `settings-panel`, and `search-panel` are
+      mounted at App root via `<RegistryComponent type="…">`; the
+      `share-mode-badge` is mounted inline inside `shell/canvas.tsx`
+      (also via `<RegistryComponent>`, so skills can still replace it
+      with `aethon.registerComponent("share-mode-badge", custom)`).
+      Previously the App-root overlays were direct-imported in
+      `App.tsx`, silently defeating the documented override path.
+- [x] **Built-in event routes dispatch by type, not id** — every
+      chrome composite (`sidebar`, `command-palette`, `settings-panel`,
+      `search-panel`, `notification-stack`, `chat-input`, `empty-state`,
+      `terminal-panel`, `tab-strip`, `model-picker`, `appearance-menu`,
+      `share-mode-badge`, `shell-canvas`) has its built-in handler
+      registered under `type:<componentType>` in
+      `src/eventRoutes/index.ts`. A custom layout payload may rename
+      the instance (`{id: "primary-side-rail", type: "sidebar"}`) and
+      events still route correctly. Previously each handler also had a
+      defensive `if (component.id !== "<literal>") return false` guard
+      that broke the override contract; those guards are gone and
+      `index.test.ts` covers eight renamed-instance regression cases.
+- [x] **`main-canvas` chat mode is opt-in** — binding `messages`
+      enables chat-history rendering, the empty hint, and the "↓
+      latest" pill; omitting `messages` (and binding only `slot`)
+      makes the canvas a pure scroll viewport so non-chat extension
+      hosts (image gallery, dashboard, …) don't inherit chat chrome.
+- [x] **Hot-reload no longer kills in-flight prompts** — the Rust
+      file-watcher now sends `{type:"reload_request"}` over the
+      bridge's stdin instead of SIGKILLing the bun child. The bridge
+      drains active prompts (`tab.promptInFlight`), writes a
+      `{"type":"_reload_done"}` sentinel, and exits cleanly. The
+      supervisor's stdout reader sees the sentinel, sets the
+      reload-in-progress flag, emits `agent-reloaded`, and the
+      frontend respawns lazily on the next request. Previous
+      behaviour aborted the user's LLM turn whenever an extension
+      file changed.
 
 #### Documentation + tests
 

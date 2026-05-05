@@ -267,6 +267,37 @@ export async function runDispatcher(
   const stateMutationDeps = { send: deps.send };
   const notifDeps = { send: deps.send };
 
+  /** If a reload was requested AND no tab has a prompt in flight, write
+   *  the `_reload_done` sentinel and exit cleanly. The Rust supervisor's
+   *  stdout reader watches for the sentinel so it can flag the upcoming
+   *  EOF as an intentional reload (not a crash) and emit `agent-reloaded`.
+   *  The next chat / agent_command request lazily respawns the bridge with
+   *  the new extension state.
+   *
+   *  Idempotent — safe to call after every prompt completion. */
+  function maybeExitForReload(
+    state: AethonAgentState,
+    deps: DispatcherDeps,
+  ): void {
+    if (!state.reloadPending) return;
+    for (const tab of state.tabs.values()) {
+      if (tab.promptInFlight) return;
+    }
+    deps.send({ type: "_reload_done" });
+    // Flush stdout before exiting so the supervisor sees the sentinel
+    // before the EOF. process.stdout is non-blocking on a pipe, so a
+    // synchronous .write() returning false would otherwise let the EOF
+    // race the sentinel line.
+    if (typeof process.stdout.write === "function") {
+      try {
+        process.stdout.write("");
+      } catch {
+        /* ignore */
+      }
+    }
+    process.exit(0);
+  }
+
   for await (const line of rl) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -302,6 +333,15 @@ export async function runDispatcher(
         case "report": {
           markFrontendReady(state);
           emitReady(state, deps);
+          break;
+        }
+        case "reload_request": {
+          // Rust file-watcher asked us to reload because an extension
+          // file changed. Drain in-flight prompts first, then exit so
+          // the supervisor respawns us cleanly. Killing the bridge
+          // mid-prompt would lose the user's turn — see issue #N.
+          state.reloadPending = true;
+          maybeExitForReload(state, deps);
           break;
         }
         case "mutation_ack": {
@@ -453,6 +493,10 @@ export async function runDispatcher(
         if (!queued && state.currentAgentTabId === tabId) {
           state.currentAgentTabId = undefined;
         }
+        // If a hot-reload was deferred while this prompt was running,
+        // honor it now. Idempotent — does nothing if no reload is
+        // pending or another tab still has a prompt in flight.
+        maybeExitForReload(state, deps);
       });
     if (queued) {
       deps.send({ type: "queued", tabId });
