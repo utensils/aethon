@@ -106,6 +106,9 @@ describe("buildBuiltinSlashCommands", () => {
       removeProject: () => false,
       listProjects: () => [],
       activeProject: () => null,
+      reloadAgent: () => Promise.resolve(),
+      renameSession: () => Promise.resolve(),
+      activeTabId: () => "default",
     };
     const extensions = buildBuiltinSlashCommands().find((c) => c.name === "extensions")!;
 
@@ -115,5 +118,80 @@ describe("buildBuiltinSlashCommands", () => {
     expect(notifications).toContain("Installing extension");
     expect(system[0]).toContain("Extension install complete");
     expect(system[0]).toContain("installed output");
+  });
+
+  it("/rename forwards to renameSession with the active tab id", async () => {
+    const calls: { tabId: string; label: string }[] = [];
+    const ctx: SlashCommandContext = {
+      appendSystem: () => {},
+      notify: () => {},
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      resetLayout: () => {},
+      listExtensions: () => [],
+      installExtension: () => Promise.resolve(""),
+      listModels: () => [],
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+      reloadAgent: () => Promise.resolve(),
+      renameSession: (tabId, label) => {
+        calls.push({ tabId, label });
+        return Promise.resolve();
+      },
+      activeTabId: () => "tab-7",
+    };
+    const rename = buildBuiltinSlashCommands().find((c) => c.name === "rename")!;
+    await rename.run("Refactor pass", ctx);
+    expect(calls).toEqual([{ tabId: "tab-7", label: "Refactor pass" }]);
+  });
+
+  it("/reload calls reloadAgent and toasts", async () => {
+    let reloadCalls = 0;
+    const titles: string[] = [];
+    const ctx: SlashCommandContext = {
+      appendSystem: () => {},
+      notify: (input) => titles.push(input.title),
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      resetLayout: () => {},
+      listExtensions: () => [],
+      installExtension: () => Promise.resolve(""),
+      listModels: () => [],
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+      reloadAgent: () => {
+        reloadCalls += 1;
+        return Promise.resolve();
+      },
+      renameSession: () => Promise.resolve(),
+      activeTabId: () => null,
+    };
+    const reload = buildBuiltinSlashCommands().find((c) => c.name === "reload")!;
+    expect(reload).toBeDefined();
+    await reload.run("", ctx);
+    expect(reloadCalls).toBe(1);
+    expect(titles).toContain("Reloading agent…");
   });
 });

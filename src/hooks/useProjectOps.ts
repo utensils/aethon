@@ -40,6 +40,7 @@ interface DiscoveredSession {
   /** First user message text, trimmed to 60 chars by the bridge. Used to
    *  label sidebar history items meaningfully instead of UUID slices. */
   firstUserMessage?: string;
+  customLabel?: string;
 }
 
 interface SidebarHistoryItem {
@@ -242,9 +243,13 @@ export function useProjectOps(
         const cwdBasename = d.cwd
           ? d.cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? ""
           : "";
-        const label = d.firstUserMessage
-          ? d.firstUserMessage.replace(/\s+/g, " ").trim()
-          : cwdBasename || `Session ${d.tabId.slice(0, 8)}`;
+        // Custom label (set via /rename or sidebar context menu) wins
+        // over the auto-derived first-user-message label.
+        const label = d.customLabel
+          ? d.customLabel
+          : d.firstUserMessage
+            ? d.firstUserMessage.replace(/\s+/g, " ").trim()
+            : cwdBasename || `Session ${d.tabId.slice(0, 8)}`;
         return {
           id: d.tabId,
           label,

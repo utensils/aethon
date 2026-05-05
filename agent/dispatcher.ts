@@ -42,7 +42,11 @@ import {
   loadProjectAethonExtensions,
 } from "./extension-loader";
 import { patchLayoutTree } from "./layout-manager";
-import { readSessionTranscript } from "./session-history";
+import {
+  readSessionMetadata,
+  readSessionTranscript,
+  writeSessionLabel,
+} from "./session-history";
 import { saveDisabledExtensions } from "./disabled-extensions";
 
 export interface DispatcherDeps {
@@ -389,6 +393,10 @@ export async function runDispatcher(
         }
         case "set_extension_disabled": {
           await handleSetExtensionDisabled(state, deps, notifDeps, msg);
+          break;
+        }
+        case "set_session_label": {
+          await handleSetSessionLabel(state, deps, msg);
           break;
         }
         default: {
@@ -759,6 +767,43 @@ export async function runDispatcher(
       type: "reload_required",
       reason: `extension-toggle:${name}`,
     });
+  }
+
+  async function handleSetSessionLabel(
+    state: AethonAgentState,
+    deps: DispatcherDeps,
+    msg: InboundMessage,
+  ): Promise<void> {
+    const tabId = (msg as { tabId?: unknown }).tabId;
+    const labelField = (msg as { label?: unknown }).label;
+    if (typeof tabId !== "string" || !tabId) {
+      deps.send({
+        type: "error",
+        message: "set_session_label: tabId required",
+      });
+      return;
+    }
+    const label = typeof labelField === "string" ? labelField : "";
+    try {
+      await writeSessionLabel(tabSessionDir(state, tabId), label);
+    } catch (err) {
+      deps.send({
+        type: "error",
+        message: `set_session_label: ${(err as Error).message}`,
+      });
+      return;
+    }
+    // Refresh the discovered-tabs cache so the next emitReady (which the
+    // frontend triggers by sending `report` after this command finishes)
+    // reflects the new label. Cheap to re-read just the one entry.
+    const refreshed = await readSessionMetadata(tabSessionDir(state, tabId));
+    if (refreshed) {
+      const idx = state.discoveredTabs.findIndex((t) => t.tabId === tabId);
+      const entry = { tabId, ...refreshed };
+      if (idx >= 0) state.discoveredTabs[idx] = entry;
+      else state.discoveredTabs.push(entry);
+    }
+    emitReady(state, deps);
   }
 
   async function handleA2UIEvent(

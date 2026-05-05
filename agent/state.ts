@@ -134,6 +134,10 @@ export interface DiscoveredTab {
   lastModified: number;
   cwd?: string;
   firstUserMessage?: string;
+  /** User-supplied label (via the sidebar "Rename session…" action).
+   *  When present, the sidebar shows this instead of `firstUserMessage`.
+   *  Persisted at `<sessionsDir>/<tabId>/label.txt`. */
+  customLabel?: string;
 }
 
 export interface ModelDescriptor {

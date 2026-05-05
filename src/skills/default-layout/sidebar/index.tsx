@@ -174,6 +174,26 @@ export function Sidebar({
     setContextMenu(null);
   };
 
+  const renameContextSession = () => {
+    if (!contextMenu) return;
+    // Native prompt is intentionally lo-fi — keeps the surface tiny and
+    // matches the existing browser-prompt fallbacks elsewhere
+    // (delete confirmation, project picker errors). A richer modal can
+    // come later without changing the wire format.
+    const next = window.prompt("Rename session", contextMenu.label);
+    if (next === null) {
+      setContextMenu(null);
+      return;
+    }
+    onEvent("rename-session", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      sessionId: extractSessionId(contextMenu.itemId),
+      label: next,
+    });
+    setContextMenu(null);
+  };
+
   const toggleContextExtension = (disabled: boolean) => {
     if (!contextMenu || !contextMenu.extensionName) return;
     onEvent("toggle-extension", {
@@ -353,12 +373,20 @@ export function Sidebar({
                   type="button"
                   className="a2ui-sidebar-context-menu-item"
                   role="menuitem"
+                  onClick={renameContextSession}
+                >
+                  Rename session…
+                </button>
+                <button
+                  type="button"
+                  className="a2ui-sidebar-context-menu-item"
+                  role="menuitem"
                   onClick={deleteContextSession}
                 >
                   Delete session…
                 </button>
                 <div className="a2ui-sidebar-context-menu-note">
-                  Removes saved transcript
+                  Delete removes the saved transcript
                 </div>
               </>
             ) : contextMenu.kind === "extension-enabled" ? (

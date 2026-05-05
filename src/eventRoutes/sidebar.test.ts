@@ -4,6 +4,7 @@ import {
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
   handleSidebarDeleteSession,
+  handleSidebarRenameSession,
   handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
@@ -93,6 +94,28 @@ describe("handleSidebarDeleteSession", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.promptDeleteSessionConfirmation).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleSidebarRenameSession", () => {
+  it("forwards a set_session_label command to the bridge", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-7", label: "Refactor pass" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "tab-7",
+        label: "Refactor pass",
+      }),
+    });
   });
 });
 

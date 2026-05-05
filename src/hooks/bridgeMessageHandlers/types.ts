@@ -35,6 +35,7 @@ export interface DiscoveredSession {
   cwd?: string;
   /** First user message text, trimmed to 60 chars by the bridge. */
   firstUserMessage?: string;
+  customLabel?: string;
 }
 
 export interface RecentSessionItem {

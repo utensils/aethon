@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   parseSessionHistoryLines,
+  readSessionLabel,
   readSessionMetadata,
   readSessionTranscript,
+  writeSessionLabel,
 } from "./session-history";
 
 const roots: string[] = [];
@@ -129,5 +131,21 @@ describe("readSessionTranscript", () => {
     await expect(readSessionMetadata(dir)).resolves.toMatchObject({
       cwd: "/tmp/project",
     });
+  });
+
+  it("round-trips a custom session label and surfaces it through readSessionMetadata", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({ type: "session", id: "x", cwd: "/tmp/p" })}\n`,
+    );
+    expect(await readSessionLabel(dir)).toBeUndefined();
+    await writeSessionLabel(dir, "  Refactor pass  ");
+    expect(await readSessionLabel(dir)).toBe("Refactor pass");
+    const meta = await readSessionMetadata(dir);
+    expect(meta?.customLabel).toBe("Refactor pass");
+    // Empty label clears the file.
+    await writeSessionLabel(dir, "");
+    expect(await readSessionLabel(dir)).toBeUndefined();
   });
 });

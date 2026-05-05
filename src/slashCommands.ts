@@ -52,6 +52,17 @@ export interface SlashCommandContext {
   removeProject: (id: string) => boolean;
   listProjects: () => { id: string; label: string; path: string }[];
   activeProject: () => { id: string; label: string; path: string } | null;
+  /** Hard-reload the agent bridge subprocess. Goes through the same
+   *  supervisor path as the right-click "Disable extension" toggle:
+   *  the new bridge re-discovers extensions, themes, slash commands,
+   *  re-reads disabled-extensions.json, and emits a fresh `ready`. */
+  reloadAgent: () => Promise<void>;
+  /** Rename a session by tabId. Empty `label` clears the custom label
+   *  and falls back to the auto-derived first-user-message label. */
+  renameSession: (tabId: string, label: string) => Promise<void>;
+  /** Currently active tab id, or null when none. Used by `/rename` so
+   *  no-arg target inference can hit the right session. */
+  activeTabId: () => string | null;
 }
 
 /** A single completion option for a slash command's argument. The picker
@@ -151,6 +162,56 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       run: (_args, ctx) => {
         ctx.resetLayout();
         ctx.notify({ title: "Layout reset", kind: "success" });
+      },
+    },
+    {
+      name: "reload",
+      description:
+        "Reload the agent bridge — re-discover extensions, themes, and slash commands",
+      run: async (_args, ctx) => {
+        ctx.notify({
+          title: "Reloading agent…",
+          kind: "info",
+        });
+        try {
+          await ctx.reloadAgent();
+        } catch (err) {
+          ctx.notify({
+            title: "Reload failed",
+            message: String(err),
+            kind: "error",
+          });
+        }
+      },
+    },
+    {
+      name: "rename",
+      description:
+        "Rename the active session (empty input restores the auto-label)",
+      usage: "[new label]",
+      run: async (args, ctx) => {
+        const tabId = ctx.activeTabId();
+        if (!tabId) {
+          ctx.notify({
+            title: "No active session",
+            kind: "warning",
+          });
+          return;
+        }
+        const label = args.trim();
+        try {
+          await ctx.renameSession(tabId, label);
+          ctx.notify({
+            title: label ? `Renamed to “${label}”` : "Restored default label",
+            kind: "success",
+          });
+        } catch (err) {
+          ctx.notify({
+            title: "Rename failed",
+            message: String(err),
+            kind: "error",
+          });
+        }
       },
     },
     {

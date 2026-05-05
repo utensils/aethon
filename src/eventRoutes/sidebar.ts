@@ -126,6 +126,41 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
   return true;
 };
 
+/** sidebar rename-session: forward the new label to the bridge. The
+ *  bridge persists `<sessionsDir>/<tabId>/label.txt` and re-emits
+ *  `ready` so the sidebar history list re-renders with the new label. */
+export const handleSidebarRenameSession: EventRouteHandler = (
+  { component, eventType, data },
+  ctx,
+) => {
+  if (component.id !== "sidebar" || eventType !== "rename-session") {
+    return false;
+  }
+  const selected = data as
+    | { sessionId?: string; itemId?: string; label?: string }
+    | undefined;
+  const raw = selected?.sessionId ?? selected?.itemId ?? "";
+  const sessionId = extractSessionId(raw);
+  const label = typeof selected?.label === "string" ? selected.label : "";
+  if (!sessionId) return true;
+  ctx
+    .invoke("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: sessionId,
+        label,
+      }),
+    })
+    .catch((err: unknown) => {
+      ctx.pushNotification({
+        title: "Rename session failed",
+        message: String(err),
+        kind: "error",
+      });
+    });
+  return true;
+};
+
 /** sidebar toggle-extension: forward to the bridge so the user's
  *  disabled list is updated + persisted. The bridge re-emits `ready`
  *  on success so the sidebar entry shifts buckets without a refresh. */

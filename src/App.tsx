@@ -650,6 +650,22 @@ export default function App() {
           label: p.label,
           path: p.path,
         })),
+      reloadAgent: async () => {
+        await invoke("reload_agent");
+      },
+      renameSession: async (tabId: string, label: string) => {
+        await invoke("agent_command", {
+          payload: JSON.stringify({
+            type: "set_session_label",
+            tabId,
+            label,
+          }),
+        });
+      },
+      activeTabId: () => {
+        const id = stateRef.current.activeTabId;
+        return typeof id === "string" && id.length > 0 ? id : null;
+      },
       activeProject: () => {
         const a = activeProject(projectsRef.current);
         return a ? { id: a.id, label: a.label, path: a.path } : null;

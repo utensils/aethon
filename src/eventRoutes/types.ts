@@ -27,6 +27,7 @@ export interface DiscoveredSession {
   lastModified: number;
   cwd?: string;
   firstUserMessage?: string;
+  customLabel?: string;
 }
 
 /** Everything a route handler may close over. Flat by design — every

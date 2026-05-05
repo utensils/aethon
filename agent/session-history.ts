@@ -1,5 +1,49 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+
+const LABEL_FILE = "label.txt";
+const MAX_CUSTOM_LABEL_CHARS = 120;
+
+/** Per-session custom label set via the sidebar "Rename session…"
+ *  context-menu action. Returns undefined if no label has been set
+ *  (or if the file can't be read — best-effort, never throws). */
+export async function readSessionLabel(
+  sessionDir: string,
+): Promise<string | undefined> {
+  try {
+    const text = await readFile(join(sessionDir, LABEL_FILE), "utf8");
+    const trimmed = text.trim();
+    if (!trimmed) return undefined;
+    return trimmed.length > MAX_CUSTOM_LABEL_CHARS
+      ? trimmed.slice(0, MAX_CUSTOM_LABEL_CHARS)
+      : trimmed;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    return undefined;
+  }
+}
+
+/** Write a custom label for the given session. Empty / whitespace-only
+ *  input clears the label (deletes the file). The session dir is
+ *  created if missing so the call is safe before any chat turn. */
+export async function writeSessionLabel(
+  sessionDir: string,
+  label: string,
+): Promise<void> {
+  await mkdir(sessionDir, { recursive: true });
+  const trimmed = label.trim().slice(0, MAX_CUSTOM_LABEL_CHARS);
+  const path = join(sessionDir, LABEL_FILE);
+  if (!trimmed) {
+    try {
+      const fs = await import("node:fs/promises");
+      await fs.unlink(path);
+    } catch {
+      // Already absent — the desired end state.
+    }
+    return;
+  }
+  await writeFile(path, trimmed + "\n", "utf8");
+}
 
 const MAX_RESTORED_MESSAGES = 200;
 const MAX_TEXT_CHARS = 8 * 1024;
@@ -22,6 +66,9 @@ export interface SessionLogMetadata {
   /** First user-turn text, trimmed to 60 chars. Used to label sessions
    *  meaningfully in the sidebar instead of showing raw UUID slices. */
   firstUserMessage?: string;
+  /** User-supplied label (sidebar "Rename session…" / `/rename`).
+   *  Wins over `firstUserMessage` when both are present. */
+  customLabel?: string;
 }
 
 function textFromContent(content: unknown): string {
@@ -181,10 +228,12 @@ export async function readSessionMetadata(
 
   const raw = await readFile(latest.path, "utf8");
   const { cwd, firstUserMessage } = metaFromSessionLines(raw.split(/\r?\n/));
+  const customLabel = await readSessionLabel(sessionDir);
   return {
     lastModified: latest.mtimeMs,
     ...(cwd ? { cwd } : {}),
     ...(firstUserMessage ? { firstUserMessage } : {}),
+    ...(customLabel ? { customLabel } : {}),
   };
 }
 
