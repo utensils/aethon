@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NO_PROJECT_KEY,
+  deriveTabActiveFlags,
   makeEmptyTab,
   projectBucketKey,
 } from "./tab";
@@ -60,5 +61,54 @@ describe("makeEmptyTab", () => {
     const b = makeEmptyTab("b", "B");
     a.messages.push({ id: "m", role: "user", text: "hi" });
     expect(b.messages).toEqual([]);
+  });
+});
+
+describe("deriveTabActiveFlags", () => {
+  it("returns both false when there are no tabs", () => {
+    expect(deriveTabActiveFlags([], undefined)).toEqual({
+      agentTabActive: false,
+      shellTabActive: false,
+    });
+  });
+
+  it("flags agent active for an agent tab", () => {
+    const a = makeEmptyTab("a", "A");
+    expect(deriveTabActiveFlags([a], "a")).toEqual({
+      agentTabActive: true,
+      shellTabActive: false,
+    });
+  });
+
+  it("flags shell active for a shell tab", () => {
+    const s = makeEmptyTab("s", "Shell", null, "shell");
+    expect(deriveTabActiveFlags([s], "s")).toEqual({
+      agentTabActive: false,
+      shellTabActive: true,
+    });
+  });
+
+  it("falls through to agent when activeTabId points at a missing tab", () => {
+    // Orphan-active-id case: tabs exist but the active id doesn't match
+    // any of them. Defaulting to agent matches the existing behaviour
+    // before this helper was introduced (kind ?? "agent" fallback).
+    const a = makeEmptyTab("a", "A");
+    expect(deriveTabActiveFlags([a], "missing")).toEqual({
+      agentTabActive: true,
+      shellTabActive: false,
+    });
+  });
+
+  it("recomputes synchronously after a tabs mutation", () => {
+    // Regression: useTabs used to mirror these flags via a useEffect
+    // that read stateRef.current — which lags state by one render. A
+    // newTab() following a project-bucket switch left agentTabActive
+    // at false, hiding the chat-input on a fresh tab. Deriving the
+    // flags here from (tabs, activeTabId) makes them synchronous.
+    const before = deriveTabActiveFlags([], undefined);
+    expect(before.agentTabActive).toBe(false);
+    const a = makeEmptyTab("a", "A");
+    const after = deriveTabActiveFlags([a], "a");
+    expect(after.agentTabActive).toBe(true);
   });
 });

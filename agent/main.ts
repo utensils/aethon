@@ -91,6 +91,40 @@ function send(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
+/**
+ * Read the active project's cwd from `<userDir>/projects.json`.
+ *
+ * The frontend's `useProjectOps` boot effect sends `set_project` shortly
+ * after the bridge is ready, but that arrives over the dispatcher loop —
+ * which races the synchronous boot replay below. Reading projects.json
+ * directly lets the bridge scope the default tab's `ensureTab` and
+ * session replay to the right cwd on its very first paint, instead of
+ * picking the most-recently-touched session in `sessions/default/`
+ * regardless of which project produced it.
+ *
+ * Returns `undefined` if the file is missing, malformed, or has no
+ * active project; the caller falls back to project-agnostic behaviour.
+ */
+async function readActiveProjectCwd(userDir: string): Promise<string | undefined> {
+  try {
+    const text = await Bun.file(join(userDir, "projects.json")).text();
+    const parsed = JSON.parse(text) as {
+      activeId?: unknown;
+      projects?: { id?: unknown; path?: unknown }[];
+    };
+    if (typeof parsed.activeId !== "string" || !parsed.activeId) return undefined;
+    if (!Array.isArray(parsed.projects)) return undefined;
+    const active = parsed.projects.find(
+      (p) => p && typeof p.id === "string" && p.id === parsed.activeId,
+    );
+    return active && typeof active.path === "string" && active.path.length > 0
+      ? active.path
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function main(): Promise<void> {
   // -- Configuration -------------------------------------------------------
   const userDir = process.env.AETHON_USER_DIR ?? join(homedir(), ".aethon");
@@ -255,6 +289,15 @@ async function main(): Promise<void> {
   await state.resourceLoader.reload();
 
   // -- Default tab -------------------------------------------------------
+  // Resolve the active project's cwd from disk so the default tab's
+  // session resume is scoped to the right project on first paint —
+  // otherwise a `default` session from a previously-active project
+  // leaks into whatever the user opens next (sessions/default/ is
+  // shared across project buckets).
+  const activeProjectCwd = await readActiveProjectCwd(userDir);
+  if (activeProjectCwd) {
+    state.tabProjectCwds.set("default", activeProjectCwd);
+  }
   const tabDeps = { send };
   await ensureTab(state, tabDeps, "default");
 
@@ -265,8 +308,15 @@ async function main(): Promise<void> {
   emitReady(state, tabDeps);
 
   // Replay the default tab's persisted pi session history so all tabs use
-  // the same session_history IPC path.
-  readSessionTranscript(tabSessionDir(state, "default"))
+  // the same session_history IPC path. Scope the read by the SAME cwd
+  // `ensureTab` resolved against — when no project is active, both fall
+  // back to `process.cwd()`. Passing `undefined` here would let the
+  // replay surface the latest JSONL from any cwd while `ensureTab` (which
+  // filters via `findSessionFileMatchingCwd`) created an empty session,
+  // leaving the UI showing a leaked transcript that the agent cannot
+  // continue.
+  const defaultTabReplayCwd = activeProjectCwd ?? process.cwd();
+  readSessionTranscript(tabSessionDir(state, "default"), defaultTabReplayCwd)
     .then((messages) => {
       if (messages.length > 0) {
         send({ type: "session_history", tabId: "default", messages });

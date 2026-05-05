@@ -90,3 +90,30 @@ export function makeEmptyTab(
     projectId,
   };
 }
+
+/**
+ * Derive `/agentTabActive` and `/shellTabActive` from the current tab
+ * list and active id. Both gates require at least one tab; when no
+ * tab is active the empty-state composite owns the canvas area.
+ *
+ * Lives here (rather than as a useEffect mirror) so layout `visible:
+ * { $ref: "/agentTabActive" }` bindings can never lag behind a
+ * tabs/activeTabId mutation — the gates recompute synchronously
+ * inside App.tsx's renderState memo.
+ */
+export function deriveTabActiveFlags(
+  tabs: Tab[],
+  activeTabId: string | undefined,
+): { agentTabActive: boolean; shellTabActive: boolean } {
+  if (tabs.length === 0) {
+    return { agentTabActive: false, shellTabActive: false };
+  }
+  const activeTab = activeTabId
+    ? tabs.find((t) => t.id === activeTabId)
+    : undefined;
+  const isShell = activeTab?.kind === "shell";
+  return {
+    agentTabActive: !isShell,
+    shellTabActive: isShell,
+  };
+}

@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useRef,
   type Dispatch,
   type MutableRefObject,
@@ -135,8 +134,7 @@ export interface UseTabsActions {
  * Tab lifecycle: create (newTab/newShellTab), switch (setActiveTab/
  * setActiveSubTab), update (updateTab/updateActiveTab), close
  * (closeTab/closeTabNow), and undo-close (pushClosedTab/
- * reopenLastClosedTab). Plus the kind-derived /shellTabActive +
- * /agentTabActive mirror effect and the tab-replay event dispatch.
+ * reopenLastClosedTab).
  *
  * The hook keeps its state local in refs; project bucket swap and
  * orchestration-level wiring (chat-input dispatch, sidebar history,
@@ -144,6 +142,10 @@ export interface UseTabsActions {
  * callbacks. Shell config refs are passed in (rather than owned)
  * because the boot config effect and the settings panel apply path
  * also write to them.
+ *
+ * /agentTabActive + /shellTabActive are derived in App's renderState
+ * from tabs/activeTabId — not mirrored here — so they can't lag the
+ * tabs mutation that produced them.
  */
 export function useTabs(ctx: UseTabsContext): UseTabsActions {
   const {
@@ -166,27 +168,6 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   const pendingTabOpens = useRef(new Map<string, Promise<unknown>>());
   const closedTabsRef = useRef<ClosedTabEntry[]>([]);
   const autoRestoredSessionIdsRef = useRef(new Set<string>());
-
-  // Mirror /shellTabActive + /agentTabActive based on the active tab's
-  // kind so layout payloads can $ref them without computing equality
-  // at the renderer. Both flags require /hasTabs — when no tab exists,
-  // neither is true (the empty-state composite owns the canvas area).
-  const hasTabsForKind = !!stateRef.current.hasTabs;
-  const tabKind = (stateRef.current.kind as string | undefined) ?? "agent";
-  useEffect(() => {
-    const isShell = hasTabsForKind && tabKind === "shell";
-    const isAgent = hasTabsForKind && tabKind !== "shell";
-    setState((prev) => {
-      if (prev.shellTabActive === isShell && prev.agentTabActive === isAgent) {
-        return prev;
-      }
-      return {
-        ...prev,
-        shellTabActive: isShell,
-        agentTabActive: isAgent,
-      };
-    });
-  }, [hasTabsForKind, tabKind, setState]);
 
   function updateTab(tabId: string, mutator: (tab: Tab) => Tab) {
     setState((prev) => {
