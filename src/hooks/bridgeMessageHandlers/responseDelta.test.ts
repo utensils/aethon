@@ -18,6 +18,7 @@ describe("handleResponseDelta", () => {
       "hello",
       "msg-1",
       "tab-2",
+      "text",
     );
   });
 
@@ -37,6 +38,26 @@ describe("handleResponseDelta", () => {
       "x",
       undefined,
       "default",
+      "text",
+    );
+  });
+
+  it("forwards thinking deltas to the thinking channel", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleResponseDelta(
+      {
+        type: "response_delta",
+        content: "plan",
+        messageId: "msg-1",
+        channel: "thinking",
+      },
+      ctx,
+    );
+    expect(mocks.appendOrAmendAgentText).toHaveBeenCalledWith(
+      "plan",
+      "msg-1",
+      "default",
+      "thinking",
     );
   });
 });

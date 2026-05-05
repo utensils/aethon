@@ -283,5 +283,6 @@ export interface ChatMessage {
   id: string;
   role: "user" | "agent" | "system";
   text?: string;
+  thinking?: string;
   a2ui?: A2UIPayload;
 }

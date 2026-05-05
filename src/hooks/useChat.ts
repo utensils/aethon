@@ -48,6 +48,7 @@ export interface UseChatActions {
     delta: string,
     messageId?: string,
     tabId?: string,
+    channel?: "text" | "thinking",
   ) => void;
   appendSystem: (text: string) => void;
   setStatusFlags: (
@@ -123,7 +124,12 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   // one bubble even after tool cards land between deltas. Without a messageId
   // (legacy bridges), fall back to the previous "is it the last message?"
   // behavior tracked via activeResponseIdRef.
-  function appendOrAmendAgentText(delta: string, messageId?: string, tabId?: string) {
+  function appendOrAmendAgentText(
+    delta: string,
+    messageId?: string,
+    tabId?: string,
+    channel: "text" | "thinking" = "text",
+  ) {
     const id = tabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
     updateTab(id, (tab) => {
       const messages = [...tab.messages];
@@ -132,10 +138,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         if (idx >= 0) {
           messages[idx] = {
             ...messages[idx],
-            text: (messages[idx].text ?? "") + delta,
+            [channel]: (messages[idx][channel] ?? "") + delta,
           };
         } else {
-          messages.push({ id: messageId, role: "agent", text: delta });
+          messages.push({ id: messageId, role: "agent", [channel]: delta });
         }
         activeResponseIdRef.current = messageId;
         return { ...tab, messages };
@@ -145,12 +151,12 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       if (activeId && last && last.id === activeId && last.role === "agent") {
         messages[messages.length - 1] = {
           ...last,
-          text: (last.text ?? "") + delta,
+          [channel]: (last[channel] ?? "") + delta,
         };
       } else {
         const newId = crypto.randomUUID();
         activeResponseIdRef.current = newId;
-        messages.push({ id: newId, role: "agent", text: delta });
+        messages.push({ id: newId, role: "agent", [channel]: delta });
       }
       return { ...tab, messages };
     });
@@ -318,7 +324,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       .map((m) => {
         const heading = `### ${m.role}`;
         const text = (m.text ?? "").replace(/\r\n/g, "\n").trim();
-        return `${heading}\n\n${text}\n`;
+        const thinking = (m.thinking ?? "").replace(/\r\n/g, "\n").trim();
+        const thinkingBlock = thinking
+          ? `<thinking>\n${thinking}\n</thinking>\n\n`
+          : "";
+        return `${heading}\n\n${thinkingBlock}${text}\n`;
       })
       .join("\n");
     const header = `# ${tab.label}\n\n_Exported from Aethon · ${new Date().toISOString()}_\n\n`;

@@ -9,6 +9,7 @@ import {
   emitBashResult,
   extractToolContent,
   handleSessionEvent,
+  inferToolResultLanguage,
   modelDescriptor,
   modelKey,
   summarizeToolArgs,
@@ -185,6 +186,18 @@ describe("toolCardPayload", () => {
     expect(code.props.content.endsWith("…")).toBe(true);
   });
 
+  it("infers the code language for file-backed tool results", () => {
+    const payload = toolCardPayload({
+      callId: "c1",
+      toolName: "read",
+      argsSummary: "src/App.tsx lines 1-end",
+      result: "export function App() { return null; }",
+    });
+    const root = payload.components[0] as { children: unknown[] };
+    const code = root.children[0] as { props: { language: string } };
+    expect(code.props.language).toBe("tsx");
+  });
+
   it("appends image children with data: URLs", () => {
     const payload = toolCardPayload({
       callId: "c1",
@@ -198,6 +211,22 @@ describe("toolCardPayload", () => {
     const image = root.children[0] as { type: string; props: { src: string } };
     expect(image.type).toBe("image");
     expect(image.props.src).toBe("data:image/png;base64,abc");
+  });
+});
+
+describe("inferToolResultLanguage", () => {
+  it("uses read/edit/write paths when available", () => {
+    expect(inferToolResultLanguage("read", "flake.nix", "{ }")).toBe("nix");
+    expect(inferToolResultLanguage("write", "src/main.rs", "fn main() {}")).toBe(
+      "rust",
+    );
+  });
+
+  it("detects json and diffs for non-file-backed output", () => {
+    expect(inferToolResultLanguage("bash", "", '{ "ok": true }')).toBe("json");
+    expect(inferToolResultLanguage("bash", "", "diff --git a/x b/x")).toBe(
+      "diff",
+    );
   });
 });
 
@@ -277,6 +306,24 @@ describe("handleSessionEvent", () => {
       tabId: "tab-1",
       content: "hello",
       messageId: "text-1234",
+      channel: "text",
+    });
+  });
+
+  it("message_update with thinking_delta emits response_delta on thinking channel", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "plan" },
+      message: { timestamp: 1234 },
+    });
+    expect(f.sent[0]).toMatchObject({
+      type: "response_delta",
+      tabId: "tab-1",
+      content: "plan",
+      messageId: "text-1234",
+      channel: "thinking",
     });
   });
 

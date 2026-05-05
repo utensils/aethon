@@ -94,6 +94,72 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+const EXTENSION_LANGUAGES: Record<string, string> = {
+  cjs: "javascript",
+  cpp: "cpp",
+  cs: "csharp",
+  cts: "typescript",
+  css: "css",
+  diff: "diff",
+  dockerfile: "dockerfile",
+  go: "go",
+  gql: "graphql",
+  graphql: "graphql",
+  hs: "haskell",
+  html: "html",
+  ini: "ini",
+  java: "java",
+  js: "javascript",
+  json: "json",
+  jsonl: "json",
+  jsx: "jsx",
+  kt: "kotlin",
+  lua: "lua",
+  mjs: "javascript",
+  mts: "typescript",
+  nix: "nix",
+  php: "php",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  scala: "scala",
+  sh: "shell",
+  sql: "sql",
+  swift: "swift",
+  toml: "toml",
+  ts: "typescript",
+  tsx: "tsx",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  zig: "zig",
+};
+
+function languageFromPath(path: string): string | undefined {
+  const clean = path.trim().replace(/^["'`]|["'`]$/g, "");
+  const base = clean.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  if (base === "dockerfile" || base.endsWith(".dockerfile")) return "dockerfile";
+  if (base === "makefile") return "make";
+  const ext = /\.([a-z0-9]+)$/.exec(base)?.[1];
+  return ext ? EXTENSION_LANGUAGES[ext] : undefined;
+}
+
+export function inferToolResultLanguage(
+  toolName: string,
+  argsSummary: string,
+  text: string,
+): string {
+  if (toolName === "read" || toolName === "edit" || toolName === "write") {
+    const pathLang = languageFromPath(argsSummary.split(/\s+/)[0] ?? "");
+    if (pathLang) return pathLang;
+  }
+
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return "json";
+  if (trimmed.startsWith("diff --git ") || trimmed.startsWith("--- ")) return "diff";
+  return "text";
+}
+
 interface ExtractedImage {
   data: string;
   mimeType: string;
@@ -177,7 +243,11 @@ export function toolCardPayload(opts: {
         type: "code",
         props: {
           content: truncate(extracted.text, 1500),
-          language: "text",
+          language: inferToolResultLanguage(
+            toolName,
+            argsSummary,
+            extracted.text,
+          ),
         },
       });
     }
@@ -479,7 +549,15 @@ function handleSessionEvent(
     case "message_update": {
       const ame = (event as { assistantMessageEvent?: { type?: string; delta?: string } })
         .assistantMessageEvent;
-      if (ame?.type === "text_delta") {
+      const channel =
+        ame?.type === "thinking_delta" || ame?.type === "reasoning_delta"
+          ? "thinking"
+          : "text";
+      if (
+        ame?.type === "text_delta" ||
+        ame?.type === "thinking_delta" ||
+        ame?.type === "reasoning_delta"
+      ) {
         const delta = ame.delta ?? "";
         if (delta) {
           const ts =
@@ -491,6 +569,7 @@ function handleSessionEvent(
             tabId,
             messageId,
             content: delta,
+            channel,
           });
         }
       }
