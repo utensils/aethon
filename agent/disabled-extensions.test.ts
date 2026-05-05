@@ -33,6 +33,23 @@ describe("disabled-extensions persistence", () => {
     }
   });
 
+  it("throws when the destination is unwritable so the caller can revert", async () => {
+    // Point at a path that can't be created — a regular file used as
+    // the parent dir. mkdir(file/...) errors with ENOTDIR, which we
+    // want to propagate so the dispatcher refuses the toggle.
+    const dir = mkdtempSync(join(tmpdir(), "aethon-dis-"));
+    try {
+      const fs = await import("node:fs/promises");
+      const sentinelFile = join(dir, "not-a-dir");
+      await fs.writeFile(sentinelFile, "i am a file", "utf8");
+      await expect(
+        saveDisabledExtensions(sentinelFile, new Set(["x"])),
+      ).rejects.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("ignores malformed JSON gracefully", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aethon-dis-"));
     try {

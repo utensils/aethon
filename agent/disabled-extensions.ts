@@ -41,6 +41,11 @@ export async function loadDisabledExtensions(
   }
 }
 
+/** Persist the disabled list. Throws on failure so the caller can
+ *  refuse the toggle (revert in-memory, surface an error) instead of
+ *  silently losing the user's intent — a swallowed write means a
+ *  successful-looking toast followed by a bridge reload that re-loads
+ *  the extension because the on-disk file still says "enabled". */
 export async function saveDisabledExtensions(
   userDir: string,
   disabled: Set<string>,
@@ -58,5 +63,6 @@ export async function saveDisabledExtensions(
     logger
       .scope("disabled-ext")
       .warn(`write ${file}: ${(err as Error).message}`);
+    throw err;
   }
 }

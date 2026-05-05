@@ -432,18 +432,23 @@ fn force_restart_agent(state: State<'_, AgentProcess>) -> Result<(), String> {
 /// loader honors the user's intent.
 #[tauri::command]
 fn reload_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), String> {
-    let reload_flag = agent_reload_in_progress(&app);
-    reload_flag.store(true, std::sync::atomic::Ordering::Release);
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    // Only set the reload flag when there's actually a child to kill —
+    // the stdout reader thread is what resets the flag on EOF, so
+    // setting it without a child to die would leave it stale and the
+    // next genuine crash would be misclassified as an intentional
+    // reload (no agent-crashed notification).
     if let Some(mut child) = guard.take() {
         let pid = child.id();
+        let reload_flag = agent_reload_in_progress(&app);
+        reload_flag.store(true, std::sync::atomic::Ordering::Release);
         tracing::info!(target: "aethon::agent", "reload_agent: killing pid={pid}");
         let _ = child.kill();
         let _ = child.wait();
     }
-    // Emit agent-reloaded immediately so the frontend re-primes via
-    // start_agent — the stdout reader thread also resets the flag and
-    // returns silently when it sees EOF, avoiding a duplicate event.
+    // Emit agent-reloaded so the frontend re-primes via start_agent.
+    // Safe to emit even when no child existed — the listener invokes
+    // start_agent which is a no-op if the agent is already absent.
     let _ = app.emit("agent-reloaded", "extension-toggle");
     Ok(())
 }

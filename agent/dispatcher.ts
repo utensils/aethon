@@ -731,7 +731,29 @@ export async function runDispatcher(
     if (disabled === wasDisabled) return; // no-op
     if (disabled) state.disabledExtensions.add(name);
     else state.disabledExtensions.delete(name);
-    await saveDisabledExtensions(state.userDir, state.disabledExtensions);
+    try {
+      await saveDisabledExtensions(state.userDir, state.disabledExtensions);
+    } catch (err) {
+      // Persistence failed — revert the in-memory toggle so the next
+      // operation sees the on-disk truth, and surface a notice instead
+      // of a misleading success toast + bridge reload that would
+      // re-load the extension and silently lose the user's intent.
+      if (disabled) state.disabledExtensions.delete(name);
+      else state.disabledExtensions.add(name);
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({
+        type: "error",
+        message: `set_extension_disabled: persist failed: ${message}`,
+      });
+      void notify(state, notifDeps, {
+        id: `aethon:extension-toggle:${name}`,
+        title: `Could not ${disabled ? "disable" : "enable"} \`${name}\``,
+        message: `Persist failed: ${message}`,
+        kind: "error",
+        durationMs: 6000,
+      });
+      return;
+    }
     // Surface the change to the frontend immediately. The loaded set
     // doesn't change until restart; the sidebar shows a `(disabled)` row
     // by deriving from `loadedExtensions ∩ ¬disabledExtensions` plus the

@@ -117,6 +117,56 @@ describe("handleSidebarRenameSession", () => {
       }),
     });
   });
+
+  it("optimistically updates an open tab's label so the rename is instant", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "tab-7", kind: "agent", label: "Tab 1" },
+          { id: "tab-9", kind: "agent", label: "Tab 2" },
+        ],
+      },
+    });
+    await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-7", label: "Refactor pass" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      tabs: [
+        { id: "tab-7", kind: "agent", label: "Tab 1" },
+        { id: "tab-9", kind: "agent", label: "Tab 2" },
+      ],
+    });
+    const tabs = next.tabs as { id: string; label: string }[];
+    expect(tabs[0].label).toBe("Refactor pass");
+    expect(tabs[1].label).toBe("Tab 2");
+  });
+
+  it("empty label restores the auto sequential label for the open tab", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "tab-3", kind: "agent", label: "Custom name" },
+        ],
+      },
+    });
+    await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-3", label: "  " },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      tabs: [{ id: "tab-3", kind: "agent", label: "Custom name" }],
+    });
+    expect((next.tabs as { label: string }[])[0].label).toBe("Tab 1");
+  });
 });
 
 describe("handleSidebarToggleExtension", () => {

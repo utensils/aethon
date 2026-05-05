@@ -654,6 +654,22 @@ export default function App() {
         await invoke("reload_agent");
       },
       renameSession: async (tabId: string, label: string) => {
+        // Optimistic in-memory update so the open-tab row in the sidebar
+        // history (and the top tab strip + palette) reflect the new
+        // label immediately. The bridge persists label.txt; on the next
+        // ready re-emit the closed-session bucket also picks it up.
+        setState((prev) => {
+          const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+          const idx = tabs.findIndex((t) => t.id === tabId);
+          if (idx < 0) return prev;
+          const trimmed = label.trim();
+          const fallback = `Tab ${idx + 1}`;
+          const nextLabel = trimmed.length > 0 ? trimmed : fallback;
+          if (tabs[idx].label === nextLabel) return prev;
+          const next = [...tabs];
+          next[idx] = { ...next[idx], label: nextLabel };
+          return { ...prev, tabs: next };
+        });
         await invoke("agent_command", {
           payload: JSON.stringify({
             type: "set_session_label",
