@@ -189,6 +189,20 @@ function findCodeElement(root: Root): Element | null {
   return null;
 }
 
+function isLineElement(node: ElementContent): boolean {
+  if (node.type !== "element") return false;
+  const className = node.properties?.class ?? node.properties?.className;
+  if (className === "line") return true;
+  return Array.isArray(className) && className.includes("line");
+}
+
+function stripRenderedLineSeparators(children: ElementContent[]): ElementContent[] {
+  return children.filter((node, index) => {
+    if (node.type !== "text" || !/^\n+$/.test(node.value)) return true;
+    return !(isLineElement(children[index - 1]) && isLineElement(children[index + 1]));
+  });
+}
+
 async function highlight(code: string, lang: string): Promise<string | null> {
   try {
     const hl = await getHighlighter();
@@ -201,7 +215,10 @@ async function highlight(code: string, lang: string): Promise<string | null> {
     const codeEl = findCodeElement(root);
     if (!codeEl) return null;
     if (!codeEl.children.every(isStructurallySafe)) return null;
-    return toHtml({ type: "root", children: codeEl.children });
+    return toHtml({
+      type: "root",
+      children: stripRenderedLineSeparators(codeEl.children),
+    });
   } catch {
     return null;
   }
