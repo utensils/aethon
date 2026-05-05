@@ -4,12 +4,14 @@ import type { PaletteItem } from "../skills/default-layout/palette-items";
 /** command-palette renders at App root and never goes through the
  *  dispatch_a2ui bridge (no agent counterpart to invoke). Events land
  *  here directly. Selection runs the item *after* closing the palette
- *  so a slow handler doesn't leave the result obscured. */
+ *  so a slow handler doesn't leave the result obscured.
+ *
+ *  Routed by `type:command-palette` (not id) so a custom layout payload
+ *  that renames the palette instance still routes correctly. */
 export const handlePalette: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "command-palette") return false;
   if (eventType === "close") {
     ctx.closePalette();
     return true;

@@ -374,6 +374,28 @@ or `type:<componentType>`. New built-in handlers go in
 `eventRoutes/<name>.ts` + a happy-path test, then registered under the
 matching key(s) in `BUILTIN_ROUTE_TABLE`.
 
+**Always key chrome-composite handlers by `type:<componentType>`, not
+`id:`** — that's how `aethon.registerComponent("<type>", custom)` and
+custom-layout payloads with renamed instances stay routable. Use
+`id:<…>` only for genuine instance-specific dispatch (none today). The
+12 chrome composites (sidebar, command-palette, settings-panel,
+search-panel, notification-stack, chat-input, empty-state,
+terminal-panel, tab-strip, model-picker, appearance-menu,
+share-mode-badge, shell-canvas) all dispatch by type as of #N.
+
+### Hot-reload doesn't kill in-flight prompts
+
+The Rust file-watcher (`commands/extensions.rs::run_debounce_worker`)
+no longer SIGKILLs the bun child when an extension file changes.
+Instead it writes `{"type":"reload_request"}` to the child's stdin.
+The bridge sets `state.reloadPending`, drains active
+`tab.promptInFlight`, writes a `{"type":"_reload_done"}` sentinel to
+stdout, and `process.exit(0)`s. The supervisor's stdout reader peeks
+for that sentinel, sets the reload-in-progress flag, emits
+`agent-reloaded`, and the next IPC call respawns. So an extension
+drop never aborts a user's LLM turn. The fallback hard-kill path
+remains for the case where stdin is wedged.
+
 ## Conventions
 
 - **Conventional Commits** for all messages: `feat(scope):`, `fix(scope):`, etc.

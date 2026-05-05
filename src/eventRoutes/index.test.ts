@@ -25,7 +25,7 @@ describe("dispatchEvent — precedence contract", () => {
     });
     const handled = await dispatchEvent(
       {
-        component: { id: "notification-stack" },
+        component: { id: "notification-stack", type: "notification-stack" },
         eventType: "action",
         data: { id: "nid-1", action: "shell-write-allow:req-1" },
       },
@@ -44,7 +44,10 @@ describe("dispatchEvent — precedence contract", () => {
       extensionRoutes: [{ componentId: "settings-panel" }],
     });
     const handled = await dispatchEvent(
-      { component: { id: "settings-panel" }, eventType: "close" },
+      {
+        component: { id: "settings-panel", type: "settings-panel" },
+        eventType: "close",
+      },
       ctx,
     );
     // false = renderer forwards to bridge so the extension's
@@ -60,7 +63,7 @@ describe("dispatchEvent — precedence contract", () => {
     });
     const handled = await dispatchEvent(
       {
-        component: { id: "chat-input" },
+        component: { id: "chat-input", type: "chat-input" },
         eventType: "submit",
         data: { value: "hi" },
       },
@@ -74,7 +77,7 @@ describe("dispatchEvent — precedence contract", () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await dispatchEvent(
       {
-        component: { id: "chat-input" },
+        component: { id: "chat-input", type: "chat-input" },
         eventType: "submit",
         data: { value: "hello" },
       },
@@ -113,7 +116,7 @@ describe("dispatchEvent — precedence contract", () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await dispatchEvent(
       {
-        component: { id: "notification-stack" },
+        component: { id: "notification-stack", type: "notification-stack" },
         eventType: "dismiss",
         data: { id: "stranger" },
       },
@@ -122,5 +125,123 @@ describe("dispatchEvent — precedence contract", () => {
     expect(handled).toBe(true);
     // Built-in path called dismissNotification once.
     expect(mocks.dismissNotification).toHaveBeenCalledWith("stranger");
+  });
+});
+
+/** Type-keyed routing contract — closes the abstraction-integrity gap
+ *  identified in the M5/M6 audit. A custom layout payload (or a skill
+ *  override) may rename the chrome-composite instance; events should
+ *  still route to the correct built-in handler because the route table
+ *  keys on `type:`, not `id:`. */
+describe("dispatchEvent — chrome composites route by type, not id", () => {
+  it("renamed command-palette instance still routes selection", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const item = { kind: "tab" as const, tabId: "abc", label: "tab abc" };
+    const handled = await dispatchEvent(
+      {
+        // A skill swapped command-palette and assigned its own id.
+        component: { id: "primary-cmd-deck", type: "command-palette" },
+        eventType: "select",
+        data: { item },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.runPaletteItem).toHaveBeenCalledWith(item);
+  });
+
+  it("renamed sidebar instance still routes select to handleSectionedSelect", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "primary-side-rail", type: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "themes", itemId: "ember" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.setTheme).toHaveBeenCalledWith("ember");
+  });
+
+  it("renamed settings-panel instance still routes close", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "config-overlay", type: "settings-panel" },
+        eventType: "close",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.closeSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("renamed search-panel instance still routes close", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "history-finder", type: "search-panel" },
+        eventType: "close",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.closeSessionSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("renamed notification-stack instance still dismisses", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "toast-rail", type: "notification-stack" },
+        eventType: "dismiss",
+        data: { id: "nid-9" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.dismissNotification).toHaveBeenCalledWith("nid-9");
+  });
+
+  it("renamed empty-state instance still routes new-tab", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "welcome-card", type: "empty-state" },
+        eventType: "new-tab",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.newTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("renamed model-picker instance still routes setModel", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "header-model-dropdown", type: "model-picker" },
+        eventType: "select",
+        data: { sectionId: "models", itemId: "anthropic/claude-opus-4-7" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.setModel).toHaveBeenCalledWith("anthropic/claude-opus-4-7");
+  });
+
+  it("renamed chat-input instance still routes submit", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await dispatchEvent(
+      {
+        component: { id: "composer-1", type: "chat-input" },
+        eventType: "submit",
+        data: { value: "hello" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.sendChat).toHaveBeenCalledWith("hello");
   });
 });

@@ -15,10 +15,9 @@ import type { EventRouteHandler } from "./types";
  *  • everything else with an action — forward to the bridge as a
  *    `notification.invoke` a2ui event for extension matchers. */
 export const handleNotifications: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "notification-stack") return false;
   const id = (data as { id?: string } | undefined)?.id;
 
   if ((eventType === "dismiss" || eventType === "expire") && id) {

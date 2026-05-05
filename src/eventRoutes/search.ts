@@ -2,12 +2,13 @@ import type { EventRouteHandler } from "./types";
 
 /** search-panel renders at App root. Search results land via the
  *  Tauri search_sessions command, not the bridge — events here drive
- *  the overlay's local state. */
+ *  the overlay's local state.
+ *
+ *  Routed by `type:search-panel` (registry override key), not id. */
 export const handleSearch: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "search-panel") return false;
   if (eventType === "close") {
     ctx.closeSessionSearch();
     return true;

@@ -2,12 +2,14 @@ import type { EventRouteHandler } from "./types";
 
 /** chat-input: submit forwards to native sendChat (replacing the
  *  bridge round-trip), change persists the unsent draft into the
- *  active tab record, cancel maps to stopPrompt. */
+ *  active tab record, cancel maps to stopPrompt.
+ *
+ *  Routed by `type:chat-input` so a registry override (or a layout
+ *  payload that renames the composer instance) still routes events. */
 export const handleChatInput: EventRouteHandler = async (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "chat-input") return false;
   if (eventType === "submit") {
     const value = (data as { value?: string } | undefined)?.value ?? "";
     await ctx.sendChat(value);

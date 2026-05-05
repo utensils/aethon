@@ -13,12 +13,16 @@ interface RecentSessionItem {
  *  /layout/columns. Layouts shape grid columns as either
  *  "${SIDEBAR}px minmax(0,1fr)" or
  *  "${SIDEBAR}px minmax(0,1fr) ${INSPECTOR}px" — replace just the first
- *  token so non-sidebar columns survive the rewrite. */
+ *  token so non-sidebar columns survive the rewrite.
+ *
+ *  All sidebar handlers below are routed by `type:sidebar` (registry
+ *  override key) so a custom layout that renames the sidebar instance
+ *  still receives these events — only the eventType filters apply. */
 export const handleSidebarResize: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "sidebar" || eventType !== "resize") return false;
+  if (eventType !== "resize") return false;
   const next = (data as { width?: number } | undefined)?.width;
   if (typeof next === "number") {
     ctx.setState((prev) => {
@@ -39,10 +43,10 @@ export const handleSidebarResize: EventRouteHandler = (
  *  value the resize listener just wrote) so a single source of truth
  *  wins. */
 export const handleSidebarResizeEnd: EventRouteHandler = (
-  { component, eventType },
+  { eventType },
   ctx,
 ) => {
-  if (component.id !== "sidebar" || eventType !== "resize-end") return false;
+  if (eventType !== "resize-end") return false;
   const layout =
     (ctx.stateRef.current.layout as Record<string, unknown> | undefined) ?? {};
   const cols = (layout.columns as string | undefined) ?? "";
@@ -60,12 +64,10 @@ export const handleSidebarResizeEnd: EventRouteHandler = (
  *  when no projectId is present (treat as handled rather than fall
  *  through — there's no other handler that wants this event). */
 export const handleSidebarRemoveProject: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "sidebar" || eventType !== "remove-project") {
-    return false;
-  }
+  if (eventType !== "remove-project") return false;
   const selected = data as
     | { projectId?: string; itemId?: string }
     | undefined;
@@ -78,12 +80,10 @@ export const handleSidebarRemoveProject: EventRouteHandler = (
  *  the user with a closed tab and a failure notification when the
  *  Tauri command refuses (e.g. the default session). */
 export const handleSidebarDeleteSession: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "sidebar" || eventType !== "delete-session") {
-    return false;
-  }
+  if (eventType !== "delete-session") return false;
   const selected = data as
     | { sessionId?: string; itemId?: string; label?: string }
     | undefined;
@@ -134,12 +134,10 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
  *  open-tab rows (whose `tab:` label flows from `Tab.label`, not from
  *  `recentSessions`/`discoveredTabs`). */
 export const handleSidebarRenameSession: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "sidebar" || eventType !== "rename-session") {
-    return false;
-  }
+  if (eventType !== "rename-session") return false;
   const selected = data as
     | { sessionId?: string; itemId?: string; label?: string }
     | undefined;
@@ -196,12 +194,10 @@ function applyOptimisticTabLabel(
  *  disabled list is updated + persisted. The bridge re-emits `ready`
  *  on success so the sidebar entry shifts buckets without a refresh. */
 export const handleSidebarToggleExtension: EventRouteHandler = (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  if (component.id !== "sidebar" || eventType !== "toggle-extension") {
-    return false;
-  }
+  if (eventType !== "toggle-extension") return false;
   const selected = data as
     | { name?: string; disabled?: boolean }
     | undefined;
@@ -226,18 +222,16 @@ export const handleSidebarToggleExtension: EventRouteHandler = (
 
 /** Sidebar select + dropdown chrome pickers (model-picker /
  *  appearance-menu) all use the same `{sectionId, itemId}` event
- *  shape. Route by section so a chrome dropdown and a sidebar row
- *  converge on the same backing action. */
+ *  shape. Registered under three route-table type keys
+ *  (`type:sidebar`, `type:model-picker`, `type:appearance-menu`) so
+ *  registry overrides win without per-instance id matching — route by
+ *  section so a chrome dropdown and a sidebar row converge on the
+ *  same backing action. */
 export const handleSectionedSelect: EventRouteHandler = async (
-  { component, eventType, data },
+  { eventType, data },
   ctx,
 ) => {
-  const isSectionedSelect =
-    eventType === "select" &&
-    (component.id === "sidebar" ||
-      component.id === "model-picker" ||
-      component.id === "appearance-menu");
-  if (!isSectionedSelect) return false;
+  if (eventType !== "select") return false;
 
   const selected = data as
     | { sectionId?: string; itemId?: string }

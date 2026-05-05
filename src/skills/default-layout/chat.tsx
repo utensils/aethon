@@ -268,8 +268,13 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
     emptyHint?: StringValue;
   };
 
-  const messages = props.messages
-    ? ((resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [])
+  // Chat-mode is opt-in: extensions hosting non-chat content (galleries,
+  // dashboards, etc.) bind only `slot` and omit `messages`. Without
+  // messages bound, the canvas is a pure scroll viewport — no chat
+  // empty-state, no message list, no "↓ latest" pill bleeding through.
+  const chatMode = props.messages !== undefined;
+  const messages = chatMode
+    ? ((resolvePointer(state, props.messages!.$ref) as ChatMessage[]) || [])
     : [];
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
@@ -296,8 +301,13 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
   }, [messages.length, liveSubtree, handleContentChanged]);
 
   return (
-    <main className="a2ui-canvas" ref={listRef}>
-      {messages.length === 0 && !liveSubtree && (
+    <main
+      className={
+        chatMode ? "a2ui-canvas" : "a2ui-canvas a2ui-canvas-bare"
+      }
+      ref={listRef}
+    >
+      {chatMode && messages.length === 0 && !liveSubtree && (
         <div className="a2ui-canvas-empty">{emptyHint}</div>
       )}
       {messages.map((m) => (
@@ -316,7 +326,12 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
-      <ScrollToBottomPill visible={!isAtBottom && (messages.length > 0 || !!liveSubtree)} onClick={scrollToBottom} />
+      {chatMode && (
+        <ScrollToBottomPill
+          visible={!isAtBottom && (messages.length > 0 || !!liveSubtree)}
+          onClick={scrollToBottom}
+        />
+      )}
     </main>
   );
 }

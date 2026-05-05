@@ -434,6 +434,13 @@ export class AethonAgentState {
    *  draft, messagesCount). */
   readonly frontendState = new Map<string, unknown>();
 
+  // -- Hot-reload coordination --------------------------------------------
+  /** Set when the Rust file watcher sends `reload_request`. The bridge
+   *  drains in-flight prompts then exits cleanly so the supervisor can
+   *  respawn it with fresh extensions on the next request — instead of
+   *  the watcher SIGKILLing mid-prompt. */
+  reloadPending = false;
+
   constructor(opts: AethonAgentStateOptions) {
     this.userDir = opts.userDir;
     this.stateFile = opts.stateFile;

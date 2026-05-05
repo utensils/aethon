@@ -304,6 +304,21 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         for line in reader.lines() {
             match line {
                 Ok(text) => {
+                    // Sentinel from the bridge meaning "I'm about to
+                    // exit cleanly because the watcher asked me to
+                    // reload." Set the flag BEFORE the EOF arrives so
+                    // the post-loop handler treats it as intentional,
+                    // and emit `agent-reloaded` here so the frontend
+                    // can clear waiting state and respawn lazily.
+                    if text.contains("\"_reload_done\"") {
+                        reload_flag_stdout
+                            .store(true, std::sync::atomic::Ordering::Release);
+                        let _ = app_stdout.emit("agent-reloaded", "");
+                        // Don't forward the sentinel — it's bridge↔
+                        // supervisor-internal and would confuse the
+                        // frontend's agent-response router.
+                        continue;
+                    }
                     let _ = app_stdout.emit("agent-response", text);
                 }
                 Err(_) => break,
