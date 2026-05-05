@@ -57,13 +57,15 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
         : null;
     if (!role) continue;
     const text = typeof record.text === "string" ? record.text : undefined;
+    const thinking =
+      typeof record.thinking === "string" ? record.thinking : undefined;
     const a2ui =
       record.a2ui &&
       typeof record.a2ui === "object" &&
       Array.isArray((record.a2ui as { components?: unknown }).components)
         ? (record.a2ui as A2UIPayload)
         : undefined;
-    if (!text && !a2ui) continue;
+    if (!text && !thinking && !a2ui) continue;
     messages.push(
       trimMessage({
         id:
@@ -72,6 +74,7 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
             : crypto.randomUUID(),
         role,
         ...(text ? { text } : {}),
+        ...(thinking ? { thinking } : {}),
         ...(a2ui ? { a2ui } : {}),
       }),
     );

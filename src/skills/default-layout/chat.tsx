@@ -21,6 +21,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
+import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
 import A2UIRenderer from "../../components/A2UIRenderer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { useStickyScroll } from "../../utils/useStickyScroll";
@@ -102,6 +103,7 @@ export function ToolCard({
   }, [startedAt, endedAt, now]);
 
   const isLongRunning = running && elapsedMs >= TOOL_LONG_RUN_THRESHOLD_MS;
+  const hasChildren = (component.children?.length ?? 0) > 0;
 
   const titleSuffix = useMemo(() => {
     if (running) return ` · running… ${formatToolDuration(elapsedMs)}`;
@@ -120,26 +122,32 @@ export function ToolCard({
         : "var(--text-dim)";
 
   return (
-    <div
+    <details
       className="ae-tool-card"
       data-running={running ? "true" : "false"}
       data-long-running={isLongRunning ? "true" : "false"}
       data-error={isError ? "true" : "false"}
     >
-      <div className="ae-tool-card-title" style={{ color: accentColor }}>
-        <span className="ae-tool-card-title-base">{baseTitle}</span>
-        <span className="ae-tool-card-title-suffix">{titleSuffix}</span>
+      <summary className="ae-tool-card-summary">
+        <span className="ae-tool-card-title" style={{ color: accentColor }}>
+          <span className="ae-tool-card-title-base">{baseTitle}</span>
+          <span className="ae-tool-card-title-suffix">{titleSuffix}</span>
+        </span>
+        {description && (
+          <span className="ae-tool-card-description">{description}</span>
+        )}
+      </summary>
+      <div className="ae-tool-card-body">
+        {isLongRunning && (
+          <div className="ae-tool-card-warning">
+            Long-running command — press <kbd>⌘.</kbd> to stop.
+          </div>
+        )}
+        {hasChildren ? renderChildren?.() : (
+          <div className="ae-tool-card-empty">No output</div>
+        )}
       </div>
-      {isLongRunning && (
-        <div className="ae-tool-card-warning">
-          Long-running command — press <kbd>⌘.</kbd> to stop.
-        </div>
-      )}
-      {description && (
-        <div className="ae-tool-card-description">{description}</div>
-      )}
-      {renderChildren && renderChildren()}
-    </div>
+    </details>
   );
 }
 
@@ -176,6 +184,46 @@ function roleBadge(role: string): string {
   if (role === "user") return "YOU";
   if (role === "agent") return "AI";
   return "SYS";
+}
+
+function ThinkingBlock({
+  children,
+  complete = true,
+}: {
+  children: string;
+  complete?: boolean;
+}) {
+  const label = complete ? "Thinking" : "Thinking...";
+  return (
+    <details className="a2ui-thinking-block" open={!complete}>
+      <summary>{label}</summary>
+      <div className="a2ui-thinking-content a2ui-markdown">
+        <ReactMarkdown components={MARKDOWN_COMPONENTS}>{children}</ReactMarkdown>
+      </div>
+    </details>
+  );
+}
+
+function MarkdownWithThinking({ text }: { text: string }) {
+  return (
+    <>
+      {splitThinkingBlocks(text).map((segment, index) => {
+        if (!segment.content) return null;
+        if (segment.type === "thinking") {
+          return (
+            <ThinkingBlock key={index} complete={segment.closed !== false}>
+              {segment.content}
+            </ThinkingBlock>
+          );
+        }
+        return (
+          <ReactMarkdown key={index} components={MARKDOWN_COMPONENTS}>
+            {segment.content}
+          </ReactMarkdown>
+        );
+      })}
+    </>
+  );
 }
 
 export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) {
@@ -237,9 +285,14 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
         messages.map((m) => (
           <div key={m.id} className={`a2ui-chat-message ${m.role}`}>
             <span className="a2ui-chat-role">{roleBadge(m.role)}</span>
+            {m.thinking && (
+              <ThinkingBlock complete={Boolean(m.text)}>
+                {m.thinking}
+              </ThinkingBlock>
+            )}
             {m.text && (
               <div className="a2ui-chat-text a2ui-markdown">
-                <ReactMarkdown components={MARKDOWN_COMPONENTS}>{m.text}</ReactMarkdown>
+                <MarkdownWithThinking text={m.text} />
               </div>
             )}
             {/* tabId forwards so clicks inside the embedded card route

@@ -1477,6 +1477,30 @@ body.ae-resizing-sidebar * {
   margin: 0.8em 0;
 }
 
+.a2ui-thinking-block {
+  margin: 0.45em 0;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--bg-input) 78%, transparent);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-dim);
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+
+.a2ui-thinking-block summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--chrome-text-muted);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.a2ui-thinking-content {
+  margin-top: 6px;
+  font-size: 0.95em;
+}
+
 .a2ui-canvas-live {
   width: 100%;
   min-width: 0;
@@ -2827,10 +2851,7 @@ body.ae-resizing-sidebar * {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  padding: 0;
   min-width: 0;
   max-width: 100%;
   transition: border-color 120ms ease;
@@ -2843,6 +2864,28 @@ body.ae-resizing-sidebar * {
 }
 .ae-tool-card[data-error="true"] {
   border-color: color-mix(in oklab, var(--danger, #c5494a) 50%, var(--border));
+}
+
+.ae-tool-card-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.ae-tool-card-summary::marker {
+  color: var(--text-dim);
+}
+
+.ae-tool-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 8px 10px 10px;
+  min-width: 0;
 }
 
 .ae-tool-card-title {
@@ -2875,6 +2918,12 @@ body.ae-resizing-sidebar * {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ae-tool-card-empty {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  font-style: italic;
 }
 
 /* =============================================================================

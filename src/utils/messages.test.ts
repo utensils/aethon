@@ -109,6 +109,15 @@ describe("coerceChatMessages", () => {
     expect(out[0].a2ui).toBeDefined();
   });
 
+  it("preserves thinking-only messages", () => {
+    const out = coerceChatMessages([
+      { id: "t1", role: "agent", thinking: "working it out" },
+    ]);
+    expect(out).toEqual([
+      { id: "t1", role: "agent", thinking: "working it out" },
+    ]);
+  });
+
   it("rejects unknown roles", () => {
     expect(coerceChatMessages([{ role: "supervisor", text: "x" }])).toEqual([]);
   });
