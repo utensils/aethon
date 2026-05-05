@@ -131,6 +131,7 @@ export function unloadProjectExtensions(
     if (info.source === "project-directory") state.loadFailures.delete(name);
   }
   state.loadedProjectExtensionFiles.clear();
+  state.failedProjectExtensionFiles.clear();
 
   state.extensionComponents.clear();
   for (const [k, v] of state.projectBaseline.components) {
@@ -542,6 +543,7 @@ export async function runDispatcher(
         extensionApi,
         state.loadedExtensions,
         state.loadedProjectExtensionFiles,
+        state.failedProjectExtensionFiles,
         deps.loadHooks,
       );
       state.currentProjectCwd = cwdOverride;
@@ -630,6 +632,7 @@ export async function runDispatcher(
       extensionApi,
       state.loadedExtensions,
       state.loadedProjectExtensionFiles,
+      state.failedProjectExtensionFiles,
       deps.loadHooks,
     );
     if (loadingNoticeTimer !== null) {

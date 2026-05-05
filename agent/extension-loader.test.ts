@@ -11,6 +11,7 @@ import {
 import {
   RESERVED_THEME_IDS,
   discoverPersistedTabs,
+  loadAethonExtensionDirectory,
   loadAethonExtensions,
   normalizeTheme,
   projectExtensionDisplayName,
@@ -144,12 +145,12 @@ describe("loadAethonExtensions", () => {
       );
       const f = makeFixture(root);
       let seen: { type: string; template: unknown } | null = null;
-      const api: AethonExtensionApi = {
-        registerComponent(componentType, template) {
+      const api = {
+        registerComponent(componentType: string, template: unknown) {
           seen = { type: componentType, template };
         },
         setState() {},
-      };
+      } as unknown as AethonExtensionApi;
       const registry = new Map<string, ExtensionSource>();
       await loadAethonExtensions(f.state, f.deps, api, registry);
       expect(seen).toEqual({ type: "hello", template: { type: "card" } });
@@ -170,10 +171,10 @@ describe("loadAethonExtensions", () => {
       mkdirSync(extDir, { recursive: true });
       writeFileSync(join(extDir, "noop.mjs"), `export const x = 1;`);
       const f = makeFixture(root);
-      const api: AethonExtensionApi = {
+      const api = {
         registerComponent() {},
         setState() {},
-      };
+      } as unknown as AethonExtensionApi;
       const registry = new Map<string, ExtensionSource>();
       const failures: { name: string; status: string }[] = [];
       await loadAethonExtensions(f.state, f.deps, api, registry, {
@@ -201,18 +202,61 @@ describe("loadAethonExtensions", () => {
       );
       const f = makeFixture(root);
       let observedDuringRegister: string | null = "<unset>";
-      const api: AethonExtensionApi = {
+      const api = {
         registerComponent() {
           observedDuringRegister = f.state.currentExtensionName;
         },
         setState() {},
-      };
+      } as unknown as AethonExtensionApi;
       const registry = new Map<string, ExtensionSource>();
       await loadAethonExtensions(f.state, f.deps, api, registry);
       // While register() ran, currentExtensionName was the displayName.
       expect(observedDuringRegister).toMatch(/^stamp-/);
       // After load, it's restored to null.
       expect(f.state.currentExtensionName).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not retry a failed extension file on the next load pass", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-ext-"));
+    try {
+      const extDir = join(root, "extensions");
+      mkdirSync(extDir, { recursive: true });
+      // Throws synchronously inside register() — counts as a "failed" load.
+      writeFileSync(
+        join(extDir, "boom.mjs"),
+        `export function register() { throw new Error("boom"); }`,
+      );
+      const f = makeFixture(root);
+      const api = {
+        registerComponent() {},
+        setState() {},
+      } as unknown as AethonExtensionApi;
+      const registry = new Map<string, ExtensionSource>();
+      const loadedFiles = new Set<string>();
+      const failedFiles = new Set<string>();
+      const opts = {
+        dir: extDir,
+        source: "project-directory" as const,
+        logPrefix: "test",
+        loadedFiles,
+        failedFiles,
+      };
+      await loadAethonExtensionDirectory(f.state, f.deps, api, registry, opts);
+      const failuresAfterFirst = f.sent.filter(
+        (m) => m.type === "extension_lifecycle" && m.status === "failed",
+      ).length;
+      expect(failuresAfterFirst).toBe(1);
+      expect(failedFiles.size).toBe(1);
+      // Second pass: file is in failedFiles, so it's skipped — no new
+      // extension_lifecycle event, no log spam.
+      await loadAethonExtensionDirectory(f.state, f.deps, api, registry, opts);
+      const failuresAfterSecond = f.sent.filter(
+        (m) => m.type === "extension_lifecycle" && m.status === "failed",
+      ).length;
+      expect(failuresAfterSecond).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

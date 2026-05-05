@@ -104,6 +104,10 @@ interface LoadDirectoryOptions {
   logPrefix: string;
   displayName?: (fileName: string) => string;
   loadedFiles?: Set<string>;
+  /** Files we previously tried to import that errored. Skipped on retry
+   *  to keep the warn-loop quiet; the failure is already in
+   *  `state.loadFailures` and surfaced via `extension_lifecycle`. */
+  failedFiles?: Set<string>;
   onLoaded?: (name: string) => void;
   onFailure?: (failure: {
     name: string;
@@ -142,7 +146,11 @@ export async function loadAethonExtensionDirectory(
       displayName:
         options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, ""),
     }))
-    .filter((c) => !options.loadedFiles?.has(c.file));
+    .filter(
+      (c) =>
+        !options.loadedFiles?.has(c.file) &&
+        !options.failedFiles?.has(c.file),
+    );
 
   const imports = await Promise.allSettled(
     candidates.map(
@@ -164,6 +172,7 @@ export async function loadAethonExtensionDirectory(
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
         log.warn(`${name}: no register() export, skipping`);
+        options.failedFiles?.add(file);
         deps.send({
           type: "extension_lifecycle",
           name: displayName,
@@ -209,6 +218,7 @@ export async function loadAethonExtensionDirectory(
     } catch (err) {
       const message = (err as Error).message;
       log.warn(`${name}: ${message}`);
+      options.failedFiles?.add(file);
       deps.send({
         type: "extension_lifecycle",
         name: displayName,
@@ -251,6 +261,7 @@ export async function loadProjectAethonExtensions(
   api: AethonExtensionApi,
   registry: Map<string, ExtensionSource>,
   loadedFiles: Set<string>,
+  failedFiles: Set<string>,
   hooks?: LoadHooks,
 ): Promise<{ loaded: number; failed: number }> {
   const dirs = await findProjectExtensionDirs(cwd);
@@ -277,6 +288,7 @@ export async function loadProjectAethonExtensions(
       source: "project-directory",
       logPrefix: "aethon-project-ext",
       loadedFiles,
+      failedFiles,
       displayName: (name) =>
         projectExtensionDisplayName(projectRoot, extensionDir, name),
       onLoaded: wrappedHooks.onLoaded,

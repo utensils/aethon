@@ -42,7 +42,12 @@ import {
   setLayout,
   unregisterLayout,
 } from "./layout-manager";
-import { makeCanvasApi, setState } from "./state-mutation";
+import {
+  EXT_STATE_LOG_WINDOW_MS,
+  makeCanvasApi,
+  setState,
+} from "./state-mutation";
+import { makeExtStateLogLimiter } from "./state-limits";
 import { normalizeTheme, RESERVED_THEME_IDS } from "./extension-loader";
 import type { CanvasApi } from "./canvas";
 import type { RuntimeSnapshot } from "./system-prompt";
@@ -141,7 +146,15 @@ export function buildAethonApi(
   state: AethonAgentState,
   deps: AethonApiDeps,
 ): AethonApi {
-  const stateMutationDeps = { send: deps.send };
+  // One shared rate limiter for setState size-guard logging + the
+  // `extension_runtime_error` notice. Without sharing, every setState
+  // call would spin up a fresh limiter that always logs the first
+  // invocation — defeating dedup and re-popping the "extension is
+  // misbehaving" toast on every rejected write.
+  const stateMutationDeps = {
+    send: deps.send,
+    extStateLogLimiter: makeExtStateLogLimiter(EXT_STATE_LOG_WINDOW_MS),
+  };
   const layoutDeps = {
     send: deps.send,
     scheduleStateFileWrite: deps.scheduleStateFileWrite,

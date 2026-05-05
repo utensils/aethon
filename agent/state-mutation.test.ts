@@ -114,6 +114,31 @@ describe("setState", () => {
     ).toEqual(big);
   });
 
+  it("emits extension_runtime_error once per (ext+kind+path), regardless of log-limiter decision", async () => {
+    // The user-facing event is gated by state.notifiedExtRuntimeErrors,
+    // not the log limiter. Even with a permissive limiter, only the
+    // first rejection per key surfaces a notification.
+    const f = makeFixture();
+    f.state.currentExtensionName = "loopy-ext";
+    const huge = "x".repeat(200 * 1024);
+    await setState(f.state, f.deps, "/blob", huge);
+    await setState(f.state, f.deps, "/blob", huge);
+    await setState(f.state, f.deps, "/blob", huge);
+    const errs = f.sent.filter((m) => m.type === "extension_runtime_error");
+    expect(errs.length).toBe(1);
+  });
+
+  it("re-notifies after a successful setState clears the sticky flag", async () => {
+    const f = makeFixture();
+    f.state.currentExtensionName = "flaky-ext";
+    const huge = "x".repeat(200 * 1024);
+    await setState(f.state, f.deps, "/blob", huge);
+    await setState(f.state, f.deps, "/blob", "ok"); // recovers
+    await setState(f.state, f.deps, "/blob", huge); // breaks again
+    const errs = f.sent.filter((m) => m.type === "extension_runtime_error");
+    expect(errs.length).toBe(2);
+  });
+
   it("records currentExtensionName as path owner for later async writes", async () => {
     const f = makeFixture();
     f.state.currentExtensionName = "my-ext";
