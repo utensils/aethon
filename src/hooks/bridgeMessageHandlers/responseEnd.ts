@@ -1,8 +1,10 @@
 import type { BridgeMessageHandler } from "./types";
+import { flushResponseDeltas } from "./responseDelta";
 
 export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
   ctx.activeResponseIdRef.current = null;
   const tabId = (data.tabId as string | undefined) ?? "default";
+  flushResponseDeltas(tabId);
   // Only clear waiting when the queue is actually empty. If pi has a
   // followUp queued, it will fire agent_start → prompt_started
   // immediately after this and re-flip waiting; clearing here would

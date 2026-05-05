@@ -208,6 +208,27 @@ export function useBootConfig(
           return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
         });
       }
+      // Restore saved terminal panel height. The panel itself reads from
+      // /terminalPanel/height, so this survives layout rerenders without
+      // replacing the active layout payload.
+      const savedTerminalHeight = (
+        await readStateWithLocalStorageFallback("terminal_height", "")
+      ).trim();
+      const terminalHeight = parseInt(savedTerminalHeight, 10);
+      if (
+        Number.isFinite(terminalHeight) &&
+        terminalHeight >= 120 &&
+        terminalHeight <= 720
+      ) {
+        setState((prev) => {
+          const panel =
+            (prev.terminalPanel as Record<string, unknown> | undefined) ?? {};
+          return {
+            ...prev,
+            terminalPanel: { ...panel, height: terminalHeight },
+          };
+        });
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

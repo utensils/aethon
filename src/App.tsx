@@ -27,6 +27,7 @@ import { useProjectOps } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import type { SlashCommandContext } from "./slashCommands";
 import { writeState } from "./persist";
+import { createAppStore, useAppState } from "./state/appStore";
 import {
   activeProject,
   emptyProjectsState,
@@ -71,7 +72,7 @@ export default function App() {
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
   // Initial state also seeds one default tab + the active-tab mirror keys.
-  const [state, setState] = useState<Record<string, unknown>>(() => {
+  const appStore = useMemo(() => createAppStore((() => {
     const tab0 = makeEmptyTab("default", "Tab 1");
     return {
       ...(BOOT_LAYOUT.state ?? {}),
@@ -105,7 +106,9 @@ export default function App() {
         ],
       },
     };
-  });
+  })()), []);
+  const state = useAppState(appStore, (s) => s);
+  const setState = appStore.setState;
 
   // Active layout payload — replaceable. Skills can swap the chrome wholesale
   // by calling window.aethon.setLayout(payload), or register a new skill via
@@ -116,10 +119,13 @@ export default function App() {
   // `window.__AETHON_STATE__()` without going through React's state
   // lifecycle. Synced in commit phase — handlers see the latest state
   // because they only dereference after the next render commits.
-  const stateRef = useRef(state);
+  const stateRef = useRef(appStore.getState());
   useEffect(() => {
-    stateRef.current = state;
-  });
+    stateRef.current = appStore.getState();
+    return appStore.subscribe(() => {
+      stateRef.current = appStore.getState();
+    });
+  }, [appStore]);
 
   // ---------------------------------------------------------------------
   // App-owned shared refs — owned here (rather than inside their primary
@@ -798,6 +804,18 @@ export default function App() {
       },
     };
   }, [buildSidebarHistory, state]);
+  const renderRecord = renderState as Record<string, unknown>;
+  const notificationsOpen =
+    ((renderRecord.notifications as unknown[] | undefined) ?? []).length > 0;
+  const paletteOpen = Boolean(
+    (renderRecord.palette as { open?: boolean } | undefined)?.open,
+  );
+  const settingsOpen = Boolean(
+    (renderRecord.settings as { open?: boolean } | undefined)?.open,
+  );
+  const searchOpen = Boolean(
+    (renderRecord.search as { open?: boolean } | undefined)?.open,
+  );
 
   return (
     <SkillRegistryProvider registry={registry}>
@@ -815,30 +833,38 @@ export default function App() {
             /open), so the renderers stay mounted but render null when
             closed. tabId is forwarded so extension override templates
             route their bridge events against the active pi session. */}
-        <RegistryComponent
-          type="notification-stack"
-          state={renderState}
-          onEvent={onEvent}
-          tabId={state.activeTabId as string | undefined}
-        />
-        <RegistryComponent
-          type="command-palette"
-          state={renderState}
-          onEvent={onEvent}
-          tabId={state.activeTabId as string | undefined}
-        />
-        <RegistryComponent
-          type="settings-panel"
-          state={renderState}
-          onEvent={onEvent}
-          tabId={state.activeTabId as string | undefined}
-        />
-        <RegistryComponent
-          type="search-panel"
-          state={renderState}
-          onEvent={onEvent}
-          tabId={state.activeTabId as string | undefined}
-        />
+        {notificationsOpen && (
+          <RegistryComponent
+            type="notification-stack"
+            state={renderState}
+            onEvent={onEvent}
+            tabId={state.activeTabId as string | undefined}
+          />
+        )}
+        {paletteOpen && (
+          <RegistryComponent
+            type="command-palette"
+            state={renderState}
+            onEvent={onEvent}
+            tabId={state.activeTabId as string | undefined}
+          />
+        )}
+        {settingsOpen && (
+          <RegistryComponent
+            type="settings-panel"
+            state={renderState}
+            onEvent={onEvent}
+            tabId={state.activeTabId as string | undefined}
+          />
+        )}
+        {searchOpen && (
+          <RegistryComponent
+            type="search-panel"
+            state={renderState}
+            onEvent={onEvent}
+            tabId={state.activeTabId as string | undefined}
+          />
+        )}
       </div>
     </SkillRegistryProvider>
   );

@@ -13,7 +13,7 @@
  * per-sub-tab scrollback isolation is automatic.
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type {
   BooleanValue,
   NumberValue,
@@ -24,6 +24,9 @@ import { Terminal } from "../terminal";
 import { ShellCanvas } from "./canvas";
 
 const AGENT_BASH_SUB_ID = "agent-bash";
+const TERMINAL_PANEL_DEFAULT_HEIGHT = 240;
+const TERMINAL_PANEL_MIN_HEIGHT = 120;
+const TERMINAL_PANEL_MAX_HEIGHT = 720;
 
 interface ShellSubTabItem {
   id: string;
@@ -63,8 +66,17 @@ export function TerminalPanel({
   // persists across renders and can be addressed via $ref. Defaults to
   // "agent-bash" — the read-only view is always present.
   const panelState =
-    (state["terminalPanel"] as { activeSubId?: string } | undefined) ?? {};
+    (state["terminalPanel"] as { activeSubId?: string; height?: number } | undefined) ?? {};
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const height =
+    typeof panelState.height === "number" &&
+    Number.isFinite(panelState.height)
+      ? Math.max(
+          TERMINAL_PANEL_MIN_HEIGHT,
+          Math.min(TERMINAL_PANEL_MAX_HEIGHT, Math.round(panelState.height)),
+        )
+      : TERMINAL_PANEL_DEFAULT_HEIGHT;
   // Clamp to a valid sub-tab id. If the requested id no longer exists
   // (e.g. user closed a shell that was active), fall back to agent-bash
   // so we always render something.
@@ -77,8 +89,44 @@ export function TerminalPanel({
 
   if (!visible) return null;
 
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const panel = panelRef.current;
+    if (!panel) return;
+    const startY = e.clientY;
+    const startHeight = panel.getBoundingClientRect().height;
+    document.body.classList.add("ae-resizing-terminal");
+    const onMove = (ev: MouseEvent) => {
+      const dy = startY - ev.clientY;
+      const next = Math.max(
+        TERMINAL_PANEL_MIN_HEIGHT,
+        Math.min(TERMINAL_PANEL_MAX_HEIGHT, Math.round(startHeight + dy)),
+      );
+      onEvent("resize", { height: next });
+    };
+    const onUp = () => {
+      document.body.classList.remove("ae-resizing-terminal");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      onEvent("resize-end");
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   return (
-    <div className="ae-terminal-panel" style={{ gridArea: "terminal" }}>
+    <div
+      ref={panelRef}
+      className="ae-terminal-panel"
+      style={{ gridArea: "terminal", height }}
+    >
+      <div
+        className="ae-terminal-panel-resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize terminal panel"
+        onMouseDown={onResizeStart}
+      />
       <div className="ae-terminal-panel-tabs" role="tablist">
         <SubTabPill
           id={AGENT_BASH_SUB_ID}

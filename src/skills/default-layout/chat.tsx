@@ -5,7 +5,7 @@
  * that pairs message history with a live-rendered A2UI subtree.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import type {
@@ -43,6 +43,9 @@ import { readUiScale } from "./layout";
 // ---------------------------------------------------------------------------
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
+const DRAFT_COMMIT_DELAY_MS = 80;
+const INITIAL_VISIBLE_MESSAGES = 160;
+const MESSAGE_PAGE_SIZE = 120;
 
 // eslint-disable-next-line react-refresh/only-export-components -- exported for vitest unit tests; doesn't affect HMR semantics in practice
 export function formatToolDuration(ms: number): string {
@@ -226,6 +229,58 @@ function MarkdownWithThinking({ text }: { text: string }) {
   );
 }
 
+const MemoMarkdownWithThinking = memo(MarkdownWithThinking);
+
+const ChatMessageRow = memo(
+  function ChatMessageRow({
+    message,
+    state,
+    tabId,
+    className = "a2ui-chat-message",
+  }: {
+    message: ChatMessage;
+    state: Record<string, unknown>;
+    tabId?: string;
+    className?: string;
+  }) {
+    return (
+      <div className={`${className} ${message.role}`}>
+        <span className={className === "a2ui-canvas-message" ? "a2ui-canvas-role" : "a2ui-chat-role"}>
+          {roleBadge(message.role)}
+        </span>
+        {message.thinking && (
+          <ThinkingBlock complete={Boolean(message.text)}>
+            {message.thinking}
+          </ThinkingBlock>
+        )}
+        {message.text && (
+          <div
+            className={
+              className === "a2ui-canvas-message"
+                ? "a2ui-canvas-text a2ui-markdown"
+                : "a2ui-chat-text a2ui-markdown"
+            }
+          >
+            {className === "a2ui-canvas-message" ? (
+              <ReactMarkdown>{message.text}</ReactMarkdown>
+            ) : (
+              <MemoMarkdownWithThinking text={message.text} />
+            )}
+          </div>
+        )}
+        {message.a2ui && (
+          <A2UIRenderer payload={message.a2ui} state={state} tabId={tabId} />
+        )}
+      </div>
+    );
+  },
+  (prev, next) =>
+    prev.message === next.message &&
+    prev.tabId === next.tabId &&
+    prev.className === next.className &&
+    (!next.message.a2ui || prev.state === next.state),
+);
+
 export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) {
   const props = component.props as {
     messages: { $ref: string };
@@ -235,7 +290,16 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
   const listRef = useRef<HTMLDivElement>(null);
   const { isAtBottom, scrollToBottom, handleContentChanged } = useStickyScroll(listRef);
 
-  const messages = (resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [];
+  const messages = useMemo(
+    () => (resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [],
+    [props.messages.$ref, state],
+  );
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_MESSAGES);
+  const visibleMessages = useMemo(
+    () => messages.slice(Math.max(0, messages.length - visibleCount)),
+    [messages, visibleCount],
+  );
+  const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
   const emptyHint = props.emptyHint
     ? resolveString(props.emptyHint, state)
     : "Start a conversation.";
@@ -257,11 +321,30 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
       (m.text ?? "").toLowerCase().includes(needle),
     );
     if (idx >= 0) {
-      const row = el.querySelectorAll(".a2ui-chat-message")[idx];
-      if (row instanceof HTMLElement) {
-        row.scrollIntoView({ block: "center", behavior: "auto" });
-        row.classList.add("a2ui-chat-message-flash");
-        window.setTimeout(() => row.classList.remove("a2ui-chat-message-flash"), 1200);
+      const start = Math.max(0, messages.length - visibleCount);
+      if (idx < start) {
+        window.setTimeout(() => {
+          setVisibleCount(messages.length - idx);
+          const row = el.querySelectorAll(".a2ui-chat-message")[0];
+          if (row instanceof HTMLElement) {
+            row.scrollIntoView({ block: "center", behavior: "auto" });
+            row.classList.add("a2ui-chat-message-flash");
+            window.setTimeout(
+              () => row.classList.remove("a2ui-chat-message-flash"),
+              1200,
+            );
+          }
+        }, 0);
+      } else {
+        const row = el.querySelectorAll(".a2ui-chat-message")[idx - start];
+        if (row instanceof HTMLElement) {
+          row.scrollIntoView({ block: "center", behavior: "auto" });
+          row.classList.add("a2ui-chat-message-flash");
+          window.setTimeout(
+            () => row.classList.remove("a2ui-chat-message-flash"),
+            1200,
+          );
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -277,29 +360,36 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
     }
   }, [messages.length, handleContentChanged]);
 
+  useEffect(() => {
+    if (messages.length < visibleCount) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVisibleCount(INITIAL_VISIBLE_MESSAGES);
+    }
+  }, [messages.length, visibleCount]);
+
   return (
     <div className="a2ui-chat-history" ref={listRef}>
       {messages.length === 0 ? (
         <div className="a2ui-chat-empty">{emptyHint}</div>
       ) : (
-        messages.map((m) => (
-          <div key={m.id} className={`a2ui-chat-message ${m.role}`}>
-            <span className="a2ui-chat-role">{roleBadge(m.role)}</span>
-            {m.thinking && (
-              <ThinkingBlock complete={Boolean(m.text)}>
-                {m.thinking}
-              </ThinkingBlock>
-            )}
-            {m.text && (
-              <div className="a2ui-chat-text a2ui-markdown">
-                <MarkdownWithThinking text={m.text} />
-              </div>
-            )}
-            {/* tabId forwards so clicks inside the embedded card route
-                back to the originating tab's pi session. */}
-            {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} tabId={tabId} />}
-          </div>
-        ))
+        <>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="a2ui-chat-load-older"
+              onClick={() =>
+                setVisibleCount((n) =>
+                  Math.min(messages.length, n + MESSAGE_PAGE_SIZE),
+                )
+              }
+            >
+              Load older messages ({hiddenCount})
+            </button>
+          )}
+          {visibleMessages.map((m) => (
+            <ChatMessageRow key={m.id} message={m} state={state} tabId={tabId} />
+          ))}
+        </>
       )}
       <ScrollToBottomPill visible={!isAtBottom && messages.length > 0} onClick={scrollToBottom} />
     </div>
@@ -326,9 +416,19 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
   // messages bound, the canvas is a pure scroll viewport — no chat
   // empty-state, no message list, no "↓ latest" pill bleeding through.
   const chatMode = props.messages !== undefined;
-  const messages = chatMode
-    ? ((resolvePointer(state, props.messages!.$ref) as ChatMessage[]) || [])
-    : [];
+  const messages = useMemo(
+    () =>
+      chatMode
+        ? (resolvePointer(state, props.messages!.$ref) as ChatMessage[]) || []
+        : [],
+    [chatMode, props.messages, state],
+  );
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_MESSAGES);
+  const visibleMessages = useMemo(
+    () => messages.slice(Math.max(0, messages.length - visibleCount)),
+    [messages, visibleCount],
+  );
+  const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
   const liveSubtree =
@@ -353,6 +453,13 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
     if (lengthChanged || liveChanged) handleContentChanged();
   }, [messages.length, liveSubtree, handleContentChanged]);
 
+  useEffect(() => {
+    if (messages.length < visibleCount) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVisibleCount(INITIAL_VISIBLE_MESSAGES);
+    }
+  }, [messages.length, visibleCount]);
+
   return (
     <main
       className={
@@ -363,16 +470,25 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
       {chatMode && messages.length === 0 && !liveSubtree && (
         <div className="a2ui-canvas-empty">{emptyHint}</div>
       )}
-      {messages.map((m) => (
-        <div key={m.id} className={`a2ui-canvas-message ${m.role}`}>
-          <span className="a2ui-canvas-role">{roleBadge(m.role)}</span>
-          {m.text && (
-            <div className="a2ui-canvas-text a2ui-markdown">
-              <ReactMarkdown>{m.text}</ReactMarkdown>
-            </div>
-          )}
-          {m.a2ui && <A2UIRenderer payload={m.a2ui} state={state} tabId={tabId} />}
-        </div>
+      {chatMode && hiddenCount > 0 && (
+        <button
+          type="button"
+          className="a2ui-chat-load-older"
+          onClick={() =>
+            setVisibleCount((n) => Math.min(messages.length, n + MESSAGE_PAGE_SIZE))
+          }
+        >
+          Load older messages ({hiddenCount})
+        </button>
+      )}
+      {visibleMessages.map((m) => (
+        <ChatMessageRow
+          key={m.id}
+          message={m}
+          state={state}
+          tabId={tabId}
+          className="a2ui-canvas-message"
+        />
       ))}
       {liveSubtree && (
         <div className="a2ui-canvas-live">
@@ -475,7 +591,66 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     queueBadgeFormat?: StringValue;
   };
 
-  const value = props.value ? resolveString(props.value, state) : "";
+  const externalValue = props.value ? resolveString(props.value, state) : "";
+  const [localValue, setLocalValue] = useState(externalValue);
+  const localValueRef = useRef(localValue);
+  const lastExternalValueRef = useRef(externalValue);
+  const draftTimerRef = useRef<number | null>(null);
+  const lastCommittedDraftRef = useRef(externalValue);
+  const onEventRef = useRef(onEvent);
+
+  useEffect(() => {
+    localValueRef.current = localValue;
+  }, [localValue]);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
+  useEffect(() => {
+    if (externalValue === lastExternalValueRef.current) return;
+    lastExternalValueRef.current = externalValue;
+    lastCommittedDraftRef.current = externalValue;
+    if (draftTimerRef.current !== null) {
+      window.clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    setLocalValue(externalValue);
+  }, [externalValue]);
+
+  const commitDraft = (next: string) => {
+    if (draftTimerRef.current !== null) {
+      window.clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    if (next === lastCommittedDraftRef.current) return;
+    lastCommittedDraftRef.current = next;
+    onEventRef.current("change", { value: next });
+  };
+
+  const scheduleDraftCommit = () => {
+    if (draftTimerRef.current !== null) {
+      window.clearTimeout(draftTimerRef.current);
+    }
+    draftTimerRef.current = window.setTimeout(() => {
+      draftTimerRef.current = null;
+      commitDraft(localValueRef.current);
+    }, DRAFT_COMMIT_DELAY_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (draftTimerRef.current !== null) {
+        window.clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
+      const latest = localValueRef.current;
+      if (latest !== lastCommittedDraftRef.current) {
+        onEventRef.current("change", { value: latest });
+      }
+    };
+  }, []);
+
+  const value = localValue;
   const placeholder = props.placeholder
     ? resolveString(props.placeholder, state)
     : "";
@@ -625,11 +800,14 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   const insertMatch = (m: PickerMatch) => {
     const text =
       m.kind === "command" ? `/${m.cmd.name} ` : `/${m.cmd.name} ${m.choice.value}`;
-    onEvent("change", { value: text });
+    setLocalValue(text);
+    commitDraft(text);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onEvent("change", { value: e.target.value });
+    const next = e.target.value;
+    setLocalValue(next);
+    scheduleDraftCommit();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -671,7 +849,8 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         if (slashMatch.mode === "arg") {
           const choice = (list[highlightIdx] ?? list[0]) as ArgMatch;
           const submitText = `/${choice.cmd.name} ${choice.choice.value}`;
-          onEvent("change", { value: submitText });
+          setLocalValue(submitText);
+          commitDraft(submitText);
           onEvent("submit", { value: submitText });
           return;
         }
@@ -693,6 +872,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         // Always submit — the bridge uses pi's followUp queue when an
         // earlier prompt is still in flight, so the user can keep
         // typing without "agent busy" rejections.
+        commitDraft(v);
         onEvent("submit", { value: v });
       }
     }
@@ -700,6 +880,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
 
   const handleClick = () => {
     if (value.trim().length > 0) {
+      commitDraft(value);
       onEvent("submit", { value });
     }
   };
@@ -749,7 +930,8 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
                     e.preventDefault();
                     if (m.kind === "arg") {
                       const submitText = `/${m.cmd.name} ${m.choice.value}`;
-                      onEvent("change", { value: submitText });
+                      setLocalValue(submitText);
+                      commitDraft(submitText);
                       onEvent("submit", { value: submitText });
                     } else {
                       insertMatch(m);
