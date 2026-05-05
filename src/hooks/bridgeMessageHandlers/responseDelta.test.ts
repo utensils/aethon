@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleResponseDelta } from "./responseDelta";
+import { flushResponseDeltas, handleResponseDelta } from "./responseDelta";
 import { buildHandlerFixture } from "./testFixtures";
 
 describe("handleResponseDelta", () => {
@@ -14,6 +14,7 @@ describe("handleResponseDelta", () => {
       },
       ctx,
     );
+    flushResponseDeltas("tab-2");
     expect(mocks.appendOrAmendAgentText).toHaveBeenCalledWith(
       "hello",
       "msg-1",
@@ -34,6 +35,7 @@ describe("handleResponseDelta", () => {
       { type: "response_delta", content: "x" },
       ctx,
     );
+    flushResponseDeltas("default");
     expect(mocks.appendOrAmendAgentText).toHaveBeenCalledWith(
       "x",
       undefined,
@@ -53,11 +55,34 @@ describe("handleResponseDelta", () => {
       },
       ctx,
     );
+    flushResponseDeltas("default");
     expect(mocks.appendOrAmendAgentText).toHaveBeenCalledWith(
       "plan",
       "msg-1",
       "default",
       "thinking",
+    );
+  });
+
+  it("coalesces adjacent deltas for the same message before flushing", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleResponseDelta(
+      { type: "response_delta", content: "hel", messageId: "msg-1" },
+      ctx,
+    );
+    handleResponseDelta(
+      { type: "response_delta", content: "lo", messageId: "msg-1" },
+      ctx,
+    );
+    expect(mocks.appendOrAmendAgentText).not.toHaveBeenCalled();
+
+    flushResponseDeltas("default");
+    expect(mocks.appendOrAmendAgentText).toHaveBeenCalledTimes(1);
+    expect(mocks.appendOrAmendAgentText).toHaveBeenCalledWith(
+      "hello",
+      "msg-1",
+      "default",
+      "text",
     );
   });
 });

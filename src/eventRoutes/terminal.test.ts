@@ -56,6 +56,48 @@ describe("handleTerminalPanel", () => {
     );
     expect(mocks.newShellTab).toHaveBeenCalledTimes(1);
   });
+
+  it("resize stores the terminal panel height in state", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { terminalPanel: { activeSubId: "agent-bash" } },
+    });
+    const handled = await handleTerminalPanel(
+      {
+        component: { id: "tp", type: "terminal-panel" },
+        eventType: "resize",
+        data: { height: 360 },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    const next = applySetState();
+    expect((next.terminalPanel as { height?: number }).height).toBe(360);
+  });
+
+  it("resize clamps height and resize-end persists the current value", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: { terminalPanel: { height: 240 } },
+    });
+    await handleTerminalPanel(
+      {
+        component: { id: "tp", type: "terminal-panel" },
+        eventType: "resize",
+        data: { height: 9999 },
+      },
+      ctx,
+    );
+    const next = applySetState();
+    expect((next.terminalPanel as { height?: number }).height).toBe(720);
+
+    await handleTerminalPanel(
+      {
+        component: { id: "tp", type: "terminal-panel" },
+        eventType: "resize-end",
+      },
+      ctx,
+    );
+    expect(mocks.writeState).toHaveBeenCalledWith("terminal_height", "720");
+  });
 });
 
 describe("handleShareModeCycle", () => {

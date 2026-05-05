@@ -2,6 +2,17 @@ import type { EventRouteHandler } from "./types";
 import { cycleShareMode } from "../utils/shareMode";
 import type { Tab } from "../types/tab";
 
+const TERMINAL_PANEL_MIN_HEIGHT = 120;
+const TERMINAL_PANEL_MAX_HEIGHT = 720;
+
+function clampTerminalHeight(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(
+    TERMINAL_PANEL_MIN_HEIGHT,
+    Math.min(TERMINAL_PANEL_MAX_HEIGHT, Math.round(value)),
+  );
+}
+
 /** terminal-panel: the bottom panel hosting the read-only agent-bash
  *  sub-tab plus every shell as a sub-tab. Sub-tab select / close /
  *  new-shell live here. The agent-bash sub-tab can't be closed (no X
@@ -24,6 +35,36 @@ export const handleTerminalPanel: EventRouteHandler = (
   }
   if (eventType === "new-shell-sub-tab") {
     ctx.newShellTab();
+    return true;
+  }
+  if (eventType === "resize") {
+    const next = clampTerminalHeight(
+      (data as { height?: unknown } | undefined)?.height,
+    );
+    if (next !== null) {
+      ctx.setState((prev) => {
+        const panel =
+          (prev.terminalPanel as Record<string, unknown> | undefined) ?? {};
+        if (panel.height === next) return prev;
+        return {
+          ...prev,
+          terminalPanel: { ...panel, height: next },
+        };
+      });
+    }
+    return true;
+  }
+  if (eventType === "resize-end") {
+    const panel =
+      (ctx.stateRef.current.terminalPanel as
+        | Record<string, unknown>
+        | undefined) ?? {};
+    const height = clampTerminalHeight(panel.height);
+    if (height !== null) {
+      ctx.writeState("terminal_height", String(height)).catch(() => {
+        /* ignore — best-effort */
+      });
+    }
     return true;
   }
   return false;

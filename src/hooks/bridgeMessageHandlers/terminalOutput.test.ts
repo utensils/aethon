@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { handleTerminalOutput } from "./terminalOutput";
+import { flushTerminalOutput, handleTerminalOutput } from "./terminalOutput";
 import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
 
@@ -25,6 +25,7 @@ describe("handleTerminalOutput", () => {
       window.removeEventListener("aethon:terminal-tap", onTap);
       window.removeEventListener("aethon:terminal", onLive);
     }
+    flushTerminalOutput(tabId);
     const [, updater] = mocks.updateTab.mock.calls[0];
     const seed = { ...makeEmptyTab(tabId, "Tab 1"), terminalBuffer: "" };
     expect(updater(seed).terminalBuffer).toBe("abc");
@@ -41,5 +42,29 @@ describe("handleTerminalOutput", () => {
     handleTerminalOutput({ type: "terminal_output", content: "" }, ctx);
     expect(mocks.updateTab).not.toHaveBeenCalled();
     expect(mocks.setState).not.toHaveBeenCalled();
+  });
+
+  it("coalesces scrollback mirror writes while preserving live events", () => {
+    const tabId = "default";
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: tabId, terminal: { buffer: {} } },
+    });
+    const live: string[] = [];
+    const onLive = (e: Event) => live.push((e as CustomEvent).detail);
+    window.addEventListener("aethon:terminal", onLive);
+    try {
+      handleTerminalOutput({ type: "terminal_output", content: "a", tabId }, ctx);
+      handleTerminalOutput({ type: "terminal_output", content: "b", tabId }, ctx);
+    } finally {
+      window.removeEventListener("aethon:terminal", onLive);
+    }
+    expect(live).toEqual(["a", "b"]);
+    expect(mocks.updateTab).not.toHaveBeenCalled();
+
+    flushTerminalOutput(tabId);
+    expect(mocks.updateTab).toHaveBeenCalledTimes(1);
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const seed = { ...makeEmptyTab(tabId, "Tab 1"), terminalBuffer: "" };
+    expect(updater(seed).terminalBuffer).toBe("ab");
   });
 });
