@@ -74,6 +74,10 @@ export interface RuntimeSnapshot {
   // extensions) are NOT included here — they're in the frontend's static
   // catalog; this is the extension delta only.
   slashCommands: { name: string; description: string; usage?: string }[];
+  // Pi skills discovered under ~/.pi/agent/skills. The frontend surfaces
+  // these as passthrough slash-command completions; execution is still
+  // handled by pi's normal skill routing.
+  piSkills?: { name: string; description: string; usage?: string }[];
   // Extension-registered keyboard shortcuts (combo + action + optional
   // description). Built-ins (Cmd+T / Cmd+] / Cmd+[ / Cmd+W / Cmd+`) are
   // NOT included here — they're hardcoded in the frontend; this is the
@@ -423,6 +427,15 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     for (const c of snapshot.slashCommands) {
       const usage = c.usage ? ` ${c.usage}` : "";
       lines.push(`- \`/${c.name}${usage}\` — ${c.description || "(no description)"}`);
+    }
+  }
+
+  if ((snapshot.piSkills ?? []).length > 0) {
+    lines.push("");
+    lines.push("Available pi skills surfaced as slash commands:");
+    for (const s of snapshot.piSkills ?? []) {
+      const usage = s.usage ? ` ${s.usage}` : "";
+      lines.push(`- \`/${s.name}${usage}\` — ${s.description || "(no description)"}`);
     }
   }
 

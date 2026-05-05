@@ -213,7 +213,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const parsed = parseSlashCommand(trimmed);
     if (parsed) {
       const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
-      if (cmd) {
+      if (cmd && !cmd.passthroughToAgent) {
         const slashTabId =
           (stateRef.current.activeTabId as string | undefined) ?? "default";
         appendMessage(

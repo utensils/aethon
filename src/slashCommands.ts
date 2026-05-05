@@ -77,6 +77,9 @@ export interface SlashCommand {
   name: string;
   description: string;
   usage?: string;
+  /** Listed for autocomplete only. When submitted, the text is forwarded
+   *  to the agent so pi can run its own skill / command router. */
+  passthroughToAgent?: boolean;
   /** JSON Pointer into App state. When set, typing `/<name> <prefix>`
    *  surfaces the array at this path as completions. The shape is
    *  `SlashArgOption[]` OR a sidebar-item style array (any object with

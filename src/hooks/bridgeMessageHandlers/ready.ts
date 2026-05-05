@@ -41,6 +41,10 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     (data.extensionSlashCommands as
       | { name: string; description: string; usage?: string }[]
       | undefined) ?? [];
+  const piSkills =
+    (data.piSkills as
+      | { name: string; description: string; usage?: string }[]
+      | undefined) ?? [];
   const extKeys =
     (data.extensionKeybindings as
       | { combo: string; action: string; description?: string }[]
@@ -97,7 +101,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // delta after reload). hydrateSlashCommands rewrites the merged
   // catalog (built-ins + extensions), updates the picker state ref, and
   // bumps /slashCommands so the picker re-resolves via $ref.
-  ctx.hydrateSlashCommands(extSlash);
+  ctx.hydrateSlashCommands(extSlash, piSkills);
   ctx.hydrateKeybindings(extKeys);
   ctx.hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
   ctx.hydrateExtensionLayouts(extLayouts);

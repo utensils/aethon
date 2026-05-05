@@ -47,6 +47,7 @@ export interface UseUiOverlaysContext {
   setTheme: (id: string) => void;
   setModel: (id: string) => Promise<void>;
   activateLayoutById: (id: string) => boolean;
+  sendChat: (text: string) => Promise<void>;
   slashCommandsRef: MutableRefObject<SlashCommand[]>;
   /** Build the live SlashCommandContext used by /palette slash items.
    *  Built per-invocation so handlers see fresh state without re-creating
@@ -119,6 +120,7 @@ export function useUiOverlays(
     setTheme,
     setModel,
     activateLayoutById,
+    sendChat,
     slashCommandsRef,
     slashContext,
   } = ctx;
@@ -385,6 +387,11 @@ export function useUiOverlays(
           return;
         }
         try {
+          if (cmd.passthroughToAgent) {
+            const args = p.args ? ` ${p.args}` : "";
+            await sendChat(`/${p.name}${args}`);
+            return;
+          }
           await cmd.run(p.args ?? "", slashContext());
         } catch (err) {
           pushNotification({

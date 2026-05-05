@@ -461,6 +461,7 @@ export default function App() {
     setTheme,
     setModel,
     activateLayoutById,
+    sendChat,
     slashCommandsRef,
     slashContext: () => slashContext(),
   });
