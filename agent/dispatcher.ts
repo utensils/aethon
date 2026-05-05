@@ -42,7 +42,12 @@ import {
   loadProjectAethonExtensions,
 } from "./extension-loader";
 import { patchLayoutTree } from "./layout-manager";
-import { readSessionTranscript } from "./session-history";
+import {
+  readSessionMetadata,
+  readSessionTranscript,
+  writeSessionLabel,
+} from "./session-history";
+import { saveDisabledExtensions } from "./disabled-extensions";
 
 export interface DispatcherDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -131,6 +136,7 @@ export function unloadProjectExtensions(
     if (info.source === "project-directory") state.loadFailures.delete(name);
   }
   state.loadedProjectExtensionFiles.clear();
+  state.failedProjectExtensionFiles.clear();
 
   state.extensionComponents.clear();
   for (const [k, v] of state.projectBaseline.components) {
@@ -385,6 +391,14 @@ export async function runDispatcher(
           state.bootLayout = msg.payload;
           break;
         }
+        case "set_extension_disabled": {
+          await handleSetExtensionDisabled(state, deps, notifDeps, msg);
+          break;
+        }
+        case "set_session_label": {
+          await handleSetSessionLabel(state, deps, msg);
+          break;
+        }
         default: {
           deps.send({
             type: "error",
@@ -542,6 +556,7 @@ export async function runDispatcher(
         extensionApi,
         state.loadedExtensions,
         state.loadedProjectExtensionFiles,
+        state.failedProjectExtensionFiles,
         deps.loadHooks,
       );
       state.currentProjectCwd = cwdOverride;
@@ -630,6 +645,7 @@ export async function runDispatcher(
       extensionApi,
       state.loadedExtensions,
       state.loadedProjectExtensionFiles,
+      state.failedProjectExtensionFiles,
       deps.loadHooks,
     );
     if (loadingNoticeTimer !== null) {
@@ -687,6 +703,129 @@ export async function runDispatcher(
       state.currentAgentTabId = undefined;
     }
     deps.send({ type: "tab_closed", tabId });
+  }
+
+  async function handleSetExtensionDisabled(
+    state: AethonAgentState,
+    deps: DispatcherDeps,
+    notifDeps: { send: (m: Record<string, unknown>) => void },
+    msg: InboundMessage,
+  ): Promise<void> {
+    const name = (msg as { name?: unknown }).name;
+    const disabled = (msg as { disabled?: unknown }).disabled;
+    if (typeof name !== "string" || !name) {
+      deps.send({
+        type: "error",
+        message: "set_extension_disabled: name required",
+      });
+      return;
+    }
+    if (typeof disabled !== "boolean") {
+      deps.send({
+        type: "error",
+        message: "set_extension_disabled: disabled must be boolean",
+      });
+      return;
+    }
+    const wasDisabled = state.disabledExtensions.has(name);
+    if (disabled === wasDisabled) return; // no-op
+    if (disabled) state.disabledExtensions.add(name);
+    else state.disabledExtensions.delete(name);
+    try {
+      await saveDisabledExtensions(state.userDir, state.disabledExtensions);
+    } catch (err) {
+      // Persistence failed — revert the in-memory toggle so the next
+      // operation sees the on-disk truth, and surface a notice instead
+      // of a misleading success toast + bridge reload that would
+      // re-load the extension and silently lose the user's intent.
+      if (disabled) state.disabledExtensions.delete(name);
+      else state.disabledExtensions.add(name);
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({
+        type: "error",
+        message: `set_extension_disabled: persist failed: ${message}`,
+      });
+      void notify(state, notifDeps, {
+        id: `aethon:extension-toggle:${name}`,
+        title: `Could not ${disabled ? "disable" : "enable"} \`${name}\``,
+        message: `Persist failed: ${message}`,
+        kind: "error",
+        durationMs: 6000,
+      });
+      return;
+    }
+    // Surface the change to the frontend immediately. The loaded set
+    // doesn't change until restart; the sidebar shows a `(disabled)` row
+    // by deriving from `loadedExtensions ∩ ¬disabledExtensions` plus the
+    // explicit disabled list. We re-emit the lifecycle event so the
+    // hydration handler can move the row to the right bucket.
+    deps.send({
+      type: "extension_lifecycle",
+      name,
+      source: "directory",
+      status: disabled ? "disabled" : "enabled",
+    });
+    // Notify the user before signalling the bridge restart so the toast
+    // is rendered before agent-reloaded clears the in-flight UI state.
+    void notify(state, notifDeps, {
+      id: `aethon:extension-toggle:${name}`,
+      title: disabled
+        ? `Disabled \`${name}\``
+        : `Enabled \`${name}\``,
+      message: disabled
+        ? "Reloading bridge to fully unload…"
+        : "Reloading bridge to load…",
+      kind: "info",
+      durationMs: 4000,
+    });
+    // Ask the frontend to force-restart the bridge. We can't restart
+    // ourselves from inside the bridge (the Tauri shell owns the child
+    // and needs to flip its `agent_reload_in_progress` flag so the
+    // supervisor emits `agent-reloaded` instead of `agent-crashed`).
+    // The frontend's reload-required handler invokes `force_restart_agent`
+    // — on respawn, the new bridge reads disabled-extensions.json on boot
+    // and the loader honors it.
+    deps.send({
+      type: "reload_required",
+      reason: `extension-toggle:${name}`,
+    });
+  }
+
+  async function handleSetSessionLabel(
+    state: AethonAgentState,
+    deps: DispatcherDeps,
+    msg: InboundMessage,
+  ): Promise<void> {
+    const tabId = (msg as { tabId?: unknown }).tabId;
+    const labelField = (msg as { label?: unknown }).label;
+    if (typeof tabId !== "string" || !tabId) {
+      deps.send({
+        type: "error",
+        message: "set_session_label: tabId required",
+      });
+      return;
+    }
+    const label = typeof labelField === "string" ? labelField : "";
+    try {
+      await writeSessionLabel(tabSessionDir(state, tabId), label);
+    } catch (err) {
+      deps.send({
+        type: "error",
+        message: `set_session_label: ${(err as Error).message}`,
+      });
+      return;
+    }
+    // Refresh the discovered-tabs cache so the next emitReady (which the
+    // frontend triggers by sending `report` after this command finishes)
+    // reflects the new label. Cheap to re-read just the one entry.
+    const refreshed = await readSessionMetadata(tabSessionDir(state, tabId));
+    if (refreshed) {
+      const idx = state.discoveredTabs.findIndex((t) => t.tabId === tabId);
+      const entry = { tabId, ...refreshed };
+      if (idx >= 0) state.discoveredTabs[idx] = entry;
+      else state.discoveredTabs.push(entry);
+    }
+    emitReady(state, deps);
   }
 
   async function handleA2UIEvent(

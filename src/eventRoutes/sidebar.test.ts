@@ -4,6 +4,8 @@ import {
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
   handleSidebarDeleteSession,
+  handleSidebarRenameSession,
+  handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
 import { buildRouteFixture } from "./testFixtures";
@@ -92,6 +94,114 @@ describe("handleSidebarDeleteSession", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.promptDeleteSessionConfirmation).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleSidebarRenameSession", () => {
+  it("forwards a set_session_label command to the bridge", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-7", label: "Refactor pass" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "tab-7",
+        label: "Refactor pass",
+      }),
+    });
+  });
+
+  it("optimistically updates an open tab's label so the rename is instant", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "tab-7", kind: "agent", label: "Tab 1" },
+          { id: "tab-9", kind: "agent", label: "Tab 2" },
+        ],
+      },
+    });
+    await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-7", label: "Refactor pass" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      tabs: [
+        { id: "tab-7", kind: "agent", label: "Tab 1" },
+        { id: "tab-9", kind: "agent", label: "Tab 2" },
+      ],
+    });
+    const tabs = next.tabs as { id: string; label: string }[];
+    expect(tabs[0].label).toBe("Refactor pass");
+    expect(tabs[1].label).toBe("Tab 2");
+  });
+
+  it("empty label restores the auto sequential label for the open tab", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "tab-3", kind: "agent", label: "Custom name" },
+        ],
+      },
+    });
+    await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-3", label: "  " },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      tabs: [{ id: "tab-3", kind: "agent", label: "Custom name" }],
+    });
+    expect((next.tabs as { label: string }[])[0].label).toBe("Tab 1");
+  });
+});
+
+describe("handleSidebarToggleExtension", () => {
+  it("forwards a set_extension_disabled command to the bridge", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarToggleExtension(
+      {
+        component: { id: "sidebar" },
+        eventType: "toggle-extension",
+        data: { name: "mold:image-gallery", disabled: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_extension_disabled",
+        name: "mold:image-gallery",
+        disabled: true,
+      }),
+    });
+  });
+
+  it("ignores non-toggle events for the sidebar", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarToggleExtension(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { name: "x", disabled: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(false);
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });
 

@@ -59,7 +59,6 @@ import { resolveAethonSystemPrompt } from "./system-prompt";
 import { readSessionTranscript } from "./session-history";
 import {
   AethonAgentState,
-  type AethonExtensionApi,
   type ExtensionFailure,
   type ExtensionFailureSource,
   type LayoutSlotsCatalogue,
@@ -82,6 +81,7 @@ import {
   emitReady,
   tabSessionDir,
 } from "./tab-lifecycle";
+import { loadDisabledExtensions } from "./disabled-extensions";
 import {
   captureProjectExtensionBaseline,
   runDispatcher,
@@ -128,6 +128,11 @@ async function main(): Promise<void> {
   state.modelRegistry = ModelRegistry.create(state.authStorage);
   state.settingsManager = SettingsManager.create(process.cwd());
 
+  // -- User's persisted "disabled extensions" list -----------------------
+  // Read before any extension load so the loader honors it on first pass.
+  const disabled = await loadDisabledExtensions(state.userDir);
+  for (const name of disabled) state.disabledExtensions.add(name);
+
   // -- Bundled boot resources read synchronously --------------------------
   if (bootLayoutFile) {
     try {
@@ -166,25 +171,12 @@ async function main(): Promise<void> {
   const extDeps = { send };
 
   // -- aethon API -- build BEFORE createAgentSession so pi extensions that
-  // touch globalThis.aethon.* see the real API instead of undefined. -----
+  // touch globalThis.aethon.* see the real API instead of undefined. The
+  // same object is the one passed to extension `register(api)` calls — see
+  // `AethonExtensionApi` in state.ts for why we don't wrap it. -----
   const aethonApi = buildAethonApi(state, apiDeps);
   (globalThis as { aethon?: typeof aethonApi }).aethon = aethonApi;
-
-  // The bridge-private extension API surface used by the loaders. Wraps
-  // aethonApi to satisfy the AethonExtensionApi contract (registerComponent
-  // / setState / registerTheme / onUnload).
-  const extensionApi: AethonExtensionApi = {
-    registerComponent: (componentType, template) => {
-      void aethonApi.registerComponent(componentType, template);
-    },
-    setState: (path, value) => {
-      void aethonApi.setState(path, value);
-    },
-    registerTheme: (theme) => {
-      void aethonApi.registerTheme(theme);
-    },
-    onUnload: aethonApi.onUnload,
-  };
+  const extensionApi = aethonApi;
 
   // -- pi resource loader (system prompt, tools, memory) ------------------
   state.resourceLoader = new DefaultResourceLoader({
@@ -254,6 +246,7 @@ async function main(): Promise<void> {
     extensionApi,
     state.loadedExtensions,
     state.loadedProjectExtensionFiles,
+    state.failedProjectExtensionFiles,
     loadHooks,
   );
   state.currentProjectCwd = process.cwd();

@@ -48,6 +48,13 @@ export interface RuntimeSnapshot {
     error: string;
     path?: string;
   }[];
+  // Extensions the user has explicitly disabled via the sidebar
+  // right-click menu. Persisted at `<userDir>/disabled-extensions.json`
+  // and consulted by the loader on every boot. The agent should respect
+  // user intent — if a disabled extension is also in `extensions`, the
+  // toggle landed mid-session and a restart is needed for it to fully
+  // unload.
+  disabledExtensions: string[];
   themes: { id: string; label: string }[];
   components: string[];
   layoutSummary: string;

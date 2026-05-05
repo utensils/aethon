@@ -422,6 +422,37 @@ fn force_restart_agent(state: State<'_, AgentProcess>) -> Result<(), String> {
     Ok(())
 }
 
+/// Intentional kill-and-respawn for state changes the bridge can't apply
+/// hot (currently: the user toggling an extension via the sidebar). Sets
+/// the supervisor's `agent_reload_in_progress` flag BEFORE killing so the
+/// stdout reader treats EOF as a clean reload (emits `agent-reloaded`,
+/// not `agent-crashed`). The frontend's `agent-reloaded` handler then
+/// invokes `start_agent` and the new bridge boots fresh — for the
+/// disable-extension case, it reads `disabled-extensions.json` and the
+/// loader honors the user's intent.
+#[tauri::command]
+fn reload_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    // Only set the reload flag when there's actually a child to kill —
+    // the stdout reader thread is what resets the flag on EOF, so
+    // setting it without a child to die would leave it stale and the
+    // next genuine crash would be misclassified as an intentional
+    // reload (no agent-crashed notification).
+    if let Some(mut child) = guard.take() {
+        let pid = child.id();
+        let reload_flag = agent_reload_in_progress(&app);
+        reload_flag.store(true, std::sync::atomic::Ordering::Release);
+        tracing::info!(target: "aethon::agent", "reload_agent: killing pid={pid}");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    // Emit agent-reloaded so the frontend re-primes via start_agent.
+    // Safe to emit even when no child existed — the listener invokes
+    // start_agent which is a no-op if the agent is already absent.
+    let _ = app.emit("agent-reloaded", "extension-toggle");
+    Ok(())
+}
+
 /// Forward an arbitrary JSON payload to the agent's stdin. Used by the model
 /// picker and any future runtime controls that aren't wrapped in
 /// `dispatch_a2ui_event`.
@@ -649,6 +680,7 @@ pub fn run() {
             send_message,
             agent_command,
             force_restart_agent,
+            reload_agent,
             dispatch_a2ui_event,
             save_paste_image,
             commands::config::read_state,

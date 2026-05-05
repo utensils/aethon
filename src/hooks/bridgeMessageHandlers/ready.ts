@@ -89,6 +89,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     (data.failedExtensionsList as
       | { name: string; source: string; error?: string }[]
       | undefined) ?? [],
+    (data.disabledExtensionsList as string[] | undefined) ?? [],
   );
   ctx.registry.setTemplates(extComponents);
   // Restore extension-registered slash commands so the picker shows them

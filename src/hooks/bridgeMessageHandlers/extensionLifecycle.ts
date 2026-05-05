@@ -13,7 +13,13 @@ export const handleExtensionLifecycle: BridgeMessageHandler = (data, ctx) => {
   const detail = {
     name: (data.name as string) ?? "(unknown)",
     source: (data.source as string) ?? "directory",
-    status: (data.status as "loaded" | "failed" | "skipped") ?? "loaded",
+    status:
+      (data.status as
+        | "loaded"
+        | "failed"
+        | "skipped"
+        | "disabled"
+        | "enabled") ?? "loaded",
     error: data.error as string | undefined,
     path: data.path as string | undefined,
   };
@@ -25,13 +31,19 @@ export const handleExtensionLifecycle: BridgeMessageHandler = (data, ctx) => {
   const proceed = window.dispatchEvent(ev);
   if (proceed) {
     // Default rendering — terse one-liner the user can recognize even
-    // when the agent's chat reply was eaten by a respawn.
+    // when the agent's chat reply was eaten by a respawn. Disable /
+    // enable toggles also surface here so the user (and the next-turn
+    // system prompt, which lists disabledExtensions) have a record.
     const verb =
       detail.status === "loaded"
         ? "loaded"
         : detail.status === "failed"
           ? "failed to load"
-          : "skipped";
+          : detail.status === "disabled"
+            ? "disabled by user"
+            : detail.status === "enabled"
+              ? "re-enabled by user"
+              : "skipped";
     const suffix = detail.error ? ` — ${detail.error}` : "";
     ctx.appendMessage(
       {

@@ -1,4 +1,4 @@
-import type { EventRouteHandler } from "./types";
+import type { EventRouteContext, EventRouteHandler } from "./types";
 import { extractSessionId } from "../utils/sidebarHistory";
 import type { Tab } from "../types/tab";
 
@@ -123,6 +123,104 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
         });
       });
   });
+  return true;
+};
+
+/** sidebar rename-session: forward the new label to the bridge AND
+ *  optimistically update the open tab's label if the target is
+ *  currently open. The bridge persists
+ *  `<sessionsDir>/<tabId>/label.txt` and re-emits `ready`; the
+ *  optimistic update is what makes the change visible immediately for
+ *  open-tab rows (whose `tab:` label flows from `Tab.label`, not from
+ *  `recentSessions`/`discoveredTabs`). */
+export const handleSidebarRenameSession: EventRouteHandler = (
+  { component, eventType, data },
+  ctx,
+) => {
+  if (component.id !== "sidebar" || eventType !== "rename-session") {
+    return false;
+  }
+  const selected = data as
+    | { sessionId?: string; itemId?: string; label?: string }
+    | undefined;
+  const raw = selected?.sessionId ?? selected?.itemId ?? "";
+  const sessionId = extractSessionId(raw);
+  const label = typeof selected?.label === "string" ? selected.label : "";
+  if (!sessionId) return true;
+  applyOptimisticTabLabel(ctx, sessionId, label);
+  ctx
+    .invoke("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: sessionId,
+        label,
+      }),
+    })
+    .catch((err: unknown) => {
+      ctx.pushNotification({
+        title: "Rename session failed",
+        message: String(err),
+        kind: "error",
+      });
+    });
+  return true;
+};
+
+/** Update an open tab's `label` in App state when renaming a currently
+ *  open session. Empty input restores the auto-derived sequential
+ *  "Tab N" label using the tab's existing index in the array (matches
+ *  the original useTabs naming convention so the auto-label fallback
+ *  behaviour from `buildSidebarHistory` kicks in). No-op if no tab
+ *  matches the id. */
+function applyOptimisticTabLabel(
+  ctx: EventRouteContext,
+  tabId: string,
+  label: string,
+): void {
+  ctx.setState((prev) => {
+    const tabs = (prev.tabs as { id: string; label: string }[] | undefined) ??
+      [];
+    const idx = tabs.findIndex((t) => t.id === tabId);
+    if (idx < 0) return prev;
+    const trimmed = label.trim();
+    const fallback = `Tab ${idx + 1}`;
+    const nextLabel = trimmed.length > 0 ? trimmed : fallback;
+    if (tabs[idx].label === nextLabel) return prev;
+    const nextTabs = [...tabs];
+    nextTabs[idx] = { ...nextTabs[idx], label: nextLabel };
+    return { ...prev, tabs: nextTabs };
+  });
+}
+
+/** sidebar toggle-extension: forward to the bridge so the user's
+ *  disabled list is updated + persisted. The bridge re-emits `ready`
+ *  on success so the sidebar entry shifts buckets without a refresh. */
+export const handleSidebarToggleExtension: EventRouteHandler = (
+  { component, eventType, data },
+  ctx,
+) => {
+  if (component.id !== "sidebar" || eventType !== "toggle-extension") {
+    return false;
+  }
+  const selected = data as
+    | { name?: string; disabled?: boolean }
+    | undefined;
+  if (!selected?.name || typeof selected.disabled !== "boolean") return true;
+  ctx
+    .invoke("agent_command", {
+      payload: JSON.stringify({
+        type: "set_extension_disabled",
+        name: selected.name,
+        disabled: selected.disabled,
+      }),
+    })
+    .catch((err: unknown) => {
+      ctx.pushNotification({
+        title: "Toggle extension failed",
+        message: String(err),
+        kind: "error",
+      });
+    });
   return true;
 };
 

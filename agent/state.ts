@@ -63,12 +63,19 @@ export interface MutationResult {
   data?: unknown;
 }
 
-export interface AethonExtensionApi {
-  registerComponent(componentType: string, template: unknown): void;
-  setState(path: string, value: unknown): void;
-  registerTheme?: (theme: unknown) => void;
-  onUnload?: (fn: () => void | Promise<void>) => void;
-}
+/** The API surface extensions receive in their `register(api)` call.
+ *
+ *  Aliased to the full `AethonApi` (the same object installed on
+ *  `globalThis.aethon`) because there is no real sandbox between the
+ *  bridge and an extension — they share a Bun runtime and could reach
+ *  `globalThis.aethon` directly anyway. The previous narrow 4-method
+ *  shim caused `api.registerSidebarSection is not a function` errors
+ *  for extensions that followed the documented contract.
+ *
+ *  Imported as `import type` to keep this circular-import safe — types
+ *  are erased at runtime. */
+import type { AethonApi } from "./aethon-api";
+export type AethonExtensionApi = AethonApi;
 
 export interface AethonExtensionModule {
   register?: (api: AethonExtensionApi) => void | Promise<void>;
@@ -127,6 +134,10 @@ export interface DiscoveredTab {
   lastModified: number;
   cwd?: string;
   firstUserMessage?: string;
+  /** User-supplied label (via the sidebar "Rename session…" action).
+   *  When present, the sidebar shows this instead of `firstUserMessage`.
+   *  Persisted at `<sessionsDir>/<tabId>/label.txt`. */
+  customLabel?: string;
 }
 
 export interface ModelDescriptor {
@@ -364,7 +375,18 @@ export class AethonAgentState {
   // -- Loading state -------------------------------------------------------
   readonly loadedExtensions = new Map<string, ExtensionSource>();
   readonly loadFailures = new Map<string, ExtensionFailure>();
+  /** Extension display-names the user has explicitly disabled. Persisted
+   *  on disk at `<userDir>/disabled-extensions.json` and consulted by
+   *  the loader to skip imports. The displayName is the same string the
+   *  sidebar shows (e.g. `mold:image-gallery`, `my-user-ext`). */
+  readonly disabledExtensions = new Set<string>();
   readonly loadedProjectExtensionFiles = new Set<string>();
+  /** Project extension files we already tried to load and that errored.
+   *  Tracked separately from `loadedProjectExtensionFiles` so we don't
+   *  re-import (and re-warn about) the same broken file on every
+   *  `tab_open` / `set_project` for the same project. Cleared by
+   *  `unloadProjectExtensions`, so switching projects does retry. */
+  readonly failedProjectExtensionFiles = new Set<string>();
   readonly projectExtensionTeardowns: Array<() => void | Promise<void>> = [];
   readonly userExtensionTeardowns: Array<() => void | Promise<void>> = [];
   /** Tracks which extension scope's register() is currently on the stack.
@@ -381,6 +403,12 @@ export class AethonAgentState {
    *  extension we saw write to each path so async callbacks still get
    *  attributed to the right extension. */
   readonly extPathOwners = new Map<string, string>();
+  /** Keys (`${ext}|${kind}|${path}`) we've already surfaced as a
+   *  user-facing `extension_runtime_error` event. We notify once per
+   *  problem and rely on the log-throttler for ongoing visibility. The
+   *  key is cleared when the same path receives a successful setState,
+   *  so a recovered-then-broken extension re-notifies. */
+  readonly notifiedExtRuntimeErrors = new Set<string>();
   projectBaseline: ProjectBaselineSnapshot | null = null;
 
   // -- Mutation acks / handshake ------------------------------------------

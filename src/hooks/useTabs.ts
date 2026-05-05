@@ -55,6 +55,7 @@ interface DiscoveredSession {
   lastModified: number;
   cwd?: string;
   firstUserMessage?: string;
+  customLabel?: string;
 }
 
 interface NotificationInput {

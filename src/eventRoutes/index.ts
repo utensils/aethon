@@ -40,6 +40,8 @@ import {
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
   handleSidebarDeleteSession,
+  handleSidebarRenameSession,
+  handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
 
@@ -62,6 +64,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
       handleSidebarResizeEnd,
       handleSidebarRemoveProject,
       handleSidebarDeleteSession,
+      handleSidebarRenameSession,
+      handleSidebarToggleExtension,
       handleSectionedSelect,
     ]],
     ["id:model-picker", [handleSectionedSelect]],

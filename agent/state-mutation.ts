@@ -89,6 +89,14 @@ export function setState(
         extStateLog.warn(
           `setState rejected: path=${path} size=${kb}KB exceeds ${state.statePayloadHardKb}KB limit${who}${tail} — store file paths, not content`,
         );
+      }
+      // User-facing notification: send once per (ext+kind+path), not on
+      // every limiter window. The toast is sticky and the user can't
+      // un-see it; periodic re-pops are pure noise. Cleared when the
+      // same path receives a successful setState.
+      const notifyKey = `${ext}|state-too-large|${path}`;
+      if (!state.notifiedExtRuntimeErrors.has(notifyKey)) {
+        state.notifiedExtRuntimeErrors.add(notifyKey);
         deps.send({
           type: "extension_runtime_error",
           name: attributed,
@@ -116,6 +124,13 @@ export function setState(
         );
       }
     }
+  }
+  // Successful write below the hard cap — clear any sticky
+  // notification flag for this path so a future regression re-notifies.
+  if (serialized !== undefined) {
+    const ext =
+      state.currentExtensionName ?? state.extPathOwners.get(path) ?? "?";
+    state.notifiedExtRuntimeErrors.delete(`${ext}|state-too-large|${path}`);
   }
   // tabId attribution priority: explicit → ALS → currentAgentTabId.
   // setIntervals registered at module-load time have NO ALS context —

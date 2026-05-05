@@ -54,6 +54,7 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       error: info.error,
       ...(info.path ? { path: info.path } : {}),
     })),
+    disabledExtensions: [...state.disabledExtensions].sort(),
     themes: [...state.extensionThemes.values()].map((t) => ({
       id: t.id,
       label: t.label,
