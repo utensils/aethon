@@ -11,7 +11,7 @@ import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
-import { useTabs } from "./hooks/useTabs";
+import { TAB_MIRROR_KEYS, useTabs } from "./hooks/useTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
 import { useBridgeMessages } from "./hooks/useBridgeMessages";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
@@ -28,6 +28,10 @@ import { useOsEdges } from "./hooks/useOsEdges";
 import type { SlashCommandContext } from "./slashCommands";
 import { writeState } from "./persist";
 import { createAppStore, useAppState } from "./state/appStore";
+import {
+  loadSessionUiSnapshot,
+  saveSessionUiSnapshot,
+} from "./state/sessionUiSnapshot";
 import {
   activeProject,
   emptyProjectsState,
@@ -74,23 +78,39 @@ export default function App() {
   // Initial state also seeds one default tab + the active-tab mirror keys.
   const appStore = useMemo(() => createAppStore((() => {
     const tab0 = makeEmptyTab("default", "Tab 1");
+    const restored = loadSessionUiSnapshot();
+    const tabs = restored?.tabs.length ? restored.tabs : [tab0];
+    const activeTabId =
+      restored?.activeTabId && tabs.some((t) => t.id === restored.activeTabId)
+        ? restored.activeTabId
+        : tabs[0].id;
+    const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+    const restoredLayout =
+      restored?.layout && typeof restored.layout === "object"
+        ? (restored.layout as Record<string, unknown>)
+        : {};
+    const activeRecord = activeTab as unknown as Record<string, unknown>;
+    const rootMirror = Object.fromEntries(
+      TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
+    );
     return {
       ...(BOOT_LAYOUT.state ?? {}),
+      ...(restored?.terminal ? { terminal: restored.terminal } : {}),
+      ...(restored?.terminalPanel ? { terminalPanel: restored.terminalPanel } : {}),
+      ...(restored?.scrollToMatchByTab
+        ? { scrollToMatchByTab: restored.scrollToMatchByTab }
+        : {}),
       logoUrl,
       // App version surfaced as a state slice so layout JSON can $ref it
       // (e.g. sidebar's `version` prop). Single source of truth is
       // package.json — vite injects __APP_VERSION__ at build time. The
       // "v" prefix matches the human-friendly format the UI used before.
       appVersion: `v${__APP_VERSION__}`,
-      tabs: [tab0],
-      activeTabId: tab0.id,
+      tabs,
+      activeTabId,
       // Mirror keys point at the active tab's empty view so layout bindings
       // see well-defined values from boot.
-      messages: tab0.messages,
-      draft: tab0.draft,
-      waiting: tab0.waiting,
-      queueCount: tab0.queueCount,
-      canvas: tab0.canvas,
+      ...rootMirror,
       // Layout-agnostic UI surfaces — the palette + notification stack
       // both render at App root so they overlay every layout. State
       // shapes are documented on the components themselves.
@@ -105,6 +125,14 @@ export default function App() {
           { id: "extension-layout", label: "default-layout", hint: "core", active: true },
         ],
       },
+      ...(Object.keys(restoredLayout).length > 0
+        ? {
+            layout: {
+              ...(BOOT_LAYOUT.state?.layout ?? {}),
+              ...restoredLayout,
+            },
+          }
+        : {}),
     };
   })()), []);
   const state = useAppState(appStore, (s) => s);
@@ -125,6 +153,21 @@ export default function App() {
     return appStore.subscribe(() => {
       stateRef.current = appStore.getState();
     });
+  }, [appStore]);
+
+  useEffect(() => {
+    const persist = () => {
+      saveSessionUiSnapshot(appStore.getState());
+    };
+    persist();
+    const unsubscribe = appStore.subscribe(persist);
+    window.addEventListener("beforeunload", persist);
+    const hot = import.meta.hot;
+    hot?.dispose(persist);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("beforeunload", persist);
+    };
   }, [appStore]);
 
   // ---------------------------------------------------------------------

@@ -15,14 +15,21 @@ export const handleTabClosed: BridgeMessageHandler = (data, ctx) => {
     const tabs = ((prev.tabs as Tab[] | undefined) ?? []).filter(
       (t) => t.id !== tabId,
     );
-    if (tabs.length === 0) return prev; // shouldn't happen — bridge refuses to close default
     let activeTabId = prev.activeTabId as string | undefined;
     if (activeTabId === tabId) {
-      activeTabId = tabs[tabs.length - 1].id;
+      activeTabId = tabs.length > 0 ? tabs[tabs.length - 1].id : undefined;
       switched = true;
     }
     const result: Record<string, unknown> = { ...prev, tabs, activeTabId };
-    const target = tabs.find((t) => t.id === activeTabId)!;
+    const target = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined;
+    if (!target) {
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = undefined;
+      }
+      result.empty = true;
+      result.hasTabs = false;
+      return result;
+    }
     nextBuffer = target.terminalBuffer ?? "";
     const targetRec = target as unknown as Record<string, unknown>;
     for (const key of TAB_MIRROR_KEYS) {
@@ -32,6 +39,8 @@ export const handleTabClosed: BridgeMessageHandler = (data, ctx) => {
       prev.sidebar as Record<string, unknown> | undefined,
       target.model,
     );
+    result.empty = false;
+    result.hasTabs = true;
     return result;
   });
   if (switched) ctx.dispatchTerminalReplay(nextBuffer);

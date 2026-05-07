@@ -82,6 +82,27 @@ describe("handleSidebarDeleteSession", () => {
     });
   });
 
+  it("deletes and closes the default session when allowed", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      promptDeleteAllow: true,
+      state: { tabs: [{ id: "default", kind: "agent" }] },
+    });
+    await handleSidebarDeleteSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "delete-session",
+        data: { sessionId: "default", label: "Tab 1" },
+      },
+      ctx,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_session", {
+      tabId: "default",
+    });
+    expect(mocks.closeTab).toHaveBeenCalledWith("default");
+  });
+
   it("returns true and does nothing on empty input", async () => {
     const { ctx, mocks } = buildRouteFixture({ promptDeleteAllow: true });
     const handled = await handleSidebarDeleteSession(

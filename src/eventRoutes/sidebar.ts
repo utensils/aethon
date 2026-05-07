@@ -76,9 +76,8 @@ export const handleSidebarRemoveProject: EventRouteHandler = (
 };
 
 /** sidebar delete-session: prompt user, then delete via the Tauri
- *  command. Delete-then-close ordering matters — the reverse leaves
- *  the user with a closed tab and a failure notification when the
- *  Tauri command refuses (e.g. the default session). */
+ *  command. Delete-then-close ordering matters — if deletion fails,
+ *  the open tab should stay visible. */
 export const handleSidebarDeleteSession: EventRouteHandler = (
   { eventType, data },
   ctx,

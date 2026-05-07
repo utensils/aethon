@@ -69,6 +69,22 @@ function sessionLabelFromMessages(messages: Tab["messages"]): string | undefined
   return text.length > 48 ? `${text.slice(0, 47)}...` : text;
 }
 
+export function recentSessionItemFromClosedTab(
+  tab: Tab,
+  projects: ProjectsState,
+): { id: string; label: string; lastModified: string; cwd?: string } | null {
+  if (tab.kind !== "agent" || tab.messages.length === 0) return null;
+  const projectPath = tab.projectId
+    ? projects.projects.find((p) => p.id === tab.projectId)?.path
+    : undefined;
+  return {
+    id: tab.id,
+    label: sessionLabelFromMessages(tab.messages) ?? tab.label,
+    lastModified: "now",
+    ...(projectPath ? { cwd: projectPath } : {}),
+  };
+}
+
 interface DiscoveredSession {
   tabId: string;
   lastModified: number;
@@ -627,6 +643,20 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         tabs: list,
         activeTabId,
       };
+      if (closing) {
+        const closedSession = recentSessionItemFromClosedTab(
+          closing,
+          projectsRef.current,
+        );
+        if (closedSession) {
+          const recent =
+            (prev.recentSessions as { id: string }[] | undefined) ?? [];
+          result.recentSessions = [
+            closedSession,
+            ...recent.filter((s) => s.id !== closedSession.id),
+          ].slice(0, 16);
+        }
+      }
       if (list.length === 0) {
         becameEmpty = true;
         for (const key of TAB_MIRROR_KEYS) {

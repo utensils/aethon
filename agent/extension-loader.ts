@@ -600,7 +600,6 @@ export async function discoverPersistedTabs(
   }
   const results: DiscoveredTab[] = [];
   for (const name of entries) {
-    if (name === "default") continue;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
     const dir = join(state.sessionsDir, name);
     try {

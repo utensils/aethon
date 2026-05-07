@@ -36,4 +36,33 @@ describe("handleTabClosed", () => {
     handleTabClosed({ type: "tab_closed", tabId: "tab-b" }, ctx);
     expect(mocks.dispatchTerminalReplay).not.toHaveBeenCalled();
   });
+
+  it("allows the last tab to close and leaves the UI empty", () => {
+    const tab = {
+      ...makeEmptyTab("default", "Tab 1"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [tab],
+        messages: tab.messages,
+        draft: "typed",
+        waiting: true,
+        queueCount: 1,
+        canvas: { type: "card" },
+      },
+    });
+    handleTabClosed({ type: "tab_closed", tabId: "default" }, ctx);
+    const next = applySetState();
+    expect(next.tabs).toEqual([]);
+    expect(next.activeTabId).toBeUndefined();
+    expect(next.messages).toBeUndefined();
+    expect(next.draft).toBeUndefined();
+    expect(next.waiting).toBeUndefined();
+    expect(next.queueCount).toBeUndefined();
+    expect(next.canvas).toBeUndefined();
+    expect(next.empty).toBe(true);
+    expect(next.hasTabs).toBe(false);
+  });
 });
