@@ -738,6 +738,15 @@ export default function App() {
           typeof activeId === "string" && activeId.length > 0
             ? activeId
             : "default";
+        if (name === "compact") {
+          const msg = {
+            id: crypto.randomUUID(),
+            role: "system" as const,
+            text: "Compacting context...",
+          };
+          appendMessage(msg, tabId);
+          persistLocalChatMessage(msg, tabId);
+        }
         await invoke("agent_command", {
           payload: JSON.stringify({
             type: "native_slash_command",

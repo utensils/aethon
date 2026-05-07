@@ -85,6 +85,34 @@ export interface UseExtensionsHydrationActions {
   activateLayoutById: (id: string) => boolean;
 }
 
+export function buildHydratedSlashCommands(
+  builtins: SlashCommand[],
+  extensionCommands: { name: string; description: string; usage?: string }[],
+  piCommands: { name: string; description: string; usage?: string }[],
+  makeExtensionCommand: (
+    command: { name: string; description: string; usage?: string },
+  ) => SlashCommand,
+): SlashCommand[] {
+  const builtinNames = new Set(builtins.map((c) => c.name));
+  const dispatched = extensionCommands
+    .filter((c) => !builtinNames.has(c.name))
+    .map(makeExtensionCommand);
+  const reservedNames = new Set([
+    ...builtins.map((c) => c.name),
+    ...dispatched.map((c) => c.name),
+  ]);
+  const piPassthroughCommands: SlashCommand[] = piCommands
+    .filter((s) => !reservedNames.has(s.name))
+    .map((s) => ({
+      name: s.name,
+      description: s.description,
+      usage: s.usage,
+      passthroughToAgent: true,
+      run: () => {},
+    }));
+  return [...builtins, ...dispatched, ...piPassthroughCommands];
+}
+
 /**
  * Mirrors the bridge's "what does this agent ship?" snapshot into app
  * state: themes, extensions, keybindings, event routes, layouts,
@@ -490,10 +518,14 @@ export function useExtensionsHydration(
   ) {
     if (piCommands) piCommandsRef.current = piCommands;
     const builtins = buildBuiltinSlashCommands();
-    const builtinNames = new Set(builtins.map((c) => c.name));
-    const dispatched: SlashCommand[] = list
-      .filter((c) => !builtinNames.has(c.name))
-      .map((c) => ({
+    const dispatchedNames = list
+      .filter((c) => !new Set(builtins.map((b) => b.name)).has(c.name))
+      .map((c) => c.name);
+    slashCommandsRef.current = buildHydratedSlashCommands(
+      builtins,
+      list,
+      piCommandsRef.current,
+      (c) => ({
         name: c.name,
         description: c.description,
         usage: c.usage,
@@ -509,26 +541,9 @@ export function useExtensionsHydration(
             tabId: stateRef.current.activeTabId,
           });
         },
-      }));
-    const reservedNames = new Set([
-      ...builtins.map((c) => c.name),
-      ...dispatched.map((c) => c.name),
-    ]);
-    const piPassthroughCommands: SlashCommand[] = piCommandsRef.current
-      .filter((s) => !reservedNames.has(s.name))
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        usage: s.usage,
-        passthroughToAgent: true,
-        run: () => {},
-      }));
-    extensionSlashNamesRef.current = new Set(dispatched.map((c) => c.name));
-    slashCommandsRef.current = [
-      ...builtins,
-      ...dispatched,
-      ...piPassthroughCommands,
-    ];
+      }),
+    );
+    extensionSlashNamesRef.current = new Set(dispatchedNames);
     setState((prev) => ({
       ...prev,
       slashCommands: slashCommandsRef.current.map((c) => ({

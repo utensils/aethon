@@ -70,6 +70,8 @@ describe("buildBuiltinSlashCommands", () => {
       "help",
       "theme",
       "model",
+      "name",
+      "export",
       "reset",
       "terminal",
       "extensions",

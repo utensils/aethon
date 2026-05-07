@@ -150,6 +150,41 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("bounds the Aethon-local slash command overlay on append", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      })}\n`,
+    );
+    for (let i = 0; i < 405; i++) {
+      await appendLocalChatMessage(dir, {
+        id: `local-${i}`,
+        role: "system",
+        text: `local ${i}`,
+        createdAt: i,
+      });
+    }
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.at(1)).toEqual({
+      id: "local-206",
+      role: "system",
+      text: "local 206",
+      createdAt: 206,
+    });
+    expect(restored.at(-1)).toEqual({
+      id: "local-404",
+      role: "system",
+      text: "local 404",
+      createdAt: 404,
+    });
+    expect(restored).toHaveLength(200);
+  });
+
   it("reads project cwd metadata from the newest session log", async () => {
     const dir = await tempRoot();
     const path = join(dir, "session.jsonl");

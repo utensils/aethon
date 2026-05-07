@@ -239,6 +239,18 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       run: (args, ctx) => ctx.runNativeCommand("compact", args),
     },
     {
+      name: "name",
+      description: "Show or set the pi session display name",
+      usage: "[name]",
+      run: (args, ctx) => ctx.runNativeCommand("name", args),
+    },
+    {
+      name: "export",
+      description: "Export the pi session as HTML, or JSONL when path ends in .jsonl",
+      usage: "[path.html|path.jsonl]",
+      run: (args, ctx) => ctx.runNativeCommand("export", args),
+    },
+    {
       name: "terminal",
       description: "Toggle the terminal panel",
       run: (_args, ctx) => ctx.toggleTerminal(),

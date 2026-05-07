@@ -778,6 +778,66 @@ export async function runDispatcher(
         }
         return;
       }
+      case "name": {
+        const nextName = typeof msg.args === "string" ? msg.args.trim() : "";
+        if (!nextName) {
+          const current = (
+            tab.session.sessionManager as {
+              getSessionName?: () => string | undefined;
+            }
+          ).getSessionName?.();
+          deps.send({
+            type: "native_slash_result",
+            tabId,
+            command,
+            message: current
+              ? `Session name: ${current}`
+              : "Session name is not set. Usage: `/name <name>`",
+          });
+          return;
+        }
+        tab.session.setSessionName(nextName);
+        try {
+          await writeSessionLabel(tabSessionDir(state, tabId), nextName);
+        } catch {
+          /* pi session name still succeeded; label replay is best effort */
+        }
+        deps.send({
+          type: "native_slash_result",
+          tabId,
+          command,
+          message: `Session name set: ${nextName}`,
+        });
+        emitReady(state, deps);
+        return;
+      }
+      case "export": {
+        const outputPath =
+          typeof msg.args === "string" && msg.args.trim().length > 0
+            ? msg.args.trim()
+            : undefined;
+        try {
+          const path = outputPath?.endsWith(".jsonl")
+            ? tab.session.exportToJsonl(outputPath)
+            : await tab.session.exportToHtml(outputPath);
+          deps.send({
+            type: "native_slash_result",
+            tabId,
+            command,
+            message: `Session exported to: ${path}`,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          deps.send({
+            type: "native_slash_result",
+            tabId,
+            command,
+            kind: "error",
+            message: `Export failed: ${message}`,
+          });
+        }
+        return;
+      }
       default:
         deps.send({
           type: "native_slash_result",

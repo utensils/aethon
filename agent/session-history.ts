@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 const LABEL_FILE = "label.txt";
@@ -48,6 +55,7 @@ export async function writeSessionLabel(
 }
 
 const MAX_RESTORED_MESSAGES = 200;
+const MAX_LOCAL_CHAT_MESSAGES = 400;
 const MAX_TEXT_CHARS = 8 * 1024;
 
 export interface RestoredChatMessage {
@@ -121,7 +129,9 @@ export async function appendLocalChatMessage(
         ? message.createdAt
         : Date.now(),
   };
-  await appendFile(join(sessionDir, LOCAL_CHAT_FILE), `${JSON.stringify(entry)}\n`, "utf8");
+  const path = join(sessionDir, LOCAL_CHAT_FILE);
+  await appendFile(path, `${JSON.stringify(entry)}\n`, "utf8");
+  await pruneLocalChatFile(path);
 }
 
 function parseLocalChatLines(lines: Iterable<string>): RestoredChatMessage[] {
@@ -169,6 +179,29 @@ async function readLocalChatTranscript(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     return [];
+  }
+}
+
+async function pruneLocalChatFile(path: string): Promise<void> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const kept = parseLocalChatLines(raw.split(/\r?\n/)).slice(
+      -MAX_LOCAL_CHAT_MESSAGES,
+    );
+    const next = kept
+      .map((m) =>
+        JSON.stringify({
+          type: "aethon_chat",
+          id: m.id,
+          role: m.role,
+          text: m.text,
+          ...(typeof m.createdAt === "number" ? { createdAt: m.createdAt } : {}),
+        }),
+      )
+      .join("\n");
+    await writeFile(path, next ? `${next}\n` : "", "utf8");
+  } catch {
+    /* best effort */
   }
 }
 
