@@ -144,6 +144,27 @@ export function blankTabForProjectBucket(
   };
 }
 
+export function tabsForProjectBucket(tabs: Tab[], bucketKey: string): Tab[] {
+  const projectId = projectIdFromBucketKey(bucketKey);
+  return tabs.filter((tab) =>
+    projectId === null ? tab.projectId == null : tab.projectId === projectId,
+  );
+}
+
+export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
+  return tabs.filter((tab) => {
+    if (tab.kind === "shell") return true;
+    return (
+      tab.messages.length > 0 ||
+      tab.draft.trim().length > 0 ||
+      tab.waiting ||
+      tab.queueCount > 0 ||
+      tab.canvas !== null ||
+      tab.terminalBuffer.length > 0
+    );
+  });
+}
+
 /**
  * Project list management + the per-project tab bucket model. Owns:
  *   - `projectsRef` — in-memory project list.
@@ -333,12 +354,12 @@ export function useProjectOps(
   // a transient disk failure doesn't leave the UI inconsistent with what
   // the user just did.
   async function persistProjects() {
+    syncProjectsToState();
     try {
       await saveProjects(projectsRef.current);
     } catch (err) {
       console.warn("saveProjects failed:", err);
     }
-    syncProjectsToState();
   }
 
   // Snapshot current state.tabs + activeTabId into the OLD project's
@@ -348,21 +369,39 @@ export function useProjectOps(
   // immediately. If the new project has no bucket yet, we leave tabs
   // empty + flip /empty so the empty-state composite renders — the
   // caller (newTab/openProjectByPath) decides whether to seed a tab.
-  function switchProjectBucket(fromKey: string, toKey: string) {
-    if (fromKey === toKey) return;
+  function switchProjectBucket(fromKey: string, toKey: string): string | undefined {
+    if (fromKey === toKey) {
+      return stateRef.current.activeTabId as string | undefined;
+    }
     let nextTerminalBuffer = "";
+    let nextActiveTabId: string | undefined;
     setState((prev) => {
       // Save current bucket.
-      const currentTabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      const currentTabs = nonEmptyProjectTabs(
+        tabsForProjectBucket(
+          ((prev.tabs as Tab[] | undefined) ?? []).slice(),
+          fromKey,
+        ),
+      );
       const currentActive = prev.activeTabId as string | undefined;
       tabBucketsRef.current.set(fromKey, {
         tabs: currentTabs,
-        activeTabId: currentActive,
+        activeTabId: currentTabs.some((t) => t.id === currentActive)
+          ? currentActive
+          : currentTabs[0]?.id,
       });
       // Load target bucket. When a project has no visible session bucket,
       // seed a blank tab for that project rather than carrying the old
       // active tab mirror across the boundary.
-      const savedNext = tabBucketsRef.current.get(toKey);
+      const savedNextRaw = tabBucketsRef.current.get(toKey);
+      const savedNext = savedNextRaw
+        ? {
+            tabs: nonEmptyProjectTabs(
+              tabsForProjectBucket(savedNextRaw.tabs, toKey),
+            ),
+            activeTabId: savedNextRaw.activeTabId,
+          }
+        : undefined;
       const next =
         savedNext && savedNext.tabs.length > 0
           ? savedNext
@@ -384,6 +423,7 @@ export function useProjectOps(
         next.tabs.length > 0 &&
         !next.tabs.some((t) => t.id === next.activeTabId);
       const activeTabId = hasOrphan ? next.tabs[0].id : next.activeTabId;
+      nextActiveTabId = activeTabId;
       const result: Record<string, unknown> = {
         ...prev,
         tabs: next.tabs,
@@ -414,6 +454,7 @@ export function useProjectOps(
     });
     // Replay the new active tab's terminal buffer (or clear if none).
     dispatchTerminalReplay(nextTerminalBuffer);
+    return nextActiveTabId;
   }
 
   async function openProjectFromPicker(): Promise<string | null> {
@@ -438,10 +479,9 @@ export function useProjectOps(
     // If this is a brand-new project, the bucket is empty — the empty
     // state composite will render so the caller can decide whether to
     // auto-create a fresh tab.
-    switchProjectBucket(fromKey, projectBucketKey(id));
+    const nextTabId = switchProjectBucket(fromKey, projectBucketKey(id));
     syncRecentSessionsToState();
-    const tabId =
-      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, path);
     return id;
   }
@@ -460,10 +500,9 @@ export function useProjectOps(
       activeId: id,
     };
     persistProjects();
-    switchProjectBucket(fromKey, toKey);
+    const nextTabId = switchProjectBucket(fromKey, toKey);
     syncRecentSessionsToState();
-    const tabId =
-      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, target.path);
     // Swap the file-watcher's project ext dir so edits in the new
     // project's `.aethon/extensions/` hot-reload, and edits in the old
@@ -480,10 +519,9 @@ export function useProjectOps(
     const previousActive = activeProject(projectsRef.current);
     projectsRef.current = { ...projectsRef.current, activeId: null };
     persistProjects();
-    switchProjectBucket(fromKey, NO_PROJECT_KEY);
+    const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY);
     syncRecentSessionsToState();
-    const tabId =
-      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, null);
     if (previousActive) unwatchProjectForBridge(previousActive.path);
   }
@@ -501,10 +539,9 @@ export function useProjectOps(
     persistProjects();
 
     if (wasActive) {
-      switchProjectBucket(fromKey, NO_PROJECT_KEY);
+      const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY);
       syncRecentSessionsToState();
-      const tabId =
-        (stateRef.current.activeTabId as string | undefined) ?? "default";
+      const tabId = nextTabId ?? "default";
       announceProjectToBridge(tabId, null);
       tabBucketsRef.current.delete(removedKey);
     } else {

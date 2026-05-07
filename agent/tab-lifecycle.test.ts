@@ -7,6 +7,7 @@ import {
 import {
   compilePattern,
   collectPiSlashCommands,
+  emitReady,
   emitBashResult,
   extractToolContent,
   handleSessionEvent,
@@ -239,6 +240,29 @@ describe("tabSessionDir", () => {
     const f = makeFixture();
     expect(tabSessionDir(f.state, "abc-123")).toMatch(/abc-123$/);
     expect(tabSessionDir(f.state, "../etc/passwd")).toMatch(/_unsafe$/);
+  });
+});
+
+describe("emitReady", () => {
+  it("includes per-tab cwd so the frontend can keep project buckets isolated", () => {
+    const f = makeFixture();
+    const rec = fakeRec("anthropic/claude-x");
+    rec.id = "tab-1";
+    f.state.tabs.set("tab-1", rec);
+    f.state.tabProjectCwds.set("tab-1", "/repo/a");
+
+    emitReady(f.state, f.deps);
+
+    expect(f.sent[0]).toMatchObject({
+      type: "ready",
+      tabs: [
+        {
+          id: "tab-1",
+          model: "anthropic/claude-x",
+          cwd: "/repo/a",
+        },
+      ],
+    });
   });
 });
 

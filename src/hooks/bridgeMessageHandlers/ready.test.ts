@@ -246,6 +246,42 @@ describe("handleReady", () => {
       }),
     ]);
   });
+
+  it("does not backfill bridge tabs into the visible project bucket", () => {
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [{ id: "default", model: "claude", projectId: "p2" }],
+        sidebar: {},
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p2",
+      projects: [
+        { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },
+        { id: "p2", label: "B", path: "/repo/b", lastUsed: 2 },
+      ],
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [
+          { id: "default", model: "claude", cwd: "/repo/b" },
+          { id: "tab-a", model: "gpt", cwd: "/repo/a" },
+          { id: "tab-b", model: "gpt", cwd: "/repo/b" },
+          { id: "tab-unknown", model: "gpt" },
+        ],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect((next.tabs as { id: string }[]).map((t) => t.id)).toEqual([
+      "default",
+    ]);
+  });
 });
 
 // Quiet the ESLint vi-unused warning when fake timers aren't used.

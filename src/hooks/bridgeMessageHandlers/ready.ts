@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../../types/a2ui";
 import { activeProject } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
-import { makeEmptyTab, type Tab } from "../../types/tab";
+import type { Tab } from "../../types/tab";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
 import { deletePointer } from "../../utils/jsonPointer";
 import type {
@@ -89,15 +89,6 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   const extStateKeys = (data.extensionStateKeys as string[] | undefined) ?? [];
   const discTabs =
     (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
-  const discoveredById = new Map(discTabs.map((d) => [d.tabId, d]));
-  const sessionLabel = (tabId: string, fallback: string): string => {
-    const session = discoveredById.get(tabId);
-    if (session?.customLabel) return session.customLabel;
-    if (session?.firstUserMessage) {
-      return session.firstUserMessage.replace(/\s+/g, " ").trim();
-    }
-    return fallback;
-  };
   ctx.allDiscoveredSessionsRef.current = discTabs;
   // Hydrate extension themes BEFORE the layout state merge below so
   // /sidebar/themes carries the full list (built-ins + extension) when
@@ -205,13 +196,13 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       next = deepMergeState(layoutDefaults, next);
     }
     next = deepMergeState(next, extState);
-    // Reconcile our local tabs with the bridge's reported tabs.
-    // Two cases:
-    //   (a) webview reload while bridge is alive — bridge has tabs we
-    //       don't know about; create local records for them so the user
-    //       can re-access those sessions.
-    //   (b) bridge restart — local has tabs the bridge doesn't; the
-    //       post-ready replay below re-establishes them.
+    // Reconcile bridge data onto local tabs without creating visible
+    // records from the bridge tab list. With project buckets, bridge
+    // state is global but the visible UI bucket is project-scoped; if a
+    // ready emitted during project switch backfilled every bridge tab,
+    // tabs from other projects appeared in the current project. Session
+    // UI snapshots and discoveredSessions handle reload restoration;
+    // ready may only enrich local tabs that already exist.
     //
     // Also hydrate per-tab mirrored state from extensionTabState —
     // those values are the bridge's record of what extensions / agents
@@ -221,7 +212,8 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     {
       const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
       const bridgeTabs =
-        (data.tabs as { id: string; model: string }[] | undefined) ?? [];
+        (data.tabs as { id: string; model: string; cwd?: string }[] | undefined) ??
+        [];
       const tabReplay =
         (data.extensionTabState as
           | Record<string, Record<string, unknown>>
@@ -237,25 +229,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
           localTabs[i] = { ...localTabs[i], model };
         }
       }
-      for (const bt of bridgeTabs) {
-        if (bt.id === "default") continue;
-        const exists = localTabs.find((t) => t.id === bt.id);
-        if (exists) {
-          if (!exists.model && bt.model) {
-            const idx = localTabs.indexOf(exists);
-            localTabs[idx] = { ...exists, model: bt.model };
-          }
-          continue;
+      for (let i = 0; i < localTabs.length; i++) {
+        const bt = bridgeTabs.find((candidate) => candidate.id === localTabs[i].id);
+        if (bt?.model && !localTabs[i].model) {
+          localTabs[i] = { ...localTabs[i], model: bt.model };
         }
-        const label = `Tab ${localTabs.length + 1}`;
-        localTabs.push({
-          ...makeEmptyTab(
-            bt.id,
-            sessionLabel(bt.id, label),
-            ctx.projectsRef.current.activeId,
-          ),
-          model: bt.model,
-        });
       }
       // Apply the bridge's per-tab replay over each tab record. prev
       // wins for keys the React side already restored (e.g. local-only

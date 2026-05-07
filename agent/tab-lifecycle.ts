@@ -386,6 +386,7 @@ export function emitReady(
     tabs: [...state.tabs.values()].map((t) => ({
       id: t.id,
       model: t.session.model ? modelKey(t.session.model) : "",
+      cwd: state.tabProjectCwds.get(t.id),
     })),
     extensionComponents: Object.fromEntries(state.extensionComponents),
     extensionState: state.extensionStateTree,
