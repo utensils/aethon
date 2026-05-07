@@ -120,17 +120,12 @@
             "area": "empty-state",
             "visible": { "$ref": "/empty" },
             "title": "Welcome to Aethon",
-            "subtitle": "All tabs are closed. Open a project, then start a conversation.",
+            "subtitle": "All tabs are closed. Start a new conversation or restore a recent session.",
             "primaryButtonLabel": "New Tab",
             "secondaryButtonLabel": "Open Project…",
             "recentSessions": { "$ref": "/recentSessions" },
             "recentProjects": { "$ref": "/projects" },
-            "activeProject": { "$ref": "/project" },
-            "tips": [
-              "Press ⌘T to open a new conversation tab.",
-              "Type /project to choose a working directory.",
-              "Type / in the composer to see slash commands."
-            ]
+            "activeProject": { "$ref": "/project" }
           }
         },
         {

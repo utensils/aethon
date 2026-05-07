@@ -1,5 +1,4 @@
 import type { EventRouteHandler } from "./types";
-import type { Tab } from "../types/tab";
 
 /** tab-strip: select / close / new. Tab events route by component
  *  *type* — id may vary across layouts (workstation hoists the strip
@@ -31,7 +30,7 @@ export const handleTabStrip: EventRouteHandler = (
 
 /** empty-state CTA buttons: new-tab, open-project, select-project,
  *  restore-session. Renders when the active project has no open tabs;
- *  selection events here seed a fresh tab in the chosen project.
+ *  only new-tab / restore-session create conversation tabs.
  *
  *  Routed by `type:empty-state` (registry override key). */
 export const handleEmptyState: EventRouteHandler = (
@@ -43,12 +42,7 @@ export const handleEmptyState: EventRouteHandler = (
     return true;
   }
   if (eventType === "open-project") {
-    // Pop the native folder picker. On a successful pick we've already
-    // persisted + announced the new project — open a fresh tab in it
-    // so the user lands ready-to-chat. On cancel, leave empty state.
-    ctx.openProjectFromPicker().then((id) => {
-      if (id) ctx.newTab();
-    });
+    ctx.openProjectFromPicker();
     return true;
   }
   if (eventType === "select-project") {
@@ -57,12 +51,6 @@ export const handleEmptyState: EventRouteHandler = (
       | undefined;
     if (sel?.projectId) {
       ctx.setActiveProjectById(sel.projectId);
-      // Only seed a fresh tab when the project's bucket is empty. If
-      // the user already has tabs in this project, the bucket load
-      // restored them — popping a new tab on top would be jarring.
-      const tabsAfter =
-        (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
-      if (tabsAfter.length === 0) ctx.newTab();
     }
     return true;
   }

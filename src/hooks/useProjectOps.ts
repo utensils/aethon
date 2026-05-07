@@ -7,7 +7,6 @@ import {
   type SetStateAction,
 } from "react";
 import {
-  makeEmptyTab,
   NO_PROJECT_KEY,
   projectBucketKey,
   type Tab,
@@ -22,7 +21,7 @@ import {
   type ProjectsState,
 } from "../projects";
 import { formatRelativeTime } from "../utils/time";
-import { modelForNewProjectTab, TAB_MIRROR_KEYS } from "./useTabs";
+import { TAB_MIRROR_KEYS } from "./useTabs";
 import { recomputeModelPicker } from "../utils/modelPicker";
 import type { ChatMessage } from "../types/a2ui";
 import type { GitStatus } from "./useProjects";
@@ -59,7 +58,7 @@ export interface UseProjectOpsContext {
    *  shadow. The hook mutates `.current` in place. */
   projectsRef: MutableRefObject<ProjectsState>;
   /** Pi's default model from the last `ready` event. Owned at App-root
-   *  for the same reason. */
+   *  so tab creation can use the same shared default elsewhere. */
   piDefaultModelRef: MutableRefObject<string>;
   /** Cached git status keyed by absolute path — mirrored into
    *  /sidebar/projects badges. Owned by useProjects; read here. */
@@ -132,18 +131,6 @@ export function projectIdFromBucketKey(key: string): string | null {
   return key === NO_PROJECT_KEY ? null : key;
 }
 
-export function blankTabForProjectBucket(
-  state: Record<string, unknown>,
-  bucketKey: string,
-  fallbackModel: string,
-): Tab {
-  const projectId = projectIdFromBucketKey(bucketKey);
-  return {
-    ...makeEmptyTab("default", "Tab 1", projectId),
-    model: modelForNewProjectTab(state, projectId, fallbackModel),
-  };
-}
-
 export function tabsForProjectBucket(tabs: Tab[], bucketKey: string): Tab[] {
   const projectId = projectIdFromBucketKey(bucketKey);
   return tabs.filter((tab) =>
@@ -171,8 +158,6 @@ export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
  *   - `tabBucketsRef` — per-project tab snapshots.
  *   - `allDiscoveredSessionsRef` — bridge-discovered sessions awaiting
  *     restore (filtered to the active project's cwd).
- *   - `piDefaultModelRef` — default model from `ready`, used to seed
- *     new tabs.
  *
  * The boot effect runs once on mount: loads projects from disk,
  * mirrors them to state, kicks an initial git status fetch, and
@@ -193,7 +178,6 @@ export function useProjectOps(
     setState,
     stateRef,
     projectsRef,
-    piDefaultModelRef,
     gitStatusRef,
     refreshGitStatusFor,
     refreshAllGitStatus,
@@ -367,8 +351,8 @@ export function useProjectOps(
   // active tab's view (messages / draft / canvas / model) is mirrored
   // to the root keys so the layout sees the new project's view
   // immediately. If the new project has no bucket yet, we leave tabs
-  // empty + flip /empty so the empty-state composite renders — the
-  // caller (newTab/openProjectByPath) decides whether to seed a tab.
+  // empty + flip /empty so the empty-state composite renders. Project
+  // switching never creates conversation tabs.
   function switchProjectBucket(fromKey: string, toKey: string): string | undefined {
     if (fromKey === toKey) {
       return stateRef.current.activeTabId as string | undefined;
@@ -391,8 +375,7 @@ export function useProjectOps(
           : currentTabs[0]?.id,
       });
       // Load target bucket. When a project has no visible session bucket,
-      // seed a blank tab for that project rather than carrying the old
-      // active tab mirror across the boundary.
+      // keep tabs empty so the empty-state composite owns the canvas.
       const savedNextRaw = tabBucketsRef.current.get(toKey);
       const savedNext = savedNextRaw
         ? {
@@ -405,16 +388,7 @@ export function useProjectOps(
       const next =
         savedNext && savedNext.tabs.length > 0
           ? savedNext
-          : {
-              tabs: [
-                blankTabForProjectBucket(
-                  prev,
-                  toKey,
-                  piDefaultModelRef.current,
-                ),
-              ],
-              activeTabId: "default",
-            };
+          : { tabs: [], activeTabId: undefined };
       // Heal an orphaned bucket: tabs present but the saved activeTabId
       // doesn't match any of them (or is missing). Without this fixup,
       // the fallthrough below would set empty:true with tabs.length>0,
@@ -476,9 +450,8 @@ export function useProjectOps(
     // appears on the same render that adds the row, not 30s later.
     void refreshGitStatusFor(path);
     // Switch to the project's tab bucket BEFORE notifying the bridge.
-    // If this is a brand-new project, the bucket is empty — the empty
-    // state composite will render so the caller can decide whether to
-    // auto-create a fresh tab.
+    // If this is a brand-new project, the bucket is empty and the empty
+    // state composite renders until the user explicitly creates a tab.
     const nextTabId = switchProjectBucket(fromKey, projectBucketKey(id));
     syncRecentSessionsToState();
     const tabId = nextTabId ?? "default";
