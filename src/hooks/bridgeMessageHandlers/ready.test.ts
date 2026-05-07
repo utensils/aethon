@@ -155,6 +155,44 @@ describe("handleReady", () => {
       "/tmp/p1",
     );
   });
+
+  it("requests transcript replay for open tabs after ready", () => {
+    const harness = installTauriMocks();
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [
+          { id: "default", model: "claude" },
+          { id: "tab-2", model: "gpt" },
+        ],
+      },
+    });
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [{ id: "default", model: "claude" }],
+      },
+      ctx,
+    );
+    const payloads = harness.invoke.mock.calls
+      .filter((call) => call[0] === "agent_command")
+      .map((call) => JSON.parse(call[1].payload as string));
+    expect(payloads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tab_open",
+          tabId: "default",
+          restoreHistory: true,
+        }),
+        expect.objectContaining({
+          type: "tab_open",
+          tabId: "tab-2",
+          restoreHistory: true,
+        }),
+      ]),
+    );
+  });
 });
 
 // Quiet the ESLint vi-unused warning when fake timers aren't used.
