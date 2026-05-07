@@ -51,6 +51,7 @@ export interface ExtensionLoaderDeps {
 
 export interface LoadHooks {
   onLoaded?: (name: string) => void;
+  onProjectLoaded?: (name: string, projectRoot: string) => void;
   onFailure?: (
     failure: ExtensionFailure & { name: string; source: ExtensionFailureSource },
   ) => void;
@@ -109,12 +110,14 @@ interface LoadDirectoryOptions {
    *  `state.loadFailures` and surfaced via `extension_lifecycle`. */
   failedFiles?: Set<string>;
   onLoaded?: (name: string) => void;
+  onProjectLoaded?: (name: string, projectRoot: string) => void;
   onFailure?: (failure: {
     name: string;
     source: Extract<ExtensionSource, "directory" | "project-directory">;
     status: "failed" | "skipped";
     error: string;
     path: string;
+    projectRoot?: string;
   }) => void;
 }
 
@@ -271,6 +274,7 @@ export async function loadAethonExtensions(
     source: "directory",
     logPrefix: "aethon-ext",
     onLoaded: hooks?.onLoaded,
+    onProjectLoaded: hooks?.onProjectLoaded,
     onFailure: hooks?.onFailure,
   });
 }
@@ -294,6 +298,7 @@ export async function loadProjectAethonExtensions(
   let failedThisCall = 0;
   const wrappedHooks = {
     onLoaded: hooks?.onLoaded,
+    onProjectLoaded: hooks?.onProjectLoaded,
     onFailure: hooks?.onFailure
       ? (f: Parameters<NonNullable<typeof hooks.onFailure>>[0]) => {
           failedThisCall += 1;
@@ -312,8 +317,12 @@ export async function loadProjectAethonExtensions(
       failedFiles,
       displayName: (name) =>
         projectExtensionDisplayName(projectRoot, extensionDir, name),
-      onLoaded: wrappedHooks.onLoaded,
-      onFailure: wrappedHooks.onFailure,
+      onLoaded: (name) => {
+        wrappedHooks.onLoaded?.(name);
+        wrappedHooks.onProjectLoaded?.(name, projectRoot);
+      },
+      onFailure: (failure) =>
+        wrappedHooks.onFailure({ ...failure, projectRoot }),
     });
   }
   return { loaded: loadedFiles.size - before, failed: failedThisCall };
@@ -600,7 +609,6 @@ export async function discoverPersistedTabs(
   }
   const results: DiscoveredTab[] = [];
   for (const name of entries) {
-    if (name === "default") continue;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
     const dir = join(state.sessionsDir, name);
     try {

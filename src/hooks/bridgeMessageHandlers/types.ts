@@ -7,6 +7,8 @@ import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import type { SkillRegistry } from "../../skills/SkillRegistry";
 import type {
+  ExtensionFailureSummary,
+  ExtensionSummary,
   ExtensionTheme,
 } from "../useExtensionsHydration";
 import type {
@@ -80,13 +82,14 @@ export interface BridgeMessageContext {
   // ─── Extension hydration (from useExtensionsHydration) ──────────────
   hydrateThemes: (list: ExtensionTheme[]) => void;
   hydrateExtensions: (
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
+    loaded: ExtensionSummary[],
+    failed: ExtensionFailureSummary[],
     disabled?: string[],
+    activeProjectPath?: string | null,
   ) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],
-    piSkills?: { name: string; description: string; usage?: string }[],
+    piCommands?: { name: string; description: string; usage?: string }[],
   ) => void;
   hydrateKeybindings: (
     list: { combo: string; action: string; description?: string }[],
@@ -110,6 +113,8 @@ export interface BridgeMessageContext {
 
   // ─── Chat / status helpers (defined on App) ─────────────────────────
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
+  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  recordProjectModel: (model: string, tabId?: string) => void;
   appendOrAmendAgentText: (
     delta: string,
     messageId?: string,

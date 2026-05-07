@@ -103,7 +103,7 @@ describe("discoverPersistedTabs", () => {
     expect(await discoverPersistedTabs(f.state)).toEqual([]);
   });
 
-  it("ignores 'default' and malformed names; sorts by lastModified desc", async () => {
+  it("allows 'default' and ignores malformed names", async () => {
     const root = mkdtempSync(join(tmpdir(), "aethon-ext-"));
     try {
       const sessionsDir = join(root, "sessions");
@@ -112,18 +112,22 @@ describe("discoverPersistedTabs", () => {
       mkdirSync(join(sessionsDir, "tab-b"), { recursive: true });
       mkdirSync(join(sessionsDir, "weird name?!"), { recursive: true });
       // Stamp two files in tab-a / tab-b, b is newer.
+      const defaultFile = join(sessionsDir, "default", "1.jsonl");
       const aFile = join(sessionsDir, "tab-a", "1.jsonl");
       const bFile = join(sessionsDir, "tab-b", "1.jsonl");
+      writeFileSync(defaultFile, `${JSON.stringify({
+        type: "session",
+        id: "default",
+        cwd: "/tmp/default",
+      })}\n`);
       writeFileSync(aFile, "");
       writeFileSync(bFile, "");
       const stateOpts = makeOpts(root);
       stateOpts.sessionsDir = sessionsDir;
       const state = new AethonAgentState(stateOpts);
       const tabs = await discoverPersistedTabs(state);
-      // No metadata in jsonl → readSessionMetadata returns null → both
-      // skipped. We just want to verify the safety filter.
       const ids = tabs.map((t) => t.tabId);
-      expect(ids).not.toContain("default");
+      expect(ids).toContain("default");
       expect(ids).not.toContain("weird name?!");
     } finally {
       rmSync(root, { recursive: true, force: true });

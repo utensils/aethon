@@ -49,6 +49,57 @@ const VALID_SHARE_MODES: ShellMeta["shareMode"][] = [
   "read-write-trusted",
 ];
 
+function sessionLabel(session: DiscoveredSession): string {
+  if (session.customLabel) return session.customLabel;
+  if (session.firstUserMessage) {
+    return session.firstUserMessage.replace(/\s+/g, " ").trim();
+  }
+  return `Session ${session.tabId.slice(0, 8)}`;
+}
+
+function sessionLabelFromMessages(messages: Tab["messages"]): string | undefined {
+  const first = messages.find(
+    (m) =>
+      m.role === "user" &&
+      typeof m.text === "string" &&
+      m.text.trim().length > 0,
+  );
+  const text = first?.text?.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  return text.length > 48 ? `${text.slice(0, 47)}...` : text;
+}
+
+export function modelForNewProjectTab(
+  state: Record<string, unknown>,
+  activeProjectId: string | null,
+  fallbackModel: string,
+): string {
+  const projectModels =
+    (state.projectModels as Record<string, string> | undefined) ?? {};
+  const projectModel = activeProjectId ? projectModels[activeProjectId] : "";
+  return (
+    projectModel ||
+    (state.model as string | undefined) ||
+    fallbackModel
+  ).trim();
+}
+
+export function recentSessionItemFromClosedTab(
+  tab: Tab,
+  projects: ProjectsState,
+): { id: string; label: string; lastModified: string; cwd?: string } | null {
+  if (tab.kind !== "agent" || tab.messages.length === 0) return null;
+  const projectPath = tab.projectId
+    ? projects.projects.find((p) => p.id === tab.projectId)?.path
+    : undefined;
+  return {
+    id: tab.id,
+    label: sessionLabelFromMessages(tab.messages) ?? tab.label,
+    lastModified: "now",
+    ...(projectPath ? { cwd: projectPath } : {}),
+  };
+}
+
 interface DiscoveredSession {
   tabId: string;
   lastModified: number;
@@ -331,17 +382,25 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         });
       }, 5000);
     }
-    // Inherit the previously-active tab's model so the picker stays
-    // consistent. Fall back to piDefaultModelRef so tabs opened before
-    // ready still get a valid model.
-    const inheritedModel = (
-      (stateRef.current.model as string | undefined) ||
-      piDefaultModelRef.current
-    ).trim();
+    // Project-scoped model default: new tabs in a project should use
+    // the last model selected in that project, then the visible/global
+    // model, then pi's ready-reported default.
+    const projectId = projectsRef.current.activeId;
+    const inheritedModel = modelForNewProjectTab(
+      stateRef.current,
+      projectId,
+      piDefaultModelRef.current,
+    );
+    const existingSessionLabel = restoreId
+      ? sessionLabelFromMessages(
+          ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+            (t) => t.id === restoreId,
+          )?.messages ?? [],
+        )
+      : undefined;
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
-      const projectId = projectsRef.current.activeId;
+      const label = restoreLabel ?? existingSessionLabel ?? `Tab ${tabs.length + 1}`;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
@@ -480,7 +539,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
             (t) => t.id,
           )),
         ]);
-        const toRestore = discovered
+      const toRestore = discovered
           .filter((d) => !liveIds.has(d.tabId))
           .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
           .slice(0, 8);
@@ -488,7 +547,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         // Open oldest first so the most recent session ends up active.
         for (const session of [...toRestore].reverse()) {
           autoRestoredSessionIdsRef.current.add(session.tabId);
-          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`, {
+          newTab(session.tabId, sessionLabel(session), {
             restoredSession: true,
             ...(session.cwd ? { cwd: session.cwd } : {}),
           });
@@ -600,6 +659,20 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         tabs: list,
         activeTabId,
       };
+      if (closing) {
+        const closedSession = recentSessionItemFromClosedTab(
+          closing,
+          projectsRef.current,
+        );
+        if (closedSession) {
+          const recent =
+            (prev.recentSessions as { id: string }[] | undefined) ?? [];
+          result.recentSessions = [
+            closedSession,
+            ...recent.filter((s) => s.id !== closedSession.id),
+          ].slice(0, 16);
+        }
+      }
       if (list.length === 0) {
         becameEmpty = true;
         for (const key of TAB_MIRROR_KEYS) {

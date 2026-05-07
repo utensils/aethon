@@ -46,6 +46,20 @@ describe("parseSlashCommand", () => {
       args: "",
     });
   });
+
+  it("accepts pi skill command names with one colon segment", () => {
+    expect(parseSlashCommand("/skill:review diff")).toEqual({
+      name: "skill:review",
+      args: "diff",
+    });
+  });
+
+  it("accepts pi duplicate command suffixes", () => {
+    expect(parseSlashCommand("/review:1 file.ts")).toEqual({
+      name: "review:1",
+      args: "file.ts",
+    });
+  });
 });
 
 describe("buildBuiltinSlashCommands", () => {
@@ -56,6 +70,8 @@ describe("buildBuiltinSlashCommands", () => {
       "help",
       "theme",
       "model",
+      "name",
+      "export",
       "reset",
       "terminal",
       "extensions",
@@ -107,10 +123,13 @@ describe("buildBuiltinSlashCommands", () => {
       listProjects: () => [],
       activeProject: () => null,
       reloadAgent: () => Promise.resolve(),
+      runNativeCommand: () => Promise.resolve(),
       renameSession: () => Promise.resolve(),
       activeTabId: () => "default",
     };
-    const extensions = buildBuiltinSlashCommands().find((c) => c.name === "extensions")!;
+    const extensions = buildBuiltinSlashCommands().find(
+      (c) => c.name === "extensions",
+    )!;
 
     await extensions.run("install github:utensils/aethon-demo-extension", ctx);
 
@@ -145,13 +164,16 @@ describe("buildBuiltinSlashCommands", () => {
       listProjects: () => [],
       activeProject: () => null,
       reloadAgent: () => Promise.resolve(),
+      runNativeCommand: () => Promise.resolve(),
       renameSession: (tabId, label) => {
         calls.push({ tabId, label });
         return Promise.resolve();
       },
       activeTabId: () => "tab-7",
     };
-    const rename = buildBuiltinSlashCommands().find((c) => c.name === "rename")!;
+    const rename = buildBuiltinSlashCommands().find(
+      (c) => c.name === "rename",
+    )!;
     await rename.run("Refactor pass", ctx);
     expect(calls).toEqual([{ tabId: "tab-7", label: "Refactor pass" }]);
   });
@@ -185,13 +207,55 @@ describe("buildBuiltinSlashCommands", () => {
         reloadCalls += 1;
         return Promise.resolve();
       },
+      runNativeCommand: () => Promise.resolve(),
       renameSession: () => Promise.resolve(),
       activeTabId: () => null,
     };
-    const reload = buildBuiltinSlashCommands().find((c) => c.name === "reload")!;
+    const reload = buildBuiltinSlashCommands().find(
+      (c) => c.name === "reload",
+    )!;
     expect(reload).toBeDefined();
     await reload.run("", ctx);
     expect(reloadCalls).toBe(1);
     expect(titles).toContain("Reloading agent…");
+  });
+
+  it("/context routes through the native command bridge", async () => {
+    const calls: { name: string; args: string }[] = [];
+    const ctx: SlashCommandContext = {
+      appendSystem: () => {},
+      notify: () => {},
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      resetLayout: () => {},
+      listExtensions: () => [],
+      installExtension: () => Promise.resolve(""),
+      listModels: () => [],
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+      reloadAgent: () => Promise.resolve(),
+      runNativeCommand: (name, args) => {
+        calls.push({ name, args });
+        return Promise.resolve();
+      },
+      renameSession: () => Promise.resolve(),
+      activeTabId: () => "default",
+    };
+    const context = buildBuiltinSlashCommands().find(
+      (c) => c.name === "context",
+    )!;
+    await context.run("", ctx);
+    expect(calls).toEqual([{ name: "context", args: "" }]);
   });
 });

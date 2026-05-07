@@ -22,10 +22,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
 import type { RuntimeSnapshot } from "./system-prompt";
 import { logger } from "./logger";
-import {
-  summarizeLayout,
-  summarizeLayoutStructure,
-} from "./layout-manager";
+import { summarizeLayout, summarizeLayoutStructure } from "./layout-manager";
 
 const STATE_FILE_DEBOUNCE_MS = 200;
 
@@ -46,6 +43,9 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
     extensions: [...state.loadedExtensions.entries()].map(([name, source]) => ({
       name,
       source,
+      ...(source === "project-directory"
+        ? { projectRoot: state.projectExtensionRoots.get(name) }
+        : {}),
     })),
     failedExtensions: [...state.loadFailures.entries()].map(([name, info]) => ({
       name,
@@ -53,6 +53,7 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       status: info.status,
       error: info.error,
       ...(info.path ? { path: info.path } : {}),
+      ...(info.projectRoot ? { projectRoot: info.projectRoot } : {}),
     })),
     disabledExtensions: [...state.disabledExtensions].sort(),
     themes: [...state.extensionThemes.values()].map((t) => ({
@@ -75,6 +76,7 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       ...(match.eventType ? { eventType: match.eventType } : {}),
     })),
     slashCommands: [...state.extensionSlashCommands.values()],
+    piSlashCommands: state.piSlashCommands,
     piSkills: state.piSkills,
     keybindings: [...state.extensionKeybindings.values()],
     menuItems: [...state.extensionMenuItems.values()],

@@ -1,4 +1,10 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../types/a2ui";
 import {
@@ -7,7 +13,10 @@ import {
 } from "../slashCommands";
 import { reconcileFrontendModules } from "../skills/extensionFrontendLoader";
 import type { SkillRegistry } from "../skills/SkillRegistry";
-import { builtinLayouts, type LayoutCatalogueEntry } from "../skills/default-layout";
+import {
+  builtinLayouts,
+  type LayoutCatalogueEntry,
+} from "../skills/default-layout";
 import { deepMergeState } from "../utils/stateMutation";
 import { normalizeRegisteredCombo } from "../utils/keybindings";
 
@@ -15,6 +24,35 @@ export interface ExtensionTheme {
   id: string;
   label: string;
   vars: Record<string, string>;
+}
+
+export interface ExtensionSummary {
+  name: string;
+  source: string;
+  projectRoot?: string;
+}
+
+export interface ExtensionFailureSummary extends ExtensionSummary {
+  error?: string;
+}
+
+function normalizeExtensionProjectPath(path: string | undefined | null): string {
+  return (path ?? "").replace(/[/\\]+$/, "");
+}
+
+export function filterExtensionSummariesByProject<
+  T extends ExtensionSummary,
+>(entries: T[], activeProjectPath: string | null = null): T[] {
+  const activePath = normalizeExtensionProjectPath(activeProjectPath);
+  return entries.filter((entry) => {
+    if (entry.source !== "project-directory") return true;
+    const projectRoot = normalizeExtensionProjectPath(entry.projectRoot);
+    return (
+      activePath.length > 0 &&
+      projectRoot.length > 0 &&
+      (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
+    );
+  });
 }
 
 /** Built-in themes always available. CSS for these lives in styles.css —
@@ -54,9 +92,10 @@ export interface UseExtensionsHydrationActions {
   injectThemeStyle: (theme: ExtensionTheme) => void;
   hydrateThemes: (list: ExtensionTheme[]) => void;
   hydrateExtensions: (
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
+    loaded: ExtensionSummary[],
+    failed: ExtensionFailureSummary[],
     disabled?: string[],
+    activeProjectPath?: string | null,
   ) => void;
   hydrateEventRoutes: (
     routes: { componentId?: string; eventType?: string }[],
@@ -76,13 +115,41 @@ export interface UseExtensionsHydrationActions {
   hydrateFrontendModules: (list: { name: string; code: string }[]) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],
-    piSkills?: { name: string; description: string; usage?: string }[],
+    piCommands?: { name: string; description: string; usage?: string }[],
   ) => void;
   listThemes: () => { id: string; label: string }[];
   summarizeLayoutComponents: (
     payload: A2UIPayload,
   ) => { id: string; label: string; active: boolean }[];
   activateLayoutById: (id: string) => boolean;
+}
+
+export function buildHydratedSlashCommands(
+  builtins: SlashCommand[],
+  extensionCommands: { name: string; description: string; usage?: string }[],
+  piCommands: { name: string; description: string; usage?: string }[],
+  makeExtensionCommand: (
+    command: { name: string; description: string; usage?: string },
+  ) => SlashCommand,
+): SlashCommand[] {
+  const builtinNames = new Set(builtins.map((c) => c.name));
+  const dispatched = extensionCommands
+    .filter((c) => !builtinNames.has(c.name))
+    .map(makeExtensionCommand);
+  const reservedNames = new Set([
+    ...builtins.map((c) => c.name),
+    ...dispatched.map((c) => c.name),
+  ]);
+  const piPassthroughCommands: SlashCommand[] = piCommands
+    .filter((s) => !reservedNames.has(s.name))
+    .map((s) => ({
+      name: s.name,
+      description: s.description,
+      usage: s.usage,
+      passthroughToAgent: true,
+      run: () => {},
+    }));
+  return [...builtins, ...dispatched, ...piPassthroughCommands];
 }
 
 /**
@@ -125,7 +192,7 @@ export function useExtensionsHydration(
   >(new Map());
   const frontendModulesRef = useRef<Map<string, string>>(new Map());
   const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
-  const piSkillsRef = useRef<
+  const piCommandsRef = useRef<
     { name: string; description: string; usage?: string }[]
   >([]);
   const extensionSlashNamesRef = useRef<Set<string>>(new Set());
@@ -190,10 +257,19 @@ export function useExtensionsHydration(
   }
 
   function hydrateExtensions(
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
+    loaded: ExtensionSummary[],
+    failed: ExtensionFailureSummary[],
     disabled: string[] = [],
+    activeProjectPath: string | null = null,
   ) {
+    const scopedLoaded = filterExtensionSummariesByProject(
+      loaded,
+      activeProjectPath,
+    );
+    const scopedFailed = filterExtensionSummariesByProject(
+      failed,
+      activeProjectPath,
+    );
     const sourceLabel = (s: string) =>
       s === "project-directory"
         ? "project"
@@ -215,7 +291,7 @@ export function useExtensionsHydration(
         hint: "core",
         active: true,
       },
-      ...loaded
+      ...scopedLoaded
         .filter((e) => !disabledSet.has(e.name))
         .map((e) => ({
           id: `ext:${e.name}`,
@@ -223,7 +299,7 @@ export function useExtensionsHydration(
           hint: sourceLabel(e.source),
           active: true,
         })),
-      ...failed
+      ...scopedFailed
         .filter((e) => !disabledSet.has(e.name))
         .map((e) => ({
           id: `ext-failed:${e.name}`,
@@ -486,14 +562,18 @@ export function useExtensionsHydration(
 
   function hydrateSlashCommands(
     list: { name: string; description: string; usage?: string }[],
-    piSkills?: { name: string; description: string; usage?: string }[],
+    piCommands?: { name: string; description: string; usage?: string }[],
   ) {
-    if (piSkills) piSkillsRef.current = piSkills;
+    if (piCommands) piCommandsRef.current = piCommands;
     const builtins = buildBuiltinSlashCommands();
-    const builtinNames = new Set(builtins.map((c) => c.name));
-    const dispatched: SlashCommand[] = list
-      .filter((c) => !builtinNames.has(c.name))
-      .map((c) => ({
+    const dispatchedNames = list
+      .filter((c) => !new Set(builtins.map((b) => b.name)).has(c.name))
+      .map((c) => c.name);
+    slashCommandsRef.current = buildHydratedSlashCommands(
+      builtins,
+      list,
+      piCommandsRef.current,
+      (c) => ({
         name: c.name,
         description: c.description,
         usage: c.usage,
@@ -509,22 +589,9 @@ export function useExtensionsHydration(
             tabId: stateRef.current.activeTabId,
           });
         },
-      }));
-    const reservedNames = new Set([
-      ...builtins.map((c) => c.name),
-      ...dispatched.map((c) => c.name),
-    ]);
-    const skillCommands: SlashCommand[] = piSkillsRef.current
-      .filter((s) => !reservedNames.has(s.name))
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        usage: s.usage,
-        passthroughToAgent: true,
-        run: () => {},
-      }));
-    extensionSlashNamesRef.current = new Set(dispatched.map((c) => c.name));
-    slashCommandsRef.current = [...builtins, ...dispatched, ...skillCommands];
+      }),
+    );
+    extensionSlashNamesRef.current = new Set(dispatchedNames);
     setState((prev) => ({
       ...prev,
       slashCommands: slashCommandsRef.current.map((c) => ({

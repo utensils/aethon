@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  appendLocalChatMessage,
   findSessionFileMatchingCwd,
+  normalizeSessionLabel,
   parseSessionHistoryLines,
   readSessionLabel,
   readSessionMetadata,
@@ -113,6 +115,77 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("appends Aethon-local slash command messages to restored history", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "slash-user",
+      role: "user",
+      text: "/context",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "slash-output",
+      role: "system",
+      text: "## Context",
+      createdAt: 2,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-user", role: "user", text: "hi" },
+      { id: "slash-user", role: "user", text: "/context", createdAt: 1 },
+      {
+        id: "slash-output",
+        role: "system",
+        text: "## Context",
+        createdAt: 2,
+      },
+    ]);
+  });
+
+  it("bounds the Aethon-local slash command overlay on append", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      })}\n`,
+    );
+    for (let i = 0; i < 405; i++) {
+      await appendLocalChatMessage(dir, {
+        id: `local-${i}`,
+        role: "system",
+        text: `local ${i}`,
+        createdAt: i,
+      });
+    }
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.at(1)).toEqual({
+      id: "local-206",
+      role: "system",
+      text: "local 206",
+      createdAt: 206,
+    });
+    expect(restored.at(-1)).toEqual({
+      id: "local-404",
+      role: "system",
+      text: "local 404",
+      createdAt: 404,
+    });
+    expect(restored).toHaveLength(200);
+  });
+
   it("reads project cwd metadata from the newest session log", async () => {
     const dir = await tempRoot();
     const path = join(dir, "session.jsonl");
@@ -148,6 +221,14 @@ describe("readSessionTranscript", () => {
     // Empty label clears the file.
     await writeSessionLabel(dir, "");
     expect(await readSessionLabel(dir)).toBeUndefined();
+  });
+});
+
+describe("normalizeSessionLabel", () => {
+  it("trims and applies the same length limit pi receives", () => {
+    expect(normalizeSessionLabel(`  ${"a".repeat(130)}  `)).toBe(
+      "a".repeat(120),
+    );
   });
 });
 
@@ -195,6 +276,68 @@ describe("readSessionTranscript with expectedCwd", () => {
     await expect(
       readSessionTranscript(dir, "/tmp/target"),
     ).resolves.toEqual([]);
+  });
+
+  it("filters Aethon-local slash overlay by cwd when restoring a scoped session", async () => {
+    const dir = await tempRoot();
+    await writeMiniSession(dir, "target.jsonl", "/tmp/target", "from target", 1_000);
+    await appendLocalChatMessage(dir, {
+      id: "target-local",
+      role: "system",
+      text: "target context",
+      cwd: "/tmp/target",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "other-local",
+      role: "system",
+      text: "other context",
+      cwd: "/tmp/other",
+      createdAt: 2,
+    });
+
+    await expect(
+      readSessionTranscript(dir, "/tmp/target"),
+    ).resolves.toEqual([
+      { id: "target.jsonl-u", role: "user", text: "from target" },
+      {
+        id: "target-local",
+        role: "system",
+        text: "target context",
+        createdAt: 1,
+        cwd: "/tmp/target",
+      },
+    ]);
+  });
+
+  it("restores Aethon-local slash overlay when no pi session log exists", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "target-local",
+      role: "system",
+      text: "target context",
+      cwd: "/tmp/target",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "other-local",
+      role: "system",
+      text: "other context",
+      cwd: "/tmp/other",
+      createdAt: 2,
+    });
+
+    await expect(
+      readSessionTranscript(dir, "/tmp/target"),
+    ).resolves.toEqual([
+      {
+        id: "target-local",
+        role: "system",
+        text: "target context",
+        createdAt: 1,
+        cwd: "/tmp/target",
+      },
+    ]);
   });
 
   it("does not diverge from ensureTab when no active project is set", async () => {

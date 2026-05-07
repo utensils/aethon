@@ -28,6 +28,7 @@ describe("handleModelChanged", () => {
     const [tabId, updater] = mocks.updateTab.mock.calls[0];
     expect(tabId).toBe("default");
     expect(updater(makeEmptyTab("default", "Tab 1")).model).toBe("gpt");
+    expect(mocks.recordProjectModel).toHaveBeenCalledWith("gpt", "default");
     const next = applySetState();
     expect(next.status).toBe("switched to gpt");
     expect((next.sidebar as { models: { id: string; active: boolean }[] }).models)

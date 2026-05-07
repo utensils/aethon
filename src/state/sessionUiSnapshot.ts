@@ -1,0 +1,200 @@
+import type { Tab } from "../types/tab";
+
+export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
+
+const KEY = "aethon:session-ui-snapshot:v1";
+const MAX_MESSAGES_PER_TAB = 200;
+const MAX_TERMINAL_BUFFER = 256 * 1024;
+
+export interface SessionUiSnapshot {
+  activeTabId?: string;
+  tabs: Tab[];
+  layout?: unknown;
+  terminal?: unknown;
+  terminalPanel?: unknown;
+  scrollToMatchByTab?: unknown;
+  projectModels?: Record<string, string>;
+  savedAt: number;
+}
+
+function canUseSessionStorage(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.sessionStorage?.getItem === "function" &&
+    typeof window.sessionStorage?.setItem === "function" &&
+    typeof window.sessionStorage?.removeItem === "function"
+  );
+}
+
+function canUseLocalStorage(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.localStorage?.getItem === "function" &&
+    typeof window.localStorage?.setItem === "function" &&
+    typeof window.localStorage?.removeItem === "function"
+  );
+}
+
+function trimTab(tab: Tab): Tab {
+  return {
+    ...tab,
+    messages: tab.messages.slice(-MAX_MESSAGES_PER_TAB),
+    terminalBuffer: tab.terminalBuffer.slice(-MAX_TERMINAL_BUFFER),
+  };
+}
+
+function shouldPersistTab(tab: Tab): boolean {
+  if (tab.kind === "shell") return false;
+  return (
+    tab.messages.length > 0 ||
+    tab.draft.trim().length > 0 ||
+    tab.waiting ||
+    tab.queueCount > 0 ||
+    tab.canvas !== null ||
+    tab.terminalBuffer.length > 0
+  );
+}
+
+function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undefined {
+  if (!layout || typeof layout !== "object") return undefined;
+  const input = layout as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  if (typeof input.sidebarVisible === "boolean") {
+    next.sidebarVisible = input.sidebarVisible;
+  }
+  if (typeof input.columns === "string") {
+    const first = input.columns.trim().split(/\s+/)[0];
+    if (/^\d+px$/.test(first)) {
+      next.columns = `${first} minmax(0,1fr)`;
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
+  const candidates: string[] = [];
+  if (canUseSessionStorage()) {
+    const raw = window.sessionStorage.getItem(KEY);
+    if (raw) candidates.push(raw);
+  }
+  if (canUseLocalStorage()) {
+    const raw = window.localStorage.getItem(KEY);
+    if (raw) candidates.push(raw);
+  }
+  for (const raw of candidates) {
+    const parsed = parseSessionUiSnapshot(raw);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
+  try {
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SessionUiSnapshot>;
+    const tabs = Array.isArray(parsed.tabs)
+      ? parsed.tabs.filter((t): t is Tab => {
+          const candidate = t as Partial<Tab>;
+          return (
+            typeof candidate.id === "string" &&
+            typeof candidate.label === "string" &&
+            Array.isArray(candidate.messages)
+          );
+        })
+      : [];
+    if (tabs.length === 0) return null;
+    const activeTabId =
+      typeof parsed.activeTabId === "string" &&
+      tabs.some((t) => t.id === parsed.activeTabId)
+        ? parsed.activeTabId
+        : tabs[0].id;
+    return {
+      tabs: tabs.map((t) => ({
+        ...t,
+        kind: t.kind ?? "agent",
+        draft: t.draft ?? "",
+        waiting: Boolean(t.waiting),
+        queueCount: typeof t.queueCount === "number" ? t.queueCount : 0,
+        canvas: t.canvas ?? null,
+        model: t.model ?? "",
+        terminalBuffer: t.terminalBuffer ?? "",
+        projectId: t.projectId ?? null,
+      })),
+      activeTabId,
+      layout: durableLayoutSnapshot(parsed.layout),
+      terminal: parsed.terminal,
+      terminalPanel: parsed.terminalPanel,
+      scrollToMatchByTab: parsed.scrollToMatchByTab,
+      projectModels:
+        parsed.projectModels &&
+        typeof parsed.projectModels === "object" &&
+        !Array.isArray(parsed.projectModels)
+          ? Object.fromEntries(
+              Object.entries(parsed.projectModels).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[0] === "string" && typeof entry[1] === "string",
+              ),
+            )
+          : undefined,
+      savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function serializeSessionUiSnapshot(
+  state: Record<string, unknown>,
+): string | null {
+  try {
+    const tabs = Array.isArray(state.tabs)
+      ? (state.tabs as Tab[]).filter(shouldPersistTab).map(trimTab)
+      : [];
+    if (tabs.length === 0) {
+      return null;
+    }
+    const activeTabId =
+      typeof state.activeTabId === "string" &&
+      tabs.some((t) => t.id === state.activeTabId)
+        ? state.activeTabId
+        : tabs[0]?.id;
+    const snapshot: SessionUiSnapshot = {
+      tabs,
+      activeTabId,
+      layout: durableLayoutSnapshot(state.layout),
+      terminal: state.terminal,
+      terminalPanel: state.terminalPanel,
+      scrollToMatchByTab: state.scrollToMatchByTab,
+      projectModels:
+        state.projectModels &&
+        typeof state.projectModels === "object" &&
+        !Array.isArray(state.projectModels)
+          ? (state.projectModels as Record<string, string>)
+          : undefined,
+      savedAt: Date.now(),
+    };
+    return JSON.stringify(snapshot);
+  } catch {
+    return null;
+  }
+}
+
+export function saveSessionUiSnapshot(
+  state: Record<string, unknown>,
+  persistDisk?: (content: string) => void,
+): void {
+  const serialized = serializeSessionUiSnapshot(state);
+  try {
+    if (serialized === null) {
+      if (canUseSessionStorage()) window.sessionStorage.removeItem(KEY);
+      if (canUseLocalStorage()) window.localStorage.removeItem(KEY);
+      persistDisk?.("");
+      return;
+    }
+    if (canUseSessionStorage()) window.sessionStorage.setItem(KEY, serialized);
+    if (canUseLocalStorage()) window.localStorage.setItem(KEY, serialized);
+    persistDisk?.(serialized);
+  } catch {
+    /* best-effort; quota or privacy settings should not break the app */
+  }
+}

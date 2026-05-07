@@ -32,15 +32,16 @@ describe("handleSidebarResize", () => {
 });
 
 describe("handleSidebarResizeEnd", () => {
-  it("persists the current sidebar width", async () => {
+  it("handles the drag lifecycle without a legacy one-off write", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: { layout: { columns: "240px minmax(0,1fr)" } },
     });
-    await handleSidebarResizeEnd(
+    const handled = await handleSidebarResizeEnd(
       { component: { id: "sidebar" }, eventType: "resize-end" },
       ctx,
     );
-    expect(mocks.writeState).toHaveBeenCalledWith("sidebar_width", "240");
+    expect(handled).toBe(true);
+    expect(mocks.writeState).not.toHaveBeenCalled();
   });
 });
 
@@ -80,6 +81,27 @@ describe("handleSidebarDeleteSession", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("delete_session", {
       tabId: "sess-1",
     });
+  });
+
+  it("deletes and closes the default session when allowed", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      promptDeleteAllow: true,
+      state: { tabs: [{ id: "default", kind: "agent" }] },
+    });
+    await handleSidebarDeleteSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "delete-session",
+        data: { sessionId: "default", label: "Tab 1" },
+      },
+      ctx,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_session", {
+      tabId: "default",
+    });
+    expect(mocks.closeTab).toHaveBeenCalledWith("default");
   });
 
   it("returns true and does nothing on empty input", async () => {

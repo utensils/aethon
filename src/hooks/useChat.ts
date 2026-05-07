@@ -33,6 +33,8 @@ export interface UseChatContext {
    *  invocation so handlers see fresh state without re-creating the
    *  command registry. */
   slashContext: () => SlashCommandContext;
+  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  recordProjectModel: (model: string, tabId?: string) => void;
 }
 
 export interface UseChatActions {
@@ -87,6 +89,8 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     slashCommandsRef,
     pushNotification,
     slashContext,
+    persistLocalChatMessage,
+    recordProjectModel,
   } = ctx;
 
   // Fallback id for text bubbles when the bridge doesn't supply one. The
@@ -216,10 +220,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       if (cmd && !cmd.passthroughToAgent) {
         const slashTabId =
           (stateRef.current.activeTabId as string | undefined) ?? "default";
-        appendMessage(
-          { id: crypto.randomUUID(), role: "user", text: trimmed },
-          slashTabId,
-        );
+        const slashUserMessage = {
+          id: crypto.randomUUID(),
+          role: "user" as const,
+          text: trimmed,
+        };
+        appendMessage(slashUserMessage, slashTabId);
+        persistLocalChatMessage(slashUserMessage, slashTabId);
         // Clear via updateActiveTab — without this, the active tab's
         // draft still holds the slash text and any subsequent mirror
         // (clearChat, theme switch, …) writes it back into root.draft,
@@ -275,6 +282,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
 
   async function setModel(id: string) {
     const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    recordProjectModel(id, tabId);
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "set_model", id, tabId }),

@@ -14,6 +14,7 @@
 # Env vars consumed:
 #   AETHON_VITE_PORT_BASE      starting port for Vite (default 1420)
 #   AETHON_DEBUG_PORT_BASE     starting port for the debug server (default 19433)
+#   AETHON_SKIP_BUN_INSTALL    when set to 1, skip the frontend dependency check
 #
 # Env vars set for the child:
 #   VITE_PORT                  the chosen Vite port (vite.config.ts honors this)
@@ -25,6 +26,32 @@ set -euo pipefail
 VITE_BASE="${AETHON_VITE_PORT_BASE:-1420}"
 DEBUG_BASE="${AETHON_DEBUG_PORT_BASE:-19433}"
 DEV_INFO="${HOME}/.aethon/dev-info.json"
+
+ensure_frontend_deps() {
+  if [[ "${AETHON_SKIP_BUN_INSTALL:-0}" == "1" ]]; then
+    return
+  fi
+  if [[ -x "node_modules/.bin/vite" ]]; then
+    return
+  fi
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "[dev] local Vite is missing and bun is not on PATH; run bun install" >&2
+    return 1
+  fi
+  echo "[dev] local Vite is missing; running bun install" >&2
+  if [[ -f bun.lock || -f bun.lockb ]]; then
+    if ! bun install --frozen-lockfile; then
+      echo "[dev] frozen bun install failed; retrying without --frozen-lockfile" >&2
+      bun install
+    fi
+  else
+    bun install
+  fi
+  if [[ ! -x "node_modules/.bin/vite" ]]; then
+    echo "[dev] bun install completed but node_modules/.bin/vite is still missing" >&2
+    return 1
+  fi
+}
 
 # Test whether ANY process is listening on TCP $1 on any interface or
 # address family. We use lsof here (available on macOS and the Nix
@@ -57,6 +84,8 @@ find_free_port() {
   fi
   echo "$p"
 }
+
+ensure_frontend_deps
 
 VITE_PORT="$(find_free_port "$VITE_BASE")"
 DEBUG_PORT="$(find_free_port "$DEBUG_BASE")"

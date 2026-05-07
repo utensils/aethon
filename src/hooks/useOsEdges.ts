@@ -7,6 +7,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import type { A2UIPayload } from "../types/a2ui";
 import type { ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import { shellQuoteAll } from "../utils/shellQuote";
@@ -14,6 +15,7 @@ import { TERMINAL_REPLAY_MAX } from "./useTabs";
 import type { NotificationInput } from "./useNotifications";
 
 export interface UseOsEdgesContext {
+  bootLayout: A2UIPayload;
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
 
@@ -94,6 +96,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
     dismissNotification,
     checkForUpdates,
   } = ctx;
+  const { bootLayout } = ctx;
 
   useEffect(() => {
     // The boot sequence (start_agent → boot_layout → report) and the
@@ -176,8 +179,22 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
       for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
       hangWarnActiveRef.current.clear();
       setStatusFlags({ waiting: false, status: "agent reloaded" });
-      // Re-prime the agent so we get a fresh `ready` event with the new code.
-      invoke("start_agent").catch(() => {
+      // Re-prime the full bridge handshake. A bare start_agent emits the
+      // bridge's startup ready, but does not replay the frontend boot layout
+      // or request a post-layout ready snapshot, which leaves hot-reload
+      // restore dependent on message timing.
+      (async () => {
+        await invoke("start_agent");
+        await invoke("agent_command", {
+          payload: JSON.stringify({
+            type: "boot_layout",
+            payload: bootLayout,
+          }),
+        });
+        await invoke("agent_command", {
+          payload: JSON.stringify({ type: "report" }),
+        });
+      })().catch(() => {
         /* surfaced by the next user action */
       });
     });

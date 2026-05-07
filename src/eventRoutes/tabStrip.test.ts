@@ -54,7 +54,20 @@ describe("handleEmptyState", () => {
     expect(mocks.newTab).toHaveBeenCalledTimes(1);
   });
 
-  it("select-project switches and seeds a fresh tab when bucket is empty", async () => {
+  it("open-project opens the picker without creating a tab", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    await handleEmptyState(
+      {
+        component: { id: "empty-state" },
+        eventType: "open-project",
+      },
+      ctx,
+    );
+    expect(mocks.openProjectFromPicker).toHaveBeenCalledTimes(1);
+    expect(mocks.newTab).not.toHaveBeenCalled();
+  });
+
+  it("select-project only switches projects", async () => {
     const { ctx, mocks } = buildRouteFixture({ state: { tabs: [] } });
     await handleEmptyState(
       {
@@ -65,7 +78,7 @@ describe("handleEmptyState", () => {
       ctx,
     );
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("proj-1");
-    expect(mocks.newTab).toHaveBeenCalledTimes(1);
+    expect(mocks.newTab).not.toHaveBeenCalled();
   });
 
   it("restore-session reuses the sessionId as the new tabId", async () => {

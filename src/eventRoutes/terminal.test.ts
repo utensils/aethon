@@ -74,7 +74,7 @@ describe("handleTerminalPanel", () => {
     expect((next.terminalPanel as { height?: number }).height).toBe(360);
   });
 
-  it("resize clamps height and resize-end persists the current value", async () => {
+  it("resize clamps height and resize-end avoids legacy one-off writes", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: { terminalPanel: { height: 240 } },
     });
@@ -96,7 +96,7 @@ describe("handleTerminalPanel", () => {
       },
       ctx,
     );
-    expect(mocks.writeState).toHaveBeenCalledWith("terminal_height", "720");
+    expect(mocks.writeState).not.toHaveBeenCalled();
   });
 });
 

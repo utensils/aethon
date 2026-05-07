@@ -1,8 +1,22 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 const LABEL_FILE = "label.txt";
+const LOCAL_CHAT_FILE = "aethon-chat.jsonl";
 const MAX_CUSTOM_LABEL_CHARS = 120;
+
+export function normalizeSessionLabel(label: string): string {
+  return label.trim().slice(0, MAX_CUSTOM_LABEL_CHARS);
+}
 
 /** Per-session custom label set via the sidebar "Rename session…"
  *  context-menu action. Returns undefined if no label has been set
@@ -31,7 +45,7 @@ export async function writeSessionLabel(
   label: string,
 ): Promise<void> {
   await mkdir(sessionDir, { recursive: true });
-  const trimmed = label.trim().slice(0, MAX_CUSTOM_LABEL_CHARS);
+  const trimmed = normalizeSessionLabel(label);
   const path = join(sessionDir, LABEL_FILE);
   if (!trimmed) {
     try {
@@ -46,12 +60,15 @@ export async function writeSessionLabel(
 }
 
 const MAX_RESTORED_MESSAGES = 200;
+const MAX_LOCAL_CHAT_MESSAGES = 400;
 const MAX_TEXT_CHARS = 8 * 1024;
 
 export interface RestoredChatMessage {
   id: string;
   role: "user" | "agent" | "system";
   text?: string;
+  createdAt?: number;
+  cwd?: string;
 }
 
 interface LatestSessionLog {
@@ -94,6 +111,127 @@ function trimText(text: string): string {
   return text.length > MAX_TEXT_CHARS
     ? `${text.slice(0, MAX_TEXT_CHARS - 3)}...`
     : text;
+}
+
+function isChatRole(role: unknown): role is RestoredChatMessage["role"] {
+  return role === "user" || role === "agent" || role === "system";
+}
+
+export async function appendLocalChatMessage(
+  sessionDir: string,
+  message: RestoredChatMessage,
+): Promise<void> {
+  if (!isChatRole(message.role)) return;
+  const text = typeof message.text === "string" ? trimText(message.text) : "";
+  if (!text) return;
+  await mkdir(sessionDir, { recursive: true });
+  const entry = {
+    type: "aethon_chat",
+    id: message.id || randomUUID(),
+    role: message.role,
+    text,
+    createdAt:
+      typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
+        ? message.createdAt
+        : Date.now(),
+    ...(typeof message.cwd === "string" && message.cwd.length > 0
+      ? { cwd: message.cwd }
+      : {}),
+  };
+  const path = join(sessionDir, LOCAL_CHAT_FILE);
+  await appendFile(path, `${JSON.stringify(entry)}\n`, "utf8");
+  await pruneLocalChatFile(path);
+}
+
+function normalizeCwd(cwd: string | undefined): string | undefined {
+  return cwd?.replace(/[/\\]+$/, "");
+}
+
+function parseLocalChatLines(
+  lines: Iterable<string>,
+  expectedCwd?: string,
+): RestoredChatMessage[] {
+  const messages: RestoredChatMessage[] = [];
+  const seen = new Set<string>();
+  const targetCwd = normalizeCwd(expectedCwd);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "aethon_chat") continue;
+    if (!isChatRole(record.role)) continue;
+    const entryCwd =
+      typeof record.cwd === "string" && record.cwd.length > 0
+        ? record.cwd
+        : undefined;
+    if (targetCwd !== undefined && normalizeCwd(entryCwd) !== targetCwd) {
+      continue;
+    }
+    const text = typeof record.text === "string" ? trimText(record.text) : "";
+    if (!text) continue;
+    const id =
+      typeof record.id === "string" && record.id.length > 0
+        ? record.id
+        : `aethon-local-${messages.length}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    messages.push({
+      id,
+      role: record.role,
+      text,
+      ...(typeof record.createdAt === "number"
+        ? { createdAt: record.createdAt }
+        : {}),
+      ...(entryCwd ? { cwd: entryCwd } : {}),
+    });
+  }
+  return messages;
+}
+
+async function readLocalChatTranscript(
+  sessionDir: string,
+  expectedCwd?: string,
+): Promise<RestoredChatMessage[]> {
+  try {
+    const raw = await readFile(join(sessionDir, LOCAL_CHAT_FILE), "utf8");
+    return parseLocalChatLines(raw.split(/\r?\n/), expectedCwd);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    return [];
+  }
+}
+
+async function pruneLocalChatFile(path: string): Promise<void> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const kept = parseLocalChatLines(raw.split(/\r?\n/)).slice(
+      -MAX_LOCAL_CHAT_MESSAGES,
+    );
+    const next = kept
+      .map((m) =>
+        JSON.stringify({
+          type: "aethon_chat",
+          id: m.id,
+          role: m.role,
+          text: m.text,
+          ...(typeof m.createdAt === "number" ? { createdAt: m.createdAt } : {}),
+          ...(m.cwd ? { cwd: m.cwd } : {}),
+        }),
+      )
+      .join("\n");
+    const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+    await writeFile(tempPath, next ? `${next}\n` : "", "utf8");
+    await rename(tempPath, path);
+  } catch {
+    /* best effort */
+  }
 }
 
 export function parseSessionHistoryLines(lines: Iterable<string>): RestoredChatMessage[] {
@@ -198,6 +336,7 @@ export async function findSessionFileMatchingCwd(
   const target = expectedCwd.replace(/[/\\]+$/, "");
   const matches: LatestSessionLog[] = [];
   for (const name of entries) {
+    if (name === LOCAL_CHAT_FILE) continue;
     if (!name.endsWith(".jsonl")) continue;
     const path = join(sessionDir, name);
     let mtimeMs: number;
@@ -230,6 +369,7 @@ async function latestSessionLog(sessionDir: string): Promise<LatestSessionLog | 
 
   let latest: LatestSessionLog | null = null;
   for (const name of entries) {
+    if (name === LOCAL_CHAT_FILE) continue;
     if (!name.endsWith(".jsonl")) continue;
     const path = join(sessionDir, name);
     let mtimeMs: number;
@@ -331,8 +471,10 @@ export async function readSessionTranscript(
   } else {
     path = (await latestSessionLog(sessionDir))?.path;
   }
-  if (!path) return [];
+  const localMessages = await readLocalChatTranscript(sessionDir, expectedCwd);
+  if (!path) return localMessages.slice(-MAX_RESTORED_MESSAGES);
 
   const raw = await readFile(path, "utf8");
-  return parseSessionHistoryLines(raw.split(/\r?\n/));
+  const piMessages = parseSessionHistoryLines(raw.split(/\r?\n/));
+  return [...piMessages, ...localMessages].slice(-MAX_RESTORED_MESSAGES);
 }

@@ -145,16 +145,24 @@ pub fn search_sessions(
 /// Delete a persisted session directory at `~/.aethon/sessions/<tab_id>/`.
 /// `tab_id` must match the bridge's `discoverPersistedTabs` regex
 /// (`^[A-Za-z0-9_-]{1,128}$`) so a malicious caller can't path-traverse
-/// out of the sessions directory. The reserved name `default` is also
-/// rejected — it's the bridge's bootstrap-tab session and removing it
-/// would orphan the next bun respawn.
+/// out of the sessions directory. `default` is intentionally allowed:
+/// it is a bootstrap implementation detail, not a protected user
+/// session.
 #[tauri::command]
 pub fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
+    validate_session_tab_id(&tab_id)?;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let sessions_root = home.join(".aethon").join("sessions");
+    let target = sessions_root.join(&tab_id);
+    delete_session_dir(target, sessions_root)
+}
+
+fn validate_session_tab_id(tab_id: &str) -> Result<(), String> {
     if tab_id.is_empty() || tab_id.len() > 128 {
         return Err("tab_id must be 1..=128 chars".to_string());
-    }
-    if tab_id == "default" {
-        return Err("cannot delete the default session".to_string());
     }
     if !tab_id
         .chars()
@@ -162,12 +170,10 @@ pub fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
     {
         return Err("tab_id must match [A-Za-z0-9_-]".to_string());
     }
-    let home = app
-        .path()
-        .home_dir()
-        .map_err(|e| format!("home_dir: {e}"))?;
-    let sessions_root = home.join(".aethon").join("sessions");
-    let target = sessions_root.join(&tab_id);
+    Ok(())
+}
+
+fn delete_session_dir(target: PathBuf, sessions_root: PathBuf) -> Result<(), String> {
     // Defense in depth: even though the regex above forbids '/' and '..',
     // canonicalize and verify the result still lives directly under
     // sessions_root. A symlink replacing <tab_id>/ could otherwise
@@ -342,4 +348,35 @@ pub fn export_chat_markdown(
     }
     std::fs::write(&path, content).map_err(|e| format!("write: {e}"))?;
     Ok(path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{delete_session_dir, validate_session_tab_id};
+
+    #[test]
+    fn validate_session_tab_id_allows_default() {
+        assert!(validate_session_tab_id("default").is_ok());
+    }
+
+    #[test]
+    fn validate_session_tab_id_rejects_path_traversal() {
+        assert!(validate_session_tab_id("../default").is_err());
+        assert!(validate_session_tab_id("nested/default").is_err());
+        assert!(validate_session_tab_id("").is_err());
+    }
+
+    #[test]
+    fn delete_session_dir_removes_default_directory() {
+        let root =
+            std::env::temp_dir().join(format!("aethon-session-delete-{}", uuid::Uuid::new_v4()));
+        let sessions = root.join("sessions");
+        let default_dir = sessions.join("default");
+        std::fs::create_dir_all(&default_dir).expect("create default session dir");
+        std::fs::write(default_dir.join("aethon-chat.jsonl"), "{}\n").expect("write local log");
+
+        delete_session_dir(default_dir.clone(), sessions).expect("delete default session");
+        assert!(!default_dir.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

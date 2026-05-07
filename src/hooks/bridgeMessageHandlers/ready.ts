@@ -2,10 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../../types/a2ui";
 import { activeProject } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
-import { makeEmptyTab, type Tab } from "../../types/tab";
+import type { Tab } from "../../types/tab";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
 import { deletePointer } from "../../utils/jsonPointer";
-import type { ExtensionTheme } from "../useExtensionsHydration";
+import type {
+  ExtensionFailureSummary,
+  ExtensionSummary,
+  ExtensionTheme,
+} from "../useExtensionsHydration";
 import type {
   BridgeMessageHandler,
   DiscoveredSession,
@@ -41,10 +45,14 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     (data.extensionSlashCommands as
       | { name: string; description: string; usage?: string }[]
       | undefined) ?? [];
-  const piSkills =
+  const piCommands =
+    (data.piSlashCommands as
+      | { name: string; description: string; usage?: string }[]
+      | undefined) ??
     (data.piSkills as
       | { name: string; description: string; usage?: string }[]
-      | undefined) ?? [];
+      | undefined) ??
+    [];
   const extKeys =
     (data.extensionKeybindings as
       | { combo: string; action: string; description?: string }[]
@@ -88,12 +96,10 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // choice has the rule available before data-theme is read.
   ctx.hydrateThemes(extThemes);
   ctx.hydrateExtensions(
-    (data.extensionsList as { name: string; source: string }[] | undefined) ??
-      [],
-    (data.failedExtensionsList as
-      | { name: string; source: string; error?: string }[]
-      | undefined) ?? [],
+    (data.extensionsList as ExtensionSummary[] | undefined) ?? [],
+    (data.failedExtensionsList as ExtensionFailureSummary[] | undefined) ?? [],
     (data.disabledExtensionsList as string[] | undefined) ?? [],
+    activeProject(ctx.projectsRef.current)?.path ?? null,
   );
   ctx.registry.setTemplates(extComponents);
   // Restore extension-registered slash commands so the picker shows them
@@ -101,7 +107,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // delta after reload). hydrateSlashCommands rewrites the merged
   // catalog (built-ins + extensions), updates the picker state ref, and
   // bumps /slashCommands so the picker re-resolves via $ref.
-  ctx.hydrateSlashCommands(extSlash, piSkills);
+  ctx.hydrateSlashCommands(extSlash, piCommands);
   ctx.hydrateKeybindings(extKeys);
   ctx.hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
   ctx.hydrateExtensionLayouts(extLayouts);
@@ -176,19 +182,27 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     for (const stale of willPruneKeys) {
       next = deletePointer(next, stale);
     }
-    if (extLayout && extLayout.state) {
-      // Defaults semantics: deep-merge layout into a fresh object and
-      // let prev win for any overlapping keys.
-      next = deepMergeState(extLayout.state, next);
+    const layoutDefaults =
+      baseLayout && typeof baseLayout === "object" && "state" in baseLayout
+        ? baseLayout.state
+        : undefined;
+    if (layoutDefaults) {
+      // Defaults semantics: restore the active layout's baseline after
+      // stale extension-owned paths are pruned. This is load-bearing for
+      // project switches: a project extension may have owned
+      // /layout/areas or /sidebar/extraSections, and deleting those paths
+      // must fall back to the workstation defaults, not leave CSS Grid
+      // without template areas.
+      next = deepMergeState(layoutDefaults, next);
     }
     next = deepMergeState(next, extState);
-    // Reconcile our local tabs with the bridge's reported tabs.
-    // Two cases:
-    //   (a) webview reload while bridge is alive — bridge has tabs we
-    //       don't know about; create local records for them so the user
-    //       can re-access those sessions.
-    //   (b) bridge restart — local has tabs the bridge doesn't; the
-    //       post-ready replay below re-establishes them.
+    // Reconcile bridge data onto local tabs without creating visible
+    // records from the bridge tab list. With project buckets, bridge
+    // state is global but the visible UI bucket is project-scoped; if a
+    // ready emitted during project switch backfilled every bridge tab,
+    // tabs from other projects appeared in the current project. Session
+    // UI snapshots and discoveredSessions handle reload restoration;
+    // ready may only enrich local tabs that already exist.
     //
     // Also hydrate per-tab mirrored state from extensionTabState —
     // those values are the bridge's record of what extensions / agents
@@ -198,7 +212,8 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     {
       const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
       const bridgeTabs =
-        (data.tabs as { id: string; model: string }[] | undefined) ?? [];
+        (data.tabs as { id: string; model: string; cwd?: string }[] | undefined) ??
+        [];
       const tabReplay =
         (data.extensionTabState as
           | Record<string, Record<string, unknown>>
@@ -214,21 +229,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
           localTabs[i] = { ...localTabs[i], model };
         }
       }
-      for (const bt of bridgeTabs) {
-        if (bt.id === "default") continue;
-        const exists = localTabs.find((t) => t.id === bt.id);
-        if (exists) {
-          if (!exists.model && bt.model) {
-            const idx = localTabs.indexOf(exists);
-            localTabs[idx] = { ...exists, model: bt.model };
-          }
-          continue;
+      for (let i = 0; i < localTabs.length; i++) {
+        const bt = bridgeTabs.find((candidate) => candidate.id === localTabs[i].id);
+        if (bt?.model && !localTabs[i].model) {
+          localTabs[i] = { ...localTabs[i], model: bt.model };
         }
-        const label = `Tab ${localTabs.length + 1}`;
-        localTabs.push({
-          ...makeEmptyTab(bt.id, label, ctx.projectsRef.current.activeId),
-          model: bt.model,
-        });
       }
       // Apply the bridge's per-tab replay over each tab record. prev
       // wins for keys the React side already restored (e.g. local-only
@@ -236,14 +241,18 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       for (let i = 0; i < localTabs.length; i++) {
         const replay = tabReplay[localTabs[i].id];
         if (!replay) continue;
-        const merged = { ...localTabs[i] } as unknown as Record<string, unknown>;
+        const merged = { ...localTabs[i] } as unknown as Record<
+          string,
+          unknown
+        >;
         for (const [k, v] of Object.entries(replay)) {
           // Only fill keys that aren't already populated locally, so a
           // real local update beats a possibly-stale replay.
           if (
             merged[k] === undefined ||
             merged[k] === null ||
-            (Array.isArray(merged[k]) && (merged[k] as unknown[]).length === 0) ||
+            (Array.isArray(merged[k]) &&
+              (merged[k] as unknown[]).length === 0) ||
             merged[k] === ""
           ) {
             merged[k] = v;
@@ -304,18 +313,21 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     // pendingTabOpens so a fast first chat on the restored tab waits
     // for the bridge to register the session (otherwise send_message
     // would race tab_open and lazily create the tab without the
-    // inherited model). Same cwd inheritance as newTab — restored
-    // sessions land in the currently-active project unless they were
-    // opened before any project was set. The bridge dedupes paths
-    // internally, so a re-announce on existing tabs with the same cwd
-    // is a no-op.
-    const restoredCwd = activeProject(ctx.projectsRef.current)?.path;
+    // inherited model). Preserve the tab's original project bucket
+    // instead of using the currently-active project: existing tabs keep
+    // the cwd they were created with, and a hot reload should restore
+    // that same scoped history.
+    const tabProject = t.projectId
+      ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
+      : null;
+    const restoredCwd = tabProject?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
         tabId: t.id,
         ...(t.model ? { model: t.model } : {}),
         ...(restoredCwd ? { cwd: restoredCwd } : {}),
+        restoreHistory: true,
       }),
     });
     ctx.pendingTabOpens.current.set(t.id, opening);

@@ -471,8 +471,9 @@ fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandl
             // about overlapping immutable + mutable borrows of `child`.
             let pid = child.id();
             let write_result = match child.stdin.as_mut() {
-                Some(stdin) => writeln!(stdin, "{{\"type\":\"reload_request\"}}")
-                    .and_then(|_| stdin.flush()),
+                Some(stdin) => {
+                    writeln!(stdin, "{{\"type\":\"reload_request\"}}").and_then(|_| stdin.flush())
+                }
                 None => Err(std::io::Error::other("agent stdin closed")),
             };
             match write_result {

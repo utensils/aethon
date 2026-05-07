@@ -8,6 +8,7 @@ export const handleModelChanged: BridgeMessageHandler = (data, ctx) => {
   const model = (data.model as string) || "";
   const tabId = (data.tabId as string | undefined) ?? "default";
   ctx.updateTab(tabId, (tab) => ({ ...tab, model }));
+  ctx.recordProjectModel(model, tabId);
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};

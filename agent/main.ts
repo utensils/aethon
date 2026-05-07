@@ -86,7 +86,6 @@ import {
   captureProjectExtensionBaseline,
   runDispatcher,
 } from "./dispatcher";
-import { discoverPiSkills } from "./pi-skills";
 
 function send(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -223,13 +222,16 @@ async function main(): Promise<void> {
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),
     ],
   });
-  state.piSkills = await discoverPiSkills();
   await state.resourceLoader.reload();
 
   // -- Extension loaders --------------------------------------------------
   const loadHooks = {
     onLoaded: (name: string) => {
       state.loadFailures.delete(name);
+      scheduleStateFileWrite();
+    },
+    onProjectLoaded: (name: string, projectRoot: string) => {
+      state.projectExtensionRoots.set(name, projectRoot);
       scheduleStateFileWrite();
     },
     onFailure: (
@@ -240,6 +242,7 @@ async function main(): Promise<void> {
         status: f.status,
         error: f.error,
         path: f.path,
+        projectRoot: f.projectRoot,
       });
       scheduleStateFileWrite();
     },

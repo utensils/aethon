@@ -24,4 +24,64 @@ describe("handleSessionHistory", () => {
     expect(out.messages).toHaveLength(2);
     expect(mocks.syncRecentSessionsToState).toHaveBeenCalledTimes(1);
   });
+
+  it("uses discovered custom session labels for restored chat tabs", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    ctx.allDiscoveredSessionsRef.current = [
+      {
+        tabId: "tab-1",
+        lastModified: 1,
+        firstUserMessage: "first prompt",
+        customLabel: "Named session",
+      },
+    ];
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [{ id: "1", role: "user", text: "hi" }],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("tab-1", "Tab 1"));
+    expect(out.label).toBe("Named session");
+  });
+
+  it("derives generic restored tab labels from the first user message", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "default",
+        messages: [
+          {
+            id: "1",
+            role: "user",
+            text: "Research this application and summarize the changes",
+          },
+          { id: "2", role: "agent", text: "Done." },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("default", "Tab 1"));
+    expect(out.label).toBe("Research this application and summarize the cha...");
+  });
+
+  it("does not replace explicit tab labels with restored first messages", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "default",
+        messages: [{ id: "1", role: "user", text: "first prompt" }],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("default", "Custom label"));
+    expect(out.label).toBe("Custom label");
+  });
 });

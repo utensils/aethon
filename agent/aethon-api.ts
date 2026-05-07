@@ -450,6 +450,9 @@ export function buildAethonApi(
       [...state.loadedExtensions.entries()].map(([name, source]) => ({
         name,
         source,
+        ...(source === "project-directory"
+          ? { projectRoot: state.projectExtensionRoots.get(name) }
+          : {}),
       })),
     listComponents: () => Object.fromEntries(state.extensionComponents),
     listThemes: () => [...state.extensionThemes.values()],

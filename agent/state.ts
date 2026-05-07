@@ -41,6 +41,7 @@ export interface ExtensionFailure {
   status: "failed" | "skipped";
   error: string;
   path?: string;
+  projectRoot?: string;
 }
 
 export interface ThemeRecord {
@@ -122,6 +123,14 @@ export interface RegisteredPiSkill {
   usage?: string;
 }
 
+export interface RegisteredPiSlashCommand {
+  name: string;
+  description: string;
+  usage?: string;
+  source?: "extension" | "prompt" | "skill";
+  sourceInfo?: unknown;
+}
+
 export interface RegisteredLayout {
   id: string;
   name: string;
@@ -189,7 +198,10 @@ export type A2UIEventHandler = (
   event: A2UIEventInfo,
   ctx: {
     setState: (path: string, value: unknown) => Promise<MutationResult>;
-    registerComponent: (componentType: string, template: unknown) => Promise<MutationResult>;
+    registerComponent: (
+      componentType: string,
+      template: unknown,
+    ) => Promise<MutationResult>;
     pi: PiHandlerCtx;
     canvas: AethonApiLike;
     shells: AethonApiLike;
@@ -233,6 +245,10 @@ export interface ProjectBaselineSnapshot {
    *  still in the set even though the handler was trimmed). */
   handlerDedupeKeys: string[];
   stateTree: Record<string, unknown>;
+  /** JSON Pointer paths written by non-project extensions. Restoring this
+   *  lets the frontend prune project-only state slices on the next hydrate. */
+  stateKeys: string[];
+  frontendModules: Map<string, FrontendModule>;
   /** Active extension-supplied layout (full replacement). Cloned so a
    *  later patchLayout doesn't mutate the snapshot in place. */
   extensionLayout: unknown;
@@ -367,6 +383,7 @@ export class AethonAgentState {
   readonly extensionMenuItems = new Map<string, RegisteredMenuItem>();
   readonly extensionKeybindings = new Map<string, RegisteredKeybinding>();
   readonly extensionSlashCommands = new Map<string, RegisteredSlashCommand>();
+  piSlashCommands: RegisteredPiSlashCommand[] = [];
   piSkills: RegisteredPiSkill[] = [];
   readonly extensionLayouts = new Map<string, RegisteredLayout>();
   readonly extensionFrontendModules = new Map<string, FrontendModule>();
@@ -381,6 +398,7 @@ export class AethonAgentState {
 
   // -- Loading state -------------------------------------------------------
   readonly loadedExtensions = new Map<string, ExtensionSource>();
+  readonly projectExtensionRoots = new Map<string, string>();
   readonly loadFailures = new Map<string, ExtensionFailure>();
   /** Extension display-names the user has explicitly disabled. Persisted
    *  on disk at `<userDir>/disabled-extensions.json` and consulted by
