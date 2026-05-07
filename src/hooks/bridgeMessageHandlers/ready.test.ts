@@ -122,6 +122,57 @@ describe("handleReady", () => {
     expect(next).not.toHaveProperty("old");
   });
 
+  it("restores default layout state after pruning project-owned layout paths", () => {
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [{ id: "default" }],
+        layout: {
+          columns: "220px minmax(0,1fr) 360px",
+          areas: ["sidebar header gallery"],
+        },
+        sidebar: {
+          extraSections: [{ id: "gallery", title: "Local gallery" }],
+        },
+      },
+    });
+    ctx.bootLayout = {
+      components: [{ id: "root", type: "container" }],
+      state: {
+        layout: {
+          columns: "220px minmax(0,1fr)",
+          areas: ["sidebar header", "sidebar canvas", "sidebar composer"],
+        },
+        sidebar: {
+          extraSections: [],
+        },
+      },
+    };
+    ctx.lastExtensionStateKeysRef.current = new Set([
+      "/layout/columns",
+      "/layout/areas",
+      "/sidebar/extraSections",
+    ]);
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        models: [],
+        extensionStateKeys: [],
+        tabs: [{ id: "default", model: "claude" }],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect(next.layout).toMatchObject({
+      columns: "220px minmax(0,1fr)",
+      areas: ["sidebar header", "sidebar canvas", "sidebar composer"],
+    });
+    expect(next.sidebar).toMatchObject({ extraSections: [] });
+  });
+
   it("calls auto-restore only after projects are loaded", () => {
     const { ctx, mocks } = buildHandlerFixture();
     handleReady({ type: "ready", tabs: [], discoveredTabs: [] }, ctx);

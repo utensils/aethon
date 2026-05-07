@@ -191,10 +191,18 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     for (const stale of willPruneKeys) {
       next = deletePointer(next, stale);
     }
-    if (extLayout && extLayout.state) {
-      // Defaults semantics: deep-merge layout into a fresh object and
-      // let prev win for any overlapping keys.
-      next = deepMergeState(extLayout.state, next);
+    const layoutDefaults =
+      baseLayout && typeof baseLayout === "object" && "state" in baseLayout
+        ? baseLayout.state
+        : undefined;
+    if (layoutDefaults) {
+      // Defaults semantics: restore the active layout's baseline after
+      // stale extension-owned paths are pruned. This is load-bearing for
+      // project switches: a project extension may have owned
+      // /layout/areas or /sidebar/extraSections, and deleting those paths
+      // must fall back to the workstation defaults, not leave CSS Grid
+      // without template areas.
+      next = deepMergeState(layoutDefaults, next);
     }
     next = deepMergeState(next, extState);
     // Reconcile our local tabs with the bridge's reported tabs.
