@@ -47,4 +47,41 @@ describe("handleSessionHistory", () => {
     const out = updater(makeEmptyTab("tab-1", "Tab 1"));
     expect(out.label).toBe("Named session");
   });
+
+  it("derives generic restored tab labels from the first user message", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "default",
+        messages: [
+          {
+            id: "1",
+            role: "user",
+            text: "Research this application and summarize the changes",
+          },
+          { id: "2", role: "agent", text: "Done." },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("default", "Tab 1"));
+    expect(out.label).toBe("Research this application and summarize the cha...");
+  });
+
+  it("does not replace explicit tab labels with restored first messages", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "default",
+        messages: [{ id: "1", role: "user", text: "first prompt" }],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("default", "Custom label"));
+    expect(out.label).toBe("Custom label");
+  });
 });
