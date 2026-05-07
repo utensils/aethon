@@ -82,6 +82,13 @@ describe("unloadProjectExtensions", () => {
   it("restores every registry from the baseline and emits hydrate messages", () => {
     const f = makeFixture();
     f.state.extensionComponents.set("base", { type: "card" });
+    f.state.extensionStateTree = { base: { ok: true } };
+    f.state.extensionStateKeys.add("/base");
+    f.state.extensionFrontendModules.set("base-module", {
+      name: "base-module",
+      entryPath: "/base/frontend.js",
+      code: "skill.registerComponent('base', () => null)",
+    });
     f.state.eventRoutingMode = "builtin";
     captureProjectExtensionBaseline(f.state);
     // Now layer some "project" registrations on top.
@@ -90,6 +97,16 @@ describe("unloadProjectExtensions", () => {
       id: "project-theme",
       label: "P",
       vars: {},
+    });
+    f.state.extensionStateTree = {
+      ...f.state.extensionStateTree,
+      projectOnly: { stale: true },
+    };
+    f.state.extensionStateKeys.add("/projectOnly");
+    f.state.extensionFrontendModules.set("project-module", {
+      name: "project-module",
+      entryPath: "/project/frontend.js",
+      code: "skill.registerComponent('project', () => null)",
     });
     f.state.eventRoutingMode = "extension";
     f.state.loadedExtensions.set("foo", "project-directory");
@@ -101,6 +118,11 @@ describe("unloadProjectExtensions", () => {
     expect(f.state.extensionComponents.size).toBe(1);
     expect(f.state.extensionComponents.has("project-only")).toBe(false);
     expect(f.state.extensionThemes.size).toBe(0);
+    expect(f.state.extensionStateTree).toEqual({ base: { ok: true } });
+    expect([...f.state.extensionStateKeys]).toEqual(["/base"]);
+    expect([...f.state.extensionFrontendModules.keys()]).toEqual([
+      "base-module",
+    ]);
     expect(f.state.eventRoutingMode).toBe("builtin");
     // loadedExtensions: project-directory entries dropped, others kept.
     expect(f.state.loadedExtensions.has("foo")).toBe(false);
@@ -115,6 +137,13 @@ describe("unloadProjectExtensions", () => {
     expect(types).toContain("extension_menu_items");
     expect(types).toContain("extension_layouts");
     expect(types).toContain("extension_event_routes");
+    expect(types).toContain("extension_frontend_modules");
+    const frontendModulesMsg = f.sent.find(
+      (m) => m.type === "extension_frontend_modules",
+    );
+    expect(frontendModulesMsg).toMatchObject({
+      modules: [{ name: "base-module" }],
+    });
     expect(f.writes()).toBe(1);
   });
 
@@ -170,6 +199,8 @@ describe("ProjectBaselineSnapshot type shape", () => {
       eventHandlerCount: 0,
       handlerDedupeKeys: [],
       stateTree: {},
+      stateKeys: [],
+      frontendModules: new Map(),
       extensionLayout: undefined,
       pendingLayoutPatches: [],
     };

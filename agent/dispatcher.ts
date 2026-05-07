@@ -89,6 +89,8 @@ export function captureProjectExtensionBaseline(
       string,
       unknown
     >,
+    stateKeys: [...state.extensionStateKeys],
+    frontendModules: new Map(state.extensionFrontendModules),
     extensionLayout:
       state.extensionLayout === undefined
         ? undefined
@@ -181,6 +183,14 @@ export function unloadProjectExtensions(
   state.extensionStateTree = JSON.parse(
     JSON.stringify(state.projectBaseline.stateTree),
   ) as Record<string, unknown>;
+  state.extensionStateKeys.clear();
+  for (const k of state.projectBaseline.stateKeys) {
+    state.extensionStateKeys.add(k);
+  }
+  state.extensionFrontendModules.clear();
+  for (const [k, v] of state.projectBaseline.frontendModules) {
+    state.extensionFrontendModules.set(k, v);
+  }
   state.extensionLayout =
     state.projectBaseline.extensionLayout === undefined
       ? undefined
@@ -221,6 +231,13 @@ export function unloadProjectExtensions(
     type: "extension_event_routes",
     routes: [...state.extensionEventRoutes.values()],
     mode: state.eventRoutingMode,
+  });
+  deps.send({
+    type: "extension_frontend_modules",
+    modules: [...state.extensionFrontendModules.values()].map((m) => ({
+      name: m.name,
+      code: m.code,
+    })),
   });
   // Push the restored layout to the frontend.
   const effective = (() => {

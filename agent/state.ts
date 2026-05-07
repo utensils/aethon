@@ -245,6 +245,10 @@ export interface ProjectBaselineSnapshot {
    *  still in the set even though the handler was trimmed). */
   handlerDedupeKeys: string[];
   stateTree: Record<string, unknown>;
+  /** JSON Pointer paths written by non-project extensions. Restoring this
+   *  lets the frontend prune project-only state slices on the next hydrate. */
+  stateKeys: string[];
+  frontendModules: Map<string, FrontendModule>;
   /** Active extension-supplied layout (full replacement). Cloned so a
    *  later patchLayout doesn't mutate the snapshot in place. */
   extensionLayout: unknown;
