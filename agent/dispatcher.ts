@@ -899,8 +899,15 @@ export async function runDispatcher(
     let restoredMessages: Awaited<ReturnType<typeof readSessionTranscript>> = [];
     if (restoreHistory) {
       try {
+        const expectedCwd =
+          cwdOverride ??
+          state.tabProjectCwds.get(tabId) ??
+          (tabId === "default"
+            ? state.currentProjectCwd ?? process.cwd()
+            : undefined);
         restoredMessages = await readSessionTranscript(
           tabSessionDir(state, tabId),
+          expectedCwd,
         );
       } catch (err) {
         deps.send({
@@ -1181,6 +1188,9 @@ export async function runDispatcher(
     }
     if (typeof text !== "string" || text.length === 0) return;
     try {
+      const localCwd =
+        state.tabProjectCwds.get(tabId) ??
+        (tabId === "default" ? state.currentProjectCwd ?? process.cwd() : undefined);
       await appendLocalChatMessage(tabSessionDir(state, tabId), {
         id:
           typeof record.id === "string" && record.id.length > 0
@@ -1188,6 +1198,7 @@ export async function runDispatcher(
             : randomUUID(),
         role,
         text,
+        ...(localCwd ? { cwd: localCwd } : {}),
         ...(typeof record.createdAt === "number"
           ? { createdAt: record.createdAt }
           : {}),

@@ -269,6 +269,38 @@ describe("readSessionTranscript with expectedCwd", () => {
     ).resolves.toEqual([]);
   });
 
+  it("filters Aethon-local slash overlay by cwd when restoring a scoped session", async () => {
+    const dir = await tempRoot();
+    await writeMiniSession(dir, "target.jsonl", "/tmp/target", "from target", 1_000);
+    await appendLocalChatMessage(dir, {
+      id: "target-local",
+      role: "system",
+      text: "target context",
+      cwd: "/tmp/target",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "other-local",
+      role: "system",
+      text: "other context",
+      cwd: "/tmp/other",
+      createdAt: 2,
+    });
+
+    await expect(
+      readSessionTranscript(dir, "/tmp/target"),
+    ).resolves.toEqual([
+      { id: "target.jsonl-u", role: "user", text: "from target" },
+      {
+        id: "target-local",
+        role: "system",
+        text: "target context",
+        createdAt: 1,
+        cwd: "/tmp/target",
+      },
+    ]);
+  });
+
   it("does not diverge from ensureTab when no active project is set", async () => {
     // Regression — codex peer review of the cwd-scoped session fix:
     // when the bridge boots without an active project, `ensureTab`

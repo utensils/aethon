@@ -319,6 +319,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // doesn't silently send the next prompt to pi's default.
   const localTabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
   for (const t of localTabs) {
+    if (t.id === "default") continue;
     // Pass `model` so the new bridge session boots with the same model
     // the user previously selected — no race window. Track in
     // pendingTabOpens so a fast first chat on the restored tab waits

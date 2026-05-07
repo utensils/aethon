@@ -57,6 +57,18 @@ function sessionLabel(session: DiscoveredSession): string {
   return `Session ${session.tabId.slice(0, 8)}`;
 }
 
+function sessionLabelFromMessages(messages: Tab["messages"]): string | undefined {
+  const first = messages.find(
+    (m) =>
+      m.role === "user" &&
+      typeof m.text === "string" &&
+      m.text.trim().length > 0,
+  );
+  const text = first?.text?.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  return text.length > 48 ? `${text.slice(0, 47)}...` : text;
+}
+
 interface DiscoveredSession {
   tabId: string;
   lastModified: number;
@@ -346,9 +358,16 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       (stateRef.current.model as string | undefined) ||
       piDefaultModelRef.current
     ).trim();
+    const existingSessionLabel = restoreId
+      ? sessionLabelFromMessages(
+          ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+            (t) => t.id === restoreId,
+          )?.messages ?? [],
+        )
+      : undefined;
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const label = restoreLabel ?? `Tab ${tabs.length + 1}`;
+      const label = restoreLabel ?? existingSessionLabel ?? `Tab ${tabs.length + 1}`;
       const projectId = projectsRef.current.activeId;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
