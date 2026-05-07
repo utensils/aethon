@@ -55,16 +55,7 @@ export const handleTerminalPanel: EventRouteHandler = (
     return true;
   }
   if (eventType === "resize-end") {
-    const panel =
-      (ctx.stateRef.current.terminalPanel as
-        | Record<string, unknown>
-        | undefined) ?? {};
-    const height = clampTerminalHeight(panel.height);
-    if (height !== null) {
-      ctx.writeState("terminal_height", String(height)).catch(() => {
-        /* ignore — best-effort */
-      });
-    }
+    // The debounced session UI snapshot persists /terminalPanel/height.
     return true;
   }
   return false;

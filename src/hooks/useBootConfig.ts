@@ -48,7 +48,7 @@ export interface UseBootConfigActions {
 
 /**
  * One-shot boot config effect: read ~/.aethon/config.toml + persisted
- * theme/zoom/sidebar-width state from disk and seed the live config
+ * theme/zoom state from disk and seed the live config
  * refs that the rest of the app consults. Runs once on mount.
  *
  * The refs are exposed so other hooks can mutate them (currently only
@@ -188,103 +188,6 @@ export function useBootConfig(
       const z = parseFloat(savedZoom);
       if (Number.isFinite(z) && z >= 0.7 && z <= 1.6) {
         applyUiScale(z);
-      }
-      // Restore saved sidebar width: patch the leading column token in
-      // /layout/columns so the boot layout opens at the user's last
-      // chosen width. Bail on missing/invalid values — the layout's
-      // own seed wins by default.
-      const savedUiState = (
-        await readStateWithLocalStorageFallback("ui_state", "")
-      ).trim();
-      if (savedUiState) {
-        try {
-          const parsed = JSON.parse(savedUiState) as {
-            layout?: {
-              sidebarVisible?: boolean;
-              columns?: string;
-            };
-            terminal?: { open?: boolean };
-            terminalPanel?: { activeSubId?: string; height?: number };
-          };
-          setState((prev) => {
-            const layout =
-              (prev.layout as Record<string, unknown> | undefined) ?? {};
-            const terminal =
-              (prev.terminal as Record<string, unknown> | undefined) ?? {};
-            const terminalPanel =
-              (prev.terminalPanel as Record<string, unknown> | undefined) ??
-              {};
-            const firstColumn =
-              typeof parsed.layout?.columns === "string"
-                ? parsed.layout.columns.trim().split(/\s+/)[0]
-                : "";
-            return {
-              ...prev,
-              layout: {
-                ...layout,
-                ...(typeof parsed.layout?.sidebarVisible === "boolean"
-                  ? { sidebarVisible: parsed.layout.sidebarVisible }
-                  : {}),
-                ...(firstColumn.endsWith("px")
-                  ? { columns: `${firstColumn} minmax(0,1fr)` }
-                  : {}),
-              },
-              terminal: {
-                ...terminal,
-                ...(typeof parsed.terminal?.open === "boolean"
-                  ? { open: parsed.terminal.open }
-                  : {}),
-              },
-              terminalPanel: {
-                ...terminalPanel,
-                ...(typeof parsed.terminalPanel?.activeSubId === "string"
-                  ? { activeSubId: parsed.terminalPanel.activeSubId }
-                  : {}),
-                ...(typeof parsed.terminalPanel?.height === "number"
-                  ? { height: parsed.terminalPanel.height }
-                  : {}),
-              },
-            };
-          });
-        } catch {
-          /* ignore malformed UI state */
-        }
-      }
-      const savedWidth = (
-        await readStateWithLocalStorageFallback("sidebar_width", "")
-      ).trim();
-      const px = parseInt(savedWidth, 10);
-      if (Number.isFinite(px) && px >= 180 && px <= 540) {
-        setState((prev) => {
-          const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
-          const current = (layout.columns as string | undefined) ?? "";
-          if (!current) return prev;
-          const tokens = current.trim().split(/\s+/);
-          if (!tokens[0]?.endsWith("px")) return prev;
-          tokens[0] = `${px}px`;
-          return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
-        });
-      }
-      // Restore saved terminal panel height. The panel itself reads from
-      // /terminalPanel/height, so this survives layout rerenders without
-      // replacing the active layout payload.
-      const savedTerminalHeight = (
-        await readStateWithLocalStorageFallback("terminal_height", "")
-      ).trim();
-      const terminalHeight = parseInt(savedTerminalHeight, 10);
-      if (
-        Number.isFinite(terminalHeight) &&
-        terminalHeight >= 120 &&
-        terminalHeight <= 720
-      ) {
-        setState((prev) => {
-          const panel =
-            (prev.terminalPanel as Record<string, unknown> | undefined) ?? {};
-          return {
-            ...prev,
-            terminalPanel: { ...panel, height: terminalHeight },
-          };
-        });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

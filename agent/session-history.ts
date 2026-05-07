@@ -4,6 +4,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -12,6 +13,10 @@ import { join } from "node:path";
 const LABEL_FILE = "label.txt";
 const LOCAL_CHAT_FILE = "aethon-chat.jsonl";
 const MAX_CUSTOM_LABEL_CHARS = 120;
+
+export function normalizeSessionLabel(label: string): string {
+  return label.trim().slice(0, MAX_CUSTOM_LABEL_CHARS);
+}
 
 /** Per-session custom label set via the sidebar "Rename session…"
  *  context-menu action. Returns undefined if no label has been set
@@ -40,7 +45,7 @@ export async function writeSessionLabel(
   label: string,
 ): Promise<void> {
   await mkdir(sessionDir, { recursive: true });
-  const trimmed = label.trim().slice(0, MAX_CUSTOM_LABEL_CHARS);
+  const trimmed = normalizeSessionLabel(label);
   const path = join(sessionDir, LABEL_FILE);
   if (!trimmed) {
     try {
@@ -221,7 +226,9 @@ async function pruneLocalChatFile(path: string): Promise<void> {
         }),
       )
       .join("\n");
-    await writeFile(path, next ? `${next}\n` : "", "utf8");
+    const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+    await writeFile(tempPath, next ? `${next}\n` : "", "utf8");
+    await rename(tempPath, path);
   } catch {
     /* best effort */
   }

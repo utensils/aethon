@@ -170,7 +170,7 @@ export default function App() {
       const targetId =
         tabId ?? (prev.activeTabId as string | undefined) ?? undefined;
       const tab = targetId ? tabs.find((t) => t.id === targetId) : undefined;
-      const projectId = tab?.projectId ?? projectsRef.current.activeId;
+      const projectId = tab?.projectId ?? null;
       if (!projectId) return prev;
       const projectModels =
         (prev.projectModels as Record<string, string> | undefined) ?? {};
@@ -229,22 +229,35 @@ export default function App() {
     let cancelled = false;
     let persistenceStarted = false;
     let unsubscribe: (() => void) | undefined;
-    const persist = () => {
+    const persistNow = () => {
       if (!persistenceStarted) return;
+      if (sessionSnapshotPersistTimerRef.current !== null) {
+        window.clearTimeout(sessionSnapshotPersistTimerRef.current);
+        sessionSnapshotPersistTimerRef.current = null;
+      }
       saveSessionUiSnapshot(appStore.getState(), (content) => {
         writeState(SESSION_UI_SNAPSHOT_FILE, content).catch(() => {
           /* persist is best effort */
         });
       });
     };
+    const schedulePersist = () => {
+      if (!persistenceStarted) return;
+      if (sessionSnapshotPersistTimerRef.current !== null) {
+        window.clearTimeout(sessionSnapshotPersistTimerRef.current);
+      }
+      sessionSnapshotPersistTimerRef.current = window.setTimeout(() => {
+        persistNow();
+      }, 100);
+    };
     const startPersistence = () => {
       persistenceStarted = true;
-      persist();
-      unsubscribe = appStore.subscribe(persist);
-      window.addEventListener("beforeunload", persist);
+      persistNow();
+      unsubscribe = appStore.subscribe(schedulePersist);
+      window.addEventListener("beforeunload", persistNow);
     };
     const hot = import.meta.hot;
-    hot?.dispose(persist);
+    hot?.dispose(persistNow);
     if (hasSyncSessionSnapshot) {
       startPersistence();
     } else {
@@ -260,9 +273,14 @@ export default function App() {
         });
     }
     return () => {
+      persistNow();
       cancelled = true;
       unsubscribe?.();
-      window.removeEventListener("beforeunload", persist);
+      if (sessionSnapshotPersistTimerRef.current !== null) {
+        window.clearTimeout(sessionSnapshotPersistTimerRef.current);
+        sessionSnapshotPersistTimerRef.current = null;
+      }
+      window.removeEventListener("beforeunload", persistNow);
     };
   }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot]);
 
@@ -282,7 +300,7 @@ export default function App() {
   const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
   const hangWarnActiveRef = useRef<Set<string>>(new Set());
   const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const uiStatePersistTimerRef = useRef<number | null>(null);
+  const sessionSnapshotPersistTimerRef = useRef<number | null>(null);
 
   // Forward handles populated below as hooks construct. Lets earlier
   // hooks (useTabs / useProjects / useZoomAndTheme / useShellConsent)
@@ -732,54 +750,6 @@ export default function App() {
   // patch per slice.
   useFrontendStateMirror({ state });
 
-  // Persist frontend-only chrome state so Vite/webview hot reloads restore
-  // the working surface, not just the agent transcript. Resize-end handlers
-  // still write legacy one-off keys; this snapshot covers sidebar visible
-  // state, sidebar width, terminal visibility, and panel state. Do not
-  // persist arbitrary grid areas/columns: project extensions can add
-  // layout regions, and those must disappear when the project changes.
-  useEffect(() => {
-    if (uiStatePersistTimerRef.current !== null) {
-      window.clearTimeout(uiStatePersistTimerRef.current);
-    }
-    uiStatePersistTimerRef.current = window.setTimeout(() => {
-      uiStatePersistTimerRef.current = null;
-      const layoutState = (state.layout as Record<string, unknown> | undefined) ?? {};
-      const terminalState =
-        (state.terminal as Record<string, unknown> | undefined) ?? {};
-      const terminalPanelState =
-        (state.terminalPanel as Record<string, unknown> | undefined) ?? {};
-      const firstColumn =
-        typeof layoutState.columns === "string"
-          ? layoutState.columns.trim().split(/\s+/)[0]
-          : "";
-      const snapshot = {
-        layout: {
-          sidebarVisible: layoutState.sidebarVisible,
-          ...(firstColumn.endsWith("px")
-            ? { columns: `${firstColumn} minmax(0,1fr)` }
-            : {}),
-        },
-        terminal: {
-          open: terminalState.open,
-        },
-        terminalPanel: {
-          activeSubId: terminalPanelState.activeSubId,
-          height: terminalPanelState.height,
-        },
-      };
-      writeState("ui_state", JSON.stringify(snapshot)).catch(() => {
-        /* persist is best effort */
-      });
-    }, 100);
-    return () => {
-      if (uiStatePersistTimerRef.current !== null) {
-        window.clearTimeout(uiStatePersistTimerRef.current);
-        uiStatePersistTimerRef.current = null;
-      }
-    };
-  }, [state.layout, state.terminal, state.terminalPanel]);
-
   // OS-edge event listeners — PTY streams, agent supervisor signals,
   // native menu, drag-drop file paths, clipboard image paste. Bridge
   // response IPC stays in useBridgeMessages; this hook only owns
@@ -886,15 +856,6 @@ export default function App() {
           typeof activeId === "string" && activeId.length > 0
             ? activeId
             : "default";
-        if (name === "compact") {
-          const msg = {
-            id: crypto.randomUUID(),
-            role: "system" as const,
-            text: "Compacting context...",
-          };
-          appendMessage(msg, tabId);
-          persistLocalChatMessage(msg, tabId);
-        }
         await invoke("agent_command", {
           payload: JSON.stringify({
             type: "native_slash_command",

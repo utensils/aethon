@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   appendLocalChatMessage,
   findSessionFileMatchingCwd,
+  normalizeSessionLabel,
   parseSessionHistoryLines,
   readSessionLabel,
   readSessionMetadata,
@@ -220,6 +221,14 @@ describe("readSessionTranscript", () => {
     // Empty label clears the file.
     await writeSessionLabel(dir, "");
     expect(await readSessionLabel(dir)).toBeUndefined();
+  });
+});
+
+describe("normalizeSessionLabel", () => {
+  it("trims and applies the same length limit pi receives", () => {
+    expect(normalizeSessionLabel(`  ${"a".repeat(130)}  `)).toBe(
+      "a".repeat(120),
+    );
   });
 });
 

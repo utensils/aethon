@@ -38,25 +38,12 @@ export const handleSidebarResize: EventRouteHandler = (
   return true;
 };
 
-/** sidebar resize-end: persist the final width so the next boot opens
- *  at the same size. Reads from state.layout.columns (the in-flight
- *  value the resize listener just wrote) so a single source of truth
- *  wins. */
+/** sidebar resize-end: handled for drag lifecycle symmetry. The app-wide
+ *  session UI snapshot persists the final /layout/columns value. */
 export const handleSidebarResizeEnd: EventRouteHandler = (
   { eventType },
-  ctx,
 ) => {
   if (eventType !== "resize-end") return false;
-  const layout =
-    (ctx.stateRef.current.layout as Record<string, unknown> | undefined) ?? {};
-  const cols = (layout.columns as string | undefined) ?? "";
-  const lead = cols.trim().split(/\s+/)[0] ?? "";
-  const px = parseInt(lead, 10);
-  if (Number.isFinite(px) && px > 0) {
-    ctx.writeState("sidebar_width", String(px)).catch(() => {
-      /* ignore — best-effort */
-    });
-  }
   return true;
 };
 

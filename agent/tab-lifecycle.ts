@@ -447,6 +447,8 @@ function samePiSlashCommands(
   });
 }
 
+let warnedMissingExtensionRunner = false;
+
 export function collectPiSlashCommands(
   state: AethonAgentState,
   session: TabRecord["session"],
@@ -478,6 +480,13 @@ export function collectPiSlashCommands(
       };
     }
   )._extensionRunner;
+  if (!runner && !warnedMissingExtensionRunner) {
+    warnedMissingExtensionRunner = true;
+    logger
+      .scope("slash")
+      .warn("pi extension command discovery is using a private session API; _extensionRunner is unavailable");
+  }
+  // TODO: switch extension command discovery to pi's public API once exposed.
   for (const command of runner?.getRegisteredCommands?.() ?? []) {
     push({
       name: command.invocationName ?? "",

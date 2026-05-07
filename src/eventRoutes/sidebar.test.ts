@@ -32,15 +32,16 @@ describe("handleSidebarResize", () => {
 });
 
 describe("handleSidebarResizeEnd", () => {
-  it("persists the current sidebar width", async () => {
+  it("handles the drag lifecycle without a legacy one-off write", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: { layout: { columns: "240px minmax(0,1fr)" } },
     });
-    await handleSidebarResizeEnd(
+    const handled = await handleSidebarResizeEnd(
       { component: { id: "sidebar" }, eventType: "resize-end" },
       ctx,
     );
-    expect(mocks.writeState).toHaveBeenCalledWith("sidebar_width", "240");
+    expect(handled).toBe(true);
+    expect(mocks.writeState).not.toHaveBeenCalled();
   });
 });
 

@@ -14,6 +14,8 @@
 
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type {
   AethonAgentState,
@@ -45,6 +47,7 @@ import {
 import { patchLayoutTree } from "./layout-manager";
 import {
   appendLocalChatMessage,
+  normalizeSessionLabel,
   readSessionMetadata,
   readSessionTranscript,
   writeSessionLabel,
@@ -316,6 +319,25 @@ function formatCost(n: number | undefined): string {
   return typeof n === "number" && Number.isFinite(n)
     ? `$${n.toFixed(4)}`
     : "$0.0000";
+}
+
+export function exportTargetForSlashCommand(
+  state: AethonAgentState,
+  args: unknown,
+): { path: string; jsonl: boolean } {
+  const exportsDir = join(state.userDir, "exports");
+  const fallbackName = `session-${new Date().toISOString().replace(/[:.]/g, "-")}.html`;
+  const raw = typeof args === "string" ? args.trim() : "";
+  let fileName = raw ? basename(raw.replace(/\\/g, "/")) : fallbackName;
+  if (!fileName || fileName === "." || fileName === "..") {
+    fileName = fallbackName;
+  }
+  const ext = extname(fileName).toLowerCase();
+  const jsonl = ext === ".jsonl";
+  if (!jsonl && ext !== ".html" && ext !== ".htm") {
+    fileName = `${fileName}.html`;
+  }
+  return { path: join(exportsDir, fileName), jsonl };
 }
 
 export function formatContextUsageMessage(
@@ -800,7 +822,8 @@ export async function runDispatcher(
         return;
       }
       case "name": {
-        const nextName = typeof msg.args === "string" ? msg.args.trim() : "";
+        const nextName =
+          typeof msg.args === "string" ? normalizeSessionLabel(msg.args) : "";
         if (!nextName) {
           const current = (
             tab.session.sessionManager as {
@@ -833,14 +856,12 @@ export async function runDispatcher(
         return;
       }
       case "export": {
-        const outputPath =
-          typeof msg.args === "string" && msg.args.trim().length > 0
-            ? msg.args.trim()
-            : undefined;
         try {
-          const path = outputPath?.endsWith(".jsonl")
-            ? tab.session.exportToJsonl(outputPath)
-            : await tab.session.exportToHtml(outputPath);
+          const target = exportTargetForSlashCommand(state, msg.args);
+          await mkdir(join(state.userDir, "exports"), { recursive: true });
+          const path = target.jsonl
+            ? tab.session.exportToJsonl(target.path)
+            : await tab.session.exportToHtml(target.path);
           deps.send({
             type: "native_slash_result",
             tabId,
@@ -1191,7 +1212,14 @@ export async function runDispatcher(
   ): Promise<void> {
     const tabId = msg.tabId ?? "default";
     const payload = msg.payload;
-    if (!payload || typeof payload !== "object") return;
+    if (!payload || typeof payload !== "object") {
+      deps.send({
+        type: "notice",
+        tabId,
+        message: "local_chat_message: missing payload",
+      });
+      return;
+    }
     const record = payload as Record<string, unknown>;
     const role = record.role;
     const text = record.text;
@@ -1207,7 +1235,14 @@ export async function runDispatcher(
       });
       return;
     }
-    if (typeof text !== "string" || text.length === 0) return;
+    if (typeof text !== "string" || text.length === 0) {
+      deps.send({
+        type: "notice",
+        tabId,
+        message: "local_chat_message: empty text",
+      });
+      return;
+    }
     try {
       const localCwd =
         state.tabProjectCwds.get(tabId) ??

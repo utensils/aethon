@@ -40,7 +40,10 @@ ensure_frontend_deps() {
   fi
   echo "[dev] local Vite is missing; running bun install" >&2
   if [[ -f bun.lock || -f bun.lockb ]]; then
-    bun install --frozen-lockfile
+    if ! bun install --frozen-lockfile; then
+      echo "[dev] frozen bun install failed; retrying without --frozen-lockfile" >&2
+      bun install
+    fi
   else
     bun install
   fi

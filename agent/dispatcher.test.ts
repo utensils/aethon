@@ -6,6 +6,7 @@ import {
 } from "./state";
 import {
   captureProjectExtensionBaseline,
+  exportTargetForSlashCommand,
   formatContextUsageMessage,
   formatSessionStatsMessage,
   unloadProjectExtensions,
@@ -250,5 +251,29 @@ describe("native slash command formatters", () => {
     );
     expect(message).toContain("- Name: Work");
     expect(message).toContain("- Total: $0.0123");
+  });
+});
+
+describe("exportTargetForSlashCommand", () => {
+  it("clamps user-supplied export names under the aethon exports directory", () => {
+    const f = makeFixture();
+    expect(
+      exportTargetForSlashCommand(f.state, "../../etc/passwd.html"),
+    ).toEqual({
+      path: "/tmp/aethon-test/exports/passwd.html",
+      jsonl: false,
+    });
+  });
+
+  it("only treats a real .jsonl extension as jsonl export", () => {
+    const f = makeFixture();
+    expect(exportTargetForSlashCommand(f.state, "session.jsonl")).toEqual({
+      path: "/tmp/aethon-test/exports/session.jsonl",
+      jsonl: true,
+    });
+    expect(exportTargetForSlashCommand(f.state, "session.jsonl.bak")).toEqual({
+      path: "/tmp/aethon-test/exports/session.jsonl.bak.html",
+      jsonl: false,
+    });
   });
 });
