@@ -7,6 +7,7 @@ import {
   type SetStateAction,
 } from "react";
 import {
+  makeEmptyTab,
   NO_PROJECT_KEY,
   projectBucketKey,
   type Tab,
@@ -21,7 +22,7 @@ import {
   type ProjectsState,
 } from "../projects";
 import { formatRelativeTime } from "../utils/time";
-import { TAB_MIRROR_KEYS } from "./useTabs";
+import { modelForNewProjectTab, TAB_MIRROR_KEYS } from "./useTabs";
 import { recomputeModelPicker } from "../utils/modelPicker";
 import type { ChatMessage } from "../types/a2ui";
 import type { GitStatus } from "./useProjects";
@@ -127,6 +128,22 @@ function normalizeSessionPath(path: string | undefined): string {
   return (path ?? "").replace(/[/\\]+$/, "");
 }
 
+export function projectIdFromBucketKey(key: string): string | null {
+  return key === NO_PROJECT_KEY ? null : key;
+}
+
+export function blankTabForProjectBucket(
+  state: Record<string, unknown>,
+  bucketKey: string,
+  fallbackModel: string,
+): Tab {
+  const projectId = projectIdFromBucketKey(bucketKey);
+  return {
+    ...makeEmptyTab("default", "Tab 1", projectId),
+    model: modelForNewProjectTab(state, projectId, fallbackModel),
+  };
+}
+
 /**
  * Project list management + the per-project tab bucket model. Owns:
  *   - `projectsRef` — in-memory project list.
@@ -155,6 +172,7 @@ export function useProjectOps(
     setState,
     stateRef,
     projectsRef,
+    piDefaultModelRef,
     gitStatusRef,
     refreshGitStatusFor,
     refreshAllGitStatus,
@@ -341,11 +359,23 @@ export function useProjectOps(
         tabs: currentTabs,
         activeTabId: currentActive,
       });
-      // Load target bucket (or empty).
-      const next = tabBucketsRef.current.get(toKey) ?? {
-        tabs: [],
-        activeTabId: undefined,
-      };
+      // Load target bucket. When a project has no visible session bucket,
+      // seed a blank tab for that project rather than carrying the old
+      // active tab mirror across the boundary.
+      const savedNext = tabBucketsRef.current.get(toKey);
+      const next =
+        savedNext && savedNext.tabs.length > 0
+          ? savedNext
+          : {
+              tabs: [
+                blankTabForProjectBucket(
+                  prev,
+                  toKey,
+                  piDefaultModelRef.current,
+                ),
+              ],
+              activeTabId: "default",
+            };
       // Heal an orphaned bucket: tabs present but the saved activeTabId
       // doesn't match any of them (or is missing). Without this fixup,
       // the fallthrough below would set empty:true with tabs.length>0,
