@@ -9,6 +9,7 @@ import {
 
 afterEach(() => {
   window.sessionStorage.clear();
+  window.localStorage?.clear?.();
 });
 
 describe("sessionUiSnapshot", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
 import { SkillRegistry } from "./skills/SkillRegistry";
@@ -26,11 +26,14 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useProjectOps } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import type { SlashCommandContext } from "./slashCommands";
-import { writeState } from "./persist";
+import { readState, writeState } from "./persist";
 import { createAppStore, useAppState } from "./state/appStore";
 import {
+  SESSION_UI_SNAPSHOT_FILE,
   loadSessionUiSnapshot,
+  parseSessionUiSnapshot,
   saveSessionUiSnapshot,
+  type SessionUiSnapshot,
 } from "./state/sessionUiSnapshot";
 import {
   activeProject,
@@ -76,7 +79,7 @@ export default function App() {
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
   // Initial state also seeds one default tab + the active-tab mirror keys.
-  const appStore = useMemo(() => createAppStore((() => {
+  const initialApp = useMemo(() => {
     const tab0 = makeEmptyTab("default", "Tab 1");
     const restored = loadSessionUiSnapshot();
     const tabs = restored?.tabs.length ? restored.tabs : [tab0];
@@ -94,6 +97,7 @@ export default function App() {
       TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
     );
     return {
+      appStore: createAppStore({
       ...(BOOT_LAYOUT.state ?? {}),
       ...(restored?.terminal ? { terminal: restored.terminal } : {}),
       ...(restored?.terminalPanel ? { terminalPanel: restored.terminalPanel } : {}),
@@ -134,8 +138,11 @@ export default function App() {
             },
           }
         : {}),
+      }),
+      hasSyncSessionSnapshot: Boolean(restored),
     };
-  })()), []);
+  }, []);
+  const { appStore, hasSyncSessionSnapshot } = initialApp;
   const state = useAppState(appStore, (s) => s);
   const setState = appStore.setState;
 
@@ -175,20 +182,89 @@ export default function App() {
     });
   }
 
+  const restoreSessionUiSnapshot = useCallback((snapshot: SessionUiSnapshot) => {
+    setState((prev) => {
+      const tabs = snapshot.tabs.length ? snapshot.tabs : [];
+      if (tabs.length === 0) return prev;
+      const activeTabId =
+        snapshot.activeTabId && tabs.some((t) => t.id === snapshot.activeTabId)
+          ? snapshot.activeTabId
+          : tabs[0].id;
+      const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+      const activeRecord = activeTab as unknown as Record<string, unknown>;
+      const rootMirror = Object.fromEntries(
+        TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
+      );
+      const restoredLayout =
+        snapshot.layout && typeof snapshot.layout === "object"
+          ? (snapshot.layout as Record<string, unknown>)
+          : {};
+      const currentLayout =
+        (prev.layout as Record<string, unknown> | undefined) ?? {};
+      return {
+        ...prev,
+        ...(snapshot.terminal ? { terminal: snapshot.terminal } : {}),
+        ...(snapshot.terminalPanel
+          ? { terminalPanel: snapshot.terminalPanel }
+          : {}),
+        ...(snapshot.scrollToMatchByTab
+          ? { scrollToMatchByTab: snapshot.scrollToMatchByTab }
+          : {}),
+        ...(snapshot.projectModels
+          ? { projectModels: snapshot.projectModels }
+          : {}),
+        ...(Object.keys(restoredLayout).length > 0
+          ? { layout: { ...currentLayout, ...restoredLayout } }
+          : {}),
+        tabs,
+        activeTabId,
+        empty: false,
+        hasTabs: true,
+        ...rootMirror,
+      };
+    });
+  }, [setState]);
+
   useEffect(() => {
+    let cancelled = false;
+    let persistenceStarted = false;
+    let unsubscribe: (() => void) | undefined;
     const persist = () => {
-      saveSessionUiSnapshot(appStore.getState());
+      if (!persistenceStarted) return;
+      saveSessionUiSnapshot(appStore.getState(), (content) => {
+        writeState(SESSION_UI_SNAPSHOT_FILE, content).catch(() => {
+          /* persist is best effort */
+        });
+      });
     };
-    persist();
-    const unsubscribe = appStore.subscribe(persist);
-    window.addEventListener("beforeunload", persist);
+    const startPersistence = () => {
+      persistenceStarted = true;
+      persist();
+      unsubscribe = appStore.subscribe(persist);
+      window.addEventListener("beforeunload", persist);
+    };
     const hot = import.meta.hot;
     hot?.dispose(persist);
+    if (hasSyncSessionSnapshot) {
+      startPersistence();
+    } else {
+      readState(SESSION_UI_SNAPSHOT_FILE)
+        .then((raw) => {
+          if (cancelled) return;
+          const snapshot = parseSessionUiSnapshot(raw);
+          if (snapshot) restoreSessionUiSnapshot(snapshot);
+          startPersistence();
+        })
+        .catch(() => {
+          if (!cancelled) startPersistence();
+        });
+    }
     return () => {
-      unsubscribe();
+      cancelled = true;
+      unsubscribe?.();
       window.removeEventListener("beforeunload", persist);
     };
-  }, [appStore]);
+  }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot]);
 
   // ---------------------------------------------------------------------
   // App-owned shared refs — owned here (rather than inside their primary

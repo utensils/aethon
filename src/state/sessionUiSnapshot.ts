@@ -1,5 +1,7 @@
 import type { Tab } from "../types/tab";
 
+export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
+
 const KEY = "aethon:session-ui-snapshot:v1";
 const MAX_MESSAGES_PER_TAB = 200;
 const MAX_TERMINAL_BUFFER = 256 * 1024;
@@ -16,7 +18,21 @@ export interface SessionUiSnapshot {
 }
 
 function canUseSessionStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+  return (
+    typeof window !== "undefined" &&
+    typeof window.sessionStorage?.getItem === "function" &&
+    typeof window.sessionStorage?.setItem === "function" &&
+    typeof window.sessionStorage?.removeItem === "function"
+  );
+}
+
+function canUseLocalStorage(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.localStorage?.getItem === "function" &&
+    typeof window.localStorage?.setItem === "function" &&
+    typeof window.localStorage?.removeItem === "function"
+  );
 }
 
 function trimTab(tab: Tab): Tab {
@@ -56,9 +72,24 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
 }
 
 export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
-  if (!canUseSessionStorage()) return null;
-  try {
+  const candidates: string[] = [];
+  if (canUseSessionStorage()) {
     const raw = window.sessionStorage.getItem(KEY);
+    if (raw) candidates.push(raw);
+  }
+  if (canUseLocalStorage()) {
+    const raw = window.localStorage.getItem(KEY);
+    if (raw) candidates.push(raw);
+  }
+  for (const raw of candidates) {
+    const parsed = parseSessionUiSnapshot(raw);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
+  try {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SessionUiSnapshot>;
     const tabs = Array.isArray(parsed.tabs)
@@ -112,15 +143,15 @@ export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
   }
 }
 
-export function saveSessionUiSnapshot(state: Record<string, unknown>): void {
-  if (!canUseSessionStorage()) return;
+export function serializeSessionUiSnapshot(
+  state: Record<string, unknown>,
+): string | null {
   try {
     const tabs = Array.isArray(state.tabs)
       ? (state.tabs as Tab[]).filter(shouldPersistTab).map(trimTab)
       : [];
     if (tabs.length === 0) {
-      window.sessionStorage.removeItem(KEY);
-      return;
+      return null;
     }
     const activeTabId =
       typeof state.activeTabId === "string" &&
@@ -142,7 +173,27 @@ export function saveSessionUiSnapshot(state: Record<string, unknown>): void {
           : undefined,
       savedAt: Date.now(),
     };
-    window.sessionStorage.setItem(KEY, JSON.stringify(snapshot));
+    return JSON.stringify(snapshot);
+  } catch {
+    return null;
+  }
+}
+
+export function saveSessionUiSnapshot(
+  state: Record<string, unknown>,
+  persistDisk?: (content: string) => void,
+): void {
+  const serialized = serializeSessionUiSnapshot(state);
+  try {
+    if (serialized === null) {
+      if (canUseSessionStorage()) window.sessionStorage.removeItem(KEY);
+      if (canUseLocalStorage()) window.localStorage.removeItem(KEY);
+      persistDisk?.("");
+      return;
+    }
+    if (canUseSessionStorage()) window.sessionStorage.setItem(KEY, serialized);
+    if (canUseLocalStorage()) window.localStorage.setItem(KEY, serialized);
+    persistDisk?.(serialized);
   } catch {
     /* best-effort; quota or privacy settings should not break the app */
   }
