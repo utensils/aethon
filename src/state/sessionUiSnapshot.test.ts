@@ -25,9 +25,13 @@ describe("sessionUiSnapshot", () => {
     saveSessionUiSnapshot({
       tabs: [tabA, tabB],
       activeTabId: "tab-b",
-      layout: { columns: "300px minmax(0,1fr)" },
+      layout: {
+        sidebarVisible: true,
+        columns: "300px minmax(0,1fr)",
+      },
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 240 },
+      projectModels: { "project-1": "anthropic/claude-opus-4-7" },
     });
 
     expect(loadSessionUiSnapshot()).toMatchObject({
@@ -36,9 +40,10 @@ describe("sessionUiSnapshot", () => {
         { id: "tab-a", label: "A", messages: [{ text: "hi" }] },
         { id: "tab-b", label: "B", canvas: { type: "card" } },
       ],
-      layout: { columns: "300px minmax(0,1fr)" },
+      layout: { sidebarVisible: true, columns: "300px minmax(0,1fr)" },
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 240 },
+      projectModels: { "project-1": "anthropic/claude-opus-4-7" },
     });
   });
 
@@ -87,5 +92,30 @@ describe("sessionUiSnapshot", () => {
     const restored = loadSessionUiSnapshot();
     expect(restored?.tabs.map((t) => t.id)).toEqual(["active-chat"]);
     expect(restored?.activeTabId).toBe("active-chat");
+  });
+
+  it("does not persist extension-added layout columns or areas", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      layout: {
+        sidebarVisible: true,
+        columns: "256px minmax(0,1fr) 360px",
+        areas: [
+          "sidebar header header",
+          "sidebar canvas gallery",
+          "status status status",
+        ],
+      },
+    });
+
+    expect(loadSessionUiSnapshot()?.layout).toEqual({
+      sidebarVisible: true,
+      columns: "256px minmax(0,1fr)",
+    });
   });
 });

@@ -202,7 +202,6 @@ export function useBootConfig(
             layout?: {
               sidebarVisible?: boolean;
               columns?: string;
-              areas?: string[];
             };
             terminal?: { open?: boolean };
             terminalPanel?: { activeSubId?: string; height?: number };
@@ -215,6 +214,10 @@ export function useBootConfig(
             const terminalPanel =
               (prev.terminalPanel as Record<string, unknown> | undefined) ??
               {};
+            const firstColumn =
+              typeof parsed.layout?.columns === "string"
+                ? parsed.layout.columns.trim().split(/\s+/)[0]
+                : "";
             return {
               ...prev,
               layout: {
@@ -222,11 +225,8 @@ export function useBootConfig(
                 ...(typeof parsed.layout?.sidebarVisible === "boolean"
                   ? { sidebarVisible: parsed.layout.sidebarVisible }
                   : {}),
-                ...(typeof parsed.layout?.columns === "string"
-                  ? { columns: parsed.layout.columns }
-                  : {}),
-                ...(Array.isArray(parsed.layout?.areas)
-                  ? { areas: parsed.layout.areas }
+                ...(firstColumn.endsWith("px")
+                  ? { columns: `${firstColumn} minmax(0,1fr)` }
                   : {}),
               },
               terminal: {

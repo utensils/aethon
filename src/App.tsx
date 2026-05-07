@@ -100,6 +100,7 @@ export default function App() {
       ...(restored?.scrollToMatchByTab
         ? { scrollToMatchByTab: restored.scrollToMatchByTab }
         : {}),
+      ...(restored?.projectModels ? { projectModels: restored.projectModels } : {}),
       logoUrl,
       // App version surfaced as a state slice so layout JSON can $ref it
       // (e.g. sidebar's `version` prop). Single source of truth is
@@ -154,6 +155,25 @@ export default function App() {
       stateRef.current = appStore.getState();
     });
   }, [appStore]);
+
+  function recordProjectModel(model: string, tabId?: string) {
+    if (!model.trim()) return;
+    setState((prev) => {
+      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+      const targetId =
+        tabId ?? (prev.activeTabId as string | undefined) ?? undefined;
+      const tab = targetId ? tabs.find((t) => t.id === targetId) : undefined;
+      const projectId = tab?.projectId ?? projectsRef.current.activeId;
+      if (!projectId) return prev;
+      const projectModels =
+        (prev.projectModels as Record<string, string> | undefined) ?? {};
+      if (projectModels[projectId] === model) return prev;
+      return {
+        ...prev,
+        projectModels: { ...projectModels, [projectId]: model },
+      };
+    });
+  }
 
   useEffect(() => {
     const persist = () => {
@@ -450,6 +470,7 @@ export default function App() {
     pushNotification,
     slashContext: () => slashContext(),
     persistLocalChatMessage,
+    recordProjectModel,
   });
   // Wire the chat-actions handle in commit phase so useTabs /
   // useExtensionsHydration's appendSystem-via-stub becomes the live one
@@ -560,6 +581,7 @@ export default function App() {
       announceProjectToBridge,
       appendMessage,
       persistLocalChatMessage,
+      recordProjectModel,
       appendOrAmendAgentText,
       setStatusFlags,
       pushNotification,
@@ -637,7 +659,9 @@ export default function App() {
   // Persist frontend-only chrome state so Vite/webview hot reloads restore
   // the working surface, not just the agent transcript. Resize-end handlers
   // still write legacy one-off keys; this snapshot covers sidebar visible
-  // state, current grid columns/areas, terminal visibility, and panel state.
+  // state, sidebar width, terminal visibility, and panel state. Do not
+  // persist arbitrary grid areas/columns: project extensions can add
+  // layout regions, and those must disappear when the project changes.
   useEffect(() => {
     if (uiStatePersistTimerRef.current !== null) {
       window.clearTimeout(uiStatePersistTimerRef.current);
@@ -649,11 +673,16 @@ export default function App() {
         (state.terminal as Record<string, unknown> | undefined) ?? {};
       const terminalPanelState =
         (state.terminalPanel as Record<string, unknown> | undefined) ?? {};
+      const firstColumn =
+        typeof layoutState.columns === "string"
+          ? layoutState.columns.trim().split(/\s+/)[0]
+          : "";
       const snapshot = {
         layout: {
           sidebarVisible: layoutState.sidebarVisible,
-          columns: layoutState.columns,
-          areas: layoutState.areas,
+          ...(firstColumn.endsWith("px")
+            ? { columns: `${firstColumn} minmax(0,1fr)` }
+            : {}),
         },
         terminal: {
           open: terminalState.open,

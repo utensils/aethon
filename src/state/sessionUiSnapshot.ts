@@ -11,6 +11,7 @@ export interface SessionUiSnapshot {
   terminal?: unknown;
   terminalPanel?: unknown;
   scrollToMatchByTab?: unknown;
+  projectModels?: Record<string, string>;
   savedAt: number;
 }
 
@@ -36,6 +37,22 @@ function shouldPersistTab(tab: Tab): boolean {
     tab.canvas !== null ||
     tab.terminalBuffer.length > 0
   );
+}
+
+function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undefined {
+  if (!layout || typeof layout !== "object") return undefined;
+  const input = layout as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  if (typeof input.sidebarVisible === "boolean") {
+    next.sidebarVisible = input.sidebarVisible;
+  }
+  if (typeof input.columns === "string") {
+    const first = input.columns.trim().split(/\s+/)[0];
+    if (/^\d+px$/.test(first)) {
+      next.columns = `${first} minmax(0,1fr)`;
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
@@ -73,10 +90,21 @@ export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
         projectId: t.projectId ?? null,
       })),
       activeTabId,
-      layout: parsed.layout,
+      layout: durableLayoutSnapshot(parsed.layout),
       terminal: parsed.terminal,
       terminalPanel: parsed.terminalPanel,
       scrollToMatchByTab: parsed.scrollToMatchByTab,
+      projectModels:
+        parsed.projectModels &&
+        typeof parsed.projectModels === "object" &&
+        !Array.isArray(parsed.projectModels)
+          ? Object.fromEntries(
+              Object.entries(parsed.projectModels).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[0] === "string" && typeof entry[1] === "string",
+              ),
+            )
+          : undefined,
       savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0,
     };
   } catch {
@@ -102,10 +130,16 @@ export function saveSessionUiSnapshot(state: Record<string, unknown>): void {
     const snapshot: SessionUiSnapshot = {
       tabs,
       activeTabId,
-      layout: state.layout,
+      layout: durableLayoutSnapshot(state.layout),
       terminal: state.terminal,
       terminalPanel: state.terminalPanel,
       scrollToMatchByTab: state.scrollToMatchByTab,
+      projectModels:
+        state.projectModels &&
+        typeof state.projectModels === "object" &&
+        !Array.isArray(state.projectModels)
+          ? (state.projectModels as Record<string, string>)
+          : undefined,
       savedAt: Date.now(),
     };
     window.sessionStorage.setItem(KEY, JSON.stringify(snapshot));

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { emptyProjectsState } from "../projects";
 import { makeEmptyTab } from "../types/tab";
-import { recentSessionItemFromClosedTab } from "./useTabs";
+import {
+  modelForNewProjectTab,
+  recentSessionItemFromClosedTab,
+} from "./useTabs";
 
 describe("recentSessionItemFromClosedTab", () => {
   it("keeps a closed chat tab available for history restore", () => {
@@ -34,5 +37,27 @@ describe("recentSessionItemFromClosedTab", () => {
     expect(
       recentSessionItemFromClosedTab(makeEmptyTab("t1", "Tab 1"), emptyProjectsState()),
     ).toBeNull();
+  });
+});
+
+describe("modelForNewProjectTab", () => {
+  it("prefers the active project's last model over the global active model", () => {
+    expect(
+      modelForNewProjectTab(
+        {
+          model: "openai/gpt-5.5",
+          projectModels: { p1: "anthropic/claude-opus-4-7" },
+        },
+        "p1",
+        "openai/gpt-5-mini",
+      ),
+    ).toBe("anthropic/claude-opus-4-7");
+  });
+
+  it("falls back to visible model and then pi default", () => {
+    expect(
+      modelForNewProjectTab({ model: "openai/gpt-5.5" }, "p1", "fallback"),
+    ).toBe("openai/gpt-5.5");
+    expect(modelForNewProjectTab({}, "p1", "fallback")).toBe("fallback");
   });
 });

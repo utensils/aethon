@@ -69,6 +69,21 @@ function sessionLabelFromMessages(messages: Tab["messages"]): string | undefined
   return text.length > 48 ? `${text.slice(0, 47)}...` : text;
 }
 
+export function modelForNewProjectTab(
+  state: Record<string, unknown>,
+  activeProjectId: string | null,
+  fallbackModel: string,
+): string {
+  const projectModels =
+    (state.projectModels as Record<string, string> | undefined) ?? {};
+  const projectModel = activeProjectId ? projectModels[activeProjectId] : "";
+  return (
+    projectModel ||
+    (state.model as string | undefined) ||
+    fallbackModel
+  ).trim();
+}
+
 export function recentSessionItemFromClosedTab(
   tab: Tab,
   projects: ProjectsState,
@@ -367,13 +382,15 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         });
       }, 5000);
     }
-    // Inherit the previously-active tab's model so the picker stays
-    // consistent. Fall back to piDefaultModelRef so tabs opened before
-    // ready still get a valid model.
-    const inheritedModel = (
-      (stateRef.current.model as string | undefined) ||
-      piDefaultModelRef.current
-    ).trim();
+    // Project-scoped model default: new tabs in a project should use
+    // the last model selected in that project, then the visible/global
+    // model, then pi's ready-reported default.
+    const projectId = projectsRef.current.activeId;
+    const inheritedModel = modelForNewProjectTab(
+      stateRef.current,
+      projectId,
+      piDefaultModelRef.current,
+    );
     const existingSessionLabel = restoreId
       ? sessionLabelFromMessages(
           ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
@@ -384,7 +401,6 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       const label = restoreLabel ?? existingSessionLabel ?? `Tab ${tabs.length + 1}`;
-      const projectId = projectsRef.current.activeId;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
