@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Tab } from "../types/tab";
 
 export interface UseFrontendStateMirrorContext {
@@ -28,6 +29,18 @@ export function useFrontendStateMirror(
   const { state } = ctx;
   const lastFrontendStateRef = useRef<Record<string, string>>({});
   const frontendPatchTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen<string>("agent-reloaded", () => {
+      // The fresh bridge lost its in-memory frontendState mirror. Clear
+      // the local diff cache so the next state tick resends every watched
+      // slice, even if the React value itself did not change.
+      lastFrontendStateRef.current = {};
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     if (frontendPatchTimerRef.current !== null) {

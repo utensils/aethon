@@ -27,6 +27,7 @@ import { findSessionFileMatchingCwd } from "./session-history";
 import { consumeBashTerminalSnapshot } from "./terminal-stream";
 import type {
   AethonAgentState,
+  RegisteredPiSlashCommand,
   ModelDescriptor,
   TabRecord,
 } from "./state";
@@ -373,6 +374,11 @@ export function emitReady(
   state: AethonAgentState,
   deps: TabLifecycleDeps,
 ): void {
+  const commandSourceTab =
+    state.tabs.get("default") ?? state.tabs.values().next().value;
+  if (commandSourceTab) {
+    refreshPiSlashCommands(state, commandSourceTab.session);
+  }
   deps.send({
     type: "ready",
     model: defaultModelKey(state),
@@ -389,6 +395,7 @@ export function emitReady(
     extensionLayoutPatches: state.pendingLayoutPatches,
     extensionThemes: [...state.extensionThemes.values()],
     extensionSlashCommands: [...state.extensionSlashCommands.values()],
+    piSlashCommands: state.piSlashCommands,
     piSkills: state.piSkills,
     extensionKeybindings: [...state.extensionKeybindings.values()],
     extensionMenuItems: [...state.extensionMenuItems.values()],
@@ -415,6 +422,114 @@ export function emitReady(
     disabledExtensionsList: [...state.disabledExtensions].sort(),
     discoveredTabs: state.discoveredTabs,
   });
+}
+
+function samePiSlashCommands(
+  a: RegisteredPiSlashCommand[],
+  b: RegisteredPiSlashCommand[],
+): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((left, i) => {
+    const right = b[i];
+    return (
+      left.name === right?.name &&
+      left.description === right.description &&
+      left.usage === right.usage &&
+      left.source === right.source
+    );
+  });
+}
+
+export function collectPiSlashCommands(
+  state: AethonAgentState,
+  session: TabRecord["session"],
+): RegisteredPiSlashCommand[] {
+  const seen = new Set<string>();
+  const out: RegisteredPiSlashCommand[] = [];
+  const push = (cmd: RegisteredPiSlashCommand) => {
+    const name = typeof cmd.name === "string" ? cmd.name.trim() : "";
+    if (!/^[A-Za-z][\w-]*(?::[A-Za-z0-9][\w-]*)?$/.test(name)) return;
+    if (seen.has(name)) return;
+    seen.add(name);
+    out.push({
+      name,
+      description: cmd.description || "",
+      ...(cmd.usage ? { usage: cmd.usage } : {}),
+      ...(cmd.source ? { source: cmd.source } : {}),
+      ...(cmd.sourceInfo ? { sourceInfo: cmd.sourceInfo } : {}),
+    });
+  };
+
+  const runner = (
+    session as {
+      _extensionRunner?: {
+        getRegisteredCommands?: () => {
+          invocationName?: string;
+          description?: string;
+          sourceInfo?: unknown;
+        }[];
+      };
+    }
+  )._extensionRunner;
+  for (const command of runner?.getRegisteredCommands?.() ?? []) {
+    push({
+      name: command.invocationName ?? "",
+      description: command.description ?? "",
+      source: "extension",
+      sourceInfo: command.sourceInfo,
+    });
+  }
+
+  for (const template of session.promptTemplates ?? []) {
+    push({
+      name: template.name,
+      description: template.description ?? "",
+      source: "prompt",
+      sourceInfo: template.sourceInfo,
+    });
+  }
+
+  const skills =
+    (
+      state.resourceLoader as
+        | {
+            getSkills?: () => {
+              skills: {
+                name: string;
+                description?: string;
+                sourceInfo?: unknown;
+              }[];
+            };
+          }
+        | undefined
+    )?.getSkills?.().skills ?? [];
+  for (const skill of skills) {
+    push({
+      name: `skill:${skill.name}`,
+      description: skill.description ?? "",
+      source: "skill",
+      sourceInfo: skill.sourceInfo,
+    });
+  }
+
+  return out;
+}
+
+export function refreshPiSlashCommands(
+  state: AethonAgentState,
+  session: TabRecord["session"],
+): void {
+  const next = collectPiSlashCommands(state, session);
+  if (!samePiSlashCommands(state.piSlashCommands, next)) {
+    state.piSlashCommands = next;
+    state.piSkills = next
+      .filter((c) => c.source === "skill" && c.name.startsWith("skill:"))
+      .map((c) => ({
+        name: c.name,
+        description: c.description,
+        ...(c.usage ? { usage: c.usage } : {}),
+      }));
+  }
 }
 
 export interface EnsureTabOptions {
@@ -485,6 +600,7 @@ export async function ensureTab(
     queuedCount: 0,
   };
   state.tabs.set(tabId, rec);
+  refreshPiSlashCommands(state, session);
 
   // First tab: populate the global picker now that we have a model.
   if (state.cachedModels.length === 0) {

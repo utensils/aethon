@@ -49,6 +49,14 @@ const VALID_SHARE_MODES: ShellMeta["shareMode"][] = [
   "read-write-trusted",
 ];
 
+function sessionLabel(session: DiscoveredSession): string {
+  if (session.customLabel) return session.customLabel;
+  if (session.firstUserMessage) {
+    return session.firstUserMessage.replace(/\s+/g, " ").trim();
+  }
+  return `Session ${session.tabId.slice(0, 8)}`;
+}
+
 interface DiscoveredSession {
   tabId: string;
   lastModified: number;
@@ -480,7 +488,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
             (t) => t.id,
           )),
         ]);
-        const toRestore = discovered
+      const toRestore = discovered
           .filter((d) => !liveIds.has(d.tabId))
           .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
           .slice(0, 8);
@@ -488,7 +496,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         // Open oldest first so the most recent session ends up active.
         for (const session of [...toRestore].reverse()) {
           autoRestoredSessionIdsRef.current.add(session.tabId);
-          newTab(session.tabId, `Session ${session.tabId.slice(0, 8)}`, {
+          newTab(session.tabId, sessionLabel(session), {
             restoredSession: true,
             ...(session.cwd ? { cwd: session.cwd } : {}),
           });

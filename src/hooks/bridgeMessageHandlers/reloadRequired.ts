@@ -19,7 +19,6 @@ export const handleReloadRequired: BridgeMessageHandler = (data, _ctx) => {
   invoke("reload_agent").catch((err: unknown) => {
     // Best-effort. If the restart fails the toggle still applies on
     // the next manual restart; we just won't get an instant reload.
-    // eslint-disable-next-line no-console
     console.warn(`reload_required (${reason}): reload_agent failed`, err);
   });
 };

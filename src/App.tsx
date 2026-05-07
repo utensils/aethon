@@ -143,6 +143,7 @@ export default function App() {
   const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
   const hangWarnActiveRef = useRef<Set<string>>(new Set());
   const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const uiStatePersistTimerRef = useRef<number | null>(null);
 
   // Forward handles populated below as hooks construct. Lets earlier
   // hooks (useTabs / useProjects / useZoomAndTheme / useShellConsent)
@@ -405,6 +406,7 @@ export default function App() {
     slashCommandsRef,
     pushNotification,
     slashContext: () => slashContext(),
+    persistLocalChatMessage,
   });
   // Wire the chat-actions handle in commit phase so useTabs /
   // useExtensionsHydration's appendSystem-via-stub becomes the live one
@@ -514,6 +516,7 @@ export default function App() {
       hydrateFrontendModules,
       announceProjectToBridge,
       appendMessage,
+      persistLocalChatMessage,
       appendOrAmendAgentText,
       setStatusFlags,
       pushNotification,
@@ -588,11 +591,53 @@ export default function App() {
   // patch per slice.
   useFrontendStateMirror({ state });
 
+  // Persist frontend-only chrome state so Vite/webview hot reloads restore
+  // the working surface, not just the agent transcript. Resize-end handlers
+  // still write legacy one-off keys; this snapshot covers sidebar visible
+  // state, current grid columns/areas, terminal visibility, and panel state.
+  useEffect(() => {
+    if (uiStatePersistTimerRef.current !== null) {
+      window.clearTimeout(uiStatePersistTimerRef.current);
+    }
+    uiStatePersistTimerRef.current = window.setTimeout(() => {
+      uiStatePersistTimerRef.current = null;
+      const layoutState = (state.layout as Record<string, unknown> | undefined) ?? {};
+      const terminalState =
+        (state.terminal as Record<string, unknown> | undefined) ?? {};
+      const terminalPanelState =
+        (state.terminalPanel as Record<string, unknown> | undefined) ?? {};
+      const snapshot = {
+        layout: {
+          sidebarVisible: layoutState.sidebarVisible,
+          columns: layoutState.columns,
+          areas: layoutState.areas,
+        },
+        terminal: {
+          open: terminalState.open,
+        },
+        terminalPanel: {
+          activeSubId: terminalPanelState.activeSubId,
+          height: terminalPanelState.height,
+        },
+      };
+      writeState("ui_state", JSON.stringify(snapshot)).catch(() => {
+        /* persist is best effort */
+      });
+    }, 100);
+    return () => {
+      if (uiStatePersistTimerRef.current !== null) {
+        window.clearTimeout(uiStatePersistTimerRef.current);
+        uiStatePersistTimerRef.current = null;
+      }
+    };
+  }, [state.layout, state.terminal, state.terminalPanel]);
+
   // OS-edge event listeners — PTY streams, agent supervisor signals,
   // native menu, drag-drop file paths, clipboard image paste. Bridge
   // response IPC stays in useBridgeMessages; this hook only owns
   // listeners that aren't routed through the bridge response stream.
   useOsEdges({
+    bootLayout: BOOT_LAYOUT,
     setState,
     stateRef,
     activeResponseIdRef,
@@ -618,9 +663,36 @@ export default function App() {
 
   // Build the dispatch context fresh per invocation so handlers see latest
   // state (model list, skills) without re-creating the command registry.
+  function persistLocalChatMessage(
+    msg: { id: string; role: "user" | "agent" | "system"; text?: string },
+    tabId: string,
+  ) {
+    if (!msg.text) return;
+    invoke("agent_command", {
+      payload: JSON.stringify({
+        type: "local_chat_message",
+        tabId,
+        payload: {
+          id: msg.id,
+          role: msg.role,
+          text: msg.text,
+          createdAt: Date.now(),
+        },
+      }),
+    }).catch(() => {
+      /* bridge gone — visible state remains in-memory until reload */
+    });
+  }
+
   function slashContext(): SlashCommandContext {
     return {
-      appendSystem,
+      appendSystem: (text: string) => {
+        const tabId =
+          (stateRef.current.activeTabId as string | undefined) ?? "default";
+        const msg = { id: crypto.randomUUID(), role: "system" as const, text };
+        appendMessage(msg, tabId);
+        persistLocalChatMessage(msg, tabId);
+      },
       notify: (input) => {
         pushNotification(input);
       },
@@ -659,6 +731,21 @@ export default function App() {
         })),
       reloadAgent: async () => {
         await invoke("reload_agent");
+      },
+      runNativeCommand: async (name: string, args: string) => {
+        const activeId = stateRef.current.activeTabId;
+        const tabId =
+          typeof activeId === "string" && activeId.length > 0
+            ? activeId
+            : "default";
+        await invoke("agent_command", {
+          payload: JSON.stringify({
+            type: "native_slash_command",
+            tabId,
+            name,
+            args,
+          }),
+        });
       },
       renameSession: async (tabId: string, label: string) => {
         // Optimistic in-memory update so the open-tab row in the sidebar

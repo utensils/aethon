@@ -29,6 +29,7 @@ export interface HandlerFixture {
     updateTab: Mock;
     updateActiveTab: Mock;
     appendMessage: Mock;
+    persistLocalChatMessage: Mock;
     appendOrAmendAgentText: Mock;
     setStatusFlags: Mock;
     pushNotification: Mock;
@@ -81,6 +82,7 @@ export function buildHandlerFixture(
   const updateTab = vi.fn();
   const updateActiveTab = vi.fn();
   const appendMessage = vi.fn();
+  const persistLocalChatMessage = vi.fn();
   const appendOrAmendAgentText = vi.fn();
   const setStatusFlags = vi.fn();
   const pushNotification = vi.fn();
@@ -137,6 +139,7 @@ export function buildHandlerFixture(
     announceProjectToBridge,
 
     appendMessage,
+    persistLocalChatMessage,
     appendOrAmendAgentText,
     setStatusFlags,
 
@@ -184,6 +187,7 @@ export function buildHandlerFixture(
       updateTab,
       updateActiveTab,
       appendMessage,
+      persistLocalChatMessage,
       appendOrAmendAgentText,
       setStatusFlags,
       pushNotification,

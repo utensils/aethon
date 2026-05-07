@@ -6,6 +6,8 @@ import {
 } from "./state";
 import {
   captureProjectExtensionBaseline,
+  formatContextUsageMessage,
+  formatSessionStatsMessage,
   unloadProjectExtensions,
 } from "./dispatcher";
 
@@ -172,5 +174,50 @@ describe("ProjectBaselineSnapshot type shape", () => {
       pendingLayoutPatches: [],
     };
     expect(snap.eventRoutingMode).toBe("builtin");
+  });
+});
+
+describe("native slash command formatters", () => {
+  it("formats context usage with remaining tokens", () => {
+    expect(
+      formatContextUsageMessage(
+        { tokens: 12_000, contextWindow: 200_000, percent: 6 },
+        "anthropic/claude",
+      ),
+    ).toContain("- Remaining: 188,000 tokens");
+  });
+
+  it("formats unknown context usage after compaction", () => {
+    expect(
+      formatContextUsageMessage(
+        { tokens: null, contextWindow: 200_000, percent: null },
+        "anthropic/claude",
+      ),
+    ).toContain("- Used: unknown");
+  });
+
+  it("formats session stats", () => {
+    const message = formatSessionStatsMessage(
+      {
+        sessionFile: "/tmp/session.jsonl",
+        sessionId: "abc",
+        userMessages: 2,
+        assistantMessages: 3,
+        toolCalls: 4,
+        toolResults: 5,
+        totalMessages: 10,
+        tokens: {
+          input: 1000,
+          output: 2000,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 3000,
+        },
+        cost: 0.0123,
+      },
+      "Work",
+    );
+    expect(message).toContain("- Name: Work");
+    expect(message).toContain("- Total: $0.0123");
   });
 });

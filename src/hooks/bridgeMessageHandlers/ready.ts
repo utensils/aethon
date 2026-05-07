@@ -41,10 +41,14 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     (data.extensionSlashCommands as
       | { name: string; description: string; usage?: string }[]
       | undefined) ?? [];
-  const piSkills =
+  const piCommands =
+    (data.piSlashCommands as
+      | { name: string; description: string; usage?: string }[]
+      | undefined) ??
     (data.piSkills as
       | { name: string; description: string; usage?: string }[]
-      | undefined) ?? [];
+      | undefined) ??
+    [];
   const extKeys =
     (data.extensionKeybindings as
       | { combo: string; action: string; description?: string }[]
@@ -81,6 +85,15 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   const extStateKeys = (data.extensionStateKeys as string[] | undefined) ?? [];
   const discTabs =
     (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
+  const discoveredById = new Map(discTabs.map((d) => [d.tabId, d]));
+  const sessionLabel = (tabId: string, fallback: string): string => {
+    const session = discoveredById.get(tabId);
+    if (session?.customLabel) return session.customLabel;
+    if (session?.firstUserMessage) {
+      return session.firstUserMessage.replace(/\s+/g, " ").trim();
+    }
+    return fallback;
+  };
   ctx.allDiscoveredSessionsRef.current = discTabs;
   // Hydrate extension themes BEFORE the layout state merge below so
   // /sidebar/themes carries the full list (built-ins + extension) when
@@ -101,7 +114,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // delta after reload). hydrateSlashCommands rewrites the merged
   // catalog (built-ins + extensions), updates the picker state ref, and
   // bumps /slashCommands so the picker re-resolves via $ref.
-  ctx.hydrateSlashCommands(extSlash, piSkills);
+  ctx.hydrateSlashCommands(extSlash, piCommands);
   ctx.hydrateKeybindings(extKeys);
   ctx.hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
   ctx.hydrateExtensionLayouts(extLayouts);
@@ -226,7 +239,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
         }
         const label = `Tab ${localTabs.length + 1}`;
         localTabs.push({
-          ...makeEmptyTab(bt.id, label, ctx.projectsRef.current.activeId),
+          ...makeEmptyTab(
+            bt.id,
+            sessionLabel(bt.id, label),
+            ctx.projectsRef.current.activeId,
+          ),
           model: bt.model,
         });
       }
@@ -236,14 +253,18 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       for (let i = 0; i < localTabs.length; i++) {
         const replay = tabReplay[localTabs[i].id];
         if (!replay) continue;
-        const merged = { ...localTabs[i] } as unknown as Record<string, unknown>;
+        const merged = { ...localTabs[i] } as unknown as Record<
+          string,
+          unknown
+        >;
         for (const [k, v] of Object.entries(replay)) {
           // Only fill keys that aren't already populated locally, so a
           // real local update beats a possibly-stale replay.
           if (
             merged[k] === undefined ||
             merged[k] === null ||
-            (Array.isArray(merged[k]) && (merged[k] as unknown[]).length === 0) ||
+            (Array.isArray(merged[k]) &&
+              (merged[k] as unknown[]).length === 0) ||
             merged[k] === ""
           ) {
             merged[k] = v;

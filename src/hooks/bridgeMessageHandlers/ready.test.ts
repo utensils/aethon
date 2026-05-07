@@ -31,7 +31,18 @@ describe("handleReady", () => {
         failedExtensionsList: [],
         extensionThemes: [],
         extensionSlashCommands: [],
-        piSkills: [{ name: "claudex", description: "Query sessions" }],
+        piSlashCommands: [
+          {
+            name: "prompt-review",
+            description: "Review prompt",
+            source: "prompt",
+          },
+          {
+            name: "skill:claudex",
+            description: "Query sessions",
+            source: "skill",
+          },
+        ],
         extensionKeybindings: [],
         extensionEventRoutes: [],
         extensionLayouts: [],
@@ -53,7 +64,18 @@ describe("handleReady", () => {
     );
     expect(mocks.hydrateSlashCommands).toHaveBeenCalledWith(
       [],
-      [{ name: "claudex", description: "Query sessions" }],
+      [
+        {
+          name: "prompt-review",
+          description: "Review prompt",
+          source: "prompt",
+        },
+        {
+          name: "skill:claudex",
+          description: "Query sessions",
+          source: "skill",
+        },
+      ],
     );
     expect(mocks.setLayout).toHaveBeenCalledTimes(1);
     const next = applySetState({
@@ -101,16 +123,17 @@ describe("handleReady", () => {
 
   it("calls auto-restore only after projects are loaded", () => {
     const { ctx, mocks } = buildHandlerFixture();
-    handleReady(
-      { type: "ready", tabs: [], discoveredTabs: [] },
-      ctx,
-    );
+    handleReady({ type: "ready", tabs: [], discoveredTabs: [] }, ctx);
     expect(mocks.autoRestoreDiscoveredSessions).not.toHaveBeenCalled();
 
     const second = buildHandlerFixture();
     second.ctx.projectsLoadedRef.current = true;
     handleReady(
-      { type: "ready", tabs: [], discoveredTabs: [{ tabId: "x", lastModified: 1 }] },
+      {
+        type: "ready",
+        tabs: [],
+        discoveredTabs: [{ tabId: "x", lastModified: 1 }],
+      },
       second.ctx,
     );
     expect(second.mocks.autoRestoreDiscoveredSessions).toHaveBeenCalledTimes(1);

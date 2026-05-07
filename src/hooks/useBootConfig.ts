@@ -193,6 +193,63 @@ export function useBootConfig(
       // /layout/columns so the boot layout opens at the user's last
       // chosen width. Bail on missing/invalid values — the layout's
       // own seed wins by default.
+      const savedUiState = (
+        await readStateWithLocalStorageFallback("ui_state", "")
+      ).trim();
+      if (savedUiState) {
+        try {
+          const parsed = JSON.parse(savedUiState) as {
+            layout?: {
+              sidebarVisible?: boolean;
+              columns?: string;
+              areas?: string[];
+            };
+            terminal?: { open?: boolean };
+            terminalPanel?: { activeSubId?: string; height?: number };
+          };
+          setState((prev) => {
+            const layout =
+              (prev.layout as Record<string, unknown> | undefined) ?? {};
+            const terminal =
+              (prev.terminal as Record<string, unknown> | undefined) ?? {};
+            const terminalPanel =
+              (prev.terminalPanel as Record<string, unknown> | undefined) ??
+              {};
+            return {
+              ...prev,
+              layout: {
+                ...layout,
+                ...(typeof parsed.layout?.sidebarVisible === "boolean"
+                  ? { sidebarVisible: parsed.layout.sidebarVisible }
+                  : {}),
+                ...(typeof parsed.layout?.columns === "string"
+                  ? { columns: parsed.layout.columns }
+                  : {}),
+                ...(Array.isArray(parsed.layout?.areas)
+                  ? { areas: parsed.layout.areas }
+                  : {}),
+              },
+              terminal: {
+                ...terminal,
+                ...(typeof parsed.terminal?.open === "boolean"
+                  ? { open: parsed.terminal.open }
+                  : {}),
+              },
+              terminalPanel: {
+                ...terminalPanel,
+                ...(typeof parsed.terminalPanel?.activeSubId === "string"
+                  ? { activeSubId: parsed.terminalPanel.activeSubId }
+                  : {}),
+                ...(typeof parsed.terminalPanel?.height === "number"
+                  ? { height: parsed.terminalPanel.height }
+                  : {}),
+              },
+            };
+          });
+        } catch {
+          /* ignore malformed UI state */
+        }
+      }
       const savedWidth = (
         await readStateWithLocalStorageFallback("sidebar_width", "")
       ).trim();

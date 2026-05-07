@@ -712,7 +712,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   } | null => {
     if (dismissedDraft !== null && value === dismissedDraft) return null;
     // Command mode: just the slash + an optional partial name, no space.
-    const cmdM = value.match(/^\/([A-Za-z][\w-]*)?$/);
+    const cmdM = value.match(/^\/([A-Za-z][\w-]*(?::[A-Za-z0-9][\w-]*)?)?$/);
     if (cmdM) {
       const prefix = (cmdM[1] ?? "").toLowerCase();
       const matches: PickerMatch[] = commands
@@ -724,7 +724,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     // command name and the (optionally empty) argument prefix. We
     // intentionally don't support multi-arg commands yet; the spec for
     // those should land alongside the first command that needs it.
-    const argM = value.match(/^\/([A-Za-z][\w-]*) ([^\n]*)$/);
+    const argM = value.match(
+      /^\/([A-Za-z][\w-]*(?::[A-Za-z0-9][\w-]*)?) ([^\n]*)$/,
+    );
     if (argM) {
       const cmdName = argM[1].toLowerCase();
       const argPrefix = argM[2].toLowerCase();

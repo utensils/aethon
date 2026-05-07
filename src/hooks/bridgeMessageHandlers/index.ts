@@ -24,6 +24,7 @@ import { handleExtensionThemes } from "./extensionThemes";
 import { handleLayoutPatch } from "./layoutPatch";
 import { handleLayoutSet } from "./layoutSet";
 import { handleModelChanged } from "./modelChanged";
+import { handleNativeSlashResult } from "./nativeSlashResult";
 import { handleNotice } from "./notice";
 import { handleNotification } from "./notification";
 import { handleNotificationDismiss } from "./notificationDismiss";
@@ -61,6 +62,7 @@ export const bridgeMessageHandlers: Readonly<
   layout_patch: handleLayoutPatch,
   layout_set: handleLayoutSet,
   model_changed: handleModelChanged,
+  native_slash_result: handleNativeSlashResult,
   notice: handleNotice,
   notification: handleNotification,
   notification_dismiss: handleNotificationDismiss,

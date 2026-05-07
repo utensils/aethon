@@ -22,10 +22,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
 import type { RuntimeSnapshot } from "./system-prompt";
 import { logger } from "./logger";
-import {
-  summarizeLayout,
-  summarizeLayoutStructure,
-} from "./layout-manager";
+import { summarizeLayout, summarizeLayoutStructure } from "./layout-manager";
 
 const STATE_FILE_DEBOUNCE_MS = 200;
 
@@ -75,6 +72,7 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       ...(match.eventType ? { eventType: match.eventType } : {}),
     })),
     slashCommands: [...state.extensionSlashCommands.values()],
+    piSlashCommands: state.piSlashCommands,
     piSkills: state.piSkills,
     keybindings: [...state.extensionKeybindings.values()],
     menuItems: [...state.extensionMenuItems.values()],

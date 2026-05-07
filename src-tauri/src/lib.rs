@@ -311,8 +311,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
                     // and emit `agent-reloaded` here so the frontend
                     // can clear waiting state and respawn lazily.
                     if text.contains("\"_reload_done\"") {
-                        reload_flag_stdout
-                            .store(true, std::sync::atomic::Ordering::Release);
+                        reload_flag_stdout.store(true, std::sync::atomic::Ordering::Release);
                         let _ = app_stdout.emit("agent-reloaded", "");
                         // Don't forward the sentinel — it's bridge↔
                         // supervisor-internal and would confuse the

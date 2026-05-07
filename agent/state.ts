@@ -122,6 +122,14 @@ export interface RegisteredPiSkill {
   usage?: string;
 }
 
+export interface RegisteredPiSlashCommand {
+  name: string;
+  description: string;
+  usage?: string;
+  source?: "extension" | "prompt" | "skill";
+  sourceInfo?: unknown;
+}
+
 export interface RegisteredLayout {
   id: string;
   name: string;
@@ -189,7 +197,10 @@ export type A2UIEventHandler = (
   event: A2UIEventInfo,
   ctx: {
     setState: (path: string, value: unknown) => Promise<MutationResult>;
-    registerComponent: (componentType: string, template: unknown) => Promise<MutationResult>;
+    registerComponent: (
+      componentType: string,
+      template: unknown,
+    ) => Promise<MutationResult>;
     pi: PiHandlerCtx;
     canvas: AethonApiLike;
     shells: AethonApiLike;
@@ -367,6 +378,7 @@ export class AethonAgentState {
   readonly extensionMenuItems = new Map<string, RegisteredMenuItem>();
   readonly extensionKeybindings = new Map<string, RegisteredKeybinding>();
   readonly extensionSlashCommands = new Map<string, RegisteredSlashCommand>();
+  piSlashCommands: RegisteredPiSlashCommand[] = [];
   piSkills: RegisteredPiSkill[] = [];
   readonly extensionLayouts = new Map<string, RegisteredLayout>();
   readonly extensionFrontendModules = new Map<string, FrontendModule>();

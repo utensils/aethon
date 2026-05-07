@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  appendLocalChatMessage,
   findSessionFileMatchingCwd,
   parseSessionHistoryLines,
   readSessionLabel,
@@ -110,6 +111,42 @@ describe("readSessionTranscript", () => {
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
       { id: "new", role: "agent", text: "new" },
+    ]);
+  });
+
+  it("appends Aethon-local slash command messages to restored history", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "slash-user",
+      role: "user",
+      text: "/context",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "slash-output",
+      role: "system",
+      text: "## Context",
+      createdAt: 2,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-user", role: "user", text: "hi" },
+      { id: "slash-user", role: "user", text: "/context", createdAt: 1 },
+      {
+        id: "slash-output",
+        role: "system",
+        text: "## Context",
+        createdAt: 2,
+      },
     ]);
   });
 

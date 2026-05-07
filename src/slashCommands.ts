@@ -2,9 +2,10 @@
 // frontend without ever reaching the agent — useful for UI actions that
 // don't need an LLM round-trip (clearing chat, switching theme, etc.).
 //
-// Pi's own server-side slash commands (extension/skill-registered ones
-// like /clock, /reload) are not yet plumbed through the bridge — they'll
-// arrive in a later phase that exposes pi's getCommands()/handler API.
+// Pi's own server-side slash commands (extension commands, prompt templates,
+// and skill commands like /skill:name) are hydrated from the bridge as
+// passthrough entries. Submitting one sends the original text to pi's prompt
+// router.
 
 export interface SlashCommandContext {
   /** Append a chat-history bubble (system role). Use for output that
@@ -57,6 +58,10 @@ export interface SlashCommandContext {
    *  the new bridge re-discovers extensions, themes, slash commands,
    *  re-reads disabled-extensions.json, and emits a fresh `ready`. */
   reloadAgent: () => Promise<void>;
+  /** Run a pi-native command implemented by the bridge for the active tab.
+   *  Used for commands that pi's SDK does not execute through prompt()
+   *  because they normally belong to the interactive TUI command loop. */
+  runNativeCommand: (name: string, args: string) => Promise<void>;
   /** Rename a session by tabId. Empty `label` clears the custom label
    *  and falls back to the auto-derived first-user-message label. */
   renameSession: (tabId: string, label: string) => Promise<void>;
@@ -218,6 +223,22 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       },
     },
     {
+      name: "context",
+      description: "Show current pi context window usage",
+      run: (args, ctx) => ctx.runNativeCommand("context", args),
+    },
+    {
+      name: "session",
+      description: "Show current pi session stats",
+      run: (args, ctx) => ctx.runNativeCommand("session", args),
+    },
+    {
+      name: "compact",
+      description: "Compact older context using pi's compaction flow",
+      usage: "[instructions]",
+      run: (args, ctx) => ctx.runNativeCommand("compact", args),
+    },
+    {
       name: "terminal",
       description: "Toggle the terminal panel",
       run: (_args, ctx) => ctx.toggleTerminal(),
@@ -237,7 +258,10 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
         const layouts = ctx.listLayouts();
         if (!v) {
           const list = layouts
-            .map((l) => `- \`${l.id}\` — ${l.name}${l.description ? ` (${l.description})` : ""}`)
+            .map(
+              (l) =>
+                `- \`${l.id}\` — ${l.name}${l.description ? ` (${l.description})` : ""}`,
+            )
             .join("\n");
           ctx.appendSystem(
             layouts.length > 0
@@ -263,7 +287,8 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     },
     {
       name: "extensions",
-      description: "List registered extensions, or install an Aethon extension package",
+      description:
+        "List registered extensions, or install an Aethon extension package",
       usage: "[install <npm-package|git-url>]",
       run: async (args, ctx) => {
         const v = args.trim();
@@ -387,12 +412,17 @@ export interface ParsedSlashCommand {
 }
 
 // Parse a chat input line into a slash command if it starts with `/word`.
+// Pi skill commands use a single colon segment (`/skill:name`), and pi may
+// suffix duplicate extension commands (`/review:1`), so the command name
+// grammar accepts one optional `:<segment>` suffix.
 // Returns null when the input is plain text (or starts with `//`, an escape
 // for sending a literal slash to the agent).
 export function parseSlashCommand(input: string): ParsedSlashCommand | null {
   const trimmed = input.trimStart();
   if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
-  const match = trimmed.match(/^\/([A-Za-z][\w-]*)\s*(.*)$/s);
+  const match = trimmed.match(
+    /^\/([A-Za-z][\w-]*(?::[A-Za-z0-9][\w-]*)?)\s*(.*)$/s,
+  );
   if (!match) return null;
   return { name: match[1], args: match[2] ?? "" };
 }

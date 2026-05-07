@@ -76,7 +76,7 @@ export interface UseExtensionsHydrationActions {
   hydrateFrontendModules: (list: { name: string; code: string }[]) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],
-    piSkills?: { name: string; description: string; usage?: string }[],
+    piCommands?: { name: string; description: string; usage?: string }[],
   ) => void;
   listThemes: () => { id: string; label: string }[];
   summarizeLayoutComponents: (
@@ -125,7 +125,7 @@ export function useExtensionsHydration(
   >(new Map());
   const frontendModulesRef = useRef<Map<string, string>>(new Map());
   const slashCommandsRef = useRef<SlashCommand[]>(buildBuiltinSlashCommands());
-  const piSkillsRef = useRef<
+  const piCommandsRef = useRef<
     { name: string; description: string; usage?: string }[]
   >([]);
   const extensionSlashNamesRef = useRef<Set<string>>(new Set());
@@ -486,9 +486,9 @@ export function useExtensionsHydration(
 
   function hydrateSlashCommands(
     list: { name: string; description: string; usage?: string }[],
-    piSkills?: { name: string; description: string; usage?: string }[],
+    piCommands?: { name: string; description: string; usage?: string }[],
   ) {
-    if (piSkills) piSkillsRef.current = piSkills;
+    if (piCommands) piCommandsRef.current = piCommands;
     const builtins = buildBuiltinSlashCommands();
     const builtinNames = new Set(builtins.map((c) => c.name));
     const dispatched: SlashCommand[] = list
@@ -514,7 +514,7 @@ export function useExtensionsHydration(
       ...builtins.map((c) => c.name),
       ...dispatched.map((c) => c.name),
     ]);
-    const skillCommands: SlashCommand[] = piSkillsRef.current
+    const piPassthroughCommands: SlashCommand[] = piCommandsRef.current
       .filter((s) => !reservedNames.has(s.name))
       .map((s) => ({
         name: s.name,
@@ -524,7 +524,11 @@ export function useExtensionsHydration(
         run: () => {},
       }));
     extensionSlashNamesRef.current = new Set(dispatched.map((c) => c.name));
-    slashCommandsRef.current = [...builtins, ...dispatched, ...skillCommands];
+    slashCommandsRef.current = [
+      ...builtins,
+      ...dispatched,
+      ...piPassthroughCommands,
+    ];
     setState((prev) => ({
       ...prev,
       slashCommands: slashCommandsRef.current.map((c) => ({

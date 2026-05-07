@@ -6,12 +6,14 @@ import {
 } from "./state";
 import {
   compilePattern,
+  collectPiSlashCommands,
   emitBashResult,
   extractToolContent,
   handleSessionEvent,
   inferToolResultLanguage,
   modelDescriptor,
   modelKey,
+  refreshPiSlashCommands,
   summarizeToolArgs,
   tabSessionDir,
   toolCardPayload,
@@ -83,10 +85,12 @@ describe("compilePattern", () => {
 
 describe("summarizeToolArgs", () => {
   it("summarizes known tools concisely", () => {
-    expect(summarizeToolArgs("read", { path: "x.ts", startLine: 1, endLine: 9 })).toBe(
-      "x.ts lines 1-9",
+    expect(
+      summarizeToolArgs("read", { path: "x.ts", startLine: 1, endLine: 9 }),
+    ).toBe("x.ts lines 1-9");
+    expect(summarizeToolArgs("bash", { command: "echo hi\nbye" })).toBe(
+      "echo hi",
     );
-    expect(summarizeToolArgs("bash", { command: "echo hi\nbye" })).toBe("echo hi");
     expect(summarizeToolArgs("write", { path: "x.ts" })).toBe("x.ts");
     expect(summarizeToolArgs("grep", { pattern: "foo", path: "src" })).toBe(
       "foo in src",
@@ -217,9 +221,9 @@ describe("toolCardPayload", () => {
 describe("inferToolResultLanguage", () => {
   it("uses read/edit/write paths when available", () => {
     expect(inferToolResultLanguage("read", "flake.nix", "{ }")).toBe("nix");
-    expect(inferToolResultLanguage("write", "src/main.rs", "fn main() {}")).toBe(
-      "rust",
-    );
+    expect(
+      inferToolResultLanguage("write", "src/main.rs", "fn main() {}"),
+    ).toBe("rust");
   });
 
   it("detects json and diffs for non-file-backed output", () => {
@@ -235,6 +239,92 @@ describe("tabSessionDir", () => {
     const f = makeFixture();
     expect(tabSessionDir(f.state, "abc-123")).toMatch(/abc-123$/);
     expect(tabSessionDir(f.state, "../etc/passwd")).toMatch(/_unsafe$/);
+  });
+});
+
+describe("collectPiSlashCommands", () => {
+  it("collects extension commands, prompt templates, and skill commands", () => {
+    const f = makeFixture();
+    f.state.resourceLoader = {
+      getSkills: () => ({
+        skills: [
+          {
+            name: "review",
+            description: "Review code",
+            sourceInfo: { scope: "user" },
+          },
+        ],
+        diagnostics: [],
+      }),
+    } as never;
+    const session = {
+      promptTemplates: [
+        {
+          name: "commit",
+          description: "Draft commit message",
+          sourceInfo: { scope: "project" },
+        },
+      ],
+      _extensionRunner: {
+        getRegisteredCommands: () => [
+          {
+            invocationName: "todos",
+            description: "Manage todos",
+            sourceInfo: { scope: "user" },
+          },
+          {
+            invocationName: "review:1",
+            description: "Review duplicate",
+            sourceInfo: { scope: "user" },
+          },
+        ],
+      },
+    } as unknown as TabRecord["session"];
+
+    expect(collectPiSlashCommands(f.state, session)).toEqual([
+      {
+        name: "todos",
+        description: "Manage todos",
+        source: "extension",
+        sourceInfo: { scope: "user" },
+      },
+      {
+        name: "review:1",
+        description: "Review duplicate",
+        source: "extension",
+        sourceInfo: { scope: "user" },
+      },
+      {
+        name: "commit",
+        description: "Draft commit message",
+        source: "prompt",
+        sourceInfo: { scope: "project" },
+      },
+      {
+        name: "skill:review",
+        description: "Review code",
+        source: "skill",
+        sourceInfo: { scope: "user" },
+      },
+    ]);
+  });
+
+  it("refreshes the state snapshot and legacy skill subset", () => {
+    const f = makeFixture();
+    f.state.resourceLoader = {
+      getSkills: () => ({
+        skills: [{ name: "plan", description: "Plan work" }],
+        diagnostics: [],
+      }),
+    } as never;
+    const session = { promptTemplates: [] } as unknown as TabRecord["session"];
+    refreshPiSlashCommands(f.state, session);
+    expect(f.state.piSlashCommands).toEqual([
+      { name: "skill:plan", description: "Plan work", source: "skill" },
+    ]);
+    expect(f.state.piSkills).toEqual([
+      { name: "skill:plan", description: "Plan work" },
+    ]);
   });
 });
 

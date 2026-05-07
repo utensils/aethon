@@ -86,7 +86,7 @@ export interface BridgeMessageContext {
   ) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],
-    piSkills?: { name: string; description: string; usage?: string }[],
+    piCommands?: { name: string; description: string; usage?: string }[],
   ) => void;
   hydrateKeybindings: (
     list: { combo: string; action: string; description?: string }[],
@@ -110,6 +110,7 @@ export interface BridgeMessageContext {
 
   // ─── Chat / status helpers (defined on App) ─────────────────────────
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
+  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
   appendOrAmendAgentText: (
     delta: string,
     messageId?: string,

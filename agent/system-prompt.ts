@@ -74,6 +74,15 @@ export interface RuntimeSnapshot {
   // extensions) are NOT included here — they're in the frontend's static
   // catalog; this is the extension delta only.
   slashCommands: { name: string; description: string; usage?: string }[];
+  // Pi slash commands discovered from the live pi session. Includes
+  // user/project extension commands, prompt templates, and skill commands
+  // such as /skill:name. These pass through to pi's normal prompt router.
+  piSlashCommands?: {
+    name: string;
+    description: string;
+    usage?: string;
+    source?: "extension" | "prompt" | "skill";
+  }[];
   // Pi skills discovered under ~/.pi/agent/skills. The frontend surfaces
   // these as passthrough slash-command completions; execution is still
   // handled by pi's normal skill routing.
@@ -430,12 +439,15 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     }
   }
 
-  if ((snapshot.piSkills ?? []).length > 0) {
+  if ((snapshot.piSlashCommands ?? []).length > 0) {
     lines.push("");
-    lines.push("Available pi skills surfaced as slash commands:");
-    for (const s of snapshot.piSkills ?? []) {
-      const usage = s.usage ? ` ${s.usage}` : "";
-      lines.push(`- \`/${s.name}${usage}\` — ${s.description || "(no description)"}`);
+    lines.push("Available pi slash commands (handled by pi):");
+    for (const c of snapshot.piSlashCommands ?? []) {
+      const usage = c.usage ? ` ${c.usage}` : "";
+      const source = c.source ? ` [${c.source}]` : "";
+      lines.push(
+        `- \`/${c.name}${usage}\`${source} — ${c.description || "(no description)"}`,
+      );
     }
   }
 
