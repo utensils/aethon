@@ -464,10 +464,10 @@ export async function readSessionTranscript(
   } else {
     path = (await latestSessionLog(sessionDir))?.path;
   }
-  if (!path) return [];
+  const localMessages = await readLocalChatTranscript(sessionDir, expectedCwd);
+  if (!path) return localMessages.slice(-MAX_RESTORED_MESSAGES);
 
   const raw = await readFile(path, "utf8");
   const piMessages = parseSessionHistoryLines(raw.split(/\r?\n/));
-  const localMessages = await readLocalChatTranscript(sessionDir, expectedCwd);
   return [...piMessages, ...localMessages].slice(-MAX_RESTORED_MESSAGES);
 }

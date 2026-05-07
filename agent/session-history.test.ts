@@ -301,6 +301,36 @@ describe("readSessionTranscript with expectedCwd", () => {
     ]);
   });
 
+  it("restores Aethon-local slash overlay when no pi session log exists", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "target-local",
+      role: "system",
+      text: "target context",
+      cwd: "/tmp/target",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "other-local",
+      role: "system",
+      text: "other context",
+      cwd: "/tmp/other",
+      createdAt: 2,
+    });
+
+    await expect(
+      readSessionTranscript(dir, "/tmp/target"),
+    ).resolves.toEqual([
+      {
+        id: "target-local",
+        role: "system",
+        text: "target context",
+        createdAt: 1,
+        cwd: "/tmp/target",
+      },
+    ]);
+  });
+
   it("does not diverge from ensureTab when no active project is set", async () => {
     // Regression — codex peer review of the cwd-scoped session fix:
     // when the bridge boots without an active project, `ensureTab`

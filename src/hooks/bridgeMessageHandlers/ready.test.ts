@@ -162,11 +162,18 @@ describe("handleReady", () => {
       state: {
         activeTabId: "default",
         tabs: [
-          { id: "default", model: "claude" },
-          { id: "tab-2", model: "gpt" },
+          { id: "default", model: "claude", projectId: "p2" },
+          { id: "tab-2", model: "gpt", projectId: "p1" },
         ],
       },
     });
+    ctx.projectsRef.current = {
+      activeId: "p2",
+      projects: [
+        { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },
+        { id: "p2", label: "B", path: "/repo/b", lastUsed: 2 },
+      ],
+    };
     handleReady(
       {
         type: "ready",
@@ -183,6 +190,7 @@ describe("handleReady", () => {
         type: "tab_open",
         tabId: "tab-2",
         restoreHistory: true,
+        cwd: "/repo/a",
       }),
     ]);
   });

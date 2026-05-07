@@ -325,12 +325,14 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     // pendingTabOpens so a fast first chat on the restored tab waits
     // for the bridge to register the session (otherwise send_message
     // would race tab_open and lazily create the tab without the
-    // inherited model). Same cwd inheritance as newTab — restored
-    // sessions land in the currently-active project unless they were
-    // opened before any project was set. The bridge dedupes paths
-    // internally, so a re-announce on existing tabs with the same cwd
-    // is a no-op.
-    const restoredCwd = activeProject(ctx.projectsRef.current)?.path;
+    // inherited model). Preserve the tab's original project bucket
+    // instead of using the currently-active project: existing tabs keep
+    // the cwd they were created with, and a hot reload should restore
+    // that same scoped history.
+    const tabProject = t.projectId
+      ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
+      : null;
+    const restoredCwd = tabProject?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
