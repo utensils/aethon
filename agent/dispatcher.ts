@@ -58,6 +58,7 @@ export interface DispatcherDeps {
    *  registry stays in sync with the lifecycle events. */
   loadHooks: {
     onLoaded?: (name: string) => void;
+    onProjectLoaded?: (name: string, projectRoot: string) => void;
     onFailure?: (
       f: ExtensionFailure & { name: string; source: ExtensionFailureSource },
     ) => void;
@@ -132,7 +133,10 @@ export function unloadProjectExtensions(
     state.projectExtensionTeardowns.length = 0;
   }
   for (const [name, source] of state.loadedExtensions) {
-    if (source === "project-directory") state.loadedExtensions.delete(name);
+    if (source === "project-directory") {
+      state.loadedExtensions.delete(name);
+      state.projectExtensionRoots.delete(name);
+    }
   }
   for (const [name, info] of state.loadFailures) {
     if (info.source === "project-directory") state.loadFailures.delete(name);

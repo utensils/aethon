@@ -7,6 +7,8 @@ import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import type { SkillRegistry } from "../../skills/SkillRegistry";
 import type {
+  ExtensionFailureSummary,
+  ExtensionSummary,
   ExtensionTheme,
 } from "../useExtensionsHydration";
 import type {
@@ -80,9 +82,10 @@ export interface BridgeMessageContext {
   // ─── Extension hydration (from useExtensionsHydration) ──────────────
   hydrateThemes: (list: ExtensionTheme[]) => void;
   hydrateExtensions: (
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
+    loaded: ExtensionSummary[],
+    failed: ExtensionFailureSummary[],
     disabled?: string[],
+    activeProjectPath?: string | null,
   ) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],

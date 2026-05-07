@@ -41,6 +41,7 @@ export interface ExtensionFailure {
   status: "failed" | "skipped";
   error: string;
   path?: string;
+  projectRoot?: string;
 }
 
 export interface ThemeRecord {
@@ -393,6 +394,7 @@ export class AethonAgentState {
 
   // -- Loading state -------------------------------------------------------
   readonly loadedExtensions = new Map<string, ExtensionSource>();
+  readonly projectExtensionRoots = new Map<string, string>();
   readonly loadFailures = new Map<string, ExtensionFailure>();
   /** Extension display-names the user has explicitly disabled. Persisted
    *  on disk at `<userDir>/disabled-extensions.json` and consulted by

@@ -409,7 +409,13 @@ export function emitReady(
       }),
     ),
     extensionsList: [...state.loadedExtensions.entries()].map(
-      ([name, source]) => ({ name, source }),
+      ([name, source]) => ({
+        name,
+        source,
+        ...(source === "project-directory"
+          ? { projectRoot: state.projectExtensionRoots.get(name) }
+          : {}),
+      }),
     ),
     failedExtensionsList: [...state.loadFailures.entries()].map(
       ([name, info]) => ({
@@ -417,6 +423,7 @@ export function emitReady(
         source: info.source,
         error: info.error,
         ...(info.path ? { path: info.path } : {}),
+        ...(info.projectRoot ? { projectRoot: info.projectRoot } : {}),
       }),
     ),
     disabledExtensionsList: [...state.disabledExtensions].sort(),

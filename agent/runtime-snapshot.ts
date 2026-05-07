@@ -43,6 +43,9 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
     extensions: [...state.loadedExtensions.entries()].map(([name, source]) => ({
       name,
       source,
+      ...(source === "project-directory"
+        ? { projectRoot: state.projectExtensionRoots.get(name) }
+        : {}),
     })),
     failedExtensions: [...state.loadFailures.entries()].map(([name, info]) => ({
       name,
@@ -50,6 +53,7 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       status: info.status,
       error: info.error,
       ...(info.path ? { path: info.path } : {}),
+      ...(info.projectRoot ? { projectRoot: info.projectRoot } : {}),
     })),
     disabledExtensions: [...state.disabledExtensions].sort(),
     themes: [...state.extensionThemes.values()].map((t) => ({

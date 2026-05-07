@@ -32,6 +32,7 @@ export interface RuntimeSnapshot {
   extensions: {
     name: string;
     source: "directory" | "project-directory" | "extension-package" | "pi-extension";
+    projectRoot?: string;
   }[];
   // Extensions that failed to load (parse / runtime error during import or
   // register()) or were skipped (missing register export, missing
@@ -47,6 +48,7 @@ export interface RuntimeSnapshot {
     status: "failed" | "skipped";
     error: string;
     path?: string;
+    projectRoot?: string;
   }[];
   // Extensions the user has explicitly disabled via the sidebar
   // right-click menu. Persisted at `<userDir>/disabled-extensions.json`

@@ -5,7 +5,11 @@ import { TAB_MIRROR_KEYS } from "../useTabs";
 import { makeEmptyTab, type Tab } from "../../types/tab";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
 import { deletePointer } from "../../utils/jsonPointer";
-import type { ExtensionTheme } from "../useExtensionsHydration";
+import type {
+  ExtensionFailureSummary,
+  ExtensionSummary,
+  ExtensionTheme,
+} from "../useExtensionsHydration";
 import type {
   BridgeMessageHandler,
   DiscoveredSession,
@@ -101,12 +105,10 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // choice has the rule available before data-theme is read.
   ctx.hydrateThemes(extThemes);
   ctx.hydrateExtensions(
-    (data.extensionsList as { name: string; source: string }[] | undefined) ??
-      [],
-    (data.failedExtensionsList as
-      | { name: string; source: string; error?: string }[]
-      | undefined) ?? [],
+    (data.extensionsList as ExtensionSummary[] | undefined) ?? [],
+    (data.failedExtensionsList as ExtensionFailureSummary[] | undefined) ?? [],
     (data.disabledExtensionsList as string[] | undefined) ?? [],
+    activeProject(ctx.projectsRef.current)?.path ?? null,
   );
   ctx.registry.setTemplates(extComponents);
   // Restore extension-registered slash commands so the picker shows them

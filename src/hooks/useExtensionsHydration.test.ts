@@ -1,59 +1,59 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildHydratedSlashCommands,
-} from "./useExtensionsHydration";
-import {
-  buildBuiltinSlashCommands,
-  type SlashCommand,
-} from "../slashCommands";
+import { filterExtensionSummariesByProject } from "./useExtensionsHydration";
 
-describe("buildHydratedSlashCommands", () => {
-  it("keeps Aethon built-ins ahead of colliding pi passthrough commands", () => {
-    const commands = buildHydratedSlashCommands(
-      buildBuiltinSlashCommands(),
-      [],
+describe("filterExtensionSummariesByProject", () => {
+  it("keeps global extensions and only the active project's local extensions", () => {
+    const filtered = filterExtensionSummariesByProject(
       [
+        { name: "user-ext", source: "directory" },
         {
-          name: "context",
-          description: "pi context passthrough",
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
         },
         {
-          name: "pi-only",
-          description: "pi-only command",
+          name: "latent:tools",
+          source: "project-directory",
+          projectRoot: "/repo/latentforge",
         },
       ],
-      (c): SlashCommand => ({
-        ...c,
-        run: () => {},
-      }),
+      "/repo/latentforge",
     );
 
-    const context = commands.filter((c) => c.name === "context");
-    expect(context).toHaveLength(1);
-    expect(context[0].passthroughToAgent).toBeUndefined();
-    expect(commands.find((c) => c.name === "pi-only")).toMatchObject({
-      passthroughToAgent: true,
-    });
+    expect(filtered.map((e) => e.name)).toEqual([
+      "user-ext",
+      "latent:tools",
+    ]);
   });
 
-  it("keeps Aethon built-ins ahead of colliding extension commands", () => {
-    const commands = buildHydratedSlashCommands(
-      buildBuiltinSlashCommands(),
+  it("drops project extensions when no active project path is known", () => {
+    const filtered = filterExtensionSummariesByProject(
       [
+        { name: "user-ext", source: "directory" },
         {
-          name: "context",
-          description: "extension collision",
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
         },
       ],
-      [],
-      (c): SlashCommand => ({
-        ...c,
-        run: () => {},
-      }),
+      null,
     );
 
-    const context = commands.filter((c) => c.name === "context");
-    expect(context).toHaveLength(1);
-    expect(context[0].description).toBe("Show current pi context window usage");
+    expect(filtered.map((e) => e.name)).toEqual(["user-ext"]);
+  });
+
+  it("does not treat sibling path prefixes as the same project", () => {
+    const filtered = filterExtensionSummariesByProject(
+      [
+        {
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
+        },
+      ],
+      "/repo/mold-tools",
+    );
+
+    expect(filtered).toEqual([]);
   });
 });

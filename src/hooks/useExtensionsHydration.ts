@@ -1,4 +1,10 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../types/a2ui";
 import {
@@ -7,7 +13,10 @@ import {
 } from "../slashCommands";
 import { reconcileFrontendModules } from "../skills/extensionFrontendLoader";
 import type { SkillRegistry } from "../skills/SkillRegistry";
-import { builtinLayouts, type LayoutCatalogueEntry } from "../skills/default-layout";
+import {
+  builtinLayouts,
+  type LayoutCatalogueEntry,
+} from "../skills/default-layout";
 import { deepMergeState } from "../utils/stateMutation";
 import { normalizeRegisteredCombo } from "../utils/keybindings";
 
@@ -15,6 +24,35 @@ export interface ExtensionTheme {
   id: string;
   label: string;
   vars: Record<string, string>;
+}
+
+export interface ExtensionSummary {
+  name: string;
+  source: string;
+  projectRoot?: string;
+}
+
+export interface ExtensionFailureSummary extends ExtensionSummary {
+  error?: string;
+}
+
+function normalizeExtensionProjectPath(path: string | undefined | null): string {
+  return (path ?? "").replace(/[/\\]+$/, "");
+}
+
+export function filterExtensionSummariesByProject<
+  T extends ExtensionSummary,
+>(entries: T[], activeProjectPath: string | null = null): T[] {
+  const activePath = normalizeExtensionProjectPath(activeProjectPath);
+  return entries.filter((entry) => {
+    if (entry.source !== "project-directory") return true;
+    const projectRoot = normalizeExtensionProjectPath(entry.projectRoot);
+    return (
+      activePath.length > 0 &&
+      projectRoot.length > 0 &&
+      (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
+    );
+  });
 }
 
 /** Built-in themes always available. CSS for these lives in styles.css —
@@ -54,9 +92,10 @@ export interface UseExtensionsHydrationActions {
   injectThemeStyle: (theme: ExtensionTheme) => void;
   hydrateThemes: (list: ExtensionTheme[]) => void;
   hydrateExtensions: (
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
+    loaded: ExtensionSummary[],
+    failed: ExtensionFailureSummary[],
     disabled?: string[],
+    activeProjectPath?: string | null,
   ) => void;
   hydrateEventRoutes: (
     routes: { componentId?: string; eventType?: string }[],
@@ -218,10 +257,19 @@ export function useExtensionsHydration(
   }
 
   function hydrateExtensions(
-    loaded: { name: string; source: string }[],
-    failed: { name: string; source: string; error?: string }[],
+    loaded: ExtensionSummary[],
+    failed: ExtensionFailureSummary[],
     disabled: string[] = [],
+    activeProjectPath: string | null = null,
   ) {
+    const scopedLoaded = filterExtensionSummariesByProject(
+      loaded,
+      activeProjectPath,
+    );
+    const scopedFailed = filterExtensionSummariesByProject(
+      failed,
+      activeProjectPath,
+    );
     const sourceLabel = (s: string) =>
       s === "project-directory"
         ? "project"
@@ -243,7 +291,7 @@ export function useExtensionsHydration(
         hint: "core",
         active: true,
       },
-      ...loaded
+      ...scopedLoaded
         .filter((e) => !disabledSet.has(e.name))
         .map((e) => ({
           id: `ext:${e.name}`,
@@ -251,7 +299,7 @@ export function useExtensionsHydration(
           hint: sourceLabel(e.source),
           active: true,
         })),
-      ...failed
+      ...scopedFailed
         .filter((e) => !disabledSet.has(e.name))
         .map((e) => ({
           id: `ext-failed:${e.name}`,

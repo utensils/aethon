@@ -61,6 +61,7 @@ describe("handleReady", () => {
       [{ name: "ext-a", source: "directory" }],
       [],
       [],
+      null,
     );
     expect(mocks.hydrateSlashCommands).toHaveBeenCalledWith(
       [],

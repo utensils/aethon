@@ -230,6 +230,10 @@ async function main(): Promise<void> {
       state.loadFailures.delete(name);
       scheduleStateFileWrite();
     },
+    onProjectLoaded: (name: string, projectRoot: string) => {
+      state.projectExtensionRoots.set(name, projectRoot);
+      scheduleStateFileWrite();
+    },
     onFailure: (
       f: ExtensionFailure & { name: string; source: ExtensionFailureSource },
     ) => {
@@ -238,6 +242,7 @@ async function main(): Promise<void> {
         status: f.status,
         error: f.error,
         path: f.path,
+        projectRoot: f.projectRoot,
       });
       scheduleStateFileWrite();
     },
