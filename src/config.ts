@@ -56,7 +56,7 @@ export interface AethonConfig {
 
 const DEFAULTS: AethonConfig = {
   ui: {
-    theme: null,
+    theme: 42, // TEST: intentional type error — number is not assignable to string | null
     fontSize: null,
     restoreTabs: false,
     notifyOnCompletion: true,
