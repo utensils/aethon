@@ -391,6 +391,20 @@ body.ae-resizing-sidebar .a2ui-sidebar-resize-handle {
     transparent 4px
   );
 }
+
+.a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle:hover,
+body.ae-resizing-sidebar
+  .a2ui-sidebar-resize-left
+  .a2ui-sidebar-resize-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 3px,
+    var(--accent, #ff6a18) 3px,
+    var(--accent, #ff6a18) 5px,
+    transparent 5px
+  );
+}
 body.ae-resizing-sidebar {
   cursor: ew-resize !important;
   user-select: none;
