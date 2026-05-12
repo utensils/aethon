@@ -79,9 +79,12 @@ export function Sidebar({
     props.resizable === undefined
       ? true
       : resolveBoolean(props.resizable, state);
-  const resizeEdge = props.resizeEdge
+  const resolvedResizeEdge = props.resizeEdge
     ? resolveString(props.resizeEdge, state)
     : "right";
+  const normalizedResizeEdge = resolvedResizeEdge.trim().toLowerCase();
+  const resizeEdge: "left" | "right" =
+    normalizedResizeEdge === "left" ? "left" : "right";
   const resizeFromLeft = resizeEdge === "left";
 
   const asideRef = useRef<HTMLElement | null>(null);
