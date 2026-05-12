@@ -11,10 +11,7 @@ import type {
   SidebarSection,
   StringValue,
 } from "../../../types/a2ui";
-import {
-  resolveBoolean,
-  resolveString,
-} from "../../../utils/dataBinding";
+import { resolveBoolean, resolveString } from "../../../utils/dataBinding";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import {
@@ -32,9 +29,7 @@ import {
 export { providerOf, filterItems } from "./filter";
 export { ItemRow } from "./item-row";
 export type { ItemRowProps } from "./item-row";
-export {
-  SearchableSidebarSection,
-} from "./searchable-section";
+export { SearchableSidebarSection } from "./searchable-section";
 export type {
   SidebarSectionExt,
   SearchableSidebarSectionProps,
@@ -75,11 +70,22 @@ export function Sidebar({
     // Bound via $ref so extensions can push into a state path and have
     // their sections appear without modifying the layout payload.
     extraSections?: SidebarSection[] | { $ref: string };
-    /** When false, hide the right-edge drag handle. Default true. */
+    /** When false, hide the drag handle. Default true. */
     resizable?: BooleanValue;
+    /** Which edge owns resize drag. Default right for the primary sidebar. */
+    resizeEdge?: StringValue;
   };
   const resizable =
-    props.resizable === undefined ? true : resolveBoolean(props.resizable, state);
+    props.resizable === undefined
+      ? true
+      : resolveBoolean(props.resizable, state);
+  const resolvedResizeEdge = props.resizeEdge
+    ? resolveString(props.resizeEdge, state)
+    : "right";
+  const normalizedResizeEdge = resolvedResizeEdge.trim().toLowerCase();
+  const resizeEdge: "left" | "right" =
+    normalizedResizeEdge === "left" ? "left" : "right";
+  const resizeFromLeft = resizeEdge === "left";
 
   const asideRef = useRef<HTMLElement | null>(null);
   const [contextMenu, setContextMenu] =
@@ -218,7 +224,7 @@ export function Sidebar({
     const MAX = 540;
     document.body.classList.add("ae-resizing-sidebar");
     const onMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - startX;
+      const dx = resizeFromLeft ? startX - ev.clientX : ev.clientX - startX;
       const next = Math.max(MIN, Math.min(MAX, Math.round(startWidth + dx)));
       onEvent("resize", { width: next });
     };
@@ -264,7 +270,10 @@ export function Sidebar({
   ];
 
   return (
-    <aside ref={asideRef} className="a2ui-sidebar">
+    <aside
+      ref={asideRef}
+      className={`a2ui-sidebar ${resizeFromLeft ? "a2ui-sidebar-resize-left" : ""}`}
+    >
       {(title || version) && (
         <div className="a2ui-sidebar-title">
           {showBrand && <AeMarkInline size={20} radius={4} />}
@@ -323,7 +332,11 @@ export function Sidebar({
                       key={a.id}
                       className="a2ui-sidebar-action"
                       onClick={() =>
-                        onEvent("select", { sectionId: section.id, itemId: a.id }, a.id)
+                        onEvent(
+                          "select",
+                          { sectionId: section.id, itemId: a.id },
+                          a.id,
+                        )
                       }
                     >
                       {a.label}
