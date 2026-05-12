@@ -370,6 +370,16 @@ body {
   background: transparent;
   transition: background 120ms ease;
 }
+.a2ui-sidebar-resize-left {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle {
+  right: auto;
+  left: -3px;
+}
+
 .a2ui-sidebar-resize-handle:hover,
 body.ae-resizing-sidebar .a2ui-sidebar-resize-handle {
   background: linear-gradient(
