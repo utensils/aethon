@@ -377,7 +377,8 @@ body {
 
 .a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle {
   right: auto;
-  left: -3px;
+  left: 0;
+  width: 8px;
 }
 
 .a2ui-sidebar-resize-handle:hover,
@@ -393,9 +394,7 @@ body.ae-resizing-sidebar .a2ui-sidebar-resize-handle {
 }
 
 .a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle:hover,
-body.ae-resizing-sidebar
-  .a2ui-sidebar-resize-left
-  .a2ui-sidebar-resize-handle {
+body.ae-resizing-sidebar .a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle {
   background: linear-gradient(
     to right,
     transparent 0,
@@ -412,6 +411,10 @@ body.ae-resizing-sidebar {
 body.ae-resizing-sidebar * {
   cursor: ew-resize !important;
   user-select: none !important;
+}
+
+body.ae-resizing-sidebar .a2ui-layout {
+  transition: none !important;
 }
 
 .a2ui-sidebar-title {

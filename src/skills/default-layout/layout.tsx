@@ -12,11 +12,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
-import type {
-  BooleanValue,
-  NumberValue,
-  StringValue,
-} from "../../types/a2ui";
+import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { CSSProperties } from "react";
 
 // eslint-disable-next-line react-refresh/only-export-components -- helper used by sibling chat module; doesn't affect HMR in practice
@@ -62,7 +58,13 @@ export function AeMarkInline({
       >
         Æ
       </text>
-      <circle cx="248" cy="82" r="38" fill="var(--accent, #ff6a18)" opacity="0.85" />
+      <circle
+        cx="248"
+        cy="82"
+        r="38"
+        fill="var(--accent, #ff6a18)"
+        opacity="0.85"
+      />
       <text
         x="248"
         y="86"
@@ -122,7 +124,9 @@ export function Layout({
     }
     return undefined;
   })();
-  const areas = resolvedAreas ? resolvedAreas.map((row) => `"${row}"`).join(" ") : undefined;
+  const areas = resolvedAreas
+    ? resolvedAreas.map((row) => `"${row}"`).join(" ")
+    : undefined;
   const slotMap = props.slotMap ?? {};
 
   const style: CSSProperties = {
@@ -134,6 +138,7 @@ export function Layout({
     height: "100%",
     width: "100%",
     minHeight: 0,
+    transition: "grid-template-columns 180ms ease",
   };
 
   return (
@@ -201,7 +206,11 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
 // button so App's onEvent handler can spin up a fresh tab.
 // ---------------------------------------------------------------------------
 
-export function EmptyState({ component, state, onEvent }: BuiltinComponentProps) {
+export function EmptyState({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     title?: StringValue;
     subtitle?: StringValue;
@@ -227,7 +236,9 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
       | null
       | { $ref: string };
   };
-  const title = props.title ? resolveString(props.title, state) : "Welcome to Aethon";
+  const title = props.title
+    ? resolveString(props.title, state)
+    : "Welcome to Aethon";
   const subtitle = props.subtitle
     ? resolveString(props.subtitle, state)
     : "All tabs are closed. Open a new one to start a conversation.";
@@ -247,7 +258,12 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
     if (Array.isArray(recentSessionsRaw)) return recentSessionsRaw;
     const resolved = resolvePointer(state, recentSessionsRaw.$ref);
     return Array.isArray(resolved)
-      ? (resolved as { id: string; label: string; lastModified?: string; cwd?: string }[])
+      ? (resolved as {
+          id: string;
+          label: string;
+          lastModified?: string;
+          cwd?: string;
+        }[])
       : [];
   })();
   const recentProjectsRaw = props.recentProjects;
@@ -256,7 +272,12 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
     if (Array.isArray(recentProjectsRaw)) return recentProjectsRaw;
     const resolved = resolvePointer(state, recentProjectsRaw.$ref);
     return Array.isArray(resolved)
-      ? (resolved as { id: string; label: string; path: string; active?: boolean }[])
+      ? (resolved as {
+          id: string;
+          label: string;
+          path: string;
+          active?: boolean;
+        }[])
       : [];
   })();
   const activeProjectRaw = props.activeProject;
@@ -311,7 +332,9 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
               {recentProjects.map((p) => (
                 <li
                   key={p.id}
-                  className={p.active ? "a2ui-empty-state-recent-active" : undefined}
+                  className={
+                    p.active ? "a2ui-empty-state-recent-active" : undefined
+                  }
                   onClick={() =>
                     onEvent(
                       "select-project",
@@ -320,7 +343,9 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
                     )
                   }
                 >
-                  <span className="a2ui-empty-state-recent-label">{p.label}</span>
+                  <span className="a2ui-empty-state-recent-label">
+                    {p.label}
+                  </span>
                   <span className="a2ui-empty-state-recent-meta">{p.path}</span>
                 </li>
               ))}
@@ -345,9 +370,13 @@ export function EmptyState({ component, state, onEvent }: BuiltinComponentProps)
                     )
                   }
                 >
-                  <span className="a2ui-empty-state-recent-label">{s.label}</span>
+                  <span className="a2ui-empty-state-recent-label">
+                    {s.label}
+                  </span>
                   {s.lastModified && (
-                    <span className="a2ui-empty-state-recent-meta">{s.lastModified}</span>
+                    <span className="a2ui-empty-state-recent-meta">
+                      {s.lastModified}
+                    </span>
                   )}
                 </li>
               ))}
