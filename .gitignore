@@ -31,6 +31,7 @@ src-tauri/binaries/
 result
 result-*
 .direnv/
+.envrc.local
 
 # Coverage
 *.profraw

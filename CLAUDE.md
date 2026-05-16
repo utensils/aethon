@@ -25,7 +25,8 @@ by the agent.
 
 ## Common Commands
 
-Run inside `nix develop` (or via direnv — `.envrc` is `use flake`). The
+Run inside `nix develop` (or via direnv — `.envrc` bootstraps `nix-direnv`
+then `use flake`, so reentering the shell is cached and instant). The
 devshell exposes these helpers (defined in `flake.nix`):
 
 | Command     | What it does                                                                  |
