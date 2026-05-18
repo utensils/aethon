@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <em>An agent-driven desktop shell where the agent decides what you see.</em>
+  <em>An agent-driven desktop shell where the agent decides what you see — and how.</em>
 </p>
 
 <p align="center">
