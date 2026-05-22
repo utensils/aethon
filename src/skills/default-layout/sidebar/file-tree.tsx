@@ -29,6 +29,7 @@ import {
   ContextMenu,
   type ContextMenuItem,
 } from "../../../components/primitives/context-menu";
+import { FileIcon } from "../../../components/file-icon";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 interface FsEntry {
@@ -594,6 +595,28 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     }
   };
 
+  const onContextRevealInFinder = async () => {
+    if (!contextMenu) return;
+    const path = contextMenu.node.entry.path;
+    closeContextMenu();
+    try {
+      await invoke("fs_reveal_in_file_manager", { path });
+    } catch (err) {
+      window.alert(`Reveal failed: ${String(err)}`);
+    }
+  };
+
+  const onContextOpenWithDefault = async () => {
+    if (!contextMenu) return;
+    const path = contextMenu.node.entry.path;
+    closeContextMenu();
+    try {
+      await invoke("fs_open_in_default_app", { path });
+    } catch (err) {
+      window.alert(`Open failed: ${String(err)}`);
+    }
+  };
+
   if (hidden) {
     // Panel toggled off. Render nothing so the flex container collapses
     // and other sidebar sections claim the space. The toggle event
@@ -638,6 +661,18 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           id: "new-folder",
           label: "New Folder…",
           onSelect: onContextNewFolder,
+        },
+        { type: "separator" },
+        {
+          id: "reveal-in-finder",
+          label: "Reveal in File Manager",
+          onSelect: onContextRevealInFinder,
+        },
+        {
+          id: "open-with-default",
+          label: "Open with default app",
+          disabled: contextMenu.node.entry.kind !== "file",
+          onSelect: onContextOpenWithDefault,
         },
         { type: "separator" },
         { id: "rename", label: "Rename…", onSelect: onContextRename },
@@ -806,7 +841,6 @@ interface FileTreeRowProps {
 function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProps) {
   const indent = (node.depth - 1) * 12;
   const isDir = node.entry.kind === "dir";
-  const icon = isDir ? (expanded ? "▾" : "▸") : "  ";
   return (
     <li
       role="treeitem"
@@ -818,8 +852,25 @@ function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProp
       onContextMenu={onContextMenu}
       title={node.entry.path}
     >
-      <span className="ae-file-tree-icon" aria-hidden="true">{icon}</span>
-      <span className="ae-file-tree-label">{node.entry.name}</span>
+      {isDir ? (
+        <span
+          className="ae-file-tree-chevron-row"
+          aria-hidden="true"
+        >
+          {expanded ? "▾" : "▸"}
+        </span>
+      ) : (
+        <span className="ae-file-tree-chevron-row ae-file-tree-chevron-spacer" />
+      )}
+      <FileIcon
+        path={node.entry.path}
+        isDir={isDir}
+        open={isDir && expanded}
+        className="ae-file-tree-icon"
+      />
+      <span className="ae-file-tree-label" data-selectable>
+        {node.entry.name}
+      </span>
       {node.loading && <span className="ae-file-tree-loading" aria-hidden="true">…</span>}
     </li>
   );

@@ -484,6 +484,122 @@ pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Reveal a path in the native file manager (Finder / Explorer / xdg).
+/// On macOS uses `open -R` so the target file is preselected inside its
+/// parent directory; on Linux falls back to `xdg-open` on the parent.
+#[tauri::command]
+pub fn fs_reveal_in_file_manager(path: String) -> Result<(), String> {
+    use std::process::Command;
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| format!("open -R: {e}"))?;
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe")
+            .arg(format!("/select,{}", p.display()))
+            .spawn()
+            .map_err(|e| format!("explorer.exe: {e}"))?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // No portable "select-this-file" on Linux; open the parent dir.
+        let parent = p.parent().unwrap_or(&p);
+        Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| format!("xdg-open: {e}"))?;
+        Ok(())
+    }
+}
+
+/// Open a directory (or file's parent) in the OS file manager. This is
+/// the project / worktree / "show this folder" flow. Falls back to
+/// xdg-open on Linux.
+#[tauri::command]
+pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
+    use std::process::Command;
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+    let target = if p.is_file() {
+        p.parent().unwrap_or(&p).to_path_buf()
+    } else {
+        p.clone()
+    };
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("open: {e}"))?;
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("explorer.exe: {e}"))?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("xdg-open: {e}"))?;
+        Ok(())
+    }
+}
+
+/// Open a file with the OS default application.
+#[tauri::command]
+pub fn fs_open_in_default_app(path: String) -> Result<(), String> {
+    use std::process::Command;
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| format!("open: {e}"))?;
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // start "" "<file>" — the empty title argument is required by cmd.
+        Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(&p)
+            .spawn()
+            .map_err(|e| format!("start: {e}"))?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| format!("xdg-open: {e}"))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

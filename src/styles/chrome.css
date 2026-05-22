@@ -275,7 +275,7 @@ body.ae-resizing-sidebar .ae-file-tree-resize-handle {
 .ae-file-tree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 2px 8px 2px 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -285,15 +285,30 @@ body.ae-resizing-sidebar .ae-file-tree-resize-handle {
   line-height: 1.5;
 }
 .ae-file-tree-row:hover {
-  background: var(--hover, rgba(255, 255, 255, 0.04));
+  background: var(--bg-hover);
   color: var(--text);
 }
+.ae-file-tree-chevron-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  opacity: 0.6;
+}
+.ae-file-tree-chevron-spacer {
+  visibility: hidden;
+}
+.ae-file-icon,
 .ae-file-tree-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
   display: inline-block;
-  width: 12px;
-  text-align: center;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  opacity: 0.7;
+  user-select: none;
+  pointer-events: none;
 }
 .ae-file-tree-row.is-dir .ae-file-tree-label {
   color: var(--text);
@@ -304,7 +319,7 @@ body.ae-resizing-sidebar .ae-file-tree-resize-handle {
   text-overflow: ellipsis;
 }
 .ae-file-tree-loading {
-  opacity: 0.6;
+  opacity: var(--opacity-muted);
 }
 
 /* Resize handle — 6px-wide hit target hugging the sidebar's right edge.
