@@ -16,7 +16,8 @@
         "width": 1200,
         "height": 800,
         "center": true,
-        "maximized": true
+        "maximized": true,
+        "visible": false
       }
     ],
     "security": {
