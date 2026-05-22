@@ -5,12 +5,15 @@ import {
   normalizeRegisteredCombo,
 } from "./keybindings";
 
-function ke(init: Partial<KeyboardEventInit & { key: string }>): KeyboardEvent {
+function ke(
+  init: Partial<KeyboardEventInit & { key: string; code: string }>,
+): KeyboardEvent {
   // Vitest runs in node; KeyboardEvent isn't globally available unless jsdom
   // is loaded. Construct a plain object that satisfies the duck-typed shape
-  // canonicalCombo() reads from (key + modifier flags).
+  // canonicalCombo() reads from (key/code + modifier flags).
   return {
     key: init.key ?? "",
+    code: init.code ?? "",
     metaKey: init.metaKey ?? false,
     ctrlKey: init.ctrlKey ?? false,
     altKey: init.altKey ?? false,
@@ -46,6 +49,38 @@ describe("canonicalCombo", () => {
 
   it("preserves non-letter keys", () => {
     expect(canonicalCombo(ke({ key: "]", ctrlKey: true }))).toBe("ctrl+]");
+  });
+
+  it("uses e.code to canonicalize Shift-modified brackets", () => {
+    // Browsers emit `key: "}"` for Shift+] on US layouts; the canonical
+    // combo still has to read as `meta+shift+]` so extensions that
+    // register the documented combo match. Same for `[` → `{`.
+    expect(
+      canonicalCombo(
+        ke({ key: "}", code: "BracketRight", metaKey: true, shiftKey: true }),
+      ),
+    ).toBe("meta+shift+]");
+    expect(
+      canonicalCombo(
+        ke({ key: "{", code: "BracketLeft", metaKey: true, shiftKey: true }),
+      ),
+    ).toBe("meta+shift+[");
+  });
+
+  it("uses e.code to canonicalize Option-modified brackets on macOS", () => {
+    // macOS produces special glyphs for Option-bracket (`‘` and `’`).
+    // canonicalCombo must still map them back to `]`/`[` so
+    // extensions registering `Cmd+Opt+]` match the runtime event.
+    expect(
+      canonicalCombo(
+        ke({ key: "’", code: "BracketRight", metaKey: true, altKey: true }),
+      ),
+    ).toBe("meta+alt+]");
+    expect(
+      canonicalCombo(
+        ke({ key: "‘", code: "BracketLeft", metaKey: true, altKey: true }),
+      ),
+    ).toBe("meta+alt+[");
   });
 });
 
