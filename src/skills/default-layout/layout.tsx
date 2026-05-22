@@ -352,6 +352,9 @@ export function EmptyState({
   return (
     <div className="a2ui-empty-state">
       <div className="a2ui-empty-state-card">
+        <div className="a2ui-empty-state-hero" aria-hidden="true">
+          <AeMarkInline size={64} radius={12} />
+        </div>
         <h1 className="a2ui-empty-state-title">{title}</h1>
         <p className="a2ui-empty-state-subtitle">{subtitle}</p>
         {activeProject && (

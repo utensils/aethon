@@ -1179,12 +1179,18 @@ body.ae-resizing-sidebar .a2ui-layout {
   text-align: center;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 32px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: center;
+  box-shadow: var(--shadow-2);
+}
+
+.a2ui-empty-state-hero {
+  margin-bottom: var(--space-2);
+  filter: drop-shadow(var(--shadow-1));
 }
 
 .a2ui-empty-state-title {
@@ -2447,14 +2453,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   left: 0;
   width: var(--app-viewport-width);
   height: var(--app-viewport-height);
-  z-index: 1000;
+  z-index: var(--z-overlay);
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgba(8, 8, 12, 0.42);
+  background: color-mix(in srgb, var(--bg) calc(var(--opacity-overlay-scrim) * 100%), transparent);
   backdrop-filter: blur(6px);
-  animation: ae-palette-fade 120ms ease-out;
+  animation: ae-palette-fade var(--motion-fast) var(--ease-out);
 }
 @keyframes ae-palette-fade {
   from {
@@ -2470,14 +2476,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-height: min(70vh, calc(var(--app-viewport-height) - 24px));
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.55),
-    0 0 0 1px var(--accent-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay), 0 0 0 1px var(--accent-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: ae-palette-pop 140ms ease-out;
+  animation: ae-palette-pop var(--motion-base) var(--ease-out-strong);
 }
 @keyframes ae-palette-pop {
   from {
