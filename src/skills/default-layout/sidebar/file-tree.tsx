@@ -134,7 +134,14 @@ function readPanelPrefs(raw: string): PanelPrefs {
 
 
 export function FileTreePanel({ component, state, onEvent }: BuiltinComponentProps) {
-  void component;
+  const componentProps = (component.props as { embed?: string } | undefined) ?? {};
+  // When `embed === "right-sidebar"` the file tree fills its parent grid
+  // cell vertically — the parent area controls height, so the internal
+  // resize handle + hide button are dropped. The "left-stack" default
+  // (no embed prop) keeps the legacy resize-as-bottom-panel behavior
+  // for custom layouts still using the old shape.
+  const embedMode = componentProps.embed ?? "left-stack";
+  const fillsContainer = embedMode === "right-sidebar";
   const project = state["project"] as ProjectShape | undefined;
   const projectPath = project?.path ?? "";
 
@@ -734,22 +741,28 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           </span>
         ) : null}
       </button>
-      <button
-        type="button"
-        className="ae-file-tree-hide"
-        aria-label="Hide files panel"
-        title="Hide files panel"
-        onClick={() => setHidden(true)}
-      >
-        ×
-      </button>
+      {fillsContainer ? null : (
+        <button
+          type="button"
+          className="ae-file-tree-hide"
+          aria-label="Hide files panel"
+          title="Hide files panel"
+          onClick={() => setHidden(true)}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 
-  // Style honors the collapsed (just header) + resizable (height) state.
-  const panelStyle: React.CSSProperties = collapsed
-    ? { flex: "0 0 auto" }
-    : { flex: `0 0 ${height}px` };
+  // In right-sidebar embed, the grid cell controls height — fill it.
+  // In legacy left-stack mode, use the resizable flex-basis pattern so
+  // custom layouts that haven't migrated keep working.
+  const panelStyle: React.CSSProperties = fillsContainer
+    ? { flex: "1 1 auto", minHeight: 0 }
+    : collapsed
+      ? { flex: "0 0 auto" }
+      : { flex: `0 0 ${height}px` };
 
   if (!projectPath) {
     return (
@@ -820,7 +833,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       aria-label="Project files"
       style={panelStyle}
     >
-      {!collapsed && (
+      {!collapsed && !fillsContainer && (
         <div
           className="ae-file-tree-resize-handle"
           role="separator"

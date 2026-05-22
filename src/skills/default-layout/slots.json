@@ -13,6 +13,11 @@
       "defaultComposite": "sidebar",
       "required": false
     },
+    "files-sidebar": {
+      "description": "Right panel hosting the project file tree. Toggleable via /layout/filesSidebarVisible.",
+      "defaultComposite": "file-tree",
+      "required": false
+    },
     "tabs": {
       "description": "Horizontal tab strip for switching between agent sessions.",
       "defaultComposite": "tab-strip",

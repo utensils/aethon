@@ -84,20 +84,31 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
-                  },
-                  {
-                    "id": "history",
-                    "title": "chat history",
-                    "items": { "$ref": "/sidebar/history" }
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }
               }
-            },
+            }
+          ]
+        },
+        {
+          "id": "files-sidebar-area",
+          "type": "container",
+          "props": {
+            "area": "files-sidebar",
+            "direction": "column",
+            "gap": 0,
+            "padding": 0,
+            "className": "ae-files-sidebar-area",
+            "visible": { "$ref": "/layout/filesSidebarVisible" }
+          },
+          "children": [
             {
               "id": "file-tree",
               "type": "file-tree",
-              "props": {}
+              "props": {
+                "embed": "right-sidebar"
+              }
             }
           ]
         },
@@ -192,14 +203,15 @@
     },
     "layout": {
       "sidebarVisible": true,
-      "columns": "220px minmax(0,1fr)",
+      "filesSidebarVisible": true,
+      "columns": "220px minmax(0,1fr) 280px",
       "rows": "38px minmax(0,1fr) auto auto auto",
       "areas": [
-        "sidebar header",
-        "sidebar canvas",
-        "sidebar terminal",
-        "sidebar composer",
-        "status status"
+        "sidebar header files-sidebar",
+        "sidebar canvas files-sidebar",
+        "sidebar terminal files-sidebar",
+        "sidebar composer files-sidebar",
+        "status status status"
       ]
     },
     "sidebar": {
