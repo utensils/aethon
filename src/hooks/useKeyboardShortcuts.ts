@@ -161,27 +161,19 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
       }
       // Cmd+Shift+] / Cmd+Shift+[: next/prev tab. Focus-aware: panel
       // cycles sub-tabs. Browser/terminal convention (iTerm, Terminal.app,
-      // most modern editors). `e.key` reports the Shift-modified glyph
-      // for these on most layouts (`}` / `{`), so match the bracket itself
-      // via `e.code` for layout-independence.
-      if (
-        (e.key === "}" || e.code === "BracketRight") &&
-        mod &&
-        e.shiftKey &&
-        !e.altKey
-      ) {
+      // most modern editors). Match purely on `e.code` for layout-
+      // independence — matching on `e.key === "}"` would also fire on
+      // layouts where Shift+<some other physical key> produces `}` (e.g.
+      // some European layouts where the bracket lives behind AltGr), which
+      // would surprise users who didn't press the bracket key.
+      if (e.code === "BracketRight" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         if (isFocusInTerminalPanel()) ctx.nextShellSubTab(1);
         else ctx.nextTab(1);
         return;
       }
-      if (
-        (e.key === "{" || e.code === "BracketLeft") &&
-        mod &&
-        e.shiftKey &&
-        !e.altKey
-      ) {
+      if (e.code === "BracketLeft" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         if (isFocusInTerminalPanel()) ctx.nextShellSubTab(-1);
