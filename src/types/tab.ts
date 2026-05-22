@@ -13,7 +13,29 @@ export interface ShellMeta {
   exitCode?: number;
 }
 
-export type TabKind = "agent" | "shell";
+/**
+ * Editor-tab metadata. Present iff Tab.kind === "editor".
+ *
+ * The buffer (in-memory text) lives on the Monaco model instance,
+ * keyed by tabId — we don't mirror it here because (a) Monaco's
+ * undo/cursor state is the source of truth while the tab is open
+ * and (b) JSON-serialising a 10 MB buffer for every keystroke would
+ * choke the persist layer. `isDirty` is what we *do* track in state
+ * because the tab strip needs to render the dirty dot.
+ *
+ * Cursor position is recorded so a tab restored after a restart
+ * lands where the user left off. Both `cursorLine` / `cursorColumn`
+ * are 1-based to match Monaco's `IPosition` shape.
+ */
+export interface EditorMeta {
+  filePath: string;
+  language: string;
+  isDirty: boolean;
+  cursorLine?: number;
+  cursorColumn?: number;
+}
+
+export type TabKind = "agent" | "shell" | "editor";
 
 export interface Tab {
   id: string;
@@ -40,6 +62,8 @@ export interface Tab {
   projectId: string | null;
   /** Present iff kind === "shell". */
   shell?: ShellMeta;
+  /** Present iff kind === "editor". */
+  editor?: EditorMeta;
 }
 
 /**
@@ -60,6 +84,9 @@ export interface ClosedTabEntry {
   cwd?: string;
   command?: string;
   args?: string[];
+  /** Editor tabs only — passed back to newEditorTab so reopen lands on
+   *  the same file. */
+  filePath?: string;
 }
 
 // Sentinel key for the "no project" bucket. Project ids are UUIDs so a
@@ -92,28 +119,41 @@ export function makeEmptyTab(
 }
 
 /**
- * Derive `/agentTabActive` and `/shellTabActive` from the current tab
- * list and active id. Both gates require at least one tab; when no
- * tab is active the empty-state composite owns the canvas area.
+ * Derive `/agentTabActive`, `/shellTabActive`, and `/editorTabActive`
+ * from the current tab list and active id. All three gates require at
+ * least one tab; when no tab is active the empty-state composite owns
+ * the canvas area.
  *
  * Lives here (rather than as a useEffect mirror) so layout `visible:
  * { $ref: "/agentTabActive" }` bindings can never lag behind a
  * tabs/activeTabId mutation — the gates recompute synchronously
  * inside App.tsx's renderState memo.
+ *
+ * The three flags are mutually exclusive; the active tab's `kind`
+ * picks exactly one of them.
  */
 export function deriveTabActiveFlags(
   tabs: Tab[],
   activeTabId: string | undefined,
-): { agentTabActive: boolean; shellTabActive: boolean } {
+): {
+  agentTabActive: boolean;
+  shellTabActive: boolean;
+  editorTabActive: boolean;
+} {
   if (tabs.length === 0) {
-    return { agentTabActive: false, shellTabActive: false };
+    return {
+      agentTabActive: false,
+      shellTabActive: false,
+      editorTabActive: false,
+    };
   }
   const activeTab = activeTabId
     ? tabs.find((t) => t.id === activeTabId)
     : undefined;
-  const isShell = activeTab?.kind === "shell";
+  const kind = activeTab?.kind ?? "agent";
   return {
-    agentTabActive: !isShell,
-    shellTabActive: isShell,
+    agentTabActive: kind === "agent",
+    shellTabActive: kind === "shell",
+    editorTabActive: kind === "editor",
   };
 }

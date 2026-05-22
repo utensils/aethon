@@ -3280,6 +3280,69 @@ body.ae-resizing-terminal * {
   width: 100%;
 }
 
+/* =============================================================================
+   Editor canvas — Monaco editor surface for editor tabs. Same vertical
+   shape as the shell canvas: editor fills the available height, thin
+   status strip underneath.
+   ============================================================================= */
+
+.ae-editor-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-editor-canvas-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+.ae-editor-canvas-error {
+  padding: 8px 12px;
+  color: var(--text-error, #d6655a);
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+}
+.ae-editor-status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-editor-status-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+.ae-editor-status-dirty {
+  color: var(--accent, #f9cc6c);
+  font-size: 1.1em;
+  line-height: 1;
+}
+.ae-editor-status-spacer {
+  flex: 1 1 auto;
+}
+.ae-editor-status-pos,
+.ae-editor-status-lang {
+  white-space: nowrap;
+}
+.ae-editor-status-sep {
+  opacity: 0.5;
+}
+
 .ae-shell-status-bar {
   flex: 0 0 auto;
   display: flex;

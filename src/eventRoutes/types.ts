@@ -3,7 +3,7 @@ import type {
   MutableRefObject,
   SetStateAction,
 } from "react";
-import type { Tab } from "../types/tab";
+import type { EditorMeta, Tab } from "../types/tab";
 import type { ShareMode } from "../utils/shareMode";
 import type {
   NotificationEntry,
@@ -82,6 +82,8 @@ export interface EventRouteContext {
     },
   ) => void;
   newShellTab: () => void;
+  newEditorTab: (filePath: string) => void;
+  updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   setActiveSubTab: (subId: string) => void;

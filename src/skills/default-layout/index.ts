@@ -10,6 +10,7 @@ import type { A2UISkill } from "../types";
 import {
   ChatHistory,
   ChatInput,
+  EditorCanvas,
   EmptyState,
   Layout,
   MainCanvas,
@@ -62,6 +63,10 @@ export const defaultLayoutSkill: A2UISkill = {
     // equivalent mode flag) so it appears only when the active tab is a
     // shell tab.
     "shell-canvas": ShellCanvas,
+    // Monaco-backed editor canvas for editor tabs. Mounts when the
+    // active tab is `kind === "editor"`; the layout binds visibility
+    // to `/editorTabActive`.
+    "editor-canvas": EditorCanvas,
     // M6 restructure: tabbed bottom panel. Hosts the read-only
     // agent-bash sub-tab + every user shell as a separate sub-tab.
     // Replaces the standalone `terminal` cell in workstation.

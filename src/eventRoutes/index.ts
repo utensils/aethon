@@ -44,6 +44,7 @@ import {
   handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
+import { handleEditorCanvas, handleFileTree } from "./editor";
 
 /** Lookup table for built-in routes. Keys are `id:<componentId>` or
  *  `type:<componentType>`. The dispatcher computes both keys for an
@@ -79,6 +80,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:tab-strip", [handleTabStrip]],
     ["type:shell-canvas", [handleShareModeCycle]],
     ["type:share-mode-badge", [handleShareModeCycle]],
+    ["type:editor-canvas", [handleEditorCanvas]],
+    ["type:file-tree", [handleFileTree]],
   ]);
 
 /** Dispatch a renderer-side event through the precedence layers.

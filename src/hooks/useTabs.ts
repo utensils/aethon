@@ -7,10 +7,12 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import {
   type ClosedTabEntry,
+  type EditorMeta,
   type ShellMeta,
   type Tab,
   makeEmptyTab,
 } from "../types/tab";
+import { languageFromPath } from "../monaco/language-detection";
 import {
   activeProject,
   type ProjectsState,
@@ -39,6 +41,11 @@ export const TAB_MIRROR_KEYS: (keyof Tab)[] = [
   // full /tabs/<idx> lookup on every render.
   "kind",
   "shell",
+  // Editor-tab metadata mirror — the EditorCanvas composite reads
+  // /editor/filePath, /editor/language, /editor/isDirty, /editor/cursorLine
+  // via $ref so the status strip + dirty dot reflect the active editor
+  // tab without a /tabs/<idx>/editor walk per render.
+  "editor",
 ];
 
 const CLOSED_TAB_STACK_MAX = 10;
@@ -170,6 +177,13 @@ export interface UseTabsActions {
     args?: string[];
     cwd?: string;
   }) => void;
+  /** Open (or focus, if already open) an editor tab for `filePath`.
+   *  `filePath` must be inside the active project; the EditorCanvas
+   *  composite handles the actual fs_read_file call on mount. */
+  newEditorTab: (filePath: string) => void;
+  /** Set the dirty flag + cursor on the active editor tab. Used by
+   *  EditorCanvas to mirror Monaco's model state back to the layout. */
+  updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -525,6 +539,73 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       });
   }
 
+  /** Compute a tab label from a file path: just the basename, since the
+   *  full path is shown in the editor status strip. */
+  function editorLabelForPath(filePath: string): string {
+    const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+    return slash >= 0 ? filePath.slice(slash + 1) : filePath;
+  }
+
+  /** Open (or focus) an editor tab for the supplied absolute path. If a
+   *  tab for the same path already exists in the current project bucket,
+   *  switch to it instead of creating a duplicate. */
+  function newEditorTab(filePath: string) {
+    if (!filePath) return;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const existing = tabs.find(
+      (t) => t.kind === "editor" && t.editor?.filePath === filePath,
+    );
+    if (existing) {
+      setActiveTab(existing.id);
+      return;
+    }
+    const id = crypto.randomUUID();
+    const projectId = projectsRef.current.activeId;
+    const language = languageFromPath(filePath);
+    const tab: Tab = {
+      ...makeEmptyTab(id, editorLabelForPath(filePath), projectId, "editor"),
+      editor: {
+        filePath,
+        language,
+        isDirty: false,
+      },
+    };
+    setState((prev) => {
+      const list = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      list.push(tab);
+      const tabRec = tab as unknown as Record<string, unknown>;
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs: list,
+        activeTabId: id,
+        hasTabs: true,
+        empty: false,
+      };
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = tabRec[key as string];
+      }
+      return result;
+    });
+  }
+
+  /** Patch the active editor tab's metadata (dirty flag, cursor). Cheap
+   *  no-op if the tab is missing or not an editor tab. */
+  function updateEditorMeta(tabId: string, patch: Partial<EditorMeta>) {
+    updateTab(tabId, (t) => {
+      if (t.kind !== "editor" || !t.editor) return t;
+      const merged = { ...t.editor, ...patch };
+      // Skip the setState if nothing meaningful changed — guards against
+      // re-render storms from Monaco's cursorPosition events on every key.
+      const samePath = merged.filePath === t.editor.filePath;
+      const sameLang = merged.language === t.editor.language;
+      const sameDirty = merged.isDirty === t.editor.isDirty;
+      const sameLine = merged.cursorLine === t.editor.cursorLine;
+      const sameCol = merged.cursorColumn === t.editor.cursorColumn;
+      if (samePath && sameLang && sameDirty && sameLine && sameCol) return t;
+      return { ...t, editor: merged };
+    });
+  }
+
   function autoRestoreDiscoveredSessions(
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -577,6 +658,9 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
             args: tab.shell.args,
           }
         : {}),
+      ...(tab.kind === "editor" && tab.editor
+        ? { filePath: tab.editor.filePath }
+        : {}),
     };
     closedTabsRef.current.push(entry);
     if (closedTabsRef.current.length > CLOSED_TAB_STACK_MAX) {
@@ -612,6 +696,10 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         ...(entry.args ? { args: entry.args } : {}),
         ...(entry.cwd ? { cwd: entry.cwd } : {}),
       });
+    } else if (entry.kind === "editor" && entry.filePath) {
+      // Re-open the same file. EditorCanvas reads it from disk on mount;
+      // unsaved buffer state is intentionally not preserved across close.
+      newEditorTab(entry.filePath);
     } else {
       newTab(entry.id, entry.label, { restoredSession: true });
     }
@@ -726,6 +814,8 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     setActiveSubTab,
     newTab,
     newShellTab,
+    newEditorTab,
+    updateEditorMeta,
     autoRestoreDiscoveredSessions,
     pushClosedTab,
     reopenLastClosedTab,

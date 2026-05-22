@@ -114,6 +114,15 @@
           }
         },
         {
+          "id": "editor-canvas",
+          "type": "editor-canvas",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/editorTabActive" },
+            "tabId": { "$ref": "/activeTabId" }
+          }
+        },
+        {
           "id": "empty-state",
           "type": "empty-state",
           "props": {
@@ -177,6 +186,7 @@
     "hasTabs": true,
     "agentTabActive": true,
     "shellTabActive": false,
+    "editorTabActive": false,
     "recentSessions": [],
     "agentStatus": {
       "label": "agent live",
