@@ -577,11 +577,21 @@ export function Sidebar({
                       : null;
                     const worktrees = projectItem?.worktrees;
                     const expanded = projectItem?.expanded === true;
+                    // Only show the disclosure when there are EXTRA worktrees
+                    // beyond the main one — every git repo returns ≥1 entry
+                    // (the project's primary checkout), so a 1-element list
+                    // is "no extra worktrees" and the chevron is meaningless.
+                    // Surface the chevron only when worktrees.length > 1.
+                    const hasExtraWorktrees =
+                      !!worktrees && worktrees.length > 1;
+                    const extraWorktrees = hasExtraWorktrees
+                      ? worktrees.filter((w) => !w.isMain)
+                      : [];
                     return (
                       <Fragment key={item.id}>
                         <ItemRow
                           item={
-                            worktrees && worktrees.length > 0
+                            hasExtraWorktrees
                               ? {
                                   ...item,
                                   componentType: undefined,
@@ -597,14 +607,14 @@ export function Sidebar({
                           renderChildWithState={renderChildWithState}
                           state={state}
                           disclosure={
-                            worktrees && worktrees.length > 0
+                            hasExtraWorktrees
                               ? expanded
                                 ? "expanded"
                                 : "collapsed"
                               : undefined
                           }
                           onToggleDisclosure={
-                            worktrees && worktrees.length > 0
+                            hasExtraWorktrees
                               ? () =>
                                   onEvent(
                                     "toggle-project-expand",
@@ -614,8 +624,8 @@ export function Sidebar({
                               : undefined
                           }
                         />
-                        {worktrees && expanded
-                          ? worktrees.map((wt) => (
+                        {hasExtraWorktrees && expanded
+                          ? extraWorktrees.map((wt) => (
                               <WorktreeRow
                                 key={wt.id}
                                 item={wt}
