@@ -421,8 +421,9 @@ built-in behavior. Built-ins without an override are:
 | `Cmd+Shift+P`               | Open command palette (commands mode) |
 | `Cmd+T`                     | New tab                              |
 | `Cmd+W`                     | Close active tab                     |
-| `Cmd+]`                     | Next tab                             |
-| `Cmd+[`                     | Previous tab                         |
+| `Cmd+Shift+]`               | Next tab                             |
+| `Cmd+Shift+[`               | Previous tab                         |
+| `Cmd+Opt+]` / `Cmd+Opt+[`   | Move active tab right / left         |
 | `Cmd+\``                    | Toggle terminal                      |
 | `Cmd+K`                     | Clear chat                           |
 | `Cmd+.`                     | Stop current prompt                  |

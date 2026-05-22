@@ -295,7 +295,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
 
     // Native menu activations land here. The Rust shell emits the
     // menu item id; we route the same way the keyboard shortcuts do
-    // so menu and Cmd+T / Cmd+] / etc. always do the same thing.
+    // so menu and Cmd+T / Cmd+Shift+] / etc. always do the same thing.
     const unlistenMenu = listen<string>("menu", (event) => {
       const id = event.payload;
       // Extension menu items use the `ext:<action>` prefix so they don't
@@ -359,7 +359,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
           break;
         }
         case "help_docs": {
-          openUrl("https://github.com/utensils/aethon").catch(() => {
+          openUrl("https://utensils.io/aethon/").catch(() => {
             /* opener errors are noisy and rarely actionable */
           });
           break;

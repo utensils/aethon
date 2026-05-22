@@ -287,7 +287,7 @@ then sharing, then polish.
 - [x] `Cmd/Ctrl+Shift+F` — search across past sessions.
 - [x] `F12` — toggle dev tools (debug builds only). Release builds surface a "DevTools unavailable" toast.
 - [x] `Cmd/Ctrl+Opt+T` — reopen most-recently-closed tab from the in-memory stack (cap 10). Agent tabs spawn fresh; shell tabs spawn a new PTY at the original cwd / command / args. Session-history replay for restored agent tabs is a follow-up.
-- [x] **Sub-tab navigation when focus is in the panel** — `Cmd+1..9` jumps between sub-tabs (1 = agent-bash). `Cmd+Shift+]/[` reorders shell sub-tabs (agent-bash is pinned first).
+- [x] **Sub-tab navigation when focus is in the panel** — `Cmd+1..9` jumps between sub-tabs (1 = agent-bash). `Cmd+Shift+]/[` cycles sub-tabs; `Cmd+Opt+]/[` reorders shell sub-tabs (agent-bash is pinned first).
 - [x] Native menu accelerators in `src-tauri/src/lib.rs` extended in lockstep so menu and shortcut paths never drift. Extension `registerKeybinding` priority is unchanged: extensions still run first and may override built-ins.
 
 #### Workspace polish
