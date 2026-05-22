@@ -100,12 +100,6 @@
                     ]
                   },
                   {
-                    "id": "themes",
-                    "title": "themes",
-                    "monoItems": true,
-                    "items": { "$ref": "/sidebar/themes" }
-                  },
-                  {
                     "id": "history",
                     "title": "chat history",
                     "items": { "$ref": "/sidebar/history" }

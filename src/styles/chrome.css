@@ -2083,10 +2083,11 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .a2ui-status-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
   align-items: center;
+  gap: var(--space-3);
   height: 22px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   background: var(--bg-elev);
   border-top: 1px solid var(--border);
   font-size: var(--chrome-text-compact);
@@ -2095,6 +2096,52 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   width: 100%;
   min-width: 0;
+}
+
+.a2ui-status-project-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  padding: 0 var(--space-2);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.a2ui-status-chip-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.a2ui-status-chip-label {
+  color: var(--text);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-status-chip-sep {
+  color: var(--text-dim);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.a2ui-status-chip-worktree,
+.a2ui-status-chip-branch {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-status-chip-dirty {
+  color: var(--warn);
+  font-size: var(--chrome-text-compact);
 }
 
 .a2ui-status-left {
