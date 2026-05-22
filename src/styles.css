@@ -212,6 +212,67 @@
   --ansi-bright-white: #fef3e2;
 }
 
+/* Brink — mid-tone warm chrome (Ristretto base) with gold accent. Ported
+   from the Claudette `brink` theme; ANSI + syntax tokens derived to keep
+   the Ristretto/Tokyo-Night cohort cohesive (gold keywords, pink errors,
+   cyan functions, lavender symbols). */
+:root[data-theme="brink"] {
+  color-scheme: dark;
+  --bg: #2c2525;
+  --bg-elev: #504646;
+  --bg-input: #241e1e;
+  --border: #6e6464;
+  --text: #f1e5e7;
+  --text-dim: #d0c4c6;
+  --accent: #f9cc6c;
+  --accent-soft: rgba(249, 204, 108, 0.2);
+  --accent-hover-tint: rgba(249, 204, 108, 0.1);
+  --accent-active-tint: rgba(249, 204, 108, 0.16);
+  --btn-text: #2c2525;
+  --user-bubble: #3a302f;
+  --agent-bubble: #3f3434;
+  --scrollbar-thumb: #6e6464;
+  --scrollbar-thumb-hover: #7a6e70;
+  --success: #adda78;
+  --warn: #f9cc6c;
+  --error: #fd6883;
+  /* Syntax-highlighting palette — Brink (Ristretto-flavored). Gold
+     keywords on warm brown; symbols/functions/variables ride the same
+     pink/cyan/lavender accents the chat surfaces use. */
+  --syntax-text: #f1e5e7;
+  --syntax-comment: #907e80;
+  --syntax-punctuation: #b0a4a6;
+  --syntax-keyword: #f9cc6c;
+  --syntax-string: #adda78;
+  --syntax-number: #f38d70;
+  --syntax-symbol: #a8a9eb;
+  --syntax-operator: #d0c4c6;
+  --syntax-function: #85dacc;
+  --syntax-variable: #fd6883;
+  /* xterm theme + ANSI palette — Brink (Ristretto). Terminal uses the
+     darker chat-input brown so it visually anchors below the chrome. */
+  --terminal-bg: #1e1818;
+  --terminal-fg: #f1e5e7;
+  --terminal-cursor: #f9cc6c;
+  --terminal-selection: rgba(249, 204, 108, 0.28);
+  --ansi-black: #241e1e;
+  --ansi-red: #fd6883;
+  --ansi-green: #adda78;
+  --ansi-yellow: #f9cc6c;
+  --ansi-blue: #82aaff;
+  --ansi-magenta: #a8a9eb;
+  --ansi-cyan: #85dacc;
+  --ansi-white: #d0c4c6;
+  --ansi-bright-black: #504646;
+  --ansi-bright-red: #ff8294;
+  --ansi-bright-green: #c2e893;
+  --ansi-bright-yellow: #ffd98a;
+  --ansi-bright-blue: #9bb8ff;
+  --ansi-bright-magenta: #c4c5f4;
+  --ansi-bright-cyan: #a8e8de;
+  --ansi-bright-white: #f1e5e7;
+}
+
 /* Motion timing tokens + reduced-motion + focus-ring tokens — applied
    across every palette so a single declaration controls every component. */
 :root {

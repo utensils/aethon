@@ -202,7 +202,8 @@
       "themes": [
         { "id": "ember", "label": "Ember — warm dark", "active": true },
         { "id": "paper", "label": "Paper — cream light" },
-        { "id": "aether", "label": "Æther — signature" }
+        { "id": "aether", "label": "Æther — signature" },
+        { "id": "brink", "label": "Brink — Ristretto warm chrome with gold accent" }
       ]
     },
     "projects": [],
