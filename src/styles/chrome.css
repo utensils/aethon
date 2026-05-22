@@ -195,38 +195,66 @@ body {
 .ae-file-tree-titlebar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px 4px 6px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   flex: 0 0 auto;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  min-height: 30px;
 }
 .ae-file-tree-toggle {
   flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   background: transparent;
   border: 0;
   padding: 0;
   margin: 0;
   text-align: left;
   font: inherit;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-.ae-file-tree-toggle:hover {
   color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+}
+.ae-file-tree-toggle:hover .ae-file-tree-title {
+  color: var(--accent);
 }
 .ae-file-tree-chevron {
-  display: inline-block;
-  width: 12px;
-  text-align: center;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
   opacity: 0.7;
 }
 .ae-file-tree-title {
+  font-size: var(--chrome-text);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  transition: color var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
   font-size: var(--chrome-text-muted);
-  text-transform: lowercase;
-  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ae-file-tree-hide {
   background: transparent;
@@ -2944,6 +2972,53 @@ body.ae-resizing-terminal * {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Extensions list — one row per extension with name + provenance + a
+   toggle button. Failed extensions get an error tint. */
+.ae-settings-ext-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ae-settings-ext-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+}
+.ae-settings-ext-row--failed {
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+  background: color-mix(in srgb, var(--error) 5%, var(--bg-elev));
+}
+.ae-settings-ext-row--disabled {
+  opacity: var(--opacity-muted);
+}
+.ae-settings-ext-name {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-settings-ext-hint {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.ae-settings-ext-action {
+  white-space: nowrap;
 }
 .ae-settings-field {
   display: flex;

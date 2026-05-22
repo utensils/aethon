@@ -692,6 +692,26 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       ]
     : [];
 
+  // Project label + active worktree branch — shown in the panel header
+  // so the user always knows whose files they're looking at without
+  // hopping up to the sidebar projects list. Derived from the same
+  // /sidebar/projects path the sidebar reads from.
+  const sidebarProjects =
+    ((state.sidebar as Record<string, unknown> | undefined)?.projects as
+      | Array<{
+          id: string;
+          label?: string;
+          active?: boolean;
+          worktrees?: Array<{ id: string; label?: string; branch?: string; active?: boolean }>;
+          git?: { branch?: string };
+        }>
+      | undefined) ?? [];
+  const activeProject = sidebarProjects.find((p) => p.active === true);
+  const activeWorktree = activeProject?.worktrees?.find((w) => w.active === true);
+  const headerLabel = activeProject?.label ?? project?.name ?? "files";
+  const headerBranch =
+    activeWorktree?.label ?? activeWorktree?.branch ?? activeProject?.git?.branch;
+
   const titleRow = (
     <div className="ae-file-tree-titlebar">
       <button
@@ -705,7 +725,14 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         <span className="ae-file-tree-chevron" aria-hidden="true">
           {collapsed ? "▸" : "▾"}
         </span>
-        <span className="ae-file-tree-title">files</span>
+        <span className="ae-file-tree-title" data-selectable>
+          {headerLabel}
+        </span>
+        {headerBranch ? (
+          <span className="ae-file-tree-branch" data-selectable>
+            {headerBranch}
+          </span>
+        ) : null}
       </button>
       <button
         type="button"

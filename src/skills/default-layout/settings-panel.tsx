@@ -396,6 +396,10 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </p>
             </Section>
 
+            <Section title="Extensions">
+              <ExtensionsList state={state} onEvent={onEvent} />
+            </Section>
+
             <Section title="Advanced">
               <p className="ae-settings-note">
                 For keys not surfaced here, edit{" "}
@@ -450,5 +454,90 @@ function Field(props: { label: string; children: React.ReactNode }) {
       <span className="ae-settings-field-label">{props.label}</span>
       <span className="ae-settings-field-control">{props.children}</span>
     </label>
+  );
+}
+
+interface ExtensionItem {
+  id: string;
+  label: string;
+  hint?: string;
+  active?: boolean;
+}
+
+function ExtensionsList({
+  state,
+  onEvent,
+}: {
+  state: Record<string, unknown>;
+  onEvent: BuiltinComponentProps["onEvent"];
+}) {
+  const sidebar = (state.sidebar as Record<string, unknown> | undefined) ?? {};
+  const items = (sidebar.extensions as ExtensionItem[] | undefined) ?? [];
+  if (items.length === 0) {
+    return (
+      <p className="ae-settings-note">
+        No extensions loaded. Drop a <code>.mjs</code> into{" "}
+        <code>~/.aethon/extensions/</code> to register one.
+      </p>
+    );
+  }
+  return (
+    <ul className="ae-settings-ext-list">
+      {items.map((item) => {
+        const kind = item.id.startsWith("ext:")
+          ? "enabled"
+          : item.id.startsWith("ext-failed:")
+            ? "failed"
+            : item.id.startsWith("ext-disabled:")
+              ? "disabled"
+              : "core";
+        const name =
+          kind === "enabled"
+            ? item.id.slice("ext:".length)
+            : kind === "failed"
+              ? item.id.slice("ext-failed:".length)
+              : kind === "disabled"
+                ? item.id.slice("ext-disabled:".length)
+                : item.label;
+        const canToggle = kind !== "core";
+        const targetDisabled = kind !== "disabled";
+        return (
+          <li
+            key={item.id}
+            className={`ae-settings-ext-row ae-settings-ext-row--${kind}`}
+          >
+            <span className="ae-settings-ext-name" data-selectable>
+              {item.label}
+            </span>
+            {item.hint ? (
+              <span className="ae-settings-ext-hint">{item.hint}</span>
+            ) : null}
+            {canToggle ? (
+              <button
+                type="button"
+                className="ae-settings-secondary ae-settings-ext-action"
+                onClick={() =>
+                  onEvent("toggle-extension", {
+                    sectionId: "extensions",
+                    itemId: item.id,
+                    name,
+                    disabled: targetDisabled,
+                  })
+                }
+              >
+                {kind === "disabled" ? "Enable" : "Disable"}
+              </button>
+            ) : (
+              <span
+                className="ae-settings-ext-hint"
+                title="Built-in core extension"
+              >
+                core
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
