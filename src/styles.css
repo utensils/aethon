@@ -894,6 +894,19 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: var(--chrome-text-muted);
 }
 
+.a2ui-sidebar-context-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+  opacity: 0.6;
+}
+
+/* File-tree context menu reuses the sidebar menu's chrome but is wider
+   to fit the longest label ("Copy Relative Path") without truncation. */
+.ae-file-tree-context-menu {
+  min-width: 200px;
+}
+
 /* ---- Header (Container with className=app-header) ----------------------- */
 
 .app-header {

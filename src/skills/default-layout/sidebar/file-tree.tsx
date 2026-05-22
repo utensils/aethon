@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readState, writeState } from "../../../persist";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
@@ -53,18 +54,31 @@ interface ExpandedStore {
 const EXPAND_STATE_FILE = "file-tree.json";
 const EXPANDED_CAP_PER_PROJECT = 200;
 
+/** Return the directory of `node`'s entry: the node itself when it's a
+ *  folder, the containing folder when it's a file. Used by the
+ *  context menu's New File / New Folder actions to anchor at the
+ *  right location regardless of which row the user right-clicked. */
+function parentDirOf(node: TreeNode): string {
+  if (node.entry.kind === "dir") return node.entry.path;
+  const slash = Math.max(
+    node.entry.path.lastIndexOf("/"),
+    node.entry.path.lastIndexOf("\\"),
+  );
+  return slash >= 0 ? node.entry.path.slice(0, slash) : node.entry.path;
+}
+
 /** Parse the persisted store; tolerate corruption by returning empty. */
 function parseExpandedStore(raw: string): ExpandedStore {
   if (!raw) return { byProject: {} };
   try {
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed: unknown = JSON.parse(raw);
     if (
       parsed &&
       typeof parsed === "object" &&
       "byProject" in parsed &&
-      typeof (parsed as { byProject: unknown }).byProject === "object"
+      typeof parsed.byProject === "object"
     ) {
-      const map = (parsed as { byProject: Record<string, unknown> }).byProject;
+      const map = parsed.byProject as Record<string, unknown>;
       const cleaned: Record<string, string[]> = {};
       for (const [projectPath, list] of Object.entries(map)) {
         if (Array.isArray(list)) {
@@ -86,6 +100,12 @@ interface ProjectShape {
   name?: string;
 }
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  node: TreeNode;
+}
+
 export function FileTreePanel({ component, state, onEvent }: BuiltinComponentProps) {
   void component;
   const project = state["project"] as ProjectShape | undefined;
@@ -97,6 +117,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   // Set of expanded absolute paths. Driving render, mirror-saved to disk.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string>("");
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const expandedStoreRef = useRef<ExpandedStore>({ byProject: {} });
   const projectPathRef = useRef<string>(projectPath);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,7 +160,13 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   }, []);
 
   // Fetch the root directory listing whenever the active project changes.
+  // The two synchronous setState calls here are intentional: they reset
+  // local in-effect state (last project's tree + error) before kicking
+  // off the async fetch for the new root. Splitting into a derived-from-
+  // props pattern would force a re-render dance every time the user
+  // expands a folder elsewhere.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoot(null);
     setError("");
     if (!projectPath) return;
@@ -247,6 +274,200 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     onEvent("file-tree-open", { filePath: node.entry.path });
   };
 
+  const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    setContextMenu({
+      x: Math.min(e.clientX, Math.max(8, viewportWidth - 220)),
+      y: Math.min(e.clientY, Math.max(8, viewportHeight - 220)),
+      node,
+    });
+  };
+
+  // Close the menu on any outside interaction. Mirrors the existing
+  // Sidebar context-menu UX so the pattern is consistent.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+    };
+  }, [contextMenu]);
+
+  // Pop a folder out of the tree's children cache so the next expand
+  // re-fetches it. Used after create/rename/delete so the tree reflects
+  // the new state without a full reload.
+  const invalidateFolder = useCallback((folderPath: string) => {
+    setRoot((r) => {
+      if (!r) return r;
+      const next = { ...r };
+      const walk = (node: TreeNode): TreeNode => {
+        if (node.entry.path === folderPath) {
+          return { ...node, children: undefined };
+        }
+        if (!node.children) return node;
+        return {
+          ...node,
+          children: node.children.map(walk),
+        };
+      };
+      next.children = next.children?.map(walk);
+      return next;
+    });
+  }, []);
+
+  // Re-fetch a folder's children inline (used after operations land —
+  // skips collapse+expand UX and just updates the visible tree).
+  const refreshFolder = useCallback(
+    async (folderPath: string) => {
+      if (!projectPathRef.current) return;
+      try {
+        const entries = await invoke<FsEntry[]>("fs_list_dir", {
+          root: projectPathRef.current,
+          path: folderPath,
+        });
+        setRoot((r) => {
+          if (!r) return r;
+          const walk = (node: TreeNode): TreeNode => {
+            if (node.entry.path === folderPath) {
+              return {
+                ...node,
+                children: entries.map((e) => ({
+                  entry: e,
+                  depth: node.depth + 1,
+                })),
+              };
+            }
+            if (!node.children) return node;
+            return { ...node, children: node.children.map(walk) };
+          };
+          return { ...r, children: r.children?.map(walk) ?? undefined };
+        });
+      } catch {
+        invalidateFolder(folderPath);
+      }
+    },
+    [invalidateFolder],
+  );
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  const onContextNewFile = async () => {
+    if (!contextMenu) return;
+    const parentPath = parentDirOf(contextMenu.node);
+    closeContextMenu();
+    const name = window.prompt("New file name");
+    if (!name) return;
+    const target = `${parentPath.replace(/\/$/, "")}/${name}`;
+    try {
+      await invoke("fs_create_file", {
+        root: projectPathRef.current,
+        path: target,
+      });
+      await refreshFolder(parentPath);
+      onEvent("file-tree-open", { filePath: target });
+    } catch (err) {
+      window.alert(`Failed to create file: ${String(err)}`);
+    }
+  };
+
+  const onContextNewFolder = async () => {
+    if (!contextMenu) return;
+    const parentPath = parentDirOf(contextMenu.node);
+    closeContextMenu();
+    const name = window.prompt("New folder name");
+    if (!name) return;
+    const target = `${parentPath.replace(/\/$/, "")}/${name}`;
+    try {
+      await invoke("fs_create_dir", {
+        root: projectPathRef.current,
+        path: target,
+      });
+      await refreshFolder(parentPath);
+    } catch (err) {
+      window.alert(`Failed to create folder: ${String(err)}`);
+    }
+  };
+
+  const onContextRename = async () => {
+    if (!contextMenu) return;
+    const node = contextMenu.node;
+    closeContextMenu();
+    const name = window.prompt("Rename to", node.entry.name);
+    if (!name || name === node.entry.name) return;
+    const dirIdx = Math.max(
+      node.entry.path.lastIndexOf("/"),
+      node.entry.path.lastIndexOf("\\"),
+    );
+    const parentPath = dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
+    const target = `${parentPath}/${name}`;
+    try {
+      await invoke("fs_rename", {
+        root: projectPathRef.current,
+        from: node.entry.path,
+        to: target,
+      });
+      await refreshFolder(parentPath);
+    } catch (err) {
+      window.alert(`Rename failed: ${String(err)}`);
+    }
+  };
+
+  const onContextDelete = async () => {
+    if (!contextMenu) return;
+    const node = contextMenu.node;
+    closeContextMenu();
+    if (!window.confirm(`Move "${node.entry.name}" to the trash?`)) return;
+    const dirIdx = Math.max(
+      node.entry.path.lastIndexOf("/"),
+      node.entry.path.lastIndexOf("\\"),
+    );
+    const parentPath = dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
+    try {
+      await invoke("fs_delete", {
+        root: projectPathRef.current,
+        path: node.entry.path,
+      });
+      await refreshFolder(parentPath);
+    } catch (err) {
+      window.alert(`Delete failed: ${String(err)}`);
+    }
+  };
+
+  const onContextCopyPath = async () => {
+    if (!contextMenu) return;
+    const path = contextMenu.node.entry.path;
+    closeContextMenu();
+    try {
+      await navigator.clipboard.writeText(path);
+    } catch {
+      window.alert(path);
+    }
+  };
+
+  const onContextCopyRelativePath = async () => {
+    if (!contextMenu) return;
+    const root = projectPathRef.current.replace(/\/+$/, "");
+    const path = contextMenu.node.entry.path;
+    const rel = path.startsWith(root + "/") ? path.slice(root.length + 1) : path;
+    closeContextMenu();
+    try {
+      await navigator.clipboard.writeText(rel);
+    } catch {
+      window.alert(rel);
+    }
+  };
+
   if (!projectPath) {
     return (
       <div className="ae-file-tree ae-file-tree-empty">
@@ -278,9 +499,72 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
             node={node}
             expanded={expanded.has(node.entry.path)}
             onClick={() => onItemClick(node)}
+            onContextMenu={(e) => onRowContextMenu(e, node)}
           />
         ))}
       </ul>
+      {contextMenu &&
+        createPortal(
+          <div
+            className="a2ui-sidebar-context-menu ae-file-tree-context-menu"
+            role="menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={onContextNewFile}
+            >
+              New File…
+            </button>
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={onContextNewFolder}
+            >
+              New Folder…
+            </button>
+            <div className="a2ui-sidebar-context-menu-sep" />
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={onContextRename}
+            >
+              Rename…
+            </button>
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={onContextDelete}
+            >
+              Move to Trash…
+            </button>
+            <div className="a2ui-sidebar-context-menu-sep" />
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={onContextCopyPath}
+            >
+              Copy Path
+            </button>
+            <button
+              type="button"
+              className="a2ui-sidebar-context-menu-item"
+              role="menuitem"
+              onClick={onContextCopyRelativePath}
+            >
+              Copy Relative Path
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -289,9 +573,10 @@ interface FileTreeRowProps {
   node: TreeNode;
   expanded: boolean;
   onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function FileTreeRow({ node, expanded, onClick }: FileTreeRowProps) {
+function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProps) {
   const indent = (node.depth - 1) * 12;
   const isDir = node.entry.kind === "dir";
   const icon = isDir ? (expanded ? "▾" : "▸") : "  ";
@@ -303,6 +588,7 @@ function FileTreeRow({ node, expanded, onClick }: FileTreeRowProps) {
       className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}`}
       style={{ paddingLeft: indent }}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       title={node.entry.path}
     >
       <span className="ae-file-tree-icon" aria-hidden="true">{icon}</span>

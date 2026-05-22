@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 import { FileTreePanel } from "./file-tree";
 
@@ -15,7 +21,7 @@ import { readState } from "../../../persist";
 import { invoke } from "@tauri-apps/api/core";
 
 const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
-const readStateMock = readState as unknown as ReturnType<typeof vi.fn>;
+const readStateMock = readState as ReturnType<typeof vi.fn>;
 
 function panelProps(overrides?: Partial<Parameters<typeof FileTreePanel>[0]>) {
   return {
@@ -34,6 +40,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Portal-mounted context menus survive React Testing Library's default
+  // autocleanup until the component unmounts; call cleanup explicitly so
+  // each test starts with an empty document.body.
+  cleanup();
   invokeMock.mockReset();
 });
 
@@ -41,7 +51,7 @@ describe("FileTreePanel", () => {
   it("shows an empty state when no project is active", () => {
     render(
       <FileTreePanel
-        {...panelProps({ state: {} as Record<string, unknown> })}
+        {...panelProps({ state: {} })}
       />,
     );
     expect(screen.getByText("no project")).toBeTruthy();
@@ -80,5 +90,51 @@ describe("FileTreePanel", () => {
     render(<FileTreePanel {...panelProps()} />);
     await waitFor(() => screen.getByText(/permission denied/));
     expect(screen.getByText(/permission denied/)).toBeTruthy();
+  });
+
+  it("opens a context menu on right-click and exposes the action set", async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: "App.tsx", path: "/projects/aethon/src/App.tsx", kind: "file" },
+    ]);
+    render(<FileTreePanel {...panelProps()} />);
+    const row = await waitFor(() => screen.getByText("App.tsx"));
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: /New File…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /New Folder…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Rename…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Move to Trash…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Copy Path/ })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: /Copy Relative Path/ }),
+    ).toBeTruthy();
+  });
+
+  it("creates a file via the New File menu and opens it", async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: "src", path: "/projects/aethon/src", kind: "dir" },
+    ]);
+    const onEvent = vi.fn();
+    render(<FileTreePanel {...panelProps({ onEvent })} />);
+    const row = await waitFor(() => screen.getByText("src"));
+    fireEvent.contextMenu(row);
+    // fs_create_file then fs_list_dir refresh.
+    invokeMock.mockResolvedValueOnce(undefined);
+    invokeMock.mockResolvedValueOnce([
+      { name: "new.ts", path: "/projects/aethon/src/new.ts", kind: "file" },
+    ]);
+    vi.spyOn(window, "prompt").mockReturnValueOnce("new.ts");
+    const newFileBtn = screen.getByRole("menuitem", { name: /New File…/ });
+    fireEvent.click(newFileBtn);
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("fs_create_file", {
+        root: "/projects/aethon",
+        path: "/projects/aethon/src/new.ts",
+      });
+    });
+    await waitFor(() => {
+      expect(onEvent).toHaveBeenCalledWith("file-tree-open", {
+        filePath: "/projects/aethon/src/new.ts",
+      });
+    });
   });
 });

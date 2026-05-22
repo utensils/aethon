@@ -706,7 +706,9 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   }
 
   /** Close a tab, prompting for confirmation when closing a running
-   *  shell tab and `[shell] prompt_before_close` is true. */
+   *  shell tab and `[shell] prompt_before_close` is true. Editor tabs
+   *  with unsaved changes get a lightweight native confirm prompt so
+   *  Cmd+W on a dirty file can't silently throw work away. */
   function closeTab(tabId: string) {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     const closing = tabs.find((t) => t.id === tabId);
@@ -720,6 +722,12 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         closeTabNow(tabId);
       });
       return;
+    }
+    if (closing?.kind === "editor" && closing.editor?.isDirty) {
+      const ok = window.confirm(
+        `"${closing.label}" has unsaved changes. Close without saving?`,
+      );
+      if (!ok) return;
     }
     closeTabNow(tabId);
   }
