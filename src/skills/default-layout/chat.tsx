@@ -57,6 +57,34 @@ export function formatToolDuration(ms: number): string {
   return `${min}m ${sec.toString().padStart(2, "0")}s`;
 }
 
+// Status icons for tool card pill
+function ToolStatusIcon({ running, isError, isLongRunning }: { running: boolean; isError: boolean; isLongRunning: boolean }) {
+  if (running) {
+    const label = isLongRunning ? "Tool long-running" : "Tool running";
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        className={`ae-tool-status-icon ae-tool-status-running${isLongRunning ? " ae-tool-status-long" : ""}`}
+      >
+        <span className="ae-tool-spinner" aria-hidden="true" />
+      </span>
+    );
+  }
+  if (isError) {
+    return (
+      <span role="img" aria-label="Tool failed" className="ae-tool-status-icon ae-tool-status-error">
+        <span aria-hidden="true">✕</span>
+      </span>
+    );
+  }
+  return (
+    <span role="img" aria-label="Tool completed" className="ae-tool-status-icon ae-tool-status-done">
+      <span aria-hidden="true">✓</span>
+    </span>
+  );
+}
+
 export function ToolCard({
   component,
   state,
@@ -108,21 +136,11 @@ export function ToolCard({
   const isLongRunning = running && elapsedMs >= TOOL_LONG_RUN_THRESHOLD_MS;
   const hasChildren = (component.children?.length ?? 0) > 0;
 
-  const titleSuffix = useMemo(() => {
-    if (running) return ` · running… ${formatToolDuration(elapsedMs)}`;
-    if (isError) return ` · failed in ${formatToolDuration(elapsedMs)}`;
-    if (startedAt !== undefined)
-      return ` · completed in ${formatToolDuration(elapsedMs)}`;
+  const timeSuffix = useMemo(() => {
+    if (running) return formatToolDuration(elapsedMs);
+    if (startedAt !== undefined) return formatToolDuration(elapsedMs);
     return "";
-  }, [running, isError, startedAt, elapsedMs]);
-
-  const accentColor = isError
-    ? "var(--danger, #c5494a)"
-    : isLongRunning
-      ? "var(--warning, #d18a2c)"
-      : running
-        ? "var(--accent)"
-        : "var(--text-dim)";
+  }, [running, startedAt, elapsedMs]);
 
   return (
     <details
@@ -132,25 +150,39 @@ export function ToolCard({
       data-error={isError ? "true" : "false"}
     >
       <summary className="ae-tool-card-summary">
-        <span className="ae-tool-card-title" style={{ color: accentColor }}>
-          <span className="ae-tool-card-title-base">{baseTitle}</span>
-          <span className="ae-tool-card-title-suffix">{titleSuffix}</span>
-        </span>
+        <ToolStatusIcon running={running} isError={isError} isLongRunning={isLongRunning} />
+        <span className="ae-tool-card-name">{baseTitle}</span>
         {description && (
           <span className="ae-tool-card-description">{description}</span>
         )}
+        {timeSuffix && (
+          <span className="ae-tool-card-time">{timeSuffix}</span>
+        )}
+        {isLongRunning && (
+          <span className="ae-tool-card-long-hint">long-running · <kbd>⌘.</kbd> to stop</span>
+        )}
       </summary>
       <div className="ae-tool-card-body">
-        {isLongRunning && (
-          <div className="ae-tool-card-warning">
-            Long-running command — press <kbd>⌘.</kbd> to stop.
-          </div>
-        )}
         {hasChildren ? renderChildren?.() : (
           <div className="ae-tool-card-empty">No output</div>
         )}
       </div>
     </details>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TypingIndicator — animated three-dot pulse shown while the agent is thinking
+// (waiting=true but no streaming tokens yet).
+// ---------------------------------------------------------------------------
+
+function TypingIndicator() {
+  return (
+    <div role="status" aria-label="Agent is thinking" className="ae-typing-indicator">
+      <span className="ae-typing-dot" aria-hidden="true" />
+      <span className="ae-typing-dot" aria-hidden="true" />
+      <span className="ae-typing-dot" aria-hidden="true" />
+    </div>
   );
 }
 
@@ -237,30 +269,31 @@ const ChatMessageRow = memo(
     state,
     tabId,
     className = "a2ui-chat-message",
+    prevRole,
   }: {
     message: ChatMessage;
     state: Record<string, unknown>;
     tabId?: string;
     className?: string;
+    prevRole?: string;
   }) {
+    const isCanvas = className === "a2ui-canvas-message";
+    const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
+    const textClass = isCanvas ? "a2ui-canvas-text a2ui-markdown" : "a2ui-chat-text a2ui-markdown";
+    // Suppress role label for consecutive messages from same sender
+    const showRole = prevRole !== message.role;
     return (
-      <div className={`${className} ${message.role}`}>
-        <span className={className === "a2ui-canvas-message" ? "a2ui-canvas-role" : "a2ui-chat-role"}>
-          {roleBadge(message.role)}
-        </span>
+      <div className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}>
+        {showRole && message.role !== "system" && (
+          <span className={roleClass}>{roleBadge(message.role)}</span>
+        )}
         {message.thinking && (
           <ThinkingBlock complete={Boolean(message.text)}>
             {message.thinking}
           </ThinkingBlock>
         )}
         {message.text && (
-          <div
-            className={
-              className === "a2ui-canvas-message"
-                ? "a2ui-canvas-text a2ui-markdown"
-                : "a2ui-chat-text a2ui-markdown"
-            }
-          >
+          <div className={textClass}>
             <MemoMarkdownWithThinking text={message.text} />
           </div>
         )}
@@ -274,6 +307,7 @@ const ChatMessageRow = memo(
     prev.message === next.message &&
     prev.tabId === next.tabId &&
     prev.className === next.className &&
+    prev.prevRole === next.prevRole &&
     (!next.message.a2ui || prev.state === next.state),
 );
 
@@ -382,8 +416,14 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
               Load older messages ({hiddenCount})
             </button>
           )}
-          {visibleMessages.map((m) => (
-            <ChatMessageRow key={m.id} message={m} state={state} tabId={tabId} />
+          {visibleMessages.map((m, i) => (
+            <ChatMessageRow
+              key={m.id}
+              message={m}
+              state={state}
+              tabId={tabId}
+              prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
+            />
           ))}
         </>
       )}
@@ -477,19 +517,23 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           Load older messages ({hiddenCount})
         </button>
       )}
-      {visibleMessages.map((m) => (
+      {visibleMessages.map((m, i) => (
         <ChatMessageRow
           key={m.id}
           message={m}
           state={state}
           tabId={tabId}
           className="a2ui-canvas-message"
+          prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
         />
       ))}
       {liveSubtree && (
         <div className="a2ui-canvas-live">
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
+      )}
+      {chatMode && state.waiting === true && !liveSubtree && messages.length > 0 && (
+        <TypingIndicator />
       )}
       {chatMode && (
         <ScrollToBottomPill
