@@ -45,6 +45,7 @@ vi.mock("monaco-editor", () => {
       createModel: vi.fn(() => ({
         dispose: vi.fn(),
         getValue: vi.fn(() => ""),
+        getValueLength: vi.fn(() => 0),
         setValue: vi.fn(),
       })),
       defineTheme: vi.fn(),

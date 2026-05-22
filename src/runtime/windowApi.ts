@@ -146,12 +146,6 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
         registerHighlightGrammar(lang.trim(), grammar);
         return true;
       },
-      /** Replace (or register) the Monaco editor theme for an Aethon
-       *  theme id. `id` matches a CSS `data-theme="…"` value (e.g.
-       *  "ember", "paper"); `data` is a Monaco `IStandaloneThemeData`
-       *  with chrome colors + optional token rules. Re-applies
-       *  immediately if `id` is the active theme. Returns false on a
-       *  malformed argument so the caller can surface a warning. */
       /** Register a custom file viewer that replaces Monaco for files
        *  whose extension matches `extensions[]`. The named
        *  `componentType` must be registered separately via
@@ -169,6 +163,12 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
         registerFileViewerImpl(entry);
         return true;
       },
+      /** Replace (or register) the Monaco editor theme for an Aethon
+       *  theme id. `id` matches a CSS `data-theme="…"` value (e.g.
+       *  "ember", "paper"); `data` is a Monaco `IStandaloneThemeData`
+       *  with chrome colors + optional token rules. Re-applies
+       *  immediately if `id` is the active theme. Returns false on a
+       *  malformed argument so the caller can surface a warning. */
       registerMonacoTheme: (
         id: string,
         data: monaco.editor.IStandaloneThemeData,

@@ -144,8 +144,11 @@ export function clampFixedOverlay(
 ): { x: number; y: number } {
   const { x, y } = viewportToFixed(clientX, clientY);
   const { width: vw, height: vh } = viewportLayoutSize();
+  const inset = 8;
+  const maxX = Math.max(inset, vw - width - inset);
+  const maxY = Math.max(inset, vh - height - inset);
   return {
-    x: Math.min(x, Math.max(8, vw - width)),
-    y: Math.min(y, Math.max(8, vh - height)),
+    x: Math.max(inset, Math.min(x, maxX)),
+    y: Math.max(inset, Math.min(y, maxY)),
   };
 }

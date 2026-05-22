@@ -417,10 +417,9 @@ const WALK_FILE_CAP: usize = 20_000;
 /// Recursive non-binary file enumeration for the Cmd+P file fuzzy
 /// search. Returns absolute paths inside `root` (so they round-trip
 /// through `fs_read_file` without rewriting), capped at 20k entries.
-/// Excludes `EXCLUDED_DIRS` plus any directory whose name starts with
-/// `.` and isn't an explicit allow (none today). Symlinks are not
-/// followed — too easy to get stuck in a loop or wander outside the
-/// project.
+/// Excludes directory names in `EXCLUDED_DIRS`; dot-prefixed directories
+/// not listed there are still walked. Symlinks are not followed — too
+/// easy to get stuck in a loop or wander outside the project.
 #[tauri::command]
 pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
     let root_canon = canonical_root(&root)?;

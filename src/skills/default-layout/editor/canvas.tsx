@@ -45,6 +45,7 @@ import {
   getEditorBuffer,
 } from "../../../monaco/editor-buffers";
 import { pickFileViewer } from "./file-viewers";
+import { compressPath } from "./path";
 
 interface EditorTabLike {
   id: string;
@@ -404,12 +405,4 @@ function EditorStatusBar({
       <span className="ae-editor-status-lang">{language}</span>
     </div>
   );
-}
-
-/** Show the last 2 path components — full path is in the title attribute. */
-function compressPath(filePath: string): string {
-  if (!filePath) return "";
-  const parts = filePath.replace(/\/+$/, "").split("/").filter(Boolean);
-  if (parts.length <= 2) return filePath;
-  return `…/${parts.slice(-2).join("/")}`;
 }

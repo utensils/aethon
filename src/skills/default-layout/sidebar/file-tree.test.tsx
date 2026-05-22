@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -17,11 +18,12 @@ vi.mock("../../../persist", () => ({
   writeState: vi.fn(() => Promise.resolve(true)),
 }));
 
-import { readState } from "../../../persist";
+import { readState, writeState } from "../../../persist";
 import { invoke } from "@tauri-apps/api/core";
 
 const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
 const readStateMock = readState as ReturnType<typeof vi.fn>;
+const writeStateMock = writeState as ReturnType<typeof vi.fn>;
 
 function panelProps(overrides?: Partial<Parameters<typeof FileTreePanel>[0]>) {
   return {
@@ -37,6 +39,8 @@ beforeEach(() => {
   invokeMock.mockReset();
   readStateMock.mockReset();
   readStateMock.mockResolvedValue("");
+  writeStateMock.mockReset();
+  writeStateMock.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -45,6 +49,7 @@ afterEach(() => {
   // each test starts with an empty document.body.
   cleanup();
   invokeMock.mockReset();
+  vi.useRealTimers();
 });
 
 describe("FileTreePanel", () => {
@@ -136,5 +141,33 @@ describe("FileTreePanel", () => {
         filePath: "/projects/aethon/src/new.ts",
       });
     });
+  });
+
+  it("persists expanded folders under the project active when scheduled", async () => {
+    invokeMock.mockResolvedValue([
+      { name: "src", path: "/projects/aethon/src", kind: "dir" },
+    ]);
+    const { rerender } = render(<FileTreePanel {...panelProps()} />);
+    const row = await waitFor(() => screen.getByText("src"));
+    vi.useFakeTimers();
+    fireEvent.click(row);
+    rerender(
+      <FileTreePanel
+        {...panelProps({
+          state: { project: { path: "/projects/other", name: "other" } },
+        })}
+      />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(writeStateMock).toHaveBeenCalledWith(
+      "file-tree.json",
+      JSON.stringify({
+        byProject: {
+          "/projects/aethon": ["/projects/aethon/src"],
+        },
+      }),
+    );
   });
 });

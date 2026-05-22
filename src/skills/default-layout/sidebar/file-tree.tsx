@@ -217,11 +217,12 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   // Schedule a debounced persist whenever the active project's expand
   // set changes. Debounce avoids hammering disk during rapid expand/collapse.
   const schedulePersist = useCallback((next: Set<string>) => {
-    if (!projectPathRef.current) return;
+    const projectKey = projectPathRef.current;
+    if (!projectKey) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       const list = [...next].slice(0, EXPANDED_CAP_PER_PROJECT);
-      expandedStoreRef.current.byProject[projectPathRef.current] = list;
+      expandedStoreRef.current.byProject[projectKey] = list;
       void writeState(
         EXPAND_STATE_FILE,
         JSON.stringify(expandedStoreRef.current),
