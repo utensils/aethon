@@ -244,6 +244,7 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -352,6 +353,7 @@ body {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: none;
   position: relative;
 }
 
@@ -1007,6 +1009,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: none;
   padding: 16px 20px 12px;
   gap: 4px;
   background: var(--bg);
@@ -1041,6 +1044,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg);
   padding: 40px 20px;
   overflow-y: auto;
+  overscroll-behavior: none;
 }
 
 .a2ui-empty-state-card {
@@ -1273,22 +1277,25 @@ body.ae-resizing-sidebar .a2ui-layout {
   border: 1px solid var(--border);
   border-radius: 14px 14px 4px 14px;
   margin-left: 14%;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .a2ui-canvas-message.user.ae-msg-cont {
   border-radius: 14px 4px 4px 14px;
-  margin-top: -2px;
+  margin-top: 2px;
 }
 
 .a2ui-canvas-message.agent {
   align-self: stretch;
   background: transparent;
+  border-top: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
   max-width: 100%;
-  padding-left: 4px;
-  margin-top: 12px;
+  padding: 8px 12px 4px 4px;
+  margin-top: 8px;
 }
 .a2ui-canvas-message.agent.ae-msg-cont {
-  margin-top: 2px;
+  border-top: none;
+  padding-top: 2px;
+  margin-top: 1px;
 }
 .a2ui-canvas-message.agent .a2ui-canvas-role {
   color: color-mix(in oklab, var(--accent) 55%, var(--text-dim));
@@ -1311,12 +1318,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-bottom: 4px;
-  opacity: 0.65;
+  margin-bottom: 3px;
+  opacity: 0.8;
 }
 .a2ui-canvas-message.user .a2ui-canvas-role {
   color: var(--text-dim);
   text-align: right;
+  opacity: 0.55;
 }
 
 .a2ui-canvas-text {
@@ -1426,12 +1434,23 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* `text` language blocks — typically file paths and single commands.
    Render as a compact reference chip with a left accent bar. */
 .a2ui-code[data-language="text"] {
-  padding: 5px 10px 5px 10px;
+  padding: 4px 10px;
   font-size: var(--chrome-text-compact);
   line-height: 1.45;
   border-left: 2px solid var(--accent);
-  border-radius: 0 6px 6px 0;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--text-dim);
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.2em 0;
+}
+.a2ui-code[data-language="text"] code {
+  width: auto;
+  min-width: 0;
 }
 .a2ui-code[data-language="text"] .a2ui-code-lang {
   display: none;
@@ -1450,17 +1469,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 .a2ui-code-lang {
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 5px;
+  right: 8px;
   font-family: var(--font-mono);
-  font-size: var(--chrome-text-muted);
+  font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: lowercase;
   color: var(--text-dim);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 1px 8px;
+  opacity: 0.55;
   pointer-events: none;
 }
 .a2ui-code-inline {
@@ -1550,27 +1566,29 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-thinking-block {
-  margin: 0.45em 0;
-  padding: 8px 10px;
-  background: color-mix(in srgb, var(--bg-input) 78%, transparent);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--text-dim);
-  border-radius: 6px;
+  margin: 0.3em 0;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid color-mix(in oklab, var(--text-dim) 40%, transparent);
+  border-radius: 0;
   color: var(--text-dim);
 }
 
 .a2ui-thinking-block summary {
   cursor: pointer;
   user-select: none;
-  font-size: var(--chrome-text-muted);
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  opacity: 0.6;
 }
 
 .a2ui-thinking-content {
-  margin-top: 6px;
-  font-size: 0.95em;
+  margin-top: 4px;
+  font-size: 0.9em;
+  opacity: 0.75;
 }
 
 .a2ui-canvas-live {
@@ -1590,6 +1608,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: none;
   padding: 12px 12px 8px;
   gap: 4px;
   contain: layout style;
@@ -1634,24 +1653,27 @@ body.ae-resizing-sidebar .a2ui-layout {
   border-radius: 14px 14px 4px 14px;
   align-self: flex-end;
   margin-left: 14%;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .a2ui-chat-message.user.ae-msg-cont {
   border-radius: 14px 4px 4px 14px;
-  margin-top: -2px;
+  margin-top: 2px;
 }
 
 /* Agent messages: full-width, no heavy box. */
 .a2ui-chat-message.agent {
   background: transparent;
   border: 0;
+  border-top: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
   align-self: stretch;
   max-width: 100%;
-  padding-left: 4px;
-  margin-top: 12px;
+  padding: 8px 12px 4px 4px;
+  margin-top: 8px;
 }
 .a2ui-chat-message.agent.ae-msg-cont {
-  margin-top: 2px;
+  border-top: none;
+  padding-top: 2px;
+  margin-top: 1px;
 }
 .a2ui-chat-message.agent .a2ui-chat-role {
   color: color-mix(in oklab, var(--accent) 55%, var(--text-dim));
@@ -1688,13 +1710,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-bottom: 4px;
-  opacity: 0.65;
+  margin-bottom: 3px;
+  opacity: 0.8;
 }
 
 .a2ui-chat-message.user .a2ui-chat-role {
   color: var(--text-dim);
   text-align: right;
+  opacity: 0.55;
 }
 
 .a2ui-chat-empty {
@@ -2337,6 +2360,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 .ae-palette-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: none;
   padding: 4px 0;
 }
 
@@ -2727,6 +2751,7 @@ body.ae-resizing-terminal * {
 .ae-settings-body {
   padding: 16px 20px;
   overflow-y: auto;
+  overscroll-behavior: none;
   flex: 1 1 auto;
 }
 .ae-settings-section {
@@ -2881,6 +2906,7 @@ body.ae-resizing-terminal * {
 .ae-search-results {
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: none;
   padding: 6px 0;
 }
 .ae-search-empty {
