@@ -229,9 +229,15 @@
   }
   .a2ui-terminal,
   .ae-agent-pill-dot,
-  .app-header-pill[data-state="thinking"]::before {
+  .app-header-pill[data-state="thinking"]::before,
+  .ae-typing-dot,
+  .ae-tool-spinner {
     animation: none !important;
   }
+  /* Keep dots visible but static when motion is reduced */
+  .ae-typing-dot { opacity: 0.35; }
+  /* Keep spinner visible as a static partial ring */
+  .ae-tool-spinner { opacity: 0.6; }
 }
 
 * {

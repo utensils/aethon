@@ -60,16 +60,29 @@ export function formatToolDuration(ms: number): string {
 // Status icons for tool card pill
 function ToolStatusIcon({ running, isError, isLongRunning }: { running: boolean; isError: boolean; isLongRunning: boolean }) {
   if (running) {
+    const label = isLongRunning ? "Tool long-running" : "Tool running";
     return (
-      <span className={`ae-tool-status-icon ae-tool-status-running${isLongRunning ? " ae-tool-status-long" : ""}`} aria-label="running">
-        <span className="ae-tool-spinner" />
+      <span
+        role="img"
+        aria-label={label}
+        className={`ae-tool-status-icon ae-tool-status-running${isLongRunning ? " ae-tool-status-long" : ""}`}
+      >
+        <span className="ae-tool-spinner" aria-hidden="true" />
       </span>
     );
   }
   if (isError) {
-    return <span className="ae-tool-status-icon ae-tool-status-error" aria-label="failed">✕</span>;
+    return (
+      <span role="img" aria-label="Tool failed" className="ae-tool-status-icon ae-tool-status-error">
+        <span aria-hidden="true">✕</span>
+      </span>
+    );
   }
-  return <span className="ae-tool-status-icon ae-tool-status-done" aria-label="done">✓</span>;
+  return (
+    <span role="img" aria-label="Tool completed" className="ae-tool-status-icon ae-tool-status-done">
+      <span aria-hidden="true">✓</span>
+    </span>
+  );
 }
 
 export function ToolCard({
@@ -165,10 +178,10 @@ export function ToolCard({
 
 function TypingIndicator() {
   return (
-    <div className="ae-typing-indicator" aria-label="Agent is thinking">
-      <span className="ae-typing-dot" />
-      <span className="ae-typing-dot" />
-      <span className="ae-typing-dot" />
+    <div role="status" aria-label="Agent is thinking" className="ae-typing-indicator">
+      <span className="ae-typing-dot" aria-hidden="true" />
+      <span className="ae-typing-dot" aria-hidden="true" />
+      <span className="ae-typing-dot" aria-hidden="true" />
     </div>
   );
 }
