@@ -143,9 +143,10 @@ helpers: `src/utils/jsonPointer.ts` and `src/utils/dataBinding.ts`.
 
 **3. Two registries.** Primitive React components live in
 `src/components/primitives/` (`text.tsx`, `controls.tsx`, `form.tsx`,
-`layout.tsx`, `media.tsx`); the registry that wires them is built in
-`src/components/builtins.tsx` and consumed by `A2UIRenderer.tsx` as a
-hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout primitives (`text`,
+`layout.tsx`, `media.tsx`, `context-menu.tsx`); the registry that wires
+them is built in `src/components/builtins.tsx` and consumed by
+`A2UIRenderer.tsx` as a hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout
+primitives (`text`,
 `heading`, `paragraph`, `code`, `card`, `button`, `container`,
 `divider`, `image`, `icon`, `text-input`, `date-picker`, `select`,
 `checkbox`, `slider`, `form`, `form-field`, `list`, `table`) — these
@@ -325,14 +326,36 @@ capture-phase keydown handler keyed off a `navRef` so focus theft and
 content swaps don't strand the selection — see the comments in
 `command-palette.tsx` before refactoring.
 
-### Projects
+### Projects and worktrees
 
 Pi sessions are scoped to a working directory. `src/projects.ts` persists
-the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) and
-the active project's path is passed as `cwd` on `tab_open`. **Existing
-tabs keep the cwd they were created with** — switching the active project
-only affects new tabs. When updating tab/session code, treat the per-tab
-cwd as immutable.
+the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) under
+schemaVersion 2; a v1→v2 migration runs on first read so older builds
+still resolve. The active project's path is passed as `cwd` on `tab_open`.
+**Existing tabs keep the cwd they were created with** — switching the
+active project only affects new tabs. When updating tab/session code,
+treat the per-tab cwd as immutable.
+
+Worktrees attach to projects via `src/worktrees.ts`. The Rust shell
+exposes `git_worktrees`, `git_worktree_add`, `git_worktree_remove`, and
+`git_branch_list` in `src-tauri/src/commands/git.rs`; the frontend
+reconciles fresh listings against in-memory state by path so stable ids
++ user labels survive polls. A "pending" worktree is a live UI object
+(queued → starting → succeeded | failed) — Codex pattern — that the
+user can cancel / retry / dismiss directly in the sidebar. The
+worktree-aware projects render nested under their parent project with
+a disclosure caret (sidebar item carries `worktrees` + `expanded`).
+
+### File icons (Material Icon Theme)
+
+The file tree renders Material Icon Theme SVGs vendored under
+`src/file-icons/icons/` (subset of PKief/vscode-material-icon-theme, MIT
+license — see `src/file-icons/LICENSE` + `SOURCE.md`). `iconForPath`
+(`src/file-icons/index.ts`) resolves a filesystem entry to a bundled
+asset URL via basename → extension → fallback. The `<FileIcon>` wrapper
+in `src/components/file-icon.tsx` is what file-tree rows use today.
+Adding new icons is a vendor-and-map operation: drop the SVG into
+`icons/`, add an import + mapping in `manifest.ts`.
 
 ### Monaco editor + file tree
 
