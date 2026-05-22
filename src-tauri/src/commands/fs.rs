@@ -211,14 +211,55 @@ pub fn fs_write_file(root: String, path: String, content: String) -> Result<(), 
     let target = validated_target(&root, &path)?;
     let root_canon = canonical_root(&root)?;
     ensure_symlink_safe(&target, &root_canon)?;
-    // Atomic write: write to <path>.tmp.<pid>, then rename. fs::rename
-    // is atomic within the same filesystem on Unix and Windows, so a
-    // crash mid-write either leaves the old file untouched or the
-    // fully-written new one — never a half-state.
-    let pid = std::process::id();
-    let tmp = target.with_extension(format!("aethontmp.{pid}"));
-    std::fs::write(&tmp, content).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &target).map_err(|e| format!("rename {}: {e}", target.display()))?;
+    // Atomic write: write to a per-call unique temp path in the same
+    // directory, then rename. fs::rename is atomic within the same
+    // filesystem on Unix and Windows, so a crash mid-write either
+    // leaves the old file untouched or the fully-written new one —
+    // never a half-state.
+    //
+    // We open the temp with `create_new(true)` so the syscall fails
+    // when the path already exists. That blocks a crafted workspace
+    // from pre-planting a symlink named `foo.aethon-save.<uuid>.tmp`
+    // pointing outside the project root: `create_new` refuses to
+    // follow existing symlinks (it's `O_EXCL` under the hood). The
+    // path itself also rides through `validated_target` /
+    // `ensure_symlink_safe` so even the lexical layer would catch a
+    // traversal in the leaf name; the create-new flag closes the
+    // TOCTOU window between validation and write.
+    let parent = target.parent().ok_or_else(|| {
+        format!("target has no parent dir: {}", target.display())
+    })?;
+    let target_name = target
+        .file_name()
+        .ok_or_else(|| format!("target has no leaf name: {}", target.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let tmp_name = format!(
+        ".{target_name}.aethon-save.{}.tmp",
+        uuid::Uuid::new_v4().simple()
+    );
+    let tmp = parent.join(&tmp_name);
+    // Belt-and-suspenders: the temp path must also live inside the
+    // root. Same helpers as the user-facing target.
+    let tmp_str = tmp.to_string_lossy().into_owned();
+    validated_target(&root, &tmp_str)?;
+    {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| format!("create {}: {e}", tmp.display()))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        file.sync_all().ok();
+    }
+    std::fs::rename(&tmp, &target).map_err(|e| {
+        // Best-effort cleanup so a failed rename doesn't leave the
+        // hidden temp on disk.
+        let _ = std::fs::remove_file(&tmp);
+        format!("rename {}: {e}", target.display())
+    })?;
     Ok(())
 }
 

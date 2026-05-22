@@ -170,6 +170,15 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoot(null);
     setError("");
+    // Reset the expanded set to the new project's persisted entries
+    // (or empty when this is the first time the user has opened it).
+    // Without this, switching projects would carry the previous
+    // project's expanded paths over — collapsed visually in the tree
+    // but still present in the set, so the next toggle would write
+    // them back into the wrong project's persist slot.
+    setExpanded(
+      new Set(expandedStoreRef.current.byProject[projectPath] ?? []),
+    );
     if (!projectPath) return;
     let cancelled = false;
     void invoke<FsEntry[]>("fs_list_dir", {

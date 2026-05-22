@@ -70,6 +70,15 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const currentTabIdRef = useRef<string>("");
   const projectPathRef = useRef<string>(projectPath);
+  // Stable reference to the live onEvent callback. The renderer
+  // recreates the callback on every render; routing through a ref
+  // keeps the model-swap effect's identity stable so it doesn't re-run
+  // (and re-call `restoreViewState`) on every keystroke that ripples
+  // back into state.
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
   const [loadError, setLoadError] = useState<string>("");
   const [cursorDisplay, setCursorDisplay] = useState<{ line: number; column: number }>({
     line: 1,
@@ -107,7 +116,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       setCursorDisplay({ line: e.position.lineNumber, column: e.position.column });
       const tid = currentTabIdRef.current;
       if (!tid) return;
-      onEvent("editor-cursor", {
+      onEventRef.current("editor-cursor", {
         tabId: tid,
         line: e.position.lineNumber,
         column: e.position.column,
@@ -127,7 +136,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       const buf = getEditorBuffer(tid);
       if (!buf) return;
       if (buf.loading) return;
-      onEvent("editor-change", { tabId: tid, isDirty: true });
+      onEventRef.current("editor-change", { tabId: tid, isDirty: true });
     });
 
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -135,7 +144,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       if (!tid) return;
       const buf = getEditorBuffer(tid);
       if (!buf) return;
-      onEvent("editor-save", {
+      onEventRef.current("editor-save", {
         tabId: tid,
         filePath: buf.filePath,
         content: buf.model.getValue(),
@@ -158,7 +167,24 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Initial cursor for a NEW (just-loaded) buffer comes from the
+  // persisted editor meta. We capture it via a ref to avoid putting
+  // cursorLine/cursorColumn in the model-swap effect's deps — that
+  // would re-run the effect on every keystroke that ripples back into
+  // state via `editor-cursor`, snapping the view to the persisted
+  // position mid-typing.
+  const initialCursorRef = useRef<{ line?: number; column?: number }>({});
+  useEffect(() => {
+    initialCursorRef.current = {
+      line: editorMeta?.cursorLine,
+      column: editorMeta?.cursorColumn,
+    };
+  }, [editorMeta?.cursorLine, editorMeta?.cursorColumn]);
+
   // ─── Swap models when the active editor tab changes ────────────────
+  // Deps are narrow on purpose: only tabId / filePath / language flip
+  // the model. Live cursor updates and project-path readiness are
+  // handled by the separate load effect below.
   useEffect(() => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -189,62 +215,63 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     ed.setModel(buf.model);
     if (buf.viewState) ed.restoreViewState(buf.viewState);
     ed.focus();
+  }, [tabId, editorMeta?.filePath, editorMeta?.language]);
 
-    // Lazy file read. Skipped if the buffer is already populated (the
-    // user came back to this tab after editing). This is what makes
-    // scroll/cursor/dirty all survive tab switches.
-    if (!buf.loaded) {
-      const root = projectPathRef.current;
-      const path = editorMeta.filePath;
-      const initialBuf = buf;
-      void invoke<string>("fs_read_file", { root, path })
-        .then((text) => {
-          // If the user typed before the read landed, keep their
-          // content — overwriting it now would silently destroy edits.
-          // We do still mark the buffer "loaded" so subsequent
-          // keystrokes can no-op the load path; the dirty flag stays
-          // (or starts) true because the content-change listener
-          // already fired (or will fire) for the user's typing.
-          const hadUserEdits = initialBuf.model.getValueLength() > 0;
-          if (hadUserEdits) {
-            initialBuf.loaded = true;
-            // Ensure dirty is set — the listener may have skipped
-            // earlier events if loading was somehow toggled.
-            onEvent("editor-change", {
-              tabId,
-              isDirty: true,
-            });
-            return;
-          }
-          // Wrap setValue in the loading window so the bulk-replace
-          // doesn't flip the tab dirty via the content listener.
-          initialBuf.loading = true;
-          initialBuf.model.setValue(text);
-          initialBuf.loading = false;
+  // ─── Load file content for unloaded buffers ────────────────────────
+  // Depends on projectPath so a restored editor tab whose project list
+  // hasn't loaded yet retries the read once `state.project.path`
+  // arrives, instead of being permanently stuck on the
+  // "non-absolute root" error.
+  useEffect(() => {
+    if (!tabId) return;
+    if (!editorMeta?.filePath) return;
+    if (!projectPath) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+    const buf = getEditorBuffer(tabId);
+    if (!buf || buf.loaded) return;
+
+    const path = editorMeta.filePath;
+    const initialBuf = buf;
+    void invoke<string>("fs_read_file", { root: projectPath, path })
+      .then((text) => {
+        // If the user typed before the read landed, keep their
+        // content — overwriting it now would silently destroy edits.
+        const hadUserEdits = initialBuf.model.getValueLength() > 0;
+        if (hadUserEdits) {
           initialBuf.loaded = true;
-          if (currentTabIdRef.current === tabId) {
-            if (editorMeta.cursorLine && editorMeta.cursorColumn) {
-              try {
-                const pos = {
-                  lineNumber: editorMeta.cursorLine,
-                  column: editorMeta.cursorColumn,
-                };
-                ed.setPosition(pos);
-                ed.revealPositionInCenter(pos);
-              } catch {
-                /* ignore invalid persisted cursor */
-              }
+          onEventRef.current("editor-change", {
+            tabId,
+            isDirty: true,
+          });
+          return;
+        }
+        // Wrap setValue in the loading window so the bulk-replace
+        // doesn't flip the tab dirty via the content listener.
+        initialBuf.loading = true;
+        initialBuf.model.setValue(text);
+        initialBuf.loading = false;
+        initialBuf.loaded = true;
+        if (currentTabIdRef.current === tabId) {
+          const { line, column } = initialCursorRef.current;
+          if (line && column) {
+            try {
+              const pos = { lineNumber: line, column };
+              ed.setPosition(pos);
+              ed.revealPositionInCenter(pos);
+            } catch {
+              /* ignore invalid persisted cursor */
             }
           }
-          onEvent("editor-loaded", { tabId, filePath: path });
-        })
-        .catch((err: unknown) => {
-          if (currentTabIdRef.current === tabId) {
-            setLoadError(String(err));
-          }
-        });
-    }
-  }, [tabId, editorMeta?.filePath, editorMeta?.language, onEvent, editorMeta?.cursorLine, editorMeta?.cursorColumn]);
+        }
+        onEventRef.current("editor-loaded", { tabId, filePath: path });
+      })
+      .catch((err: unknown) => {
+        if (currentTabIdRef.current === tabId) {
+          setLoadError(String(err));
+        }
+      });
+  }, [tabId, editorMeta?.filePath, projectPath]);
 
   // ─── React to theme changes after mount ────────────────────────────
   useEffect(() => {
