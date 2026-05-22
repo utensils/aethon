@@ -360,6 +360,14 @@ export function useUiOverlays(
       if (!root) return;
       void invoke<string[]>("fs_walk_project", { root })
         .then((paths) => {
+          // Project may have changed while the walk was in flight —
+          // discard so we never show files from a stale root. The user
+          // re-triggering Cmd+P refires the walk against the current
+          // project, so this is just a "don't poison the palette"
+          // guard, not a retry.
+          const current = (stateRef.current.project as { path?: string } | undefined)
+            ?.path ?? "";
+          if (current !== root) return;
           const normalized = root.replace(/\/+$/, "");
           const files = paths.map((path) => {
             const rel = path.startsWith(normalized + "/")

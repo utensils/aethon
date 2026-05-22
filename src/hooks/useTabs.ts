@@ -13,6 +13,7 @@ import {
   makeEmptyTab,
 } from "../types/tab";
 import { languageFromPath } from "../monaco/language-detection";
+import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import {
   activeProject,
   type ProjectsState,
@@ -870,6 +871,14 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       invoke("shell_close", { tabId }).catch(() => {
         /* idempotent — already torn down by natural exit */
       });
+    }
+    // Editor tabs own a Monaco model. Dispose it explicitly here so a
+    // closed tab doesn't leak — the buffer cache is intentionally
+    // long-lived across hidden project buckets (a tab the user can
+    // still come back to keeps its unsaved buffer), so we can't rely
+    // on a "tab not visible" prune.
+    if (closedKind === "editor") {
+      disposeEditorBuffer(tabId);
     }
   }
 

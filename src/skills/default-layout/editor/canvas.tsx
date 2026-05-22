@@ -7,15 +7,20 @@
  * buffer all survive tab switches. Mirrors VSCode's model-per-file
  * approach.
  *
- * Buffers live in a module-level `Map<tabId, EditorBuffer>` so they
- * survive the React component unmount that happens when no editor tab
- * is active (e.g. user switches to an agent tab). The next time the
- * component remounts and the tab becomes active again, its model and
- * saved viewState are still there and we just `setModel` + restore.
+ * Buffers live in `src/monaco/editor-buffers.ts` so they survive the
+ * React component unmount that happens when no editor tab is active
+ * (e.g. user switches to an agent tab or to a project whose visible
+ * bucket has no editor tabs). The next time the component remounts and
+ * the tab becomes active again, its model and saved viewState are
+ * still there and we just `setModel` + restore.
  *
- * Orphaned buffers (whose tab id no longer appears in `state.tabs`)
- * are pruned in a `tabs`-watcher effect — that catches the user
- * closing a tab via the X button, Cmd+W, or close-all.
+ * Buffers are disposed explicitly when the user closes a tab —
+ * `useTabs.closeTabNow` calls `disposeEditorBuffer(tabId)`. We
+ * intentionally don't prune from this component based on
+ * `state.tabs` because a project-bucket swap removes tabs from the
+ * visible list while still keeping them in `tabBucketsRef`; disposing
+ * those would drop unsaved edits when the user comes back to the
+ * other project.
  *
  * Shiki ↔ Monaco grammars/themes are wired by `ensureShikiMonacoReady()`
  * the first time the canvas mounts. Until that resolves the editor
@@ -32,6 +37,10 @@ import { resolveString } from "../../../utils/dataBinding";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { applyMonacoTheme } from "../../../monaco/theme";
 import { ensureShikiMonacoReady } from "../../../monaco/shiki";
+import {
+  createEditorBuffer,
+  getEditorBuffer,
+} from "../../../monaco/editor-buffers";
 
 interface EditorTabLike {
   id: string;
@@ -43,48 +52,6 @@ interface EditorTabLike {
     cursorLine?: number;
     cursorColumn?: number;
   };
-}
-
-interface EditorBuffer {
-  /** Monaco model holding the file's text. Disposed only when the
-   *  matching editor tab is closed. */
-  model: monaco.editor.ITextModel;
-  /** Persisted view state (scroll, cursor, selection, folds, etc.).
-   *  Saved on tab switch + window blur; restored on re-entry. */
-  viewState: monaco.editor.ICodeEditorViewState | null;
-  /** Set once `fs_read_file` has populated the model. Subsequent
-   *  visits to the tab reuse the in-memory buffer rather than re-read
-   *  the file (so unsaved edits survive). */
-  loaded: boolean;
-  /** Absolute path the buffer is backed by. Tracks renames. */
-  filePath: string;
-}
-
-/** Module-level buffer cache. Lives across React mount/unmount cycles
- *  so closing the last editor tab + reopening doesn't lose work. */
-const EDITOR_BUFFERS = new Map<string, EditorBuffer>();
-
-/** Dispose buffers for tab ids that no longer exist. Called from the
- *  tabs-watcher effect so closed tabs don't leak Monaco models.
- *  Exported for test cleanup. */
-export function pruneEditorBuffers(liveTabIds: Iterable<string>): void {
-  const live = new Set(liveTabIds);
-  for (const [id, buf] of EDITOR_BUFFERS) {
-    if (!live.has(id)) {
-      buf.model.dispose();
-      EDITOR_BUFFERS.delete(id);
-    }
-  }
-}
-
-/** Update an editor buffer's file path after a rename. The Monaco
- *  model itself doesn't carry the path; we only need to keep the
- *  buffer cache's `filePath` in sync so the next Cmd+S writes to the
- *  new location. Exported for the file-tree rename flow. */
-export function renameEditorBuffer(tabId: string, newPath: string): void {
-  const buf = EDITOR_BUFFERS.get(tabId);
-  if (!buf) return;
-  buf.filePath = newPath;
 }
 
 export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProps) {
@@ -101,8 +68,6 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
 
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  // Current tab the editor is bound to. Used by the (single) set of
-  // event listeners to forward events with the right tab id.
   const currentTabIdRef = useRef<string>("");
   const projectPathRef = useRef<string>(projectPath);
   const [loadError, setLoadError] = useState<string>("");
@@ -119,16 +84,12 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   useEffect(() => {
     if (!containerRef.current) return;
     applyMonacoTheme(document.documentElement.dataset.theme);
-    // Kick off the Shiki bridge in the background — when it resolves
-    // Monaco re-tokenises any live models with the new grammars + the
-    // active theme (now resolved to github-dark/github-light).
     void ensureShikiMonacoReady()
       .then(() => {
         applyMonacoTheme(document.documentElement.dataset.theme);
       })
       .catch(() => {
-        // Fall through to Monaco's built-in tokenisation — better than
-        // throwing.
+        /* fall through to Monaco's built-in tokenisation */
       });
 
     const ed = monaco.editor.create(containerRef.current, {
@@ -153,21 +114,26 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       });
     });
 
-    // Mark dirty on content changes — but only after the model's
-    // initial setValue from fs_read_file has completed. We track that
-    // via the buffer's `loaded` flag.
+    // Mark dirty on content changes. We suppress the event while
+    // `buf.loading` is true — that's the window where the canvas is
+    // calling `model.setValue` to populate disk content, and we don't
+    // want that bulk replace to flip the tab dirty. User keystrokes
+    // arriving *before* the load lands fall through (buffer is still
+    // populated by setValue afterwards only when no user content exists
+    // — see the load callback below).
     const contentDisposable = ed.onDidChangeModelContent(() => {
       const tid = currentTabIdRef.current;
       if (!tid) return;
-      const buf = EDITOR_BUFFERS.get(tid);
-      if (!buf?.loaded) return;
+      const buf = getEditorBuffer(tid);
+      if (!buf) return;
+      if (buf.loading) return;
       onEvent("editor-change", { tabId: tid, isDirty: true });
     });
 
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       const tid = currentTabIdRef.current;
       if (!tid) return;
-      const buf = EDITOR_BUFFERS.get(tid);
+      const buf = getEditorBuffer(tid);
       if (!buf) return;
       onEvent("editor-save", {
         tabId: tid,
@@ -181,7 +147,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       // the canvas going away (e.g. user switched to a non-editor tab).
       const tid = currentTabIdRef.current;
       if (tid) {
-        const buf = EDITOR_BUFFERS.get(tid);
+        const buf = getEditorBuffer(tid);
         if (buf) buf.viewState = ed.saveViewState();
       }
       positionDisposable.dispose();
@@ -202,23 +168,22 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     // Save the outgoing tab's view state before swap.
     const prev = currentTabIdRef.current;
     if (prev && prev !== tabId) {
-      const prevBuf = EDITOR_BUFFERS.get(prev);
+      const prevBuf = getEditorBuffer(prev);
       if (prevBuf) prevBuf.viewState = ed.saveViewState();
     }
     currentTabIdRef.current = tabId;
     setLoadError("");
 
-    let buf = EDITOR_BUFFERS.get(tabId);
     const language = editorMeta.language || "plaintext";
+    let buf = getEditorBuffer(tabId);
     if (!buf) {
-      const model = monaco.editor.createModel("", language);
-      buf = {
-        model,
-        viewState: null,
-        loaded: false,
-        filePath: editorMeta.filePath,
-      };
-      EDITOR_BUFFERS.set(tabId, buf);
+      buf = createEditorBuffer(tabId, editorMeta.filePath, language);
+    } else if (buf.filePath !== editorMeta.filePath) {
+      // Tab was renamed (file-tree rename or folder-rename prefix
+      // rewrite). Sync the cache so the next Cmd+S writes to the new
+      // path. The model itself doesn't need to be recreated — only
+      // its on-disk anchor.
+      buf.filePath = editorMeta.filePath;
     }
 
     ed.setModel(buf.model);
@@ -234,11 +199,28 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       const initialBuf = buf;
       void invoke<string>("fs_read_file", { root, path })
         .then((text) => {
-          // The user may have switched away before the read landed —
-          // still populate the buffer so a later tab-switch back finds
-          // it ready, but only touch the editor view if it's still
-          // bound to this tab.
+          // If the user typed before the read landed, keep their
+          // content — overwriting it now would silently destroy edits.
+          // We do still mark the buffer "loaded" so subsequent
+          // keystrokes can no-op the load path; the dirty flag stays
+          // (or starts) true because the content-change listener
+          // already fired (or will fire) for the user's typing.
+          const hadUserEdits = initialBuf.model.getValueLength() > 0;
+          if (hadUserEdits) {
+            initialBuf.loaded = true;
+            // Ensure dirty is set — the listener may have skipped
+            // earlier events if loading was somehow toggled.
+            onEvent("editor-change", {
+              tabId,
+              isDirty: true,
+            });
+            return;
+          }
+          // Wrap setValue in the loading window so the bulk-replace
+          // doesn't flip the tab dirty via the content listener.
+          initialBuf.loading = true;
           initialBuf.model.setValue(text);
+          initialBuf.loading = false;
           initialBuf.loaded = true;
           if (currentTabIdRef.current === tabId) {
             if (editorMeta.cursorLine && editorMeta.cursorColumn) {
@@ -263,12 +245,6 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
         });
     }
   }, [tabId, editorMeta?.filePath, editorMeta?.language, onEvent, editorMeta?.cursorLine, editorMeta?.cursorColumn]);
-
-  // ─── Prune buffers for tabs that have been closed ──────────────────
-  useEffect(() => {
-    const editorIds = tabs.filter((t) => t.kind === "editor").map((t) => t.id);
-    pruneEditorBuffers(editorIds);
-  }, [tabs]);
 
   // ─── React to theme changes after mount ────────────────────────────
   useEffect(() => {
