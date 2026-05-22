@@ -15,6 +15,13 @@ export interface ItemRowProps {
   renderChildWithState: BuiltinComponentProps["renderChildWithState"];
   state: BuiltinComponentProps["state"];
   index: number;
+  /** When set, render a disclosure caret in front of the label so the
+   *  caller can show / hide nested rows below this one. The caret reflects
+   *  the current state; the row itself stays clickable for "select". */
+  disclosure?: "expanded" | "collapsed";
+  /** Click handler for the disclosure caret only; toggles independent of
+   *  row selection so the user can expand without switching projects. */
+  onToggleDisclosure?: () => void;
 }
 
 export function ItemRow({
@@ -27,6 +34,8 @@ export function ItemRow({
   renderChildWithState,
   state,
   index,
+  disclosure,
+  onToggleDisclosure,
 }: ItemRowProps) {
   if (item.componentType && renderChildWithState) {
     const synthetic: A2UIComponent = {
@@ -73,6 +82,7 @@ export function ItemRow({
         "a2ui-sidebar-item",
         item.active ? "a2ui-sidebar-item-active" : "",
         monoItems ? "a2ui-sidebar-item-mono" : "",
+        disclosure ? `a2ui-sidebar-item-discl-${disclosure}` : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -80,6 +90,20 @@ export function ItemRow({
       onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
       onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
+      {disclosure ? (
+        <button
+          type="button"
+          className="a2ui-sidebar-item-discl"
+          aria-label={disclosure === "expanded" ? "Collapse" : "Expand"}
+          aria-expanded={disclosure === "expanded"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDisclosure?.();
+          }}
+        >
+          {disclosure === "expanded" ? "▾" : "▸"}
+        </button>
+      ) : null}
       {git?.dirty ? (
         <span
           className="a2ui-sidebar-item-git-dot"
@@ -87,7 +111,7 @@ export function ItemRow({
           title="Uncommitted changes"
         />
       ) : null}
-      <span className="a2ui-sidebar-item-label">{item.label}</span>
+      <span className="a2ui-sidebar-item-label" data-selectable>{item.label}</span>
       {git?.branch ? (
         <span className="a2ui-sidebar-item-git-branch" title={branchTitle}>
           {git.branch}

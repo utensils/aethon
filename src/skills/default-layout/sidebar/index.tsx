@@ -3,7 +3,7 @@
  * arrays or bound to state via a $ref.
  */
 
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -17,6 +17,7 @@ import {
   type ContextMenuItem,
 } from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
 import {
   canDeleteHistoryItem,
   extractSessionId,
@@ -45,18 +46,39 @@ interface SidebarContextMenuState {
   itemId: string;
   label: string;
   // Discriminator so the rendered menu shows the right action. "project"
-  // prompts for "Remove from Projects"; "session" prompts for
-  // "Delete session". "extension-enabled" / "extension-disabled" prompt
-  // for Disable / Enable. Set by `openItemContextMenu` based on the
-  // section + item id.
-  kind: "project" | "session" | "extension-enabled" | "extension-disabled";
+  // prompts for project actions; "worktree" for nested worktree rows;
+  // "session" for chat-history rows; "extension-*" for the extension
+  // toggle. Set by openItemContextMenu / openWorktreeContextMenu based
+  // on the section + item id.
+  kind:
+    | "project"
+    | "worktree"
+    | "session"
+    | "extension-enabled"
+    | "extension-disabled";
   /** For `extension-*` kinds, the extension's display name (item id
    *  minus the `ext:` / `ext-failed:` / `ext-disabled:` prefix). */
   extensionName?: string;
+  /** For `worktree` kind: the full worktree shape so menu actions can
+   *  surface path + branch + main-flag context without re-resolving. */
+  worktree?: WorktreeSidebarItem;
 }
 
 interface SidebarMenuHandlers {
+  // Project actions
+  switchToContextProject: () => void;
+  createWorktreeForContextProject: () => void;
+  openContextProjectInFinder: () => void;
+  copyContextProjectPath: () => void;
+  renameContextProject: () => void;
   removeContextProject: () => void;
+  // Worktree actions
+  switchToContextWorktree: () => void;
+  openContextWorktreeInFinder: () => void;
+  copyContextWorktreePath: () => void;
+  renameContextWorktree: () => void;
+  removeContextWorktree: () => void;
+  // Session + extension (unchanged)
   renameContextSession: () => void;
   deleteContextSession: () => void;
   toggleContextExtension: (disabled: boolean) => void;
@@ -70,6 +92,33 @@ function buildSidebarMenuItems(
     case "project":
       return [
         {
+          id: "switch-project",
+          label: "Switch to project",
+          onSelect: h.switchToContextProject,
+        },
+        {
+          id: "create-worktree",
+          label: "Create worktree…",
+          onSelect: h.createWorktreeForContextProject,
+        },
+        { type: "separator" },
+        {
+          id: "open-finder",
+          label: "Open in Finder",
+          onSelect: h.openContextProjectInFinder,
+        },
+        {
+          id: "copy-path",
+          label: "Copy path",
+          onSelect: h.copyContextProjectPath,
+        },
+        {
+          id: "rename-project",
+          label: "Rename project…",
+          onSelect: h.renameContextProject,
+        },
+        { type: "separator" },
+        {
           id: "remove-project",
           label: "Remove from Projects",
           danger: true,
@@ -77,6 +126,43 @@ function buildSidebarMenuItems(
         },
         { type: "note", label: "Keeps files on disk" },
       ];
+    case "worktree": {
+      const isMain = state.worktree?.isMain === true;
+      return [
+        {
+          id: "switch-worktree",
+          label: "Switch to worktree",
+          onSelect: h.switchToContextWorktree,
+        },
+        { type: "separator" },
+        {
+          id: "open-finder",
+          label: "Open in Finder",
+          onSelect: h.openContextWorktreeInFinder,
+        },
+        {
+          id: "copy-path",
+          label: "Copy path",
+          onSelect: h.copyContextWorktreePath,
+        },
+        {
+          id: "rename-worktree",
+          label: "Rename worktree…",
+          onSelect: h.renameContextWorktree,
+        },
+        { type: "separator" },
+        {
+          id: "remove-worktree",
+          label: "Remove worktree",
+          danger: true,
+          disabled: isMain,
+          onSelect: h.removeContextWorktree,
+        },
+        isMain
+          ? { type: "note", label: "Can't remove the main worktree" }
+          : { type: "note", label: "git worktree remove" },
+      ];
+    }
     case "session":
       return [
         { id: "rename-session", label: "Rename session…", onSelect: h.renameContextSession },
@@ -252,6 +338,137 @@ export function Sidebar({
     setContextMenu(null);
   };
 
+  // Project + worktree context-menu handlers. Each fires an event the
+  // App-side route table picks up via `type:sidebar`; the App handles
+  // the actual git / clipboard / dialog work so this component stays
+  // surface-only.
+  const switchToContextProject = () => {
+    if (!contextMenu) return;
+    onEvent("switch-to-project", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+    });
+    setContextMenu(null);
+  };
+  const createWorktreeForContextProject = () => {
+    if (!contextMenu) return;
+    onEvent("create-worktree", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+    });
+    setContextMenu(null);
+  };
+  const openContextProjectInFinder = () => {
+    if (!contextMenu) return;
+    onEvent("open-project-in-finder", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+    });
+    setContextMenu(null);
+  };
+  const copyContextProjectPath = () => {
+    if (!contextMenu) return;
+    onEvent("copy-project-path", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+    });
+    setContextMenu(null);
+  };
+  const renameContextProject = () => {
+    if (!contextMenu) return;
+    const next = window.prompt("Rename project", contextMenu.label);
+    if (next === null) {
+      setContextMenu(null);
+      return;
+    }
+    onEvent("rename-project", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+      label: next,
+    });
+    setContextMenu(null);
+  };
+  const switchToContextWorktree = () => {
+    if (!contextMenu?.worktree) return;
+    onEvent("switch-worktree", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      worktreeId: contextMenu.worktree.id,
+    });
+    setContextMenu(null);
+  };
+  const openContextWorktreeInFinder = () => {
+    if (!contextMenu?.worktree) return;
+    onEvent("open-worktree-in-finder", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      worktreeId: contextMenu.worktree.id,
+      path: contextMenu.worktree.path,
+    });
+    setContextMenu(null);
+  };
+  const copyContextWorktreePath = () => {
+    if (!contextMenu?.worktree) return;
+    onEvent("copy-worktree-path", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      worktreeId: contextMenu.worktree.id,
+      path: contextMenu.worktree.path,
+    });
+    setContextMenu(null);
+  };
+  const renameContextWorktree = () => {
+    if (!contextMenu?.worktree) return;
+    const next = window.prompt(
+      "Rename worktree",
+      contextMenu.worktree.label || contextMenu.worktree.branch || "",
+    );
+    if (next === null) {
+      setContextMenu(null);
+      return;
+    }
+    onEvent("rename-worktree", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      worktreeId: contextMenu.worktree.id,
+      label: next,
+    });
+    setContextMenu(null);
+  };
+  const removeContextWorktree = () => {
+    if (!contextMenu?.worktree) return;
+    onEvent("remove-worktree", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      worktreeId: contextMenu.worktree.id,
+      path: contextMenu.worktree.path,
+    });
+    setContextMenu(null);
+  };
+
+  const openWorktreeContextMenu = (
+    e: React.MouseEvent<HTMLElement>,
+    item: WorktreeSidebarItem,
+    sectionId: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      sectionId,
+      itemId: item.id,
+      label: item.label || item.branch || "worktree",
+      kind: "worktree",
+      worktree: item,
+    });
+  };
+
   // Drag handle. On mousedown we capture the pointer and start emitting
   // `resize` events with the new pixel width. App listens for those and
   // patches the active layout's grid columns. Cleanup on mouseup.
@@ -343,6 +560,7 @@ export function Sidebar({
             );
           }
           const actions = section.actions ?? [];
+          const isProjects = section.id === "projects";
           return (
             <div key={section.id} className="a2ui-sidebar-section">
               <div className="a2ui-sidebar-section-title">{section.title}</div>
@@ -350,20 +568,66 @@ export function Sidebar({
                 <div className="a2ui-sidebar-empty">empty</div>
               ) : (
                 <ul className="a2ui-sidebar-list">
-                  {items.map((item, idx) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      index={idx}
-                      monoItems={monoItems}
-                      sectionId={section.id}
-                      componentId={component.id}
-                      onEvent={onEvent}
-                      onItemContextMenu={openItemContextMenu}
-                      renderChildWithState={renderChildWithState}
-                      state={state}
-                    />
-                  ))}
+                  {items.map((item, idx) => {
+                    const projectItem = isProjects
+                      ? (item as unknown as {
+                          worktrees?: WorktreeSidebarItem[];
+                          expanded?: boolean;
+                        })
+                      : null;
+                    const worktrees = projectItem?.worktrees;
+                    const expanded = projectItem?.expanded === true;
+                    return (
+                      <Fragment key={item.id}>
+                        <ItemRow
+                          item={
+                            worktrees && worktrees.length > 0
+                              ? {
+                                  ...item,
+                                  componentType: undefined,
+                                }
+                              : item
+                          }
+                          index={idx}
+                          monoItems={monoItems}
+                          sectionId={section.id}
+                          componentId={component.id}
+                          onEvent={onEvent}
+                          onItemContextMenu={openItemContextMenu}
+                          renderChildWithState={renderChildWithState}
+                          state={state}
+                          disclosure={
+                            worktrees && worktrees.length > 0
+                              ? expanded
+                                ? "expanded"
+                                : "collapsed"
+                              : undefined
+                          }
+                          onToggleDisclosure={
+                            worktrees && worktrees.length > 0
+                              ? () =>
+                                  onEvent(
+                                    "toggle-project-expand",
+                                    { sectionId: section.id, itemId: item.id },
+                                    item.id,
+                                  )
+                              : undefined
+                          }
+                        />
+                        {worktrees && expanded
+                          ? worktrees.map((wt) => (
+                              <WorktreeRow
+                                key={wt.id}
+                                item={wt}
+                                sectionId={section.id}
+                                onEvent={onEvent}
+                                onItemContextMenu={openWorktreeContextMenu}
+                              />
+                            ))
+                          : null}
+                      </Fragment>
+                    );
+                  })}
                 </ul>
               )}
               {actions.length > 0 && (
@@ -402,10 +666,26 @@ export function Sidebar({
         open={!!contextMenu}
         x={contextMenu?.x ?? 0}
         y={contextMenu?.y ?? 0}
-        items={contextMenu ? buildSidebarMenuItems(
-          contextMenu,
-          { removeContextProject, renameContextSession, deleteContextSession, toggleContextExtension },
-        ) : []}
+        items={
+          contextMenu
+            ? buildSidebarMenuItems(contextMenu, {
+                switchToContextProject,
+                createWorktreeForContextProject,
+                openContextProjectInFinder,
+                copyContextProjectPath,
+                renameContextProject,
+                removeContextProject,
+                switchToContextWorktree,
+                openContextWorktreeInFinder,
+                copyContextWorktreePath,
+                renameContextWorktree,
+                removeContextWorktree,
+                renameContextSession,
+                deleteContextSession,
+                toggleContextExtension,
+              })
+            : []
+        }
         onClose={() => setContextMenu(null)}
         ariaLabel={`${contextMenu?.kind ?? ""} menu`}
         className="a2ui-sidebar-context-menu"

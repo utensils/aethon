@@ -124,6 +124,16 @@ export interface EventRouteContext {
   setActiveProjectById: (id: string) => void;
   removeProjectById: (id: string) => boolean;
   syncRecentSessionsToState: () => void;
+  // ─── Worktrees ─────────────────────────────────────────────────────
+  setProjectExpanded: (projectId: string, expanded: boolean) => void;
+  refreshProjectWorktrees: (projectId: string) => Promise<void>;
+  activateWorktree: (worktreeId: string | null) => void;
+  createWorktreeForProject: (projectId: string) => Promise<void>;
+  removeWorktreeById: (worktreeId: string) => Promise<void>;
+  dismissPendingWorktree: (worktreeId: string) => void;
+  retryPendingWorktree: (worktreeId: string) => Promise<void>;
+  renameWorktree: (worktreeId: string, label: string) => void;
+  renameProject: (projectId: string, label: string) => void;
 
   // ─── Tauri IPC (injected so tests can mock it) ─────────────────────
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;

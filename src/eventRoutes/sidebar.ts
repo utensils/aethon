@@ -176,6 +176,155 @@ function applyOptimisticTabLabel(
   });
 }
 
+/** Sidebar disclosure on a project row — toggle the per-project
+ *  expanded state so worktrees show/hide nested under the row. */
+export const handleSidebarToggleProjectExpand: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "toggle-project-expand") return false;
+  const selected = data as { itemId?: string } | undefined;
+  if (!selected?.itemId) return true;
+  // Read current expanded flag from state.
+  const projects = (ctx.stateRef.current.projects as Array<{ id: string; uiExpanded?: boolean }> | undefined) ?? [];
+  const project = projects.find((p) => p.id === selected.itemId);
+  ctx.setProjectExpanded(selected.itemId, !(project?.uiExpanded ?? false));
+  return true;
+};
+
+/** Worktree event family — all routed through useProjectOps actions. */
+export const handleSidebarCreateWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "create-worktree") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (projectId) void ctx.createWorktreeForProject(projectId);
+  return true;
+};
+export const handleSidebarSwitchWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "switch-worktree") return false;
+  const worktreeId =
+    (data as { worktreeId?: string } | undefined)?.worktreeId ?? null;
+  ctx.activateWorktree(worktreeId);
+  return true;
+};
+export const handleSidebarRemoveWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "remove-worktree") return false;
+  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
+  if (worktreeId) void ctx.removeWorktreeById(worktreeId);
+  return true;
+};
+export const handleSidebarCancelPendingWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "cancel-pending-worktree") return false;
+  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
+  if (worktreeId) ctx.dismissPendingWorktree(worktreeId);
+  return true;
+};
+export const handleSidebarRetryPendingWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "retry-pending-worktree") return false;
+  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
+  if (worktreeId) void ctx.retryPendingWorktree(worktreeId);
+  return true;
+};
+export const handleSidebarRenameWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "rename-worktree") return false;
+  const { worktreeId, label } =
+    (data as { worktreeId?: string; label?: string } | undefined) ?? {};
+  if (worktreeId && typeof label === "string") ctx.renameWorktree(worktreeId, label);
+  return true;
+};
+
+/** Filesystem helpers — open + copy on a project or worktree. The path
+ *  to act on is read from the projects state when only an id is given. */
+export const handleSidebarOpenProjectInFinder: EventRouteHandler = async (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "open-project-in-finder") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) return true;
+  const projects = (ctx.stateRef.current.projects as Array<{ id: string; path?: string }> | undefined) ?? [];
+  const path = projects.find((p) => p.id === projectId)?.path;
+  if (!path) return true;
+  await ctx
+    .invoke("fs_open_in_file_manager", { path })
+    .catch(() => {
+      /* command may not exist in older builds; ignore */
+    });
+  return true;
+};
+export const handleSidebarCopyProjectPath: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "copy-project-path") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) return true;
+  const projects = (ctx.stateRef.current.projects as Array<{ id: string; path?: string }> | undefined) ?? [];
+  const path = projects.find((p) => p.id === projectId)?.path;
+  if (path && navigator.clipboard) {
+    void navigator.clipboard.writeText(path).catch(() => {});
+  }
+  return true;
+};
+export const handleSidebarOpenWorktreeInFinder: EventRouteHandler = async (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "open-worktree-in-finder") return false;
+  const path = (data as { path?: string } | undefined)?.path;
+  if (!path) return true;
+  await ctx
+    .invoke("fs_open_in_file_manager", { path })
+    .catch(() => {});
+  return true;
+};
+export const handleSidebarCopyWorktreePath: EventRouteHandler = (
+  { eventType, data },
+) => {
+  if (eventType !== "copy-worktree-path") return false;
+  const path = (data as { path?: string } | undefined)?.path;
+  if (path && navigator.clipboard) {
+    void navigator.clipboard.writeText(path).catch(() => {});
+  }
+  return true;
+};
+export const handleSidebarSwitchToProject: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "switch-to-project") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (projectId) ctx.setActiveProjectById(projectId);
+  return true;
+};
+export const handleSidebarRenameProject: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "rename-project") return false;
+  const { projectId, label } =
+    (data as { projectId?: string; label?: string } | undefined) ?? {};
+  if (projectId && typeof label === "string") ctx.renameProject(projectId, label);
+  return true;
+};
+
 /** sidebar toggle-extension: forward to the bridge so the user's
  *  disabled list is updated + persisted. The bridge re-emits `ready`
  *  on success so the sidebar entry shifts buckets without a refresh. */

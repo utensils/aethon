@@ -590,6 +590,96 @@ body.ae-resizing-sidebar .a2ui-layout {
   text-align: center;
 }
 
+/* Disclosure triangle inside a project row. Sits before the label,
+   hover-able + clickable independent of the row's select target. */
+.a2ui-sidebar-item-discl {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--chrome-text-muted);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  transition: color var(--motion-fast) var(--ease-out);
+}
+.a2ui-sidebar-item-discl:hover,
+.a2ui-sidebar-item-discl:focus-visible {
+  outline: none;
+  color: var(--accent);
+  background: var(--accent-hover-tint);
+}
+
+/* Worktree row — nested under a project row when worktrees are present
+   and the parent is expanded. Visually indented + has a connector glyph
+   so the relationship reads at a glance. */
+.ae-worktree-row {
+  padding-left: var(--space-6);
+  gap: var(--space-2);
+}
+.ae-worktree-glyph {
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  opacity: var(--opacity-muted);
+}
+.ae-worktree-row--main .ae-worktree-glyph {
+  color: var(--accent);
+  opacity: 1;
+}
+.ae-worktree-branch {
+  margin-left: auto;
+}
+.ae-worktree-row--pending {
+  opacity: 0.8;
+}
+.ae-worktree-row--failed {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.ae-worktree-pending-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-worktree-pending-failed {
+  color: var(--error);
+}
+.ae-worktree-action {
+  border: 0;
+  padding: 0 var(--space-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--chrome-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+.ae-worktree-action:hover,
+.ae-worktree-action:focus-visible {
+  outline: none;
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+}
+.ae-worktree-lock {
+  flex-shrink: 0;
+  font-size: var(--chrome-text-muted);
+  color: var(--warn);
+  margin-left: var(--space-1);
+}
+
 .a2ui-sidebar-empty {
   padding: 6px 16px;
   font-size: var(--chrome-text-compact);
