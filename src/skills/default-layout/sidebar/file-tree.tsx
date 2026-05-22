@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readState, writeState } from "../../../persist";
+import { clampFixedOverlay } from "../../../utils/zoom-probe";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 interface FsEntry {
@@ -391,13 +392,14 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    const viewportWidth = document.documentElement.clientWidth;
-    const viewportHeight = document.documentElement.clientHeight;
-    setContextMenu({
-      x: Math.min(e.clientX, Math.max(8, viewportWidth - 220)),
-      y: Math.min(e.clientY, Math.max(8, viewportHeight - 220)),
-      node,
-    });
+    // Translate clientX/Y into the layout frame `position: fixed`
+    // actually uses. On WebKit at zoom != 1 the two frames diverge,
+    // which previously left the menu drifted away from the cursor;
+    // `clampFixedOverlay` divides by zoom on the engines that need
+    // it (no-op on Chromium / at zoom 1). Same Claudette pattern the
+    // Monaco context-view fix uses.
+    const { x, y } = clampFixedOverlay(e.clientX, e.clientY, 220, 220);
+    setContextMenu({ x, y, node });
   };
 
   // Close the menu on any outside interaction. Mirrors the existing

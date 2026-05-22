@@ -95,7 +95,7 @@
                     "title": "panels",
                     "items": [
                       { "id": "toggle-terminal", "label": "Toggle Terminal", "hint": "⌘`" },
-                      { "id": "toggle-file-tree", "label": "Toggle Files" },
+                      { "id": "toggle-file-tree", "label": "Toggle Files", "hint": "⌘J" },
                       { "id": "clear-chat", "label": "Clear Chat", "hint": "⌘K" }
                     ]
                   },

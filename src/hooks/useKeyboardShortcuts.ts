@@ -100,6 +100,14 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         ctx.toggleTerminalAndFocus();
         return;
       }
+      // Cmd+J: toggle the sidebar's file-tree panel. Mirrors the View
+      // menu's "Toggle Files" item.
+      if (e.key.toLowerCase() === "j" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new Event("aethon:toggle-file-tree"));
+        return;
+      }
       if (e.key.toLowerCase() === "b" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
