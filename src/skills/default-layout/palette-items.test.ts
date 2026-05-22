@@ -164,4 +164,44 @@ describe("rankItems", () => {
     const ranked = rankItems(items, "@tab");
     expect(ranked[0].section).toBe("tabs");
   });
+
+  it("typing 'theme' surfaces /theme + theme rows, NOT every slash command", () => {
+    // Regression for the bug screenshot where typing "theme" listed
+    // /reload, /model, /mcp-auth, /terminal, … because the old scorer
+    // accepted any in-order subsequence match against the concatenated
+    // label + hint + section haystack. Letters t-h-e-m-e occur in
+    // order inside "Swi**t**c**h** activ**e** **m**od**e**l" so /model
+    // matched. With substring-first scoring + word-boundary fuzzy
+    // fallback, /model et al. score 0.
+    const items = selectPaletteItems(
+      {
+        ...SAMPLE,
+        slashCommands: [
+          { name: "theme", description: "Switch theme by id" },
+          { name: "reload", description: "Reload the agent bridge" },
+          { name: "model", description: "Switch active model by id" },
+          { name: "mcp-auth", description: "Authenticate with an MCP server" },
+          { name: "terminal", description: "Toggle the terminal panel" },
+        ],
+      },
+      "commands",
+    );
+    const ranked = rankItems(items, "theme");
+    // First hit is the slash command itself.
+    expect(ranked[0].id).toBe("slash:theme");
+    // Every surviving row is genuinely theme-related: it has "theme"
+    // somewhere in its label / hint / section, or it IS the /theme
+    // command. /reload, /model, /mcp-auth, /terminal must NOT appear.
+    const ids = ranked.map((r) => r.id);
+    expect(ids).not.toContain("slash:reload");
+    expect(ids).not.toContain("slash:model");
+    expect(ids).not.toContain("slash:mcp-auth");
+    expect(ids).not.toContain("slash:terminal");
+  });
+
+  it("typing a command name without the leading slash still matches it", () => {
+    const items = selectPaletteItems(SAMPLE, "commands");
+    expect(rankItems(items, "clear")[0].id).toBe("slash:clear");
+    expect(rankItems(items, "/clear")[0].id).toBe("slash:clear");
+  });
 });

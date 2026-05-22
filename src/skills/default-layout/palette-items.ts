@@ -326,32 +326,108 @@ function dirnameOf(p: string): string {
   return slash > 0 ? p.slice(0, slash) : "";
 }
 
-// Cheap, dependency-free fuzzy scorer. Returns >0 if the query matches
-// in order; higher = better. Two heuristics:
-//   - prefix / contiguous-substring matches score highest
-//   - in-order char run with small gaps still matches but ranks lower
+/**
+ * Dependency-free scorer. Substring-first so the palette behaves like a
+ * filter: typing "theme" finds rows whose label/hint/section actually
+ * contains "theme", not every row whose description happens to share
+ * the same letters in order.
+ *
+ * Score tiers (higher = better):
+ *   100  exact match
+ *   90   exact match ignoring a leading `/` (matches `/theme` on "theme")
+ *   80–  prefix match (longer remainder ⇒ slightly lower)
+ *   70   word-boundary substring (e.g. "theme" inside "Switch theme by id")
+ *   55–  general substring match (drops with offset from start)
+ *   1–30 strict fuzzy fallback — char-by-char in order, REQUIRES the
+ *        first match to land at a word boundary AND span ≤ 3× query
+ *        length. Otherwise 0.
+ *   0    no match
+ *
+ * The "word boundary" rule is what kills the old fuzzy-over-everything
+ * bug: the letters t-h-e-m-e occur scattered through "Switch active
+ * model by id", but none of them at word-start, so /model now scores 0
+ * for "theme".
+ */
 export function fuzzyScore(query: string, target: string): number {
   if (!query) return 1;
   const q = query.toLowerCase();
   const t = target.toLowerCase();
   if (!t) return 0;
+
   if (t === q) return 100;
-  if (t.startsWith(q)) return 80 - (t.length - q.length) * 0.1;
+  // Slash commands render with a leading "/" in their label; users type
+  // the bare name, so peel one slash before matching prefixes/exacts.
+  const stripped = t.startsWith("/") ? t.slice(1) : t;
+  if (stripped === q) return 90;
+  if (stripped.startsWith(q)) {
+    return 80 - Math.min(20, (stripped.length - q.length) * 0.5);
+  }
+  if (t.startsWith(q)) {
+    return 78 - Math.min(20, (t.length - q.length) * 0.5);
+  }
+  // Word-boundary substring: query lies at the start of a word inside
+  // the haystack. Picks up "theme" inside "Switch theme by id".
+  for (let i = 0; i <= t.length - q.length; i++) {
+    if (!isWordStart(t, i)) continue;
+    if (t.slice(i, i + q.length) === q) {
+      return 70 - Math.min(15, i * 0.05);
+    }
+  }
   const idx = t.indexOf(q);
-  if (idx >= 0) return 60 - idx * 0.5;
+  if (idx >= 0) return 55 - Math.min(20, idx * 0.4);
+
+  // Last-resort fuzzy. Require the FIRST matched char to be at a word
+  // boundary so unrelated rows whose internal letters happen to spell
+  // the query (e.g. "theme" inside "Switch active model by id") get
+  // rejected. Also bound the span so very loose matches don't outrank
+  // genuine hits in another field.
   let qi = 0;
   let firstMatch = -1;
   let lastMatch = -1;
   for (let ti = 0; ti < t.length && qi < q.length; ti++) {
     if (t[ti] === q[qi]) {
-      if (firstMatch < 0) firstMatch = ti;
+      if (firstMatch < 0) {
+        if (!isWordStart(t, ti)) continue;
+        firstMatch = ti;
+      }
       lastMatch = ti;
       qi++;
     }
   }
   if (qi < q.length) return 0;
   const span = lastMatch - firstMatch + 1;
+  if (span > Math.max(8, q.length * 3)) return 0;
   return Math.max(1, 30 - span * 0.5 - firstMatch * 0.2);
+}
+
+const WORD_SEP = /[\s/\-_:,.()]/;
+
+function isWordStart(s: string, i: number): boolean {
+  if (i === 0) return true;
+  return WORD_SEP.test(s[i - 1] ?? "");
+}
+
+/**
+ * Score one PaletteItem against the query. Each component (label, hint,
+ * section label) is scored independently so we can favor label matches
+ * over description matches without conflating their text into one
+ * haystack. The section component lets "theme" surface every row in the
+ * Themes section, but doesn't bleed into unrelated Slash commands rows.
+ */
+function scoreItem(item: PaletteItem, q: string): number {
+  if (!q) return 1;
+  // Strip a leading `/` from the query so typing `theme` or `/theme`
+  // both match `/theme` cleanly.
+  const queryNoSlash = q.startsWith("/") ? q.slice(1) : q;
+  const labelScore = fuzzyScore(queryNoSlash, item.label);
+  const hintScore = item.hint
+    ? fuzzyScore(queryNoSlash, item.hint) * 0.6
+    : 0;
+  const sectionScore = fuzzyScore(queryNoSlash, SECTION_LABEL[item.section]) * 0.5;
+  const shortcutScore = item.shortcut
+    ? fuzzyScore(queryNoSlash, item.shortcut) * 0.4
+    : 0;
+  return Math.max(labelScore, hintScore, sectionScore, shortcutScore);
 }
 
 export function rankItems(
@@ -371,17 +447,10 @@ export function rankItems(
     preferred = "keybindings";
     q = q.slice(1).trim();
   }
+  if (!q) return items;
   const scored: { item: PaletteItem; score: number }[] = [];
   for (const item of items) {
-    // Score against user-visible text plus the section label. Including
-    // the internal `id` (e.g. `keybind:builtin:meta+b`) made fuzzy hit
-    // unrelated rows whose ids happened to share characters with the
-    // query (typing "theme" matched every keybinding because their ids
-    // contain h/e/m in order). The section label is what users actually
-    // expect to search by — typing "theme" should find every theme,
-    // typing "model" every model — so we score it explicitly here.
-    const haystack = `${item.label} ${item.hint ?? ""} ${SECTION_LABEL[item.section]}`;
-    let score = fuzzyScore(q, haystack);
+    let score = scoreItem(item, q);
     if (score <= 0) continue;
     if (preferred && item.section === preferred) score += 20;
     scored.push({ item, score });
