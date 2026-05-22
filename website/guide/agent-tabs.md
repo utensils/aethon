@@ -28,10 +28,10 @@ focused session.
 | New agent tab (always) | `Cmd+Shift+T` | Force the *opposite* of `new_tab_kind`. |
 | Close tab | `Cmd+W` | Shell tabs prompt before killing a running job. |
 | Reopen most-recently closed | `Cmd+Opt+T` | Restores chat + cwd + draft. |
-| Next / previous | `Cmd+]` / `Cmd+[` | Cycles agent tabs. |
+| Next / previous | `Cmd+Shift+]` / `Cmd+Shift+[` | Cycles agent tabs. Matches the iTerm / Terminal.app convention. |
 | Jump to N | `Cmd+1` … `Cmd+8` | Index 1 = first agent tab. |
 | Jump to last | `Cmd+9` | |
-| Move tab right / left | `Cmd+Shift+]` / `Cmd+Shift+[` | Reorders the strip. |
+| Move tab right / left | `Cmd+Opt+]` / `Cmd+Opt+[` | Reorders the strip. |
 
 When focus is inside the bottom terminal panel, the same shortcuts cycle
 *shell sub-tabs* instead — see [Shells & share modes](/guide/shells-and-share-modes).

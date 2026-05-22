@@ -127,10 +127,10 @@ pub fn install_app_menu(
         .accelerator("CmdOrCtrl+W")
         .build(app)?;
     let next_tab = MenuItemBuilder::with_id("next_tab", "Next Tab")
-        .accelerator("CmdOrCtrl+]")
+        .accelerator("CmdOrCtrl+Shift+]")
         .build(app)?;
     let prev_tab = MenuItemBuilder::with_id("prev_tab", "Previous Tab")
-        .accelerator("CmdOrCtrl+[")
+        .accelerator("CmdOrCtrl+Shift+[")
         .build(app)?;
     let toggle_terminal = MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
         .accelerator("CmdOrCtrl+`")

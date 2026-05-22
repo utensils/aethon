@@ -491,8 +491,8 @@ export function useUiOverlays(
         else if (p.action === "builtin:meta+w") {
           const id = stateRef.current.activeTabId as string | undefined;
           if (id) closeTab(id);
-        } else if (p.action === "builtin:meta+]") nextTab(1);
-        else if (p.action === "builtin:meta+[") nextTab(-1);
+        } else if (p.action === "builtin:meta+shift+]") nextTab(1);
+        else if (p.action === "builtin:meta+shift+[") nextTab(-1);
         else if (p.action === "builtin:meta+`") toggleTerminalAndFocus();
         else if (p.action === "builtin:meta+0") toggleFocusComposerTerminal();
         else if (p.action === "builtin:meta+k") clearChat();

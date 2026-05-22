@@ -90,7 +90,7 @@ export interface RuntimeSnapshot {
   // handled by pi's normal skill routing.
   piSkills?: { name: string; description: string; usage?: string }[];
   // Extension-registered keyboard shortcuts (combo + action + optional
-  // description). Built-ins (Cmd+T / Cmd+] / Cmd+[ / Cmd+W / Cmd+`) are
+  // description). Built-ins (Cmd+T / Cmd+Shift+] / Cmd+Shift+[ / Cmd+W / Cmd+`) are
   // NOT included here — they're hardcoded in the frontend; this is the
   // extension delta only.
   keybindings: { combo: string; action: string; description?: string }[];

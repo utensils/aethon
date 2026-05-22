@@ -763,7 +763,7 @@ pub fn run() {
             // Native menu — replaces Tauri's auto-generated default. Each
             // app-specific item emits a `menu` Tauri event whose payload
             // is the item id; the frontend's listener fans out to the
-            // existing Cmd+T / Cmd+] / etc. handlers so the menu and
+            // existing Cmd+T / Cmd+Shift+] / etc. handlers so the menu and
             // keyboard shortcuts always do the same thing. Predefined
             // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
             // get native NS actions for free, no event handler needed.
