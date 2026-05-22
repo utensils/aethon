@@ -47,8 +47,14 @@ describe("applyMonacoTheme", () => {
       "aethon-brink",
       expect.objectContaining({
         base: "vs-dark",
-        inherit: true,
+        inherit: false,
         colors: expect.any(Object),
+        rules: expect.arrayContaining([
+          expect.objectContaining({
+            token: "keyword",
+            foreground: "f9cc6c",
+          }),
+        ]),
       }),
     );
     expect(monaco.editor.setTheme).toHaveBeenLastCalledWith("aethon-brink");
@@ -58,7 +64,18 @@ describe("applyMonacoTheme", () => {
     applyMonacoTheme("paper");
     expect(monaco.editor.defineTheme).toHaveBeenCalledWith(
       "aethon-paper",
-      expect.objectContaining({ base: "vs" }),
+      expect.objectContaining({
+        base: "vs",
+        colors: expect.objectContaining({
+          "editor.background": "#fef3e2",
+        }),
+        rules: expect.arrayContaining([
+          expect.objectContaining({
+            token: "keyword",
+            foreground: "b94000",
+          }),
+        ]),
+      }),
     );
     expect(monaco.editor.setTheme).toHaveBeenLastCalledWith("aethon-paper");
   });

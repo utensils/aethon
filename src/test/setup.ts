@@ -61,6 +61,37 @@ vi.mock("shiki", () => ({
 
 vi.mock("@shikijs/monaco", () => ({
   shikiToMonaco: vi.fn(),
+  textmateThemeToMonacoTheme: vi.fn(
+    (theme: {
+      type?: string;
+      colors?: Record<string, string>;
+      settings?: {
+        scope?: string | string[];
+        settings?: {
+          foreground?: string;
+          background?: string;
+          fontStyle?: string;
+        };
+      }[];
+    }) => ({
+      base: theme.type === "light" ? "vs" : "vs-dark",
+      inherit: false,
+      colors: theme.colors ?? {},
+      rules: (theme.settings ?? []).flatMap((entry) => {
+        const scopes = Array.isArray(entry.scope)
+          ? entry.scope
+          : entry.scope
+            ? [entry.scope]
+            : [];
+        return scopes.map((scope) => ({
+          token: scope,
+          foreground: entry.settings?.foreground?.replace(/^#/, ""),
+          background: entry.settings?.background?.replace(/^#/, ""),
+          fontStyle: entry.settings?.fontStyle,
+        }));
+      }),
+    }),
+  ),
 }));
 
 vi.mock("@monaco-editor/react", () => ({

@@ -21,6 +21,12 @@
  * without a reload.
  */
 
+import { textmateThemeToMonacoTheme } from "@shikijs/monaco";
+
+import {
+  AETHON_SHIKI_THEMES,
+  type AethonThemeId,
+} from "./aethon-themes";
 import { monaco } from "./setup";
 
 /** Monaco theme id namespace used for the built-ins. */
@@ -40,144 +46,17 @@ let monacoDefined = false;
  *  initial value of `:root[data-theme]` in `useBootConfig`. */
 const DEFAULT_ID = "ember";
 
-/** Theme definitions — chrome only (`base + colors`). Token rules are
- *  inherited from the matching built-in (`vs` / `vs-dark`); when the
- *  Shiki bridge mounts it adds richer per-grammar tokenisation on top.
- *  Values are taken verbatim from `src/styles.css`. */
-const BUILTIN_THEMES: Record<string, monaco.editor.IStandaloneThemeData> = {
-  ember: {
-    base: "vs-dark",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#161618",
-      "editor.foreground": "#e7e5e2",
-      "editorLineNumber.foreground": "#5a5651",
-      "editorLineNumber.activeForeground": "#e7e5e2",
-      "editor.lineHighlightBackground": "#1f1e21",
-      "editor.selectionBackground": "#ff6a182a",
-      "editor.selectionHighlightBackground": "#ff6a181a",
-      "editorCursor.foreground": "#ff6a18",
-      "editorWhitespace.foreground": "#2c2a2d",
-      "editorIndentGuide.background1": "#2c2a2d",
-      "editorIndentGuide.activeBackground1": "#5a5651",
-      "editorGutter.background": "#161618",
-      "editorWidget.background": "#1f1e21",
-      "editorWidget.border": "#2c2a2d",
-      "editorWidget.foreground": "#e7e5e2",
-      "editorSuggestWidget.background": "#1f1e21",
-      "editorSuggestWidget.border": "#2c2a2d",
-      "editorSuggestWidget.foreground": "#e7e5e2",
-      "editorSuggestWidget.selectedBackground": "#ff6a1822",
-      "input.background": "#1f1e21",
-      "input.foreground": "#e7e5e2",
-      "input.border": "#2c2a2d",
-      focusBorder: "#ff6a18",
-      "scrollbarSlider.background": "#2c2a2dcc",
-      "scrollbarSlider.hoverBackground": "#5a565180",
-      "scrollbarSlider.activeBackground": "#5a5651",
-    },
-  },
-  paper: {
-    base: "vs",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#fef3e2",
-      "editor.foreground": "#1f1f23",
-      "editorLineNumber.foreground": "#a39a87",
-      "editorLineNumber.activeForeground": "#1f1f23",
-      "editor.lineHighlightBackground": "#fffaee",
-      "editor.selectionBackground": "#d4530c33",
-      "editor.selectionHighlightBackground": "#d4530c1a",
-      "editorCursor.foreground": "#d4530c",
-      "editorWhitespace.foreground": "#e3d8be",
-      "editorIndentGuide.background1": "#e3d8be",
-      "editorIndentGuide.activeBackground1": "#a39a87",
-      "editorGutter.background": "#fef3e2",
-      "editorWidget.background": "#fffaee",
-      "editorWidget.border": "#e3d8be",
-      "editorWidget.foreground": "#1f1f23",
-      "editorSuggestWidget.background": "#fffaee",
-      "editorSuggestWidget.border": "#e3d8be",
-      "editorSuggestWidget.foreground": "#1f1f23",
-      "editorSuggestWidget.selectedBackground": "#d4530c22",
-      "input.background": "#f5e8d0",
-      "input.foreground": "#1f1f23",
-      "input.border": "#e3d8be",
-      focusBorder: "#d4530c",
-      "scrollbarSlider.background": "#d8cdb3cc",
-      "scrollbarSlider.hoverBackground": "#b8ad9480",
-      "scrollbarSlider.activeBackground": "#b8ad94",
-    },
-  },
-  aether: {
-    base: "vs-dark",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#0e1118",
-      "editor.foreground": "#d6dceb",
-      "editorLineNumber.foreground": "#4e5670",
-      "editorLineNumber.activeForeground": "#d6dceb",
-      "editor.lineHighlightBackground": "#161a25",
-      "editor.selectionBackground": "#7aa2f72a",
-      "editor.selectionHighlightBackground": "#7aa2f71a",
-      "editorCursor.foreground": "#7aa2f7",
-      "editorWhitespace.foreground": "#252b3a",
-      "editorIndentGuide.background1": "#252b3a",
-      "editorIndentGuide.activeBackground1": "#4e5670",
-      "editorGutter.background": "#0e1118",
-      "editorWidget.background": "#161a25",
-      "editorWidget.border": "#252b3a",
-      "editorWidget.foreground": "#d6dceb",
-      "editorSuggestWidget.background": "#161a25",
-      "editorSuggestWidget.border": "#252b3a",
-      "editorSuggestWidget.foreground": "#d6dceb",
-      "editorSuggestWidget.selectedBackground": "#7aa2f722",
-      "input.background": "#161a25",
-      "input.foreground": "#d6dceb",
-      "input.border": "#252b3a",
-      focusBorder: "#7aa2f7",
-      "scrollbarSlider.background": "#252b3acc",
-      "scrollbarSlider.hoverBackground": "#4e567080",
-      "scrollbarSlider.activeBackground": "#4e5670",
-    },
-  },
-  brink: {
-    base: "vs-dark",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#2c2525",
-      "editor.foreground": "#d9c8b4",
-      "editorLineNumber.foreground": "#7a6c61",
-      "editorLineNumber.activeForeground": "#d9c8b4",
-      "editor.lineHighlightBackground": "#3a3030",
-      "editor.selectionBackground": "#f9cc6c33",
-      "editor.selectionHighlightBackground": "#f9cc6c1a",
-      "editorCursor.foreground": "#f9cc6c",
-      "editorWhitespace.foreground": "#504646",
-      "editorIndentGuide.background1": "#504646",
-      "editorIndentGuide.activeBackground1": "#7a6c61",
-      "editorGutter.background": "#2c2525",
-      "editorWidget.background": "#3a3030",
-      "editorWidget.border": "#504646",
-      "editorWidget.foreground": "#d9c8b4",
-      "editorSuggestWidget.background": "#3a3030",
-      "editorSuggestWidget.border": "#504646",
-      "editorSuggestWidget.foreground": "#d9c8b4",
-      "editorSuggestWidget.selectedBackground": "#f9cc6c22",
-      "input.background": "#3a3030",
-      "input.foreground": "#d9c8b4",
-      "input.border": "#504646",
-      focusBorder: "#f9cc6c",
-      "scrollbarSlider.background": "#504646cc",
-      "scrollbarSlider.hoverBackground": "#7a6c6180",
-      "scrollbarSlider.activeBackground": "#7a6c61",
-    },
-  },
-};
+/** Theme definitions shared with Shiki. The Shiki bridge monkey-patches
+ *  `monaco.editor.setTheme()` and only accepts loaded Shiki theme names,
+ *  so the built-ins must be registered in both registries under the same
+ *  `aethon-*` ids. */
+const BUILTIN_THEMES: Record<AethonThemeId, monaco.editor.IStandaloneThemeData> =
+  Object.fromEntries(
+    AETHON_SHIKI_THEMES.map((theme) => [
+      theme.name.replace(PREFIX, ""),
+      textmateThemeToMonacoTheme(theme),
+    ]),
+  ) as Record<AethonThemeId, monaco.editor.IStandaloneThemeData>;
 
 function seedBuiltins(): void {
   if (bootSeeded) return;

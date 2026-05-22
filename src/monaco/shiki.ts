@@ -25,6 +25,8 @@ import * as monaco from "monaco-editor";
 import { createHighlighter, type Highlighter } from "shiki";
 import { shikiToMonaco } from "@shikijs/monaco";
 
+import { AETHON_SHIKI_THEMES } from "./aethon-themes";
+
 /** Languages Aethon ships syntax highlighting for. Mirrors the
  *  `LANG_LOADERS` set in `src/workers/highlight.worker.ts`. */
 const LANGS = [
@@ -65,8 +67,6 @@ const LANGS = [
   "zig",
 ] as const;
 
-const THEMES = ["github-dark", "github-light"] as const;
-
 let readyPromise: Promise<Highlighter> | null = null;
 
 /**
@@ -76,14 +76,14 @@ let readyPromise: Promise<Highlighter> | null = null;
  *
  * Returns the highlighter so callers can fire one-off `codeToHast`
  * queries if needed. The primary side-effect is registering ~35
- * Monaco languages + 2 Monaco themes; after this resolves,
- * `monaco.editor.setTheme("github-dark")` and language="nix" both
+ * Monaco languages + Aethon's Monaco themes; after this resolves,
+ * `monaco.editor.setTheme("aethon-paper")` and language="nix" both
  * tokenize correctly.
  */
 export function ensureShikiMonacoReady(): Promise<Highlighter> {
   if (readyPromise) return readyPromise;
   readyPromise = createHighlighter({
-    themes: [...THEMES],
+    themes: [...AETHON_SHIKI_THEMES],
     langs: [...LANGS],
   }).then((hl) => {
     shikiToMonaco(hl, monaco);
