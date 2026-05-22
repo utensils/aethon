@@ -13,6 +13,7 @@ import type {
 } from "../../../types/a2ui";
 import { resolveBoolean, resolveString } from "../../../utils/dataBinding";
 import { resolvePointer } from "../../../utils/jsonPointer";
+import { clampOverlayPosition } from "../../../utils/viewport";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import {
   canDeleteHistoryItem,
@@ -142,11 +143,10 @@ export function Sidebar({
     if (!kind) return;
     e.preventDefault();
     e.stopPropagation();
-    const viewportWidth = document.documentElement.clientWidth;
-    const viewportHeight = document.documentElement.clientHeight;
+    const { x, y } = clampOverlayPosition(e.clientX, e.clientY, 220, 96);
     setContextMenu({
-      x: Math.min(e.clientX, Math.max(8, viewportWidth - 220)),
-      y: Math.min(e.clientY, Math.max(8, viewportHeight - 96)),
+      x,
+      y,
       sectionId,
       itemId: item.id,
       label: item.label,

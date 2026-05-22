@@ -184,6 +184,9 @@ export interface UseTabsActions {
   /** Set the dirty flag + cursor on the active editor tab. Used by
    *  EditorCanvas to mirror Monaco's model state back to the layout. */
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
+  /** Reconcile open editor tabs after a rename. See implementation
+   *  notes inside useTabs. */
+  renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -588,6 +591,65 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     });
   }
 
+  /** Reconcile open editor tabs after an on-disk rename. For files,
+   *  match the exact path and rewrite filePath + label. For folders,
+   *  rewrite any tab whose path is rooted at the old folder. Imported
+   *  by the file-tree's rename context-menu action. */
+  function renameEditorTabsForPath(from: string, to: string, kind: string) {
+    if (!from || !to || from === to) return;
+    const prefix = `${from.replace(/\/+$/, "")}/`;
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      let changed = false;
+      const next = tabs.map((tab) => {
+        if (tab.kind !== "editor" || !tab.editor) return tab;
+        const current = tab.editor.filePath;
+        let nextPath: string | null = null;
+        if (kind === "dir") {
+          if (current.startsWith(prefix)) {
+            nextPath = `${to.replace(/\/+$/, "")}/${current.slice(prefix.length)}`;
+          } else if (current === from) {
+            nextPath = to;
+          }
+        } else if (current === from) {
+          nextPath = to;
+        }
+        if (!nextPath) return tab;
+        changed = true;
+        // Recompute the tab label too — Cmd+P/file-tree both expect the
+        // basename to track the path. Language id intentionally stays
+        // put since Shiki keeps grammars by file extension, which is
+        // usually what changed during a rename.
+        const renamed: Tab = {
+          ...tab,
+          label: editorLabelForPath(nextPath),
+          editor: {
+            ...tab.editor,
+            filePath: nextPath,
+            language: languageFromPath(nextPath),
+          },
+        };
+        return renamed;
+      });
+      if (!changed) return prev;
+      const result: Record<string, unknown> = { ...prev, tabs: next };
+      // Mirror the active tab's updated editor field into the root
+      // state so Monaco's EditorCanvas (which reads tabs via $ref) sees
+      // the new path on its next render.
+      const activeId = prev.activeTabId as string | undefined;
+      if (activeId) {
+        const active = next.find((t) => t.id === activeId);
+        if (active) {
+          const rec = active as unknown as Record<string, unknown>;
+          for (const key of TAB_MIRROR_KEYS) {
+            result[key as string] = rec[key as string];
+          }
+        }
+      }
+      return result;
+    });
+  }
+
   /** Patch the active editor tab's metadata (dirty flag, cursor). Cheap
    *  no-op if the tab is missing or not an editor tab. */
   function updateEditorMeta(tabId: string, patch: Partial<EditorMeta>) {
@@ -824,6 +886,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     newShellTab,
     newEditorTab,
     updateEditorMeta,
+    renameEditorTabsForPath,
     autoRestoreDiscoveredSessions,
     pushClosedTab,
     reopenLastClosedTab,

@@ -141,6 +141,10 @@ export function tabsForProjectBucket(tabs: Tab[], bucketKey: string): Tab[] {
 export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
   return tabs.filter((tab) => {
     if (tab.kind === "shell") return true;
+    // Editor tabs always count — even an empty file viewer is worth
+    // keeping during a project bucket swap so the user comes back to
+    // the same open files. A dirty buffer is doubly worth preserving.
+    if (tab.kind === "editor") return true;
     return (
       tab.messages.length > 0 ||
       tab.draft.trim().length > 0 ||

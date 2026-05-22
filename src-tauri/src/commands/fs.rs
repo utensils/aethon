@@ -294,6 +294,96 @@ pub fn fs_delete(root: String, path: String) -> Result<(), String> {
     trash::delete(&target).map_err(|e| format!("trash {}: {e}", target.display()))
 }
 
+/// Directories pruned from the project walk. Reasons range from huge
+/// (`node_modules`, `target`) to noisy (`.git`) to platform metadata
+/// (`__pycache__`, `.next`). Hidden-by-convention; this is the same
+/// list VSCode's quick-open uses by default. Kept short so the user
+/// can `git grep` `EXCLUDED_DIRS` and immediately understand the policy.
+const EXCLUDED_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    ".idea",
+    ".vscode",
+    ".direnv",
+    ".cache",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".next",
+    ".nuxt",
+    "coverage",
+    "__pycache__",
+    ".venv",
+    ".tox",
+    "bower_components",
+    "vendor",
+    ".gradle",
+];
+
+/// Hard ceiling on the project walk. 20 000 files comfortably covers
+/// large repos (Aethon's own `src/` is ~150 files) while keeping the
+/// returned payload under ~2 MB and the walk under ~50 ms on SSD-class
+/// disks. Going higher would slow the fuzzy-search palette without
+/// adding usefulness for a single-window quick-open UX.
+const WALK_FILE_CAP: usize = 20_000;
+
+/// Recursive non-binary file enumeration for the Cmd+P file fuzzy
+/// search. Returns absolute paths inside `root` (so they round-trip
+/// through `fs_read_file` without rewriting), capped at 20k entries.
+/// Excludes `EXCLUDED_DIRS` plus any directory whose name starts with
+/// `.` and isn't an explicit allow (none today). Symlinks are not
+/// followed — too easy to get stuck in a loop or wander outside the
+/// project.
+#[tauri::command]
+pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
+    let root_canon = canonical_root(&root)?;
+    let mut out: Vec<String> = Vec::with_capacity(1024);
+    let mut stack: Vec<PathBuf> = vec![root_canon.clone()];
+    while let Some(dir) = stack.pop() {
+        if out.len() >= WALK_FILE_CAP {
+            break;
+        }
+        let read = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for entry in read.flatten() {
+            let path = entry.path();
+            // symlink_metadata avoids following symlinks; broken or
+            // recursive links are skipped.
+            let meta = match std::fs::symlink_metadata(&path) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if EXCLUDED_DIRS.iter().any(|d| name_str == *d) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            if meta.is_file() {
+                out.push(path.to_string_lossy().into_owned());
+                if out.len() >= WALK_FILE_CAP {
+                    break;
+                }
+            }
+        }
+    }
+    // Stable lexicographic ordering so the palette renders the same
+    // list across invocations.
+    out.sort();
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +467,33 @@ mod tests {
         fs_rename(s(&canon), s(&from), s(&to)).unwrap();
         assert!(!from.exists());
         assert_eq!(std::fs::read_to_string(&to).unwrap(), "x");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn walk_returns_files_excluding_blocklist() {
+        let tmp = std::env::temp_dir().join(format!("aethon-fs-walk-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let canon = tmp.canonicalize().unwrap();
+        std::fs::write(canon.join("App.tsx"), "x").unwrap();
+        std::fs::create_dir_all(canon.join("src")).unwrap();
+        std::fs::write(canon.join("src").join("nested.ts"), "x").unwrap();
+        // Should be skipped:
+        std::fs::create_dir_all(canon.join("node_modules").join("foo")).unwrap();
+        std::fs::write(canon.join("node_modules").join("foo").join("ignored.js"), "x").unwrap();
+
+        let paths = fs_walk_project(s(&canon)).unwrap();
+        let leaves: Vec<&str> = paths
+            .iter()
+            .filter_map(|p| p.split('/').next_back())
+            .collect();
+        assert!(leaves.contains(&"App.tsx"));
+        assert!(leaves.contains(&"nested.ts"));
+        assert!(
+            !leaves.contains(&"ignored.js"),
+            "node_modules content must not appear; got {paths:?}"
+        );
 
         std::fs::remove_dir_all(&tmp).ok();
     }

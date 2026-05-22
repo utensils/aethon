@@ -30,20 +30,38 @@ vi.mock("monaco-editor", () => {
       create: vi.fn(() => ({
         addCommand: vi.fn(),
         dispose: vi.fn(),
+        focus: vi.fn(),
         getModel: vi.fn(() => null),
         getValue: vi.fn(() => ""),
         onDidChangeCursorPosition: vi.fn(noop),
         onDidChangeModelContent: vi.fn(noop),
+        restoreViewState: vi.fn(),
         revealPositionInCenter: vi.fn(),
+        saveViewState: vi.fn(() => null),
+        setModel: vi.fn(),
         setPosition: vi.fn(),
         setValue: vi.fn(),
       })),
+      createModel: vi.fn(() => ({
+        dispose: vi.fn(),
+        getValue: vi.fn(() => ""),
+        setValue: vi.fn(),
+      })),
+      defineTheme: vi.fn(),
       setTheme: vi.fn(),
     },
     KeyMod: { CtrlCmd: 0 },
     KeyCode: { KeyS: 0 },
   };
 });
+
+vi.mock("shiki", () => ({
+  createHighlighter: vi.fn(() => Promise.resolve({})),
+}));
+
+vi.mock("@shikijs/monaco", () => ({
+  shikiToMonaco: vi.fn(),
+}));
 
 vi.mock("@monaco-editor/react", () => ({
   loader: { config: vi.fn(), init: vi.fn(() => Promise.resolve()) },

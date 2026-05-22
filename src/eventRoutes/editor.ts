@@ -81,10 +81,21 @@ export const handleFileTree: EventRouteHandler = (
   event: EventRouteEvent,
   ctx: EventRouteContext,
 ): boolean => {
-  if (event.eventType !== "file-tree-open") return false;
-  const payload = asRecord(event.data);
-  const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
-  if (!filePath) return false;
-  ctx.newEditorTab(filePath);
-  return true;
+  if (event.eventType === "file-tree-open") {
+    const payload = asRecord(event.data);
+    const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
+    if (!filePath) return false;
+    ctx.newEditorTab(filePath);
+    return true;
+  }
+  if (event.eventType === "file-tree-rename") {
+    const payload = asRecord(event.data);
+    const from = typeof payload.from === "string" ? payload.from : "";
+    const to = typeof payload.to === "string" ? payload.to : "";
+    const kind = typeof payload.kind === "string" ? payload.kind : "file";
+    if (!from || !to) return false;
+    ctx.renameEditorTabsForPath(from, to, kind);
+    return true;
+  }
+  return false;
 };

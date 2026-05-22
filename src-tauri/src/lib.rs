@@ -731,6 +731,7 @@ pub fn run() {
             commands::fs::fs_create_dir,
             commands::fs::fs_rename,
             commands::fs::fs_delete,
+            commands::fs::fs_walk_project,
             commands::git::git_status,
             commands::git::pick_project_directory,
             commands::window::updater_available,

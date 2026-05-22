@@ -45,6 +45,11 @@ function trimTab(tab: Tab): Tab {
 
 function shouldPersistTab(tab: Tab): boolean {
   if (tab.kind === "shell") return false;
+  // Editor tabs persist so the user reopens to the same files. The
+  // on-disk content is the source of truth on restore — dirty buffers
+  // are intentionally not serialised (saving arbitrary in-memory edits
+  // could surprise the user on next launch).
+  if (tab.kind === "editor") return tab.editor?.filePath != null;
   return (
     tab.messages.length > 0 ||
     tab.draft.trim().length > 0 ||

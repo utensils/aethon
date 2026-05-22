@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readState, writeState } from "../../../persist";
+import { clampOverlayPosition } from "../../../utils/viewport";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 interface FsEntry {
@@ -175,7 +176,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       root: projectPath,
       path: projectPath,
     })
-      .then((entries) => {
+      .then(async (entries) => {
         if (cancelled) return;
         const rootNode: TreeNode = {
           entry: {
@@ -187,9 +188,45 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           children: entries.map((e) => ({ entry: e, depth: 1 })),
         };
         setRoot(rootNode);
-        // Restore prior expand state for this project (already in `expanded`
-        // from the hydrate effect). Walk through the expanded set and trigger
-        // a fetch for each open folder.
+        // Hydrate any persisted-expanded folders so the user comes back
+        // to the same view they left. We fetch from the outside in
+        // (shorter paths first) so a parent's children land before its
+        // descendants get their refreshFolder call. Capped against the
+        // currently-known set so we don't try to load arbitrary paths
+        // that no longer exist.
+        const expandedNow = expandedStoreRef.current.byProject[projectPath] ?? [];
+        if (expandedNow.length === 0) return;
+        const ordered = [...expandedNow].sort((a, b) => a.length - b.length);
+        for (const folderPath of ordered) {
+          if (cancelled) return;
+          try {
+            const childEntries = await invoke<FsEntry[]>("fs_list_dir", {
+              root: projectPath,
+              path: folderPath,
+            });
+            if (cancelled) return;
+            setRoot((r) => {
+              if (!r) return r;
+              const walk = (node: TreeNode): TreeNode => {
+                if (node.entry.path === folderPath) {
+                  return {
+                    ...node,
+                    children: childEntries.map((e) => ({
+                      entry: e,
+                      depth: node.depth + 1,
+                    })),
+                  };
+                }
+                if (!node.children) return node;
+                return { ...node, children: node.children.map(walk) };
+              };
+              return { ...r, children: r.children?.map(walk) ?? undefined };
+            });
+          } catch {
+            // Folder may have been deleted since last persist; skip it
+            // silently — the user can re-expand if they want.
+          }
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -277,13 +314,12 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    const viewportWidth = document.documentElement.clientWidth;
-    const viewportHeight = document.documentElement.clientHeight;
-    setContextMenu({
-      x: Math.min(e.clientX, Math.max(8, viewportWidth - 220)),
-      y: Math.min(e.clientY, Math.max(8, viewportHeight - 220)),
-      node,
-    });
+    // Use the zoom-aware helper so the menu lands on the cursor at any
+    // UI scale. Without it, position: fixed on a portal child is
+    // interpreted in the unzoomed visual viewport while clientX/Y come
+    // back from the zoomed logical viewport, so the menu drifts.
+    const { x, y } = clampOverlayPosition(e.clientX, e.clientY, 220, 220);
+    setContextMenu({ x, y, node });
   };
 
   // Close the menu on any outside interaction. Mirrors the existing
@@ -328,6 +364,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
 
   // Re-fetch a folder's children inline (used after operations land —
   // skips collapse+expand UX and just updates the visible tree).
+  // Handles the root case: when `folderPath === root.entry.path`, the
+  // walk's mapper would never see the root itself (it only iterates
+  // `r.children`). We special-case at the top so create/rename/delete
+  // on root-level items still refreshes the listing.
   const refreshFolder = useCallback(
     async (folderPath: string) => {
       if (!projectPathRef.current) return;
@@ -338,6 +378,13 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         });
         setRoot((r) => {
           if (!r) return r;
+          // Root case: replace the root's children directly.
+          if (r.entry.path === folderPath) {
+            return {
+              ...r,
+              children: entries.map((e) => ({ entry: e, depth: 1 })),
+            };
+          }
           const walk = (node: TreeNode): TreeNode => {
             if (node.entry.path === folderPath) {
               return {
@@ -416,6 +463,16 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         root: projectPathRef.current,
         from: node.entry.path,
         to: target,
+      });
+      // Tell App-level routes about the rename so any open editor tab
+      // backed by the old path (or any descendant when renaming a
+      // folder) updates its filePath + label. Without this the next
+      // Cmd+S on a renamed-file's editor tab would write to the
+      // pre-rename location and resurrect the old file.
+      onEvent("file-tree-rename", {
+        from: node.entry.path,
+        to: target,
+        kind: node.entry.kind,
       });
       await refreshFolder(parentPath);
     } catch (err) {

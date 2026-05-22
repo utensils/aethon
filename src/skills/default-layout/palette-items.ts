@@ -3,7 +3,7 @@
 // runtime, and so react-refresh doesn't trip over a non-component
 // export sharing the file with components.
 
-export type PaletteMode = "switcher" | "commands";
+export type PaletteMode = "switcher" | "commands" | "files";
 
 export type PaletteSection =
   | "tabs"
@@ -14,7 +14,8 @@ export type PaletteSection =
   | "layouts"
   | "themes"
   | "models"
-  | "actions";
+  | "actions"
+  | "files";
 
 export const SECTION_LABEL: Record<PaletteSection, string> = {
   tabs: "Tabs",
@@ -26,6 +27,7 @@ export const SECTION_LABEL: Record<PaletteSection, string> = {
   themes: "Themes",
   models: "Models",
   actions: "Actions",
+  files: "Files",
 };
 
 export type PalettePayload =
@@ -38,7 +40,8 @@ export type PalettePayload =
   | { kind: "layout"; layoutId: string }
   | { kind: "theme"; themeId: string }
   | { kind: "model"; modelId: string }
-  | { kind: "action"; action: string };
+  | { kind: "action"; action: string }
+  | { kind: "file"; filePath: string };
 
 export interface PaletteItem {
   id: string;
@@ -58,8 +61,8 @@ export interface BuiltinKeybinding {
 // in App.tsx. Surfaced in the palette so users can discover shortcuts
 // without leaving the workspace.
 export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
-  { combo: "meta+p", description: "Open command palette (switcher)" },
-  { combo: "meta+shift+p", description: "Open command palette (commands)" },
+  { combo: "meta+p", description: "Quick-open file (fuzzy search)" },
+  { combo: "meta+shift+p", description: "Open command palette" },
   { combo: "meta+t", description: "New shell tab" },
   { combo: "meta+shift+t", description: "New agent tab" },
   { combo: "meta+w", description: "Close active tab" },
@@ -114,6 +117,13 @@ export interface SelectInput {
   slashCommands?: { name: string; description: string; usage?: string }[];
   keybindings?: { combo: string; action: string; description?: string }[];
   layoutCatalogue?: { id: string; label: string; description?: string }[];
+  /** Palette state slice. The "files" mode reads the pre-fetched
+   *  walk list from `palette.files` — populated by
+   *  `openPalette("files")` once `fs_walk_project` returns. */
+  palette?: {
+    files?: { path: string; rel: string }[];
+    projectPath?: string | null;
+  };
 }
 
 export function selectPaletteItems(
@@ -250,7 +260,28 @@ export function selectPaletteItems(
     }
   };
 
-  if (mode === "switcher") {
+  const pushFiles = () => {
+    for (const f of state.palette?.files ?? []) {
+      items.push({
+        id: `file:${f.path}`,
+        // VSCode-style: leaf in big text, parent dir as hint. The path
+        // we display is project-relative so the user can recognise it
+        // without needing the absolute prefix.
+        label: basenameOf(f.rel),
+        hint: dirnameOf(f.rel),
+        section: "files",
+        payload: { kind: "file", filePath: f.path },
+      });
+    }
+  };
+
+  if (mode === "files") {
+    pushFiles();
+    // Also include open editor tabs at the top — they're typically what
+    // the user is bouncing between. Reuses the "tabs" section so the
+    // ranking + section headers stay consistent.
+    pushTabs();
+  } else if (mode === "switcher") {
     pushTabs();
     pushSessions();
     pushProjects();
@@ -270,6 +301,21 @@ export function selectPaletteItems(
     pushProjects();
   }
   return items;
+}
+
+/** Return the leaf name of a path (last segment after `/` or `\\`). */
+function basenameOf(p: string): string {
+  if (!p) return "";
+  const slash = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return slash >= 0 ? p.slice(slash + 1) : p;
+}
+
+/** Return everything *before* the last segment of a path. Empty for
+ *  one-segment paths (so the palette doesn't show a misleading "."). */
+function dirnameOf(p: string): string {
+  if (!p) return "";
+  const slash = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return slash > 0 ? p.slice(0, slash) : "";
 }
 
 // Cheap, dependency-free fuzzy scorer. Returns >0 if the query matches

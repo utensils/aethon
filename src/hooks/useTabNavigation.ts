@@ -14,12 +14,13 @@ export interface UseTabNavigationContext {
 }
 
 export interface UseTabNavigationActions {
-  /** Cycle the active *agent* tab one slot. Wraps at the ends. Skips
-   *  shell tabs since they live in the bottom panel and have their
-   *  own selection. */
+  /** Cycle the active top-strip tab one slot. Includes both agent
+   *  (chat) and editor tabs; skips shells (they own the bottom panel).
+   *  Wraps at the ends. */
   nextTab: (direction: 1 | -1) => void;
-  /** Jump to the agent tab at zero-based index. Clamped — out-of-range
-   *  is silent (Cmd+5 with only 3 tabs is a no-op). */
+  /** Jump to the top-strip tab at zero-based index. Includes both
+   *  agent and editor tabs in left-to-right order. Out-of-range is
+   *  silent (Cmd+5 with only 3 top-strip tabs is a no-op). */
   jumpToTab: (idx: number) => void;
   /** Reorder the active tab one slot left (-1) or right (+1). Wraps. */
   moveActiveTab: (direction: 1 | -1) => void;
@@ -50,14 +51,17 @@ export function useTabNavigation(
 
   const nextTab = useCallback(
     (direction: 1 | -1) => {
+      // Top-strip tabs only: agent + editor. Shell sub-tabs cycle via
+      // nextShellSubTab when focus is inside the bottom panel.
       const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
         .filter((t) => t.kind !== "shell");
       if (tabs.length <= 1) return;
       const activeId = stateRef.current.activeTabId as string | undefined;
       const idx = tabs.findIndex((t) => t.id === activeId);
       if (idx < 0) {
-        // Active tab is no longer an agent (or not in /tabs). Jump to
-        // the first agent tab in the requested direction.
+        // Active tab isn't a top-strip tab (e.g. user has focus in the
+        // bottom panel, or no tab is active). Jump to the first/last
+        // top-strip tab in the requested direction.
         setActiveTab(direction > 0 ? tabs[0].id : tabs[tabs.length - 1].id);
         return;
       }

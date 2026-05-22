@@ -84,6 +84,11 @@ export interface EventRouteContext {
   newShellTab: () => void;
   newEditorTab: (filePath: string) => void;
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
+  /** Reconcile any open editor tabs whose `editor.filePath` is `from`
+   *  (or, when `kind === "dir"`, starts with `from/`) to point at the
+   *  renamed location. Used after fs_rename completes so the next
+   *  Cmd+S writes to the new path. */
+  renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   setActiveSubTab: (subId: string) => void;

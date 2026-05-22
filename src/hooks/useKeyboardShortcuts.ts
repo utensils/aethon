@@ -42,7 +42,7 @@ export interface UseKeyboardShortcutsContext {
   reopenLastClosedTab: () => void;
   closeTab: (tabId: string) => void;
   toggleSessionSearch: () => void;
-  openPalette: (mode: "switcher" | "commands") => void;
+  openPalette: (mode: "switcher" | "commands" | "files") => void;
   closePalette: () => void;
   adjustZoom: (delta: number) => void;
   resetZoom: () => void;
@@ -228,18 +228,22 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         return;
       }
       // Cmd+Shift+P: command palette in commands mode (checked before
-      // plain Cmd+P so shift takes precedence).
+      // plain Cmd+P so shift takes precedence). Holds the previous
+      // switcher content (tabs / sessions / projects / layouts /
+      // themes / models) via the @ prefix once the palette is open.
       if (e.key.toLowerCase() === "p" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         ctx.openPalette("commands");
         return;
       }
-      // Cmd+P: command palette in switcher mode.
+      // Cmd+P: VSCode-style file fuzzy search. Walks the active
+      // project's tree (skipping common ignored dirs), surfaces a
+      // ranked file list, opens the selection in an editor tab.
       if (e.key.toLowerCase() === "p" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        ctx.openPalette("switcher");
+        ctx.openPalette("files");
         return;
       }
       // Esc closes the palette when open.
