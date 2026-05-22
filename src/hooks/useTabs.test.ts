@@ -20,6 +20,8 @@ describe("recentSessionItemFromClosedTab", () => {
     };
     const projects = {
       activeId: "p1",
+      activeWorktreeId: null,
+      worktreesByProject: {},
       projects: [
         { id: "p1", label: "mold", path: "/repo/mold", lastUsed: 1 },
       ],

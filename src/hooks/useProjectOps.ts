@@ -472,6 +472,7 @@ export function useProjectOps(
     const toKey = projectBucketKey(id);
     const previousActive = activeProject(ps);
     projectsRef.current = {
+      ...ps,
       projects: ps.projects.map((p) =>
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
       ),
