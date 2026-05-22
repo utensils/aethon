@@ -453,3 +453,115 @@ export function EmptyState({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// WorktreeLanding — full-canvas landing page shown when the user clicks a
+// worktree in the sidebar but hasn't yet started a session in it. Mirrors
+// EmptyState's visual shape (AeMark hero + active-target chip + CTAs) but
+// scoped to a single worktree. The "Start Session" CTA spawns a fresh
+// agent tab whose cwd is the worktree's path; "Open in Files" reveals it
+// in the system file manager.
+//
+// Visibility is driven by /landing/kind === "worktree" — sidebar emits the
+// "switch-worktree" event which the app handles by writing to /landing.
+// Selecting any tab clears /landing so the canvas snaps back.
+//
+// Octocrab-backed branch status (pushed / PR open / merged) lands here in a
+// follow-up; the placeholder slot below already reserves the layout.
+// ---------------------------------------------------------------------------
+export function WorktreeLanding({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
+  const props = component.props as {
+    landing?: { $ref: string };
+  };
+  const landing = (() => {
+    if (!props.landing) return null;
+    const raw = resolvePointer(state, props.landing.$ref);
+    if (!raw || typeof raw !== "object") return null;
+    return raw as {
+      kind?: string;
+      projectId?: string;
+      projectLabel?: string;
+      worktreeId?: string;
+      worktreeLabel?: string;
+      branch?: string;
+      path?: string;
+      isMain?: boolean;
+    };
+  })();
+  if (!landing || landing.kind !== "worktree") return null;
+
+  const title = landing.worktreeLabel ?? landing.branch ?? "worktree";
+  const projectLabel = landing.projectLabel ?? "";
+  const branch = landing.branch ?? "";
+  const path = landing.path ?? "";
+  const isMain = landing.isMain === true;
+
+  return (
+    <div className="a2ui-empty-state a2ui-worktree-landing">
+      <div className="a2ui-empty-state-card">
+        <div className="a2ui-empty-state-hero" aria-hidden="true">
+          <AeMarkInline size={64} radius={12} />
+        </div>
+        <h1 className="a2ui-empty-state-title">{title}</h1>
+        <p className="a2ui-empty-state-subtitle">
+          {isMain ? "Main worktree of " : "Worktree of "}
+          <strong>{projectLabel}</strong>
+          {branch && (
+            <>
+              {" — "}
+              <code>{branch}</code>
+            </>
+          )}
+        </p>
+        <p className="a2ui-empty-state-active-project">
+          <span className="a2ui-empty-state-active-project-label">
+            {branch || title}
+          </span>
+          <span className="a2ui-empty-state-active-project-path">{path}</span>
+        </p>
+        <div className="a2ui-empty-state-actions">
+          <button
+            type="button"
+            className="a2ui-empty-state-primary"
+            onClick={() =>
+              onEvent("start-session", {
+                worktreeId: landing.worktreeId,
+                projectId: landing.projectId,
+                path,
+              })
+            }
+          >
+            Start Session
+          </button>
+          <button
+            type="button"
+            className="a2ui-empty-state-secondary"
+            onClick={() =>
+              onEvent("open-worktree-in-finder", {
+                worktreeId: landing.worktreeId,
+                projectId: landing.projectId,
+                path,
+              })
+            }
+          >
+            Open in Files
+          </button>
+        </div>
+        {/* GitHub branch status — populated by a follow-up Octocrab
+            integration. The placeholder slot reserves layout space so
+            the addition won't shift the rest of the page. */}
+        <div className="a2ui-worktree-landing-gh">
+          <h2>Branch status</h2>
+          <p className="a2ui-empty-state-subtitle">
+            GitHub status (pushed · PRs · merge state) will appear here once
+            the remote is connected.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

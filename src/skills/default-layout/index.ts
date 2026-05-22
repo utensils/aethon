@@ -12,6 +12,7 @@ import {
   ChatInput,
   EditorCanvas,
   EmptyState,
+  WorktreeLanding,
   FileTreePanel,
   ImageViewer,
   Layout,
@@ -90,6 +91,11 @@ export const defaultLayoutSkill: A2UISkill = {
     // (replacing the plain `card` primitive in toolCardPayload).
     "tool-card": ToolCard,
     "empty-state": EmptyState,
+    // Worktree landing page — shown when the user clicks a worktree in
+    // the sidebar but hasn't yet started a session. Mirrors EmptyState
+    // shape but scoped to a single worktree (cwd + branch + GitHub
+    // status placeholder).
+    "worktree-landing": WorktreeLanding,
     // Workstation header chrome — agent-status pill (canonical
     // `agent-pulse`; legacy `agent-status-pill` alias kept so existing
     // layout payloads continue to render after the rename) plus the

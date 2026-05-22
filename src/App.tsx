@@ -1029,13 +1029,20 @@ export default function App() {
     // produced them.
     const { agentTabActive, shellTabActive, editorTabActive } =
       deriveTabActiveFlags(tabs, state.activeTabId as string | undefined);
+    // Worktree landing — when /landing.kind === "worktree" the
+    // landing page takes over the canvas slot. Suppress every other
+    // canvas's visibility flag so only one component draws into the
+    // canvas grid cell at a time.
+    const landing = state.landing as { kind?: string } | null | undefined;
+    const landingVisible = !!landing && landing.kind === "worktree";
     return {
       ...state,
       hasTabs,
-      empty: !hasTabs,
-      agentTabActive,
-      shellTabActive,
-      editorTabActive,
+      empty: !hasTabs && !landingVisible,
+      agentTabActive: agentTabActive && !landingVisible,
+      shellTabActive: shellTabActive && !landingVisible,
+      editorTabActive: editorTabActive && !landingVisible,
+      landingVisible,
       sidebar: {
         ...sidebar,
         history,

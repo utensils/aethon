@@ -331,6 +331,10 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         prev.sidebar as Record<string, unknown> | undefined,
         target.model,
       );
+      // Selecting any tab clears a worktree-landing override so the
+      // chat canvas can render. Without this, clicking a tab while the
+      // landing was visible would leave the landing stuck on top.
+      result.landing = null;
       return result;
     });
     dispatchTerminalReplay(nextBuffer);

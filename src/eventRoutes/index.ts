@@ -46,6 +46,7 @@ import {
   handleSidebarToggleProjectExpand,
   handleSidebarCreateWorktree,
   handleSidebarSwitchWorktree,
+  handleSidebarStartSession,
   handleSidebarRemoveWorktree,
   handleSidebarCancelPendingWorktree,
   handleSidebarRetryPendingWorktree,
@@ -78,6 +79,13 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:command-palette", [handlePalette]],
     ["type:chat-input", [handleChatInput]],
     ["type:empty-state", [handleEmptyState]],
+    // Worktree landing — "Start Session" + "Open in Files" CTAs reuse
+    // the sidebar's worktree routes since the destination semantics
+    // are identical.
+    ["type:worktree-landing", [
+      handleSidebarStartSession,
+      handleSidebarOpenWorktreeInFinder,
+    ]],
     ["type:sidebar", [
       handleSidebarResize,
       handleSidebarResizeEnd,

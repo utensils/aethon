@@ -147,6 +147,15 @@
           }
         },
         {
+          "id": "worktree-landing",
+          "type": "worktree-landing",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/landingVisible" },
+            "landing": { "$ref": "/landing" }
+          }
+        },
+        {
           "id": "terminal-panel",
           "type": "terminal-panel",
           "props": {
@@ -196,6 +205,8 @@
     "agentTabActive": true,
     "shellTabActive": false,
     "editorTabActive": false,
+    "landingVisible": false,
+    "landing": null,
     "recentSessions": [],
     "agentStatus": {
       "label": "agent live",

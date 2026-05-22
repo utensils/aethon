@@ -213,6 +213,14 @@ export const handleSidebarCreateWorktree: EventRouteHandler = (
   if (projectId) void ctx.createWorktreeForProject(projectId);
   return true;
 };
+/**
+ * switch-worktree: route the user to a landing page for the selected
+ * worktree instead of activating it immediately. The landing presents
+ * a "Start Session" CTA that fires `start-session`, which is where the
+ * actual `activateWorktree` + new-tab flow happens. Pulling the landing
+ * in between gives us a place to surface branch metadata (cwd, branch
+ * name, GitHub status) before the user commits to a fresh session.
+ */
 export const handleSidebarSwitchWorktree: EventRouteHandler = (
   { eventType, data },
   ctx,
@@ -220,7 +228,75 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
   if (eventType !== "switch-worktree") return false;
   const worktreeId =
     (data as { worktreeId?: string } | undefined)?.worktreeId ?? null;
+  if (!worktreeId) {
+    ctx.activateWorktree(null);
+    ctx.setState((prev) => ({ ...prev, landing: null }));
+    return true;
+  }
+  // Find the worktree + its parent project in state. The sidebar's
+  // /sidebar/projects items carry the canonical worktrees array; we
+  // mirror its shape into /landing so the landing component can render
+  // without re-fetching.
+  const sidebar =
+    (ctx.stateRef.current.sidebar as
+      | {
+          projects?: {
+            id: string;
+            label: string;
+            worktrees?: {
+              id: string;
+              label?: string;
+              branch?: string;
+              path?: string;
+              isMain?: boolean;
+            }[];
+          }[];
+        }
+      | undefined) ?? {};
+  for (const project of sidebar.projects ?? []) {
+    const worktree = project.worktrees?.find((w) => w.id === worktreeId);
+    if (worktree) {
+      ctx.setState((prev) => ({
+        ...prev,
+        landing: {
+          kind: "worktree",
+          projectId: project.id,
+          projectLabel: project.label,
+          worktreeId: worktree.id,
+          worktreeLabel: worktree.label,
+          branch: worktree.branch,
+          path: worktree.path,
+          isMain: worktree.isMain === true,
+        },
+      }));
+      return true;
+    }
+  }
+  // Fallback when state doesn't have the worktree (race during refresh):
+  // activate directly so the click never becomes a no-op.
   ctx.activateWorktree(worktreeId);
+  return true;
+};
+
+/**
+ * start-session: emitted by the worktree landing's "Start Session" CTA.
+ * Activates the worktree (so subsequent new tabs inherit its cwd) and
+ * opens a fresh agent tab pointing at the worktree's path. Clears the
+ * landing so the new tab gets the chat canvas instead.
+ */
+export const handleSidebarStartSession: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "start-session") return false;
+  const payload =
+    (data as
+      | { worktreeId?: string; projectId?: string; path?: string }
+      | undefined) ?? {};
+  if (payload.worktreeId) ctx.activateWorktree(payload.worktreeId);
+  if (payload.projectId) ctx.setActiveProjectById(payload.projectId);
+  ctx.setState((prev) => ({ ...prev, landing: null }));
+  ctx.newTab(undefined, undefined, payload.path ? { cwd: payload.path } : undefined);
   return true;
 };
 export const handleSidebarRemoveWorktree: EventRouteHandler = (
