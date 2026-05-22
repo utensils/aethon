@@ -126,7 +126,12 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
 }
 
 /// One worktree row as reported by `git worktree list --porcelain`.
+/// `serde(rename_all = "camelCase")` matches the TS `GitWorktreeRecord`
+/// shape — without it, `is_main` would serialize as `is_main` and the
+/// frontend's `rec.isMain` reads `undefined`, silently treating every
+/// worktree as non-main (which broke "Create worktree" reconciliation).
 #[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct Worktree {
     pub path: String,
     /// Short branch name (no `refs/heads/` prefix). `None` for detached HEAD.
@@ -415,6 +420,28 @@ mod tests {
             ])
             .status()
             .expect("git commit");
+    }
+
+    #[test]
+    fn worktree_serializes_with_camel_case_keys() {
+        // The TS GitWorktreeRecord shape expects `isMain` / `branch` /
+        // `head` / `path` / `locked`. Without the `rename_all`
+        // attribute the bool ships as `is_main` and rec.isMain on the
+        // frontend reads `undefined` — which silently breaks the
+        // "Create worktree" reconcile loop.
+        let w = Worktree {
+            path: "/x".into(),
+            branch: Some("main".into()),
+            head: Some("abcdef0".into()),
+            is_main: true,
+            locked: false,
+        };
+        let json = serde_json::to_value(&w).unwrap();
+        assert!(json.get("isMain").is_some());
+        assert!(json.get("is_main").is_none());
+        assert_eq!(json["isMain"], serde_json::json!(true));
+        assert_eq!(json["path"], serde_json::json!("/x"));
+        assert_eq!(json["branch"], serde_json::json!("main"));
     }
 
     #[test]
