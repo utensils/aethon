@@ -408,6 +408,32 @@ body {
   min-height: 0;
 }
 
+/* ---- Sidebar area (wraps the sidebar + file tree) ----------------------- */
+
+.ae-sidebar-area {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+}
+.ae-sidebar-area > .a2ui-sidebar {
+  flex: 0 1 auto;
+  border-right: 0;
+  /* Cap so the sections list doesn't push the file tree off-screen on a
+     short window. The actual scroll containment stays inside the
+     sidebar element. */
+  max-height: 60%;
+}
+.ae-sidebar-area > .ae-file-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
 /* ---- Sidebar ------------------------------------------------------------ */
 
 .a2ui-sidebar {
@@ -422,6 +448,74 @@ body {
   overflow-y: auto;
   overscroll-behavior: none;
   position: relative;
+}
+
+/* ---- File tree (sibling of .a2ui-sidebar inside .ae-sidebar-area) ------ */
+
+.ae-file-tree {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  padding: 6px 0 8px 0;
+  user-select: none;
+}
+.ae-file-tree-empty {
+  padding: 6px 12px;
+}
+.ae-file-tree-error {
+  padding: 6px 12px;
+  color: var(--text-error, #d6655a);
+  font-size: var(--chrome-text-muted);
+}
+.ae-file-tree-title {
+  padding: 4px 12px;
+  font-size: var(--chrome-text-muted);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.ae-file-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.ae-file-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--chrome-text-muted);
+  line-height: 1.5;
+}
+.ae-file-tree-row:hover {
+  background: var(--hover, rgba(255, 255, 255, 0.04));
+  color: var(--text);
+}
+.ae-file-tree-icon {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.7;
+}
+.ae-file-tree-row.is-dir .ae-file-tree-label {
+  color: var(--text);
+}
+.ae-file-tree-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-file-tree-loading {
+  opacity: 0.6;
 }
 
 /* Resize handle — 6px-wide hit target hugging the sidebar's right edge.

@@ -30,6 +30,7 @@ export {
   readUiScale,
 } from "./layout";
 export { Sidebar, filterItems, providerOf } from "./sidebar";
+export { FileTreePanel } from "./sidebar/file-tree";
 export { ChatHistory, ChatInput, MainCanvas, ToolCard, formatToolDuration } from "./chat";
 export {
   Terminal,

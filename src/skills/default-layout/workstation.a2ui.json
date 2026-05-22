@@ -58,50 +58,67 @@
           ]
         },
         {
-          "id": "sidebar",
-          "type": "sidebar",
+          "id": "sidebar-area",
+          "type": "container",
           "props": {
             "area": "sidebar",
-            "visible": { "$ref": "/layout/sidebarVisible" },
-            "title": "aethon",
-            "version": { "$ref": "/appVersion" },
-            "brandMark": true,
-            "sections": [
-              {
-                "id": "projects",
-                "title": "projects",
-                "items": { "$ref": "/sidebar/projects" },
-                "actions": [
-                  { "id": "open-project", "label": "Open project…" }
-                ]
-              },
-              {
-                "id": "extensions",
-                "title": "extensions",
-                "items": { "$ref": "/sidebar/extensions" }
-              },
-              {
-                "id": "panels",
-                "title": "panels",
-                "items": [
-                  { "id": "toggle-terminal", "label": "Toggle Terminal", "hint": "⌘`" },
-                  { "id": "clear-chat", "label": "Clear Chat", "hint": "⌘K" }
-                ]
-              },
-              {
-                "id": "themes",
-                "title": "themes",
-                "monoItems": true,
-                "items": { "$ref": "/sidebar/themes" }
-              },
-              {
-                "id": "history",
-                "title": "chat history",
-                "items": { "$ref": "/sidebar/history" }
+            "direction": "column",
+            "gap": 0,
+            "padding": 0,
+            "className": "ae-sidebar-area",
+            "visible": { "$ref": "/layout/sidebarVisible" }
+          },
+          "children": [
+            {
+              "id": "sidebar",
+              "type": "sidebar",
+              "props": {
+                "title": "aethon",
+                "version": { "$ref": "/appVersion" },
+                "brandMark": true,
+                "sections": [
+                  {
+                    "id": "projects",
+                    "title": "projects",
+                    "items": { "$ref": "/sidebar/projects" },
+                    "actions": [
+                      { "id": "open-project", "label": "Open project…" }
+                    ]
+                  },
+                  {
+                    "id": "extensions",
+                    "title": "extensions",
+                    "items": { "$ref": "/sidebar/extensions" }
+                  },
+                  {
+                    "id": "panels",
+                    "title": "panels",
+                    "items": [
+                      { "id": "toggle-terminal", "label": "Toggle Terminal", "hint": "⌘`" },
+                      { "id": "clear-chat", "label": "Clear Chat", "hint": "⌘K" }
+                    ]
+                  },
+                  {
+                    "id": "themes",
+                    "title": "themes",
+                    "monoItems": true,
+                    "items": { "$ref": "/sidebar/themes" }
+                  },
+                  {
+                    "id": "history",
+                    "title": "chat history",
+                    "items": { "$ref": "/sidebar/history" }
+                  }
+                ],
+                "extraSections": { "$ref": "/sidebar/extraSections" }
               }
-            ],
-            "extraSections": { "$ref": "/sidebar/extraSections" }
-          }
+            },
+            {
+              "id": "file-tree",
+              "type": "file-tree",
+              "props": {}
+            }
+          ]
         },
         {
           "id": "main-canvas",

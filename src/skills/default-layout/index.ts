@@ -12,6 +12,7 @@ import {
   ChatInput,
   EditorCanvas,
   EmptyState,
+  FileTreePanel,
   Layout,
   MainCanvas,
   ShellCanvas,
@@ -67,6 +68,11 @@ export const defaultLayoutSkill: A2UISkill = {
     // active tab is `kind === "editor"`; the layout binds visibility
     // to `/editorTabActive`.
     "editor-canvas": EditorCanvas,
+    // Project file tree — sidebar surface that lists the active
+    // project's working directory. Single click on a file opens an
+    // editor tab. Disabled with an empty state when no project is
+    // active.
+    "file-tree": FileTreePanel,
     // M6 restructure: tabbed bottom panel. Hosts the read-only
     // agent-bash sub-tab + every user shell as a separate sub-tab.
     // Replaces the standalone `terminal` cell in workstation.
