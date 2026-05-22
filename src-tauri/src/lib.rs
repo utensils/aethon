@@ -36,6 +36,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 mod commands;
 mod helpers;
 mod shell;
+mod window_state;
 use helpers::{parse_config_toml, sanitize_filename_segment};
 
 #[cfg(debug_assertions)]
@@ -689,6 +690,18 @@ pub fn run() {
         .manage(AgentProcess(Mutex::new(None)))
         .manage(AgentReloadFlag(Arc::new(AtomicBool::new(false))))
         .manage(shell::ShellRegistry::new())
+        .manage(window_state::WindowStateStore::new())
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                window_state::schedule_save(window.app_handle().clone(), window.label().to_string());
+            }
+            tauri::WindowEvent::CloseRequested { .. } => {
+                if let Err(e) = window_state::save_now(window.app_handle(), window.label()) {
+                    tracing::warn!(target: "aethon::window_state", "save_now on close: {e}");
+                }
+            }
+            _ => {}
+        })
         .invoke_handler(tauri::generate_handler![
             start_agent,
             send_message,
@@ -759,15 +772,20 @@ pub fn run() {
             // frontend forwards to `set_extension_menu_items`, which
             // re-runs both installers with the persisted list.
             app.manage(commands::extensions::ExtensionMenuStore::default());
-            // tauri.conf.json `"maximized": true` is unreliable on macOS —
-            // the window manifest applies before the WindowController has
-            // a chance to zoom and the flag silently no-ops. Force it
-            // here after setup so the dev/release window opens at the
-            // user's screen size instead of the 1200x800 manifest default.
-            if let Some(w) = app.get_webview_window("main")
-                && let Err(err) = w.maximize()
-            {
-                tracing::warn!(target: "aethon", "maximize main window failed: {err}");
+            // Restore saved window geometry (position, size, monitor)
+            // before showing the window — tauri.conf.json sets
+            // `"visible": false` so this runs without a 1200×800 flash.
+            // First-launch fallback (no saved state) is "maximized on
+            // primary monitor", replacing the previous hardcoded
+            // `maximize()` that worked around the unreliable manifest
+            // `"maximized": true` on macOS.
+            if let Err(err) = window_state::restore_on_setup(app.handle()) {
+                tracing::warn!(target: "aethon::window_state", "restore failed: {err}");
+                // Best-effort: show the window anyway so a corrupt
+                // state file can never strand the user.
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
             }
             Ok(())
         })
