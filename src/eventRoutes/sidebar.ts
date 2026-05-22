@@ -244,7 +244,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
   }
   if (selected?.sectionId === "themes" && selected.itemId) {
     // Accept any registered theme id (built-ins + extension themes).
-    // Built-in CSS lives in styles.css; extension themes had their
+    // Built-in CSS lives in src/styles/themes.css; extension themes had their
     // <style> tag injected on hydrateThemes().
     ctx.setTheme(selected.itemId);
     return true;
