@@ -1,7 +1,18 @@
 /* Aethon chrome rules — consumes tokens (tokens.css) + theme color tokens
  * (themes.css). Selectors target Aethon-authored chrome only (.a2ui-*,
  * .ae-*, .app-*) plus a tiny global reset; do not put third-party-library
- * styles here. */
+ * styles here.
+ *
+ * Text-selection policy: chrome surfaces set `user-select: none` on the
+ * container; content surfaces inherit the default. Any string inside
+ * chrome that should remain copyable (paths, branch names, error
+ * messages) opts in via `data-selectable`. See
+ * docs/aethon-agent/text-selection.md for the full rules. */
+
+[data-selectable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
 
 * {
   box-sizing: border-box;
@@ -630,34 +641,46 @@ body.ae-resizing-sidebar .a2ui-layout {
   border-color: var(--accent);
 }
 
+/* Canonical context-menu primitive (src/components/primitives/context-menu.tsx).
+   `.a2ui-sidebar-context-menu` and `.ae-file-tree-context-menu` selectors
+   stay aliased here so any extension that styled the old class names
+   still works. New code should target `.a2ui-context-menu*` only. */
+.a2ui-context-menu,
 .a2ui-sidebar-context-menu {
   position: fixed;
-  z-index: 1001;
-  min-width: 190px;
-  padding: 6px;
+  z-index: var(--z-popover);
+  min-width: 200px;
+  padding: var(--space-1);
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
   color: var(--text);
   font-family: var(--font-ui);
+  outline: none;
 }
 
+.a2ui-context-menu-item,
 .a2ui-sidebar-context-menu-item {
   width: 100%;
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   border: 0;
-  border-radius: 5px;
-  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-2);
   background: transparent;
   color: var(--text);
   font: inherit;
   font-size: var(--chrome-text);
   text-align: left;
   cursor: pointer;
+  user-select: none;
 }
 
+.a2ui-context-menu-item:hover,
+.a2ui-context-menu-item:focus-visible,
+.a2ui-context-menu-item.is-focused,
 .a2ui-sidebar-context-menu-item:hover,
 .a2ui-sidebar-context-menu-item:focus-visible {
   outline: none;
@@ -665,24 +688,69 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--accent);
 }
 
+.a2ui-context-menu-item.is-danger {
+  color: var(--error);
+}
+.a2ui-context-menu-item.is-danger:hover,
+.a2ui-context-menu-item.is-danger:focus-visible,
+.a2ui-context-menu-item.is-danger.is-focused {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+}
+
+.a2ui-context-menu-item[aria-disabled="true"] {
+  cursor: default;
+  opacity: var(--opacity-disabled);
+}
+.a2ui-context-menu-item[aria-disabled="true"]:hover,
+.a2ui-context-menu-item[aria-disabled="true"].is-focused {
+  background: transparent;
+  color: var(--text);
+}
+
+.a2ui-context-menu-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-context-menu-item-hint {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  opacity: var(--opacity-muted);
+}
+
+.a2ui-context-menu-header {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.a2ui-context-menu-note,
 .a2ui-sidebar-context-menu-note {
-  padding: 3px 8px 4px;
+  padding: var(--space-1) var(--space-2) var(--space-1);
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--chrome-text-muted);
 }
 
+.a2ui-context-menu-sep,
 .a2ui-sidebar-context-menu-sep {
   height: 1px;
-  margin: 4px 0;
+  margin: var(--space-1) 0;
   background: var(--border);
   opacity: 0.6;
 }
 
-/* File-tree context menu reuses the sidebar menu's chrome but is wider
-   to fit the longest label ("Copy Relative Path") without truncation. */
+/* File-tree context menu uses a wider min-width to fit the longest
+   label ("Copy Relative Path") without truncation. */
 .ae-file-tree-context-menu {
-  min-width: 200px;
+  min-width: 220px;
 }
 
 /* ---- Header (Container with className=app-header) ----------------------- */

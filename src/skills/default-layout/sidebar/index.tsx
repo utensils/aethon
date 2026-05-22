@@ -3,8 +3,7 @@
  * arrays or bound to state via a $ref.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -13,7 +12,10 @@ import type {
 } from "../../../types/a2ui";
 import { resolveBoolean, resolveString } from "../../../utils/dataBinding";
 import { resolvePointer } from "../../../utils/jsonPointer";
-import { clampFixedOverlay } from "../../../utils/zoom-probe";
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import {
   canDeleteHistoryItem,
@@ -51,6 +53,60 @@ interface SidebarContextMenuState {
   /** For `extension-*` kinds, the extension's display name (item id
    *  minus the `ext:` / `ext-failed:` / `ext-disabled:` prefix). */
   extensionName?: string;
+}
+
+interface SidebarMenuHandlers {
+  removeContextProject: () => void;
+  renameContextSession: () => void;
+  deleteContextSession: () => void;
+  toggleContextExtension: (disabled: boolean) => void;
+}
+
+function buildSidebarMenuItems(
+  state: SidebarContextMenuState,
+  h: SidebarMenuHandlers,
+): ContextMenuItem[] {
+  switch (state.kind) {
+    case "project":
+      return [
+        {
+          id: "remove-project",
+          label: "Remove from Projects",
+          danger: true,
+          onSelect: h.removeContextProject,
+        },
+        { type: "note", label: "Keeps files on disk" },
+      ];
+    case "session":
+      return [
+        { id: "rename-session", label: "Rename session…", onSelect: h.renameContextSession },
+        {
+          id: "delete-session",
+          label: "Delete session…",
+          danger: true,
+          onSelect: h.deleteContextSession,
+        },
+        { type: "note", label: "Delete removes the saved transcript" },
+      ];
+    case "extension-enabled":
+      return [
+        {
+          id: "disable-ext",
+          label: "Disable extension",
+          onSelect: () => h.toggleContextExtension(true),
+        },
+        { type: "note", label: "Restart Aethon to fully unload" },
+      ];
+    case "extension-disabled":
+      return [
+        {
+          id: "enable-ext",
+          label: "Enable extension",
+          onSelect: () => h.toggleContextExtension(false),
+        },
+        { type: "note", label: "Restart Aethon (or /reload) to load" },
+      ];
+  }
 }
 
 export function Sidebar({
@@ -92,22 +148,6 @@ export function Sidebar({
   const [contextMenu, setContextMenu] =
     useState<SidebarContextMenuState | null>(null);
 
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("click", close);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("click", close);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", close);
-    };
-  }, [contextMenu]);
-
   const openItemContextMenu: ItemRowProps["onItemContextMenu"] = (
     e,
     item,
@@ -143,13 +183,11 @@ export function Sidebar({
     if (!kind) return;
     e.preventDefault();
     e.stopPropagation();
-    // clampFixedOverlay handles the WebKit + zoom != 1 visual-vs-
-    // layout-frame mismatch the same way the Monaco context-view fix
-    // does, so the menu lands at the cursor at any UI scale.
-    const { x, y } = clampFixedOverlay(e.clientX, e.clientY, 220, 96);
+    // Raw clientX/clientY here; the ContextMenu primitive clamps via
+    // clampFixedOverlay so the menu lands at the cursor at any UI scale.
     setContextMenu({
-      x,
-      y,
+      x: e.clientX,
+      y: e.clientY,
       sectionId,
       itemId: item.id,
       label: item.label,
@@ -360,83 +398,18 @@ export function Sidebar({
           onMouseDown={onResizeStart}
         />
       )}
-      {contextMenu &&
-        createPortal(
-          <div
-            className="a2ui-sidebar-context-menu"
-            role="menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {contextMenu.kind === "project" ? (
-              <>
-                <button
-                  type="button"
-                  className="a2ui-sidebar-context-menu-item"
-                  role="menuitem"
-                  onClick={removeContextProject}
-                >
-                  Remove from Projects
-                </button>
-                <div className="a2ui-sidebar-context-menu-note">
-                  Keeps files on disk
-                </div>
-              </>
-            ) : contextMenu.kind === "session" ? (
-              <>
-                <button
-                  type="button"
-                  className="a2ui-sidebar-context-menu-item"
-                  role="menuitem"
-                  onClick={renameContextSession}
-                >
-                  Rename session…
-                </button>
-                <button
-                  type="button"
-                  className="a2ui-sidebar-context-menu-item"
-                  role="menuitem"
-                  onClick={deleteContextSession}
-                >
-                  Delete session…
-                </button>
-                <div className="a2ui-sidebar-context-menu-note">
-                  Delete removes the saved transcript
-                </div>
-              </>
-            ) : contextMenu.kind === "extension-enabled" ? (
-              <>
-                <button
-                  type="button"
-                  className="a2ui-sidebar-context-menu-item"
-                  role="menuitem"
-                  onClick={() => toggleContextExtension(true)}
-                >
-                  Disable extension
-                </button>
-                <div className="a2ui-sidebar-context-menu-note">
-                  Restart Aethon to fully unload
-                </div>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="a2ui-sidebar-context-menu-item"
-                  role="menuitem"
-                  onClick={() => toggleContextExtension(false)}
-                >
-                  Enable extension
-                </button>
-                <div className="a2ui-sidebar-context-menu-note">
-                  Restart Aethon (or /reload) to load
-                </div>
-              </>
-            )}
-          </div>,
-          document.body,
-        )}
+      <ContextMenu
+        open={!!contextMenu}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        items={contextMenu ? buildSidebarMenuItems(
+          contextMenu,
+          { removeContextProject, renameContextSession, deleteContextSession, toggleContextExtension },
+        ) : []}
+        onClose={() => setContextMenu(null)}
+        ariaLabel={`${contextMenu?.kind ?? ""} menu`}
+        className="a2ui-sidebar-context-menu"
+      />
     </aside>
   );
 }

@@ -23,10 +23,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readState, writeState } from "../../../persist";
-import { clampFixedOverlay } from "../../../utils/zoom-probe";
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 interface FsEntry {
@@ -128,6 +130,7 @@ function readPanelPrefs(raw: string): PanelPrefs {
   }
   return {};
 }
+
 
 export function FileTreePanel({ component, state, onEvent }: BuiltinComponentProps) {
   void component;
@@ -393,33 +396,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    // Translate clientX/Y into the layout frame `position: fixed`
-    // actually uses. On WebKit at zoom != 1 the two frames diverge,
-    // which previously left the menu drifted away from the cursor;
-    // `clampFixedOverlay` divides by zoom on the engines that need
-    // it (no-op on Chromium / at zoom 1). Same Claudette pattern the
-    // Monaco context-view fix uses.
-    const { x, y } = clampFixedOverlay(e.clientX, e.clientY, 220, 220);
-    setContextMenu({ x, y, node });
+    // Raw client coords; the ContextMenu primitive clamps + corrects
+    // for WebKit zoom-frame drift before positioning.
+    setContextMenu({ x: e.clientX, y: e.clientY, node });
   };
-
-  // Close the menu on any outside interaction. Mirrors the existing
-  // Sidebar context-menu UX so the pattern is consistent.
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("click", close);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("click", close);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", close);
-    };
-  }, [contextMenu]);
 
   // Pop a folder out of the tree's children cache so the next expand
   // re-fetches it. Used after create/rename/delete so the tree reflects
@@ -646,6 +626,37 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     document.addEventListener("mouseup", onUp);
   };
 
+  // Items array for the right-click menu. Memoizing on the contextMenu
+  // identity is enough here — handlers reference state via closures and
+  // close over a stable `contextMenu` per render, so changing the menu
+  // target rebuilds the items, and `setContextMenu(null)` collapses
+  // them to an empty list.
+  const fileTreeMenuItems: ContextMenuItem[] = contextMenu
+    ? [
+        { id: "new-file", label: "New File…", onSelect: onContextNewFile },
+        {
+          id: "new-folder",
+          label: "New Folder…",
+          onSelect: onContextNewFolder,
+        },
+        { type: "separator" },
+        { id: "rename", label: "Rename…", onSelect: onContextRename },
+        {
+          id: "delete",
+          label: "Move to Trash…",
+          danger: true,
+          onSelect: onContextDelete,
+        },
+        { type: "separator" },
+        { id: "copy-path", label: "Copy Path", onSelect: onContextCopyPath },
+        {
+          id: "copy-rel",
+          label: "Copy Relative Path",
+          onSelect: onContextCopyRelativePath,
+        },
+      ]
+    : [];
+
   const titleRow = (
     <div className="ae-file-tree-titlebar">
       <button
@@ -770,68 +781,17 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           ))}
         </ul>
       )}
-      {contextMenu &&
-        createPortal(
-          <div
-            className="a2ui-sidebar-context-menu ae-file-tree-context-menu"
-            role="menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextNewFile}
-            >
-              New File…
-            </button>
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextNewFolder}
-            >
-              New Folder…
-            </button>
-            <div className="a2ui-sidebar-context-menu-sep" />
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextRename}
-            >
-              Rename…
-            </button>
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextDelete}
-            >
-              Move to Trash…
-            </button>
-            <div className="a2ui-sidebar-context-menu-sep" />
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextCopyPath}
-            >
-              Copy Path
-            </button>
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextCopyRelativePath}
-            >
-              Copy Relative Path
-            </button>
-          </div>,
-          document.body,
-        )}
+      <ContextMenu
+        open={!!contextMenu}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        items={fileTreeMenuItems}
+        onClose={() => setContextMenu(null)}
+        ariaLabel="File operations"
+        className="ae-file-tree-context-menu"
+        estimatedWidth={240}
+        estimatedHeight={260}
+      />
     </div>
   );
 }
