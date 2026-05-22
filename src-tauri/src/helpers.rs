@@ -229,6 +229,66 @@ pub fn clamp_font_size(size: u32) -> u32 {
     size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX)
 }
 
+/// Lexically resolve `..` and `.` segments in `path` and check whether
+/// the result is `root` or a descendant. Inputs must be absolute. Returns
+/// `Some(resolved)` when the path stays inside `root`, `None` otherwise.
+///
+/// This is the gatekeeper for the file-system Tauri commands in
+/// [`crate::commands::fs`]. Each editor / file-tree operation passes the
+/// active project's cwd as `root` and the target path as `path`; the
+/// command refuses to touch anything that lexically escapes the root.
+///
+/// Implementation notes:
+///
+/// - Pure path arithmetic. We do **not** call `canonicalize` here — for
+///   create operations the target path doesn't exist yet, and the helper
+///   has to give a stable answer either way. Symlink-aware canonicalization
+///   happens once per command, after this check passes, on whichever
+///   parent component already exists. That second pass catches symlink
+///   escapes that lexical resolution can't see.
+/// - Strips `RootDir`/`Prefix` components on Windows so the comparison is
+///   structural; the inputs are still required to be absolute.
+/// - Both arguments must be normalized to the same prefix style by the
+///   caller (the commands convert `tilde` and relative segments before
+///   calling).
+pub fn resolve_inside_root(
+    root: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    use std::path::{Component, PathBuf};
+    if !root.is_absolute() || !path.is_absolute() {
+        return None;
+    }
+    // Walk `path` lexically; build up the resolved absolute path.
+    let mut resolved: Vec<Component<'_>> = Vec::with_capacity(8);
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                // Pop the most recent Normal component. If the only thing
+                // left is the prefix/root, this attempts to ascend past
+                // the filesystem root — refuse.
+                if let Some(last) = resolved.last()
+                    && matches!(last, Component::Normal(_))
+                {
+                    resolved.pop();
+                    continue;
+                }
+                return None;
+            }
+            Component::CurDir => continue,
+            other => resolved.push(other),
+        }
+    }
+    let resolved_path: PathBuf = resolved.iter().collect();
+    // Same-prefix structural compare. `starts_with` matches Path
+    // component-by-component, so `/a/bc` does not start with `/a/b`.
+    if resolved_path == root || resolved_path.starts_with(root) {
+        Some(resolved_path)
+    } else {
+        None
+    }
+}
+
 /// POSIX-friendly filename sanitiser: keeps `[A-Za-z0-9_-]+`, replaces
 /// runs of unsafe chars with `_`, trims leading/trailing dots/dashes/
 /// underscores, and clamps to 64 chars. Empty input → empty output (the
@@ -562,5 +622,61 @@ state_hard_kb = 100
     fn clamp_font_size_clamps_high() {
         assert_eq!(clamp_font_size(99), FONT_SIZE_MAX);
         assert_eq!(clamp_font_size(FONT_SIZE_MAX + 1), FONT_SIZE_MAX);
+    }
+
+    // ── resolve_inside_root ────────────────────────────────────────────────
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn resolve_inside_root_accepts_direct_descendant() {
+        let root = Path::new("/projects/aethon");
+        let target = Path::new("/projects/aethon/src/App.tsx");
+        let out = resolve_inside_root(root, target).expect("should resolve");
+        assert_eq!(out, PathBuf::from("/projects/aethon/src/App.tsx"));
+    }
+
+    #[test]
+    fn resolve_inside_root_accepts_root_itself() {
+        let root = Path::new("/projects/aethon");
+        let out = resolve_inside_root(root, root).expect("root is inside root");
+        assert_eq!(out, PathBuf::from("/projects/aethon"));
+    }
+
+    #[test]
+    fn resolve_inside_root_resolves_inner_parent_segments() {
+        // /projects/aethon/src/.. → /projects/aethon, still inside.
+        let root = Path::new("/projects/aethon");
+        let target = Path::new("/projects/aethon/src/..");
+        let out = resolve_inside_root(root, target).expect("inner .. stays inside");
+        assert_eq!(out, PathBuf::from("/projects/aethon"));
+    }
+
+    #[test]
+    fn resolve_inside_root_rejects_traversal_escape() {
+        let root = Path::new("/projects/aethon");
+        // /projects/aethon/../passwd → /projects/passwd, escapes.
+        assert!(resolve_inside_root(root, Path::new("/projects/aethon/../passwd")).is_none());
+        // /etc/passwd is plain outside.
+        assert!(resolve_inside_root(root, Path::new("/etc/passwd")).is_none());
+        // Sibling that shares a prefix is NOT a descendant — `/projects/aethon-other`
+        // starts with the same string as `/projects/aethon` but is a sibling
+        // dir. starts_with compares components, so this is rejected.
+        assert!(resolve_inside_root(root, Path::new("/projects/aethon-other/file")).is_none());
+    }
+
+    #[test]
+    fn resolve_inside_root_rejects_relative_inputs() {
+        // Both args must be absolute. A relative root or path is a caller
+        // bug — return None so the command surfaces an error.
+        assert!(resolve_inside_root(Path::new("projects/aethon"), Path::new("/x")).is_none());
+        assert!(resolve_inside_root(Path::new("/x"), Path::new("projects/aethon")).is_none());
+    }
+
+    #[test]
+    fn resolve_inside_root_rejects_pop_past_root() {
+        // /projects/aethon/../.. ascends above /projects — refuse rather
+        // than pop off the prefix component.
+        let root = Path::new("/projects/aethon");
+        assert!(resolve_inside_root(root, Path::new("/projects/aethon/../..")).is_none());
     }
 }
