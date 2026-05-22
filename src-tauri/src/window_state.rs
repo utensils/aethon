@@ -1,31 +1,36 @@
-//! Native window geometry persistence — position, size, maximized
-//! state, and the monitor the window was on at save time.
+//! Native window geometry persistence, in **logical** (DPI-independent)
+//! pixels. The load-bearing detail: physical pixels aren't portable
+//! across monitors with different scale factors, so a window saved on
+//! Retina (scale 2.0) would render at the wrong user-visible size when
+//! restored onto a 1× monitor unless every dimension is stored as
+//! logical units.
 //!
-//! Storage: a single JSON file at `~/.aethon/window-state.json` keyed by
-//! window label (`{"main": {...}, "settings": {...}}`). Aethon ships one
-//! window today; the map shape is so adding a second (popout, settings
-//! window) is a one-line change instead of a schema migration.
+//! Storage: `~/.aethon/window-state.json`, map keyed by window label.
 //!
-//! Restore happens in `setup()` *before* the window is shown — Tauri
-//! config sets `visible: false`, this module applies geometry, then the
-//! window is `show()`n. No restoration race, no settle-debounce.
+//! Restore runs in `setup()` *before* the window is shown — Tauri's
+//! manifest sets `visible: false`, this module applies bounds, then
+//! shows. No restoration race, no settle-debounce. First launch (no
+//! file) falls back to maximized on the primary monitor.
 //!
-//! Save is 250 ms-debounced on `WindowEvent::Moved` / `WindowEvent::Resized`
-//! and flushed synchronously on `WindowEvent::CloseRequested`. The
-//! debounce uses a monotonically-incrementing generation counter — every
-//! event bumps the counter and spawns a delayed worker that no-ops if
-//! the counter moved while it slept.
+//! Save: 250 ms-debounced on `Moved`/`Resized`, synchronous flush on
+//! `CloseRequested`. When the window is maximized at save time the
+//! prior "normal" bounds are preserved (only the `maximized` flag
+//! flips) so un-maximizing later lands at the user's last sensible
+//! size. Fullscreen is treated as transient and skipped.
 //!
-//! Multi-monitor matching (`restoreable_rect`):
-//!  1. Find a monitor whose dimensions exactly match the saved monitor.
-//!     If multiple match, pick the one closest in absolute origin.
-//!  2. If none match, pick the monitor whose center is nearest the saved
-//!     window's center.
-//!  3. If the saved rect would land off-screen on the picked monitor,
-//!     clamp into the monitor's visible area.
+//! Monitor matching, three-tier fallback:
+//!  1. Exact logical-dimension match — closest origin wins when several
+//!     candidates share dimensions.
+//!  2. Intersects — a current monitor whose rect overlaps the saved
+//!     window. Catches resolution toggles since save.
+//!  3. Nearest by saved-monitor center.
 //!
-//! This is the 95% case. Spaces/desktops aren't tracked — Tauri 2's
-//! public API doesn't expose them.
+//! Then the window is translated so its offset-within-saved-monitor is
+//! preserved on the target, clamped so at least `CLAMP_MARGIN` of the
+//! titlebar stays on-screen, and capped at the target monitor's size.
+//!
+//! Spaces / virtual desktops aren't tracked — Tauri 2's public API
+//! doesn't expose a stable identifier.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,47 +39,74 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Monitor, Position, Size};
 
 const STATE_FILE: &str = "window-state.json";
 const SAVE_DEBOUNCE_MS: u64 = 250;
 const MAIN_LABEL: &str = "main";
+const MIN_WIDTH: f64 = 600.0;
+const MIN_HEIGHT: f64 = 400.0;
+/// Minimum logical pixels of right edge / titlebar that must remain
+/// visible after a clamp — keeps the window controls reachable on every
+/// platform without making restored windows feel "snapped".
+const CLAMP_MARGIN_X: f64 = 80.0;
+const CLAMP_MARGIN_Y: f64 = 40.0;
 
-/// Per-window persisted geometry. Physical coordinates so the same JSON
-/// re-applies cleanly across DPI changes; `monitor` records where the
-/// window was at save time so [`restoreable_rect`] can match it back to
-/// a current monitor on next boot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowState {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
     pub maximized: bool,
     pub monitor: MonitorSnapshot,
+    /// Schema version. Bumped when the on-disk semantics change so old
+    /// records can be migrated. Missing → `0` (the original
+    /// physical-pixel format from the prior release).
+    #[serde(default)]
+    pub version: u32,
 }
 
-/// Snapshot of the monitor the window lived on at save time.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+const CURRENT_VERSION: u32 = 1;
+
+/// Logical-pixel snapshot of a monitor — used both as the persisted
+/// "saved monitor" record and as the runtime view of a current monitor
+/// (constructed via [`MonitorSnapshot::from_monitor`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MonitorSnapshot {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
     pub scale: f64,
 }
 
-/// Whole-store schema — labelled map so future windows ride this without
-/// migration. The outer object is the serialized form of
-/// [`WindowStateStore::states`].
+impl MonitorSnapshot {
+    fn from_monitor(m: &Monitor) -> Self {
+        let scale = m.scale_factor();
+        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        Self {
+            x: f64::from(m.position().x) / scale,
+            y: f64::from(m.position().y) / scale,
+            width: f64::from(m.size().width) / scale,
+            height: f64::from(m.size().height) / scale,
+            scale,
+        }
+    }
+
+    fn center(&self) -> (f64, f64) {
+        (self.x + self.width / 2.0, self.y + self.height / 2.0)
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct PersistedStore {
     #[serde(flatten)]
     states: HashMap<String, WindowState>,
 }
 
-/// Tauri-managed save coordinator. Holds the debounce generation counter
-/// per label so concurrent windows don't stomp each other's pending writes.
+/// Tauri-managed save coordinator. One debounce generation counter per
+/// window label so concurrent windows don't stomp each other.
 #[derive(Default)]
 pub struct WindowStateStore {
     save_gen: Mutex<HashMap<String, Arc<AtomicU64>>>,
@@ -92,10 +124,7 @@ impl WindowStateStore {
 }
 
 fn state_file_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let home = app
-        .path()
-        .home_dir()
-        .map_err(|e| format!("home_dir: {e}"))?;
+    let home = app.path().home_dir().map_err(|e| format!("home_dir: {e}"))?;
     let dir = home.join(".aethon");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     Ok(dir.join(STATE_FILE))
@@ -106,12 +135,39 @@ fn load_store(app: &AppHandle) -> PersistedStore {
         return PersistedStore::default();
     };
     match std::fs::read_to_string(&path) {
-        Ok(s) if !s.trim().is_empty() => serde_json::from_str(&s).unwrap_or_else(|e| {
-            tracing::warn!(target: "aethon::window_state", "parse {}: {e}", path.display());
-            PersistedStore::default()
-        }),
+        Ok(s) if !s.trim().is_empty() => {
+            let raw: PersistedStore = serde_json::from_str(&s).unwrap_or_else(|e| {
+                tracing::warn!(target: "aethon::window_state", "parse {}: {e}", path.display());
+                PersistedStore::default()
+            });
+            migrate(raw)
+        }
         _ => PersistedStore::default(),
     }
+}
+
+/// Apply per-record migrations so on-disk format changes don't strand
+/// users' saved geometry. Currently:
+///  - v0 → v1: old records stored window x/y/w/h as physical px (the
+///    fields were i32/u32 in the prior release). The new code treats
+///    them as logical px. Divide by `monitor.scale` to recover logical
+///    units. No-op on a 1× monitor.
+fn migrate(mut store: PersistedStore) -> PersistedStore {
+    for state in store.states.values_mut() {
+        if state.version < 1 {
+            let scale = if state.monitor.scale.is_finite() && state.monitor.scale > 0.0 {
+                state.monitor.scale
+            } else {
+                1.0
+            };
+            state.x /= scale;
+            state.y /= scale;
+            state.width /= scale;
+            state.height /= scale;
+            state.version = 1;
+        }
+    }
+    store
 }
 
 fn save_store(app: &AppHandle, store: &PersistedStore) -> Result<(), String> {
@@ -120,11 +176,9 @@ fn save_store(app: &AppHandle, store: &PersistedStore) -> Result<(), String> {
     std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// Apply persisted geometry to `main` (or whichever window matches the
-/// stored label) before it's shown. Falls back to a maximized window on
-/// the primary monitor when no state exists. Always shows the window at
-/// the end so a partial failure (e.g. monitor-list query) can never
-/// leave the user staring at a hidden window.
+/// Apply persisted geometry before the window is shown. First launch
+/// falls back to maximized on the primary monitor. Always shows the
+/// window so a partial failure can't strand the user.
 pub fn restore_on_setup(app: &AppHandle) -> Result<(), String> {
     let store = load_store(app);
     let Some(window) = app.get_webview_window(MAIN_LABEL) else {
@@ -135,31 +189,36 @@ pub fn restore_on_setup(app: &AppHandle) -> Result<(), String> {
     let monitors = window
         .available_monitors()
         .map_err(|e| format!("available_monitors: {e}"))?;
-    let monitor_rects: Vec<Rect> = monitors.iter().map(Rect::from_monitor).collect();
+    let monitor_snaps: Vec<MonitorSnapshot> =
+        monitors.iter().map(MonitorSnapshot::from_monitor).collect();
 
     if let Some(state) = store.states.get(MAIN_LABEL)
-        && !monitor_rects.is_empty()
+        && !monitor_snaps.is_empty()
     {
-        let target = restoreable_rect(state, &monitor_rects);
+        let target = restoreable_state(state, &monitor_snaps);
+        // Un-maximize first so set_position/set_size apply to the
+        // normal bounds, then re-maximize at the end if needed.
         let _ = window.unmaximize();
-        if let Err(e) = window.set_position(PhysicalPosition::new(target.x, target.y)) {
-            tracing::warn!(target: "aethon::window_state", "set_position: {e}");
-        }
-        if let Err(e) = window.set_size(PhysicalSize::new(target.width, target.height)) {
+        if let Err(e) = window.set_size(Size::Logical(LogicalSize {
+            width: target.width,
+            height: target.height,
+        })) {
             tracing::warn!(target: "aethon::window_state", "set_size: {e}");
+        }
+        if let Err(e) = window.set_position(Position::Logical(LogicalPosition {
+            x: target.x,
+            y: target.y,
+        })) {
+            tracing::warn!(target: "aethon::window_state", "set_position: {e}");
         }
         if state.maximized
             && let Err(e) = window.maximize()
         {
             tracing::warn!(target: "aethon::window_state", "maximize: {e}");
         }
-    } else {
-        // No saved state — match the previous behavior of opening
-        // maximized on the primary monitor. The manifest's
-        // `"maximized": true` is unreliable on macOS so we force it.
-        if let Err(e) = window.maximize() {
-            tracing::warn!(target: "aethon::window_state", "default maximize: {e}");
-        }
+    } else if let Err(e) = window.maximize() {
+        // Manifest `"maximized": true` is unreliable on macOS — force.
+        tracing::warn!(target: "aethon::window_state", "default maximize: {e}");
     }
 
     if let Err(e) = window.show() {
@@ -168,19 +227,16 @@ pub fn restore_on_setup(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Snapshot the window's current geometry and persist after a 250 ms
-/// debounce. Repeated calls within the window coalesce into one write.
+/// Schedule a debounced save. Repeated calls within 250 ms coalesce.
 pub fn schedule_save(app: AppHandle, label: String) {
-    let store_state = app.state::<WindowStateStore>();
-    let counter = store_state.generation(&label);
+    let counter = app.state::<WindowStateStore>().generation(&label);
     let token = counter.fetch_add(1, Ordering::SeqCst) + 1;
 
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(SAVE_DEBOUNCE_MS)).await;
-        let store_state = app.state::<WindowStateStore>();
-        let current = store_state.generation(&label).load(Ordering::SeqCst);
+        let current = app.state::<WindowStateStore>().generation(&label).load(Ordering::SeqCst);
         if current != token {
-            return; // a newer event superseded this one
+            return;
         }
         if let Err(e) = save_now(&app, &label) {
             tracing::warn!(target: "aethon::window_state", "scheduled save failed: {e}");
@@ -188,305 +244,394 @@ pub fn schedule_save(app: AppHandle, label: String) {
     });
 }
 
-/// Synchronous flush — used on `CloseRequested` so we don't lose the
-/// final geometry to a debounce that never fires.
+/// Synchronous flush — called on `CloseRequested`.
 pub fn save_now(app: &AppHandle, label: &str) -> Result<(), String> {
     let Some(window) = app.get_webview_window(label) else {
         return Ok(());
     };
-    // Tauri returns an error if the window is minimized; treat that
-    // as a no-op rather than persisting bogus minimized coordinates.
+
+    // Fullscreen is a transient mode — don't persist; let the prior
+    // saved state stand for the next launch.
+    if window.is_fullscreen().unwrap_or(false) {
+        return Ok(());
+    }
+
+    let scale = window.scale_factor().map_err(|e| format!("scale: {e}"))?;
+    let Some(monitor) = window.current_monitor().map_err(|e| format!("current_monitor: {e}"))? else {
+        return Ok(()); // transient detached state — skip
+    };
+    let monitor_snap = MonitorSnapshot::from_monitor(&monitor);
     let maximized = window.is_maximized().unwrap_or(false);
-    let position = window
-        .outer_position()
-        .map_err(|e| format!("outer_position: {e}"))?;
-    let size = window.outer_size().map_err(|e| format!("outer_size: {e}"))?;
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| format!("current_monitor: {e}"))?;
-
-    let monitor_snap = match monitor.as_ref() {
-        Some(m) => MonitorSnapshot {
-            x: m.position().x,
-            y: m.position().y,
-            width: m.size().width,
-            height: m.size().height,
-            scale: m.scale_factor(),
-        },
-        // Window with no monitor (e.g. transient detached state) —
-        // don't persist; we'd just write a bogus origin.
-        None => return Ok(()),
-    };
-
-    let state = WindowState {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-        maximized,
-        monitor: monitor_snap,
-    };
 
     let mut store = load_store(app);
-    store.states.insert(label.to_string(), state);
+    let next = if maximized {
+        // Preserve prior normal bounds; flip the maximized flag. Without
+        // this, un-maximize would land at the monitor-full geometry.
+        let base = store
+            .states
+            .get(label)
+            .cloned()
+            .unwrap_or_else(|| default_normal(monitor_snap));
+        WindowState {
+            maximized: true,
+            monitor: monitor_snap,
+            version: CURRENT_VERSION,
+            ..base
+        }
+    } else {
+        let outer = window.outer_position().map_err(|e| format!("outer_position: {e}"))?;
+        let inner = window.inner_size().map_err(|e| format!("inner_size: {e}"))?;
+        WindowState {
+            x: f64::from(outer.x) / scale,
+            y: f64::from(outer.y) / scale,
+            width: f64::from(inner.width) / scale,
+            height: f64::from(inner.height) / scale,
+            maximized: false,
+            monitor: monitor_snap,
+            version: CURRENT_VERSION,
+        }
+    };
+    store.states.insert(label.to_string(), next);
     save_store(app, &store)
 }
 
+fn default_normal(monitor: MonitorSnapshot) -> WindowState {
+    let width = 1200.0_f64.min(monitor.width);
+    let height = 800.0_f64.min(monitor.height);
+    WindowState {
+        x: monitor.x + (monitor.width - width).max(0.0) / 2.0,
+        y: monitor.y + (monitor.height - height).max(0.0) / 2.0,
+        width,
+        height,
+        maximized: false,
+        monitor,
+        version: CURRENT_VERSION,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rect {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
+pub struct LogicalRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
-impl Rect {
-    fn from_monitor(m: &tauri::Monitor) -> Self {
-        Self {
-            x: m.position().x,
-            y: m.position().y,
-            width: m.size().width,
-            height: m.size().height,
-        }
-    }
+/// Compute the bounds the window should restore to, given the saved
+/// state and the current monitor list. All units are logical.
+pub fn restoreable_state(state: &WindowState, monitors: &[MonitorSnapshot]) -> LogicalRect {
+    debug_assert!(!monitors.is_empty());
+    let saved_monitor = state.monitor;
+    let saved_window = LogicalRect {
+        x: state.x,
+        y: state.y,
+        width: state.width,
+        height: state.height,
+    };
 
-    fn from_state(s: &WindowState) -> Self {
-        Self {
-            x: s.x,
-            y: s.y,
-            width: s.width,
-            height: s.height,
-        }
-    }
-
-    fn from_monitor_snap(s: &MonitorSnapshot) -> Self {
-        Self {
-            x: s.x,
-            y: s.y,
-            width: s.width,
-            height: s.height,
-        }
-    }
-
-    fn center(&self) -> (i64, i64) {
-        (
-            self.x as i64 + (self.width / 2) as i64,
-            self.y as i64 + (self.height / 2) as i64,
-        )
-    }
-}
-
-/// Pick a target rect for `state` against the currently available
-/// monitors. Algorithm:
-///  1. Exact dimension match on the saved monitor (closest origin if
-///     several match) → preserve position-within-monitor exactly.
-///  2. Otherwise nearest-by-center monitor → translate the window so
-///     its offset within the new monitor mirrors its offset within
-///     the saved monitor (best-effort).
-///  3. Clamp so the window's top-left lands inside the chosen monitor
-///     and at least 80×40 px of titlebar remains on-screen.
-pub fn restoreable_rect(state: &WindowState, monitors: &[Rect]) -> Rect {
-    debug_assert!(!monitors.is_empty(), "caller guarantees ≥1 monitor");
-    let saved_window = Rect::from_state(state);
-    let saved_monitor = Rect::from_monitor_snap(&state.monitor);
-
-    let target_monitor = exact_match(&saved_monitor, monitors)
-        .or_else(|| Some(nearest_by_center(&saved_window, monitors)))
+    let target = exact_match(&saved_monitor, monitors)
+        .or_else(|| intersects(&saved_window, monitors))
         .copied()
-        .unwrap_or(monitors[0]);
+        .unwrap_or_else(|| nearest_by_center(&saved_monitor, monitors));
 
-    // Translate the window into the new monitor preserving the
-    // offset-within-monitor (e.g. window was 100 px in from the left
-    // edge of saved monitor → still 100 px in on the new one). This
-    // is a no-op when the monitor matched exactly.
-    let dx = target_monitor.x - saved_monitor.x;
-    let dy = target_monitor.y - saved_monitor.y;
-    let mut x = saved_window.x.saturating_add(dx);
-    let mut y = saved_window.y.saturating_add(dy);
+    // Preserve offset-within-monitor onto the target.
+    let dx = target.x - saved_monitor.x;
+    let dy = target.y - saved_monitor.y;
+    let mut x = saved_window.x + dx;
+    let mut y = saved_window.y + dy;
 
-    // Cap the window's size to the target monitor — a 4K window
-    // restored onto a 1080p screen should fit, not spill off-screen.
-    let width = saved_window.width.min(target_monitor.width);
-    let height = saved_window.height.min(target_monitor.height);
+    let width = saved_window
+        .width
+        .min(target.width)
+        .max(MIN_WIDTH.min(target.width));
+    let height = saved_window
+        .height
+        .min(target.height)
+        .max(MIN_HEIGHT.min(target.height));
 
-    let monitor_right = target_monitor.x + target_monitor.width as i32;
-    let monitor_bottom = target_monitor.y + target_monitor.height as i32;
-    // Clamp x/y so at least 80 px of right edge and 40 px of titlebar
-    // stay on-screen — picked to fit a window-control cluster on every
-    // platform without making restored windows feel "snapped".
-    let min_x = target_monitor.x - (width as i32 - 80).max(0);
-    let max_x = monitor_right - 80;
-    let min_y = target_monitor.y;
-    let max_y = monitor_bottom - 40;
+    let max_x = target.x + target.width - CLAMP_MARGIN_X;
+    let max_y = target.y + target.height - CLAMP_MARGIN_Y;
+    let min_x = target.x - (width - CLAMP_MARGIN_X).max(0.0);
+    let min_y = target.y;
     if min_x <= max_x {
         x = x.clamp(min_x, max_x);
     } else {
-        x = target_monitor.x;
+        x = target.x;
     }
     if min_y <= max_y {
         y = y.clamp(min_y, max_y);
     } else {
-        y = target_monitor.y;
+        y = target.y;
     }
 
-    Rect {
-        x,
-        y,
-        width,
-        height,
-    }
+    LogicalRect { x, y, width, height }
 }
 
-fn exact_match<'a>(saved: &Rect, monitors: &'a [Rect]) -> Option<&'a Rect> {
+fn exact_match<'a>(
+    saved: &MonitorSnapshot,
+    monitors: &'a [MonitorSnapshot],
+) -> Option<&'a MonitorSnapshot> {
     monitors
         .iter()
-        .filter(|m| m.width == saved.width && m.height == saved.height)
-        .min_by_key(|m| {
-            let dx = (m.x - saved.x) as i64;
-            let dy = (m.y - saved.y) as i64;
-            dx * dx + dy * dy
+        .filter(|m| (m.width - saved.width).abs() < 0.5 && (m.height - saved.height).abs() < 0.5)
+        .min_by(|a, b| {
+            sq_distance((a.x, a.y), (saved.x, saved.y))
+                .partial_cmp(&sq_distance((b.x, b.y), (saved.x, saved.y)))
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
 }
 
-fn nearest_by_center<'a>(saved: &Rect, monitors: &'a [Rect]) -> &'a Rect {
-    let (sx, sy) = saved.center();
+fn intersects<'a>(
+    window: &LogicalRect,
+    monitors: &'a [MonitorSnapshot],
+) -> Option<&'a MonitorSnapshot> {
+    let right = window.x + window.width;
+    let bottom = window.y + window.height;
+    let window_center = (window.x + window.width / 2.0, window.y + window.height / 2.0);
+    // With mixed-scale monitor arrangements the per-monitor logical
+    // rects can overlap numerically, so first-overlap could pick the
+    // wrong display. Among all intersecting candidates, return the one
+    // whose center is closest to the saved window's center.
     monitors
         .iter()
-        .min_by_key(|m| {
-            let (mx, my) = m.center();
-            (mx - sx).pow(2) + (my - sy).pow(2)
+        .filter(|m| {
+            window.x < m.x + m.width && right > m.x && window.y < m.y + m.height && bottom > m.y
         })
-        .expect("nearest_by_center called with empty monitors")
+        .min_by(|a, b| {
+            sq_distance(a.center(), window_center)
+                .partial_cmp(&sq_distance(b.center(), window_center))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
+fn nearest_by_center(saved: &MonitorSnapshot, monitors: &[MonitorSnapshot]) -> MonitorSnapshot {
+    let saved_center = saved.center();
+    monitors
+        .iter()
+        .min_by(|a, b| {
+            sq_distance(a.center(), saved_center)
+                .partial_cmp(&sq_distance(b.center(), saved_center))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .copied()
+        .expect("non-empty monitors")
+}
+
+fn sq_distance(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn state(x: i32, y: i32, w: u32, h: u32, monitor: Rect) -> WindowState {
+    fn mon(x: f64, y: f64, w: f64, h: f64, scale: f64) -> MonitorSnapshot {
+        MonitorSnapshot { x, y, width: w, height: h, scale }
+    }
+
+    fn state(x: f64, y: f64, w: f64, h: f64, monitor: MonitorSnapshot) -> WindowState {
         WindowState {
             x,
             y,
             width: w,
             height: h,
             maximized: false,
-            monitor: MonitorSnapshot {
-                x: monitor.x,
-                y: monitor.y,
-                width: monitor.width,
-                height: monitor.height,
-                scale: 1.0,
-            },
+            monitor,
+            version: CURRENT_VERSION,
         }
     }
 
-    fn mon(x: i32, y: i32, w: u32, h: u32) -> Rect {
-        Rect {
-            x,
-            y,
-            width: w,
-            height: h,
-        }
+    fn approx_eq(a: f64, b: f64) -> bool {
+        (a - b).abs() < 0.5
     }
 
     #[test]
     fn single_monitor_no_op_when_in_bounds() {
-        let m = mon(0, 0, 1920, 1080);
-        let s = state(200, 150, 800, 600, m);
-        let out = restoreable_rect(&s, &[m]);
-        assert_eq!(out, Rect { x: 200, y: 150, width: 800, height: 600 });
+        let m = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let out = restoreable_state(&state(200.0, 150.0, 800.0, 600.0, m), &[m]);
+        assert!(approx_eq(out.x, 200.0) && approx_eq(out.y, 150.0));
+        assert!(approx_eq(out.width, 800.0) && approx_eq(out.height, 600.0));
     }
 
     #[test]
-    fn exact_dim_match_picked_even_when_position_changed() {
-        // Saved monitor and a smaller monitor present; same-dim monitor
-        // moved to (-1920, 0) since save. Window should ride along.
-        let saved_monitor = mon(0, 0, 1920, 1080);
-        let now_a = mon(-1920, 0, 1920, 1080);
-        let now_b = mon(0, 0, 1024, 768);
-        let s = state(200, 150, 800, 600, saved_monitor);
-        let out = restoreable_rect(&s, &[now_b, now_a]);
-        // x translated by -1920 (saved was 200 → -1720 on relocated monitor)
-        assert_eq!(out.x, -1720);
-        assert_eq!(out.y, 150);
-        assert_eq!(out.width, 800);
-        assert_eq!(out.height, 600);
+    fn exact_dim_match_picks_repositioned_monitor() {
+        // Saved monitor and a smaller one present; same-dim monitor
+        // moved since save. Window rides along.
+        let saved = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let now_repositioned = mon(-1920.0, 0.0, 1920.0, 1080.0, 1.0);
+        let other = mon(0.0, 0.0, 1024.0, 768.0, 1.0);
+        let out = restoreable_state(
+            &state(200.0, 150.0, 800.0, 600.0, saved),
+            &[other, now_repositioned],
+        );
+        assert!(approx_eq(out.x, -1720.0));
+        assert!(approx_eq(out.y, 150.0));
+        assert!(approx_eq(out.width, 800.0));
+    }
+
+    #[test]
+    fn duplicate_dimension_monitors_pick_closest_origin() {
+        // Three same-dim monitors arranged horizontally; saved monitor
+        // is the middle one. Exact match picks closest origin → middle.
+        let a = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let b = mon(1920.0, 0.0, 1920.0, 1080.0, 1.0);
+        let c = mon(3840.0, 0.0, 1920.0, 1080.0, 1.0);
+        let out =
+            restoreable_state(&state(2020.0, 100.0, 800.0, 600.0, b), &[a, b, c]);
+        assert!(approx_eq(out.x, 2020.0));
+        assert!(approx_eq(out.y, 100.0));
+    }
+
+    #[test]
+    fn cross_dpi_save_restore_keeps_logical_size() {
+        // Saved on a 2× monitor, restored onto a 1× monitor — window
+        // should keep its user-visible size (logical units). No exact
+        // match → intersect / nearest fallback.
+        let retina = mon(0.0, 0.0, 1500.0, 900.0, 2.0);
+        let one_x = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let out = restoreable_state(
+            &state(100.0, 100.0, 800.0, 600.0, retina),
+            &[one_x],
+        );
+        // Intersects → translate dx=0; size unchanged logical 800×600.
+        assert!(approx_eq(out.width, 800.0));
+        assert!(approx_eq(out.height, 600.0));
     }
 
     #[test]
     fn missing_monitor_falls_back_to_nearest_center() {
-        // External monitor at (1920, 0) is gone; only the laptop screen
-        // remains. The saved window should land on the laptop, offset
-        // mirrored relative to the new monitor's origin.
-        let external = mon(1920, 0, 2560, 1440);
-        let laptop = mon(0, 0, 1440, 900);
-        let s = state(2120, 200, 800, 600, external); // 200 px in from external
-        let out = restoreable_rect(&s, &[laptop]);
-        // Offset 200/200 preserved relative to laptop origin (0,0)
-        assert_eq!(out.x, 200);
-        assert_eq!(out.y, 200);
-        // Size unchanged (fits within laptop)
-        assert_eq!(out.width, 800);
-        assert_eq!(out.height, 600);
+        let external = mon(1920.0, 0.0, 2560.0, 1440.0, 1.0);
+        let laptop = mon(0.0, 0.0, 1440.0, 900.0, 1.0);
+        let out = restoreable_state(
+            &state(2120.0, 200.0, 800.0, 600.0, external),
+            &[laptop],
+        );
+        // Offset (200, 200) preserved onto laptop origin (0, 0).
+        assert!(approx_eq(out.x, 200.0));
+        assert!(approx_eq(out.y, 200.0));
     }
 
     #[test]
-    fn oversize_window_clamped_to_monitor() {
-        // Window saved on a 4K display; only 1080p available now.
-        let m4k = mon(0, 0, 3840, 2160);
-        let m1080 = mon(0, 0, 1920, 1080);
-        let s = state(100, 100, 3000, 1800, m4k);
-        let out = restoreable_rect(&s, &[m1080]);
-        assert!(out.width <= m1080.width);
-        assert!(out.height <= m1080.height);
-        // Clamped — x/y should still fit
-        assert!(out.x >= m1080.x);
-        assert!(out.y >= m1080.y);
+    fn intersect_fallback_when_saved_monitor_dims_changed() {
+        // Saved on 1920×1080, that monitor's resolution toggled.
+        let now = mon(0.0, 0.0, 2560.0, 1440.0, 1.0);
+        let out = restoreable_state(
+            &state(100.0, 100.0, 800.0, 600.0, mon(0.0, 0.0, 1920.0, 1080.0, 1.0)),
+            &[now],
+        );
+        assert!(approx_eq(out.x, 100.0));
+        assert!(approx_eq(out.y, 100.0));
+    }
+
+    #[test]
+    fn oversize_window_clamped_to_target_monitor() {
+        let small = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let big_phantom = mon(0.0, 0.0, 3840.0, 2160.0, 1.0);
+        let out =
+            restoreable_state(&state(100.0, 100.0, 3000.0, 1800.0, big_phantom), &[small]);
+        assert!(out.width <= small.width + 0.5);
+        assert!(out.height <= small.height + 0.5);
     }
 
     #[test]
     fn off_edge_window_clamped_into_visible_area() {
-        // Window saved with its top-left near the bottom-right corner —
-        // most of the titlebar would be off-screen on restore without
-        // clamping. (Same-monitor save so the translation step is a no-op
-        // and only the clamp can rescue it.)
-        let m = mon(0, 0, 1920, 1080);
-        let s = state(1900, 1070, 800, 600, m);
-        let out = restoreable_rect(&s, &[m]);
-        // 80 px right margin / 40 px bottom margin pulled in
-        assert!(out.x + 80 <= m.x + m.width as i32);
-        assert!(out.y + 40 <= m.y + m.height as i32);
-        // Still on the monitor (not pulled into negative x/y).
-        assert!(out.x >= m.x);
-        assert!(out.y >= m.y);
-    }
-
-    #[test]
-    fn nearest_by_center_picks_closest_when_no_exact_match() {
-        let near = mon(-100, -100, 1024, 768);
-        let far = mon(5000, 5000, 1024, 768);
-        let saved_monitor = mon(0, 0, 1920, 1080); // no exact match
-        let s = state(100, 100, 400, 300, saved_monitor);
-        let out = restoreable_rect(&s, &[far, near]);
-        // Translated relative to `near`, not `far`.
-        // dx = -100, dy = -100 → window x = 0, y = 0
-        assert_eq!(out.x, 0);
-        assert_eq!(out.y, 0);
+        let m = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let out = restoreable_state(&state(1900.0, 1070.0, 800.0, 600.0, m), &[m]);
+        assert!(out.x + CLAMP_MARGIN_X <= m.x + m.width + 0.5);
+        assert!(out.y + CLAMP_MARGIN_Y <= m.y + m.height + 0.5);
     }
 
     #[test]
     fn persisted_store_round_trips_through_json() {
-        let mut s = PersistedStore::default();
-        s.states.insert(
-            "main".to_string(),
-            state(100, 200, 800, 600, mon(0, 0, 1920, 1080)),
+        let mut store = PersistedStore::default();
+        store.states.insert(
+            "main".into(),
+            state(100.0, 200.0, 800.0, 600.0, mon(0.0, 0.0, 1920.0, 1080.0, 1.0)),
         );
-        let json = serde_json::to_string(&s).unwrap();
-        let back: PersistedStore = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.states.len(), 1);
-        let restored = back.states.get("main").unwrap();
-        assert_eq!(restored.x, 100);
-        assert_eq!(restored.width, 800);
-        assert_eq!(restored.monitor.scale, 1.0);
+        let back: PersistedStore =
+            serde_json::from_str(&serde_json::to_string(&store).unwrap()).unwrap();
+        let r = back.states.get("main").unwrap();
+        assert!(approx_eq(r.x, 100.0) && approx_eq(r.width, 800.0));
+        assert!(approx_eq(r.monitor.scale, 1.0));
+        assert_eq!(r.version, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn migrate_v0_physical_record_to_logical() {
+        // Prior release stored window x/y/w/h as physical px alongside
+        // a Retina-scale monitor. Round-trip through migrate() must
+        // divide by scale to recover logical units.
+        let raw = r#"{
+            "main": {
+                "x": 600, "y": 400, "width": 2000, "height": 1400,
+                "maximized": false,
+                "monitor": { "x": 0, "y": 0, "width": 2056, "height": 1329, "scale": 2.0 }
+            }
+        }"#;
+        let parsed: PersistedStore = serde_json::from_str(raw).unwrap();
+        let migrated = migrate(parsed);
+        let m = migrated.states.get("main").unwrap();
+        assert!(approx_eq(m.x, 300.0));
+        assert!(approx_eq(m.y, 200.0));
+        assert!(approx_eq(m.width, 1000.0));
+        assert!(approx_eq(m.height, 700.0));
+        assert_eq!(m.version, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn migrate_v0_on_1x_monitor_is_noop() {
+        // On a 1× monitor physical == logical, so no value change.
+        let raw = r#"{
+            "main": {
+                "x": -1325, "y": 440, "width": 1281, "height": 859,
+                "maximized": false,
+                "monitor": { "x": -5120, "y": 0, "width": 5120, "height": 1440, "scale": 1.0 }
+            }
+        }"#;
+        let m = migrate(serde_json::from_str(raw).unwrap())
+            .states
+            .remove("main")
+            .unwrap();
+        assert!(approx_eq(m.x, -1325.0));
+        assert!(approx_eq(m.width, 1281.0));
+        assert_eq!(m.version, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn migrate_skips_records_already_at_current_version() {
+        // A v1 record must not be migrated again.
+        let mut store = PersistedStore::default();
+        store.states.insert(
+            "main".into(),
+            state(300.0, 200.0, 1000.0, 700.0, mon(0.0, 0.0, 2056.0, 1329.0, 2.0)),
+        );
+        let migrated = migrate(store);
+        let m = migrated.states.get("main").unwrap();
+        // Values unchanged — no double-divide by 2.0.
+        assert!(approx_eq(m.x, 300.0));
+        assert!(approx_eq(m.width, 1000.0));
+    }
+
+    #[test]
+    fn intersect_picks_best_center_match_when_multiple_candidates() {
+        // Two monitors whose logical rects both intersect the saved
+        // window (mixed-scale overlap scenario). The one whose center
+        // is closest to the window's center should win.
+        let near_window = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
+        let far_overlap = mon(800.0, 0.0, 1920.0, 1080.0, 1.0);
+        let s = state(
+            100.0,
+            100.0,
+            800.0,
+            600.0,
+            // Phantom saved monitor — no dim match.
+            mon(0.0, 0.0, 9999.0, 9999.0, 1.0),
+        );
+        let out = restoreable_state(&s, &[far_overlap, near_window]);
+        // Window center ≈ (500, 400). near_window center (960, 540)
+        // is closer than far_overlap center (1760, 540). The result
+        // should translate as if `near_window` was picked — dx = 0.
+        assert!(approx_eq(out.x, 100.0));
+        assert!(approx_eq(out.y, 100.0));
     }
 }
