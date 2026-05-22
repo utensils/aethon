@@ -67,10 +67,28 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
   if (typeof input.sidebarVisible === "boolean") {
     next.sidebarVisible = input.sidebarVisible;
   }
+  if (typeof input.filesSidebarVisible === "boolean") {
+    next.filesSidebarVisible = input.filesSidebarVisible;
+  }
   if (typeof input.columns === "string") {
-    const first = input.columns.trim().split(/\s+/)[0];
-    if (/^\d+px$/.test(first)) {
-      next.columns = `${first} minmax(0,1fr)`;
+    // Preserve fixed left + right column widths; reset the center to
+    // minmax(0,1fr) so the user's resize sticks across reloads. Two
+    // shapes are supported:
+    //   "<L>px minmax(0,1fr)"            (legacy: left sidebar only)
+    //   "<L>px minmax(0,1fr) <R>px"      (canonical: left + files-right)
+    // Anything else is dropped so the boot payload's default wins.
+    const tokens = input.columns.trim().split(/\s+/);
+    const first = tokens[0];
+    const last = tokens[tokens.length - 1];
+    if (tokens.length >= 2 && /^\d+px$/.test(first)) {
+      if (/^\d+px$/.test(last) && tokens.length >= 3) {
+        next.columns = `${first} minmax(0,1fr) ${last}`;
+      } else {
+        // Legacy snapshot — let the boot payload's default fill in
+        // the right column so the redesigned 3-column layout still
+        // surfaces on first restore after upgrade.
+        next.columns = `${first} minmax(0,1fr) 280px`;
+      }
     }
   }
   return Object.keys(next).length > 0 ? next : undefined;
