@@ -1039,8 +1039,18 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           className="a2ui-chat-input-send a2ui-chat-input-stop"
           onClick={handleStop}
           title={stopTitle}
+          aria-label={stopLabel}
         >
-          {stopLabel}
+          <svg
+            className="a2ui-chat-input-send-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+          </svg>
+          <span className="a2ui-chat-input-send-label">{stopLabel}</span>
         </button>
       ) : (
         <button
@@ -1048,22 +1058,24 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           className="a2ui-chat-input-send"
           onClick={handleClick}
           disabled={value.trim().length === 0}
+          aria-label={sendLabel}
+          title={`${sendLabel} (Enter)`}
         >
           <svg
             className="a2ui-chat-input-send-icon"
-            width="14"
-            height="14"
+            width="16"
+            height="16"
             viewBox="0 0 16 16"
             fill="none"
             stroke="currentColor"
-            strokeWidth="1.5"
+            strokeWidth="1.6"
             strokeLinecap="round"
             strokeLinejoin="round"
             aria-hidden="true"
           >
             <path d="M2 8l11-5-4 11-2-5-5-1z" />
           </svg>
-          <span>{sendLabel}</span>
+          <span className="a2ui-chat-input-send-label">{sendLabel}</span>
         </button>
       )}
     </div>
