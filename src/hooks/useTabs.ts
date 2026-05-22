@@ -601,7 +601,10 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   /** Close every editor tab whose filePath matches `path` (or is a
    *  descendant when `kind === "dir"`). Imported by the file-tree's
    *  delete action so a moved-to-Trash file can't be resurrected by a
-   *  later Cmd+S on the still-open buffer. */
+   *  later Cmd+S on the still-open buffer. Routes through `closeTab`
+   *  (not `closeTabNow`) so the dirty-buffer confirm prompt still fires
+   *  per-tab — a folder delete with unsaved edits inside it can't
+   *  silently destroy the in-memory buffer. */
   function closeEditorTabsForPath(path: string, kind: string) {
     if (!path) return;
     const prefix = `${path.replace(/\/+$/, "")}/`;
@@ -613,7 +616,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         kind === "dir"
           ? current === path || current.startsWith(prefix)
           : current === path;
-      if (match) closeTabNow(tab.id);
+      if (match) closeTab(tab.id);
     }
   }
 

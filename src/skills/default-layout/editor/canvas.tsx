@@ -298,61 +298,74 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   }, []);
 
   // Branch on file viewer registry first — image / pdf / future custom
-  // viewers replace Monaco entirely for matching extensions. Falls
-  // through to Monaco when the registry has nothing for this path.
-  // Viewers don't currently emit events back, so a no-op A2UIEventHandler
-  // is fine. We bridge BuiltinComponentProps.onEvent to A2UIEventHandler
-  // when a viewer ever does need to talk back.
+  // viewers overlay Monaco for matching extensions. The Monaco host div
+  // stays mounted (display: none below) so the mount effect's
+  // containerRef populates on first render even when the active tab is
+  // an image; switching to a text file later then "just works" without
+  // recreating Monaco.
   const filePath = editorMeta?.filePath ?? "";
   const viewerType = pickFileViewer(filePath);
-  if (viewerType) {
-    return (
-      <RegistryComponent
-        type={viewerType}
-        state={state}
-        onEvent={(_c, eventType, data) => {
-          onEvent(eventType, data);
-        }}
-        componentProps={{ filePath, projectPath }}
-      />
-    );
-  }
+  const previewMode =
+    editorMeta?.previewMode === true && editorMeta?.language === "markdown";
+  const showViewer = !!viewerType;
+  const showPreview = previewMode && !showViewer;
+  const showMonaco = !showViewer && !showPreview;
 
-  // Markdown preview mode (Cmd+Shift+V) — same Monaco-managed file,
-  // but the canvas swaps in the rendered view. The buffer is still
-  // live; toggling back to Monaco shows whatever the user had.
-  const previewMode = editorMeta?.previewMode === true &&
-    editorMeta?.language === "markdown";
-  if (previewMode) {
-    return (
-      <RegistryComponent
-        type="markdown-preview"
-        state={state}
-        onEvent={(_c, eventType, data) => {
-          onEvent(eventType, data);
-        }}
-        componentProps={{
-          filePath,
-          projectPath,
-          refreshKey: editorMeta?.previewRefreshKey ?? 0,
-        }}
-      />
-    );
-  }
+  // Re-measure the editor when the host transitions from display:none
+  // back to visible. automaticLayout's ResizeObserver fires on the size
+  // change too, but the explicit call avoids a one-frame "0x0" paint
+  // when toggling preview off in a tab that's been hidden for a while.
+  useEffect(() => {
+    if (!showMonaco) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+    const raf = requestAnimationFrame(() => ed.layout());
+    return () => cancelAnimationFrame(raf);
+  }, [showMonaco]);
 
   return (
     <div className="ae-editor-canvas-wrap" style={{ gridArea: "canvas" }}>
-      <div ref={containerRef} className="ae-editor-canvas-host" />
-      {loadError && (
+      <div
+        ref={containerRef}
+        className="ae-editor-canvas-host"
+        style={showMonaco ? undefined : { display: "none" }}
+      />
+      {viewerType && (
+        <RegistryComponent
+          type={viewerType}
+          state={state}
+          onEvent={(_c, eventType, data) => {
+            onEvent(eventType, data);
+          }}
+          componentProps={{ filePath, projectPath }}
+        />
+      )}
+      {showPreview && (
+        <RegistryComponent
+          type="markdown-preview"
+          state={state}
+          onEvent={(_c, eventType, data) => {
+            onEvent(eventType, data);
+          }}
+          componentProps={{
+            filePath,
+            projectPath,
+            refreshKey: editorMeta?.previewRefreshKey ?? 0,
+          }}
+        />
+      )}
+      {showMonaco && loadError && (
         <div className="ae-editor-canvas-error">Failed to load file: {loadError}</div>
       )}
-      <EditorStatusBar
-        filePath={editorMeta?.filePath ?? ""}
-        language={editorMeta?.language ?? "plaintext"}
-        isDirty={Boolean(editorMeta?.isDirty)}
-        line={cursorDisplay.line}
-        column={cursorDisplay.column}
-      />
+      {showMonaco && (
+        <EditorStatusBar
+          filePath={editorMeta?.filePath ?? ""}
+          language={editorMeta?.language ?? "plaintext"}
+          isDirty={Boolean(editorMeta?.isDirty)}
+          line={cursorDisplay.line}
+          column={cursorDisplay.column}
+        />
+      )}
     </div>
   );
 }
