@@ -138,6 +138,10 @@ pub fn install_app_menu(
     let toggle_files = MenuItemBuilder::with_id("toggle_files", "Toggle Files")
         .accelerator("CmdOrCtrl+J")
         .build(app)?;
+    let toggle_files_sidebar =
+        MenuItemBuilder::with_id("toggle_files_sidebar", "Toggle Files Sidebar")
+            .accelerator("CmdOrCtrl+D")
+            .build(app)?;
     let clear_chat = MenuItemBuilder::with_id("clear_chat", "Clear Chat")
         .accelerator("CmdOrCtrl+K")
         .build(app)?;
@@ -190,6 +194,7 @@ pub fn install_app_menu(
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
         .item(&toggle_files)
+        .item(&toggle_files_sidebar)
         .item(&clear_chat)
         .item(&stop_prompt)
         .build()?;
@@ -197,6 +202,7 @@ pub fn install_app_menu(
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
         .item(&toggle_files)
+        .item(&toggle_files_sidebar)
         .item(&clear_chat)
         .item(&stop_prompt)
         .separator()

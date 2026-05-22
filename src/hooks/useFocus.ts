@@ -19,6 +19,118 @@ export interface UseFocusActions {
   focusComposer: () => void;
   focusTerminalPanel: () => void;
   toggleSidebar: () => void;
+  toggleFilesSidebar: () => void;
+}
+
+const DEFAULT_LEFT_WIDTH = "220px";
+const DEFAULT_RIGHT_WIDTH = "280px";
+
+function parseWidth(token: string | undefined, fallback: string): string {
+  return token && /^\d+px$/.test(token) ? token : fallback;
+}
+
+/**
+ * Compose the workstation grid template from `{left, right}` visibility +
+ * the user's most-recently-resized widths. Layout-as-payload means the
+ * sidebar can't just `display: none` — the grid column would still claim
+ * space — so each toggle has to rewrite `columns` and `areas` in lockstep.
+ *
+ * Width tokens are pulled from the current `layout.columns` so user
+ * resizes survive a hide/show round-trip; falls back to the boot defaults
+ * when the token is missing or malformed.
+ */
+/**
+ * Pick out the left + right px widths from any of the workstation's
+ * column shapes. The grid template can be:
+ *   [L, 1fr, R]   3-column (canonical)
+ *   [L, 1fr]      2-column left-only
+ *   [1fr, R]      2-column right-only
+ *   [1fr]         1-column (both hidden)
+ * Returns the first/last tokens iff they're `<n>px`. Width memos on
+ * `layout.lastLeftWidth` / `layout.lastRightWidth` win over inference so
+ * a hide/show round-trip restores the user's previous size.
+ */
+function pickWidths(current: {
+  columns?: unknown;
+  lastLeftWidth?: unknown;
+  lastRightWidth?: unknown;
+}): { left: string; right: string } {
+  const tokens =
+    typeof current.columns === "string"
+      ? current.columns.trim().split(/\s+/)
+      : [];
+  const first = tokens[0];
+  const last = tokens[tokens.length - 1];
+  // Right token is only the LAST token when there are ≥3 tokens (3-col
+  // shape) or when the last token is px AND the layout had no left
+  // sidebar (2-col right-only).
+  const inferredLeft =
+    first && /^minmax/.test(first) ? undefined : first;
+  const inferredRight =
+    tokens.length >= 3 && last && /^\d+px$/.test(last)
+      ? last
+      : tokens.length === 2 && last && /^\d+px$/.test(last) && first && /^minmax/.test(first)
+        ? last
+        : undefined;
+  const memoLeft =
+    typeof current.lastLeftWidth === "string" ? current.lastLeftWidth : undefined;
+  const memoRight =
+    typeof current.lastRightWidth === "string" ? current.lastRightWidth : undefined;
+  return {
+    left: parseWidth(inferredLeft ?? memoLeft, DEFAULT_LEFT_WIDTH),
+    right: parseWidth(inferredRight ?? memoRight, DEFAULT_RIGHT_WIDTH),
+  };
+}
+
+export function workstationLayout(
+  current: {
+    columns?: unknown;
+    lastLeftWidth?: unknown;
+    lastRightWidth?: unknown;
+  },
+  leftVisible: boolean,
+  rightVisible: boolean,
+): {
+  columns: string;
+  areas: string[];
+  lastLeftWidth: string;
+  lastRightWidth: string;
+} {
+  const { left, right } = pickWidths(current);
+
+  const parts: string[] = [];
+  const areaCols: string[] = [];
+  if (leftVisible) {
+    parts.push(left);
+    areaCols.push("sidebar");
+  }
+  parts.push("minmax(0,1fr)");
+  const centerIndex = areaCols.length;
+  areaCols.push("__center__");
+  if (rightVisible) {
+    parts.push(right);
+    areaCols.push("files-sidebar");
+  }
+
+  const rowFor = (centerName: string) => {
+    const cols = [...areaCols];
+    cols[centerIndex] = centerName;
+    return cols.join(" ");
+  };
+  const statusRow = areaCols.map(() => "status").join(" ");
+
+  return {
+    columns: parts.join(" "),
+    areas: [
+      rowFor("header"),
+      rowFor("canvas"),
+      rowFor("terminal"),
+      rowFor("composer"),
+      statusRow,
+    ],
+    lastLeftWidth: left,
+    lastRightWidth: right,
+  };
 }
 
 /**
@@ -137,29 +249,46 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
 
   function toggleSidebar() {
     setState((prev) => {
-      // Flip /layout/sidebarVisible AND swap /layout/columns +
-      // /layout/areas atomically so the grid template adapts on
-      // the same frame the sidebar cell hides. Without the
-      // template swap the hidden sidebar would still reserve its
-      // 220px column. Workstation hoists tabs into the header
-      // (5 rows total); future layout variations may own their own
-      // area templates and not bind /layout/areas, so this toggle
-      // stays workstation-shaped.
       const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
-      const visible = !((layout.sidebarVisible as boolean | undefined) ?? true);
-      const columns = visible ? "220px minmax(0,1fr)" : "minmax(0,1fr)";
-      const areas = visible
-        ? [
-            "sidebar header",
-            "sidebar canvas",
-            "sidebar terminal",
-            "sidebar composer",
-            "status status",
-          ]
-        : ["header", "canvas", "terminal", "composer", "status"];
+      const leftVisible = !((layout.sidebarVisible as boolean | undefined) ?? true);
+      const rightVisible =
+        (layout.filesSidebarVisible as boolean | undefined) ?? true;
+      const next = workstationLayout(layout, leftVisible, rightVisible);
       return {
         ...prev,
-        layout: { ...layout, sidebarVisible: visible, columns, areas },
+        layout: {
+          ...layout,
+          sidebarVisible: leftVisible,
+          filesSidebarVisible: rightVisible,
+          columns: next.columns,
+          areas: next.areas,
+          lastLeftWidth: next.lastLeftWidth,
+          lastRightWidth: next.lastRightWidth,
+        },
+      };
+    });
+  }
+
+  function toggleFilesSidebar() {
+    setState((prev) => {
+      const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const leftVisible =
+        (layout.sidebarVisible as boolean | undefined) ?? true;
+      const rightVisible = !(
+        (layout.filesSidebarVisible as boolean | undefined) ?? true
+      );
+      const next = workstationLayout(layout, leftVisible, rightVisible);
+      return {
+        ...prev,
+        layout: {
+          ...layout,
+          sidebarVisible: leftVisible,
+          filesSidebarVisible: rightVisible,
+          columns: next.columns,
+          areas: next.areas,
+          lastLeftWidth: next.lastLeftWidth,
+          lastRightWidth: next.lastRightWidth,
+        },
       };
     });
   }
@@ -172,5 +301,6 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
     focusComposer,
     focusTerminalPanel,
     toggleSidebar,
+    toggleFilesSidebar,
   };
 }

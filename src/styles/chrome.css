@@ -2331,17 +2331,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   gap: 6px;
   padding: 6px 10px 6px 12px;
   background: transparent;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
+  border: none;
+  border-radius: 0;
   color: var(--text-dim);
   font-size: var(--chrome-text);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
   position: relative;
-  top: 1px; /* sits flush with the tab-strip's bottom border when active */
-  margin-bottom: -1px;
   /* Tabs share the strip evenly: `flex: 1 1 0` distributes remaining
      space by grow factor with no per-item basis claim, so 1 tab takes
      the whole strip (clamped by max-inline-size below) and 12 tabs each
@@ -2350,19 +2347,38 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-inline-size: 4rem;
   max-inline-size: min(18rem, 36vw);
   flex: 1 1 0;
+  transition: color 120ms var(--ease-out, ease), background-color 120ms var(--ease-out, ease);
+}
+
+/* Underline marker — sits flush with the strip's bottom border so a
+   non-active tab visually blends with the strip while the active one
+   draws a 2px accent line. Pseudo-element so we don't need an extra DOM
+   node and the underline animates independently from the tab background. */
+.a2ui-tab::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  background: transparent;
+  border-radius: 2px 2px 0 0;
+  transition: background-color 120ms var(--ease-out, ease);
+  pointer-events: none;
 }
 
 .a2ui-tab:hover {
   color: var(--text);
-  background: var(--accent-hover-tint);
+  background: var(--bg-hover, var(--accent-hover-tint));
 }
 
 .a2ui-tab-active {
   color: var(--text);
-  background: var(--bg);
-  border-color: var(--border);
-  border-bottom: 1px solid var(--bg);
-  box-shadow: 0 -2px 0 0 var(--accent) inset;
+  background: transparent;
+}
+
+.a2ui-tab-active::after {
+  background: var(--accent);
 }
 
 /* Dirty indicator — small accent dot rendered before the label when a

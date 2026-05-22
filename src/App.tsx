@@ -597,6 +597,7 @@ export default function App() {
     toggleFocusComposerTerminal,
     focusActiveContextInput,
     toggleSidebar,
+    toggleFilesSidebar,
   } = useFocus({ setState, stateRef });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
@@ -713,6 +714,7 @@ export default function App() {
     shortcutsNewTabKindRef,
     toggleTerminalAndFocus,
     toggleSidebar,
+    toggleFilesSidebar,
     toggleEditorPreview,
     clearChat,
     stopPrompt,
@@ -790,6 +792,7 @@ export default function App() {
     clearChat,
     stopPrompt,
     toggleTerminal,
+    toggleFilesSidebar,
     pushNotification,
     dismissNotification,
     checkForUpdates,
@@ -845,6 +848,7 @@ export default function App() {
       },
       toggleTerminal,
       toggleSidebar,
+      toggleFilesSidebar,
       activateLayout: activateLayoutById,
       listLayouts: () =>
         layoutCatalogueRef.current.map((l) => ({

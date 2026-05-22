@@ -32,7 +32,18 @@ export const handleSidebarResize: EventRouteHandler = (
         (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
       const tokens = current.trim().split(/\s+/);
       tokens[0] = `${next}px`;
-      return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
+      // Stash the new left width on the layout so a hide/show
+      // round-trip restores the user's sized sidebar instead of the
+      // boot default. The files sidebar carries its own memo via the
+      // toggle helpers.
+      return {
+        ...prev,
+        layout: {
+          ...layout,
+          columns: tokens.join(" "),
+          lastLeftWidth: `${next}px`,
+        },
+      };
     });
   }
   return true;

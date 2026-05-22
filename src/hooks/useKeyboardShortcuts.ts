@@ -29,6 +29,7 @@ export interface UseKeyboardShortcutsContext {
   // Built-in actions, all hoisted from App or hook destructures.
   toggleTerminalAndFocus: () => void;
   toggleSidebar: () => void;
+  toggleFilesSidebar: () => void;
   /** Toggle markdown preview mode on the active editor tab (Cmd+Shift+V).
    *  No-op when the active tab isn't a markdown file. */
   toggleEditorPreview: () => void;
@@ -123,6 +124,13 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         e.preventDefault();
         e.stopPropagation();
         ctx.toggleSidebar();
+        return;
+      }
+      // Cmd+D: toggle the right-hand files sidebar.
+      if (e.key.toLowerCase() === "d" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.toggleFilesSidebar();
         return;
       }
       if (e.key.toLowerCase() === "k" && mod && !e.shiftKey && !e.altKey) {
