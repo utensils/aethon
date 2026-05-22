@@ -38,4 +38,4 @@ export {
   readTerminalTheme,
 } from "./terminal";
 export { ShellCanvas, TabStrip, TerminalPanel } from "./shell";
-export { EditorCanvas } from "./editor";
+export { EditorCanvas, ImageViewer, MarkdownPreview } from "./editor";

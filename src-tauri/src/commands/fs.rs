@@ -175,6 +175,31 @@ pub fn fs_list_dir(root: String, path: String) -> Result<Vec<FsEntry>, String> {
     Ok(entries)
 }
 
+/// Read an arbitrary file from disk and return its bytes base64-encoded.
+/// Used by the image viewer — `fs_read_file` rejects non-UTF-8 input by
+/// design (Monaco needs faithful round-trip), so the binary path is a
+/// separate command. Path validation mirrors `fs_read_file`'s; the
+/// same 10 MB ceiling applies so a runaway PNG can't OOM the webview.
+#[tauri::command]
+pub fn fs_read_file_base64(root: String, path: String) -> Result<String, String> {
+    use base64::Engine as _;
+    let target = validated_target(&root, &path)?;
+    let root_canon = canonical_root(&root)?;
+    ensure_symlink_safe(&target, &root_canon)?;
+    let metadata = std::fs::metadata(&target).map_err(|e| format!("stat {}: {e}", target.display()))?;
+    if metadata.is_dir() {
+        return Err(format!("not a file: {}", target.display()));
+    }
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(format!(
+            "file too large: {} bytes (cap {MAX_FILE_BYTES})",
+            metadata.len()
+        ));
+    }
+    let bytes = std::fs::read(&target).map_err(|e| format!("read {}: {e}", target.display()))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
 /// Read a UTF-8 text file. Non-UTF-8 bytes return an error rather than
 /// lossy-replace — Monaco needs faithful round-trip. The 10 MB cap stops
 /// a tarball from accidentally tanking the webview.
@@ -210,6 +235,24 @@ pub fn fs_write_file(root: String, path: String, content: String) -> Result<(), 
     }
     let target = validated_target(&root, &path)?;
     let root_canon = canonical_root(&root)?;
+    ensure_symlink_safe(&target, &root_canon)?;
+    // If the target is a symlink inside the project, write through to
+    // its resolved target instead of replacing the link itself. The
+    // atomic rename below would silently swap the symlink for a
+    // regular file, breaking the original target and surprising any
+    // tooling that relied on the link. We still funnel the resolved
+    // path through `validated_target` so the boundary check stays
+    // intact — the symlink can only redirect inside the project root.
+    let target = match std::fs::symlink_metadata(&target) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            let resolved = target
+                .canonicalize()
+                .map_err(|e| format!("resolve symlink {}: {e}", target.display()))?;
+            let resolved_str = resolved.to_string_lossy().into_owned();
+            validated_target(&root, &resolved_str)?
+        }
+        _ => target,
+    };
     ensure_symlink_safe(&target, &root_canon)?;
     // Atomic write: write to a per-call unique temp path in the same
     // directory, then rename. fs::rename is atomic within the same

@@ -23,6 +23,7 @@ import {
   registerMonacoTheme as registerMonacoThemeImpl,
   applyMonacoTheme,
 } from "../monaco/theme";
+import { registerFileViewer as registerFileViewerImpl } from "../skills/default-layout/editor";
 import type * as monaco from "monaco-editor";
 
 export interface UseWindowApiContext {
@@ -151,6 +152,23 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
        *  with chrome colors + optional token rules. Re-applies
        *  immediately if `id` is the active theme. Returns false on a
        *  malformed argument so the caller can surface a warning. */
+      /** Register a custom file viewer that replaces Monaco for files
+       *  whose extension matches `extensions[]`. The named
+       *  `componentType` must be registered separately via
+       *  `registerComponent` and receives `{ filePath, projectPath }`
+       *  props. Returns false on a malformed argument so the caller
+       *  can surface a warning. */
+      registerFileViewer: (entry: {
+        extensions: string[];
+        componentType: string;
+      }): boolean => {
+        if (!entry || !Array.isArray(entry.extensions)) return false;
+        if (typeof entry.componentType !== "string" || !entry.componentType.trim()) {
+          return false;
+        }
+        registerFileViewerImpl(entry);
+        return true;
+      },
       registerMonacoTheme: (
         id: string,
         data: monaco.editor.IStandaloneThemeData,

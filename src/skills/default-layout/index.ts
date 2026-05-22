@@ -13,8 +13,10 @@ import {
   EditorCanvas,
   EmptyState,
   FileTreePanel,
+  ImageViewer,
   Layout,
   MainCanvas,
+  MarkdownPreview,
   ShellCanvas,
   Sidebar,
   StatusBar,
@@ -73,6 +75,12 @@ export const defaultLayoutSkill: A2UISkill = {
     // editor tab. Disabled with an empty state when no project is
     // active.
     "file-tree": FileTreePanel,
+    // Built-in file viewers — dispatched by EditorCanvas when the
+    // active editor tab's path matches an entry in the file-viewer
+    // registry (image extensions ship out of the box). Extensions can
+    // override either component via `aethon.registerComponent`.
+    "image-viewer": ImageViewer,
+    "markdown-preview": MarkdownPreview,
     // M6 restructure: tabbed bottom panel. Hosts the read-only
     // agent-bash sub-tab + every user shell as a separate sub-tab.
     // Replaces the standalone `terminal` cell in workstation.

@@ -450,6 +450,15 @@ body {
 
 /* ---- File tree (sibling of .a2ui-sidebar inside .ae-sidebar-area) ------ */
 
+.ae-file-tree,
+.ae-file-tree * {
+  /* Cover every descendant — single rows, the titlebar, the resize
+     handle. Without the deep selector the chevron + filename text
+     stayed selectable, which made click-and-drag accidentally drag-
+     select the tree instead of opening a file. */
+  user-select: none;
+  -webkit-user-select: none;
+}
 .ae-file-tree {
   position: relative;
   display: flex;
@@ -457,7 +466,6 @@ body {
   overflow: hidden;
   background: var(--bg-elev);
   color: var(--text-dim);
-  user-select: none;
   min-height: 0;
 }
 .ae-file-tree.is-collapsed {
@@ -3516,6 +3524,131 @@ body.ae-resizing-terminal * {
 }
 .ae-editor-status-sep {
   opacity: 0.5;
+}
+
+/* =============================================================================
+   Image viewer — alternate editor canvas for image extensions.
+   ============================================================================= */
+
+.ae-image-viewer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-image-viewer-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background:
+    repeating-conic-gradient(
+      var(--bg-elev) 0% 25%,
+      var(--bg) 0% 50%
+    ) 0 0 / 24px 24px;
+}
+.ae-image-viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+.ae-image-viewer-loading,
+.ae-image-viewer-error {
+  padding: 12px;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+}
+.ae-image-viewer-error {
+  color: var(--text-error, #d6655a);
+}
+.ae-image-viewer-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-image-viewer-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-image-viewer-spacer {
+  flex: 1 1 auto;
+}
+
+/* =============================================================================
+   Markdown preview — Cmd+Shift+V toggle on the editor canvas.
+   ============================================================================= */
+
+.ae-md-preview {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-md-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 32px;
+}
+.ae-md-preview-doc {
+  max-width: 76ch;
+  margin: 0 auto;
+  color: var(--text);
+  line-height: 1.6;
+}
+.ae-md-preview-loading,
+.ae-md-preview-error,
+.ae-md-preview-empty {
+  padding: 12px 16px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-md-preview-error {
+  color: var(--text-error, #d6655a);
+}
+.ae-md-preview-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-md-preview-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-md-preview-spacer {
+  flex: 1 1 auto;
+}
+.ae-md-preview-hint {
+  opacity: 0.7;
 }
 
 .ae-shell-status-bar {

@@ -726,6 +726,7 @@ pub fn run() {
             commands::extensions::unwatch_project_extensions,
             commands::fs::fs_list_dir,
             commands::fs::fs_read_file,
+            commands::fs::fs_read_file_base64,
             commands::fs::fs_write_file,
             commands::fs::fs_create_file,
             commands::fs::fs_create_dir,

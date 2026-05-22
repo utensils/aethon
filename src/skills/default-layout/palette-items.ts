@@ -282,6 +282,13 @@ export function selectPaletteItems(
     // the user is bouncing between. Reuses the "tabs" section so the
     // ranking + section headers stay consistent.
     pushTabs();
+    // Load commands + keybindings so the `>` / `?` query prefixes
+    // still surface them when the user opens Cmd+P and then changes
+    // intent mid-query. rankItems already prioritises whichever
+    // section the prefix selects; the items just have to exist for it
+    // to filter against.
+    pushCommands();
+    pushKeybindings();
   } else if (mode === "switcher") {
     pushTabs();
     pushSessions();

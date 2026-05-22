@@ -34,13 +34,17 @@ import * as monaco from "monaco-editor";
 
 import type { StringValue } from "../../../types/a2ui";
 import { resolveString } from "../../../utils/dataBinding";
-import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import {
+  RegistryComponent,
+  type BuiltinComponentProps,
+} from "../../../components/A2UIRenderer";
 import { applyMonacoTheme } from "../../../monaco/theme";
 import { ensureShikiMonacoReady } from "../../../monaco/shiki";
 import {
   createEditorBuffer,
   getEditorBuffer,
 } from "../../../monaco/editor-buffers";
+import { pickFileViewer } from "./file-viewers";
 
 interface EditorTabLike {
   id: string;
@@ -51,6 +55,12 @@ interface EditorTabLike {
     isDirty?: boolean;
     cursorLine?: number;
     cursorColumn?: number;
+    /** When true, render the markdown preview instead of Monaco for
+     *  this tab. Toggled by Cmd+Shift+V. Has no effect on non-markdown
+     *  files (the canvas only branches when language === "markdown"). */
+    previewMode?: boolean;
+    /** Bumps on every successful save so the preview re-reads. */
+    previewRefreshKey?: number;
   };
 }
 
@@ -286,6 +296,49 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
     return () => observer.disconnect();
   }, []);
+
+  // Branch on file viewer registry first — image / pdf / future custom
+  // viewers replace Monaco entirely for matching extensions. Falls
+  // through to Monaco when the registry has nothing for this path.
+  // Viewers don't currently emit events back, so a no-op A2UIEventHandler
+  // is fine. We bridge BuiltinComponentProps.onEvent to A2UIEventHandler
+  // when a viewer ever does need to talk back.
+  const filePath = editorMeta?.filePath ?? "";
+  const viewerType = pickFileViewer(filePath);
+  if (viewerType) {
+    return (
+      <RegistryComponent
+        type={viewerType}
+        state={state}
+        onEvent={(_c, eventType, data) => {
+          onEvent(eventType, data);
+        }}
+        componentProps={{ filePath, projectPath }}
+      />
+    );
+  }
+
+  // Markdown preview mode (Cmd+Shift+V) — same Monaco-managed file,
+  // but the canvas swaps in the rendered view. The buffer is still
+  // live; toggling back to Monaco shows whatever the user had.
+  const previewMode = editorMeta?.previewMode === true &&
+    editorMeta?.language === "markdown";
+  if (previewMode) {
+    return (
+      <RegistryComponent
+        type="markdown-preview"
+        state={state}
+        onEvent={(_c, eventType, data) => {
+          onEvent(eventType, data);
+        }}
+        componentProps={{
+          filePath,
+          projectPath,
+          refreshKey: editorMeta?.previewRefreshKey ?? 0,
+        }}
+      />
+    );
+  }
 
   return (
     <div className="ae-editor-canvas-wrap" style={{ gridArea: "canvas" }}>

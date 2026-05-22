@@ -185,6 +185,8 @@ export interface UseTabsActions {
   /** Set the dirty flag + cursor on the active editor tab. Used by
    *  EditorCanvas to mirror Monaco's model state back to the layout. */
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
+  /** Toggle the active editor tab's markdown preview mode (Cmd+Shift+V). */
+  toggleEditorPreview: () => void;
   /** Reconcile open editor tabs after a rename. See implementation
    *  notes inside useTabs. */
   renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
@@ -674,6 +676,21 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     });
   }
 
+  /** Toggle the active editor tab's markdown preview mode. No-op when
+   *  the active tab isn't an editor tab or isn't a markdown file. */
+  function toggleEditorPreview() {
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    if (!activeId) return;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tab = tabs.find((t) => t.id === activeId);
+    if (!tab || tab.kind !== "editor" || !tab.editor) return;
+    if (tab.editor.language !== "markdown") return;
+    updateEditorMeta(activeId, {
+      previewMode: !tab.editor.previewMode,
+      previewRefreshKey: (tab.editor.previewRefreshKey ?? 0) + 1,
+    });
+  }
+
   /** Patch the active editor tab's metadata (dirty flag, cursor). Cheap
    *  no-op if the tab is missing or not an editor tab. */
   function updateEditorMeta(tabId: string, patch: Partial<EditorMeta>) {
@@ -918,6 +935,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     newShellTab,
     newEditorTab,
     updateEditorMeta,
+    toggleEditorPreview,
     renameEditorTabsForPath,
     closeEditorTabsForPath,
     autoRestoreDiscoveredSessions,

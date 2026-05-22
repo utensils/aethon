@@ -33,6 +33,12 @@ export interface EditorMeta {
   isDirty: boolean;
   cursorLine?: number;
   cursorColumn?: number;
+  /** When true and language === "markdown", the editor canvas renders
+   *  the markdown preview instead of Monaco. Toggled by Cmd+Shift+V. */
+  previewMode?: boolean;
+  /** Increments on every successful save while previewMode is true so
+   *  the preview re-reads fresh disk content. */
+  previewRefreshKey?: number;
 }
 
 export type TabKind = "agent" | "shell" | "editor";

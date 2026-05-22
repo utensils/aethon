@@ -29,6 +29,9 @@ export interface UseKeyboardShortcutsContext {
   // Built-in actions, all hoisted from App or hook destructures.
   toggleTerminalAndFocus: () => void;
   toggleSidebar: () => void;
+  /** Toggle markdown preview mode on the active editor tab (Cmd+Shift+V).
+   *  No-op when the active tab isn't a markdown file. */
+  toggleEditorPreview: () => void;
   clearChat: () => void;
   stopPrompt: () => void | Promise<void>;
   newTab: () => void;
@@ -106,6 +109,14 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         e.preventDefault();
         e.stopPropagation();
         window.dispatchEvent(new Event("aethon:toggle-file-tree"));
+        return;
+      }
+      // Cmd+Shift+V: toggle markdown preview on the active editor
+      // tab. No-op when the active tab isn't a markdown file.
+      if (e.key.toLowerCase() === "v" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.toggleEditorPreview();
         return;
       }
       if (e.key.toLowerCase() === "b" && mod && !e.shiftKey && !e.altKey) {
