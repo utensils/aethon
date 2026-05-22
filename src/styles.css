@@ -421,16 +421,14 @@ body {
   border-right: 1px solid var(--border);
 }
 .ae-sidebar-area > .a2ui-sidebar {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   border-right: 0;
-  /* Cap so the sections list doesn't push the file tree off-screen on a
-     short window. The actual scroll containment stays inside the
-     sidebar element. */
-  max-height: 60%;
+  min-height: 0;
 }
 .ae-sidebar-area > .ae-file-tree {
-  flex: 1 1 auto;
-  min-height: 0;
+  /* Height controlled by the React component's inline flex-basis so the
+     user-driven resize handle works. Border separates from the sidebar
+     above; the handle sits over the top edge. */
   border-top: 1px solid var(--border);
 }
 
@@ -453,35 +451,105 @@ body {
 /* ---- File tree (sibling of .a2ui-sidebar inside .ae-sidebar-area) ------ */
 
 .ae-file-tree {
+  position: relative;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overscroll-behavior: none;
+  overflow: hidden;
   background: var(--bg-elev);
   color: var(--text-dim);
-  padding: 6px 0 8px 0;
   user-select: none;
+  min-height: 0;
+}
+.ae-file-tree.is-collapsed {
+  flex: 0 0 auto;
 }
 .ae-file-tree-empty {
-  padding: 6px 12px;
+  padding-bottom: 6px;
 }
 .ae-file-tree-error {
   padding: 6px 12px;
   color: var(--text-error, #d6655a);
   font-size: var(--chrome-text-muted);
 }
+.ae-file-tree-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 6px;
+  flex: 0 0 auto;
+}
+.ae-file-tree-toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.ae-file-tree-toggle:hover {
+  color: var(--text);
+}
+.ae-file-tree-chevron {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.7;
+}
 .ae-file-tree-title {
-  padding: 4px 12px;
   font-size: var(--chrome-text-muted);
   text-transform: lowercase;
   letter-spacing: 0.04em;
+}
+.ae-file-tree-hide {
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  margin: 0;
   color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1.05em;
+  line-height: 1;
+}
+.ae-file-tree-hide:hover {
+  color: var(--text);
+}
+.ae-file-tree-resize-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.ae-file-tree-resize-handle:hover,
+body.ae-resizing-sidebar .ae-file-tree-resize-handle {
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
 }
 .ae-file-tree-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 8px 0;
   flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
 }
 .ae-file-tree-row {
   display: flex;

@@ -164,7 +164,6 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       ed.dispose();
       editorRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Initial cursor for a NEW (just-loaded) buffer comes from the
@@ -198,6 +197,11 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       if (prevBuf) prevBuf.viewState = ed.saveViewState();
     }
     currentTabIdRef.current = tabId;
+    // Clear any stale error from a previous tab's failed load — the
+    // user has actively switched, so the prior error message is no
+    // longer relevant. Synchronous setState in an effect is the
+    // simplest way to reset state-resync of this kind.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadError("");
 
     const language = editorMeta.language || "plaintext";

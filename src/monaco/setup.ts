@@ -63,4 +63,11 @@ if (typeof window !== "undefined" && !window.MonacoEnvironment) {
 
 loader.config({ monaco });
 
+// Install the WebKit-only context-view positioning fix once, here, so
+// Monaco's right-click menu lands at the cursor under non-1 UI zoom.
+// On Chromium/at-zoom-1 every callback short-circuits — no measurable
+// runtime cost.
+import { installMonacoContextViewFix } from "./context-view-fix";
+installMonacoContextViewFix();
+
 export { monaco };

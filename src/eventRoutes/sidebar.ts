@@ -226,6 +226,14 @@ export const handleSectionedSelect: EventRouteHandler = async (
     ctx.toggleTerminal();
     return true;
   }
+  if (selected?.itemId === "toggle-file-tree") {
+    // FileTreePanel listens for this on the window. Keeps the sidebar
+    // event route free of file-tree-specific React state.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("aethon:toggle-file-tree"));
+    }
+    return true;
+  }
   if (selected?.itemId === "clear-chat") {
     ctx.clearChat();
     return true;

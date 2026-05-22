@@ -26,7 +26,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readState, writeState } from "../../../persist";
-import { clampOverlayPosition } from "../../../utils/viewport";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 interface FsEntry {
@@ -107,6 +106,28 @@ interface ContextMenuState {
   node: TreeNode;
 }
 
+const PANEL_PREFS_FILE = "file-tree-prefs.json";
+const PANEL_HEIGHT_DEFAULT = 280;
+const PANEL_HEIGHT_MIN = 120;
+const PANEL_HEIGHT_MAX = 1200;
+
+interface PanelPrefs {
+  collapsed?: boolean;
+  hidden?: boolean;
+  height?: number;
+}
+
+function readPanelPrefs(raw: string): PanelPrefs {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === "object") return v as PanelPrefs;
+  } catch {
+    /* fall through */
+  }
+  return {};
+}
+
 export function FileTreePanel({ component, state, onEvent }: BuiltinComponentProps) {
   void component;
   const project = state["project"] as ProjectShape | undefined;
@@ -118,6 +139,16 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   // Set of expanded absolute paths. Driving render, mirror-saved to disk.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string>("");
+  // Panel chrome state — collapsed header (just shows the "files" row,
+  // hides the tree), hidden entirely (panel offscreen), and the panel
+  // height when expanded (drag handle resizes; clamped to a sensible
+  // range so it can't squeeze the rest of the sidebar). Persisted to
+  // ~/.aethon/file-tree-prefs.json.
+  const [collapsed, setCollapsed] = useState<boolean>(false);
+  const [hidden, setHidden] = useState<boolean>(false);
+  const [height, setHeight] = useState<number>(PANEL_HEIGHT_DEFAULT);
+  const prefsHydrated = useRef<boolean>(false);
+  const prefsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const expandedStoreRef = useRef<ExpandedStore>({ byProject: {} });
   const projectPathRef = useRef<string>(projectPath);
@@ -140,9 +171,46 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         if (prior?.length) setExpanded(new Set(prior));
       }
     });
+    void readState(PANEL_PREFS_FILE).then((raw) => {
+      if (cancelled) return;
+      const prefs = readPanelPrefs(raw);
+      if (typeof prefs.collapsed === "boolean") setCollapsed(prefs.collapsed);
+      if (typeof prefs.hidden === "boolean") setHidden(prefs.hidden);
+      if (
+        typeof prefs.height === "number" &&
+        prefs.height >= PANEL_HEIGHT_MIN &&
+        prefs.height <= PANEL_HEIGHT_MAX
+      ) {
+        setHeight(prefs.height);
+      }
+      prefsHydrated.current = true;
+    });
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Persist panel prefs (collapsed / hidden / height) whenever they
+  // change after the initial hydrate. Debounced because the drag
+  // handle fires height updates on every mousemove.
+  useEffect(() => {
+    if (!prefsHydrated.current) return;
+    if (prefsSaveTimerRef.current) clearTimeout(prefsSaveTimerRef.current);
+    prefsSaveTimerRef.current = setTimeout(() => {
+      void writeState(
+        PANEL_PREFS_FILE,
+        JSON.stringify({ collapsed, hidden, height }),
+      );
+    }, 200);
+  }, [collapsed, hidden, height]);
+
+  // Listen for the global `aethon:toggle-file-tree` event so the panels
+  // sidebar item / a future keybinding can hide-and-show the panel from
+  // the outside without prop drilling.
+  useEffect(() => {
+    const toggle = () => setHidden((h) => !h);
+    window.addEventListener("aethon:toggle-file-tree", toggle);
+    return () => window.removeEventListener("aethon:toggle-file-tree", toggle);
   }, []);
 
   // Schedule a debounced persist whenever the active project's expand
@@ -323,12 +391,13 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    // Use the zoom-aware helper so the menu lands on the cursor at any
-    // UI scale. Without it, position: fixed on a portal child is
-    // interpreted in the unzoomed visual viewport while clientX/Y come
-    // back from the zoomed logical viewport, so the menu drifts.
-    const { x, y } = clampOverlayPosition(e.clientX, e.clientY, 220, 220);
-    setContextMenu({ x, y, node });
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    setContextMenu({
+      x: Math.min(e.clientX, Math.max(8, viewportWidth - 220)),
+      y: Math.min(e.clientY, Math.max(8, viewportHeight - 220)),
+      node,
+    });
   };
 
   // Close the menu on any outside interaction. Mirrors the existing
@@ -534,41 +603,162 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     }
   };
 
+  if (hidden) {
+    // Panel toggled off. Render nothing so the flex container collapses
+    // and other sidebar sections claim the space. The toggle event
+    // brings it back without losing collapsed/height prefs.
+    return null;
+  }
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = height;
+    document.body.classList.add("ae-resizing-sidebar");
+    const onMove = (ev: MouseEvent) => {
+      // Drag handle sits at the TOP of the panel — dragging UP grows
+      // the panel (decreasing the panel's flex-basis is reversed
+      // compared to a bottom handle).
+      const dy = startY - ev.clientY;
+      const next = Math.max(
+        PANEL_HEIGHT_MIN,
+        Math.min(PANEL_HEIGHT_MAX, Math.round(startHeight + dy)),
+      );
+      setHeight(next);
+    };
+    const onUp = () => {
+      document.body.classList.remove("ae-resizing-sidebar");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  const titleRow = (
+    <div className="ae-file-tree-titlebar">
+      <button
+        type="button"
+        className="ae-file-tree-toggle"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand files" : "Collapse files"}
+        title={collapsed ? "Expand files" : "Collapse files"}
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <span className="ae-file-tree-chevron" aria-hidden="true">
+          {collapsed ? "▸" : "▾"}
+        </span>
+        <span className="ae-file-tree-title">files</span>
+      </button>
+      <button
+        type="button"
+        className="ae-file-tree-hide"
+        aria-label="Hide files panel"
+        title="Hide files panel"
+        onClick={() => setHidden(true)}
+      >
+        ×
+      </button>
+    </div>
+  );
+
+  // Style honors the collapsed (just header) + resizable (height) state.
+  const panelStyle: React.CSSProperties = collapsed
+    ? { flex: "0 0 auto" }
+    : { flex: `0 0 ${height}px` };
+
   if (!projectPath) {
     return (
-      <div className="ae-file-tree ae-file-tree-empty">
-        <div className="a2ui-sidebar-empty">no project</div>
+      <div
+        className={`ae-file-tree ae-file-tree-empty${collapsed ? " is-collapsed" : ""}`}
+        style={panelStyle}
+      >
+        {!collapsed && (
+          <div
+            className="ae-file-tree-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize files panel"
+            onMouseDown={startResize}
+          />
+        )}
+        {titleRow}
+        {!collapsed && (
+          <div className="a2ui-sidebar-empty">no project</div>
+        )}
       </div>
     );
   }
   if (error) {
     return (
-      <div className="ae-file-tree">
-        <div className="ae-file-tree-error">{error}</div>
+      <div
+        className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
+        style={panelStyle}
+      >
+        {!collapsed && (
+          <div
+            className="ae-file-tree-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize files panel"
+            onMouseDown={startResize}
+          />
+        )}
+        {titleRow}
+        {!collapsed && <div className="ae-file-tree-error">{error}</div>}
       </div>
     );
   }
   if (!root) {
     return (
-      <div className="ae-file-tree">
-        <div className="a2ui-sidebar-empty">loading…</div>
+      <div
+        className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
+        style={panelStyle}
+      >
+        {!collapsed && (
+          <div
+            className="ae-file-tree-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize files panel"
+            onMouseDown={startResize}
+          />
+        )}
+        {titleRow}
+        {!collapsed && <div className="a2ui-sidebar-empty">loading…</div>}
       </div>
     );
   }
   return (
-    <div className="ae-file-tree" role="tree" aria-label="Project files">
-      <div className="ae-file-tree-title">files</div>
-      <ul className="ae-file-tree-list">
-        {visibleNodes.map((node) => (
-          <FileTreeRow
-            key={node.entry.path}
-            node={node}
-            expanded={expanded.has(node.entry.path)}
-            onClick={() => onItemClick(node)}
-            onContextMenu={(e) => onRowContextMenu(e, node)}
-          />
-        ))}
-      </ul>
+    <div
+      className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
+      role="tree"
+      aria-label="Project files"
+      style={panelStyle}
+    >
+      {!collapsed && (
+        <div
+          className="ae-file-tree-resize-handle"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize files panel"
+          onMouseDown={startResize}
+        />
+      )}
+      {titleRow}
+      {!collapsed && (
+        <ul className="ae-file-tree-list">
+          {visibleNodes.map((node) => (
+            <FileTreeRow
+              key={node.entry.path}
+              node={node}
+              expanded={expanded.has(node.entry.path)}
+              onClick={() => onItemClick(node)}
+              onContextMenu={(e) => onRowContextMenu(e, node)}
+            />
+          ))}
+        </ul>
+      )}
       {contextMenu &&
         createPortal(
           <div
