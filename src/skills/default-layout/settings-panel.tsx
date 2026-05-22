@@ -506,9 +506,7 @@ function ExtensionsList({
             key={item.id}
             className={`ae-settings-ext-row ae-settings-ext-row--${kind}`}
           >
-            <span className="ae-settings-ext-name" data-selectable>
-              {item.label}
-            </span>
+            <span className="ae-settings-ext-name">{item.label}</span>
             {item.hint ? (
               <span className="ae-settings-ext-hint">{item.hint}</span>
             ) : null}

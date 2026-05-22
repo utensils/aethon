@@ -732,13 +732,9 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         <span className="ae-file-tree-chevron" aria-hidden="true">
           {collapsed ? "▸" : "▾"}
         </span>
-        <span className="ae-file-tree-title" data-selectable>
-          {headerLabel}
-        </span>
+        <span className="ae-file-tree-title">{headerLabel}</span>
         {headerBranch ? (
-          <span className="ae-file-tree-branch" data-selectable>
-            {headerBranch}
-          </span>
+          <span className="ae-file-tree-branch">{headerBranch}</span>
         ) : null}
       </button>
       {fillsContainer ? null : (
@@ -908,9 +904,7 @@ function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProp
         open={isDir && expanded}
         className="ae-file-tree-icon"
       />
-      <span className="ae-file-tree-label" data-selectable>
-        {node.entry.name}
-      </span>
+      <span className="ae-file-tree-label">{node.entry.name}</span>
       {node.loading && <span className="ae-file-tree-loading" aria-hidden="true">…</span>}
     </li>
   );

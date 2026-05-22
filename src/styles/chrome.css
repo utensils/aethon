@@ -9,6 +9,38 @@
  * messages) opts in via `data-selectable`. See
  * docs/aethon-agent/text-selection.md for the full rules. */
 
+/* Chrome surfaces lock down text selection — the app should feel
+ * like an app, not a website. `data-selectable` is the explicit
+ * opt-in for the rare path-like strings inside chrome that need to
+ * stay copyable (today: none — Copy Path lives in context menus). */
+.a2ui-sidebar,
+.a2ui-sidebar *,
+.ae-files-sidebar-area,
+.ae-files-sidebar-area *,
+.app-header,
+.app-header *,
+.a2ui-status-bar,
+.a2ui-status-bar *,
+.a2ui-tab-strip,
+.a2ui-tab-strip *,
+.ae-terminal-panel-tabs,
+.ae-terminal-panel-tabs *,
+.a2ui-context-menu,
+.a2ui-context-menu *,
+.ae-palette-panel,
+.ae-palette-panel *,
+.ae-settings-panel,
+.ae-settings-panel *,
+.ae-notification,
+.ae-notification *,
+.a2ui-empty-state,
+.a2ui-empty-state *,
+.a2ui-empty-state-card,
+.a2ui-empty-state-card * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 [data-selectable] {
   user-select: text;
   -webkit-user-select: text;

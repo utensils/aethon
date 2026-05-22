@@ -82,14 +82,9 @@ export function WorktreeRow({
       <span className="ae-worktree-glyph" aria-hidden="true">
         {item.isMain ? "●" : "└"}
       </span>
-      <span className="a2ui-sidebar-item-label" data-selectable>
-        {displayLabel}
-      </span>
+      <span className="a2ui-sidebar-item-label">{displayLabel}</span>
       {item.branch && item.branch !== displayLabel ? (
-        <span
-          className="a2ui-sidebar-item-git-branch ae-worktree-branch"
-          data-selectable
-        >
+        <span className="a2ui-sidebar-item-git-branch ae-worktree-branch">
           {item.branch}
         </span>
       ) : null}

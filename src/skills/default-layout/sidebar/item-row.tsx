@@ -111,7 +111,7 @@ export function ItemRow({
           title="Uncommitted changes"
         />
       ) : null}
-      <span className="a2ui-sidebar-item-label" data-selectable>{item.label}</span>
+      <span className="a2ui-sidebar-item-label">{item.label}</span>
       {git?.branch ? (
         <span className="a2ui-sidebar-item-git-branch" title={branchTitle}>
           {git.branch}

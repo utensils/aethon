@@ -353,10 +353,11 @@ pub fn install_tray(
         // recognizable at status-bar size; template rendering would
         // strip the orange and lose the identity.
         .icon_as_template(false)
-        // macOS HIG: left-click activates, right-click shows the menu.
-        // On Linux/Windows the menu opens on left-click by default,
-        // which matches their conventions — leave as the platform default.
-        .show_menu_on_left_click(!cfg!(target_os = "macos"))
+        // Left + right click both open the menu — matches Linux / Windows
+        // out of the box and makes the macOS tray icon discoverable.
+        // (The earlier macOS-only left-click-to-activate handler felt
+        // broken to users because nothing visible happened.)
+        .show_menu_on_left_click(true)
         .menu(&menu)
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();

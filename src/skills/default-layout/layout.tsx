@@ -218,7 +218,6 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
         <span
           className="a2ui-status-project-chip"
           title={active?.tooltip ?? active?.label ?? ""}
-          data-selectable
         >
           <span className="a2ui-status-chip-dot" />
           <span className="a2ui-status-chip-label">{active?.label}</span>
