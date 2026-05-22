@@ -39,6 +39,7 @@ const BUILTIN_THEMES = [
   { id: "ember", label: "Ember — warm dark" },
   { id: "paper", label: "Paper — cream light" },
   { id: "aether", label: "Æther — signature" },
+  { id: "brink", label: "Brink — Ristretto warm chrome with gold accent" },
 ];
 
 // 16-swatch ANSI preview block — order matches xterm's standard ANSI

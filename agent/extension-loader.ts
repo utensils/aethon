@@ -43,6 +43,7 @@ export const RESERVED_THEME_IDS = new Set([
   "paper",
   "aether",
   "signature",
+  "brink",
 ]);
 
 export interface ExtensionLoaderDeps {
