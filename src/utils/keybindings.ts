@@ -40,11 +40,32 @@ const KEY_GLYPHS: Record<string, string> = {
   backtick: "`",
 };
 
+// Physical keys whose `e.key` is volatile under Shift/Option but whose
+// `e.code` is stable. Map to the *unshifted* glyph so a combo like
+// `Cmd+Shift+]` canonicalises to `meta+shift+]`, not `meta+shift+}` —
+// matching how extensions register combos and how docs describe them.
+// We deliberately keep this list small: only physical keys whose layouts
+// produce a different glyph under Shift on the layouts we ship docs for.
+const CODE_TO_KEY: Record<string, string> = {
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Minus: "-",
+  Equal: "=",
+  Backquote: "`",
+};
+
 // Normalize a keyboard event to the same canonical combo string the bridge
 // stores (lowercased, sorted modifiers, "+"-joined). Returns null when no
 // printable key was involved (modifier keys alone don't match a combo).
 //
 //   Cmd+Shift+P   →  "meta+shift+p"
+//   Cmd+Shift+]   →  "meta+shift+]"   (not "meta+shift+}")
 //   Ctrl+]        →  "ctrl+]"
 //   Alt+M         →  "alt+m"
 export function canonicalCombo(e: KeyboardEvent): string | null {
@@ -57,7 +78,12 @@ export function canonicalCombo(e: KeyboardEvent): string | null {
   if (e.ctrlKey) parts.push("ctrl");
   if (e.altKey) parts.push("alt");
   if (e.shiftKey) parts.push("shift");
-  parts.push(k.toLowerCase());
+  // Prefer the unshifted form from e.code for keys where Shift/Option
+  // produces a different glyph (e.g. `]` vs `}`, `[` vs `{`) so extension
+  // combos registered as the documented "Cmd+Shift+]" still match.
+  // Falls through to e.key for everything else (letters, digits, arrows).
+  const codeKey = e.code ? CODE_TO_KEY[e.code] : undefined;
+  parts.push((codeKey ?? k).toLowerCase());
   return parts.join("+");
 }
 

@@ -52,9 +52,10 @@ To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
 1. **Tauri shell** (`src-tauri/src/lib.rs` is now a thin entry — agent
    supervisor + child IPC + `run()` builder; concern-grouped IPC commands
    live under `src-tauri/src/commands/` (`config.rs`, `session.rs`,
-   `extensions.rs`, `git.rs`, `window.rs`); shell-tab PTY logic lives
-   under `src-tauri/src/shell/` (`lifecycle.rs`, `scrollback.rs`,
-   `sharemode.rs`); pure helpers in `helpers.rs`; debug-only commands
+   `extensions.rs`, `git.rs`, `window.rs`, `fs.rs`); shell-tab PTY logic
+   lives under `src-tauri/src/shell/` (`lifecycle.rs`, `scrollback.rs`,
+   `sharemode.rs`); native window geometry persistence in
+   `window_state.rs`; pure helpers in `helpers.rs`; debug-only commands
    - TCP eval server in `debug.rs` gated by `#[cfg(debug_assertions)]`)
      — owns the OS boundary. Core agent commands: `send_message`
      (forwards a chat string to the agent's stdin) and
@@ -151,8 +152,9 @@ can't be overridden. Default-layout skill components are split per
 family under `src/skills/default-layout/` (`chat.tsx`, `terminal.tsx`,
 `command-palette.tsx`, `settings-panel.tsx`, `search-panel.tsx`,
 `notifications.tsx`, `share-mode-badge.tsx`, `variation-components.tsx`,
-plus `shell/` and `sidebar/` sub-directories); `components.tsx` itself
-is the registration aggregator only. Everything else (`layout`, `sidebar`,
+`markdown-adapter.tsx`, plus `shell/`, `sidebar/`, and `editor/`
+sub-directories); `components.tsx` itself is the registration
+aggregator only. Everything else (`layout`, `sidebar`,
 `chat-history`, `chat-input`, `status-bar`, `terminal-panel`, `main-canvas`,
 `shell-canvas`, `tool-card`, `command-palette`, `notification-stack`,
 `settings-panel`, `search-panel`, `share-mode-badge`, …) comes from the
@@ -190,8 +192,8 @@ console) can swap chrome at runtime:
 | `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                      |
 | `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                         |
 | `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                               |
-| `Cmd+]` / `Cmd+[`             | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead.                               |
-| `Cmd+Shift+]` / `Cmd+Shift+[` | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                   |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. Matches the iTerm / Terminal.app convention. |
+| `Cmd+Opt+]` / `Cmd+Opt+[`     | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                   |
 | `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                  |
 | `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                        |
 | `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                         |
@@ -280,11 +282,14 @@ focus is inside the bottom panel), `Cmd+Shift+T` = new shell sub-tab (always).
 `src/slashCommands.ts` registers frontend-only slash commands that run
 without an LLM round-trip (e.g. `/clear`, `/theme`, `/extensions`). They
 receive a `SlashCommandContext` with `appendSystem`, `notify`, `clearChat`,
-`setTheme`, etc. These are distinct from pi's server-side slash commands
-(extension/skill-registered, dispatched through the bridge) — pi's
-`getCommands()`/handler API is not yet plumbed through. When adding a purely
-UI action, prefer the client-side registry; only go through the bridge when
-the agent needs to observe or act on the command.
+`setTheme`, etc. Pi's server-side / native slash commands are also plumbed
+through: the bridge advertises them via `extension_slash_commands` events
+and the renderer dispatches them back through the
+`native_slash_command` → `native_slash_result` round-trip in
+`agent/dispatcher.ts`. They appear in the composer autocomplete next to the
+client-side ones. When adding a purely UI action, prefer the client-side
+registry; only go through the bridge when the agent needs to observe or
+act on the command.
 
 ### Extension frontend loading
 
@@ -327,6 +332,43 @@ the active project's path is passed as `cwd` on `tab_open`. **Existing
 tabs keep the cwd they were created with** — switching the active project
 only affects new tabs. When updating tab/session code, treat the per-tab
 cwd as immutable.
+
+### Monaco editor + file tree
+
+The editor surface (sidebar file tree + Monaco buffers + media/text
+viewers) is implemented as a default-layout sub-skill under
+`src/skills/default-layout/editor/`. Monaco glue lives in `src/monaco/`
+(`editor-buffers.ts` manages models per file, `setup.ts` configures
+workers + languages, `theme.ts` syncs to the active Aethon theme).
+File-system operations go through `src-tauri/src/commands/fs.rs` — a
+thin set of read/write/list/move/delete commands scoped to the active
+project's `cwd`. Two security layers gate every path: a lexical check
+(`helpers::resolve_inside_root`) catches `..` traversal without
+hitting disk, then a canonicalize-after-existing check catches
+symlinks that redirect outside the project root. Reads/writes are
+capped at 10 MB to keep the Tauri IPC bridge responsive. Deletes go
+to the OS trash via the `trash` crate, never `unlink`.
+
+### Window state persistence
+
+`src-tauri/src/window_state.rs` saves window position, size, and
+`maximized` flag to `~/.aethon/window-state.json` (keyed by window
+label). Everything is stored in **logical** units — physical pixels
+aren't portable across monitors with different scale factors, so a
+window saved on Retina (2×) would render at the wrong size when
+restored to a 1× monitor.
+
+Restore runs in `setup()` *before* the window becomes visible
+(`tauri.conf.json` sets `visible: false`), so there's no race or
+settle-debounce. Save is 250 ms-debounced on `Moved`/`Resized` and
+flushed synchronously on `CloseRequested`. Monitor matching is a
+three-tier fallback: exact-dimension → intersects → nearest by saved
+center, then the window is translated to preserve its
+offset-within-saved-monitor and clamped so the titlebar stays
+reachable. Fullscreen state is treated as transient and skipped on
+save. v0 (physical-unit) state files are migrated to v1 on first
+load. Spaces / virtual desktops aren't tracked — Tauri 2 doesn't
+expose a stable identifier.
 
 ### Agent runtime contract
 
@@ -521,14 +563,20 @@ The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
 keyed against milestones M1–M5). Update both that checklist and any
 relevant notes here when capabilities land.
 
-**Quick highlights as of writing:** M1–M6 complete. M6 shipped: interactive
-PTY-backed user shell tabs (`portable-pty`, `Tab.kind` discriminator,
-theme-agnostic xterm), per-tab `ShareMode` 4-value enum with privacy-floor
-guardrail, `aethon.shells.{list, read, write}` bridge API with per-write
-Allow/Deny user confirmation, pi-tool registration of
-`listShells`/`readShell`/`writeShell` (in `agent/shell-tools.ts`), Settings
-UI overlay, fullscreen, search overlay, drag-and-drop into composer, bridge
-crash recovery, OS notifications.
+**Quick highlights as of writing:** M1–M6 complete, plus post-M6 polish.
+M6 shipped: interactive PTY-backed user shell tabs (`portable-pty`,
+`Tab.kind` discriminator, theme-agnostic xterm), per-tab `ShareMode`
+4-value enum with privacy-floor guardrail,
+`aethon.shells.{list, read, write}` bridge API with per-write Allow/Deny
+user confirmation, pi-tool registration of
+`listShells`/`readShell`/`writeShell` (in `agent/shell-tools.ts`),
+Settings UI overlay, fullscreen, search overlay, drag-and-drop into
+composer, bridge crash recovery, OS notifications. Post-M6: Monaco
+editor + file tree + media viewers (`src/skills/default-layout/editor/`,
+`src/monaco/`, `src-tauri/src/commands/fs.rs`), native window geometry
+persistence with multi-monitor restore (`src-tauri/src/window_state.rs`),
+pi native slash commands plumbed through to the composer autocomplete,
+left-edge sidebar resize, Brink theme palette.
 Tool execution surfaces as A2UI cards, multi-tab persistent
 sessions, light theme, system tray + native menu, slash command picker,
 real `~/.aethon/config.toml`, layout-slot contract (`canvas` +

@@ -67,7 +67,7 @@ export interface UseKeyboardShortcutsContext {
  * the existing a2ui_event channel.
  *
  * Many shortcuts are focus-aware: when focus is inside the bottom
- * terminal panel, Cmd+T / Cmd+] / Cmd+1..9 / Cmd+Shift+] etc. operate
+ * terminal panel, Cmd+T / Cmd+Shift+] / Cmd+1..9 / Cmd+Opt+] etc. operate
  * on the shell sub-tabs instead of the agent tab strip.
  */
 export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
@@ -159,30 +159,36 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         }
         return;
       }
-      // Cmd+] / Cmd+[: next/prev tab. Focus-aware: panel cycles sub-tabs.
-      if (e.key === "]" && mod && !e.shiftKey && !e.altKey) {
+      // Cmd+Shift+] / Cmd+Shift+[: next/prev tab. Focus-aware: panel
+      // cycles sub-tabs. Browser/terminal convention (iTerm, Terminal.app,
+      // most modern editors). Match purely on `e.code` for layout-
+      // independence — matching on `e.key === "}"` would also fire on
+      // layouts where Shift+<some other physical key> produces `}` (e.g.
+      // some European layouts where the bracket lives behind AltGr), which
+      // would surprise users who didn't press the bracket key.
+      if (e.code === "BracketRight" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         if (isFocusInTerminalPanel()) ctx.nextShellSubTab(1);
         else ctx.nextTab(1);
         return;
       }
-      if (e.key === "[" && mod && !e.shiftKey && !e.altKey) {
+      if (e.code === "BracketLeft" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         if (isFocusInTerminalPanel()) ctx.nextShellSubTab(-1);
         else ctx.nextTab(-1);
         return;
       }
-      // Cmd+Shift+] / Cmd+Shift+[: reorder active tab. Focus-aware.
-      if (e.key === "}" && mod && e.shiftKey && !e.altKey) {
+      // Cmd+Opt+] / Cmd+Opt+[: reorder active tab. Focus-aware.
+      if (e.code === "BracketRight" && mod && e.altKey && !e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
         if (isFocusInTerminalPanel()) ctx.moveActiveShellSubTab(1);
         else ctx.moveActiveTab(1);
         return;
       }
-      if (e.key === "{" && mod && e.shiftKey && !e.altKey) {
+      if (e.code === "BracketLeft" && mod && e.altKey && !e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
         if (isFocusInTerminalPanel()) ctx.moveActiveShellSubTab(-1);

@@ -75,7 +75,7 @@ bottom panel for shells).
 |---|---|
 | `Cmd+W` | Close the active tab. Shell tabs prompt before killing a running job. |
 | `Cmd+Opt+T` | Reopen the most recently closed tab. |
-| `Cmd+]` / `Cmd+[` | Cycle agent tabs (or shell sub-tabs when focus is in the panel). |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Cycle agent tabs (or shell sub-tabs when focus is in the panel). |
 | `Cmd+1` … `Cmd+9` | Jump to tab N. |
 
 See the full [keyboard shortcut reference](/reference/keyboard-shortcuts).
