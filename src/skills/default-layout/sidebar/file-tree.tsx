@@ -573,6 +573,14 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         root: projectPathRef.current,
         path: node.entry.path,
       });
+      // Notify the App-level routes so any open editor tab backed by
+      // the deleted path (or any descendant when deleting a folder)
+      // closes and drops its Monaco buffer. Without this, Cmd+S on a
+      // stale buffer would resurrect the trashed file.
+      onEvent("file-tree-delete", {
+        path: node.entry.path,
+        kind: node.entry.kind,
+      });
       await refreshFolder(parentPath);
     } catch (err) {
       window.alert(`Delete failed: ${String(err)}`);

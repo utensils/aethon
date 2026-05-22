@@ -188,6 +188,10 @@ export interface UseTabsActions {
   /** Reconcile open editor tabs after a rename. See implementation
    *  notes inside useTabs. */
   renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
+  /** Close any open editor tabs whose filePath matches `path` (or is
+   *  a descendant when `kind === "dir"`). See implementation notes
+   *  inside useTabs. */
+  closeEditorTabsForPath: (path: string, kind: string) => void;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -592,6 +596,25 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     });
   }
 
+  /** Close every editor tab whose filePath matches `path` (or is a
+   *  descendant when `kind === "dir"`). Imported by the file-tree's
+   *  delete action so a moved-to-Trash file can't be resurrected by a
+   *  later Cmd+S on the still-open buffer. */
+  function closeEditorTabsForPath(path: string, kind: string) {
+    if (!path) return;
+    const prefix = `${path.replace(/\/+$/, "")}/`;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    for (const tab of tabs) {
+      if (tab.kind !== "editor" || !tab.editor) continue;
+      const current = tab.editor.filePath;
+      const match =
+        kind === "dir"
+          ? current === path || current.startsWith(prefix)
+          : current === path;
+      if (match) closeTabNow(tab.id);
+    }
+  }
+
   /** Reconcile open editor tabs after an on-disk rename. For files,
    *  match the exact path and rewrite filePath + label. For folders,
    *  rewrite any tab whose path is rooted at the old folder. Imported
@@ -896,6 +919,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     newEditorTab,
     updateEditorMeta,
     renameEditorTabsForPath,
+    closeEditorTabsForPath,
     autoRestoreDiscoveredSessions,
     pushClosedTab,
     reopenLastClosedTab,

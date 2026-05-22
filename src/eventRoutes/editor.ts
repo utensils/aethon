@@ -97,5 +97,13 @@ export const handleFileTree: EventRouteHandler = (
     ctx.renameEditorTabsForPath(from, to, kind);
     return true;
   }
+  if (event.eventType === "file-tree-delete") {
+    const payload = asRecord(event.data);
+    const path = typeof payload.path === "string" ? payload.path : "";
+    const kind = typeof payload.kind === "string" ? payload.kind : "file";
+    if (!path) return false;
+    ctx.closeEditorTabsForPath(path, kind);
+    return true;
+  }
   return false;
 };

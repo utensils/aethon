@@ -345,10 +345,25 @@ export function useUiOverlays(
   // ─── Command palette ─────────────────────────────────────────────────
 
   function openPalette(mode: PaletteMode) {
-    setState((prev) => ({
-      ...prev,
-      palette: { ...(prev.palette ?? {}), open: true, mode, query: "", selectedIndex: 0 },
-    }));
+    setState((prev) => {
+      const nextPalette: Record<string, unknown> = {
+        ...((prev.palette as Record<string, unknown> | undefined) ?? {}),
+        open: true,
+        mode,
+        query: "",
+        selectedIndex: 0,
+      };
+      // Clear stale files from a previous project when entering files
+      // mode — without this, the palette flashes the OLD project's
+      // entries while the new walk is in flight (or forever if no
+      // project is active and the walk never fires). Once the walk
+      // resolves, the same handler writes the fresh list.
+      if (mode === "files") {
+        nextPalette.files = [];
+        nextPalette.projectPath = null;
+      }
+      return { ...prev, palette: nextPalette };
+    });
     // VSCode-style file fuzzy search: when "files" mode opens, kick off
     // a project walk and stash the results in state. The palette
     // selector picks them up on the next render. Cheap when the

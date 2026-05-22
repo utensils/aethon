@@ -124,6 +124,27 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         model: t.model ?? "",
         terminalBuffer: t.terminalBuffer ?? "",
         projectId: t.projectId ?? null,
+        // Preserve editor metadata so a persisted editor tab reopens
+        // pointing at the same file. Validate the shape minimally —
+        // `filePath` is the field EditorCanvas actually requires; the
+        // rest fall back to safe defaults on the next render.
+        ...(t.kind === "editor" && t.editor && typeof t.editor.filePath === "string"
+          ? {
+              editor: {
+                filePath: t.editor.filePath,
+                language: typeof t.editor.language === "string"
+                  ? t.editor.language
+                  : "plaintext",
+                isDirty: false,
+                ...(typeof t.editor.cursorLine === "number"
+                  ? { cursorLine: t.editor.cursorLine }
+                  : {}),
+                ...(typeof t.editor.cursorColumn === "number"
+                  ? { cursorColumn: t.editor.cursorColumn }
+                  : {}),
+              },
+            }
+          : {}),
       })),
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),

@@ -381,6 +381,13 @@ const WALK_FILE_CAP: usize = 20_000;
 #[tauri::command]
 pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
     let root_canon = canonical_root(&root)?;
+    // Use the supplied root as the prefix the frontend will pass back
+    // to fs_read_file / fs_write_file. If the project was opened
+    // through a symlink, canonicalize() resolves to a different
+    // string; returning canonical paths would then fail
+    // resolve_inside_root because the lexical layer compares against
+    // the original (uncanonicalized) project root.
+    let root_path = PathBuf::from(&root);
     let mut out: Vec<String> = Vec::with_capacity(1024);
     let mut stack: Vec<PathBuf> = vec![root_canon.clone()];
     while let Some(dir) = stack.pop() {
@@ -412,7 +419,17 @@ pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
                 continue;
             }
             if meta.is_file() {
-                out.push(path.to_string_lossy().into_owned());
+                // Rebase under the original root so the path lives in
+                // the same space the FE's later fs_read_file calls
+                // validate against. strip_prefix never fails here —
+                // every walked file is under root_canon — but if it
+                // somehow does, fall back to the canonical form
+                // rather than dropping the entry.
+                let rebased = match path.strip_prefix(&root_canon) {
+                    Ok(rel) => root_path.join(rel),
+                    Err(_) => path,
+                };
+                out.push(rebased.to_string_lossy().into_owned());
                 if out.len() >= WALK_FILE_CAP {
                     break;
                 }

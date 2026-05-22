@@ -23,15 +23,15 @@
  * active zoom on engines that need it, and leave everything else
  * (menu contents, keyboard nav, focus) untouched.
  *
- * Ported from Claudette's `utils/monacoContextViewFix.ts`. Trimmed: we
- * skip the shadow-root walk (Monaco doesn't currently nest shadow
- * DOM, and Aethon doesn't render anything else into one) and the
- * coord-space probe (Tauri only ships WebKit/WKWebView on macOS +
- * Linux + WebView2 on Windows; we detect via UA fingerprint to keep
- * the install side-effect-free and synchronous).
+ * Ported from Claudette's `utils/monacoContextViewFix.ts`. Engine
+ * selection uses the runtime probe in `utils/zoom-probe.ts` (a hidden
+ * 100 px-wide marker and its `getBoundingClientRect`) rather than UA
+ * sniffing — Tauri's webview can be either WebKit (macOS, Linux) or
+ * Chromium-based depending on platform and version, and the probe
+ * gives a stable answer without enumerating each one.
  */
 
-import { readZoom } from "../utils/viewport";
+import { activeContextViewZoom } from "../utils/zoom-probe";
 
 interface PositionTarget {
   style: { left: string; top: string };
@@ -41,22 +41,6 @@ const lastApplied = new WeakMap<PositionTarget, { left: number; top: number }>()
 let installed = false;
 let rootObserver: MutationObserver | null = null;
 const hostObservers = new WeakMap<HTMLElement, MutationObserver>();
-
-/** Returns true on engines where event coords are reported in visual
- *  pixels while CSS fixed positions are layout pixels — i.e. the
- *  combinations that need the divide. Tauri uses WKWebView on macOS
- *  and WebKitGTK on Linux (both WebKit). Windows ships WebView2
- *  (Chromium). We trust the UA string here rather than running the
- *  rect-probe Claudette uses; it costs a layout reflow and Aethon's
- *  target platforms are well-known. */
-function isVisualCoordEngine(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  // WebKit fingerprint: "AppleWebKit/..." present AND no "Chrome/" —
-  // Chromium-based browsers also carry "AppleWebKit/" but include
-  // "Chrome/" too. WKWebView and Safari do not.
-  return /AppleWebKit\//.test(ua) && !/Chrome\//.test(ua);
-}
 
 /** Pure correction — exported for tests. Returns true when a write
  *  was applied. Skips on unparseable coords or echo-of-own-write. */
@@ -86,9 +70,7 @@ export function correctContextViewPosition(
 }
 
 function activeZoom(): number | null {
-  if (!isVisualCoordEngine()) return null;
-  const z = readZoom();
-  return z === 1 ? null : z;
+  return activeContextViewZoom();
 }
 
 function attachHostObserver(host: HTMLElement): void {
@@ -109,14 +91,52 @@ function detachHostObserver(host: HTMLElement): void {
   hostObservers.delete(host);
 }
 
+// Track shadow roots we've already observed so we don't double-attach
+// on re-entry. WeakSet — the host element is a regular DOM node, GC
+// will reclaim the entry when Monaco drops it.
+const observedShadowRoots = new WeakSet<ShadowRoot>();
+
+function watchShadowRoot(root: ShadowRoot, zoom: number | null): void {
+  if (observedShadowRoots.has(root)) return;
+  observedShadowRoots.add(root);
+  // Pick up any `.context-view` already inside.
+  for (const host of root.querySelectorAll<HTMLElement>(".context-view")) {
+    if (zoom !== null) correctContextViewPosition(host, zoom);
+    attachHostObserver(host);
+  }
+  // Walk one level deeper for any nested shadow hosts —
+  // MutationObserver doesn't pierce shadow boundaries.
+  for (const el of root.querySelectorAll<HTMLElement>("*")) {
+    if (el.shadowRoot) watchShadowRoot(el.shadowRoot, zoom);
+  }
+  // Subscribe to future additions inside the shadow root.
+  const inner = new MutationObserver((records) => {
+    const innerZoom = activeZoom();
+    for (const r of records) {
+      if (r.type !== "childList") continue;
+      r.addedNodes.forEach((n) => visitAddedNode(n, innerZoom));
+      r.removedNodes.forEach(visitRemovedNode);
+    }
+  });
+  inner.observe(root, { childList: true, subtree: true });
+}
+
 function visitAddedNode(node: Node, zoom: number | null): void {
   if (!(node instanceof HTMLElement)) return;
+  // 1. Direct/descendant `.context-view` in the light DOM.
   const hosts = node.classList?.contains("context-view")
     ? [node]
     : Array.from(node.querySelectorAll<HTMLElement>(".context-view"));
   for (const host of hosts) {
     if (zoom !== null) correctContextViewPosition(host, zoom);
     attachHostObserver(host);
+  }
+  // 2. Shadow roots: Monaco's StandaloneContextViewService can mount
+  //    the context view INSIDE a shadow DOM. MutationObserver doesn't
+  //    pierce shadow boundaries, so we have to walk explicitly.
+  if (node.shadowRoot) watchShadowRoot(node.shadowRoot, zoom);
+  for (const el of node.querySelectorAll<HTMLElement>("*")) {
+    if (el.shadowRoot) watchShadowRoot(el.shadowRoot, zoom);
   }
 }
 

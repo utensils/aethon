@@ -89,6 +89,11 @@ export interface EventRouteContext {
    *  renamed location. Used after fs_rename completes so the next
    *  Cmd+S writes to the new path. */
   renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
+  /** Close any open editor tabs whose `editor.filePath` is `path`
+   *  (or, when `kind === "dir"`, starts with `path/`). Called after a
+   *  successful fs_delete so a dangling buffer can't recreate the
+   *  trashed file on the next Cmd+S. */
+  closeEditorTabsForPath: (path: string, kind: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   setActiveSubTab: (subId: string) => void;
