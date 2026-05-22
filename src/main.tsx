@@ -3,6 +3,11 @@ import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App.tsx";
 import { prewarmHighlighter } from "./utils/highlight";
+// Side-effect import: registers Monaco's web-worker factories and binds
+// the @monaco-editor/react loader to the bundled monaco package so the
+// editor mounts work offline / under Tauri's CSP. Must run before any
+// component imports a Monaco-backed surface.
+import "./monaco/setup";
 import "./styles.css";
 
 // Expose Tauri's invoke globally in dev so the aethon-debug skill's TCP eval

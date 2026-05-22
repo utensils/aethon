@@ -45,6 +45,11 @@ function trimTab(tab: Tab): Tab {
 
 function shouldPersistTab(tab: Tab): boolean {
   if (tab.kind === "shell") return false;
+  // Editor tabs persist so the user reopens to the same files. The
+  // on-disk content is the source of truth on restore — dirty buffers
+  // are intentionally not serialised (saving arbitrary in-memory edits
+  // could surprise the user on next launch).
+  if (tab.kind === "editor") return tab.editor?.filePath != null;
   return (
     tab.messages.length > 0 ||
     tab.draft.trim().length > 0 ||
@@ -119,6 +124,27 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         model: t.model ?? "",
         terminalBuffer: t.terminalBuffer ?? "",
         projectId: t.projectId ?? null,
+        // Preserve editor metadata so a persisted editor tab reopens
+        // pointing at the same file. Validate the shape minimally —
+        // `filePath` is the field EditorCanvas actually requires; the
+        // rest fall back to safe defaults on the next render.
+        ...(t.kind === "editor" && t.editor && typeof t.editor.filePath === "string"
+          ? {
+              editor: {
+                filePath: t.editor.filePath,
+                language: typeof t.editor.language === "string"
+                  ? t.editor.language
+                  : "plaintext",
+                isDirty: false,
+                ...(typeof t.editor.cursorLine === "number"
+                  ? { cursorLine: t.editor.cursorLine }
+                  : {}),
+                ...(typeof t.editor.cursorColumn === "number"
+                  ? { cursorColumn: t.editor.cursorColumn }
+                  : {}),
+              },
+            }
+          : {}),
       })),
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),

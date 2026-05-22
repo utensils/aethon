@@ -10,9 +10,13 @@ import type { A2UISkill } from "../types";
 import {
   ChatHistory,
   ChatInput,
+  EditorCanvas,
   EmptyState,
+  FileTreePanel,
+  ImageViewer,
   Layout,
   MainCanvas,
+  MarkdownPreview,
   ShellCanvas,
   Sidebar,
   StatusBar,
@@ -62,6 +66,21 @@ export const defaultLayoutSkill: A2UISkill = {
     // equivalent mode flag) so it appears only when the active tab is a
     // shell tab.
     "shell-canvas": ShellCanvas,
+    // Monaco-backed editor canvas for editor tabs. Mounts when the
+    // active tab is `kind === "editor"`; the layout binds visibility
+    // to `/editorTabActive`.
+    "editor-canvas": EditorCanvas,
+    // Project file tree — sidebar surface that lists the active
+    // project's working directory. Single click on a file opens an
+    // editor tab. Disabled with an empty state when no project is
+    // active.
+    "file-tree": FileTreePanel,
+    // Built-in file viewers — dispatched by EditorCanvas when the
+    // active editor tab's path matches an entry in the file-viewer
+    // registry (image extensions ship out of the box). Extensions can
+    // override either component via `aethon.registerComponent`.
+    "image-viewer": ImageViewer,
+    "markdown-preview": MarkdownPreview,
     // M6 restructure: tabbed bottom panel. Hosts the read-only
     // agent-bash sub-tab + every user shell as a separate sub-tab.
     // Replaces the standalone `terminal` cell in workstation.

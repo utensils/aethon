@@ -17,6 +17,8 @@
 //! - [`commands::session`] — pi session search/delete/export.
 //! - [`commands::extensions`] — menu items + native menu/tray + agent
 //!   file-watcher + npm extension installer.
+//! - [`commands::fs`] — project-scoped file-system access for the
+//!   Monaco editor + file tree.
 //! - [`commands::git`] — git status + folder picker.
 //! - [`commands::window`] — fullscreen/devtools/updater.
 //!
@@ -722,6 +724,15 @@ pub fn run() {
             commands::extensions::install_aethon_extension,
             commands::extensions::watch_project_extensions,
             commands::extensions::unwatch_project_extensions,
+            commands::fs::fs_list_dir,
+            commands::fs::fs_read_file,
+            commands::fs::fs_read_file_base64,
+            commands::fs::fs_write_file,
+            commands::fs::fs_create_file,
+            commands::fs::fs_create_dir,
+            commands::fs::fs_rename,
+            commands::fs::fs_delete,
+            commands::fs::fs_walk_project,
             commands::git::git_status,
             commands::git::pick_project_directory,
             commands::window::updater_available,

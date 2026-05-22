@@ -38,9 +38,15 @@ interface PaletteState {
 
 function readPaletteState(state: Record<string, unknown>): PaletteState {
   const p = (state.palette as Partial<PaletteState> | undefined) ?? {};
+  const mode: PaletteMode =
+    p.mode === "commands"
+      ? "commands"
+      : p.mode === "files"
+        ? "files"
+        : "switcher";
   return {
     open: !!p.open,
-    mode: p.mode === "commands" ? "commands" : "switcher",
+    mode,
     query: typeof p.query === "string" ? p.query : "",
     selectedIndex:
       typeof p.selectedIndex === "number" ? p.selectedIndex : 0,

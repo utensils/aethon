@@ -401,6 +401,11 @@ export default function App() {
     setActiveSubTab,
     newTab,
     newShellTab,
+    newEditorTab,
+    updateEditorMeta,
+    toggleEditorPreview,
+    renameEditorTabsForPath,
+    closeEditorTabsForPath,
     autoRestoreDiscoveredSessions,
     reopenLastClosedTab,
     closeTab,
@@ -614,6 +619,7 @@ export default function App() {
     pushNotification,
     setActiveTab,
     newTab,
+    newEditorTab,
     setActiveProjectById,
     openProjectFromPicker,
     closeTab,
@@ -698,6 +704,7 @@ export default function App() {
     shortcutsNewTabKindRef,
     toggleTerminalAndFocus,
     toggleSidebar,
+    toggleEditorPreview,
     clearChat,
     stopPrompt,
     newTab,
@@ -929,6 +936,10 @@ export default function App() {
       updateActiveTab,
       newTab,
       newShellTab,
+      newEditorTab,
+      updateEditorMeta,
+      renameEditorTabsForPath,
+    closeEditorTabsForPath,
       closeTab,
       setActiveTab,
       setActiveSubTab,
@@ -990,19 +1001,19 @@ export default function App() {
     // (the orphan-active-id case in switchProjectBucket fallthrough) —
     // the visible UI stays consistent.
     const hasTabs = tabs.length > 0;
-    // Derive /agentTabActive + /shellTabActive from the active tab's kind
-    // so layout `visible: { $ref: "/agentTabActive" }` bindings can never
-    // lag behind the tabs/activeTabId mutation that produced them.
-    const { agentTabActive, shellTabActive } = deriveTabActiveFlags(
-      tabs,
-      state.activeTabId as string | undefined,
-    );
+    // Derive /agentTabActive + /shellTabActive + /editorTabActive from the
+    // active tab's kind so layout `visible: { $ref: "/agentTabActive" }`
+    // bindings can never lag behind the tabs/activeTabId mutation that
+    // produced them.
+    const { agentTabActive, shellTabActive, editorTabActive } =
+      deriveTabActiveFlags(tabs, state.activeTabId as string | undefined);
     return {
       ...state,
       hasTabs,
       empty: !hasTabs,
       agentTabActive,
       shellTabActive,
+      editorTabActive,
       sidebar: {
         ...sidebar,
         history,

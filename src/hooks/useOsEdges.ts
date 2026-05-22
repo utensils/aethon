@@ -343,6 +343,13 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         case "next_tab": nextTab(1); break;
         case "prev_tab": nextTab(-1); break;
         case "toggle_terminal": toggleTerminal(); break;
+        case "toggle_files": {
+          // Forward to the FileTreePanel's hidden window event so the
+          // panel toggles regardless of which surface (menu, sidebar
+          // item, future shortcut) fired the request.
+          window.dispatchEvent(new Event("aethon:toggle-file-tree"));
+          break;
+        }
         case "clear_chat": clearChat(); break;
         case "stop_prompt": void stopPrompt(); break;
         case "check_updates": {

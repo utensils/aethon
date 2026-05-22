@@ -19,6 +19,12 @@ import {
   type ProjectsState,
 } from "../projects";
 import { registerGrammar as registerHighlightGrammar } from "../utils/highlight";
+import {
+  registerMonacoTheme as registerMonacoThemeImpl,
+  applyMonacoTheme,
+} from "../monaco/theme";
+import { registerFileViewer as registerFileViewerImpl } from "../skills/default-layout/editor";
+import type * as monaco from "monaco-editor";
 
 export interface UseWindowApiContext {
   layout: A2UIPayload;
@@ -138,6 +144,46 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
         if (typeof lang !== "string" || lang.trim().length === 0) return false;
         if (!grammar || typeof grammar !== "object") return false;
         registerHighlightGrammar(lang.trim(), grammar);
+        return true;
+      },
+      /** Register a custom file viewer that replaces Monaco for files
+       *  whose extension matches `extensions[]`. The named
+       *  `componentType` must be registered separately via
+       *  `registerComponent` and receives `{ filePath, projectPath }`
+       *  props. Returns false on a malformed argument so the caller
+       *  can surface a warning. */
+      registerFileViewer: (entry: {
+        extensions: string[];
+        componentType: string;
+      }): boolean => {
+        if (!entry || !Array.isArray(entry.extensions)) return false;
+        if (typeof entry.componentType !== "string" || !entry.componentType.trim()) {
+          return false;
+        }
+        registerFileViewerImpl(entry);
+        return true;
+      },
+      /** Replace (or register) the Monaco editor theme for an Aethon
+       *  theme id. `id` matches a CSS `data-theme="…"` value (e.g.
+       *  "ember", "paper"); `data` is a Monaco `IStandaloneThemeData`
+       *  with chrome colors + optional token rules. Re-applies
+       *  immediately if `id` is the active theme. Returns false on a
+       *  malformed argument so the caller can surface a warning. */
+      registerMonacoTheme: (
+        id: string,
+        data: monaco.editor.IStandaloneThemeData,
+      ): boolean => {
+        if (typeof id !== "string" || id.trim().length === 0) return false;
+        if (!data || typeof data !== "object") return false;
+        registerMonacoThemeImpl(id.trim(), data);
+        const active =
+          (stateRef.current as { sidebar?: { themes?: { id: string; active?: boolean }[] } })
+            .sidebar?.themes?.find((t) => t.active)?.id ??
+          document.documentElement.dataset.theme ??
+          "";
+        if (active === id.trim()) {
+          applyMonacoTheme(active);
+        }
         return true;
       },
     };

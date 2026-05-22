@@ -32,6 +32,8 @@ tauri-plugin-opener = "2.5.3"
 tauri-plugin-dialog = "2.7.0"
 portable-pty = "0.9"
 tauri-plugin-notification = "2.3.3"
+trash = "5"
+base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"

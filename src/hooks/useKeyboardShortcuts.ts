@@ -29,6 +29,9 @@ export interface UseKeyboardShortcutsContext {
   // Built-in actions, all hoisted from App or hook destructures.
   toggleTerminalAndFocus: () => void;
   toggleSidebar: () => void;
+  /** Toggle markdown preview mode on the active editor tab (Cmd+Shift+V).
+   *  No-op when the active tab isn't a markdown file. */
+  toggleEditorPreview: () => void;
   clearChat: () => void;
   stopPrompt: () => void | Promise<void>;
   newTab: () => void;
@@ -42,7 +45,7 @@ export interface UseKeyboardShortcutsContext {
   reopenLastClosedTab: () => void;
   closeTab: (tabId: string) => void;
   toggleSessionSearch: () => void;
-  openPalette: (mode: "switcher" | "commands") => void;
+  openPalette: (mode: "switcher" | "commands" | "files") => void;
   closePalette: () => void;
   adjustZoom: (delta: number) => void;
   resetZoom: () => void;
@@ -98,6 +101,22 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         e.preventDefault();
         e.stopPropagation();
         ctx.toggleTerminalAndFocus();
+        return;
+      }
+      // Cmd+J: toggle the sidebar's file-tree panel. Mirrors the View
+      // menu's "Toggle Files" item.
+      if (e.key.toLowerCase() === "j" && mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new Event("aethon:toggle-file-tree"));
+        return;
+      }
+      // Cmd+Shift+V: toggle markdown preview on the active editor
+      // tab. No-op when the active tab isn't a markdown file.
+      if (e.key.toLowerCase() === "v" && mod && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.toggleEditorPreview();
         return;
       }
       if (e.key.toLowerCase() === "b" && mod && !e.shiftKey && !e.altKey) {
@@ -228,18 +247,22 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         return;
       }
       // Cmd+Shift+P: command palette in commands mode (checked before
-      // plain Cmd+P so shift takes precedence).
+      // plain Cmd+P so shift takes precedence). Holds the previous
+      // switcher content (tabs / sessions / projects / layouts /
+      // themes / models) via the @ prefix once the palette is open.
       if (e.key.toLowerCase() === "p" && mod && e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         ctx.openPalette("commands");
         return;
       }
-      // Cmd+P: command palette in switcher mode.
+      // Cmd+P: VSCode-style file fuzzy search. Walks the active
+      // project's tree (skipping common ignored dirs), surfaces a
+      // ranked file list, opens the selection in an editor tab.
       if (e.key.toLowerCase() === "p" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        ctx.openPalette("switcher");
+        ctx.openPalette("files");
         return;
       }
       // Esc closes the palette when open.

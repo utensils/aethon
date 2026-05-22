@@ -34,6 +34,9 @@ export interface UseUiOverlaysContext {
       scrollToMatch?: string;
     },
   ) => void;
+  /** Open (or focus) an editor tab for the file path — used by the
+   *  palette's "files" mode (Cmd+P selection). */
+  newEditorTab: (filePath: string) => void;
   setActiveProjectById: (id: string) => boolean;
   openProjectFromPicker: () => Promise<string | null>;
   closeTab: (tabId: string) => void;
@@ -107,6 +110,7 @@ export function useUiOverlays(
     pushNotification,
     setActiveTab,
     newTab,
+    newEditorTab,
     setActiveProjectById,
     openProjectFromPicker,
     closeTab,
@@ -341,10 +345,60 @@ export function useUiOverlays(
   // ─── Command palette ─────────────────────────────────────────────────
 
   function openPalette(mode: PaletteMode) {
-    setState((prev) => ({
-      ...prev,
-      palette: { ...(prev.palette ?? {}), open: true, mode, query: "", selectedIndex: 0 },
-    }));
+    setState((prev) => {
+      const nextPalette: Record<string, unknown> = {
+        ...((prev.palette as Record<string, unknown> | undefined) ?? {}),
+        open: true,
+        mode,
+        query: "",
+        selectedIndex: 0,
+      };
+      // Clear stale files from a previous project when entering files
+      // mode — without this, the palette flashes the OLD project's
+      // entries while the new walk is in flight (or forever if no
+      // project is active and the walk never fires). Once the walk
+      // resolves, the same handler writes the fresh list.
+      if (mode === "files") {
+        nextPalette.files = [];
+        nextPalette.projectPath = null;
+      }
+      return { ...prev, palette: nextPalette };
+    });
+    // VSCode-style file fuzzy search: when "files" mode opens, kick off
+    // a project walk and stash the results in state. The palette
+    // selector picks them up on the next render. Cheap when the
+    // results are cached (no recent project change) — the walk Rust
+    // side is ~50ms on a 5k-file repo, ~150ms on 20k.
+    if (mode === "files") {
+      const project = stateRef.current.project as { path?: string } | undefined;
+      const root = project?.path ?? "";
+      if (!root) return;
+      void invoke<string[]>("fs_walk_project", { root })
+        .then((paths) => {
+          // Project may have changed while the walk was in flight —
+          // discard so we never show files from a stale root. The user
+          // re-triggering Cmd+P refires the walk against the current
+          // project, so this is just a "don't poison the palette"
+          // guard, not a retry.
+          const current = (stateRef.current.project as { path?: string } | undefined)
+            ?.path ?? "";
+          if (current !== root) return;
+          const normalized = root.replace(/\/+$/, "");
+          const files = paths.map((path) => {
+            const rel = path.startsWith(normalized + "/")
+              ? path.slice(normalized.length + 1)
+              : path;
+            return { path, rel };
+          });
+          setState((prev) => ({
+            ...prev,
+            palette: { ...(prev.palette ?? {}), files, projectPath: root },
+          }));
+        })
+        .catch(() => {
+          /* ignore — palette falls back to empty file list */
+        });
+    }
   }
   function closePalette() {
     setState((prev) => ({
@@ -443,11 +497,16 @@ export function useUiOverlays(
         else if (p.action === "builtin:meta+0") toggleFocusComposerTerminal();
         else if (p.action === "builtin:meta+k") clearChat();
         else if (p.action === "builtin:meta+.") void stopPrompt();
-        else if (p.action === "builtin:meta+p") openPalette("switcher");
+        else if (p.action === "builtin:meta+p") openPalette("files");
         else if (p.action === "builtin:meta+shift+p") openPalette("commands");
         else if (p.action === "builtin:meta+=") adjustZoom(0.1);
         else if (p.action === "builtin:meta+-") adjustZoom(-0.1);
         else if (p.action === "builtin:meta+shift+0") resetZoom();
+        return;
+      case "file":
+        // VSCode-style Cmd+P selection — open the file in an editor
+        // tab (focuses an existing one if already open).
+        newEditorTab(p.filePath);
         return;
     }
   }

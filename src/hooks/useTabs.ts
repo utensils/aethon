@@ -7,10 +7,13 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import {
   type ClosedTabEntry,
+  type EditorMeta,
   type ShellMeta,
   type Tab,
   makeEmptyTab,
 } from "../types/tab";
+import { languageFromPath } from "../monaco/language-detection";
+import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import {
   activeProject,
   type ProjectsState,
@@ -39,6 +42,11 @@ export const TAB_MIRROR_KEYS: (keyof Tab)[] = [
   // full /tabs/<idx> lookup on every render.
   "kind",
   "shell",
+  // Editor-tab metadata mirror — the EditorCanvas composite reads
+  // /editor/filePath, /editor/language, /editor/isDirty, /editor/cursorLine
+  // via $ref so the status strip + dirty dot reflect the active editor
+  // tab without a /tabs/<idx>/editor walk per render.
+  "editor",
 ];
 
 const CLOSED_TAB_STACK_MAX = 10;
@@ -170,6 +178,22 @@ export interface UseTabsActions {
     args?: string[];
     cwd?: string;
   }) => void;
+  /** Open (or focus, if already open) an editor tab for `filePath`.
+   *  `filePath` must be inside the active project; the EditorCanvas
+   *  composite handles the actual fs_read_file call on mount. */
+  newEditorTab: (filePath: string) => void;
+  /** Set the dirty flag + cursor on the active editor tab. Used by
+   *  EditorCanvas to mirror Monaco's model state back to the layout. */
+  updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
+  /** Toggle the active editor tab's markdown preview mode (Cmd+Shift+V). */
+  toggleEditorPreview: () => void;
+  /** Reconcile open editor tabs after a rename. See implementation
+   *  notes inside useTabs. */
+  renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
+  /** Close any open editor tabs whose filePath matches `path` (or is
+   *  a descendant when `kind === "dir"`). See implementation notes
+   *  inside useTabs. */
+  closeEditorTabsForPath: (path: string, kind: string) => void;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -525,6 +549,169 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       });
   }
 
+  /** Compute a tab label from a file path: just the basename, since the
+   *  full path is shown in the editor status strip. */
+  function editorLabelForPath(filePath: string): string {
+    const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+    return slash >= 0 ? filePath.slice(slash + 1) : filePath;
+  }
+
+  /** Open (or focus) an editor tab for the supplied absolute path. If a
+   *  tab for the same path already exists in the current project bucket,
+   *  switch to it instead of creating a duplicate. */
+  function newEditorTab(filePath: string) {
+    if (!filePath) return;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const existing = tabs.find(
+      (t) => t.kind === "editor" && t.editor?.filePath === filePath,
+    );
+    if (existing) {
+      setActiveTab(existing.id);
+      return;
+    }
+    const id = crypto.randomUUID();
+    const projectId = projectsRef.current.activeId;
+    const language = languageFromPath(filePath);
+    const tab: Tab = {
+      ...makeEmptyTab(id, editorLabelForPath(filePath), projectId, "editor"),
+      editor: {
+        filePath,
+        language,
+        isDirty: false,
+      },
+    };
+    setState((prev) => {
+      const list = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      list.push(tab);
+      const tabRec = tab as unknown as Record<string, unknown>;
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs: list,
+        activeTabId: id,
+        hasTabs: true,
+        empty: false,
+      };
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = tabRec[key as string];
+      }
+      return result;
+    });
+  }
+
+  /** Close every editor tab whose filePath matches `path` (or is a
+   *  descendant when `kind === "dir"`). Imported by the file-tree's
+   *  delete action so a moved-to-Trash file can't be resurrected by a
+   *  later Cmd+S on the still-open buffer. Routes through `closeTab`
+   *  (not `closeTabNow`) so the dirty-buffer confirm prompt still fires
+   *  per-tab — a folder delete with unsaved edits inside it can't
+   *  silently destroy the in-memory buffer. */
+  function closeEditorTabsForPath(path: string, kind: string) {
+    if (!path) return;
+    const prefix = `${path.replace(/\/+$/, "")}/`;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    for (const tab of tabs) {
+      if (tab.kind !== "editor" || !tab.editor) continue;
+      const current = tab.editor.filePath;
+      const match =
+        kind === "dir"
+          ? current === path || current.startsWith(prefix)
+          : current === path;
+      if (match) closeTab(tab.id);
+    }
+  }
+
+  /** Reconcile open editor tabs after an on-disk rename. For files,
+   *  match the exact path and rewrite filePath + label. For folders,
+   *  rewrite any tab whose path is rooted at the old folder. Imported
+   *  by the file-tree's rename context-menu action. */
+  function renameEditorTabsForPath(from: string, to: string, kind: string) {
+    if (!from || !to || from === to) return;
+    const prefix = `${from.replace(/\/+$/, "")}/`;
+    setState((prev) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+      let changed = false;
+      const next = tabs.map((tab) => {
+        if (tab.kind !== "editor" || !tab.editor) return tab;
+        const current = tab.editor.filePath;
+        let nextPath: string | null = null;
+        if (kind === "dir") {
+          if (current.startsWith(prefix)) {
+            nextPath = `${to.replace(/\/+$/, "")}/${current.slice(prefix.length)}`;
+          } else if (current === from) {
+            nextPath = to;
+          }
+        } else if (current === from) {
+          nextPath = to;
+        }
+        if (!nextPath) return tab;
+        changed = true;
+        // Recompute the tab label too — Cmd+P/file-tree both expect the
+        // basename to track the path. Language id intentionally stays
+        // put since Shiki keeps grammars by file extension, which is
+        // usually what changed during a rename.
+        const renamed: Tab = {
+          ...tab,
+          label: editorLabelForPath(nextPath),
+          editor: {
+            ...tab.editor,
+            filePath: nextPath,
+            language: languageFromPath(nextPath),
+          },
+        };
+        return renamed;
+      });
+      if (!changed) return prev;
+      const result: Record<string, unknown> = { ...prev, tabs: next };
+      // Mirror the active tab's updated editor field into the root
+      // state so Monaco's EditorCanvas (which reads tabs via $ref) sees
+      // the new path on its next render.
+      const activeId = prev.activeTabId as string | undefined;
+      if (activeId) {
+        const active = next.find((t) => t.id === activeId);
+        if (active) {
+          const rec = active as unknown as Record<string, unknown>;
+          for (const key of TAB_MIRROR_KEYS) {
+            result[key as string] = rec[key as string];
+          }
+        }
+      }
+      return result;
+    });
+  }
+
+  /** Toggle the active editor tab's markdown preview mode. No-op when
+   *  the active tab isn't an editor tab or isn't a markdown file. */
+  function toggleEditorPreview() {
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    if (!activeId) return;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tab = tabs.find((t) => t.id === activeId);
+    if (!tab || tab.kind !== "editor" || !tab.editor) return;
+    if (tab.editor.language !== "markdown") return;
+    updateEditorMeta(activeId, {
+      previewMode: !tab.editor.previewMode,
+      previewRefreshKey: (tab.editor.previewRefreshKey ?? 0) + 1,
+    });
+  }
+
+  /** Patch the active editor tab's metadata (dirty flag, cursor). Cheap
+   *  no-op if the tab is missing or not an editor tab. */
+  function updateEditorMeta(tabId: string, patch: Partial<EditorMeta>) {
+    updateTab(tabId, (t) => {
+      if (t.kind !== "editor" || !t.editor) return t;
+      const merged = { ...t.editor, ...patch };
+      // Skip the setState if nothing meaningful changed — guards against
+      // re-render storms from Monaco's cursorPosition events on every key.
+      const samePath = merged.filePath === t.editor.filePath;
+      const sameLang = merged.language === t.editor.language;
+      const sameDirty = merged.isDirty === t.editor.isDirty;
+      const sameLine = merged.cursorLine === t.editor.cursorLine;
+      const sameCol = merged.cursorColumn === t.editor.cursorColumn;
+      if (samePath && sameLang && sameDirty && sameLine && sameCol) return t;
+      return { ...t, editor: merged };
+    });
+  }
+
   function autoRestoreDiscoveredSessions(
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
@@ -577,6 +764,9 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
             args: tab.shell.args,
           }
         : {}),
+      ...(tab.kind === "editor" && tab.editor
+        ? { filePath: tab.editor.filePath }
+        : {}),
     };
     closedTabsRef.current.push(entry);
     if (closedTabsRef.current.length > CLOSED_TAB_STACK_MAX) {
@@ -612,13 +802,19 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         ...(entry.args ? { args: entry.args } : {}),
         ...(entry.cwd ? { cwd: entry.cwd } : {}),
       });
+    } else if (entry.kind === "editor" && entry.filePath) {
+      // Re-open the same file. EditorCanvas reads it from disk on mount;
+      // unsaved buffer state is intentionally not preserved across close.
+      newEditorTab(entry.filePath);
     } else {
       newTab(entry.id, entry.label, { restoredSession: true });
     }
   }
 
   /** Close a tab, prompting for confirmation when closing a running
-   *  shell tab and `[shell] prompt_before_close` is true. */
+   *  shell tab and `[shell] prompt_before_close` is true. Editor tabs
+   *  with unsaved changes get a lightweight native confirm prompt so
+   *  Cmd+W on a dirty file can't silently throw work away. */
   function closeTab(tabId: string) {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     const closing = tabs.find((t) => t.id === tabId);
@@ -632,6 +828,12 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         closeTabNow(tabId);
       });
       return;
+    }
+    if (closing?.kind === "editor" && closing.editor?.isDirty) {
+      const ok = window.confirm(
+        `"${closing.label}" has unsaved changes. Close without saving?`,
+      );
+      if (!ok) return;
     }
     closeTabNow(tabId);
   }
@@ -713,6 +915,14 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         /* idempotent — already torn down by natural exit */
       });
     }
+    // Editor tabs own a Monaco model. Dispose it explicitly here so a
+    // closed tab doesn't leak — the buffer cache is intentionally
+    // long-lived across hidden project buckets (a tab the user can
+    // still come back to keeps its unsaved buffer), so we can't rely
+    // on a "tab not visible" prune.
+    if (closedKind === "editor") {
+      disposeEditorBuffer(tabId);
+    }
   }
 
   return {
@@ -726,6 +936,11 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     setActiveSubTab,
     newTab,
     newShellTab,
+    newEditorTab,
+    updateEditorMeta,
+    toggleEditorPreview,
+    renameEditorTabsForPath,
+    closeEditorTabsForPath,
     autoRestoreDiscoveredSessions,
     pushClosedTab,
     reopenLastClosedTab,

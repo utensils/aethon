@@ -69,6 +69,7 @@ describe("deriveTabActiveFlags", () => {
     expect(deriveTabActiveFlags([], undefined)).toEqual({
       agentTabActive: false,
       shellTabActive: false,
+      editorTabActive: false,
     });
   });
 
@@ -77,6 +78,7 @@ describe("deriveTabActiveFlags", () => {
     expect(deriveTabActiveFlags([a], "a")).toEqual({
       agentTabActive: true,
       shellTabActive: false,
+      editorTabActive: false,
     });
   });
 
@@ -85,6 +87,16 @@ describe("deriveTabActiveFlags", () => {
     expect(deriveTabActiveFlags([s], "s")).toEqual({
       agentTabActive: false,
       shellTabActive: true,
+      editorTabActive: false,
+    });
+  });
+
+  it("flags editor active for an editor tab", () => {
+    const e = makeEmptyTab("e", "App.tsx", null, "editor");
+    expect(deriveTabActiveFlags([e], "e")).toEqual({
+      agentTabActive: false,
+      shellTabActive: false,
+      editorTabActive: true,
     });
   });
 
@@ -96,6 +108,7 @@ describe("deriveTabActiveFlags", () => {
     expect(deriveTabActiveFlags([a], "missing")).toEqual({
       agentTabActive: true,
       shellTabActive: false,
+      editorTabActive: false,
     });
   });
 

@@ -135,6 +135,9 @@ pub fn install_app_menu(
     let toggle_terminal = MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
         .accelerator("CmdOrCtrl+`")
         .build(app)?;
+    let toggle_files = MenuItemBuilder::with_id("toggle_files", "Toggle Files")
+        .accelerator("CmdOrCtrl+J")
+        .build(app)?;
     let clear_chat = MenuItemBuilder::with_id("clear_chat", "Clear Chat")
         .accelerator("CmdOrCtrl+K")
         .build(app)?;
@@ -186,12 +189,14 @@ pub fn install_app_menu(
     #[cfg(target_os = "macos")]
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
+        .item(&toggle_files)
         .item(&clear_chat)
         .item(&stop_prompt)
         .build()?;
     #[cfg(not(target_os = "macos"))]
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
+        .item(&toggle_files)
         .item(&clear_chat)
         .item(&stop_prompt)
         .separator()

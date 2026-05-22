@@ -34,6 +34,10 @@ export interface RouteFixture {
     updateActiveTab: Mock;
     newTab: Mock;
     newShellTab: Mock;
+    newEditorTab: Mock;
+    updateEditorMeta: Mock;
+    renameEditorTabsForPath: Mock;
+    closeEditorTabsForPath: Mock;
     closeTab: Mock;
     setActiveTab: Mock;
     setActiveSubTab: Mock;
@@ -105,6 +109,10 @@ export function buildRouteFixture(
   const updateActiveTab = vi.fn();
   const newTab = vi.fn();
   const newShellTab = vi.fn();
+  const newEditorTab = vi.fn();
+  const updateEditorMeta = vi.fn();
+  const renameEditorTabsForPath = vi.fn();
+  const closeEditorTabsForPath = vi.fn();
   const closeTab = vi.fn();
   const setActiveTab = vi.fn();
   const setActiveSubTab = vi.fn();
@@ -154,6 +162,10 @@ export function buildRouteFixture(
     updateActiveTab,
     newTab,
     newShellTab,
+    newEditorTab,
+    updateEditorMeta,
+    renameEditorTabsForPath,
+    closeEditorTabsForPath,
     closeTab,
     setActiveTab,
     setActiveSubTab,
@@ -211,6 +223,10 @@ export function buildRouteFixture(
       updateActiveTab,
       newTab,
       newShellTab,
+      newEditorTab,
+      updateEditorMeta,
+      renameEditorTabsForPath,
+    closeEditorTabsForPath,
       closeTab,
       setActiveTab,
       setActiveSubTab,

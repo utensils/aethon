@@ -22,6 +22,7 @@ import {
 } from "../projects";
 import { formatRelativeTime } from "../utils/time";
 import { TAB_MIRROR_KEYS } from "./useTabs";
+import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { recomputeModelPicker } from "../utils/modelPicker";
 import type { ChatMessage } from "../types/a2ui";
 import type { GitStatus } from "./useProjects";
@@ -141,6 +142,10 @@ export function tabsForProjectBucket(tabs: Tab[], bucketKey: string): Tab[] {
 export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
   return tabs.filter((tab) => {
     if (tab.kind === "shell") return true;
+    // Editor tabs always count — even an empty file viewer is worth
+    // keeping during a project bucket swap so the user comes back to
+    // the same open files. A dirty buffer is doubly worth preserving.
+    if (tab.kind === "editor") return true;
     return (
       tab.messages.length > 0 ||
       tab.draft.trim().length > 0 ||
@@ -510,6 +515,20 @@ export function useProjectOps(
     projectsRef.current = result.state;
     gitStatusRef.current.delete(removedPath);
     persistProjects();
+
+    // Dispose Monaco models for any editor tabs sitting in the removed
+    // bucket before we drop the bucket itself. `tabBucketsRef.delete`
+    // alone would orphan the models in `EDITOR_BUFFERS` (module-level
+    // cache, keyed by tabId) for the rest of the app's lifetime.
+    // Active-project tabs already round through `switchProjectBucket`
+    // first, which snapshots them into the bucket; either way the bucket
+    // holds the to-be-removed tabs by the time we get here.
+    const removedBucket = tabBucketsRef.current.get(removedKey);
+    if (removedBucket) {
+      for (const tab of removedBucket.tabs) {
+        if (tab.kind === "editor") disposeEditorBuffer(tab.id);
+      }
+    }
 
     if (wasActive) {
       const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY);

@@ -1,0 +1,173 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+
+import { FileTreePanel } from "./file-tree";
+
+// Mock persist + tauri invoke per-test so the component sees a known
+// "empty" persisted-store + a controllable directory listing.
+vi.mock("../../../persist", () => ({
+  readState: vi.fn(() => Promise.resolve("")),
+  writeState: vi.fn(() => Promise.resolve(true)),
+}));
+
+import { readState, writeState } from "../../../persist";
+import { invoke } from "@tauri-apps/api/core";
+
+const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+const readStateMock = readState as ReturnType<typeof vi.fn>;
+const writeStateMock = writeState as ReturnType<typeof vi.fn>;
+
+function panelProps(overrides?: Partial<Parameters<typeof FileTreePanel>[0]>) {
+  return {
+    component: { id: "file-tree", type: "file-tree", props: {} },
+    state: { project: { path: "/projects/aethon", name: "aethon" } },
+    onEvent: vi.fn(),
+    renderChildWithState: () => null,
+    ...overrides,
+  } as unknown as Parameters<typeof FileTreePanel>[0];
+}
+
+beforeEach(() => {
+  invokeMock.mockReset();
+  readStateMock.mockReset();
+  readStateMock.mockResolvedValue("");
+  writeStateMock.mockReset();
+  writeStateMock.mockResolvedValue(true);
+});
+
+afterEach(() => {
+  // Portal-mounted context menus survive React Testing Library's default
+  // autocleanup until the component unmounts; call cleanup explicitly so
+  // each test starts with an empty document.body.
+  cleanup();
+  invokeMock.mockReset();
+  vi.useRealTimers();
+});
+
+describe("FileTreePanel", () => {
+  it("shows an empty state when no project is active", () => {
+    render(
+      <FileTreePanel
+        {...panelProps({ state: {} })}
+      />,
+    );
+    expect(screen.getByText("no project")).toBeTruthy();
+  });
+
+  it("lists the project root on mount", async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: "src", path: "/projects/aethon/src", kind: "dir" },
+      { name: "package.json", path: "/projects/aethon/package.json", kind: "file" },
+    ]);
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    expect(screen.getByText("src")).toBeTruthy();
+    expect(screen.getByText("package.json")).toBeTruthy();
+    expect(invokeMock).toHaveBeenCalledWith("fs_list_dir", {
+      root: "/projects/aethon",
+      path: "/projects/aethon",
+    });
+  });
+
+  it("fires file-tree-open when a file row is clicked", async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: "App.tsx", path: "/projects/aethon/src/App.tsx", kind: "file" },
+    ]);
+    const onEvent = vi.fn();
+    render(<FileTreePanel {...panelProps({ onEvent })} />);
+    const row = await waitFor(() => screen.getByText("App.tsx"));
+    row.click();
+    expect(onEvent).toHaveBeenCalledWith("file-tree-open", {
+      filePath: "/projects/aethon/src/App.tsx",
+    });
+  });
+
+  it("renders an error state when fs_list_dir rejects", async () => {
+    invokeMock.mockRejectedValueOnce("permission denied");
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText(/permission denied/));
+    expect(screen.getByText(/permission denied/)).toBeTruthy();
+  });
+
+  it("opens a context menu on right-click and exposes the action set", async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: "App.tsx", path: "/projects/aethon/src/App.tsx", kind: "file" },
+    ]);
+    render(<FileTreePanel {...panelProps()} />);
+    const row = await waitFor(() => screen.getByText("App.tsx"));
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: /New File…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /New Folder…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Rename…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Move to Trash…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Copy Path/ })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: /Copy Relative Path/ }),
+    ).toBeTruthy();
+  });
+
+  it("creates a file via the New File menu and opens it", async () => {
+    invokeMock.mockResolvedValueOnce([
+      { name: "src", path: "/projects/aethon/src", kind: "dir" },
+    ]);
+    const onEvent = vi.fn();
+    render(<FileTreePanel {...panelProps({ onEvent })} />);
+    const row = await waitFor(() => screen.getByText("src"));
+    fireEvent.contextMenu(row);
+    // fs_create_file then fs_list_dir refresh.
+    invokeMock.mockResolvedValueOnce(undefined);
+    invokeMock.mockResolvedValueOnce([
+      { name: "new.ts", path: "/projects/aethon/src/new.ts", kind: "file" },
+    ]);
+    vi.spyOn(window, "prompt").mockReturnValueOnce("new.ts");
+    const newFileBtn = screen.getByRole("menuitem", { name: /New File…/ });
+    fireEvent.click(newFileBtn);
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("fs_create_file", {
+        root: "/projects/aethon",
+        path: "/projects/aethon/src/new.ts",
+      });
+    });
+    await waitFor(() => {
+      expect(onEvent).toHaveBeenCalledWith("file-tree-open", {
+        filePath: "/projects/aethon/src/new.ts",
+      });
+    });
+  });
+
+  it("persists expanded folders under the project active when scheduled", async () => {
+    invokeMock.mockResolvedValue([
+      { name: "src", path: "/projects/aethon/src", kind: "dir" },
+    ]);
+    const { rerender } = render(<FileTreePanel {...panelProps()} />);
+    const row = await waitFor(() => screen.getByText("src"));
+    vi.useFakeTimers();
+    fireEvent.click(row);
+    rerender(
+      <FileTreePanel
+        {...panelProps({
+          state: { project: { path: "/projects/other", name: "other" } },
+        })}
+      />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(writeStateMock).toHaveBeenCalledWith(
+      "file-tree.json",
+      JSON.stringify({
+        byProject: {
+          "/projects/aethon": ["/projects/aethon/src"],
+        },
+      }),
+    );
+  });
+});

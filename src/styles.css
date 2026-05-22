@@ -408,6 +408,30 @@ body {
   min-height: 0;
 }
 
+/* ---- Sidebar area (wraps the sidebar + file tree) ----------------------- */
+
+.ae-sidebar-area {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+}
+.ae-sidebar-area > .a2ui-sidebar {
+  flex: 1 1 auto;
+  border-right: 0;
+  min-height: 0;
+}
+.ae-sidebar-area > .ae-file-tree {
+  /* Height controlled by the React component's inline flex-basis so the
+     user-driven resize handle works. Border separates from the sidebar
+     above; the handle sits over the top edge. */
+  border-top: 1px solid var(--border);
+}
+
 /* ---- Sidebar ------------------------------------------------------------ */
 
 .a2ui-sidebar {
@@ -422,6 +446,152 @@ body {
   overflow-y: auto;
   overscroll-behavior: none;
   position: relative;
+}
+
+/* ---- File tree (sibling of .a2ui-sidebar inside .ae-sidebar-area) ------ */
+
+.ae-file-tree,
+.ae-file-tree * {
+  /* Cover every descendant — single rows, the titlebar, the resize
+     handle. Without the deep selector the chevron + filename text
+     stayed selectable, which made click-and-drag accidentally drag-
+     select the tree instead of opening a file. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ae-file-tree {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  min-height: 0;
+}
+.ae-file-tree.is-collapsed {
+  flex: 0 0 auto;
+}
+.ae-file-tree-empty {
+  padding-bottom: 6px;
+}
+.ae-file-tree-error {
+  padding: 6px 12px;
+  color: var(--text-error, #d6655a);
+  font-size: var(--chrome-text-muted);
+}
+.ae-file-tree-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 6px;
+  flex: 0 0 auto;
+}
+.ae-file-tree-toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.ae-file-tree-toggle:hover {
+  color: var(--text);
+}
+.ae-file-tree-chevron {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.7;
+}
+.ae-file-tree-title {
+  font-size: var(--chrome-text-muted);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.ae-file-tree-hide {
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  margin: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1.05em;
+  line-height: 1;
+}
+.ae-file-tree-hide:hover {
+  color: var(--text);
+}
+.ae-file-tree-resize-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.ae-file-tree-resize-handle:hover,
+body.ae-resizing-sidebar .ae-file-tree-resize-handle {
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
+}
+.ae-file-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+.ae-file-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--chrome-text-muted);
+  line-height: 1.5;
+}
+.ae-file-tree-row:hover {
+  background: var(--hover, rgba(255, 255, 255, 0.04));
+  color: var(--text);
+}
+.ae-file-tree-icon {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.7;
+}
+.ae-file-tree-row.is-dir .ae-file-tree-label {
+  color: var(--text);
+}
+.ae-file-tree-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-file-tree-loading {
+  opacity: 0.6;
 }
 
 /* Resize handle — 6px-wide hit target hugging the sidebar's right edge.
@@ -798,6 +968,19 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--chrome-text-muted);
+}
+
+.a2ui-sidebar-context-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+  opacity: 0.6;
+}
+
+/* File-tree context menu reuses the sidebar menu's chrome but is wider
+   to fit the longest label ("Copy Relative Path") without truncation. */
+.ae-file-tree-context-menu {
+  min-width: 200px;
 }
 
 /* ---- Header (Container with className=app-header) ----------------------- */
@@ -3278,6 +3461,194 @@ body.ae-resizing-terminal * {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
+}
+
+/* =============================================================================
+   Editor canvas — Monaco editor surface for editor tabs. Same vertical
+   shape as the shell canvas: editor fills the available height, thin
+   status strip underneath.
+   ============================================================================= */
+
+.ae-editor-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-editor-canvas-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+.ae-editor-canvas-error {
+  padding: 8px 12px;
+  color: var(--text-error, #d6655a);
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+}
+.ae-editor-status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-editor-status-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+.ae-editor-status-dirty {
+  color: var(--accent, #f9cc6c);
+  font-size: 1.1em;
+  line-height: 1;
+}
+.ae-editor-status-spacer {
+  flex: 1 1 auto;
+}
+.ae-editor-status-pos,
+.ae-editor-status-lang {
+  white-space: nowrap;
+}
+.ae-editor-status-sep {
+  opacity: 0.5;
+}
+
+/* =============================================================================
+   Image viewer — alternate editor canvas for image extensions.
+   ============================================================================= */
+
+.ae-image-viewer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-image-viewer-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background:
+    repeating-conic-gradient(
+      var(--bg-elev) 0% 25%,
+      var(--bg) 0% 50%
+    ) 0 0 / 24px 24px;
+}
+.ae-image-viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+.ae-image-viewer-loading,
+.ae-image-viewer-error {
+  padding: 12px;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+}
+.ae-image-viewer-error {
+  color: var(--text-error, #d6655a);
+}
+.ae-image-viewer-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-image-viewer-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-image-viewer-spacer {
+  flex: 1 1 auto;
+}
+
+/* =============================================================================
+   Markdown preview — Cmd+Shift+V toggle on the editor canvas.
+   ============================================================================= */
+
+.ae-md-preview {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-md-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 32px;
+}
+.ae-md-preview-doc {
+  max-width: 76ch;
+  margin: 0 auto;
+  color: var(--text);
+  line-height: 1.6;
+}
+.ae-md-preview-loading,
+.ae-md-preview-error,
+.ae-md-preview-empty {
+  padding: 12px 16px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-md-preview-error {
+  color: var(--text-error, #d6655a);
+}
+.ae-md-preview-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  user-select: none;
+}
+.ae-md-preview-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-md-preview-spacer {
+  flex: 1 1 auto;
+}
+.ae-md-preview-hint {
+  opacity: 0.7;
 }
 
 .ae-shell-status-bar {

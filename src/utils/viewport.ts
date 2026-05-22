@@ -25,3 +25,4 @@ export function readZoom(): number {
   );
   return Number.isFinite(cur) ? cur : 1;
 }
+
