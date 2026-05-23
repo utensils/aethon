@@ -3,6 +3,7 @@ import {
   clearLayoutPrefs,
   resetLayoutPrefsInState,
 } from "../layoutPrefs";
+import { buildEditableSystemPromptBaseline } from "../systemPromptBaseline";
 
 /** settings-panel renders at App root and never goes through the
  *  bridge — events drive the panel's pending overlay directly.
@@ -59,8 +60,11 @@ export const handleSettings: EventRouteHandler = (
         }
         const fileName = "system-prompt.md";
         const existing = await ctx.invoke("read_state", { name: fileName });
-        if (typeof existing !== "string" || existing.length === 0) {
-          await ctx.invoke("write_state", { name: fileName, content: "" });
+        if (typeof existing !== "string" || existing.trim().length === 0) {
+          await ctx.invoke("write_state", {
+            name: fileName,
+            content: buildEditableSystemPromptBaseline(),
+          });
         }
         ctx.newEditorTab(`${dir}/${fileName}`, { rootPath: dir });
         ctx.closeSettings();

@@ -896,6 +896,7 @@ export default function App() {
     resetZoom,
     toggleFocusComposerTerminal,
     toggleSettings,
+    closeSettings,
     focusActiveContextInput,
     exportActiveChatMarkdown,
     pushNotification,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleSettings } from "./settings";
 import { buildRouteFixture } from "./testFixtures";
+import { DEFAULT_AETHON_SYSTEM_PROMPT } from "../systemPromptBaseline";
 
 describe("handleSettings", () => {
   it("close calls closeSettings", async () => {
@@ -77,7 +78,11 @@ describe("handleSettings", () => {
     });
     expect(mocks.invoke).toHaveBeenNthCalledWith(3, "write_state", {
       name: "system-prompt.md",
-      content: "",
+      content: expect.stringContaining("# About Aethon"),
+    });
+    expect(mocks.invoke.mock.calls[2]?.[1]).toEqual({
+      name: "system-prompt.md",
+      content: expect.stringContaining(DEFAULT_AETHON_SYSTEM_PROMPT.slice(0, 80)),
     });
     expect(mocks.newEditorTab).toHaveBeenCalledWith(
       "/Users/test/.aethon/system-prompt.md",
