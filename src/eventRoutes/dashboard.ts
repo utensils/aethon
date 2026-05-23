@@ -109,6 +109,7 @@ export const handleTaskLauncher: EventRouteHandler = (
           newWorktree?: boolean;
           branch?: string;
           baseBranch?: string;
+          worktreeId?: string;
         }
       | undefined;
     if (!sel?.projectId || !sel.prompt) return true;
@@ -118,6 +119,7 @@ export const handleTaskLauncher: EventRouteHandler = (
       newWorktree: sel.newWorktree === true,
       branch: sel.branch,
       baseBranch: sel.baseBranch,
+      worktreeId: sel.worktreeId,
     });
     return true;
   }

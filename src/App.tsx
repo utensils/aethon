@@ -601,21 +601,54 @@ export default function App() {
       newWorktree?: boolean;
       branch?: string;
       baseBranch?: string;
+      worktreeId?: string;
     }): Promise<void> => {
       const project = projectsRef.current.projects.find(
         (p) => p.id === opts.projectId,
       );
-      if (!project) return;
+      if (!project) {
+        pushNotificationRef.current({
+          title: "Could not start task",
+          message: "Project no longer exists.",
+          kind: "warning",
+        });
+        return;
+      }
       let cwd = project.path;
       if (opts.newWorktree) {
-        if (!opts.branch) return;
+        const branch = (opts.branch ?? "").trim();
+        if (!branch) {
+          pushNotificationRef.current({
+            title: "New worktree needs a branch name",
+            message: "Enter a branch name in the launcher before starting.",
+            kind: "warning",
+          });
+          return;
+        }
         const created = await createWorktreeWithParams({
           projectId: opts.projectId,
-          branch: opts.branch,
+          branch,
           baseBranch: opts.baseBranch,
         });
-        if (!created) return;
+        if (!created) {
+          pushNotificationRef.current({
+            title: "Worktree create failed",
+            message: `Could not create '${branch}'. See the sidebar's pending row for details.`,
+            kind: "warning",
+          });
+          return;
+        }
         cwd = created;
+      } else if (opts.worktreeId) {
+        // Existing-worktree path — switch the active worktree and use
+        // its path as the new tab's cwd.
+        const list =
+          projectsRef.current.worktreesByProject[opts.projectId] ?? [];
+        const wt = list.find((w) => w.id === opts.worktreeId);
+        if (wt) {
+          cwd = wt.path;
+          activateWorktree(wt.id);
+        }
       }
       // Ensure the project we're launching into is the active one so the
       // new tab lands in the right per-project bucket.
@@ -636,6 +669,7 @@ export default function App() {
       if (trimmed) await sendChat(trimmed);
     },
     [
+      activateWorktree,
       createWorktreeWithParams,
       newTab,
       pendingTabOpens,

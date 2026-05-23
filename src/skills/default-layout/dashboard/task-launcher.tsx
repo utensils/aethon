@@ -57,8 +57,15 @@ function resolveOrInline<T>(v: unknown, state: Record<string, unknown>): T | nul
   return v as T;
 }
 
-/** Default-branch fallback when the chip menu hasn't loaded `git_branch_list` yet. */
-const DEFAULT_BASE_BRANCH = "main";
+/**
+ * Default-branch fallback: empty string means "let the backend pick
+ * HEAD." We deliberately do NOT pre-fill 'main' — many repos use
+ * master/trunk/dev/misc-wip as their default, and `git worktree add
+ * <target> main` fails when no local main exists. Backend's
+ * git_worktree_add omits the base argument when this field is empty,
+ * which is equivalent to "start from current HEAD".
+ */
+const DEFAULT_BASE_BRANCH = "";
 
 type WorktreeChoice =
   | { kind: "current" }
@@ -106,9 +113,31 @@ export function TaskLauncher({
   );
 
   const [promptText, setPromptText] = useState(initialPrompt);
-  const [worktreeChoice, setWorktreeChoice] = useState<WorktreeChoice>({
-    kind: "current",
-  });
+  // Seed worktree selection from the project's currently-active
+  // worktree so the chip shows what the user has switched to in the
+  // sidebar, not just "project root". Falls back to "current" (project
+  // root) when no worktree is active.
+  const initialChoice: WorktreeChoice = useMemo(() => {
+    if (!data.activeWorktreeId) return { kind: "current" };
+    const wt = data.worktrees.find((w) => w.id === data.activeWorktreeId);
+    if (!wt) return { kind: "current" };
+    return {
+      kind: "existing",
+      id: wt.id,
+      path: wt.path,
+      label: wt.label || wt.branch || "worktree",
+    };
+  }, [data.activeWorktreeId, data.worktrees]);
+  const [worktreeChoice, setWorktreeChoice] =
+    useState<WorktreeChoice>(initialChoice);
+  // Re-sync when the active worktree changes on the project (the user
+  // can switch worktrees from the sidebar while the launcher is open).
+  // Only resets when the user hasn't started typing — typing a prompt
+  // implies intent, so don't yank their selection out from under them.
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (!touched) setWorktreeChoice(initialChoice);
+  }, [initialChoice, touched]);
   const [newBranch, setNewBranch] = useState("");
   const [baseBranch, setBaseBranch] = useState(DEFAULT_BASE_BRANCH);
   const [submitting, setSubmitting] = useState(false);
@@ -131,6 +160,11 @@ export function TaskLauncher({
     if (!data.project) return;
     if (worktreeChoice.kind === "new" && !newBranch.trim()) return;
     setSubmitting(true);
+    // baseBranch only sent when the user actually typed something — an
+    // empty / whitespace value means "off current HEAD", which is the
+    // backend's omit-the-argument path. Otherwise repos without a local
+    // 'main' would 404 on `git worktree add -b <new> <target> main`.
+    const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
       projectId: data.project.id,
       prompt: text,
@@ -138,15 +172,19 @@ export function TaskLauncher({
       branch:
         worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
       baseBranch:
-        worktreeChoice.kind === "new" ? baseBranch.trim() : undefined,
+        worktreeChoice.kind === "new" && baseTrimmed.length > 0
+          ? baseTrimmed
+          : undefined,
       // Existing worktree case: we send the worktreeId so the route
       // handler can activate it before spawning the tab.
       worktreeId:
         worktreeChoice.kind === "existing" ? worktreeChoice.id : undefined,
     });
     // Clear the input optimistically — if the start fails the dashboard
-    // will surface the error via the notification stack.
+    // will surface the error via the notification stack. Reset `touched`
+    // so a fresh dashboard visit re-syncs to the active worktree.
     setPromptText("");
+    setTouched(false);
     setSubmitting(false);
   }, [
     submitting,
@@ -159,13 +197,12 @@ export function TaskLauncher({
   ]);
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey || true)) {
-      // Plain Enter submits; Shift+Enter adds a newline. Matches the
-      // main chat composer.
-      if (!e.shiftKey) {
-        e.preventDefault();
-        submit();
-      }
+    // Plain Enter submits; Shift+Enter adds a newline. Matches the main
+    // chat composer. Cmd/Ctrl+Enter also submits for users who hold
+    // modifiers out of habit.
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
     }
   };
 
@@ -188,7 +225,10 @@ export function TaskLauncher({
         }
         value={promptText}
         rows={3}
-        onChange={(e) => setPromptText(e.target.value)}
+        onChange={(e) => {
+          setPromptText(e.target.value);
+          setTouched(true);
+        }}
         onKeyDown={onKey}
         disabled={submitting}
         aria-label="Task prompt"
@@ -235,6 +275,7 @@ export function TaskLauncher({
             },
           ]}
           onSelect={(id) => {
+            setTouched(true);
             if (id === "current") setWorktreeChoice({ kind: "current" });
             else if (id === "__new__") setWorktreeChoice({ kind: "new" });
             else {
@@ -262,10 +303,11 @@ export function TaskLauncher({
             <input
               type="text"
               className="a2ui-task-launcher-base-input"
-              placeholder="base branch"
+              placeholder="base (current HEAD)"
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
-              aria-label="Base branch"
+              aria-label="Base branch (empty = current HEAD)"
+              title="Base branch to fork from. Leave empty to use the current HEAD — useful when the repo's default isn't 'main'."
             />
           </>
         )}

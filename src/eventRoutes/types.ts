@@ -131,14 +131,19 @@ export interface EventRouteContext {
   createWorktreeForProject: (projectId: string) => Promise<void>;
   /** End-to-end task launch from the dashboard composer (or the
    *  agent-side `startTask` pi tool). Creates a worktree when
-   *  newWorktree is set, spawns a new agent tab with the right cwd,
-   *  and forwards the prompt as the tab's first user message. */
+   *  newWorktree is set; otherwise uses `worktreeId` (existing worktree)
+   *  or the project root as the cwd. Spawns a new agent tab with the
+   *  resolved cwd and forwards the prompt as the tab's first user
+   *  message. Failures surface via the notification stack. */
   startTaskInProject: (opts: {
     projectId: string;
     prompt: string;
     newWorktree?: boolean;
     branch?: string;
     baseBranch?: string;
+    /** Existing worktree to launch under. Ignored when newWorktree is
+     *  true. When omitted, the project root is used. */
+    worktreeId?: string;
   }) => Promise<void>;
   removeWorktreeById: (worktreeId: string) => Promise<void>;
   dismissPendingWorktree: (worktreeId: string) => void;

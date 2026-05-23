@@ -128,6 +128,32 @@ describe("handleTaskLauncher", () => {
       newWorktree: true,
       branch: "fix-bug",
       baseBranch: "main",
+      worktreeId: undefined,
+    });
+  });
+
+  it("start-task forwards worktreeId for existing-worktree submits", async () => {
+    const { ctx } = buildRouteFixture();
+    await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "investigate",
+          newWorktree: false,
+          worktreeId: "wt-7",
+        },
+      },
+      ctx,
+    );
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith({
+      projectId: "p1",
+      prompt: "investigate",
+      newWorktree: false,
+      branch: undefined,
+      baseBranch: undefined,
+      worktreeId: "wt-7",
     });
   });
 
