@@ -1300,7 +1300,10 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-empty-state-card {
-  max-width: 480px;
+  /* Width matched to .a2ui-worktree-landing .a2ui-empty-state-card so
+     both landing views (empty-tabs welcome + worktree start-session)
+     share the same outer footprint and only differ in content. */
+  max-width: 760px;
   width: 100%;
   min-width: 0;
   text-align: center;
