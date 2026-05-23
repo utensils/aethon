@@ -435,12 +435,13 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     }
     status.gh_available = true;
 
-    // 2. Identify the GitHub <owner>/<repo>. `gh repo view --json` only
-    //    succeeds when the cwd is a GitHub repo, so this doubles as a
-    //    cheap "is this on GitHub?" check.
+    // 2. Identify the GitHub <owner>/<repo>. `gh repo view` takes a
+    //    positional `[<repository>]` arg (not a `-R` flag — `repo view`
+    //    is the one subcommand that doesn't share the `--repo` family
+    //    convention), so we rely on `current_dir(&dir)` and a bare
+    //    invocation. Output empty / non-zero on non-GitHub remotes,
+    //    which doubles as our "is this on GitHub?" check.
     let repo_out = Command::new("gh")
-        .arg("-R")
-        .arg(&dir)
         .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
         .current_dir(&dir)
         .output();
@@ -476,11 +477,11 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     //    the UI tidy. `--json` makes parsing robust against future CLI
     //    output tweaks.
     let pr_out = Command::new("gh")
-        .arg("-R")
-        .arg(&repo_str)
         .args([
             "pr",
             "list",
+            "--repo",
+            &repo_str,
             "--state",
             "all",
             "--head",

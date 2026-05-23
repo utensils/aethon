@@ -1430,6 +1430,28 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* Worktree landing — GitHub branch status block. Inherits the
    empty-state recent-block layout (border-top + uppercase H2) and adds
    PR-row treatment with merged/open/closed/draft pills. */
+/* Worktree landing reuses .a2ui-empty-state-card but carries
+   substantially more content (GitHub status + PR list + action row).
+   Widen the card so the PR titles + repo path don't truncate on
+   typical viewports, and bump the inner gap to space the sections. */
+.a2ui-worktree-landing .a2ui-empty-state-card {
+  max-width: 760px;
+  gap: var(--space-5);
+  text-align: left;
+  align-items: stretch;
+}
+
+.a2ui-worktree-landing .a2ui-empty-state-hero,
+.a2ui-worktree-landing .a2ui-empty-state-title,
+.a2ui-worktree-landing .a2ui-empty-state-subtitle {
+  align-self: center;
+  text-align: center;
+}
+
+.a2ui-worktree-landing .a2ui-empty-state-actions {
+  justify-content: center;
+}
+
 .a2ui-worktree-landing-gh {
   width: 100%;
   text-align: left;
