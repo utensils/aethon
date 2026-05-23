@@ -34,6 +34,14 @@ interface DashboardApi {
   refresh(args?: {
     projectPath?: string;
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
+  listIssues(args: {
+    projectPath: string;
+    limit?: number;
+  }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
+  getIssue(args: {
+    projectPath: string;
+    number: number;
+  }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
 function getApi(): { tasks: TasksApi; dashboard: DashboardApi } | null {
@@ -94,6 +102,32 @@ const RefreshParams = Type.Object({
   ),
 });
 type RefreshParamsT = Static<typeof RefreshParams>;
+
+const ListIssuesParams = Type.Object({
+  projectPath: Type.String({
+    description: "Absolute filesystem path to the project.",
+  }),
+  limit: Type.Optional(
+    Type.Number({
+      description:
+        "Max issues to fetch. Clamped to [1, 100]. Defaults to 30 to match the dashboard surface.",
+      minimum: 1,
+      maximum: 100,
+    }),
+  ),
+});
+type ListIssuesParamsT = Static<typeof ListIssuesParams>;
+
+const GetIssueParams = Type.Object({
+  projectPath: Type.String({
+    description: "Absolute filesystem path to the project.",
+  }),
+  number: Type.Number({
+    description: "Issue number, positive integer.",
+    minimum: 1,
+  }),
+});
+type GetIssueParamsT = Static<typeof GetIssueParams>;
 
 export function buildDashboardTools(): ToolDefinition[] {
   const startTaskTool = defineTool({
@@ -176,5 +210,61 @@ export function buildDashboardTools(): ToolDefinition[] {
     },
   }) as ToolDefinition;
 
-  return [startTaskTool, repoOverviewTool, refreshTool];
+  const listIssuesTool = defineTool({
+    name: "listOpenIssues",
+    label: "List open GitHub issues",
+    description:
+      "Fetch open issues for the gh-resolved repository at projectPath. Cached for 90s; returns the same array the per-project dashboard's Issues section renders.",
+    promptSnippet:
+      "listOpenIssues: read the open issue list for a project",
+    parameters: ListIssuesParams,
+    async execute(_callId: string, params: ListIssuesParamsT) {
+      const api = getApi();
+      if (!api) fail("aethon.dashboard API unavailable");
+      const r = await api.dashboard.listIssues({
+        projectPath: params.projectPath,
+        ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
+      });
+      if (!r.ok) fail(r.error ?? "unknown");
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(r.data ?? {}, null, 2) },
+        ],
+        details: r.data,
+      };
+    },
+  }) as ToolDefinition;
+
+  const getIssueTool = defineTool({
+    name: "getOpenIssue",
+    label: "Fetch a single GitHub issue's body",
+    description:
+      "Return the full title + url + author + body for one open issue. Pair with `startTask` to launch a fresh worktree with the issue text as the first user message.",
+    promptSnippet:
+      "getOpenIssue: fetch the body of one GitHub issue by number",
+    parameters: GetIssueParams,
+    async execute(_callId: string, params: GetIssueParamsT) {
+      const api = getApi();
+      if (!api) fail("aethon.dashboard API unavailable");
+      const r = await api.dashboard.getIssue({
+        projectPath: params.projectPath,
+        number: params.number,
+      });
+      if (!r.ok) fail(r.error ?? "unknown");
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(r.data ?? {}, null, 2) },
+        ],
+        details: r.data,
+      };
+    },
+  }) as ToolDefinition;
+
+  return [
+    startTaskTool,
+    repoOverviewTool,
+    refreshTool,
+    listIssuesTool,
+    getIssueTool,
+  ];
 }

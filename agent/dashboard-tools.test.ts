@@ -39,10 +39,12 @@ function getTool(name: string) {
 }
 
 describe("buildDashboardTools()", () => {
-  it("registers startTask, getRepoOverview, refreshDashboard", () => {
+  it("registers startTask, getRepoOverview, refreshDashboard, listOpenIssues, getOpenIssue", () => {
     const tools = buildDashboardTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "getOpenIssue",
       "getRepoOverview",
+      "listOpenIssues",
       "refreshDashboard",
       "startTask",
     ]);

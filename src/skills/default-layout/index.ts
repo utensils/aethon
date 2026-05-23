@@ -41,6 +41,7 @@ import { ProjectCard } from "./dashboard/project-card";
 import { TaskLauncher } from "./dashboard/task-launcher";
 import { ProjectsDashboard } from "./dashboard/projects-dashboard";
 import { ProjectDashboard } from "./dashboard/project-dashboard";
+import { IssuesSection } from "./dashboard/issues-section";
 import workstationPayload from "./workstation.a2ui.json";
 
 export {
@@ -128,6 +129,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "task-launcher": TaskLauncher,
     "projects-dashboard": ProjectsDashboard,
     "project-dashboard": ProjectDashboard,
+    "issues-section": IssuesSection,
   },
   layout: workstationPayload,
 };

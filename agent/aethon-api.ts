@@ -112,6 +112,19 @@ export interface DashboardApi {
     projectPath: string;
   }): Promise<MutationResult>;
   refresh(input?: { projectPath?: string }): Promise<MutationResult>;
+  /** Cached open issues for the project. Same data the dashboard
+   *  surface renders, served from the in-memory cache so the model
+   *  doesn't re-shell `gh`. Limit clamps server-side to [1, 100]. */
+  listIssues(input: {
+    projectPath: string;
+    limit?: number;
+  }): Promise<MutationResult>;
+  /** Full issue body (title + url + body + author). Useful for
+   *  preparing a `startTask` payload with the issue context. */
+  getIssue(input: {
+    projectPath: string;
+    number: number;
+  }): Promise<MutationResult>;
 }
 
 export interface AethonApi {
@@ -477,6 +490,33 @@ export function buildAethonApi(
           ? { projectPath: input.projectPath }
           : {}),
       }),
+    listIssues: (input) => {
+      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+        return Promise.resolve({ ok: false, error: "projectPath required" });
+      }
+      return _dashboardQuery("list_issues", {
+        projectPath: input.projectPath,
+        ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+      });
+    },
+    getIssue: (input) => {
+      if (
+        !input ||
+        typeof input.projectPath !== "string" ||
+        !input.projectPath ||
+        typeof input.number !== "number" ||
+        input.number <= 0
+      ) {
+        return Promise.resolve({
+          ok: false,
+          error: "projectPath + positive integer number required",
+        });
+      }
+      return _dashboardQuery("get_issue", {
+        projectPath: input.projectPath,
+        number: input.number,
+      });
+    },
   };
 
   const shells: ShellsApi = {
