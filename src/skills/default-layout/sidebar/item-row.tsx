@@ -22,6 +22,12 @@ export interface ItemRowProps {
   /** Click handler for the disclosure caret only; toggles independent of
    *  row selection so the user can expand without switching projects. */
   onToggleDisclosure?: () => void;
+  /** Reserve the same horizontal space for the disclosure chevron and
+   *  the git dirty-dot whether or not this row actually has them.
+   *  Projects section sets this so a repo without worktrees aligns its
+   *  label at the same x-coordinate as a sibling project with worktrees.
+   *  Other sections (panels, history) leave it off so they stay tight. */
+  alignSlots?: boolean;
 }
 
 export function ItemRow({
@@ -36,6 +42,7 @@ export function ItemRow({
   index,
   disclosure,
   onToggleDisclosure,
+  alignSlots,
 }: ItemRowProps) {
   if (item.componentType && renderChildWithState) {
     const synthetic: A2UIComponent = {
@@ -126,6 +133,8 @@ export function ItemRow({
             />
           </svg>
         </button>
+      ) : alignSlots ? (
+        <span className="a2ui-sidebar-item-discl-spacer" aria-hidden="true" />
       ) : null}
       {git?.dirty ? (
         <span
@@ -133,6 +142,8 @@ export function ItemRow({
           aria-hidden="true"
           title="Uncommitted changes"
         />
+      ) : alignSlots ? (
+        <span className="a2ui-sidebar-item-git-dot-spacer" aria-hidden="true" />
       ) : null}
       <span className="a2ui-sidebar-item-label">{item.label}</span>
       {git?.branch ? (

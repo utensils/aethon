@@ -623,6 +623,11 @@ export function Sidebar({
                                   )
                               : undefined
                           }
+                          // Reserve chevron + dirty-dot slots across every
+                          // row in the projects section so labels align
+                          // regardless of which rows happen to have
+                          // worktrees or uncommitted changes.
+                          alignSlots={isProjects}
                         />
                         {hasExtraWorktrees && expanded
                           ? extraWorktrees.map((wt) => (

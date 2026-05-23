@@ -668,6 +668,26 @@ body.ae-resizing-sidebar .a2ui-layout {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* Invisible placeholders mirroring the disclosure chevron + git dirty
+   dot. Rendered for project rows that have neither, so the label text
+   starts at the same x-coordinate across every row in the section
+   regardless of whether the row has worktrees or uncommitted changes.
+   Dimensions must stay in lockstep with `.a2ui-sidebar-item-discl`
+   and `.a2ui-sidebar-item-git-dot`. */
+.a2ui-sidebar-item-discl-spacer {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-left: -4px;
+}
+.a2ui-sidebar-item-git-dot-spacer {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+}
+
 /* Branch label — quiet mono text on the right of a project row.
    No border / no chip — the row's own type weight differentiates. */
 .a2ui-sidebar-item-git-branch {
