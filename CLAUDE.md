@@ -42,6 +42,21 @@ devshell exposes these helpers (defined in `flake.nix`):
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
 
+`scripts/dev.sh` carries two state-sandbox flags (mirroring Claudette):
+
+- `dev --new` — spin up against an empty `~/.aethon`. Points
+  `AETHON_USER_DIR` at `${TMPDIR}/aethon-dev/new-<pid>/` so the launch
+  sees no config, no projects, no window state, no themes. Removed on
+  exit. Use to exercise first-run UX, missing-config flows, fresh
+  extension loading, or to A/B against a real user dir without
+  copying. Most code that touches `~/.aethon` honors the override —
+  the resolver is `helpers::aethon_dir`, used by config / sessions /
+  pastes / logs / window state / extensions / skills.
+- `dev --clean` — standalone nuke. Wipes
+  `${TMPDIR}/aethon-dev/` (per-PID `--new` sandboxes + dev-info files)
+  and exits without launching. No PID checks; use after a SIGKILL
+  left stale state.
+
 To run a single test file: `bunx vitest run agent/terminal-stream.test.ts`.
 To run tests matching a name: `bunx vitest run -t "test name pattern"`.
 To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
@@ -435,30 +450,56 @@ and matching frontend handler:
   — UI parity for the per-project dashboard composer. Spawns a
   worktree (when requested), opens a new agent tab in the right cwd,
   and forwards the prompt as the first user message.
-- `aethon.dashboard.{getRepoOverview, refresh}` — cached gh repo data
-  (stars/forks/issues/PRs/default branch/pushed) and cache-bust.
+- `aethon.dashboard.{getRepoOverview, refresh, listIssues, getIssue}` —
+  cached gh repo data (stars/forks/issues/PRs/default branch/pushed),
+  cache-bust, the open issues list, and a single issue's body.
+  `listIssues` is the same data the per-project dashboard's Issues
+  section renders; `getIssue` returns the full body so the agent can
+  prepare a `startTask` payload from an issue.
 
-The three dashboard pi tools (`startTask`, `getRepoOverview`,
-`refreshDashboard`) register automatically in `agent/dashboard-tools.ts`
-so the model can drive them via the standard tool-use protocol.
+The five dashboard pi tools (`startTask`, `getRepoOverview`,
+`refreshDashboard`, `listOpenIssues`, `getOpenIssue`) register
+automatically in `agent/dashboard-tools.ts` so the model can drive
+them via the standard tool-use protocol.
 
 ### Dashboard surfaces (M9)
 
 Empty-state replaced by two visibility-gated composites in
 `workstation.a2ui.json`: `projects-dashboard` (when `/empty && !/project`)
 and `project-dashboard` (when `/empty && /project`). Both target the
-`canvas` slot via the existing `empty-state` slotMap. Five new chrome
+`canvas` slot via the existing `empty-state` slotMap. Six chrome
 composite types — `projects-dashboard`, `project-dashboard`,
-`task-launcher`, `project-card`, `gh-stats-strip` — all registered in
-`defaultLayoutSkill.components` and swappable via
+`task-launcher`, `project-card`, `gh-stats-strip`, `issues-section`
+— all registered in `defaultLayoutSkill.components` and swappable via
 `aethon.registerComponent`. Live data via `$ref`:
 `/projectsDashboard/extraCards` (extension-injected tiles on the
 global dashboard) and `/projectDashboard/widgets` (extension-injected
 cards on the per-project dashboard); push entries with
-`aethon.patchState`. gh data is cached in `src/ghRepoOverviewCache.ts`
-(5-min live TTL, 30-min negative). Project cards lazy-fetch on
-IntersectionObserver entry; the per-project dashboard fetches eagerly
-on activation.
+`aethon.patchState`. gh repo data is cached in
+`src/ghRepoOverviewCache.ts` (5-min live TTL, 30-min negative). Issues
+get their own cache in `src/ghIssuesCache.ts` (90-s live, 60-s
+negative; cap clamped server-side to 100 issues). Project cards
+lazy-fetch on IntersectionObserver entry; the per-project dashboard
+fetches eagerly on activation. Issues section lazy-fetches when it
+scrolls into view to keep the dashboard's initial paint cheap.
+
+Per the codex audit on PR #73 we use `gh issue list -q length` for
+the open-issue count instead of `repos/<r>.open_issues_count` (which
+counts PRs + issues together). Branch names with slashes are
+percent-encoded before going into `repos/<r>/branches/{x}` so
+`feat/foo` doesn't 404. Active worktree is mirrored to root state
+`/activeWorktreeId` so the file tree and `newTab` cwd both follow
+the sidebar selection (mirroring is in `useProjectOps.syncProjectsToState`).
+
+Issue row interaction model: left-click opens the issue in the user's
+browser (`tauri-plugin-opener|open_url`); right-click pops a
+lightweight context menu (Open on GitHub · Send to agent · Copy URL);
+the hover-revealed "→ Agent" button is the keyboard-equivalent for
+"Send to agent." The send-to-agent path forwards through the same
+`start-task` event the task launcher uses, so UI parity with the pi
+tool stays one code path. The agent receives a markdown-formatted
+prompt (title + url + author + body) and lands in whichever worktree
+the user has activated.
 
 ### Event flow gotcha
 

@@ -5,6 +5,23 @@
 //! Cargo's unit tests live at the bottom of this file (`#[cfg(test)]`).
 
 use serde::Deserialize;
+use std::path::PathBuf;
+
+/// Resolve the Aethon user directory. Honors the `AETHON_USER_DIR`
+/// environment variable when set (used by `scripts/dev.sh --new` to
+/// route a session into a per-PID tmp sandbox so first-run UX can be
+/// exercised without nuking the real user data). Falls back to
+/// `<home>/.aethon` otherwise. Caller is responsible for `home_dir`
+/// when no override is set — pass `None` to skip the fallback and get
+/// a `None` back when neither the env var nor a usable home is set.
+pub fn aethon_dir(home: Option<PathBuf>) -> Option<PathBuf> {
+    if let Ok(s) = std::env::var("AETHON_USER_DIR")
+        && !s.is_empty()
+    {
+        return Some(PathBuf::from(s));
+    }
+    home.map(|h| h.join(".aethon"))
+}
 
 /// Validates a leaf filename used inside `~/.aethon/`. Rejects anything
 /// that could escape the directory — empty, slashes, parent-directory
@@ -678,5 +695,66 @@ state_hard_kb = 100
         // than pop off the prefix component.
         let root = Path::new("/projects/aethon");
         assert!(resolve_inside_root(root, Path::new("/projects/aethon/../..")).is_none());
+    }
+
+    /// Tests for `aethon_dir`. The function consults `AETHON_USER_DIR`
+    /// at call time, so each test must set+unset the var locally to
+    /// stay isolated from sibling tests running in the same process.
+    /// We use a global mutex (`ENV_LOCK`) so concurrent test threads
+    /// can't observe each other's env mutations.
+    mod aethon_dir_tests {
+        use super::super::aethon_dir;
+        use std::path::PathBuf;
+        use std::sync::Mutex;
+
+        static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+        #[test]
+        fn returns_home_dotaethon_when_no_override() {
+            let _g = ENV_LOCK.lock().unwrap();
+            // SAFETY: ENV_LOCK serialises env mutations across tests in
+            // this module so concurrent test threads cannot observe a
+            // half-written global.
+            unsafe { std::env::remove_var("AETHON_USER_DIR") };
+            let got = aethon_dir(Some(PathBuf::from("/home/test")));
+            assert_eq!(got, Some(PathBuf::from("/home/test/.aethon")));
+        }
+
+        #[test]
+        fn returns_override_when_env_set() {
+            let _g = ENV_LOCK.lock().unwrap();
+            unsafe { std::env::set_var("AETHON_USER_DIR", "/tmp/sandbox-42") };
+            let got = aethon_dir(Some(PathBuf::from("/home/test")));
+            assert_eq!(got, Some(PathBuf::from("/tmp/sandbox-42")));
+            unsafe { std::env::remove_var("AETHON_USER_DIR") };
+        }
+
+        #[test]
+        fn returns_none_when_no_home_and_no_env() {
+            let _g = ENV_LOCK.lock().unwrap();
+            unsafe { std::env::remove_var("AETHON_USER_DIR") };
+            assert_eq!(aethon_dir(None), None);
+        }
+
+        #[test]
+        fn env_override_wins_even_when_no_home() {
+            let _g = ENV_LOCK.lock().unwrap();
+            unsafe { std::env::set_var("AETHON_USER_DIR", "/tmp/sandbox-99") };
+            let got = aethon_dir(None);
+            assert_eq!(got, Some(PathBuf::from("/tmp/sandbox-99")));
+            unsafe { std::env::remove_var("AETHON_USER_DIR") };
+        }
+
+        #[test]
+        fn empty_env_var_falls_back_to_home() {
+            let _g = ENV_LOCK.lock().unwrap();
+            // Some shells export empty string instead of unsetting. We
+            // treat that as "no override" so the user isn't trapped in
+            // a broken sandbox at "".
+            unsafe { std::env::set_var("AETHON_USER_DIR", "") };
+            let got = aethon_dir(Some(PathBuf::from("/h")));
+            assert_eq!(got, Some(PathBuf::from("/h/.aethon")));
+            unsafe { std::env::remove_var("AETHON_USER_DIR") };
+        }
     }
 }

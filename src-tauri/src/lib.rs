@@ -259,7 +259,11 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
     // snapshot here so a `cat $AETHON_STATE_FILE` always reflects the
     // current registrations without having to evaluate JS in the webview.
     if let Ok(home) = app.path().home_dir() {
-        let user_dir = home.join(".aethon");
+        // helpers::aethon_dir honors AETHON_USER_DIR so `scripts/dev.sh --new`
+        // can route a session into a tmp sandbox without breaking the
+        // signal chain into the bridge.
+        let user_dir = helpers::aethon_dir(Some(home.clone()))
+            .unwrap_or_else(|| home.join(".aethon"));
         let state_file = user_dir.join("state.json");
         let sessions_dir = user_dir.join("sessions");
         command.env("AETHON_USER_DIR", &user_dir);
@@ -539,7 +543,9 @@ fn save_paste_image(
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let dir = home.join(".aethon").join("pastes");
+    let dir = helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?
+        .join("pastes");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     let ext = extension
         .as_deref()
@@ -566,8 +572,8 @@ static LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLo
 /// user troubleshooting an issue finds everything in one place. Created
 /// at boot so the appender doesn't fail on a fresh install.
 fn log_dir() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let dir = home.join(".aethon").join("logs");
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let dir = helpers::aethon_dir(home)?.join("logs");
     if let Err(e) = std::fs::create_dir_all(&dir) {
         eprintln!("[init_tracing] mkdir {}: {e}", dir.display());
         return None;
@@ -743,6 +749,8 @@ pub fn run() {
             commands::git::git_branch_list,
             commands::git::gh_branch_status,
             commands::git::gh_repo_overview,
+            commands::git::gh_issue_list,
+            commands::git::gh_issue_view,
             commands::git::pick_project_directory,
             commands::window::updater_available,
             commands::window::toggle_fullscreen,
