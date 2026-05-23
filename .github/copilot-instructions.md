@@ -89,7 +89,7 @@ A PR that adds or changes a keyboard shortcut **must** update all three:
 3. The palette listing in `src/skills/default-layout/palette-items.ts`
    (`BUILTIN_KEYBINDINGS`)
 
-Plus the docs in `CLAUDE.md`, `AGENTS.md`, `website/reference/keyboard-shortcuts.md`,
+Plus the canonical docs: `AGENTS.md`, `website/reference/keyboard-shortcuts.md`,
 `website/guide/quick-start.md`, and `docs/aethon-agent/api.md`. Drift
 between these is a frequent regression source — flag it in review.
 
