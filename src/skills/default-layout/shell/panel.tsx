@@ -24,7 +24,6 @@ import { Terminal } from "../terminal";
 import { ShellCanvas } from "./canvas";
 
 const AGENT_BASH_SUB_ID = "agent-bash";
-const TERMINAL_PANEL_DEFAULT_HEIGHT = 240;
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
 
@@ -69,14 +68,6 @@ export function TerminalPanel({
     (state["terminalPanel"] as { activeSubId?: string; height?: number } | undefined) ?? {};
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const panelRef = useRef<HTMLDivElement>(null);
-  const height =
-    typeof panelState.height === "number" &&
-    Number.isFinite(panelState.height)
-      ? Math.max(
-          TERMINAL_PANEL_MIN_HEIGHT,
-          Math.min(TERMINAL_PANEL_MAX_HEIGHT, Math.round(panelState.height)),
-        )
-      : TERMINAL_PANEL_DEFAULT_HEIGHT;
   // Clamp to a valid sub-tab id. If the requested id no longer exists
   // (e.g. user closed a shell that was active), fall back to agent-bash
   // so we always render something.
@@ -86,8 +77,6 @@ export function TerminalPanel({
       return requestedActiveId;
     return AGENT_BASH_SUB_ID;
   }, [requestedActiveId, shellTabs]);
-
-  if (!visible) return null;
 
   const onResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -117,8 +106,11 @@ export function TerminalPanel({
   return (
     <div
       ref={panelRef}
-      className="ae-terminal-panel"
-      style={{ gridArea: "terminal", height }}
+      className={
+        visible ? "ae-terminal-panel" : "ae-terminal-panel is-closed"
+      }
+      aria-hidden={!visible}
+      style={{ gridArea: "terminal", height: "100%" }}
     >
       <div
         className="ae-terminal-panel-resize-handle"

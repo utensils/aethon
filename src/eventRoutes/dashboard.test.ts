@@ -29,7 +29,9 @@ describe("handleProjectsDashboard", () => {
   });
 
   it("select-project-card activates the project", async () => {
-    const { ctx, mocks } = buildRouteFixture();
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: { landing: { kind: "worktree", worktreeId: "w-1" } },
+    });
     const handled = await handleProjectsDashboard(
       {
         component: { id: "x", type: "projects-dashboard" },
@@ -39,7 +41,9 @@ describe("handleProjectsDashboard", () => {
       ctx,
     );
     expect(handled).toBe(true);
+    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p1");
+    expect(applySetState().landing).toBeNull();
   });
 
   it("remove-project-card removes by id", async () => {
@@ -72,6 +76,25 @@ describe("handleProjectsDashboard", () => {
       cwd: "/p",
     });
   });
+
+  it("delete-session can skip the sticky prompt after inline confirmation", async () => {
+    const { ctx, mocks } = buildRouteFixture({ promptDeleteAllow: true });
+    const handled = await handleProjectsDashboard(
+      {
+        component: { id: "x", type: "projects-dashboard" },
+        eventType: "delete-session",
+        data: { sessionId: "tab-42", label: "Earlier", confirmed: true },
+      },
+      ctx,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(handled).toBe(true);
+    expect(mocks.promptDeleteSessionConfirmation).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_session", {
+      tabId: "tab-42",
+    });
+  });
 });
 
 describe("handleProjectDashboard", () => {
@@ -101,6 +124,47 @@ describe("handleProjectDashboard", () => {
     );
     expect(handled).toBe(true);
     expect(ctx.activateWorktree).toHaveBeenCalledWith("w-1");
+  });
+
+  it("forwards dashboard worktree removal to the shared remove route", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "remove-worktree",
+        data: { worktreeId: "wt-1", confirmed: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.removeWorktreeById).toHaveBeenCalledWith("wt-1", {
+      confirmed: true,
+    });
+  });
+
+  it("forwards issue-section start-task events emitted through the project dashboard", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "Please work on issue #927",
+          worktreeId: "wt-1",
+          source: "github-issue",
+        },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        prompt: "Please work on issue #927",
+        worktreeId: "wt-1",
+      }),
+    );
   });
 });
 
@@ -180,6 +244,7 @@ describe("handleTaskLauncher", () => {
       },
       ctx,
     );
+    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p2");
   });
 });

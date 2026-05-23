@@ -69,12 +69,14 @@
   /* Easing — paired with --motion-* below for transition shorthands. */
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-panel: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Motion timing — overridden by prefers-reduced-motion in themes.css. */
   --motion-fast: 120ms;
   --motion-base: 160ms;
   --motion-slow: 240ms;
+  --motion-panel: 300ms;
 
   /* App layout — UI scale + viewport normalization. */
   --app-ui-scale: 1;

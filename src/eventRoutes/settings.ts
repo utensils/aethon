@@ -1,4 +1,9 @@
 import type { EventRouteHandler } from "./types";
+import {
+  clearLayoutPrefs,
+  resetLayoutPrefsInState,
+} from "../layoutPrefs";
+import { buildEditableSystemPromptBaseline } from "../systemPromptBaseline";
 
 /** settings-panel renders at App root and never goes through the
  *  bridge — events drive the panel's pending overlay directly.
@@ -22,6 +27,71 @@ export const handleSettings: EventRouteHandler = (
   }
   if (eventType === "save") {
     void ctx.saveSettings();
+    return true;
+  }
+  if (eventType === "toggle-extension") {
+    const selected = data as
+      | { name?: string; disabled?: boolean }
+      | undefined;
+    if (!selected?.name || typeof selected.disabled !== "boolean") return true;
+    void ctx
+      .invoke("agent_command", {
+        payload: JSON.stringify({
+          type: "set_extension_disabled",
+          name: selected.name,
+          disabled: selected.disabled,
+        }),
+      })
+      .catch((err: unknown) => {
+        ctx.pushNotification({
+          title: "Toggle extension failed",
+          message: String(err),
+          kind: "error",
+        });
+      });
+    return true;
+  }
+  if (eventType === "open-system-prompt") {
+    void ctx
+      .invoke("aethon_home_dir")
+      .then(async (dir) => {
+        if (typeof dir !== "string" || dir.length === 0) {
+          throw new Error("Aethon directory unavailable");
+        }
+        const fileName = "system-prompt.md";
+        const existing = await ctx.invoke("read_state", { name: fileName });
+        if (typeof existing !== "string" || existing.trim().length === 0) {
+          await ctx.invoke("write_state", {
+            name: fileName,
+            content: buildEditableSystemPromptBaseline(),
+          });
+        }
+        ctx.newEditorTab(`${dir}/${fileName}`, { rootPath: dir });
+        ctx.closeSettings();
+      })
+      .catch((err: unknown) => {
+        ctx.pushNotification({
+          title: "Open system prompt failed",
+          message: String(err),
+          kind: "error",
+          durationMs: 6000,
+        });
+      });
+    return true;
+  }
+  if (eventType === "reset-layout-prefs") {
+    ctx.setState((prev) => resetLayoutPrefsInState(prev));
+    void clearLayoutPrefs(ctx.writeState);
+    void ctx.writeState("file-tree-prefs.json", "");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("aethon:reset-file-tree-prefs"));
+    }
+    ctx.pushNotification({
+      title: "Layout reset",
+      message: "Sidebar and panel sizes restored.",
+      kind: "success",
+      durationMs: 2400,
+    });
     return true;
   }
   return false;

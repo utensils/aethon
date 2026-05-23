@@ -495,8 +495,28 @@ export function Sidebar({
     const resolved = resolvePointer(state, raw.$ref);
     return Array.isArray(resolved) ? (resolved as SidebarSection[]) : [];
   })();
+  const extensionItems = (() => {
+    const sidebar = (state.sidebar as Record<string, unknown> | undefined) ?? {};
+    const raw = sidebar.extensions;
+    return Array.isArray(raw) ? (raw as SidebarItem[]) : [];
+  })();
+  const hasExplicitExtensionSection = [
+    ...(props.sections ?? []),
+    ...(extraSections as SidebarSectionExt[]),
+  ].some((section) => section.id === "extensions");
+  const extensionSections: SidebarSectionExt[] =
+    extensionItems.length > 0 && !hasExplicitExtensionSection
+      ? [
+          {
+            id: "extensions",
+            title: "extensions",
+            items: extensionItems,
+          },
+        ]
+      : [];
   const allSections: SidebarSectionExt[] = [
     ...(props.sections ?? []),
+    ...extensionSections,
     ...(extraSections as SidebarSectionExt[]),
   ];
 
@@ -517,6 +537,9 @@ export function Sidebar({
       <div className="a2ui-sidebar-sections">
         {allSections.map((section) => {
           const items = resolveItems(section.items);
+          if (section.hideWhenEmpty === true && items.length === 0) {
+            return null;
+          }
           const monoItems = section.monoItems === true;
           if (section.searchable === true || section.groupByPrefix === true) {
             return (
@@ -535,8 +558,18 @@ export function Sidebar({
           const actions = section.actions ?? [];
           const isProjects = section.id === "projects";
           return (
-            <div key={section.id} className="a2ui-sidebar-section">
-              <div className="a2ui-sidebar-section-title">{section.title}</div>
+            <div
+              key={section.id}
+              className={[
+                "a2ui-sidebar-section",
+                section.title ? "" : "a2ui-sidebar-section-no-title",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {section.title && (
+                <div className="a2ui-sidebar-section-title">{section.title}</div>
+              )}
               {items.length === 0 ? (
                 <div className="a2ui-sidebar-empty">empty</div>
               ) : (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workstationLayout } from "./useFocus";
+import { workstationLayout, workstationRows } from "./useFocus";
 
 describe("workstationLayout", () => {
   it("returns canonical 3-column shape with both sidebars visible", () => {
@@ -24,13 +24,13 @@ describe("workstationLayout", () => {
       true,
       false,
     );
-    expect(result.columns).toBe("220px minmax(0,1fr)");
+    expect(result.columns).toBe("220px minmax(0,1fr) 0px");
     expect(result.areas).toEqual([
-      "sidebar header",
-      "sidebar canvas",
-      "sidebar terminal",
-      "sidebar composer",
-      "status status",
+      "sidebar header files-sidebar",
+      "sidebar canvas files-sidebar",
+      "sidebar terminal files-sidebar",
+      "sidebar composer files-sidebar",
+      "status status status",
     ]);
   });
 
@@ -40,13 +40,13 @@ describe("workstationLayout", () => {
       false,
       true,
     );
-    expect(result.columns).toBe("minmax(0,1fr) 280px");
+    expect(result.columns).toBe("0px minmax(0,1fr) 280px");
     expect(result.areas).toEqual([
-      "header files-sidebar",
-      "canvas files-sidebar",
-      "terminal files-sidebar",
-      "composer files-sidebar",
-      "status status",
+      "sidebar header files-sidebar",
+      "sidebar canvas files-sidebar",
+      "sidebar terminal files-sidebar",
+      "sidebar composer files-sidebar",
+      "status status status",
     ]);
   });
 
@@ -56,13 +56,13 @@ describe("workstationLayout", () => {
       false,
       false,
     );
-    expect(result.columns).toBe("minmax(0,1fr)");
+    expect(result.columns).toBe("0px minmax(0,1fr) 0px");
     expect(result.areas).toEqual([
-      "header",
-      "canvas",
-      "terminal",
-      "composer",
-      "status",
+      "sidebar header files-sidebar",
+      "sidebar canvas files-sidebar",
+      "sidebar terminal files-sidebar",
+      "sidebar composer files-sidebar",
+      "status status status",
     ]);
   });
 
@@ -108,5 +108,38 @@ describe("workstationLayout", () => {
     expect(
       workstationLayout({ columns: "garbage" }, true, true).columns,
     ).toBe("220px minmax(0,1fr) 280px");
+  });
+
+  it("animates hidden chrome tracks with 0px sentinels but preserves memos", () => {
+    const hidden = workstationLayout(
+      {
+        columns: "0px minmax(0,1fr) 0px",
+        lastLeftWidth: "330px",
+        lastRightWidth: "410px",
+      },
+      true,
+      true,
+    );
+    expect(hidden.columns).toBe("330px minmax(0,1fr) 410px");
+  });
+});
+
+describe("workstationRows", () => {
+  it("uses a fixed terminal track so console toggles can animate", () => {
+    expect(workstationRows(false, 240)).toBe(
+      "38px minmax(0,1fr) 0px auto auto",
+    );
+    expect(workstationRows(true, 360)).toBe(
+      "38px minmax(0,1fr) 360px auto auto",
+    );
+  });
+
+  it("clamps terminal track height", () => {
+    expect(workstationRows(true, 10)).toBe(
+      "38px minmax(0,1fr) 120px auto auto",
+    );
+    expect(workstationRows(true, 900)).toBe(
+      "38px minmax(0,1fr) 720px auto auto",
+    );
   });
 });

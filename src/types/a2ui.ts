@@ -157,6 +157,8 @@ export interface SidebarSection {
   id: string;
   title: string;
   items: SidebarItem[] | { $ref: string };
+  /** When true, the default sidebar omits the section until it has items. */
+  hideWhenEmpty?: boolean;
 }
 
 export interface SidebarItem {

@@ -52,6 +52,7 @@ interface EditorTabLike {
   kind?: string;
   editor?: {
     filePath?: string;
+    rootPath?: string;
     language?: string;
     isDirty?: boolean;
     cursorLine?: number;
@@ -75,7 +76,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   const boundTab = tabs.find((t) => t.id === tabId);
   const editorMeta = boundTab?.editor;
   const project = state["project"] as { path?: string } | undefined;
-  const projectPath = project?.path ?? "";
+  const projectPath = editorMeta?.rootPath ?? project?.path ?? "";
 
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);

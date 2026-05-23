@@ -82,7 +82,7 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
 ) => {
   if (eventType !== "delete-session") return false;
   const selected = data as
-    | { sessionId?: string; itemId?: string; label?: string }
+    | { sessionId?: string; itemId?: string; label?: string; confirmed?: boolean }
     | undefined;
   // Strip the "session:" or "tab:" prefix defensively in case a future
   // caller forgets the split — the sidebar already strips it but we
@@ -92,7 +92,7 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
   const sessionId = extractSessionId(raw);
   const label = selected?.label ?? sessionId;
   if (!sessionId) return true;
-  ctx.promptDeleteSessionConfirmation(label).then((allowed) => {
+  const deleteAfterConfirmation = (allowed: boolean) => {
     if (!allowed) return;
     const isOpen = (ctx.stateRef.current.tabs as Tab[] | undefined)?.some(
       (t) => t.id === sessionId,
@@ -119,7 +119,12 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
           kind: "error",
         });
       });
-  });
+  };
+  if (selected?.confirmed === true) {
+    deleteAfterConfirmation(true);
+  } else {
+    ctx.promptDeleteSessionConfirmation(label).then(deleteAfterConfirmation);
+  }
   return true;
 };
 
@@ -314,8 +319,8 @@ export const handleSidebarOpenWorktreeInNewTab: EventRouteHandler = (
       break;
     }
   }
-  ctx.activateWorktree(worktreeId);
   if (projectId) ctx.setActiveProjectById(projectId);
+  ctx.activateWorktree(worktreeId);
   ctx.setState((prev) => ({ ...prev, landing: null }));
   ctx.newTab(undefined, undefined, path ? { cwd: path } : undefined);
   return true;
@@ -336,8 +341,8 @@ export const handleSidebarStartSession: EventRouteHandler = (
     (data as
       | { worktreeId?: string; projectId?: string; path?: string }
       | undefined) ?? {};
-  if (payload.worktreeId) ctx.activateWorktree(payload.worktreeId);
   if (payload.projectId) ctx.setActiveProjectById(payload.projectId);
+  if (payload.worktreeId) ctx.activateWorktree(payload.worktreeId);
   ctx.setState((prev) => ({ ...prev, landing: null }));
   ctx.newTab(undefined, undefined, payload.path ? { cwd: payload.path } : undefined);
   return true;
@@ -347,8 +352,13 @@ export const handleSidebarRemoveWorktree: EventRouteHandler = (
   ctx,
 ) => {
   if (eventType !== "remove-worktree") return false;
-  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
-  if (worktreeId) void ctx.removeWorktreeById(worktreeId);
+  const selected =
+    (data as { worktreeId?: string; confirmed?: boolean } | undefined) ?? {};
+  if (selected.worktreeId) {
+    void ctx.removeWorktreeById(selected.worktreeId, {
+      confirmed: selected.confirmed === true,
+    });
+  }
   return true;
 };
 export const handleSidebarCancelPendingWorktree: EventRouteHandler = (
@@ -531,7 +541,9 @@ export const handleSectionedSelect: EventRouteHandler = async (
       ctx.openProjectFromPicker();
       return true;
     }
+    ctx.activateWorktree(null);
     ctx.setActiveProjectById(selected.itemId);
+    ctx.setState((prev) => ({ ...prev, landing: null }));
     return true;
   }
   if (selected?.sectionId === "hosts" && selected.itemId) {

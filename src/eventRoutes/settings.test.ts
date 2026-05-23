@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleSettings } from "./settings";
 import { buildRouteFixture } from "./testFixtures";
+import { DEFAULT_AETHON_SYSTEM_PROMPT } from "../systemPromptBaseline";
 
 describe("handleSettings", () => {
   it("close calls closeSettings", async () => {
@@ -35,6 +36,119 @@ describe("handleSettings", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.saveSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards extension toggles from the settings panel", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "toggle-extension",
+        data: { name: "mold:image-gallery", disabled: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_extension_disabled",
+        name: "mold:image-gallery",
+        disabled: true,
+      }),
+    });
+  });
+
+  it("opens system-prompt.md in an editor tab rooted at the Aethon dir", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    mocks.invoke
+      .mockResolvedValueOnce("/Users/test/.aethon")
+      .mockResolvedValueOnce("");
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "open-system-prompt",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "aethon_home_dir");
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "read_state", {
+      name: "system-prompt.md",
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(3, "write_state", {
+      name: "system-prompt.md",
+      content: expect.stringContaining("# About Aethon"),
+    });
+    expect(mocks.invoke.mock.calls[2]?.[1]).toEqual({
+      name: "system-prompt.md",
+      content: expect.stringContaining(DEFAULT_AETHON_SYSTEM_PROMPT.slice(0, 80)),
+    });
+    expect(mocks.newEditorTab).toHaveBeenCalledWith(
+      "/Users/test/.aethon/system-prompt.md",
+      { rootPath: "/Users/test/.aethon" },
+    );
+    expect(mocks.closeSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite an existing system prompt while opening it", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    mocks.invoke
+      .mockResolvedValueOnce("/Users/test/.aethon")
+      .mockResolvedValueOnce("custom prompt");
+    await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "open-system-prompt",
+      },
+      ctx,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("write_state", {
+      name: "system-prompt.md",
+      content: "",
+    });
+    expect(mocks.newEditorTab).toHaveBeenCalledWith(
+      "/Users/test/.aethon/system-prompt.md",
+      { rootPath: "/Users/test/.aethon" },
+    );
+  });
+
+  it("reset-layout-prefs restores layout defaults and clears persisted prefs", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        layout: {
+          sidebarVisible: false,
+          filesSidebarVisible: false,
+          columns: "310px minmax(0,1fr)",
+          lastLeftWidth: "310px",
+          lastRightWidth: "520px",
+        },
+        terminalPanel: { activeSubId: "agent-bash", height: 420 },
+      },
+    });
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "reset-layout-prefs",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    const next = applySetState();
+    expect(next.layout).toEqual(
+      expect.objectContaining({
+        sidebarVisible: true,
+        filesSidebarVisible: true,
+        columns: "220px minmax(0,1fr) 360px",
+        lastLeftWidth: "220px",
+        lastRightWidth: "360px",
+      }),
+    );
+    expect(next.terminalPanel).toEqual({ activeSubId: "agent-bash" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.writeState).toHaveBeenCalledWith("layout_prefs", "");
+    expect(mocks.writeState).toHaveBeenCalledWith("file-tree-prefs.json", "");
   });
 
   // Wrong-component rejection is no longer this handler's job — the

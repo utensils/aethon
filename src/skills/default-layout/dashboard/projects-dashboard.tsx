@@ -21,6 +21,7 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
+import { DashboardSessionRow } from "./session-row";
 
 interface ProjectListItem {
   id: string;
@@ -190,25 +191,25 @@ export function ProjectsDashboard({
             <h2>Recent sessions</h2>
             <ul className="a2ui-projects-dashboard-sessions">
               {recentSessions.slice(0, 6).map((s) => (
-                <li
+                <DashboardSessionRow
                   key={s.id}
-                  onClick={() =>
+                  session={s}
+                  classPrefix="a2ui-projects-dashboard"
+                  onRestore={() =>
                     onEvent(
                       "restore-session",
                       { sessionId: s.id, label: s.label, cwd: s.cwd },
                       s.id,
                     )
                   }
-                >
-                  <span className="a2ui-projects-dashboard-session-label">
-                    {s.label}
-                  </span>
-                  {s.lastModified && (
-                    <span className="a2ui-projects-dashboard-session-meta">
-                      {s.lastModified}
-                    </span>
-                  )}
-                </li>
+                  onDelete={() =>
+                    onEvent(
+                      "delete-session",
+                      { sessionId: s.id, label: s.label, confirmed: true },
+                      s.id,
+                    )
+                  }
+                />
               ))}
             </ul>
           </section>

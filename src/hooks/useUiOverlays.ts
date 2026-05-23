@@ -60,6 +60,7 @@ export interface UseUiOverlaysContext {
 
 export interface UseUiOverlaysActions {
   // ─── Settings ───────────────────────────────────────────────────────
+  openSettings: (section?: string) => void;
   toggleSettings: () => void;
   closeSettings: () => void;
   applySettingsPatch: (
@@ -135,19 +136,30 @@ export function useUiOverlays(
    *  open via `getConfig()`, exposes form bindings via the
    *  `/settings/pending` slice, and writes back via the
    *  `write_config` Tauri command on Save. */
+  function openSettings(section?: string) {
+    setState((prev) => ({
+      ...prev,
+      settings: {
+        open: true,
+        pending: null,
+        focusSection: section ?? null,
+      },
+    }));
+  }
+
   function toggleSettings() {
     setState((prev) => {
       const cur = (prev.settings as { open?: boolean } | undefined) ?? {};
       return {
         ...prev,
-        settings: { open: !cur.open, pending: null },
+        settings: { open: !cur.open, pending: null, focusSection: null },
       };
     });
   }
   function closeSettings() {
     setState((prev) => ({
       ...prev,
-      settings: { open: false, pending: null },
+      settings: { open: false, pending: null, focusSection: null },
     }));
   }
   /** Apply a partial AethonConfig patch to `/settings/pending`. The
@@ -512,6 +524,7 @@ export function useUiOverlays(
   }
 
   return {
+    openSettings,
     toggleSettings,
     closeSettings,
     applySettingsPatch,

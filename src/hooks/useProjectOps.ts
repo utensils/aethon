@@ -161,7 +161,10 @@ export interface UseProjectOpsActions {
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
-  removeWorktreeById: (worktreeId: string) => Promise<void>;
+  removeWorktreeById: (
+    worktreeId: string,
+    opts?: { confirmed?: boolean },
+  ) => Promise<void>;
   dismissPendingWorktree: (worktreeId: string) => void;
   retryPendingWorktree: (worktreeId: string) => Promise<void>;
   renameWorktree: (worktreeId: string, label: string) => void;
@@ -246,6 +249,36 @@ export function useProjectOps(
   const tabBucketsRef = useRef<
     Map<string, { tabs: Tab[]; activeTabId: string | undefined }>
   >(new Map());
+  const projectSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  function saveProjectsBestEffort(snapshot: ProjectsState): void {
+    void saveProjects(snapshot).catch((err) => {
+      console.warn("saveProjects failed:", err);
+    });
+  }
+
+  function scheduleProjectsSave(delayMs = 250): void {
+    if (projectSaveTimerRef.current !== null) {
+      clearTimeout(projectSaveTimerRef.current);
+    }
+    projectSaveTimerRef.current = setTimeout(() => {
+      projectSaveTimerRef.current = null;
+      saveProjectsBestEffort(projectsRef.current);
+    }, delayMs);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (projectSaveTimerRef.current !== null) {
+        clearTimeout(projectSaveTimerRef.current);
+        projectSaveTimerRef.current = null;
+        saveProjectsBestEffort(projectsRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const buildSidebarHistory = useCallback((
     tabs: Tab[],
@@ -350,56 +383,64 @@ export function useProjectOps(
   // Carries the cached git status from gitStatusRef so a sync triggered
   // for non-git reasons (lastUsed bump, label change) doesn't drop the
   // badges.
-  function syncProjectsToState() {
+  function buildProjectsMirror(
+    prev: Record<string, unknown>,
+    tabsForRecent?: Tab[],
+  ): Record<string, unknown> {
     const ps = projectsRef.current;
     const active = activeProject(ps);
+    const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
+    const tabs = tabsForRecent ?? ((prev.tabs as Tab[] | undefined) ?? []);
+    const tabIds = new Set(tabs.map((t) => t.id).concat(["default"]));
+    return {
+      projects: ps.projects,
+      activeProjectId: ps.activeId,
+      activeWorktreeId: ps.activeWorktreeId,
+      project: active
+        ? { id: active.id, label: active.label, path: active.path }
+        : null,
+      sessionLabel: active ? active.label : "",
+      sidebar: {
+        ...sidebar,
+        projects: ps.projects.map((p) => {
+          const wts = ps.worktreesByProject[p.id] ?? [];
+          return {
+            id: p.id,
+            // Basename is what we surface; the absolute path lives
+            // behind the row's native tooltip (title attribute) so
+            // the row label stays compact even with deep paths.
+            label: p.label,
+            tooltip: p.path,
+            iconUrl: p.iconUrl,
+            active: p.id === ps.activeId,
+            git: gitStatusRef.current.get(p.path),
+            expanded: p.uiExpanded === true,
+            worktrees: wts.map((w) => ({
+              id: w.id,
+              label: w.label ?? w.branch ?? "worktree",
+              branch: w.branch,
+              path: w.path,
+              active: w.id === ps.activeWorktreeId,
+              isMain: w.isMain,
+              pendingState: w.pendingState,
+              pendingError: w.pendingError,
+              locked: w.locked,
+            })),
+          };
+        }),
+      },
+      recentSessions: recentSessionItems(
+        scopedDiscoveredSessions(allDiscoveredSessionsRef.current),
+        tabIds,
+      ),
+    };
+  }
+
+  function syncProjectsToState() {
     setState((prev) => {
-      const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-      const tabIds = new Set(
-        (((prev.tabs as Tab[] | undefined) ?? []).map((t) => t.id)).concat(["default"]),
-      );
       return {
         ...prev,
-        projects: ps.projects,
-        activeProjectId: ps.activeId,
-        activeWorktreeId: ps.activeWorktreeId,
-        project: active
-          ? { id: active.id, label: active.label, path: active.path }
-          : null,
-        sessionLabel: active ? active.label : "",
-        sidebar: {
-          ...sidebar,
-          projects: ps.projects.map((p) => {
-            const wts = ps.worktreesByProject[p.id] ?? [];
-            return {
-              id: p.id,
-              // Basename is what we surface; the absolute path lives
-              // behind the row's native tooltip (title attribute) so
-              // the row label stays compact even with deep paths.
-              label: p.label,
-              tooltip: p.path,
-              iconUrl: p.iconUrl,
-              active: p.id === ps.activeId,
-              git: gitStatusRef.current.get(p.path),
-              expanded: p.uiExpanded === true,
-              worktrees: wts.map((w) => ({
-                id: w.id,
-                label: w.label ?? w.branch ?? "worktree",
-                branch: w.branch,
-                path: w.path,
-                active: w.id === ps.activeWorktreeId,
-                isMain: w.isMain,
-                pendingState: w.pendingState,
-                pendingError: w.pendingError,
-                locked: w.locked,
-              })),
-            };
-          }),
-        },
-        recentSessions: recentSessionItems(
-          scopedDiscoveredSessions(allDiscoveredSessionsRef.current),
-          tabIds,
-        ),
+        ...buildProjectsMirror(prev),
       };
     });
   }
@@ -423,8 +464,15 @@ export function useProjectOps(
   // immediately. If the new project has no bucket yet, we leave tabs
   // empty + flip /empty so the empty-state composite renders. Project
   // switching never creates conversation tabs.
-  function switchProjectBucket(fromKey: string, toKey: string): string | undefined {
+  function switchProjectBucket(
+    fromKey: string,
+    toKey: string,
+    opts: { mirrorProjects?: boolean } = {},
+  ): string | undefined {
     if (fromKey === toKey) {
+      if (opts.mirrorProjects === true) {
+        setState((prev) => ({ ...prev, ...buildProjectsMirror(prev) }));
+      }
       return stateRef.current.activeTabId as string | undefined;
     }
     let nextTerminalBuffer = "";
@@ -494,6 +542,9 @@ export function useProjectOps(
         result.hasTabs = next.tabs.length > 0;
         nextTerminalBuffer = "";
       }
+      if (opts.mirrorProjects === true) {
+        Object.assign(result, buildProjectsMirror(result, next.tabs));
+      }
       return result;
     });
     // Replay the new active tab's terminal buffer (or clear if none).
@@ -514,16 +565,17 @@ export function useProjectOps(
       path,
       label,
     );
-    projectsRef.current = nextProjects;
-    persistProjects();
+    projectsRef.current = { ...nextProjects, activeWorktreeId: null };
     // Fetch git status for the (possibly new) project so the chip
     // appears on the same render that adds the row, not 30s later.
     void refreshGitStatusFor(path);
     // Switch to the project's tab bucket BEFORE notifying the bridge.
     // If this is a brand-new project, the bucket is empty and the empty
     // state composite renders until the user explicitly creates a tab.
-    const nextTabId = switchProjectBucket(fromKey, projectBucketKey(id));
-    syncRecentSessionsToState();
+    const nextTabId = switchProjectBucket(fromKey, projectBucketKey(id), {
+      mirrorProjects: true,
+    });
+    scheduleProjectsSave();
     const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, path);
     return id;
@@ -542,10 +594,12 @@ export function useProjectOps(
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
       ),
       activeId: id,
+      activeWorktreeId: null,
     };
-    persistProjects();
-    const nextTabId = switchProjectBucket(fromKey, toKey);
-    syncRecentSessionsToState();
+    const nextTabId = switchProjectBucket(fromKey, toKey, {
+      mirrorProjects: true,
+    });
+    scheduleProjectsSave();
     const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, target.path);
     // Swap the file-watcher's project ext dir so edits in the new
@@ -555,9 +609,10 @@ export function useProjectOps(
       unwatchProjectForBridge(previousActive.path);
     }
     watchProjectForBridge(target.path);
-    // Fire-and-forget worktree refresh — populates the disclosure rows
-    // on first switch. The data lives in `worktreesByProject[id]` and
-    // surfaces through syncProjectsToState.
+    // Fire-and-forget worktree refresh on every switch. External git
+    // worktree adds/removes/locks can happen while the user is looking
+    // at another project, so cached rows are only a fast initial paint,
+    // not a reason to skip discovery.
     void refreshProjectWorktrees(id);
     return true;
   }
@@ -565,10 +620,15 @@ export function useProjectOps(
   function clearActiveProject() {
     const fromKey = projectBucketKey(projectsRef.current.activeId);
     const previousActive = activeProject(projectsRef.current);
-    projectsRef.current = { ...projectsRef.current, activeId: null };
-    persistProjects();
-    const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY);
-    syncRecentSessionsToState();
+    projectsRef.current = {
+      ...projectsRef.current,
+      activeId: null,
+      activeWorktreeId: null,
+    };
+    const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY, {
+      mirrorProjects: true,
+    });
+    scheduleProjectsSave();
     const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, null);
     if (previousActive) unwatchProjectForBridge(previousActive.path);
@@ -691,11 +751,20 @@ export function useProjectOps(
       const listing = await gitWorktrees(project.path);
       const prior = projectsRef.current.worktreesByProject[projectId] ?? [];
       const next = reconcileWorktrees(projectId, prior, listing);
-      projectsRef.current = setProjectWorktrees(
+      let nextState = setProjectWorktrees(
         projectsRef.current,
         projectId,
         next,
       );
+      const activeWorktreeId = nextState.activeWorktreeId;
+      if (
+        nextState.activeId === projectId &&
+        activeWorktreeId &&
+        !next.some((w) => w.id === activeWorktreeId)
+      ) {
+        nextState = { ...nextState, activeWorktreeId: null };
+      }
+      projectsRef.current = nextState;
       void persistProjects();
     } catch {
       // Swallow; project might not be a git repo. The UI shows zero
@@ -714,7 +783,8 @@ export function useProjectOps(
     if (expanded && !projectsRef.current.worktreesByProject[projectId]) {
       void refreshProjectWorktrees(projectId);
     }
-    void persistProjects();
+    syncProjectsToState();
+    scheduleProjectsSave();
   }
 
   function setProjectIconUrl(projectId: string, iconUrl: string | null): void {
@@ -725,11 +795,13 @@ export function useProjectOps(
   }
 
   function activateWorktree(worktreeId: string | null): void {
+    if (projectsRef.current.activeWorktreeId === worktreeId) return;
     projectsRef.current = setActiveWorktreeState(
       projectsRef.current,
       worktreeId,
     );
-    void persistProjects();
+    setState((prev) => ({ ...prev, ...buildProjectsMirror(prev) }));
+    scheduleProjectsSave();
   }
 
   // Branch / target path defaults for the "Create worktree" prompt. The
@@ -832,7 +904,10 @@ export function useProjectOps(
     }
   }
 
-  async function removeWorktreeById(worktreeId: string): Promise<void> {
+  async function removeWorktreeById(
+    worktreeId: string,
+    opts: { confirmed?: boolean } = {},
+  ): Promise<void> {
     const hit = findProjectOfWorktree(worktreeId);
     if (!hit) return;
     const { project, worktree } = hit;
@@ -841,8 +916,10 @@ export function useProjectOps(
       return;
     }
     const label = worktree.label ?? worktree.branch ?? "worktree";
-    const ok = window.confirm(`Remove worktree '${label}'?`);
-    if (!ok) return;
+    if (opts.confirmed !== true) {
+      const ok = window.confirm(`Remove worktree '${label}'?`);
+      if (!ok) return;
+    }
     try {
       await gitWorktreeRemove({
         projectPath: project.path,

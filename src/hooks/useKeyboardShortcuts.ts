@@ -52,6 +52,7 @@ export interface UseKeyboardShortcutsContext {
   resetZoom: () => void;
   toggleFocusComposerTerminal: () => void;
   toggleSettings: () => void;
+  closeSettings: () => void;
   focusActiveContextInput: () => void;
   exportActiveChatMarkdown: () => Promise<void>;
   pushNotification: (n: NotificationInput) => void;
@@ -279,7 +280,8 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         ctx.openPalette("files");
         return;
       }
-      // Esc closes the palette when open.
+      // Esc closes the active overlay, with palette taking precedence
+      // because it can sit on top of Settings.
       if (e.key === "Escape") {
         const palette = ctx.stateRef.current.palette as
           | { open?: boolean }
@@ -288,6 +290,15 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           e.preventDefault();
           e.stopPropagation();
           ctx.closePalette();
+          return;
+        }
+        const settings = ctx.stateRef.current.settings as
+          | { open?: boolean }
+          | undefined;
+        if (settings?.open) {
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.closeSettings();
           return;
         }
       }

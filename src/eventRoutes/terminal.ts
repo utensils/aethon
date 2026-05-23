@@ -46,9 +46,19 @@ export const handleTerminalPanel: EventRouteHandler = (
         const panel =
           (prev.terminalPanel as Record<string, unknown> | undefined) ?? {};
         if (panel.height === next) return prev;
+        const terminal =
+          (prev.terminal as { open?: boolean } | undefined) ?? {};
+        const layout =
+          (prev.layout as Record<string, unknown> | undefined) ?? {};
         return {
           ...prev,
           terminalPanel: { ...panel, height: next },
+          layout: terminal.open
+            ? {
+                ...layout,
+                rows: `38px minmax(0,1fr) ${next}px auto auto`,
+              }
+            : layout,
         };
       });
     }

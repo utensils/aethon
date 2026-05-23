@@ -33,6 +33,10 @@
 .ae-settings-panel *,
 .ae-notification,
 .ae-notification *,
+.a2ui-projects-dashboard,
+.a2ui-projects-dashboard *,
+.a2ui-project-dashboard,
+.a2ui-project-dashboard *,
 .a2ui-empty-state,
 .a2ui-empty-state *,
 .a2ui-empty-state-card,
@@ -42,6 +46,15 @@
 }
 
 [data-selectable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.monaco-editor,
+.monaco-editor * {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -138,17 +151,15 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  /* Animate column / row template changes so toggling the sidebar,
-     files sidebar, or terminal panel feels smooth instead of snapping.
-     `transition: grid-template-*` is widely supported in WebKit/Blink
-     since 2024; Firefox lags but Aethon ships in a WebKit Tauri shell
-     so this lands. Resize drags suppress the transition (see
-     `body.ae-resizing-sidebar`) so live drag stays buttery. */
+  /* Animate stable panel tracks so sidebar/console toggles glide like
+     Codex. Resize drags suppress the transition so live drag stays direct. */
+  will-change: grid-template-columns, grid-template-rows;
   transition:
-    grid-template-columns var(--motion-base) var(--ease-out),
-    grid-template-rows var(--motion-base) var(--ease-out);
+    grid-template-columns var(--motion-panel) var(--ease-panel),
+    grid-template-rows var(--motion-panel) var(--ease-panel);
 }
 body.ae-resizing-sidebar .a2ui-layout,
+body.ae-resizing-terminal .a2ui-layout,
 body.ae-resizing-composer .a2ui-layout {
   transition: none;
 }
@@ -157,6 +168,13 @@ body.ae-resizing-composer .a2ui-layout {
   overflow: hidden;
   min-width: 0;
   min-height: 0;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity var(--motion-panel) var(--ease-panel);
+}
+.a2ui-layout-cell[data-visible="false"] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .a2ui-layout-cell > .a2ui-renderer,
@@ -344,6 +362,28 @@ body.ae-resizing-sidebar .ae-file-tree-resize-handle {
     transparent 4px
   );
 }
+.ae-file-tree-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 12;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.ae-file-tree-sidebar-resize-handle:hover,
+body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
+}
 .ae-file-tree-list {
   list-style: none;
   margin: 0;
@@ -503,6 +543,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-sidebar-section {
   padding: var(--space-1) 0;
 }
+.a2ui-sidebar-section-no-title {
+  padding-top: 0;
+}
 
 .a2ui-sidebar-section-title {
   padding: var(--space-3) var(--space-4) var(--space-2);
@@ -623,7 +666,12 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* Right-aligned hint chip — `⌘\``, `⌘K`, `2h`, `yest`. Mono, dim, 10px. */
 .a2ui-sidebar-item-hint {
   margin-left: auto;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-dim);
   font-size: var(--chrome-text-compact);
   font-family: var(--font-mono);
@@ -651,12 +699,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-sidebar-item-label {
   flex: 1 1 auto;
   min-width: 0;
-  /* Long names wrap to a second line within the sidebar instead of
-     truncating with ellipsis or scrolling horizontally. The sidebar
-     itself never scrolls horizontally — wider names just take two
-     short lines (`nyc-real-` / `estate`). */
-  overflow-wrap: anywhere;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.25;
 }
 /* Tiny icon (favicon-sized) rendered before the label for both host
@@ -787,6 +832,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 .ae-worktree-branch {
   margin-left: auto;
 }
+.ae-worktree-remove-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 28px;
+  margin-left: var(--space-1);
+}
 .ae-worktree-row--pending {
   opacity: 0.8;
 }
@@ -820,6 +873,55 @@ body.ae-resizing-sidebar .a2ui-layout {
   outline: none;
   background: var(--accent-hover-tint);
   color: var(--accent);
+}
+.ae-worktree-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ae-worktree-row:hover .ae-worktree-remove,
+.ae-worktree-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.ae-worktree-remove:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.ae-worktree-remove:focus-visible,
+.ae-worktree-confirm-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-worktree-confirm-remove {
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+}
+.ae-worktree-confirm-remove:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
 }
 .ae-worktree-lock {
   flex-shrink: 0;
@@ -3120,7 +3222,13 @@ body.ae-resizing-composer * {
   background: var(--bg-elev);
   border-top: 1px solid var(--border);
   min-height: 0;
-  height: 240px;
+  height: 100%;
+  opacity: 1;
+  transition: opacity var(--motion-panel) var(--ease-panel);
+}
+.ae-terminal-panel.is-closed {
+  opacity: 0;
+  pointer-events: none;
 }
 .ae-terminal-panel-resize-handle {
   position: absolute;
@@ -4275,6 +4383,7 @@ span.a2ui-project-card-icon--initial {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -4282,6 +4391,11 @@ span.a2ui-project-card-icon--initial {
 }
 .a2ui-projects-dashboard-sessions li:hover {
   background: var(--bg-hover);
+}
+.a2ui-projects-dashboard-sessions li.is-confirming,
+.a2ui-project-dashboard-sessions li.is-confirming {
+  background: var(--bg-hover);
+  cursor: default;
 }
 .a2ui-projects-dashboard-session-label {
   font-size: var(--text-md);
@@ -4294,8 +4408,84 @@ span.a2ui-project-card-icon--initial {
 .a2ui-projects-dashboard-session-meta {
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
-  margin-left: var(--space-3);
   flex-shrink: 0;
+}
+.a2ui-projects-dashboard-session-actions,
+.a2ui-project-dashboard-session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+.a2ui-dashboard-session-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: max-content;
+}
+.a2ui-dashboard-session-confirm-delete {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.a2ui-dashboard-session-confirm-delete:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
+}
+.a2ui-dashboard-session-confirm-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.a2ui-projects-dashboard-session-delete,
+.a2ui-project-dashboard-session-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.a2ui-projects-dashboard-sessions li:hover .a2ui-projects-dashboard-session-delete,
+.a2ui-projects-dashboard-session-delete:focus-visible,
+.a2ui-projects-dashboard-sessions li.is-confirming .a2ui-projects-dashboard-session-delete,
+.a2ui-project-dashboard-sessions li:hover .a2ui-project-dashboard-session-delete,
+.a2ui-project-dashboard-session-delete:focus-visible,
+.a2ui-project-dashboard-sessions li.is-confirming .a2ui-project-dashboard-session-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+.a2ui-projects-dashboard-session-delete:hover,
+.a2ui-project-dashboard-session-delete:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.a2ui-projects-dashboard-session-delete:focus-visible,
+.a2ui-project-dashboard-session-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* ---- Project card --------------------------------------------------- */
@@ -4546,6 +4736,57 @@ button.a2ui-gh-stat:hover {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+.a2ui-project-dashboard-worktree-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.a2ui-project-dashboard-worktree:hover .a2ui-project-dashboard-worktree-remove,
+.a2ui-project-dashboard-worktree-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.a2ui-project-dashboard-worktree-remove:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.a2ui-project-dashboard-worktree-confirm-remove {
+  height: 28px;
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+}
+.a2ui-project-dashboard-worktree-confirm-remove:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
+}
+.a2ui-project-dashboard-worktree-remove:focus-visible,
+.a2ui-project-dashboard-worktree-confirm-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .a2ui-project-dashboard-sessions {
   list-style: none;
@@ -4558,6 +4799,7 @@ button.a2ui-gh-stat:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -4578,7 +4820,7 @@ button.a2ui-gh-stat:hover {
 .a2ui-project-dashboard-session-meta {
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
-  margin-left: var(--space-3);
+  flex-shrink: 0;
 }
 
 .a2ui-project-dashboard-widgets {

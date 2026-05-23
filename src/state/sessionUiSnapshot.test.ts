@@ -80,6 +80,34 @@ describe("sessionUiSnapshot", () => {
     expect(restored?.activeTabId).toBe("agent");
   });
 
+  it("preserves editor rootPath for files outside the active project", () => {
+    const tab = {
+      ...makeEmptyTab("editor", "system-prompt.md", null, "editor"),
+      editor: {
+        filePath: "/Users/test/.aethon/system-prompt.md",
+        rootPath: "/Users/test/.aethon",
+        language: "markdown",
+        isDirty: true,
+        cursorLine: 12,
+        cursorColumn: 4,
+      },
+    };
+
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "editor",
+    });
+
+    expect(loadSessionUiSnapshot()?.tabs[0]?.editor).toMatchObject({
+      filePath: "/Users/test/.aethon/system-prompt.md",
+      rootPath: "/Users/test/.aethon",
+      language: "markdown",
+      isDirty: false,
+      cursorLine: 12,
+      cursorColumn: 4,
+    });
+  });
+
   it("does not persist blank empty new tabs", () => {
     saveSessionUiSnapshot({
       tabs: [
@@ -121,6 +149,27 @@ describe("sessionUiSnapshot", () => {
       // Canonical 3-column shape — left + right widths round-trip
       // verbatim so the user's resize sticks.
       columns: "256px minmax(0,1fr) 360px",
+    });
+  });
+
+  it("restores hidden files sidebar as a 0px track for panel animation", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      layout: {
+        sidebarVisible: true,
+        filesSidebarVisible: false,
+        columns: "256px minmax(0,1fr)",
+      },
+    });
+
+    expect(loadSessionUiSnapshot()?.layout).toMatchObject({
+      filesSidebarVisible: false,
+      columns: "256px minmax(0,1fr) 0px",
     });
   });
 });

@@ -57,9 +57,13 @@ describe("handleTerminalPanel", () => {
     expect(mocks.newShellTab).toHaveBeenCalledTimes(1);
   });
 
-  it("resize stores the terminal panel height in state", async () => {
+  it("resize stores the terminal panel height and updates the open row track", async () => {
     const { ctx, applySetState } = buildRouteFixture({
-      state: { terminalPanel: { activeSubId: "agent-bash" } },
+      state: {
+        terminal: { open: true },
+        terminalPanel: { activeSubId: "agent-bash" },
+        layout: { rows: "38px minmax(0,1fr) 240px auto auto" },
+      },
     });
     const handled = await handleTerminalPanel(
       {
@@ -72,6 +76,9 @@ describe("handleTerminalPanel", () => {
     expect(handled).toBe(true);
     const next = applySetState();
     expect((next.terminalPanel as { height?: number }).height).toBe(360);
+    expect((next.layout as { rows?: string }).rows).toBe(
+      "38px minmax(0,1fr) 360px auto auto",
+    );
   });
 
   it("resize clamps height and resize-end avoids legacy one-off writes", async () => {

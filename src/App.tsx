@@ -20,7 +20,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
 import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
-import { useFocus } from "./hooks/useFocus";
+import { useFocus, workstationRows } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { useUiOverlays } from "./hooks/useUiOverlays";
@@ -37,6 +37,12 @@ import {
   saveSessionUiSnapshot,
   type SessionUiSnapshot,
 } from "./state/sessionUiSnapshot";
+import {
+  loadLayoutPrefsFromDisk,
+  loadLayoutPrefsSync,
+  mergeLayoutPrefsIntoState,
+  saveLayoutPrefs,
+} from "./layoutPrefs";
 import {
   activeProject,
   emptyProjectsState,
@@ -86,6 +92,7 @@ export default function App() {
   // (or `dev --new`) lands on the dashboard with the canvas empty.
   const initialApp = useMemo(() => {
     const restored = loadSessionUiSnapshot();
+    const layoutPrefs = loadLayoutPrefsSync();
     const tabs = restored?.tabs.length ? restored.tabs : [];
     const activeTabId =
       restored?.activeTabId && tabs.some((t) => t.id === restored.activeTabId)
@@ -96,6 +103,22 @@ export default function App() {
       restored?.layout && typeof restored.layout === "object"
         ? (restored.layout as Record<string, unknown>)
         : {};
+    const bootTerminalPanel = BOOT_LAYOUT.state?.terminalPanel;
+    const restoredTerminalPanel = restored?.terminalPanel;
+    const terminalPanel = {
+      ...(bootTerminalPanel && typeof bootTerminalPanel === "object"
+        ? bootTerminalPanel
+        : {}),
+      ...(restoredTerminalPanel && typeof restoredTerminalPanel === "object"
+        ? restoredTerminalPanel
+        : {}),
+      ...(layoutPrefs?.terminalPanel ?? {}),
+    } as Record<string, unknown>;
+    const bootLayout = BOOT_LAYOUT.state?.layout;
+    const terminalOpen =
+      (restored?.terminal as { open?: boolean } | undefined)?.open ?? false;
+    const terminalHeight =
+      typeof terminalPanel.height === "number" ? terminalPanel.height : 240;
     // When there is no active tab, the mirror keys point at undefined so
     // layout `$ref`s resolve cleanly without throwing. The composer +
     // chat surfaces are hidden via `/agentTabActive` in this state.
@@ -106,46 +129,41 @@ export default function App() {
     );
     return {
       appStore: createAppStore({
-      ...(BOOT_LAYOUT.state ?? {}),
-      ...(restored?.terminal ? { terminal: restored.terminal } : {}),
-      ...(restored?.terminalPanel ? { terminalPanel: restored.terminalPanel } : {}),
-      ...(restored?.scrollToMatchByTab
-        ? { scrollToMatchByTab: restored.scrollToMatchByTab }
-        : {}),
-      ...(restored?.projectModels ? { projectModels: restored.projectModels } : {}),
-      logoUrl,
-      // App version surfaced as a state slice so layout JSON can $ref it
-      // (e.g. sidebar's `version` prop). Single source of truth is
-      // package.json — vite injects __APP_VERSION__ at build time. The
-      // "v" prefix matches the human-friendly format the UI used before.
-      appVersion: `v${__APP_VERSION__}`,
-      tabs,
-      activeTabId,
-      // Mirror keys point at the active tab's empty view so layout bindings
-      // see well-defined values from boot.
-      ...rootMirror,
-      // Layout-agnostic UI surfaces — the palette + notification stack
-      // both render at App root so they overlay every layout. State
-      // shapes are documented on the components themselves.
-      palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
-      notifications: [],
-      // Seed /sidebar/extensions so the $ref-bound sidebar section renders
-      // the built-in entry immediately — hydrateExtensions() fills in
-      // dynamically-loaded extensions once `ready` arrives.
-      sidebar: {
-        ...(BOOT_LAYOUT.state?.sidebar as Record<string, unknown> | undefined),
-        extensions: [
-          { id: "extension-layout", label: "default-layout", hint: "core", active: true },
-        ],
-      },
-      ...(Object.keys(restoredLayout).length > 0
-        ? {
-            layout: {
-              ...(BOOT_LAYOUT.state?.layout ?? {}),
-              ...restoredLayout,
-            },
-          }
-        : {}),
+        ...(BOOT_LAYOUT.state ?? {}),
+        ...(restored?.terminal ? { terminal: restored.terminal } : {}),
+        terminalPanel,
+        ...(restored?.scrollToMatchByTab
+          ? { scrollToMatchByTab: restored.scrollToMatchByTab }
+          : {}),
+        ...(restored?.projectModels ? { projectModels: restored.projectModels } : {}),
+        logoUrl,
+        // App version surfaced as a state slice so layout JSON can $ref it
+        // (e.g. sidebar's `version` prop). Single source of truth is
+        // package.json — vite injects __APP_VERSION__ at build time. The
+        // "v" prefix matches the human-friendly format the UI used before.
+        appVersion: `v${__APP_VERSION__}`,
+        tabs,
+        activeTabId,
+        // Mirror keys point at the active tab's empty view so layout bindings
+        // see well-defined values from boot.
+        ...rootMirror,
+        // Layout-agnostic UI surfaces — the palette + notification stack
+        // both render at App root so they overlay every layout. State
+        // shapes are documented on the components themselves.
+        palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
+        notifications: [],
+        // Seed /sidebar/extensions so Settings and the sidebar have a stable
+        // list shape before the bridge sends the first ready payload.
+        sidebar: {
+          ...(BOOT_LAYOUT.state?.sidebar as Record<string, unknown> | undefined),
+          extensions: [],
+        },
+        layout: {
+          ...(bootLayout && typeof bootLayout === "object" ? bootLayout : {}),
+          ...restoredLayout,
+          ...(layoutPrefs?.layout ?? {}),
+          rows: workstationRows(terminalOpen, terminalHeight),
+        },
       }),
       hasSyncSessionSnapshot: Boolean(restored),
     };
@@ -248,6 +266,9 @@ export default function App() {
           /* persist is best effort */
         });
       });
+      saveLayoutPrefs(appStore.getState()).catch(() => {
+        /* persist is best effort */
+      });
     };
     const schedulePersist = () => {
       if (!persistenceStarted) return;
@@ -291,6 +312,17 @@ export default function App() {
       window.removeEventListener("beforeunload", persistNow);
     };
   }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadLayoutPrefsFromDisk().then((prefs) => {
+      if (cancelled || !prefs) return;
+      setState((prev) => mergeLayoutPrefsIntoState(prev, prefs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setState]);
 
   // ---------------------------------------------------------------------
   // App-owned shared refs — owned here (rather than inside their primary
@@ -737,6 +769,7 @@ export default function App() {
   // ref-tracked defaults without a page reload.
   // ---------------------------------------------------------------------
   const {
+    openSettings,
     toggleSettings,
     closeSettings,
     applySettingsPatch,
@@ -863,6 +896,7 @@ export default function App() {
     resetZoom,
     toggleFocusComposerTerminal,
     toggleSettings,
+    closeSettings,
     focusActiveContextInput,
     exportActiveChatMarkdown,
     pushNotification,
@@ -921,6 +955,7 @@ export default function App() {
     stopPrompt,
     toggleTerminal,
     toggleFilesSidebar,
+    openSettings,
     pushNotification,
     dismissNotification,
     checkForUpdates,

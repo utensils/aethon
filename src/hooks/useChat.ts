@@ -13,6 +13,7 @@ import {
   type SlashCommandContext,
 } from "../slashCommands";
 import type { NotificationInput } from "./useNotifications";
+import { recomputeModelPicker } from "../utils/modelPicker";
 
 export interface UseChatContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -282,12 +283,38 @@ export function useChat(ctx: UseChatContext): UseChatActions {
 
   async function setModel(id: string) {
     const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const previousModel = (stateRef.current.model as string | undefined) ?? "";
+    const canOptimisticallyMirror = stateRef.current.waiting !== true;
     recordProjectModel(id, tabId);
+    if (canOptimisticallyMirror) {
+      updateTab(tabId, (tab) => ({ ...tab, model: id }));
+      setState((prev) => ({
+        ...prev,
+        model: id,
+        status: `switching to ${id}...`,
+        sidebar: recomputeModelPicker(
+          prev.sidebar as Record<string, unknown> | undefined,
+          id,
+        ),
+      }));
+    }
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "set_model", id, tabId }),
       });
     } catch (err) {
+      if (previousModel && canOptimisticallyMirror) {
+        updateTab(tabId, (tab) => ({ ...tab, model: previousModel }));
+        setState((prev) => ({
+          ...prev,
+          model: previousModel,
+          status: "model switch failed",
+          sidebar: recomputeModelPicker(
+            prev.sidebar as Record<string, unknown> | undefined,
+            previousModel,
+          ),
+        }));
+      }
       appendMessage(
         {
           id: crypto.randomUUID(),

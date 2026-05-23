@@ -48,6 +48,14 @@ interface TreeNode {
   loadError?: string;
 }
 
+interface EditorTabShape {
+  id?: string;
+  kind?: string;
+  editor?: {
+    rootPath?: string;
+  };
+}
+
 /** Persisted expand-state. Each project keeps its own set of expanded
  *  absolute paths so reopening lands on the prior view. Capped per
  *  project to bound the persisted file's size. */
@@ -57,6 +65,10 @@ interface ExpandedStore {
 
 const EXPAND_STATE_FILE = "file-tree.json";
 const EXPANDED_CAP_PER_PROJECT = 200;
+
+function basename(path: string): string {
+  return path.split(/[/\\]+/).filter(Boolean).pop() ?? path;
+}
 
 /** Return the directory of `node`'s entry: the node itself when it's a
  *  folder, the containing folder when it's a file. Used by the
@@ -114,6 +126,8 @@ const PANEL_PREFS_FILE = "file-tree-prefs.json";
 const PANEL_HEIGHT_DEFAULT = 280;
 const PANEL_HEIGHT_MIN = 120;
 const PANEL_HEIGHT_MAX = 1200;
+const SIDEBAR_WIDTH_MIN = 220;
+const SIDEBAR_WIDTH_MAX = 640;
 
 interface PanelPrefs {
   collapsed?: boolean;
@@ -143,11 +157,37 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const embedMode = componentProps.embed ?? "left-stack";
   const fillsContainer = embedMode === "right-sidebar";
   const project = state["project"] as ProjectShape | undefined;
+  const tabs = (state["tabs"] as EditorTabShape[] | undefined) ?? [];
+  const activeTabId = state["activeTabId"] as string | undefined;
+  const activeTab = activeTabId
+    ? tabs.find((t) => t.id === activeTabId)
+    : undefined;
+  const activeEditorRoot =
+    activeTab?.kind === "editor" ? activeTab.editor?.rootPath : undefined;
+  const [aethonRoot, setAethonRoot] = useState<string>("");
+
+  useEffect(() => {
+    if (project?.path || activeEditorRoot || aethonRoot) return;
+    let cancelled = false;
+    void invoke<string>("aethon_home_dir")
+      .then((dir) => {
+        if (!cancelled && dir) setAethonRoot(dir);
+      })
+      .catch(() => {
+        /* Dashboard files are best-effort when the home dir is unavailable. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEditorRoot, aethonRoot, project?.path]);
+
   // Honor the active worktree when one is selected — `/activeWorktreeId`
   // is mirrored onto root state by useProjectOps. The file tree should
   // reflect whichever cwd new tabs would inherit so user mental model
   // stays "file panel = where I'm working." Falls back to the project
-  // root when no worktree is active.
+  // root when no worktree is active. When no project is active, browse
+  // the active editor tab's root (e.g. ~/.aethon from Settings) or the
+  // Aethon home dir for the dashboard.
   const activeWorktreeId = (state["activeWorktreeId"] as string | null) ?? null;
   const projectPath = (() => {
     if (activeWorktreeId) {
@@ -165,8 +205,9 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         if (wt?.path) return wt.path;
       }
     }
-    return project?.path ?? "";
+    return project?.path ?? activeEditorRoot ?? aethonRoot;
   })();
+  const rootLabel = (project?.name ?? basename(projectPath)) || "files";
 
   // Root node represents the project's working directory. Children are
   // loaded eagerly on mount; switching projects swaps roots.
@@ -244,8 +285,17 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   // the outside without prop drilling.
   useEffect(() => {
     const toggle = () => setHidden((h) => !h);
+    const resetPrefs = () => {
+      setCollapsed(false);
+      setHidden(false);
+      setHeight(PANEL_HEIGHT_DEFAULT);
+    };
     window.addEventListener("aethon:toggle-file-tree", toggle);
-    return () => window.removeEventListener("aethon:toggle-file-tree", toggle);
+    window.addEventListener("aethon:reset-file-tree-prefs", resetPrefs);
+    return () => {
+      window.removeEventListener("aethon:toggle-file-tree", toggle);
+      window.removeEventListener("aethon:reset-file-tree-prefs", resetPrefs);
+    };
   }, []);
 
   // Schedule a debounced persist whenever the active project's expand
@@ -293,7 +343,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         if (cancelled) return;
         const rootNode: TreeNode = {
           entry: {
-            name: project?.name ?? projectPath.split("/").filter(Boolean).pop() ?? projectPath,
+            name: rootLabel,
             path: projectPath,
             kind: "dir",
           },
@@ -348,7 +398,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     return () => {
       cancelled = true;
     };
-  }, [projectPath, project?.name]);
+  }, [projectPath, rootLabel]);
 
   // Load a folder's children on demand. No-op if already loaded.
   const loadFolderChildren = useCallback(
@@ -421,7 +471,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       toggleFolder(node);
       return;
     }
-    onEvent("file-tree-open", { filePath: node.entry.path });
+    onEvent("file-tree-open", {
+      filePath: node.entry.path,
+      rootPath: projectPathRef.current,
+    });
   };
 
   const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
@@ -514,7 +567,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         path: target,
       });
       await refreshFolder(parentPath);
-      onEvent("file-tree-open", { filePath: target });
+      onEvent("file-tree-open", {
+        filePath: target,
+        rootPath: projectPathRef.current,
+      });
     } catch (err) {
       window.alert(`Failed to create file: ${String(err)}`);
     }
@@ -687,6 +743,42 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     document.addEventListener("mouseup", onUp);
   };
 
+  const startSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const host = (e.currentTarget as HTMLElement).closest(".ae-file-tree");
+    const startWidth = Math.round(
+      host?.getBoundingClientRect().width ?? SIDEBAR_WIDTH_MIN,
+    );
+    document.body.classList.add("ae-resizing-sidebar");
+    const onMove = (ev: MouseEvent) => {
+      const dx = startX - ev.clientX;
+      const next = Math.max(
+        SIDEBAR_WIDTH_MIN,
+        Math.min(SIDEBAR_WIDTH_MAX, Math.round(startWidth + dx)),
+      );
+      onEvent("resize", { width: next });
+    };
+    const onUp = () => {
+      document.body.classList.remove("ae-resizing-sidebar");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      onEvent("resize-end");
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  const sidebarResizeHandle = fillsContainer ? (
+    <div
+      className="ae-file-tree-sidebar-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize files sidebar"
+      onMouseDown={startSidebarResize}
+    />
+  ) : null;
+
   // Items array for the right-click menu. Memoizing on the contextMenu
   // identity is enough here — handlers reference state via closures and
   // close over a stable `contextMenu` per render, so changing the menu
@@ -746,7 +838,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       | undefined) ?? [];
   const activeProject = sidebarProjects.find((p) => p.active === true);
   const activeWorktree = activeProject?.worktrees?.find((w) => w.active === true);
-  const headerLabel = activeProject?.label ?? project?.name ?? "files";
+  const headerLabel = activeProject?.label ?? rootLabel;
   const headerBranch =
     activeWorktree?.label ?? activeWorktree?.branch ?? activeProject?.git?.branch;
 
@@ -797,7 +889,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         className={`ae-file-tree ae-file-tree-empty${collapsed ? " is-collapsed" : ""}`}
         style={panelStyle}
       >
-        {!collapsed && (
+        {sidebarResizeHandle}
+        {!collapsed && !fillsContainer && (
           <div
             className="ae-file-tree-resize-handle"
             role="separator"
@@ -819,7 +912,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
         style={panelStyle}
       >
-        {!collapsed && (
+        {sidebarResizeHandle}
+        {!collapsed && !fillsContainer && (
           <div
             className="ae-file-tree-resize-handle"
             role="separator"
@@ -839,7 +933,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
         style={panelStyle}
       >
-        {!collapsed && (
+        {sidebarResizeHandle}
+        {!collapsed && !fillsContainer && (
           <div
             className="ae-file-tree-resize-handle"
             role="separator"
@@ -860,6 +955,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       aria-label="Project files"
       style={panelStyle}
     >
+      {sidebarResizeHandle}
       {!collapsed && !fillsContainer && (
         <div
           className="ae-file-tree-resize-handle"

@@ -72,25 +72,18 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
   }
   if (typeof input.columns === "string") {
     // Preserve fixed left + right column widths; reset the center to
-    // minmax(0,1fr) so the user's resize sticks across reloads. Three
-    // shapes are supported:
-    //   "<L>px minmax(0,1fr)"            (files sidebar hidden)
-    //   "<L>px minmax(0,1fr) <R>px"      (canonical: left + files-right)
-    //   (legacy: any old 2-col shape)    → upgrade to 3-col 280px
-    //
-    // Critically: when filesSidebarVisible is explicitly false, the live
-    // grid is 2-col, and we must keep it 2-col on restore — otherwise
-    // the right pane stays hidden but its 280px slot renders as blank
-    // space until the user toggles the panel back.
+    // minmax(0,1fr) so the user's resize sticks across reloads. Hidden
+    // sidebars stay as 0px sentinel tracks so the grid can animate
+    // toggles instead of changing track count.
     const filesHidden = input.filesSidebarVisible === false;
     const tokens = input.columns.trim().split(/\s+/);
     const first = tokens[0];
     const last = tokens[tokens.length - 1];
     if (tokens.length >= 2 && /^\d+px$/.test(first)) {
-      if (filesHidden) {
-        next.columns = `${first} minmax(0,1fr)`;
-      } else if (/^\d+px$/.test(last) && tokens.length >= 3) {
+      if (/^\d+px$/.test(last) && tokens.length >= 3) {
         next.columns = `${first} minmax(0,1fr) ${last}`;
+      } else if (filesHidden) {
+        next.columns = `${first} minmax(0,1fr) 0px`;
       } else {
         // Legacy snapshot — let the boot payload's default fill in
         // the right column so the redesigned 3-column layout still
@@ -158,6 +151,9 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
           ? {
               editor: {
                 filePath: t.editor.filePath,
+                ...(typeof t.editor.rootPath === "string" && t.editor.rootPath
+                  ? { rootPath: t.editor.rootPath }
+                  : {}),
                 language: typeof t.editor.language === "string"
                   ? t.editor.language
                   : "plaintext",

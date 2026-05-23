@@ -53,13 +53,28 @@ afterEach(() => {
 });
 
 describe("FileTreePanel", () => {
-  it("shows an empty state when no project is active", () => {
+  it("falls back to the Aethon home dir when no project is active", async () => {
+    invokeMock
+      .mockResolvedValueOnce("/Users/test/.aethon")
+      .mockResolvedValueOnce([
+        {
+          name: "system-prompt.md",
+          path: "/Users/test/.aethon/system-prompt.md",
+          kind: "file",
+        },
+      ]);
     render(
       <FileTreePanel
         {...panelProps({ state: {} })}
       />,
     );
-    expect(screen.getByText("no project")).toBeTruthy();
+    await waitFor(() => screen.getByText("system-prompt.md"));
+    expect(screen.getByText(".aethon")).toBeTruthy();
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "aethon_home_dir");
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "fs_list_dir", {
+      root: "/Users/test/.aethon",
+      path: "/Users/test/.aethon",
+    });
   });
 
   it("lists the project root on mount", async () => {
@@ -87,7 +102,40 @@ describe("FileTreePanel", () => {
     row.click();
     expect(onEvent).toHaveBeenCalledWith("file-tree-open", {
       filePath: "/projects/aethon/src/App.tsx",
+      rootPath: "/projects/aethon",
     });
+  });
+
+  it("uses the active editor root when no project is active", async () => {
+    invokeMock.mockResolvedValueOnce([
+      {
+        name: "system-prompt.md",
+        path: "/Users/test/.aethon/system-prompt.md",
+        kind: "file",
+      },
+    ]);
+    render(
+      <FileTreePanel
+        {...panelProps({
+          state: {
+            activeTabId: "editor-1",
+            tabs: [
+              {
+                id: "editor-1",
+                kind: "editor",
+                editor: { rootPath: "/Users/test/.aethon" },
+              },
+            ],
+          },
+        })}
+      />,
+    );
+    await waitFor(() => screen.getByText("system-prompt.md"));
+    expect(invokeMock).toHaveBeenCalledWith("fs_list_dir", {
+      root: "/Users/test/.aethon",
+      path: "/Users/test/.aethon",
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("aethon_home_dir");
   });
 
   it("renders an error state when fs_list_dir rejects", async () => {
@@ -139,6 +187,7 @@ describe("FileTreePanel", () => {
     await waitFor(() => {
       expect(onEvent).toHaveBeenCalledWith("file-tree-open", {
         filePath: "/projects/aethon/src/new.ts",
+        rootPath: "/projects/aethon",
       });
     });
   });

@@ -79,7 +79,7 @@
                 "sections": [
                   {
                     "id": "hosts",
-                    "title": "hosts",
+                    "title": "",
                     "items": { "$ref": "/sidebar/hosts" }
                   },
                   {
@@ -89,6 +89,12 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
+                  },
+                  {
+                    "id": "extensions",
+                    "title": "extensions",
+                    "items": { "$ref": "/sidebar/extensions" },
+                    "hideWhenEmpty": true
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }
@@ -232,7 +238,7 @@
       "sidebarVisible": true,
       "filesSidebarVisible": true,
       "columns": "220px minmax(0,1fr) 360px",
-      "rows": "38px minmax(0,1fr) auto auto auto",
+      "rows": "38px minmax(0,1fr) 0px auto auto",
       "areas": [
         "sidebar header files-sidebar",
         "sidebar canvas files-sidebar",
@@ -246,6 +252,7 @@
       "models": [],
       "hosts": [],
       "projects": [],
+      "extensions": [],
       "extraSections": [],
       "themes": [
         { "id": "ember", "label": "Ember — warm dark", "active": true },

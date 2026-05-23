@@ -82,7 +82,7 @@ export interface EventRouteContext {
     },
   ) => void;
   newShellTab: () => void;
-  newEditorTab: (filePath: string) => void;
+  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
   /** Reconcile any open editor tabs whose `editor.filePath` is `from`
    *  (or, when `kind === "dir"`, starts with `from/`) to point at the
@@ -149,7 +149,10 @@ export interface EventRouteContext {
      *  true. When omitted, the project root is used. */
     worktreeId?: string;
   }) => Promise<void>;
-  removeWorktreeById: (worktreeId: string) => Promise<void>;
+  removeWorktreeById: (
+    worktreeId: string,
+    opts?: { confirmed?: boolean },
+  ) => Promise<void>;
   dismissPendingWorktree: (worktreeId: string) => void;
   retryPendingWorktree: (worktreeId: string) => Promise<void>;
   renameWorktree: (worktreeId: string, label: string) => void;
