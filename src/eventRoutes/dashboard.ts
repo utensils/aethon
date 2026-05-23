@@ -15,6 +15,7 @@
  * the same handlers.
  */
 import type { EventRouteHandler } from "./types";
+import { handleSidebarDeleteSession } from "./sidebar";
 
 /** New-tab / Open Project… / restore-session / select-project-card
  *  for the global projects-dashboard surface. */
@@ -32,7 +33,11 @@ export const handleProjectsDashboard: EventRouteHandler = (
   }
   if (eventType === "select-project-card") {
     const sel = data as { projectId?: string } | undefined;
-    if (sel?.projectId) ctx.setActiveProjectById(sel.projectId);
+    if (sel?.projectId) {
+      ctx.activateWorktree(null);
+      ctx.setActiveProjectById(sel.projectId);
+      ctx.setState((prev) => ({ ...prev, landing: null }));
+    }
     return true;
   }
   if (eventType === "request-card-menu") {
@@ -59,6 +64,12 @@ export const handleProjectsDashboard: EventRouteHandler = (
       ctx.newTab();
     }
     return true;
+  }
+  if (eventType === "delete-session") {
+    return handleSidebarDeleteSession(
+      { component: { id: "", type: "sidebar" }, eventType, data },
+      ctx,
+    );
   }
   return false;
 };

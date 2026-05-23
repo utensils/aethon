@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   BooleanValue,
   StringValue,
@@ -166,6 +167,104 @@ export function DropdownPickerCore({
     requestAnimationFrame(() => searchRef.current?.focus());
   }, [open]);
 
+  const panel =
+    open && coords ? (
+      <div
+        ref={panelRef}
+        className="a2ui-dropdown-panel"
+        data-align={align}
+        role="listbox"
+        style={{
+          top: coords.top,
+          width: coords.width,
+          ...(align === "right"
+            ? { right: coords.right }
+            : { left: coords.left }),
+        }}
+      >
+        {sections.map((section, sIdx) => {
+          const q = (queries[section.id] ?? "").trim().toLowerCase();
+          const filtered = q
+            ? section.items.filter(
+                (it) =>
+                  it.id.toLowerCase().includes(q) ||
+                  it.label.toLowerCase().includes(q),
+              )
+            : section.items;
+          return (
+            <div className="a2ui-dropdown-section" key={section.id}>
+              {section.title && (
+                <div className="a2ui-dropdown-section-title">
+                  {section.title}
+                </div>
+              )}
+              {section.searchable && (
+                <input
+                  ref={sIdx === 0 ? searchRef : undefined}
+                  type="text"
+                  className="a2ui-dropdown-search"
+                  placeholder={
+                    section.searchPlaceholder ??
+                    `filter ${(section.title ?? section.id).toLowerCase()}...`
+                  }
+                  value={queries[section.id] ?? ""}
+                  onChange={(e) =>
+                    setQueries((prev) => ({
+                      ...prev,
+                      [section.id]: e.target.value,
+                    }))
+                  }
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              )}
+              {filtered.length === 0 ? (
+                <div className="a2ui-dropdown-empty">
+                  {section.emptyLabel ?? "no matches"}
+                </div>
+              ) : (
+                <ul className="a2ui-dropdown-list">
+                  {filtered.map((it) => (
+                    <li
+                      key={it.id}
+                      className={[
+                        "a2ui-dropdown-item",
+                        it.active ? "a2ui-dropdown-item-active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => {
+                        onSelect(section.id, it.id);
+                        close();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        onSelect(section.id, it.id);
+                        close();
+                      }}
+                      role="option"
+                      aria-selected={it.active === true}
+                      tabIndex={0}
+                    >
+                      <span className="a2ui-dropdown-item-label">
+                        {it.label}
+                      </span>
+                      {it.hint && (
+                        <span className="a2ui-dropdown-item-hint">
+                          {it.hint}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    ) : null;
+
   return (
     <div
       ref={rootRef}
@@ -185,95 +284,7 @@ export function DropdownPickerCore({
           ▾
         </span>
       </button>
-      {open && coords && (
-        <div
-          ref={panelRef}
-          className="a2ui-dropdown-panel"
-          data-align={align}
-          role="listbox"
-          style={{
-            top: coords.top,
-            width: coords.width,
-            ...(align === "right"
-              ? { right: coords.right }
-              : { left: coords.left }),
-          }}
-        >
-          {sections.map((section, sIdx) => {
-            const q = (queries[section.id] ?? "").trim().toLowerCase();
-            const filtered = q
-              ? section.items.filter(
-                  (it) =>
-                    it.id.toLowerCase().includes(q) ||
-                    it.label.toLowerCase().includes(q),
-                )
-              : section.items;
-            return (
-              <div className="a2ui-dropdown-section" key={section.id}>
-                {section.title && (
-                  <div className="a2ui-dropdown-section-title">
-                    {section.title}
-                  </div>
-                )}
-                {section.searchable && (
-                  <input
-                    ref={sIdx === 0 ? searchRef : undefined}
-                    type="text"
-                    className="a2ui-dropdown-search"
-                    placeholder={
-                      section.searchPlaceholder ??
-                      `filter ${(section.title ?? section.id).toLowerCase()}…`
-                    }
-                    value={queries[section.id] ?? ""}
-                    onChange={(e) =>
-                      setQueries((prev) => ({
-                        ...prev,
-                        [section.id]: e.target.value,
-                      }))
-                    }
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                )}
-                {filtered.length === 0 ? (
-                  <div className="a2ui-dropdown-empty">
-                    {section.emptyLabel ?? "no matches"}
-                  </div>
-                ) : (
-                  <ul className="a2ui-dropdown-list">
-                    {filtered.map((it) => (
-                      <li
-                        key={it.id}
-                        className={[
-                          "a2ui-dropdown-item",
-                          it.active ? "a2ui-dropdown-item-active" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        onClick={() => {
-                          onSelect(section.id, it.id);
-                          close();
-                        }}
-                        role="option"
-                        aria-selected={it.active === true}
-                      >
-                        <span className="a2ui-dropdown-item-label">
-                          {it.label}
-                        </span>
-                        {it.hint && (
-                          <span className="a2ui-dropdown-item-hint">
-                            {it.hint}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {panel ? createPortal(panel, document.body) : null}
     </div>
   );
 }

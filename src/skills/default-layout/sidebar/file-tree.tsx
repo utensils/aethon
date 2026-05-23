@@ -114,6 +114,8 @@ const PANEL_PREFS_FILE = "file-tree-prefs.json";
 const PANEL_HEIGHT_DEFAULT = 280;
 const PANEL_HEIGHT_MIN = 120;
 const PANEL_HEIGHT_MAX = 1200;
+const SIDEBAR_WIDTH_MIN = 220;
+const SIDEBAR_WIDTH_MAX = 640;
 
 interface PanelPrefs {
   collapsed?: boolean;
@@ -244,8 +246,17 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   // the outside without prop drilling.
   useEffect(() => {
     const toggle = () => setHidden((h) => !h);
+    const resetPrefs = () => {
+      setCollapsed(false);
+      setHidden(false);
+      setHeight(PANEL_HEIGHT_DEFAULT);
+    };
     window.addEventListener("aethon:toggle-file-tree", toggle);
-    return () => window.removeEventListener("aethon:toggle-file-tree", toggle);
+    window.addEventListener("aethon:reset-file-tree-prefs", resetPrefs);
+    return () => {
+      window.removeEventListener("aethon:toggle-file-tree", toggle);
+      window.removeEventListener("aethon:reset-file-tree-prefs", resetPrefs);
+    };
   }, []);
 
   // Schedule a debounced persist whenever the active project's expand
@@ -687,6 +698,42 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     document.addEventListener("mouseup", onUp);
   };
 
+  const startSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const host = (e.currentTarget as HTMLElement).closest(".ae-file-tree");
+    const startWidth = Math.round(
+      host?.getBoundingClientRect().width ?? SIDEBAR_WIDTH_MIN,
+    );
+    document.body.classList.add("ae-resizing-sidebar");
+    const onMove = (ev: MouseEvent) => {
+      const dx = startX - ev.clientX;
+      const next = Math.max(
+        SIDEBAR_WIDTH_MIN,
+        Math.min(SIDEBAR_WIDTH_MAX, Math.round(startWidth + dx)),
+      );
+      onEvent("resize", { width: next });
+    };
+    const onUp = () => {
+      document.body.classList.remove("ae-resizing-sidebar");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      onEvent("resize-end");
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  const sidebarResizeHandle = fillsContainer ? (
+    <div
+      className="ae-file-tree-sidebar-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize files sidebar"
+      onMouseDown={startSidebarResize}
+    />
+  ) : null;
+
   // Items array for the right-click menu. Memoizing on the contextMenu
   // identity is enough here — handlers reference state via closures and
   // close over a stable `contextMenu` per render, so changing the menu
@@ -797,7 +844,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         className={`ae-file-tree ae-file-tree-empty${collapsed ? " is-collapsed" : ""}`}
         style={panelStyle}
       >
-        {!collapsed && (
+        {sidebarResizeHandle}
+        {!collapsed && !fillsContainer && (
           <div
             className="ae-file-tree-resize-handle"
             role="separator"
@@ -819,7 +867,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
         style={panelStyle}
       >
-        {!collapsed && (
+        {sidebarResizeHandle}
+        {!collapsed && !fillsContainer && (
           <div
             className="ae-file-tree-resize-handle"
             role="separator"
@@ -839,7 +888,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         className={`ae-file-tree${collapsed ? " is-collapsed" : ""}`}
         style={panelStyle}
       >
-        {!collapsed && (
+        {sidebarResizeHandle}
+        {!collapsed && !fillsContainer && (
           <div
             className="ae-file-tree-resize-handle"
             role="separator"
@@ -860,6 +910,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       aria-label="Project files"
       style={panelStyle}
     >
+      {sidebarResizeHandle}
       {!collapsed && !fillsContainer && (
         <div
           className="ae-file-tree-resize-handle"

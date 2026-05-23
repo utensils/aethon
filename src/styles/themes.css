@@ -293,6 +293,7 @@
     --motion-fast: 0ms;
     --motion-base: 0ms;
     --motion-slow: 60ms;
+    --motion-panel: 0ms;
   }
   .a2ui-terminal,
   .ae-agent-pill-dot,

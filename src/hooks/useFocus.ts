@@ -24,6 +24,7 @@ export interface UseFocusActions {
 
 const DEFAULT_LEFT_WIDTH = "220px";
 const DEFAULT_RIGHT_WIDTH = "280px";
+const DEFAULT_TERMINAL_HEIGHT = 240;
 
 function parseWidth(token: string | undefined, fallback: string): string {
   return token && /^\d+px$/.test(token) ? token : fallback;
@@ -31,7 +32,8 @@ function parseWidth(token: string | undefined, fallback: string): string {
 
 /**
  * Pick out the left + right px widths from any of the workstation's
- * column shapes. The grid template can be:
+ * column shapes. The modern grid stays 3-column so hidden sidebars can
+ * animate as 0px tracks, but older persisted state may still have:
  *   [L, 1fr, R]   3-column (canonical)
  *   [L, 1fr]      2-column left-only
  *   [1fr, R]      2-column right-only
@@ -56,17 +58,24 @@ function pickWidths(current: {
   // shape) or when the last token is px AND the layout had no left
   // sidebar (2-col right-only).
   const inferredLeft =
-    first && /^minmax/.test(first) ? undefined : first;
+    first && !/^minmax/.test(first) && first !== "0px" ? first : undefined;
   const inferredRight =
-    tokens.length >= 3 && last && /^\d+px$/.test(last)
+    tokens.length >= 3 && last && /^\d+px$/.test(last) && last !== "0px"
       ? last
-      : tokens.length === 2 && last && /^\d+px$/.test(last) && first && /^minmax/.test(first)
+      : tokens.length === 2 &&
+          last &&
+          /^\d+px$/.test(last) &&
+          last !== "0px" &&
+          first &&
+          /^minmax/.test(first)
         ? last
         : undefined;
-  const memoLeft =
-    typeof current.lastLeftWidth === "string" ? current.lastLeftWidth : undefined;
-  const memoRight =
-    typeof current.lastRightWidth === "string" ? current.lastRightWidth : undefined;
+  const memoLeft = typeof current.lastLeftWidth === "string"
+    ? current.lastLeftWidth
+    : undefined;
+  const memoRight = typeof current.lastRightWidth === "string"
+    ? current.lastRightWidth
+    : undefined;
   return {
     left: parseWidth(inferredLeft ?? memoLeft, DEFAULT_LEFT_WIDTH),
     right: parseWidth(inferredRight ?? memoRight, DEFAULT_RIGHT_WIDTH),
@@ -76,8 +85,8 @@ function pickWidths(current: {
 /**
  * Compose the workstation grid template from `{left, right}` visibility +
  * the user's most-recently-resized widths. Layout-as-payload means the
- * sidebar can't just `display: none` — the grid column would still claim
- * space — so each toggle has to rewrite `columns` and `areas` in lockstep.
+ * sidebar can't just `display: none` — that snaps in WebKit. Keep a
+ * stable 3-column grid and animate hidden chrome tracks down to 0px.
  *
  * Width tokens are pulled from the current `layout.columns` so user
  * resizes survive a hide/show round-trip; falls back to the boot defaults
@@ -99,19 +108,13 @@ export function workstationLayout(
 } {
   const { left, right } = pickWidths(current);
 
-  const parts: string[] = [];
-  const areaCols: string[] = [];
-  if (leftVisible) {
-    parts.push(left);
-    areaCols.push("sidebar");
-  }
-  parts.push("minmax(0,1fr)");
-  const centerIndex = areaCols.length;
-  areaCols.push("__center__");
-  if (rightVisible) {
-    parts.push(right);
-    areaCols.push("files-sidebar");
-  }
+  const parts = [
+    leftVisible ? left : "0px",
+    "minmax(0,1fr)",
+    rightVisible ? right : "0px",
+  ];
+  const areaCols = ["sidebar", "__center__", "files-sidebar"];
+  const centerIndex = 1;
 
   const rowFor = (centerName: string) => {
     const cols = [...areaCols];
@@ -134,6 +137,24 @@ export function workstationLayout(
   };
 }
 
+function terminalHeightFromState(state: Record<string, unknown>): number {
+  const panel = state.terminalPanel as { height?: unknown } | undefined;
+  const height = panel?.height;
+  return typeof height === "number" && Number.isFinite(height)
+    ? Math.max(120, Math.min(720, Math.round(height)))
+    : DEFAULT_TERMINAL_HEIGHT;
+}
+
+export function workstationRows(
+  terminalOpen: boolean,
+  terminalHeight: number,
+): string {
+  const terminalTrack = terminalOpen
+    ? `${Math.max(120, Math.min(720, Math.round(terminalHeight)))}px`
+    : "0px";
+  return `38px minmax(0,1fr) ${terminalTrack} auto auto`;
+}
+
 /**
  * Focus + chrome-toggle helpers. The hook owns:
  *   - terminal panel toggling (open/close + focus shuttle)
@@ -152,7 +173,16 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
   function toggleTerminal() {
     setState((prev) => {
       const term = (prev.terminal as { open?: boolean; output?: string }) ?? {};
-      return { ...prev, terminal: { ...term, open: !term.open } };
+      const nextOpen = !term.open;
+      const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+      return {
+        ...prev,
+        terminal: { ...term, open: nextOpen },
+        layout: {
+          ...layout,
+          rows: workstationRows(nextOpen, terminalHeightFromState(prev)),
+        },
+      };
     });
   }
 
@@ -219,7 +249,15 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
       // Open first, then focus on the next frame.
       setState((prev) => {
         const t = (prev.terminal as { open?: boolean } | undefined) ?? {};
-        return { ...prev, terminal: { ...t, open: true } };
+        const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+        return {
+          ...prev,
+          terminal: { ...t, open: true },
+          layout: {
+            ...layout,
+            rows: workstationRows(true, terminalHeightFromState(prev)),
+          },
+        };
       });
     }
     requestAnimationFrame(() => focusTerminalPanel());
@@ -239,7 +277,16 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
       if (!term.open) {
         setState((prev) => {
           const t = (prev.terminal as { open?: boolean } | undefined) ?? {};
-          return { ...prev, terminal: { ...t, open: true } };
+          const layout =
+            (prev.layout as Record<string, unknown> | undefined) ?? {};
+          return {
+            ...prev,
+            terminal: { ...t, open: true },
+            layout: {
+              ...layout,
+              rows: workstationRows(true, terminalHeightFromState(prev)),
+            },
+          };
         });
       }
       requestAnimationFrame(() => focusTerminalPanel());

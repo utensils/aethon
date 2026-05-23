@@ -514,7 +514,7 @@ export function useProjectOps(
       path,
       label,
     );
-    projectsRef.current = nextProjects;
+    projectsRef.current = { ...nextProjects, activeWorktreeId: null };
     persistProjects();
     // Fetch git status for the (possibly new) project so the chip
     // appears on the same render that adds the row, not 30s later.
@@ -542,6 +542,7 @@ export function useProjectOps(
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
       ),
       activeId: id,
+      activeWorktreeId: null,
     };
     persistProjects();
     const nextTabId = switchProjectBucket(fromKey, toKey);
@@ -565,7 +566,11 @@ export function useProjectOps(
   function clearActiveProject() {
     const fromKey = projectBucketKey(projectsRef.current.activeId);
     const previousActive = activeProject(projectsRef.current);
-    projectsRef.current = { ...projectsRef.current, activeId: null };
+    projectsRef.current = {
+      ...projectsRef.current,
+      activeId: null,
+      activeWorktreeId: null,
+    };
     persistProjects();
     const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY);
     syncRecentSessionsToState();

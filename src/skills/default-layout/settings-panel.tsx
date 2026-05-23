@@ -406,6 +406,13 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               <button
                 type="button"
                 className="ae-settings-secondary"
+                onClick={() => onEvent("reset-layout-prefs")}
+              >
+                Reset layout
+              </button>
+              <button
+                type="button"
+                className="ae-settings-secondary"
                 onClick={openConfigFile}
               >
                 Open config.toml

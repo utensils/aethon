@@ -535,8 +535,18 @@ export function Sidebar({
           const actions = section.actions ?? [];
           const isProjects = section.id === "projects";
           return (
-            <div key={section.id} className="a2ui-sidebar-section">
-              <div className="a2ui-sidebar-section-title">{section.title}</div>
+            <div
+              key={section.id}
+              className={[
+                "a2ui-sidebar-section",
+                section.title ? "" : "a2ui-sidebar-section-no-title",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {section.title && (
+                <div className="a2ui-sidebar-section-title">{section.title}</div>
+              )}
               {items.length === 0 ? (
                 <div className="a2ui-sidebar-empty">empty</div>
               ) : (

@@ -123,4 +123,25 @@ describe("sessionUiSnapshot", () => {
       columns: "256px minmax(0,1fr) 360px",
     });
   });
+
+  it("restores hidden files sidebar as a 0px track for panel animation", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      layout: {
+        sidebarVisible: true,
+        filesSidebarVisible: false,
+        columns: "256px minmax(0,1fr)",
+      },
+    });
+
+    expect(loadSessionUiSnapshot()?.layout).toMatchObject({
+      filesSidebarVisible: false,
+      columns: "256px minmax(0,1fr) 0px",
+    });
+  });
 });

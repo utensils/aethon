@@ -19,6 +19,7 @@ import { GhStatsStrip } from "./gh-stats-strip";
 import { TaskLauncher } from "./task-launcher";
 import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
+import { DashboardSessionRow } from "./session-row";
 import {
   getRepoOverview,
   type GhRepoOverview,
@@ -274,25 +275,25 @@ export function ProjectDashboard({
             <h2>Recent sessions</h2>
             <ul className="a2ui-project-dashboard-sessions">
               {recentSessions.slice(0, 8).map((s) => (
-                <li
+                <DashboardSessionRow
                   key={s.id}
-                  onClick={() =>
+                  session={s}
+                  classPrefix="a2ui-project-dashboard"
+                  onRestore={() =>
                     onEvent(
                       "restore-session",
                       { sessionId: s.id, label: s.label, cwd: s.cwd },
                       s.id,
                     )
                   }
-                >
-                  <span className="a2ui-project-dashboard-session-label">
-                    {s.label}
-                  </span>
-                  {s.lastModified && (
-                    <span className="a2ui-project-dashboard-session-meta">
-                      {s.lastModified}
-                    </span>
-                  )}
-                </li>
+                  onDelete={() =>
+                    onEvent(
+                      "delete-session",
+                      { sessionId: s.id, label: s.label, confirmed: true },
+                      s.id,
+                    )
+                  }
+                />
               ))}
             </ul>
           </section>

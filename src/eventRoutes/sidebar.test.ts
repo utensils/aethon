@@ -306,6 +306,29 @@ describe("handleSectionedSelect", () => {
     expect(mocks.openProjectFromPicker).toHaveBeenCalledTimes(1);
   });
 
+  it("projects section selects the main project and clears worktree landing", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        landing: {
+          kind: "worktree",
+          projectId: "proj-1",
+          worktreeId: "wt-1",
+        },
+      },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "projects", itemId: "proj-1" },
+      },
+      ctx,
+    );
+    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
+    expect(mocks.setActiveProjectById).toHaveBeenCalledWith("proj-1");
+    expect(applySetState().landing).toBeNull();
+  });
+
   it("returns false for non-select events", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleSectionedSelect(

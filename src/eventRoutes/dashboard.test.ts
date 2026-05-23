@@ -29,7 +29,9 @@ describe("handleProjectsDashboard", () => {
   });
 
   it("select-project-card activates the project", async () => {
-    const { ctx, mocks } = buildRouteFixture();
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: { landing: { kind: "worktree", worktreeId: "w-1" } },
+    });
     const handled = await handleProjectsDashboard(
       {
         component: { id: "x", type: "projects-dashboard" },
@@ -39,7 +41,9 @@ describe("handleProjectsDashboard", () => {
       ctx,
     );
     expect(handled).toBe(true);
+    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p1");
+    expect(applySetState().landing).toBeNull();
   });
 
   it("remove-project-card removes by id", async () => {
@@ -70,6 +74,25 @@ describe("handleProjectsDashboard", () => {
     expect(mocks.newTab).toHaveBeenCalledWith("tab-42", "Earlier", {
       restoredSession: true,
       cwd: "/p",
+    });
+  });
+
+  it("delete-session can skip the sticky prompt after inline confirmation", async () => {
+    const { ctx, mocks } = buildRouteFixture({ promptDeleteAllow: true });
+    const handled = await handleProjectsDashboard(
+      {
+        component: { id: "x", type: "projects-dashboard" },
+        eventType: "delete-session",
+        data: { sessionId: "tab-42", label: "Earlier", confirmed: true },
+      },
+      ctx,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(handled).toBe(true);
+    expect(mocks.promptDeleteSessionConfirmation).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_session", {
+      tabId: "tab-42",
     });
   });
 });
@@ -180,6 +203,7 @@ describe("handleTaskLauncher", () => {
       },
       ctx,
     );
+    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p2");
   });
 });

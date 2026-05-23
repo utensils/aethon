@@ -1,4 +1,8 @@
 import type { EventRouteHandler } from "./types";
+import {
+  clearLayoutPrefs,
+  resetLayoutPrefsInState,
+} from "../layoutPrefs";
 
 /** settings-panel renders at App root and never goes through the
  *  bridge — events drive the panel's pending overlay directly.
@@ -22,6 +26,21 @@ export const handleSettings: EventRouteHandler = (
   }
   if (eventType === "save") {
     void ctx.saveSettings();
+    return true;
+  }
+  if (eventType === "reset-layout-prefs") {
+    ctx.setState((prev) => resetLayoutPrefsInState(prev));
+    void clearLayoutPrefs(ctx.writeState);
+    void ctx.writeState("file-tree-prefs.json", "");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("aethon:reset-file-tree-prefs"));
+    }
+    ctx.pushNotification({
+      title: "Layout reset",
+      message: "Sidebar and panel sizes restored.",
+      kind: "success",
+      durationMs: 2400,
+    });
     return true;
   }
   return false;

@@ -111,6 +111,62 @@ describe("handleEditorCanvas", () => {
 });
 
 describe("handleFileTree", () => {
+  it("resizes the files sidebar column and remembers the width", () => {
+    const fx = buildRouteFixture();
+    const claimed = handleFileTree(
+      {
+        component: { id: "file-tree", type: "file-tree" },
+        eventType: "resize",
+        data: { width: 512 },
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    const next = fx.applySetState({
+      layout: { columns: "240px minmax(0,1fr) 360px" },
+    });
+    expect(next.layout).toEqual(
+      expect.objectContaining({
+        columns: "240px minmax(0,1fr) 512px",
+        lastRightWidth: "512px",
+      }),
+    );
+  });
+
+  it("clamps files sidebar resize width", () => {
+    const fx = buildRouteFixture();
+    handleFileTree(
+      {
+        component: { id: "file-tree", type: "file-tree" },
+        eventType: "resize",
+        data: { width: 1200 },
+      },
+      fx.ctx,
+    );
+    const next = fx.applySetState({
+      layout: { columns: "220px minmax(0,1fr) 360px" },
+    });
+    expect((next.layout as { columns: string; lastRightWidth: string }).columns)
+      .toBe("220px minmax(0,1fr) 640px");
+    expect((next.layout as { lastRightWidth: string }).lastRightWidth).toBe(
+      "640px",
+    );
+  });
+
+  it("handles files sidebar resize-end without a one-off write", () => {
+    const fx = buildRouteFixture();
+    const claimed = handleFileTree(
+      {
+        component: { id: "file-tree", type: "file-tree" },
+        eventType: "resize-end",
+        data: {},
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.writeState).not.toHaveBeenCalled();
+  });
+
   it("opens an editor tab on file-tree-open", () => {
     const fx = buildRouteFixture();
     const claimed = handleFileTree(

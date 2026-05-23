@@ -149,7 +149,6 @@ export function Layout({
     height: "100%",
     width: "100%",
     minHeight: 0,
-    transition: "grid-template-columns 180ms ease",
   };
 
   return (
@@ -169,14 +168,22 @@ export function Layout({
           childProps?.visible === undefined
             ? true
             : resolveBoolean(childProps.visible, state);
+        const keepsMountedForMotion =
+          area === "sidebar" || area === "files-sidebar" || area === "terminal";
         const cellStyle: CSSProperties = {
           gridArea: area,
           minWidth: 0,
           minHeight: 0,
-          display: visible ? "flex" : "none",
+          display: visible || keepsMountedForMotion ? "flex" : "none",
         };
         return (
-          <div key={child.id} className="a2ui-layout-cell" style={cellStyle}>
+          <div
+            key={child.id}
+            className="a2ui-layout-cell"
+            data-area={area}
+            data-visible={visible ? "true" : "false"}
+            style={cellStyle}
+          >
             {renderChild?.(child)}
           </div>
         );

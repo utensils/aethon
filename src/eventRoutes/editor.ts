@@ -22,6 +22,16 @@ function asRecord(data: unknown): Record<string, unknown> {
   return data && typeof data === "object" ? (data as Record<string, unknown>) : {};
 }
 
+const FILES_SIDEBAR_MIN_WIDTH = 220;
+const FILES_SIDEBAR_MAX_WIDTH = 640;
+
+function clampFilesSidebarWidth(value: number): number {
+  return Math.max(
+    FILES_SIDEBAR_MIN_WIDTH,
+    Math.min(FILES_SIDEBAR_MAX_WIDTH, Math.round(value)),
+  );
+}
+
 export const handleEditorCanvas: EventRouteHandler = async (
   event: EventRouteEvent,
   ctx: EventRouteContext,
@@ -81,6 +91,38 @@ export const handleFileTree: EventRouteHandler = (
   event: EventRouteEvent,
   ctx: EventRouteContext,
 ): boolean => {
+  if (event.eventType === "resize") {
+    const payload = asRecord(event.data);
+    const rawWidth = typeof payload.width === "number" ? payload.width : NaN;
+    if (!Number.isFinite(rawWidth)) return true;
+    const width = clampFilesSidebarWidth(rawWidth);
+    ctx.setState((prev) => {
+      const layout =
+        (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const current =
+        typeof layout.columns === "string"
+          ? layout.columns
+          : "220px minmax(0,1fr) 360px";
+      const tokens = current.trim().split(/\s+/);
+      if (tokens.length >= 3) {
+        tokens[tokens.length - 1] = `${width}px`;
+      } else if (tokens.length >= 2 && layout.filesSidebarVisible !== false) {
+        tokens.push(`${width}px`);
+      }
+      return {
+        ...prev,
+        layout: {
+          ...layout,
+          columns: tokens.join(" "),
+          lastRightWidth: `${width}px`,
+        },
+      };
+    });
+    return true;
+  }
+  if (event.eventType === "resize-end") {
+    return true;
+  }
   if (event.eventType === "file-tree-open") {
     const payload = asRecord(event.data);
     const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
