@@ -4038,3 +4038,607 @@ body.ae-resizing-terminal * {
 .ae-share-badge[data-mode="read-write-trusted"] {
   color: #c5494a;
 }
+
+/* =====================================================================
+ * M9 — Projects dashboard + per-project dashboard + task launcher.
+ *
+ * All rules are scoped under .a2ui-projects-dashboard /
+ * .a2ui-project-dashboard / .a2ui-project-card / .a2ui-gh-stats-strip /
+ * .a2ui-task-launcher to avoid leaking into other surfaces. Tokens used
+ * throughout so themes pick up automatically.
+ * ===================================================================== */
+
+.a2ui-projects-dashboard,
+.a2ui-project-dashboard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  padding: var(--space-8) var(--space-5);
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+
+.a2ui-projects-dashboard-card,
+.a2ui-project-dashboard-card {
+  max-width: 920px;
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  box-shadow: var(--shadow-2);
+}
+
+/* ---- Projects dashboard (global overview) --------------------------- */
+
+.a2ui-projects-dashboard-card {
+  align-items: center;
+  text-align: center;
+}
+
+.a2ui-projects-dashboard-hero {
+  filter: drop-shadow(var(--shadow-1));
+}
+
+.a2ui-projects-dashboard-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.a2ui-projects-dashboard-subtitle {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+  line-height: 1.4;
+}
+
+.a2ui-projects-dashboard-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.a2ui-projects-dashboard-primary {
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 24px;
+  font-size: var(--text-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--motion-fast) ease;
+}
+.a2ui-projects-dashboard-primary:hover { opacity: 0.88; }
+.a2ui-projects-dashboard-primary:active { opacity: 0.78; }
+.a2ui-projects-dashboard-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-projects-dashboard-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: var(--text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-projects-dashboard-secondary:hover {
+  background: var(--bg-hover);
+}
+.a2ui-projects-dashboard-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-projects-dashboard-section {
+  width: 100%;
+  text-align: left;
+  margin-top: var(--space-4);
+}
+.a2ui-projects-dashboard-section h2 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.a2ui-projects-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.a2ui-projects-dashboard-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.a2ui-projects-dashboard-sessions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-projects-dashboard-sessions li:hover {
+  background: var(--bg-hover);
+}
+.a2ui-projects-dashboard-session-label {
+  font-size: var(--text-md);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+}
+.a2ui-projects-dashboard-session-meta {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  margin-left: var(--space-3);
+  flex-shrink: 0;
+}
+
+/* ---- Project card --------------------------------------------------- */
+
+.a2ui-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) ease;
+  font: inherit;
+  color: inherit;
+}
+.a2ui-project-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover, var(--accent));
+  transform: translateY(-1px);
+}
+.a2ui-project-card:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.a2ui-project-card--active {
+  border-color: var(--accent);
+  background: var(--accent-hover-tint, var(--bg-hover));
+}
+
+.a2ui-project-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.a2ui-project-card-label {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text);
+}
+.a2ui-project-card-active-chip {
+  font-size: var(--chrome-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.a2ui-project-card-path {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-project-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--chrome-text-compact);
+  color: var(--text-dim);
+  gap: var(--space-2);
+}
+.a2ui-project-card-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.a2ui-project-card-branch--dirty {
+  color: var(--accent);
+}
+.a2ui-project-card-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+.a2ui-project-card-ahead,
+.a2ui-project-card-behind {
+  font-family: var(--font-mono);
+}
+.a2ui-project-card-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.a2ui-project-card-gh-loading {
+  opacity: 0.5;
+}
+
+/* ---- gh-stats-strip ------------------------------------------------- */
+
+.a2ui-gh-stats-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.a2ui-gh-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  font-size: var(--chrome-text-compact);
+  color: var(--text);
+  cursor: default;
+  font: inherit;
+}
+button.a2ui-gh-stat {
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+button.a2ui-gh-stat:hover {
+  background: var(--bg-hover);
+}
+.a2ui-gh-stat--repo {
+  font-weight: 600;
+}
+.a2ui-gh-stat-icon {
+  opacity: 0.7;
+}
+.a2ui-gh-stat-value {
+  font-family: var(--font-mono);
+}
+.a2ui-gh-stat-label {
+  color: var(--text-dim);
+  margin-left: 2px;
+}
+
+/* ---- Project dashboard (per-project) -------------------------------- */
+
+.a2ui-project-dashboard-card {
+  align-items: stretch;
+}
+
+.a2ui-project-dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.a2ui-project-dashboard-hero {
+  flex-shrink: 0;
+}
+.a2ui-project-dashboard-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.a2ui-project-dashboard-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.a2ui-project-dashboard-path {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.a2ui-project-dashboard-description {
+  margin: 4px 0 0 0;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+}
+.a2ui-project-dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.a2ui-project-dashboard-section h2 {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.a2ui-project-dashboard-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.a2ui-project-dashboard-section-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--chrome-text-compact);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-project-dashboard-section-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.a2ui-project-dashboard-worktrees {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.a2ui-project-dashboard-worktree {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-project-dashboard-worktree:hover {
+  background: var(--bg-hover);
+}
+.a2ui-project-dashboard-worktree.is-active {
+  border-color: var(--accent);
+  background: var(--accent-hover-tint, var(--bg-hover));
+}
+.a2ui-project-dashboard-worktree-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.a2ui-project-dashboard-worktree-branch {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: var(--chrome-text-muted);
+}
+.a2ui-project-dashboard-worktree-main {
+  margin-left: auto;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.a2ui-project-dashboard-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-project-dashboard-sessions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-project-dashboard-sessions li:hover {
+  background: var(--bg-hover);
+}
+.a2ui-project-dashboard-session-label {
+  font-size: var(--text-md);
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-project-dashboard-session-meta {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  margin-left: var(--space-3);
+}
+
+.a2ui-project-dashboard-widgets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.a2ui-project-dashboard-widget {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.a2ui-project-dashboard-widget-title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* ---- Task launcher (Codex-style composer) --------------------------- */
+
+.a2ui-task-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.a2ui-task-launcher-input {
+  width: 100%;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  outline: none;
+  min-height: 60px;
+}
+.a2ui-task-launcher-input::placeholder {
+  color: var(--text-dim);
+}
+
+.a2ui-task-launcher-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+}
+
+.a2ui-task-launcher-chip-wrap {
+  position: relative;
+  display: inline-block;
+}
+.a2ui-task-launcher-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-task-launcher-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.a2ui-task-launcher-chip-icon {
+  opacity: 0.7;
+}
+.a2ui-task-launcher-chip-caret {
+  opacity: 0.5;
+  font-size: 0.7em;
+}
+.a2ui-task-launcher-chip-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  z-index: var(--z-dropdown);
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-task-launcher-chip-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-task-launcher-chip-menu-item:hover {
+  background: var(--bg-hover);
+}
+.a2ui-task-launcher-chip-menu-item.is-current {
+  color: var(--accent);
+}
+
+.a2ui-task-launcher-branch-input,
+.a2ui-task-launcher-base-input {
+  padding: 4px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  font-family: var(--font-mono);
+  outline: none;
+  max-width: 160px;
+}
+.a2ui-task-launcher-branch-input:focus,
+.a2ui-task-launcher-base-input:focus {
+  border-color: var(--accent);
+}
+
+.a2ui-task-launcher-submit {
+  margin-left: auto;
+  padding: 4px var(--space-3);
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--motion-fast) ease;
+}
+.a2ui-task-launcher-submit:hover { opacity: 0.88; }
+.a2ui-task-launcher-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
