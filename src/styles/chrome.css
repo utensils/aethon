@@ -651,19 +651,13 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-sidebar-item-label {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  /* No ellipsis — long names are clipped silently and the user can
-     hover the row to scroll the label horizontally into view. Avoids
-     the "nyc-…" / "ae…" truncation seen on the projects sidebar. */
-  text-overflow: clip;
-  white-space: nowrap;
-}
-.a2ui-sidebar-item:hover .a2ui-sidebar-item-label {
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.a2ui-sidebar-item:hover .a2ui-sidebar-item-label::-webkit-scrollbar {
-  display: none;
+  /* Long names wrap to a second line within the sidebar instead of
+     truncating with ellipsis or scrolling horizontally. The sidebar
+     itself never scrolls horizontally — wider names just take two
+     short lines (`nyc-real-` / `estate`). */
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.25;
 }
 /* Tiny icon (favicon-sized) rendered before the label for both host
    and project rows. Falls back gracefully when iconUrl is absent. */
@@ -4095,6 +4089,11 @@ body.ae-resizing-terminal * {
   background: var(--bg);
   padding: var(--space-8) var(--space-5);
   overflow-y: auto;
+  /* Hard stop on horizontal overflow — long issue titles or wide
+     stat strips should never push the viewport into a horizontal
+     scroll. The card respects max-width; this is the safety net for
+     anything inside that exceeds it. */
+  overflow-x: hidden;
   overscroll-behavior: none;
 }
 
@@ -4686,6 +4685,9 @@ button.a2ui-gh-stat:hover {
   font-size: var(--text-md);
   flex: 1 1 auto;
   min-width: 0;
+  /* Wrap mid-word for very long titles so the row never forces a
+     horizontal scroll on the canvas. */
+  overflow-wrap: anywhere;
 }
 .a2ui-dashboard-issue-meta {
   grid-column: 1 / -1;

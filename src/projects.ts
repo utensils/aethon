@@ -7,6 +7,7 @@
 // they were created with — switching project doesn't retro-cwd live sessions.
 
 import { invoke } from "@tauri-apps/api/core";
+import { getLocalHostId } from "./hosts";
 import { readState, writeState } from "./persist";
 import {
   type Worktree,
@@ -84,7 +85,12 @@ interface PersistedV3 extends PersistedV2 {
 }
 
 export async function loadProjects(localHostId?: string): Promise<ProjectsState> {
-  const hostId = localHostId ?? FALLBACK_LOCAL_HOST_ID;
+  // Resolve the local host id from the bridge BEFORE migrating so v1/v2
+  // entries get stamped with the real id, not the FALLBACK placeholder
+  // — otherwise saveProjects persists "local:unknown" into projects.json
+  // and host-scoped views can never match the real host on next boot
+  // (codex P2 review finding).
+  const hostId = localHostId ?? (await getLocalHostId(FALLBACK_LOCAL_HOST_ID));
   const raw = await readState(FILE);
   if (!raw) return emptyProjectsState(hostId);
   try {

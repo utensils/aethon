@@ -68,7 +68,11 @@ pub fn advertise(
 /// Start the LAN browser. Resolution events are debounced before they
 /// fan out as Tauri events so the frontend never has to dedupe.
 pub fn start_browser(app: AppHandle) -> Result<(), String> {
-    let local_id = crate::commands::host::local_host_info().id;
+    // Compare by fingerprint, NOT by id — the browser builds remote ids
+    // as `remote:<fingerprint>` while host_info returns `local:<short>`.
+    // A pure-id check would never match and we'd surface ourselves as
+    // a remote (codex P2 review finding).
+    let local_fingerprint = crate::commands::host::local_host_info().fingerprint;
     let mdns = ServiceDaemon::new().map_err(|e| format!("daemon: {e}"))?;
     let receiver = mdns.browse(SERVICE_TYPE).map_err(|e| format!("browse: {e}"))?;
     tauri::async_runtime::spawn(async move {
@@ -107,11 +111,11 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
                     let hostname = info.get_hostname().trim_end_matches('.').to_string();
                     let port = info.get_port();
                     let fullname = info.get_fullname().to_string();
-                    let id = format!("remote:{fingerprint}");
-                    if id == local_id {
+                    if fingerprint == local_fingerprint {
                         // mdns-sd echoes our own advertisement; skip it.
                         continue;
                     }
+                    let id = format!("remote:{fingerprint}");
                     let display = if name.is_empty() {
                         hostname
                             .trim_end_matches(".local")

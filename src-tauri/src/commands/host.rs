@@ -76,10 +76,17 @@ fn stable_id(hostname: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(b"aethon-host-v1\n");
     if let Some(uuid) = machine_uuid() {
+        // Prefer the platform machine-uuid alone — including hostname
+        // here would invalidate persisted hostIds whenever the user
+        // renames the machine. The uuid survives rename + reinstall.
         hasher.update(uuid.as_bytes());
-        hasher.update(b"\n");
+    } else {
+        // No machine-uuid available (Windows today, exotic Linux
+        // distros, or sysctl failures on macOS). Fall back to the
+        // hostname so we still get a stable per-machine value within
+        // one rename cycle.
+        hasher.update(hostname.as_bytes());
     }
-    hasher.update(hostname.as_bytes());
     let digest = hasher.finalize();
     let short: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
     format!("local:{short}")
