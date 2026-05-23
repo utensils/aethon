@@ -676,8 +676,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: var(--chrome-text);
-  color: var(--text-dim);
-  opacity: 0.75;
+  color: var(--text-secondary);
   letter-spacing: 0;
   max-width: 60%;
   overflow: hidden;
@@ -691,28 +690,39 @@ body.ae-resizing-sidebar .a2ui-layout {
    font size so the glyph reads at a glance. */
 .a2ui-sidebar-item-discl {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   margin-left: -4px;
   border: 0;
   background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: var(--chrome-text);
+  /* Token mid-tone for resting state. SVG fills via `currentColor` so
+     this color drives the chevron stroke; hover + active-row push it
+     toward --accent. */
+  color: var(--text);
   line-height: 1;
   cursor: pointer;
   padding: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-xs);
-  transition: color var(--motion-fast) var(--ease-out);
+  transition: color var(--motion-fast) var(--ease-out),
+              background var(--motion-fast) var(--ease-out);
+}
+.a2ui-sidebar-item-discl svg {
+  display: block;
 }
 .a2ui-sidebar-item-discl:hover,
 .a2ui-sidebar-item-discl:focus-visible {
   outline: none;
   color: var(--accent);
   background: var(--accent-hover-tint);
+}
+/* Active project row carries the accent into its chevron + glyphs so
+   the whole row reads as one selected unit instead of an accent label
+   floating next to a dim caret. */
+.a2ui-sidebar-item-active .a2ui-sidebar-item-discl {
+  color: var(--accent);
 }
 
 /* Worktree row — nested under a project row when worktrees are present
@@ -725,15 +735,20 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 .ae-worktree-glyph {
   flex-shrink: 0;
-  width: 12px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: var(--text-md);
-  opacity: var(--opacity-muted);
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Inline SVG draws via currentColor — `--text` gives a confident
+     resting tone that doesn't fade against dark or cream backgrounds. */
+  color: var(--text);
+}
+.ae-worktree-glyph svg {
+  display: block;
 }
 .ae-worktree-row--main .ae-worktree-glyph {
   color: var(--accent);
-  opacity: 1;
 }
 .ae-worktree-branch {
   margin-left: auto;
@@ -1410,6 +1425,88 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-empty-state-recent-active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* Worktree landing — GitHub branch status block. Inherits the
+   empty-state recent-block layout (border-top + uppercase H2) and adds
+   PR-row treatment with merged/open/closed/draft pills. */
+.a2ui-worktree-landing-gh {
+  width: 100%;
+  text-align: left;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+  margin-top: var(--space-4);
+}
+.a2ui-worktree-landing-gh h2 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.a2ui-worktree-landing-gh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.a2ui-worktree-landing-gh-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-md);
+}
+.a2ui-worktree-landing-gh-label {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+.a2ui-worktree-landing-gh-pushed {
+  color: var(--text-dim);
+}
+.a2ui-worktree-landing-gh-pushed.is-pushed {
+  color: var(--accent);
+}
+.a2ui-worktree-landing-gh-pr a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  text-decoration: none;
+  width: 100%;
+  min-width: 0;
+}
+.a2ui-worktree-landing-gh-pr a:hover {
+  color: var(--accent);
+}
+.a2ui-worktree-landing-gh-pr-state {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.ae-pr-merged { background: rgba(140, 82, 255, 0.15); color: #b58aff; }
+.ae-pr-open { background: rgba(46, 160, 67, 0.15); color: #56d364; }
+.ae-pr-closed { background: rgba(248, 81, 73, 0.15); color: #f97a73; }
+.ae-pr-draft { background: var(--bg-input); color: var(--text-dim); }
+.a2ui-worktree-landing-gh-pr-number {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.a2ui-worktree-landing-gh-pr-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .a2ui-empty-state-recent {

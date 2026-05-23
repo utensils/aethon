@@ -369,6 +369,177 @@ pub async fn git_branch_list(project_path: String) -> Result<Vec<BranchInfo>, St
     Ok(branches)
 }
 
+/// GitHub branch status as understood by `gh` CLI. Returned shape is
+/// intentionally narrow so the worktree-landing UI can render without
+/// dragging the full Octocrab schema.
+///
+/// All fields are best-effort. `gh_available = false` means we couldn't
+/// find / auth `gh`; the UI degrades gracefully (renders "Connect
+/// GitHub" instead of an error). `pushed` is true when the branch
+/// exists on the remote (we look it up via `gh api`). `prs` lists open
+/// + recently-closed PRs whose head matches the branch.
+#[derive(serde::Serialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GhBranchStatus {
+    /// True when the `gh` CLI binary was reachable AND authenticated.
+    /// When false, every other field is empty/None.
+    pub gh_available: bool,
+    /// `<owner>/<repo>` if the repo has a recognised GitHub remote.
+    pub repo: Option<String>,
+    /// True when `gh api repos/<repo>/branches/<branch>` returned 200.
+    /// Implies the branch is pushed.
+    pub pushed: bool,
+    /// PRs whose head is the requested branch. Includes open + recently
+    /// closed PRs so users see merge state when the branch is gone.
+    pub prs: Vec<GhPr>,
+}
+
+#[derive(serde::Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GhPr {
+    pub number: u64,
+    pub state: String,
+    pub title: String,
+    pub url: String,
+    pub is_draft: bool,
+    pub merged: bool,
+    pub base_ref_name: String,
+}
+
+/// Fetch GitHub branch status via `gh` CLI. Silently degrades on every
+/// failure mode — missing binary, not authed, non-GitHub remote, network
+/// error — so the worktree landing always renders. The frontend reads
+/// `ghAvailable` first; on false everything else is ignored.
+#[tauri::command]
+pub async fn gh_branch_status(
+    project_path: String,
+    branch: String,
+) -> Result<GhBranchStatus, String> {
+    Ok(gh_branch_status_inner(&project_path, &branch))
+}
+
+fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
+    use std::process::Command;
+    let mut status = GhBranchStatus::default();
+    let dir = PathBuf::from(project_path);
+    if !dir.is_dir() || branch.is_empty() {
+        return status;
+    }
+    // 1. gh available + authed?
+    let auth = Command::new("gh")
+        .args(["auth", "status"])
+        .output();
+    let Ok(out) = auth else { return status };
+    if !out.status.success() {
+        return status;
+    }
+    status.gh_available = true;
+
+    // 2. Identify the GitHub <owner>/<repo>. `gh repo view --json` only
+    //    succeeds when the cwd is a GitHub repo, so this doubles as a
+    //    cheap "is this on GitHub?" check.
+    let repo_out = Command::new("gh")
+        .arg("-R")
+        .arg(&dir)
+        .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+        .current_dir(&dir)
+        .output();
+    let repo_str = match repo_out {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        }
+        _ => return status,
+    };
+    if repo_str.is_empty() {
+        return status;
+    }
+    status.repo = Some(repo_str.clone());
+
+    // 3. Branch exists on remote? `gh api` returns 200 with the branch
+    //    metadata when present; non-200 means not pushed.
+    let pushed_out = Command::new("gh")
+        .args([
+            "api",
+            "-X",
+            "GET",
+            &format!("repos/{repo_str}/branches/{branch}"),
+            "--silent",
+        ])
+        .current_dir(&dir)
+        .output();
+    if let Ok(o) = pushed_out {
+        status.pushed = o.status.success();
+    }
+
+    // 4. PRs whose head is this branch. `gh pr list --state all` covers
+    //    open + closed (incl. merged). Limit 5 keeps the call cheap and
+    //    the UI tidy. `--json` makes parsing robust against future CLI
+    //    output tweaks.
+    let pr_out = Command::new("gh")
+        .arg("-R")
+        .arg(&repo_str)
+        .args([
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--head",
+            branch,
+            "--limit",
+            "5",
+            "--json",
+            "number,state,title,url,isDraft,baseRefName,mergedAt",
+        ])
+        .current_dir(&dir)
+        .output();
+    if let Ok(o) = pr_out
+        && o.status.success()
+        && let Ok(parsed) =
+            serde_json::from_slice::<Vec<serde_json::Value>>(&o.stdout)
+    {
+        for entry in parsed {
+                    let number = entry.get("number").and_then(|v| v.as_u64());
+                    let state = entry
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let title = entry
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let url = entry
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let is_draft = entry.get("isDraft").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let base_ref_name = entry
+                        .get("baseRefName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let merged = entry
+                        .get("mergedAt")
+                        .map(|v| !v.is_null())
+                        .unwrap_or(false);
+                    if let Some(n) = number {
+                        status.prs.push(GhPr {
+                            number: n,
+                            state,
+                            title,
+                            url,
+                            is_draft,
+                            merged,
+                            base_ref_name,
+                        });
+                    }
+                }
+    }
+    status
+}
+
 /// Pop a native folder picker and return the chosen path (or None if the
 /// user cancelled). Wrapping `tauri-plugin-dialog::pick_folder` here keeps
 /// the frontend free of a direct dialog dependency — the projects feature

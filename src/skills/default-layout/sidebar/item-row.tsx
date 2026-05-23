@@ -93,7 +93,7 @@ export function ItemRow({
       {disclosure ? (
         <button
           type="button"
-          className="a2ui-sidebar-item-discl"
+          className={`a2ui-sidebar-item-discl a2ui-sidebar-item-discl-${disclosure}`}
           aria-label={disclosure === "expanded" ? "Collapse" : "Expand"}
           aria-expanded={disclosure === "expanded"}
           onClick={(e) => {
@@ -101,7 +101,30 @@ export function ItemRow({
             onToggleDisclosure?.();
           }}
         >
-          {disclosure === "expanded" ? "▾" : "▸"}
+          {/* Inline SVG instead of Unicode ▸/▾ — the geometric glyphs
+              render tiny at any font size because their metric box is
+              vertically thin. SVG scales exactly to the 12×12 viewport
+              so the chevron actually reads on Paper / Ember alike.
+              `currentColor` so the parent's `color:` controls fill. */}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d={
+                disclosure === "expanded"
+                  ? "M2.5 4.5L6 8L9.5 4.5"
+                  : "M4.5 2.5L8 6L4.5 9.5"
+              }
+            />
+          </svg>
         </button>
       ) : null}
       {git?.dirty ? (
