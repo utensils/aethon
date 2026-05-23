@@ -85,7 +85,7 @@ describe("migrateProjects", () => {
     expect(out.worktreesByProject).toEqual({});
   });
 
-  it("is idempotent on v2 data", () => {
+  it("stamps localHostId onto v2 entries during v2->v3 migration", () => {
     const v2 = {
       schemaVersion: 2,
       projects: [
@@ -102,13 +102,33 @@ describe("migrateProjects", () => {
         a: [{ id: "wt-1", projectId: "a", path: "/a", branch: "main", isMain: true }],
       },
     };
-    const out = migrateProjects(v2);
-    expect(out).toEqual({
-      projects: v2.projects,
+    const out = migrateProjects(v2, "local:abc123");
+    expect(out.projects[0].hostId).toBe("local:abc123");
+    expect(out.activeHostId).toBe("local:abc123");
+    expect(out.activeWorktreeId).toBe("wt-1");
+    expect(out.worktreesByProject.a).toHaveLength(1);
+  });
+
+  it("preserves an explicit v3 hostId + activeHostId", () => {
+    const v3 = {
+      schemaVersion: 3,
+      projects: [
+        {
+          id: "a",
+          label: "aethon",
+          path: "/Users/example/aethon",
+          lastUsed: 1,
+          hostId: "remote:peer",
+        },
+      ],
       activeId: "a",
-      activeWorktreeId: "wt-1",
-      worktreesByProject: v2.worktreesByProject,
-    });
+      activeWorktreeId: null,
+      activeHostId: "remote:peer",
+      worktreesByProject: {},
+    };
+    const out = migrateProjects(v3, "local:abc123");
+    expect(out.projects[0].hostId).toBe("remote:peer");
+    expect(out.activeHostId).toBe("remote:peer");
   });
 
   it("drops invalid worktree entries", () => {

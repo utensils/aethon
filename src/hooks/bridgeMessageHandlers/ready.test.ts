@@ -199,6 +199,7 @@ describe("handleReady", () => {
       activeId: "p1",
       activeWorktreeId: null,
       worktreesByProject: {},
+      activeHostId: null,
       projects: [
         { id: "p1", label: "p1", path: "/tmp/p1", lastUsed: Date.now() },
       ],
@@ -225,6 +226,7 @@ describe("handleReady", () => {
       activeId: "p2",
       activeWorktreeId: null,
       worktreesByProject: {},
+      activeHostId: null,
       projects: [
         { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },
         { id: "p2", label: "B", path: "/repo/b", lastUsed: 2 },
@@ -263,6 +265,7 @@ describe("handleReady", () => {
       activeId: "p2",
       activeWorktreeId: null,
       worktreesByProject: {},
+      activeHostId: null,
       projects: [
         { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },
         { id: "p2", label: "B", path: "/repo/b", lastUsed: 2 },
