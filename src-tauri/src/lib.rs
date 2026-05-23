@@ -752,6 +752,7 @@ pub fn run() {
             commands::git::gh_issue_list,
             commands::git::gh_issue_view,
             commands::git::pick_project_directory,
+            commands::host::host_info,
             commands::window::updater_available,
             commands::window::toggle_fullscreen,
             commands::window::toggle_devtools,
