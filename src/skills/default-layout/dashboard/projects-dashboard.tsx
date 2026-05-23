@@ -19,7 +19,6 @@
 import { useMemo } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
-import { ProjectCard } from "./project-card";
 import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
 
@@ -119,15 +118,24 @@ export function ProjectsDashboard({
             <h2>Recent projects</h2>
             <div className="a2ui-projects-dashboard-grid">
               {projects.map((p) => (
-                <ProjectCard
+                // Route through RegistryComponent (NOT the direct
+                // `<ProjectCard>` import) so an extension that calls
+                // `aethon.registerComponent("project-card", Custom)`
+                // can replace tiles globally. The "overrideable by
+                // type string" contract has to hold here or the
+                // override-everything story breaks on the most
+                // visible surface in the app.
+                <RegistryComponent
                   key={p.id}
-                  component={{
-                    id: `project-card-${p.id}`,
-                    type: "project-card",
-                    props: { project: p, active: p.active === true },
-                  }}
+                  type="project-card"
                   state={state}
-                  onEvent={onEvent}
+                  onEvent={(_component, eventType, data) =>
+                    onEvent(eventType, data, `project-card-${p.id}`)
+                  }
+                  componentProps={{
+                    project: p,
+                    active: p.active === true,
+                  }}
                 />
               ))}
               {extraCards.map((card) => (

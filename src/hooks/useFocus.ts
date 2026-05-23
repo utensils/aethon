@@ -30,16 +30,6 @@ function parseWidth(token: string | undefined, fallback: string): string {
 }
 
 /**
- * Compose the workstation grid template from `{left, right}` visibility +
- * the user's most-recently-resized widths. Layout-as-payload means the
- * sidebar can't just `display: none` — the grid column would still claim
- * space — so each toggle has to rewrite `columns` and `areas` in lockstep.
- *
- * Width tokens are pulled from the current `layout.columns` so user
- * resizes survive a hide/show round-trip; falls back to the boot defaults
- * when the token is missing or malformed.
- */
-/**
  * Pick out the left + right px widths from any of the workstation's
  * column shapes. The grid template can be:
  *   [L, 1fr, R]   3-column (canonical)
@@ -48,7 +38,8 @@ function parseWidth(token: string | undefined, fallback: string): string {
  *   [1fr]         1-column (both hidden)
  * Returns the first/last tokens iff they're `<n>px`. Width memos on
  * `layout.lastLeftWidth` / `layout.lastRightWidth` win over inference so
- * a hide/show round-trip restores the user's previous size.
+ * a hide/show round-trip restores the user's previous size. See
+ * `workstationLayout` below for the consumer that uses these widths.
  */
 function pickWidths(current: {
   columns?: unknown;
@@ -82,6 +73,16 @@ function pickWidths(current: {
   };
 }
 
+/**
+ * Compose the workstation grid template from `{left, right}` visibility +
+ * the user's most-recently-resized widths. Layout-as-payload means the
+ * sidebar can't just `display: none` — the grid column would still claim
+ * space — so each toggle has to rewrite `columns` and `areas` in lockstep.
+ *
+ * Width tokens are pulled from the current `layout.columns` so user
+ * resizes survive a hide/show round-trip; falls back to the boot defaults
+ * when the token is missing or malformed.
+ */
 export function workstationLayout(
   current: {
     columns?: unknown;

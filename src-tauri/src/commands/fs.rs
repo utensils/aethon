@@ -487,13 +487,32 @@ pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
 /// Reveal a path in the native file manager (Finder / Explorer / xdg).
 /// On macOS uses `open -R` so the target file is preselected inside its
 /// parent directory; on Linux falls back to `xdg-open` on the parent.
+///
+/// `root` is required and `path` must resolve inside it — same gate as
+/// `fs_read_file` / `fs_delete` / etc. Without this, a misbehaving
+/// extension calling `aethon.invoke("fs_reveal_in_file_manager", { path })`
+/// could prompt the OS to reveal arbitrary system files, leaking
+/// existence/non-existence info to the user-visible Finder window.
 #[tauri::command]
-pub fn fs_reveal_in_file_manager(path: String) -> Result<(), String> {
+pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), String> {
     use std::process::Command;
-    let p = PathBuf::from(&path);
-    if !p.exists() {
+    let root_path = PathBuf::from(&root);
+    let req = PathBuf::from(&path);
+    let p = crate::helpers::resolve_inside_root(&root_path, &req)
+        .ok_or_else(|| format!("path outside root: {path}"))?;
+    let canon = p
+        .canonicalize()
+        .map_err(|e| format!("canonicalize: {e}"))?;
+    let root_canon = root_path
+        .canonicalize()
+        .map_err(|e| format!("canonicalize root: {e}"))?;
+    if !canon.starts_with(&root_canon) {
+        return Err(format!("symlink escape: {path}"));
+    }
+    if !canon.exists() {
         return Err(format!("path does not exist: {path}"));
     }
+    let p = canon;
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
@@ -523,21 +542,38 @@ pub fn fs_reveal_in_file_manager(path: String) -> Result<(), String> {
     }
 }
 
-/// Open a directory (or file's parent) in the OS file manager. This is
-/// the project / worktree / "show this folder" flow. Falls back to
-/// xdg-open on Linux.
+/// Open a directory in the OS file manager. Project- / worktree-level
+/// "Open in Finder" flow — sidebar passes a `path` that's a registered
+/// project root or worktree path the user has already opted into. There
+/// is no `root` to constrain to here (the path *is* the root), so this
+/// command applies a tighter shape check instead of `resolve_inside_root`:
+///
+/// - Path must be absolute (no relative segments that could resolve
+///   against the working directory).
+/// - Path must canonicalize to a real directory (rejects files, dangling
+///   symlinks, NULs, and traversal segments like `..`).
+///
+/// The command does not return existence info beyond the success / error
+/// boundary, so a malicious extension can't use this as a generic
+/// "does this directory exist?" oracle — the only side effect is opening
+/// Finder/Explorer/xdg-open, which is itself visible to the user.
 #[tauri::command]
 pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     use std::process::Command;
     let p = PathBuf::from(&path);
-    if !p.exists() {
-        return Err(format!("path does not exist: {path}"));
+    if !p.is_absolute() {
+        return Err(format!("path must be absolute: {path}"));
     }
-    let target = if p.is_file() {
-        p.parent().unwrap_or(&p).to_path_buf()
-    } else {
-        p.clone()
-    };
+    if path.contains('\0') {
+        return Err("path contains NUL".to_string());
+    }
+    let canon = p
+        .canonicalize()
+        .map_err(|e| format!("canonicalize: {e}"))?;
+    if !canon.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    let target = canon;
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
@@ -564,14 +600,31 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     }
 }
 
-/// Open a file with the OS default application.
+/// Open a file with the OS default application. Same root-gating as
+/// `fs_reveal_in_file_manager` — a `root` argument is required and the
+/// resolved canonical path must live inside it. Without the gate, a
+/// caller could open `/etc/passwd` or similar and trigger external
+/// applications on arbitrary files.
 #[tauri::command]
-pub fn fs_open_in_default_app(path: String) -> Result<(), String> {
+pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> {
     use std::process::Command;
-    let p = PathBuf::from(&path);
-    if !p.exists() {
+    let root_path = PathBuf::from(&root);
+    let req = PathBuf::from(&path);
+    let p = crate::helpers::resolve_inside_root(&root_path, &req)
+        .ok_or_else(|| format!("path outside root: {path}"))?;
+    let canon = p
+        .canonicalize()
+        .map_err(|e| format!("canonicalize: {e}"))?;
+    let root_canon = root_path
+        .canonicalize()
+        .map_err(|e| format!("canonicalize root: {e}"))?;
+    if !canon.starts_with(&root_canon) {
+        return Err(format!("symlink escape: {path}"));
+    }
+    if !canon.exists() {
         return Err(format!("path does not exist: {path}"));
     }
+    let p = canon;
     #[cfg(target_os = "macos")]
     {
         Command::new("open")

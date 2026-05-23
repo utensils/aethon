@@ -629,8 +629,13 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     if (!contextMenu) return;
     const path = contextMenu.node.entry.path;
     closeContextMenu();
+    // Rust command requires `root` so paths are gated by the active
+    // project root (matches the read/write/delete commands).
     try {
-      await invoke("fs_reveal_in_file_manager", { path });
+      await invoke("fs_reveal_in_file_manager", {
+        root: projectPath,
+        path,
+      });
     } catch (err) {
       window.alert(`Reveal failed: ${String(err)}`);
     }
@@ -641,7 +646,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     const path = contextMenu.node.entry.path;
     closeContextMenu();
     try {
-      await invoke("fs_open_in_default_app", { path });
+      await invoke("fs_open_in_default_app", {
+        root: projectPath,
+        path,
+      });
     } catch (err) {
       window.alert(`Open failed: ${String(err)}`);
     }
