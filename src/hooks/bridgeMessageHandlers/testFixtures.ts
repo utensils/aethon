@@ -102,6 +102,7 @@ export function buildHandlerFixture(
   const dispatchTerminalReplay = vi.fn();
   const announceProjectToBridge = vi.fn();
   const routeShellWrite = vi.fn(() => Promise.resolve({ ok: true as const }));
+  const startTaskInProject = vi.fn(() => Promise.resolve());
   const ackMutation = vi.fn();
   const knownTabIds = vi.fn(() => new Set<string>(["default"]));
   const scopedDiscoveredSessions = vi.fn(
@@ -156,6 +157,7 @@ export function buildHandlerFixture(
     syncRecentSessionsToState,
 
     routeShellWrite,
+    startTaskInProject,
 
     ackMutation,
     hangWarnNotifId: (tabId: string) => `ae-hang-warn:${tabId}`,

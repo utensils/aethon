@@ -760,6 +760,7 @@ export default function App() {
       recentSessionItems,
       syncRecentSessionsToState,
       routeShellWrite,
+      startTaskInProject,
     },
   });
 
