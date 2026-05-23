@@ -357,13 +357,13 @@ body.ae-resizing-sidebar .ae-file-tree-resize-handle {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px 8px 2px 4px;
+  padding: 3px 8px 3px 4px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: var(--chrome-text-muted);
-  line-height: 1.5;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.35;
 }
 .ae-file-tree-row:hover {
   background: var(--bg-hover);
@@ -599,7 +599,7 @@ body.ae-resizing-sidebar .a2ui-layout {
      the projects sidebar finally feels like a column of clickable
      items instead of a list of strings. */
   padding: 7px var(--space-4);
-  font-size: var(--text-md);
+  font-size: var(--font-size-sidebar);
   line-height: 1.25;
   cursor: pointer;
   color: var(--text);

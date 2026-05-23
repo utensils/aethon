@@ -23,6 +23,10 @@
   --chrome-text: var(--text-sm);
   --chrome-text-compact: var(--text-xs);
   --chrome-text-muted: var(--text-2xs);
+  /* Shared by both sidebars (left projects/worktrees + right file tree)
+     so they read as one family. Density toggles can multiply this in
+     one place. */
+  --font-size-sidebar: var(--text-md);
 
   /* Spacing — 4px base. Use these in chrome rules instead of magic px. */
   --space-0: 0;
