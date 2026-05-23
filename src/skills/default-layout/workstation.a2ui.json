@@ -144,7 +144,8 @@
             "visible": { "$ref": "/emptyAndNoProject" },
             "projects": { "$ref": "/projects" },
             "recentSessions": { "$ref": "/recentSessions" },
-            "extraCards": { "$ref": "/projectsDashboard/extraCards" }
+            "extraCards": { "$ref": "/projectsDashboard/extraCards" },
+            "host": { "$ref": "/host" }
           }
         },
         {

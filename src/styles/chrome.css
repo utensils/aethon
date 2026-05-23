@@ -652,8 +652,28 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* No ellipsis — long names are clipped silently and the user can
+     hover the row to scroll the label horizontally into view. Avoids
+     the "nyc-…" / "ae…" truncation seen on the projects sidebar. */
+  text-overflow: clip;
   white-space: nowrap;
+}
+.a2ui-sidebar-item:hover .a2ui-sidebar-item-label {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.a2ui-sidebar-item:hover .a2ui-sidebar-item-label::-webkit-scrollbar {
+  display: none;
+}
+/* Tiny icon (favicon-sized) rendered before the label for both host
+   and project rows. Falls back gracefully when iconUrl is absent. */
+.a2ui-sidebar-item-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  object-fit: cover;
+  margin-right: var(--space-1);
 }
 
 /* Tiny accent dot before the label — used for project rows whose
@@ -4080,7 +4100,10 @@ body.ae-resizing-terminal * {
 
 .a2ui-projects-dashboard-card,
 .a2ui-project-dashboard-card {
-  max-width: 920px;
+  /* Was 920px — left a wide empty band on typical windows. Scales now
+     up to ~1400px and respects a 96px window padding so the dashboard
+     stays comfortably edge-aligned on small windows too. */
+  max-width: min(1400px, calc(100% - 96px));
   width: 100%;
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -4090,6 +4113,64 @@ body.ae-resizing-terminal * {
   flex-direction: column;
   gap: var(--space-5);
   box-shadow: var(--shadow-2);
+}
+
+/* Host banner — sits inside the dashboard card to anchor it to the
+   current host. Uses the existing token palette; no new variables. */
+.a2ui-host-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  align-self: stretch;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.a2ui-host-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.a2ui-host-banner-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.a2ui-host-banner-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.a2ui-host-banner-hint {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+/* Project-card icon — 20px square before the label. The
+   --initial modifier renders a deterministic letter tile for projects
+   without a discovered logo. */
+.a2ui-project-card-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  object-fit: cover;
+  margin-right: var(--space-2);
+}
+span.a2ui-project-card-icon--initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 /* ---- Projects dashboard (global overview) --------------------------- */

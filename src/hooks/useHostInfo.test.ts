@@ -7,27 +7,29 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async (cmd: string) =>
-    cmd === "host_info"
-      ? { id: "local:abc", hostname: "halcyon.local", displayName: "halcyon", fingerprint: "fp" }
-      : null,
+  invoke: (cmd: string) =>
+    Promise.resolve(
+      cmd === "host_info"
+        ? { id: "local:abc", hostname: "halcyon.local", displayName: "halcyon", fingerprint: "fp" }
+        : null,
+    ),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: async <T,>(event: string, cb: (e: { payload: T }) => void) => {
+  listen: <T,>(event: string, cb: (e: { payload: T }) => void) => {
     const list = eventListeners.get(event) ?? [];
     list.push(cb as (event: { payload: unknown }) => void);
     eventListeners.set(event, list);
-    return () => {
+    return Promise.resolve(() => {
       const next = (eventListeners.get(event) ?? []).filter((fn) => fn !== cb);
       eventListeners.set(event, next);
-    };
+    });
   },
 }));
 
 vi.mock("../persist", () => ({
-  readState: async () => null,
-  writeState: async () => undefined,
+  readState: () => Promise.resolve(null),
+  writeState: () => Promise.resolve(undefined),
 }));
 
 function fireEvent(name: string, payload: unknown): void {

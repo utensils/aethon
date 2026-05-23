@@ -15,9 +15,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 async function setInvoke(impl: (cmd: string, args: InvokeArgs) => unknown): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  (invoke as unknown as { mockImplementation: (i: typeof impl) => void }).mockImplementation(
-    impl as (cmd: string, args: InvokeArgs) => unknown,
-  );
+  (invoke as unknown as { mockImplementation: (i: typeof impl) => void }).mockImplementation(impl);
 }
 
 function project(extra: Partial<Project> = {}): Project {

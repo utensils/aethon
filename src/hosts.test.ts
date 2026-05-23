@@ -10,10 +10,10 @@ import {
 
 // We mock the Tauri layer at the import level so unit tests can drive
 // host_info without spinning up the bridge.
-vi.mock("@tauri-apps/api/core", async () => {
+vi.mock("@tauri-apps/api/core", () => {
   let invokeImpl: (cmd: string) => unknown = () => null;
   return {
-    invoke: (cmd: string) => invokeImpl(cmd),
+    invoke: (cmd: string) => Promise.resolve(invokeImpl(cmd)),
     __setInvoke(impl: (cmd: string) => unknown) {
       invokeImpl = impl;
     },
@@ -23,9 +23,10 @@ vi.mock("@tauri-apps/api/core", async () => {
 vi.mock("./persist", () => {
   const store = new Map<string, string>();
   return {
-    readState: async (file: string) => store.get(file) ?? null,
-    writeState: async (file: string, body: string) => {
+    readState: (file: string) => Promise.resolve(store.get(file) ?? null),
+    writeState: (file: string, body: string) => {
       store.set(file, body);
+      return Promise.resolve();
     },
     __clear() {
       store.clear();
