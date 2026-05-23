@@ -37,6 +37,26 @@ describe("handleSettings", () => {
     expect(mocks.saveSettings).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards extension toggles from the settings panel", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "toggle-extension",
+        data: { name: "mold:image-gallery", disabled: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_extension_disabled",
+        name: "mold:image-gallery",
+        disabled: true,
+      }),
+    });
+  });
+
   it("opens system-prompt.md in an editor tab rooted at the Aethon dir", async () => {
     const { ctx, mocks } = buildRouteFixture();
     mocks.invoke

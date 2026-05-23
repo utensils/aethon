@@ -6,7 +6,7 @@ import {
   type SetStateAction,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { A2UIPayload } from "../types/a2ui";
+import type { A2UIPayload, SidebarItem } from "../types/a2ui";
 import {
   buildBuiltinSlashCommands,
   type SlashCommand,
@@ -36,6 +36,12 @@ export interface ExtensionFailureSummary extends ExtensionSummary {
   error?: string;
 }
 
+export type ExtensionSidebarItem = SidebarItem & {
+  hint?: string;
+};
+
+const CORE_EXTENSION_NAMES = new Set(["default-layout"]);
+
 function normalizeExtensionProjectPath(path: string | undefined | null): string {
   return (path ?? "").replace(/[/\\]+$/, "");
 }
@@ -53,6 +59,73 @@ export function filterExtensionSummariesByProject<
       (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
     );
   });
+}
+
+function extensionSourceLabel(source: string): string {
+  switch (source) {
+    case "directory":
+    case "global-directory":
+      return "user";
+    case "project-directory":
+      return "project";
+    case "extension-package":
+      return "package";
+    default:
+      return source;
+  }
+}
+
+export function buildExtensionSidebarItems(
+  loaded: ExtensionSummary[],
+  failed: ExtensionFailureSummary[],
+  disabled: string[] = [],
+  activeProjectPath: string | null = null,
+): ExtensionSidebarItem[] {
+  const scopedLoaded = filterExtensionSummariesByProject(
+    loaded,
+    activeProjectPath,
+  );
+  const scopedFailed = filterExtensionSummariesByProject(
+    failed,
+    activeProjectPath,
+  );
+  const disabledSet = new Set(disabled);
+  // An extension may appear in `loaded` (live this run) but also be
+  // marked disabled (toggle landed mid-session, takes effect after
+  // restart). Show it in the disabled bucket so the user sees their
+  // pending intent, with a hint that a restart is needed to fully
+  // unload it.
+  return [
+    ...scopedLoaded
+      .filter((e) => !CORE_EXTENSION_NAMES.has(e.name))
+      .filter((e) => !disabledSet.has(e.name))
+      .map((e) => ({
+        id: `ext:${e.name}`,
+        label: e.name,
+        hint: extensionSourceLabel(e.source),
+        active: true,
+      })),
+    ...scopedFailed
+      .filter((e) => !CORE_EXTENSION_NAMES.has(e.name))
+      .filter((e) => !disabledSet.has(e.name))
+      .map((e) => ({
+        id: `ext-failed:${e.name}`,
+        label: e.name,
+        hint: `${extensionSourceLabel(e.source)} · failed`,
+        active: false,
+      })),
+    ...disabled
+      .filter((name) => !CORE_EXTENSION_NAMES.has(name))
+      .map((name) => {
+        const stillLoaded = loaded.some((e) => e.name === name);
+        return {
+          id: `ext-disabled:${name}`,
+          label: name,
+          hint: stillLoaded ? "disabled · restart" : "disabled",
+          active: false,
+        };
+      }),
+  ];
 }
 
 /** Built-in themes always available. CSS for these lives in src/styles/themes.css —
@@ -263,61 +336,12 @@ export function useExtensionsHydration(
     disabled: string[] = [],
     activeProjectPath: string | null = null,
   ) {
-    const scopedLoaded = filterExtensionSummariesByProject(
+    const items = buildExtensionSidebarItems(
       loaded,
-      activeProjectPath,
-    );
-    const scopedFailed = filterExtensionSummariesByProject(
       failed,
+      disabled,
       activeProjectPath,
     );
-    const sourceLabel = (s: string) =>
-      s === "project-directory"
-        ? "project"
-        : s === "global-directory"
-          ? "user"
-          : s === "extension-package"
-            ? "package"
-            : s;
-    const disabledSet = new Set(disabled);
-    // An extension may appear in `loaded` (live this run) but also be
-    // marked disabled (toggle landed mid-session, takes effect after
-    // restart). Show it in the disabled bucket so the user sees their
-    // pending intent, with a hint that a restart is needed to fully
-    // unload it.
-    const items = [
-      {
-        id: "extension-layout",
-        label: "default-layout",
-        hint: "core",
-        active: true,
-      },
-      ...scopedLoaded
-        .filter((e) => !disabledSet.has(e.name))
-        .map((e) => ({
-          id: `ext:${e.name}`,
-          label: e.name,
-          hint: sourceLabel(e.source),
-          active: true,
-        })),
-      ...scopedFailed
-        .filter((e) => !disabledSet.has(e.name))
-        .map((e) => ({
-          id: `ext-failed:${e.name}`,
-          label: e.name,
-          hint: `${sourceLabel(e.source)} · failed`,
-          active: false,
-        })),
-      ...disabled.map((name) => {
-        const stillLoaded = loaded.some((e) => e.name === name);
-        return {
-          id: `ext-disabled:${name}`,
-          label: name,
-          hint: stillLoaded ? "disabled · restart" : "disabled",
-          active: false,
-        };
-      }),
-    ];
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};
       return { ...prev, sidebar: { ...sidebar, extensions: items } };

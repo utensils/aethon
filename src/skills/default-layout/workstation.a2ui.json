@@ -89,6 +89,12 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
+                  },
+                  {
+                    "id": "extensions",
+                    "title": "extensions",
+                    "items": { "$ref": "/sidebar/extensions" },
+                    "hideWhenEmpty": true
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }
@@ -246,6 +252,7 @@
       "models": [],
       "hosts": [],
       "projects": [],
+      "extensions": [],
       "extraSections": [],
       "themes": [
         { "id": "ember", "label": "Ember — warm dark", "active": true },

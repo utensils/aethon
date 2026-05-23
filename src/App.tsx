@@ -152,14 +152,11 @@ export default function App() {
         // shapes are documented on the components themselves.
         palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
         notifications: [],
-        // Seed /sidebar/extensions so the $ref-bound sidebar section renders
-        // the built-in entry immediately — hydrateExtensions() fills in
-        // dynamically-loaded extensions once `ready` arrives.
+        // Seed /sidebar/extensions so Settings and the sidebar have a stable
+        // list shape before the bridge sends the first ready payload.
         sidebar: {
           ...(BOOT_LAYOUT.state?.sidebar as Record<string, unknown> | undefined),
-          extensions: [
-            { id: "extension-layout", label: "default-layout", hint: "core", active: true },
-          ],
+          extensions: [],
         },
         layout: {
           ...(bootLayout && typeof bootLayout === "object" ? bootLayout : {}),
@@ -772,6 +769,7 @@ export default function App() {
   // ref-tracked defaults without a page reload.
   // ---------------------------------------------------------------------
   const {
+    openSettings,
     toggleSettings,
     closeSettings,
     applySettingsPatch,
@@ -956,6 +954,7 @@ export default function App() {
     stopPrompt,
     toggleTerminal,
     toggleFilesSidebar,
+    openSettings,
     pushNotification,
     dismissNotification,
     checkForUpdates,

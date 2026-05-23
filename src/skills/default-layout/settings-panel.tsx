@@ -22,6 +22,7 @@ import { DropdownPickerCore } from "./variation-components";
 
 interface SettingsState {
   open: boolean;
+  focusSection: string | null;
   /** User's unsaved edits. Null when the panel hasn't loaded the
    *  config yet OR the user hasn't touched anything. The form reads
    *  from `pending` first, falling back to the config snapshot. */
@@ -32,6 +33,8 @@ function readSettingsState(state: Record<string, unknown>): SettingsState {
   const s = (state.settings as Partial<SettingsState> | undefined) ?? {};
   return {
     open: !!s.open,
+    focusSection:
+      typeof s.focusSection === "string" ? s.focusSection : null,
     pending: (s.pending as Partial<AethonConfig> | null) ?? null,
   };
 }
@@ -99,6 +102,20 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
     };
   }, [configSnapshot, settings.pending]);
 
+  useEffect(() => {
+    if (!settings.open || !eff || !settings.focusSection) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = [
+        ...document.querySelectorAll<HTMLElement>("[data-settings-section]"),
+      ].find((el) => el.dataset.settingsSection === settings.focusSection);
+      target?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [eff, settings.focusSection, settings.open]);
+
   if (!settings.open) return null;
 
   const update = (patch: Partial<AethonConfig>) => {
@@ -151,7 +168,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
           <div className="ae-settings-body">Loading…</div>
         ) : (
           <div className="ae-settings-body">
-            <Section title="Appearance">
+            <Section id="appearance" title="Appearance">
               <Field label="Theme">
                 <select
                   className="ae-settings-input"
@@ -195,7 +212,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
-            <Section title="Notifications">
+            <Section id="notifications" title="Notifications">
               <Field label="Notify on agent completion (when unfocused)">
                 <input
                   type="checkbox"
@@ -227,7 +244,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
-            <Section title="Agent">
+            <Section id="agent" title="Agent">
               <Field label="Default model for new tabs">
                 <ModelPicker
                   state={state}
@@ -249,7 +266,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
-            <Section title="Shell">
+            <Section id="shell" title="Shell">
               <Field label="Default share mode for new shell tabs">
                 <select
                   className="ae-settings-input"
@@ -316,7 +333,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
-            <Section title="Behavior">
+            <Section id="behavior" title="Behavior">
               <Field label="Confirm close when shell job is running">
                 <input
                   type="checkbox"
@@ -368,7 +385,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </div>
             </Section>
 
-            <Section title="Updater">
+            <Section id="updater" title="Updater">
               <Field label="Release channel">
                 <select
                   className="ae-settings-input"
@@ -387,11 +404,11 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </p>
             </Section>
 
-            <Section title="Extensions">
+            <Section id="extensions" title="Extensions">
               <ExtensionsList state={state} onEvent={onEvent} />
             </Section>
 
-            <Section title="Advanced">
+            <Section id="advanced" title="Advanced">
               <p className="ae-settings-note">
                 For keys not surfaced here, edit{" "}
                 <code>~/.aethon/config.toml</code> directly. The Save button
@@ -437,9 +454,9 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   );
 }
 
-function Section(props: { title: string; children: React.ReactNode }) {
+function Section(props: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="ae-settings-section">
+    <section className="ae-settings-section" data-settings-section={props.id}>
       <h3 className="ae-settings-section-title">{props.title}</h3>
       <div className="ae-settings-section-body">{props.children}</div>
     </section>
@@ -595,8 +612,9 @@ function ExtensionsList({
   if (items.length === 0) {
     return (
       <p className="ae-settings-note">
-        No extensions loaded. Drop a <code>.mjs</code> into{" "}
-        <code>~/.aethon/extensions/</code> to register one.
+        No user or project extensions loaded. Drop a <code>.mjs</code> into{" "}
+        <code>~/.aethon/extensions/</code> or the active project's{" "}
+        <code>.aethon/extensions/</code> directory to register one.
       </p>
     );
   }

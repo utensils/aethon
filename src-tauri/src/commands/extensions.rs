@@ -231,41 +231,40 @@ pub fn install_app_menu(
         .item(&issues_item)
         .build()?;
 
-    // Build the extension submenu. Each extension item id is prefixed
-    // with `ext:` so the React-side menu dispatcher can route it to
-    // a2ui_event without colliding with built-in ids. Items with
-    // `location: "tray"` are deferred to the tray builder below.
+    // Build the extension submenu. The first item is a built-in escape
+    // hatch for managing/disable toggling extensions even when an old
+    // extension has broken the rendered workspace. Extension-provided
+    // item ids are prefixed with `ext:` so the React-side menu dispatcher
+    // can route them to a2ui_event without colliding with built-in ids.
+    // Items with `location: "tray"` are deferred to the tray builder below.
     let app_extension_items: Vec<&ExtensionMenuItem> = extension_items
         .iter()
         .filter(|i| i.location == "app")
         .collect();
-    let extensions_submenu = if !app_extension_items.is_empty() {
-        let mut b = SubmenuBuilder::new(app, "Extensions");
-        for item in &app_extension_items {
-            let id = format!("ext:{}", item.action);
-            let mb = MenuItemBuilder::with_id(&id, &item.label).build(app)?;
-            b = b.item(&mb);
-        }
-        Some(b.build()?)
-    } else {
-        None
-    };
+    let manage_extensions =
+        MenuItemBuilder::with_id("manage_extensions", "Manage Extensions…").build(app)?;
+    let mut extensions_builder = SubmenuBuilder::new(app, "Extensions").item(&manage_extensions);
+    if !app_extension_items.is_empty() {
+        extensions_builder = extensions_builder.separator();
+    }
+    for item in &app_extension_items {
+        let id = format!("ext:{}", item.action);
+        let mb = MenuItemBuilder::with_id(&id, &item.label).build(app)?;
+        extensions_builder = extensions_builder.item(&mb);
+    }
+    let extensions_submenu = extensions_builder.build()?;
 
     #[cfg(target_os = "macos")]
     let menu = {
         let mut b = MenuBuilder::new(app)
             .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &tabs_menu]);
-        if let Some(ref s) = extensions_submenu {
-            b = b.item(s);
-        }
+        b = b.item(&extensions_submenu);
         b.items(&[&window_menu, &help_menu]).build()?
     };
     #[cfg(not(target_os = "macos"))]
     let menu = {
         let mut b = MenuBuilder::new(app).items(&[&file_menu, &edit_menu, &view_menu, &tabs_menu]);
-        if let Some(ref s) = extensions_submenu {
-            b = b.item(s);
-        }
+        b = b.item(&extensions_submenu);
         b.items(&[&window_menu, &help_menu]).build()?
     };
 
@@ -531,8 +530,8 @@ pub fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // hot-reloads without a manual restart. `helpers::aethon_dir`
         // honors the `AETHON_USER_DIR` override so `dev.sh --new` lands
         // the sandboxed extensions in the per-PID tmp tree.
-        let aethon_root = crate::helpers::aethon_dir(Some(h.clone()))
-            .unwrap_or_else(|| h.join(".aethon"));
+        let aethon_root =
+            crate::helpers::aethon_dir(Some(h.clone())).unwrap_or_else(|| h.join(".aethon"));
         let aethon_ext = aethon_root.join("extensions");
         let _ = std::fs::create_dir_all(&aethon_ext);
         if aethon_ext.exists() {
@@ -952,6 +951,23 @@ mod tests {
         assert!(
             body.contains("install_tray("),
             "set_extension_menu_items must call install_tray so location: \"tray\" extension items appear",
+        );
+    }
+
+    /// Extensions can break the rendered workspace itself, so the app
+    /// menu must always keep a built-in management entry available
+    /// outside extension-controlled UI. Extension-provided items are
+    /// additive; they must not be the condition for showing the menu.
+    #[test]
+    fn app_menu_always_exposes_extension_management() {
+        let src = include_str!("extensions.rs");
+        assert!(
+            src.contains("MenuItemBuilder::with_id(\"manage_extensions\", \"Manage Extensions…\")"),
+            "the app menu needs a built-in Manage Extensions item",
+        );
+        assert!(
+            src.contains("SubmenuBuilder::new(app, \"Extensions\").item(&manage_extensions)"),
+            "the Extensions submenu should be created even when no extension-registered menu items exist",
         );
     }
 }

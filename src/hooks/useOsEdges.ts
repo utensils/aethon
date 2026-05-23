@@ -47,6 +47,7 @@ export interface UseOsEdgesContext {
   // ─── Focus + chrome ─────────────────────────────────────────────────
   toggleTerminal: () => void;
   toggleFilesSidebar: () => void;
+  openSettings: (section?: string) => void;
 
   // ─── Notifications ──────────────────────────────────────────────────
   pushNotification: (n: NotificationInput) => string;
@@ -94,6 +95,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
     stopPrompt,
     toggleTerminal,
     toggleFilesSidebar,
+    openSettings,
     pushNotification,
     dismissNotification,
     checkForUpdates,
@@ -353,6 +355,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
           break;
         }
         case "toggle_files_sidebar": toggleFilesSidebar(); break;
+        case "manage_extensions": openSettings("extensions"); break;
         case "clear_chat": clearChat(); break;
         case "stop_prompt": void stopPrompt(); break;
         case "check_updates": {

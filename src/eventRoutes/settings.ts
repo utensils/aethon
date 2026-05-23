@@ -28,6 +28,28 @@ export const handleSettings: EventRouteHandler = (
     void ctx.saveSettings();
     return true;
   }
+  if (eventType === "toggle-extension") {
+    const selected = data as
+      | { name?: string; disabled?: boolean }
+      | undefined;
+    if (!selected?.name || typeof selected.disabled !== "boolean") return true;
+    void ctx
+      .invoke("agent_command", {
+        payload: JSON.stringify({
+          type: "set_extension_disabled",
+          name: selected.name,
+          disabled: selected.disabled,
+        }),
+      })
+      .catch((err: unknown) => {
+        ctx.pushNotification({
+          title: "Toggle extension failed",
+          message: String(err),
+          kind: "error",
+        });
+      });
+    return true;
+  }
   if (eventType === "open-system-prompt") {
     void ctx
       .invoke("aethon_home_dir")
