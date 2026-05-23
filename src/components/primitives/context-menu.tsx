@@ -89,11 +89,22 @@ export function ContextMenu({
   // menu opens. setState-in-effect is the right shape here: open is a
   // boolean prop coming from the caller and we want to mirror it onto
   // the internal focus state machine, not derive it on every render.
+  //
+  // Also move keyboard focus into the menu element itself so the
+  // `onKeyDown={onMenuKey}` on the root receives ArrowUp/ArrowDown/Enter.
+  // Without this, focus stayed on the originating row, the document-level
+  // keyboard listener only caught Esc/Tab, and arrow navigation never
+  // reached the menu — the "advertised keyboard navigation" stayed dead.
   useEffect(() => {
     if (open) {
       opener.current = document.activeElement;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed focus on open
       setFocusedIndex(focusableIndices[0] ?? null);
+      // Defer to the next tick so the menu element is in the DOM.
+      const t = window.setTimeout(() => {
+        menuRef.current?.focus({ preventScroll: true });
+      }, 0);
+      return () => window.clearTimeout(t);
     } else {
       setFocusedIndex(null);
     }

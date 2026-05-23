@@ -279,6 +279,49 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
 };
 
 /**
+ * open-worktree-in-new-tab: double-click on a worktree row in the
+ * sidebar. CLAUDE.md's "Tab kinds" promise: single-click activates the
+ * worktree (renders the landing), double-click activates AND spawns a
+ * fresh agent tab pointing at the worktree's cwd. Mirrors the
+ * start-session route's chain so the two gestures stay symmetric.
+ */
+export const handleSidebarOpenWorktreeInNewTab: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "open-worktree-in-new-tab") return false;
+  const worktreeId =
+    (data as { worktreeId?: string } | undefined)?.worktreeId ?? null;
+  if (!worktreeId) return true;
+  // Walk /sidebar/projects to find the parent project + path. Matches
+  // the lookup pattern in handleSidebarSwitchWorktree above.
+  const sidebar =
+    (ctx.stateRef.current.sidebar as
+      | {
+          projects?: {
+            id: string;
+            worktrees?: { id: string; path?: string }[];
+          }[];
+        }
+      | undefined) ?? {};
+  let projectId: string | undefined;
+  let path: string | undefined;
+  for (const project of sidebar.projects ?? []) {
+    const wt = project.worktrees?.find((w) => w.id === worktreeId);
+    if (wt) {
+      projectId = project.id;
+      path = wt.path;
+      break;
+    }
+  }
+  ctx.activateWorktree(worktreeId);
+  if (projectId) ctx.setActiveProjectById(projectId);
+  ctx.setState((prev) => ({ ...prev, landing: null }));
+  ctx.newTab(undefined, undefined, path ? { cwd: path } : undefined);
+  return true;
+};
+
+/**
  * start-session: emitted by the worktree landing's "Start Session" CTA.
  * Activates the worktree (so subsequent new tabs inherit its cwd) and
  * opens a fresh agent tab pointing at the worktree's path. Clears the

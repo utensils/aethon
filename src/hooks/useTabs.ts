@@ -15,7 +15,7 @@ import {
 import { languageFromPath } from "../monaco/language-detection";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import {
-  activeProject,
+  activeCwd,
   type ProjectsState,
 } from "../projects";
 import { getConfig } from "../config";
@@ -455,7 +455,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     // tab's scrollback until the next switch / output event.
     dispatchTerminalReplay("");
     const inheritedCwd =
-      options?.cwd ?? activeProject(projectsRef.current)?.path;
+      options?.cwd ?? activeCwd(projectsRef.current) ?? undefined;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
@@ -482,7 +482,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   }) {
     const id = crypto.randomUUID();
     const inheritedCwd =
-      options?.cwd ?? activeProject(projectsRef.current)?.path;
+      options?.cwd ?? activeCwd(projectsRef.current) ?? undefined;
     const seedShareMode = defaultShareModeRef.current;
     const resolvedCommand =
       options?.command ?? shellDefaultCommandRef.current ?? undefined;

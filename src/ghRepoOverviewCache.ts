@@ -82,6 +82,16 @@ export async function refreshRepoOverview(
   return getRepoOverview(projectPath);
 }
 
+/** Bust every cached entry. Used by the agent's global
+ *  `refreshDashboard()` (no projectPath) and by an extension that needs
+ *  to force a full re-fetch (e.g. after a `gh auth refresh`). Does not
+ *  pre-warm — the next read against each project triggers the gh call.
+ *  In-flight Promises are left alone so they resolve normally and write
+ *  fresh data to the cache. */
+export function clearAllRepoOverviews(): void {
+  cache.clear();
+}
+
 /** Read-only snapshot for code paths that want cached data without
  *  triggering a fetch (e.g. extension queries via aethon API). */
 export function peekRepoOverview(projectPath: string): GhRepoOverview | null {

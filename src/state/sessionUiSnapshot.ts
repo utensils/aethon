@@ -72,16 +72,24 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
   }
   if (typeof input.columns === "string") {
     // Preserve fixed left + right column widths; reset the center to
-    // minmax(0,1fr) so the user's resize sticks across reloads. Two
+    // minmax(0,1fr) so the user's resize sticks across reloads. Three
     // shapes are supported:
-    //   "<L>px minmax(0,1fr)"            (legacy: left sidebar only)
+    //   "<L>px minmax(0,1fr)"            (files sidebar hidden)
     //   "<L>px minmax(0,1fr) <R>px"      (canonical: left + files-right)
-    // Anything else is dropped so the boot payload's default wins.
+    //   (legacy: any old 2-col shape)    → upgrade to 3-col 280px
+    //
+    // Critically: when filesSidebarVisible is explicitly false, the live
+    // grid is 2-col, and we must keep it 2-col on restore — otherwise
+    // the right pane stays hidden but its 280px slot renders as blank
+    // space until the user toggles the panel back.
+    const filesHidden = input.filesSidebarVisible === false;
     const tokens = input.columns.trim().split(/\s+/);
     const first = tokens[0];
     const last = tokens[tokens.length - 1];
     if (tokens.length >= 2 && /^\d+px$/.test(first)) {
-      if (/^\d+px$/.test(last) && tokens.length >= 3) {
+      if (filesHidden) {
+        next.columns = `${first} minmax(0,1fr)`;
+      } else if (/^\d+px$/.test(last) && tokens.length >= 3) {
         next.columns = `${first} minmax(0,1fr) ${last}`;
       } else {
         // Legacy snapshot — let the boot payload's default fill in

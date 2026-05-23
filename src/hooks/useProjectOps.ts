@@ -355,6 +355,7 @@ export function useProjectOps(
         ...prev,
         projects: ps.projects,
         activeProjectId: ps.activeId,
+        activeWorktreeId: ps.activeWorktreeId,
         project: active
           ? { id: active.id, label: active.label, path: active.path }
           : null,

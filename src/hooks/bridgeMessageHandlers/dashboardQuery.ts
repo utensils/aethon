@@ -1,8 +1,14 @@
 import type { BridgeMessageHandler } from "./types";
 import {
+  clearAllRepoOverviews,
   getRepoOverview,
   refreshRepoOverview,
 } from "../../ghRepoOverviewCache";
+import {
+  clearAllIssues,
+  getIssueDetail,
+  getIssues,
+} from "../../ghIssuesCache";
 
 /** Bridge proxy for `aethon.tasks.start` + `aethon.dashboard.{getRepoOverview, refresh}`.
  *
@@ -60,8 +66,39 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       const projectPath = args.projectPath as string | undefined;
       if (projectPath) {
         await refreshRepoOverview(projectPath);
+      } else {
+        // Global refresh — bust every cache entry so the next gh
+        // read for each project triggers a fresh shell-out. Includes
+        // the issues cache so the agent's `refresh()` is genuinely
+        // a "everything is stale, fetch new" gesture.
+        clearAllRepoOverviews();
+        clearAllIssues();
       }
       return { ok: true };
+    }
+
+    if (op === "list_issues") {
+      const projectPath = args.projectPath as string | undefined;
+      if (!projectPath) {
+        throw new Error("list_issues requires projectPath");
+      }
+      const limit =
+        typeof args.limit === "number" ? Math.max(1, Math.min(100, args.limit)) : 30;
+      const issues = await getIssues(projectPath, limit);
+      return { issues, limit };
+    }
+
+    if (op === "get_issue") {
+      const projectPath = args.projectPath as string | undefined;
+      const number =
+        typeof args.number === "number" ? args.number : Number.NaN;
+      if (!projectPath || !Number.isFinite(number) || number <= 0) {
+        throw new Error(
+          "get_issue requires projectPath + positive integer number",
+        );
+      }
+      const detail = await getIssueDetail(projectPath, number);
+      return detail;
     }
 
     throw new Error(`unknown dashboard_query op: ${op}`);

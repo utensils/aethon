@@ -240,3 +240,19 @@ export function activeProject(state: ProjectsState): Project | null {
   if (!state.activeId) return null;
   return state.projects.find((p) => p.id === state.activeId) ?? null;
 }
+
+/** The effective cwd a new tab should open in: the active worktree's
+ *  path when one is set, falling back to the active project's path.
+ *  Used by useTabs.newTab / newShellTab and the file tree so that when
+ *  the user has switched to a worktree, follow-on tabs and the files
+ *  panel both reflect that selection. */
+export function activeCwd(state: ProjectsState): string | null {
+  const project = activeProject(state);
+  if (!project) return null;
+  if (state.activeWorktreeId) {
+    const list = state.worktreesByProject[project.id] ?? [];
+    const wt = list.find((w) => w.id === state.activeWorktreeId);
+    if (wt?.path) return wt.path;
+  }
+  return project.path;
+}

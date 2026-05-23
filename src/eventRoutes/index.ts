@@ -47,6 +47,7 @@ import {
   handleSidebarCreateWorktree,
   handleSidebarSwitchWorktree,
   handleSidebarStartSession,
+  handleSidebarOpenWorktreeInNewTab,
   handleSidebarRemoveWorktree,
   handleSidebarCancelPendingWorktree,
   handleSidebarRetryPendingWorktree,
@@ -101,6 +102,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
       handleSidebarCopyProjectPath,
       handleSidebarCreateWorktree,
       handleSidebarSwitchWorktree,
+      handleSidebarOpenWorktreeInNewTab,
       handleSidebarRemoveWorktree,
       handleSidebarCancelPendingWorktree,
       handleSidebarRetryPendingWorktree,
@@ -128,6 +130,12 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:task-launcher", [handleTaskLauncher]],
     ["type:gh-stats-strip", [handleGhStatsStrip]],
     ["type:project-card", [handleProjectsDashboard]],
+    // Issues section emits the same `start-task` payload as the task
+    // launcher (when the user picks "Send to agent" on an issue row)
+    // and `open-url` for the in-menu "Open on GitHub" affordance.
+    // Reuse the existing handlers so the dispatch chain stays one
+    // implementation.
+    ["type:issues-section", [handleTaskLauncher, handleGhStatsStrip]],
   ]);
 
 /** Dispatch a renderer-side event through the precedence layers.

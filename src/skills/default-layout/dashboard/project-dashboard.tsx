@@ -121,23 +121,41 @@ export function ProjectDashboard({
     [props?.activeWorktreeId, state],
   );
 
-  const [overview, setOverview] = useState<GhRepoOverview | null>(
-    repoOverviewProp,
+  // Key the cached overview by path so switching from project A to
+  // project B doesn't render A's description on top of B's tile. When
+  // the prop changes shape (e.g. an extension overwrites
+  // /projectDashboard/repoOverview) we still respect it as the seed,
+  // but a project change resets to null + re-fetches.
+  const [overview, setOverview] = useState<{
+    path: string;
+    data: GhRepoOverview | null;
+  } | null>(
+    project && repoOverviewProp
+      ? { path: project.path, data: repoOverviewProp }
+      : null,
   );
 
-  // Eager fetch on project activation. The cache handles dedupe.
+  // Eager fetch on project activation. The cache handles dedupe. Drops
+  // the stale entry whenever `project.path` changes so the visible card
+  // doesn't lag a project switch.
   useEffect(() => {
     if (!project) return;
-    if (overview && overview.repo) return;
+    if (overview?.path === project.path && overview.data?.repo) return;
     let cancelled = false;
+    // Optimistic clear so the previous project's strip / description
+    // doesn't briefly render under the new project's title.
+    if (overview && overview.path !== project.path) {
+      setOverview(null);
+    }
     void (async () => {
       const o = await getRepoOverview(project.path);
-      if (!cancelled) setOverview(o);
+      if (!cancelled) setOverview({ path: project.path, data: o });
     })();
     return () => {
       cancelled = true;
     };
   }, [project, overview]);
+  const overviewData = overview?.path === project?.path ? overview?.data : null;
 
   if (!project) return null;
 
@@ -151,9 +169,9 @@ export function ProjectDashboard({
           <div className="a2ui-project-dashboard-header-text">
             <h1 className="a2ui-project-dashboard-title">{project.label}</h1>
             <p className="a2ui-project-dashboard-path">{project.path}</p>
-            {overview?.description && (
+            {overviewData?.description && (
               <p className="a2ui-project-dashboard-description">
-                {overview.description}
+                {overviewData.description}
               </p>
             )}
           </div>
@@ -163,7 +181,7 @@ export function ProjectDashboard({
           component={{
             id: "project-dashboard-stats",
             type: "gh-stats-strip",
-            props: { overview: overview ?? null },
+            props: { overview: overviewData ?? null },
           }}
           state={state}
           onEvent={onEvent}
@@ -183,6 +201,20 @@ export function ProjectDashboard({
             }}
             state={state}
             onEvent={onEvent}
+          />
+        </section>
+
+        <section className="a2ui-project-dashboard-section a2ui-project-dashboard-issues-wrap">
+          <RegistryComponent
+            type="issues-section"
+            state={state}
+            onEvent={(_component, eventType, data) =>
+              onEvent(eventType, data, "issues-section")
+            }
+            componentProps={{
+              project,
+              activeWorktreeIdRef: { $ref: "/activeWorktreeId" },
+            }}
           />
         </section>
 

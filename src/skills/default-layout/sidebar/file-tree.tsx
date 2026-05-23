@@ -143,7 +143,30 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const embedMode = componentProps.embed ?? "left-stack";
   const fillsContainer = embedMode === "right-sidebar";
   const project = state["project"] as ProjectShape | undefined;
-  const projectPath = project?.path ?? "";
+  // Honor the active worktree when one is selected — `/activeWorktreeId`
+  // is mirrored onto root state by useProjectOps. The file tree should
+  // reflect whichever cwd new tabs would inherit so user mental model
+  // stays "file panel = where I'm working." Falls back to the project
+  // root when no worktree is active.
+  const activeWorktreeId = (state["activeWorktreeId"] as string | null) ?? null;
+  const projectPath = (() => {
+    if (activeWorktreeId) {
+      const sidebar = state["sidebar"] as
+        | {
+            projects?: {
+              id?: string;
+              worktrees?: { id?: string; path?: string }[];
+            }[];
+          }
+        | undefined;
+      const projects = sidebar?.projects ?? [];
+      for (const p of projects) {
+        const wt = p.worktrees?.find((w) => w.id === activeWorktreeId);
+        if (wt?.path) return wt.path;
+      }
+    }
+    return project?.path ?? "";
+  })();
 
   // Root node represents the project's working directory. Children are
   // loaded eagerly on mount; switching projects swaps roots.
