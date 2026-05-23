@@ -3357,6 +3357,20 @@ body.ae-resizing-terminal * {
   font-size: 0.88rem;
   margin: 0 0 8px 0;
 }
+/* Settings model picker — flex row carrying either the dropdown or the
+   free-text override input plus a small toggle to swap modes. */
+.ae-settings-model-picker {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.ae-settings-model-picker .ae-settings-input {
+  min-width: 260px;
+}
+.ae-settings-model-picker-toggle {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+}
 .ae-settings-ansi-preview {
   display: flex;
   flex-direction: column;
@@ -4491,6 +4505,180 @@ button.a2ui-gh-stat:hover {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: var(--space-3);
+}
+
+/* ---- Issues section (per-project dashboard) ------------------------- */
+
+.a2ui-dashboard-issues {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.a2ui-dashboard-issues-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.a2ui-dashboard-issues-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.a2ui-dashboard-issues-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  background: var(--bg-elev, var(--bg-input));
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: var(--radius-pill);
+  font-size: var(--chrome-text-muted);
+  min-width: 1.6em;
+  justify-content: center;
+}
+.a2ui-dashboard-issues-refresh {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--chrome-text-muted);
+}
+.a2ui-dashboard-issues-refresh:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.a2ui-dashboard-issues-refresh:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+.a2ui-dashboard-issues-empty {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  padding: var(--space-2) 0;
+  margin: 0;
+}
+.a2ui-dashboard-issues-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.a2ui-dashboard-issue-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+.a2ui-dashboard-issue-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong, var(--border));
+}
+.a2ui-dashboard-issue-line {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+  /* Allow long titles to wrap rather than ellipsize off-screen. */
+}
+.a2ui-dashboard-issue-num {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--chrome-text-muted);
+  flex: 0 0 auto;
+}
+.a2ui-dashboard-issue-title {
+  color: var(--text);
+  font-size: var(--text-md);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.a2ui-dashboard-issue-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-1);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.a2ui-dashboard-issue-author,
+.a2ui-dashboard-issue-updated,
+.a2ui-dashboard-issue-comments {
+  white-space: nowrap;
+}
+.a2ui-dashboard-issue-label {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+.a2ui-dashboard-issue-send {
+  align-self: center;
+  grid-row: 1;
+  grid-column: 2;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--chrome-text-muted);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.a2ui-dashboard-issue-row:hover .a2ui-dashboard-issue-send,
+.a2ui-dashboard-issue-row:focus-within .a2ui-dashboard-issue-send,
+.a2ui-dashboard-issue-send:disabled {
+  opacity: 1;
+}
+.a2ui-dashboard-issue-send:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--text-on-accent, var(--bg));
+  border-color: var(--accent);
+}
+
+/* Lightweight context menu used by the issues section. Mirrors the
+   shape of `.a2ui-context-menu` but stays self-contained until the
+   Phase-2 primitive lands. */
+.a2ui-dashboard-issue-menu {
+  z-index: var(--z-popover);
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3, 0 6px 20px rgba(0, 0, 0, 0.35));
+  padding: var(--space-1);
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-dashboard-issue-menu-item {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-size: var(--text-sm, var(--chrome-text));
+}
+.a2ui-dashboard-issue-menu-item:hover {
+  background: var(--bg-hover);
 }
 .a2ui-project-dashboard-widget {
   background: var(--bg);
