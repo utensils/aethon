@@ -36,6 +36,11 @@ import { NotificationStack } from "./notifications";
 import { SettingsPanel } from "./settings-panel";
 import { SearchPanel } from "./search-panel";
 import { ShareModeBadge } from "./share-mode-badge";
+import { GhStatsStrip } from "./dashboard/gh-stats-strip";
+import { ProjectCard } from "./dashboard/project-card";
+import { TaskLauncher } from "./dashboard/task-launcher";
+import { ProjectsDashboard } from "./dashboard/projects-dashboard";
+import { ProjectDashboard } from "./dashboard/project-dashboard";
 import workstationPayload from "./workstation.a2ui.json";
 
 export {
@@ -113,6 +118,16 @@ export const defaultLayoutSkill: A2UISkill = {
     // custom click-flow or icon set) without rewriting the whole shell
     // status bar.
     "share-mode-badge": ShareModeBadge,
+    // M9 dashboard composites. Each is registered with a stable type so
+    // an extension can swap it via `aethon.registerComponent(<type>, …)`.
+    // gh-stats-strip + project-card are leaf composites; the dashboard
+    // surfaces (projects-dashboard, project-dashboard, task-launcher)
+    // mount alongside.
+    "gh-stats-strip": GhStatsStrip,
+    "project-card": ProjectCard,
+    "task-launcher": TaskLauncher,
+    "projects-dashboard": ProjectsDashboard,
+    "project-dashboard": ProjectDashboard,
   },
   layout: workstationPayload,
 };

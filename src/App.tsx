@@ -1094,10 +1094,73 @@ export default function App() {
     // canvas grid cell at a time.
     const landing = state.landing as { kind?: string } | null | undefined;
     const landingVisible = !!landing && landing.kind === "worktree";
+    const empty = !hasTabs && !landingVisible;
+    // Empty-state branching: when /empty is true we render either the
+    // global projects-dashboard (no project active) or the per-project
+    // dashboard (project active). Both target the canvas slot via the
+    // empty-state slotMap; only one is visible at a time.
+    const hasActiveProject =
+      typeof state.project === "object" && state.project !== null;
+    const emptyAndProject = empty && hasActiveProject;
+    const emptyAndNoProject = empty && !hasActiveProject;
+    // Per-project dashboard inputs derived from existing state. The
+    // composites also tolerate missing/empty arrays so this stays
+    // forward-compatible with extensions injecting more data.
+    const activeProjectId =
+      (state.project as { id?: string } | null | undefined)?.id ?? null;
+    const sidebarProjects =
+      ((state.sidebar as { projects?: unknown } | undefined)
+        ?.projects as
+        | { id: string; worktrees?: unknown }[]
+        | undefined) ?? [];
+    const activeProjectSidebarEntry = sidebarProjects.find(
+      (p) => p.id === activeProjectId,
+    );
+    const projectDashboardWorktrees =
+      (activeProjectSidebarEntry?.worktrees as unknown[] | undefined) ?? [];
+    const recentSessionsArr = Array.isArray(state.recentSessions)
+      ? (state.recentSessions as { cwd?: string }[])
+      : [];
+    const projectPath =
+      (state.project as { path?: string } | null | undefined)?.path ?? null;
+    const projectDashboardSessions = projectPath
+      ? recentSessionsArr.filter((s) => {
+          const sCwd = (s.cwd ?? "").replace(/[/\\]+$/, "");
+          const pCwd = projectPath.replace(/[/\\]+$/, "");
+          return sCwd === pCwd;
+        })
+      : [];
+    const projectsArr = Array.isArray(state.projects)
+      ? (state.projects as { id: string }[])
+      : [];
+    const otherProjects = activeProjectId
+      ? projectsArr.filter((p) => p.id !== activeProjectId)
+      : projectsArr;
+    const existingProjectDashboard =
+      (state.projectDashboard as
+        | { widgets?: unknown[] }
+        | undefined) ?? {};
+    const projectDashboard = {
+      ...existingProjectDashboard,
+      otherProjects,
+      worktrees: projectDashboardWorktrees,
+      recentSessions: projectDashboardSessions,
+      widgets: existingProjectDashboard.widgets ?? [],
+    };
+    const existingProjectsDashboard =
+      (state.projectsDashboard as
+        | { extraCards?: unknown[] }
+        | undefined) ?? {};
+    const projectsDashboard = {
+      ...existingProjectsDashboard,
+      extraCards: existingProjectsDashboard.extraCards ?? [],
+    };
     return {
       ...state,
       hasTabs,
-      empty: !hasTabs && !landingVisible,
+      empty,
+      emptyAndProject,
+      emptyAndNoProject,
       agentTabActive: agentTabActive && !landingVisible,
       shellTabActive: shellTabActive && !landingVisible,
       editorTabActive: editorTabActive && !landingVisible,
@@ -1106,6 +1169,8 @@ export default function App() {
         ...sidebar,
         history,
       },
+      projectDashboard,
+      projectsDashboard,
     };
   }, [buildSidebarHistory, state]);
   const renderRecord = renderState as Record<string, unknown>;

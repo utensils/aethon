@@ -132,18 +132,28 @@
           }
         },
         {
-          "id": "empty-state",
-          "type": "empty-state",
+          "id": "projects-dashboard",
+          "type": "projects-dashboard",
           "props": {
             "area": "empty-state",
-            "visible": { "$ref": "/empty" },
-            "title": "Welcome to Aethon",
-            "subtitle": "All tabs are closed. Start a new conversation or restore a recent session.",
-            "primaryButtonLabel": "New Tab",
-            "secondaryButtonLabel": "Open Project…",
+            "visible": { "$ref": "/emptyAndNoProject" },
+            "projects": { "$ref": "/projects" },
             "recentSessions": { "$ref": "/recentSessions" },
-            "recentProjects": { "$ref": "/projects" },
-            "activeProject": { "$ref": "/project" }
+            "extraCards": { "$ref": "/projectsDashboard/extraCards" }
+          }
+        },
+        {
+          "id": "project-dashboard",
+          "type": "project-dashboard",
+          "props": {
+            "area": "empty-state",
+            "visible": { "$ref": "/emptyAndProject" },
+            "project": { "$ref": "/project" },
+            "otherProjects": { "$ref": "/projectDashboard/otherProjects" },
+            "worktrees": { "$ref": "/projectDashboard/worktrees" },
+            "activeWorktreeId": { "$ref": "/activeWorktreeId" },
+            "recentSessions": { "$ref": "/projectDashboard/recentSessions" },
+            "widgets": { "$ref": "/projectDashboard/widgets" }
           }
         },
         {
