@@ -131,7 +131,9 @@ export const handleFileTree: EventRouteHandler = (
     const payload = asRecord(event.data);
     const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
     if (!filePath) return false;
-    ctx.newEditorTab(filePath);
+    const rootPath = typeof payload.rootPath === "string" ? payload.rootPath : "";
+    if (rootPath) ctx.newEditorTab(filePath, { rootPath });
+    else ctx.newEditorTab(filePath);
     return true;
   }
   if (event.eventType === "file-tree-rename") {

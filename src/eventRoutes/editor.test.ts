@@ -205,13 +205,17 @@ describe("handleFileTree", () => {
       {
         component: { id: "file-tree", type: "file-tree" },
         eventType: "file-tree-open",
-        data: { filePath: "/projects/aethon/src/App.tsx" },
+        data: {
+          filePath: "/projects/aethon/src/App.tsx",
+          rootPath: "/projects/aethon",
+        },
       },
       fx.ctx,
     );
     expect(claimed).toBe(true);
     expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
       "/projects/aethon/src/App.tsx",
+      { rootPath: "/projects/aethon" },
     );
   });
 
