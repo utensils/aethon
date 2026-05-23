@@ -50,7 +50,9 @@ pub fn search_sessions(
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let sessions = home.join(".aethon").join("sessions");
+    let sessions = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?
+        .join("sessions");
     if !sessions.is_dir() {
         return Ok(Vec::new());
     }
@@ -155,7 +157,9 @@ pub fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let sessions_root = home.join(".aethon").join("sessions");
+    let sessions_root = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?
+        .join("sessions");
     let target = sessions_root.join(&tab_id);
     delete_session_dir(target, sessions_root)
 }

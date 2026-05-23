@@ -88,6 +88,45 @@ export interface ShellsApi {
   write(input: { tabId: string; text: string }): Promise<MutationResult>;
 }
 
+/** Agent-side counterpart to the per-project dashboard composer. Gives
+ *  the model UI parity: anything the user can do via the task-launcher
+ *  is reachable from a tool call. */
+export interface TasksApi {
+  /** End-to-end task start: optionally create a worktree, spawn a new
+   *  agent tab with the right cwd, and forward `prompt` as the first
+   *  message. `projectPath` identifies the target project. */
+  start(input: {
+    projectPath: string;
+    prompt: string;
+    newWorktree?: boolean;
+    branch?: string;
+    baseBranch?: string;
+  }): Promise<MutationResult>;
+}
+
+/** Agent-side counterpart to the repo overview / refresh affordances on
+ *  the dashboard. Lets the model answer "what's open right now?" without
+ *  re-shelling `gh` itself. */
+export interface DashboardApi {
+  getRepoOverview(input: {
+    projectPath: string;
+  }): Promise<MutationResult>;
+  refresh(input?: { projectPath?: string }): Promise<MutationResult>;
+  /** Cached open issues for the project. Same data the dashboard
+   *  surface renders, served from the in-memory cache so the model
+   *  doesn't re-shell `gh`. Limit clamps server-side to [1, 100]. */
+  listIssues(input: {
+    projectPath: string;
+    limit?: number;
+  }): Promise<MutationResult>;
+  /** Full issue body (title + url + body + author). Useful for
+   *  preparing a `startTask` payload with the issue context. */
+  getIssue(input: {
+    projectPath: string;
+    number: number;
+  }): Promise<MutationResult>;
+}
+
 export interface AethonApi {
   registerComponent: (
     componentType: string,
@@ -135,6 +174,8 @@ export interface AethonApi {
   getRuntimeSnapshot: () => RuntimeSnapshot;
   canvas: CanvasApi;
   shells: ShellsApi;
+  tasks: TasksApi;
+  dashboard: DashboardApi;
 }
 
 /** Build the aethon API and return it. Callers (main.ts) install it on
@@ -385,6 +426,99 @@ export function buildAethonApi(
     return promise;
   }
 
+  // -- dashboard / tasks pi tools ----------------------------------------
+  async function _dashboardQuery(
+    op: "start_task" | "get_repo_overview" | "refresh",
+    args: Record<string, unknown> = {},
+    timeoutMs?: number,
+  ): Promise<MutationResult> {
+    if (!state.frontendReady) {
+      const ready = await Promise.race<boolean>([
+        state.frontendReadyPromise.then(() => true),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), MUTATION_ACK_TIMEOUT_MS_DEFAULT),
+        ),
+      ]);
+      if (!ready) return { ok: false, error: "frontend_not_ready" };
+    }
+    const { id, promise } = trackMutation(state, timeoutMs);
+    deps.send({ type: "dashboard_query", mutationId: id, op, args });
+    return promise;
+  }
+
+  const tasks: TasksApi = {
+    start: (input) => {
+      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+        return Promise.resolve({ ok: false, error: "projectPath required" });
+      }
+      if (typeof input.prompt !== "string" || !input.prompt.trim()) {
+        return Promise.resolve({ ok: false, error: "prompt required" });
+      }
+      return _dashboardQuery(
+        "start_task",
+        {
+          projectPath: input.projectPath,
+          prompt: input.prompt,
+          ...(typeof input.newWorktree === "boolean"
+            ? { newWorktree: input.newWorktree }
+            : {}),
+          ...(typeof input.branch === "string" ? { branch: input.branch } : {}),
+          ...(typeof input.baseBranch === "string"
+            ? { baseBranch: input.baseBranch }
+            : {}),
+        },
+        // Worktree-create + tab-open + send can take several seconds on a
+        // large repo. 30s is the same ceiling as the shell-write ack
+        // pattern, which is the closest existing precedent.
+        30_000,
+      );
+    },
+  };
+
+  const dashboard: DashboardApi = {
+    getRepoOverview: (input) => {
+      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+        return Promise.resolve({ ok: false, error: "projectPath required" });
+      }
+      return _dashboardQuery("get_repo_overview", {
+        projectPath: input.projectPath,
+      });
+    },
+    refresh: (input) =>
+      _dashboardQuery("refresh", {
+        ...(input && typeof input.projectPath === "string"
+          ? { projectPath: input.projectPath }
+          : {}),
+      }),
+    listIssues: (input) => {
+      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+        return Promise.resolve({ ok: false, error: "projectPath required" });
+      }
+      return _dashboardQuery("list_issues", {
+        projectPath: input.projectPath,
+        ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+      });
+    },
+    getIssue: (input) => {
+      if (
+        !input ||
+        typeof input.projectPath !== "string" ||
+        !input.projectPath ||
+        typeof input.number !== "number" ||
+        input.number <= 0
+      ) {
+        return Promise.resolve({
+          ok: false,
+          error: "projectPath + positive integer number required",
+        });
+      }
+      return _dashboardQuery("get_issue", {
+        projectPath: input.projectPath,
+        number: input.number,
+      });
+    },
+  };
+
   const shells: ShellsApi = {
     list: () => _shellQuery("list"),
     read: (input) => {
@@ -469,6 +603,8 @@ export function buildAethonApi(
     getRuntimeSnapshot: () => deps.getRuntimeSnapshot(),
     canvas: makeCanvasApi(state, stateMutationDeps, undefined),
     shells,
+    tasks,
+    dashboard,
   };
 }
 

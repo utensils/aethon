@@ -5,7 +5,7 @@
  * that pairs message history with a live-rendered A2UI subtree.
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import type {
@@ -808,6 +808,46 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   // contain chat history scrolling). Track the chat-input rect so we can
   // anchor the menu in fixed coordinates above it.
   const inputContainerRef = useRef<HTMLDivElement>(null);
+
+  // User-resizable composer. Drag the top edge to grow / shrink the
+  // textarea — height is clamped to keep the chat above usable. Reset
+  // happens via the boot default; we don't persist across sessions yet
+  // since the layout's auto-rows already hold a sensible default.
+  const COMPOSER_MIN_HEIGHT = 46;
+  const COMPOSER_MAX_HEIGHT = 360;
+  const [composerHeight, setComposerHeight] = useState<number>(70);
+  const composerResizeRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  const startComposerResize = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      composerResizeRef.current = {
+        startY: e.clientY,
+        startH: composerHeight,
+      };
+      document.body.classList.add("ae-resizing-composer");
+      const onMove = (ev: MouseEvent) => {
+        const ref = composerResizeRef.current;
+        if (!ref) return;
+        // Drag UP = grow (dy positive).
+        const dy = ref.startY - ev.clientY;
+        const next = Math.max(
+          COMPOSER_MIN_HEIGHT,
+          Math.min(COMPOSER_MAX_HEIGHT, Math.round(ref.startH + dy)),
+        );
+        setComposerHeight(next);
+      };
+      const onUp = () => {
+        composerResizeRef.current = null;
+        document.body.classList.remove("ae-resizing-composer");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [composerHeight],
+  );
   const [menuAnchor, setMenuAnchor] = useState<{
     left: number;
     bottom: number;
@@ -938,7 +978,22 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   };
 
   return (
-    <div className="a2ui-chat-input" ref={inputContainerRef}>
+    <div
+      className="a2ui-chat-input"
+      ref={inputContainerRef}
+      style={{ "--composer-height": `${composerHeight}px` } as React.CSSProperties}
+    >
+      {/* Resize handle — drag UP to grow, DOWN to shrink. Sits on the
+          top edge so the cursor naturally targets it when the user
+          wants more room without changing where the textarea lives. */}
+      <div
+        className="a2ui-chat-input-resize"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize composer"
+        title="Drag to resize composer"
+        onMouseDown={startComposerResize}
+      />
       {slashMatch && menuAnchor &&
         createPortal(
           <div
@@ -1014,58 +1069,75 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           </div>,
           document.body,
         )}
-      <textarea
-        className="a2ui-chat-input-field"
-        rows={2}
-        placeholder={placeholder}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-      />
-      {/* Queue badge — visible when the user has stacked messages behind
-          an in-flight prompt. Sits between the textarea and the action
-          button so it's near the input but doesn't compete with Stop. */}
-      {queueCount > 0 && (
-        <span
-          className="a2ui-chat-input-queue"
-          title={`${queueCount} message${queueCount === 1 ? "" : "s"} queued behind the current prompt`}
-        >
-          {queueBadgeFormat.replace("{n}", String(queueCount))}
-        </span>
-      )}
-      {busy ? (
-        <button
-          type="button"
-          className="a2ui-chat-input-send a2ui-chat-input-stop"
-          onClick={handleStop}
-          title={stopTitle}
-        >
-          {stopLabel}
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="a2ui-chat-input-send"
-          onClick={handleClick}
-          disabled={value.trim().length === 0}
-        >
-          <svg
-            className="a2ui-chat-input-send-icon"
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+      {/* Wrap the textarea and action button so Send sits INSIDE the
+          textarea visually (absolute-positioned, bottom-right). Right
+          padding on the textarea makes room for the button so text
+          never runs under it. */}
+      <div className="a2ui-chat-input-field-wrap">
+        <textarea
+          className="a2ui-chat-input-field"
+          placeholder={placeholder}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+        />
+        {/* Queue badge — visible when the user has stacked messages
+            behind an in-flight prompt. Sits inside the wrap to the
+            left of the Send/Stop button. */}
+        {queueCount > 0 && (
+          <span
+            className="a2ui-chat-input-queue"
+            title={`${queueCount} message${queueCount === 1 ? "" : "s"} queued behind the current prompt`}
           >
-            <path d="M2 8l11-5-4 11-2-5-5-1z" />
-          </svg>
-          <span>{sendLabel}</span>
-        </button>
-      )}
+            {queueBadgeFormat.replace("{n}", String(queueCount))}
+          </span>
+        )}
+        {busy ? (
+          <button
+            type="button"
+            className="a2ui-chat-input-send a2ui-chat-input-stop"
+            onClick={handleStop}
+            title={stopTitle}
+            aria-label={stopLabel}
+          >
+            <svg
+              className="a2ui-chat-input-send-icon"
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+            </svg>
+            <span className="a2ui-chat-input-send-label">{stopLabel}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="a2ui-chat-input-send"
+            onClick={handleClick}
+            disabled={value.trim().length === 0}
+            aria-label={sendLabel}
+            title={`${sendLabel} (Enter)`}
+          >
+            <svg
+              className="a2ui-chat-input-send-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M2 8l11-5-4 11-2-5-5-1z" />
+            </svg>
+            <span className="a2ui-chat-input-send-label">{sendLabel}</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

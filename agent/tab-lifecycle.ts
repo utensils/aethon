@@ -21,6 +21,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "./shell-tools";
+import { buildDashboardTools } from "./dashboard-tools";
 import { logger } from "./logger";
 import { extractAgentEndError } from "./agent-errors";
 import { findSessionFileMatchingCwd } from "./session-history";
@@ -604,7 +605,7 @@ export async function ensureTab(
     settingsManager: state.settingsManager,
     sessionManager,
     resourceLoader: state.resourceLoader,
-    customTools: buildShellTools(),
+    customTools: [...buildShellTools(), ...buildDashboardTools()],
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });
 

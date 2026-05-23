@@ -490,6 +490,16 @@ export default function App() {
     setActiveProjectById,
     clearActiveProject,
     removeProjectById,
+    setProjectExpanded,
+    refreshProjectWorktrees,
+    activateWorktree,
+    createWorktreeForProject,
+    createWorktreeWithParams,
+    removeWorktreeById,
+    dismissPendingWorktree,
+    retryPendingWorktree,
+    renameWorktree,
+    renameProject,
   } = useProjectOps({
     setState,
     stateRef,
@@ -579,6 +589,97 @@ export default function App() {
   });
 
   // ---------------------------------------------------------------------
+  // Dashboard task launch orchestrator. Shared by the per-project
+  // dashboard composer event route AND the agent-side `startTask` pi
+  // tool, so both surfaces drive the same worktree-create + new-tab +
+  // first-message chain.
+  // ---------------------------------------------------------------------
+  const startTaskInProject = useCallback(
+    async (opts: {
+      projectId: string;
+      prompt: string;
+      newWorktree?: boolean;
+      branch?: string;
+      baseBranch?: string;
+      worktreeId?: string;
+    }): Promise<void> => {
+      const project = projectsRef.current.projects.find(
+        (p) => p.id === opts.projectId,
+      );
+      if (!project) {
+        pushNotificationRef.current({
+          title: "Could not start task",
+          message: "Project no longer exists.",
+          kind: "warning",
+        });
+        return;
+      }
+      let cwd = project.path;
+      if (opts.newWorktree) {
+        const branch = (opts.branch ?? "").trim();
+        if (!branch) {
+          pushNotificationRef.current({
+            title: "New worktree needs a branch name",
+            message: "Enter a branch name in the launcher before starting.",
+            kind: "warning",
+          });
+          return;
+        }
+        const created = await createWorktreeWithParams({
+          projectId: opts.projectId,
+          branch,
+          baseBranch: opts.baseBranch,
+        });
+        if (!created) {
+          pushNotificationRef.current({
+            title: "Worktree create failed",
+            message: `Could not create '${branch}'. See the sidebar's pending row for details.`,
+            kind: "warning",
+          });
+          return;
+        }
+        cwd = created;
+      } else if (opts.worktreeId) {
+        // Existing-worktree path — switch the active worktree and use
+        // its path as the new tab's cwd.
+        const list =
+          projectsRef.current.worktreesByProject[opts.projectId] ?? [];
+        const wt = list.find((w) => w.id === opts.worktreeId);
+        if (wt) {
+          cwd = wt.path;
+          activateWorktree(wt.id);
+        }
+      }
+      // Ensure the project we're launching into is the active one so the
+      // new tab lands in the right per-project bucket.
+      if (projectsRef.current.activeId !== opts.projectId) {
+        setActiveProjectById(opts.projectId);
+      }
+      const tabId = crypto.randomUUID();
+      newTab(tabId, undefined, { cwd });
+      const opening = pendingTabOpens.current.get(tabId);
+      if (opening) {
+        try {
+          await opening;
+        } catch {
+          /* tab open failed; sendChat below will no-op */
+        }
+      }
+      const trimmed = opts.prompt.trim();
+      if (trimmed) await sendChat(trimmed);
+    },
+    [
+      activateWorktree,
+      createWorktreeWithParams,
+      newTab,
+      pendingTabOpens,
+      projectsRef,
+      sendChat,
+      setActiveProjectById,
+    ],
+  );
+
+  // ---------------------------------------------------------------------
   // Focus + chrome toggles — terminal panel, composer/terminal focus
   // shuttle, sidebar toggle.
   // ---------------------------------------------------------------------
@@ -588,6 +689,7 @@ export default function App() {
     toggleFocusComposerTerminal,
     focusActiveContextInput,
     toggleSidebar,
+    toggleFilesSidebar,
   } = useFocus({ setState, stateRef });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
@@ -692,6 +794,7 @@ export default function App() {
       recentSessionItems,
       syncRecentSessionsToState,
       routeShellWrite,
+      startTaskInProject,
     },
   });
 
@@ -704,6 +807,7 @@ export default function App() {
     shortcutsNewTabKindRef,
     toggleTerminalAndFocus,
     toggleSidebar,
+    toggleFilesSidebar,
     toggleEditorPreview,
     clearChat,
     stopPrompt,
@@ -781,6 +885,7 @@ export default function App() {
     clearChat,
     stopPrompt,
     toggleTerminal,
+    toggleFilesSidebar,
     pushNotification,
     dismissNotification,
     checkForUpdates,
@@ -836,6 +941,7 @@ export default function App() {
       },
       toggleTerminal,
       toggleSidebar,
+      toggleFilesSidebar,
       activateLayout: activateLayoutById,
       listLayouts: () =>
         layoutCatalogueRef.current.map((l) => ({
@@ -962,6 +1068,16 @@ export default function App() {
       setActiveProjectById,
       removeProjectById,
       syncRecentSessionsToState,
+      setProjectExpanded,
+      refreshProjectWorktrees,
+      activateWorktree,
+      createWorktreeForProject,
+      startTaskInProject,
+      removeWorktreeById,
+      dismissPendingWorktree,
+      retryPendingWorktree,
+      renameWorktree,
+      renameProject,
       invoke,
       writeState,
     }),
@@ -1007,17 +1123,89 @@ export default function App() {
     // produced them.
     const { agentTabActive, shellTabActive, editorTabActive } =
       deriveTabActiveFlags(tabs, state.activeTabId as string | undefined);
+    // Worktree landing — when /landing.kind === "worktree" the
+    // landing page takes over the canvas slot. Suppress every other
+    // canvas's visibility flag so only one component draws into the
+    // canvas grid cell at a time.
+    const landing = state.landing as { kind?: string } | null | undefined;
+    const landingVisible = !!landing && landing.kind === "worktree";
+    const empty = !hasTabs && !landingVisible;
+    // Empty-state branching: when /empty is true we render either the
+    // global projects-dashboard (no project active) or the per-project
+    // dashboard (project active). Both target the canvas slot via the
+    // empty-state slotMap; only one is visible at a time.
+    const hasActiveProject =
+      typeof state.project === "object" && state.project !== null;
+    const emptyAndProject = empty && hasActiveProject;
+    const emptyAndNoProject = empty && !hasActiveProject;
+    // Per-project dashboard inputs derived from existing state. The
+    // composites also tolerate missing/empty arrays so this stays
+    // forward-compatible with extensions injecting more data.
+    const activeProjectId =
+      (state.project as { id?: string } | null | undefined)?.id ?? null;
+    const sidebarProjects =
+      ((state.sidebar as { projects?: unknown } | undefined)
+        ?.projects as
+        | { id: string; worktrees?: unknown }[]
+        | undefined) ?? [];
+    const activeProjectSidebarEntry = sidebarProjects.find(
+      (p) => p.id === activeProjectId,
+    );
+    const projectDashboardWorktrees =
+      (activeProjectSidebarEntry?.worktrees as unknown[] | undefined) ?? [];
+    const recentSessionsArr = Array.isArray(state.recentSessions)
+      ? (state.recentSessions as { cwd?: string }[])
+      : [];
+    const projectPath =
+      (state.project as { path?: string } | null | undefined)?.path ?? null;
+    const projectDashboardSessions = projectPath
+      ? recentSessionsArr.filter((s) => {
+          const sCwd = (s.cwd ?? "").replace(/[/\\]+$/, "");
+          const pCwd = projectPath.replace(/[/\\]+$/, "");
+          return sCwd === pCwd;
+        })
+      : [];
+    const projectsArr = Array.isArray(state.projects)
+      ? (state.projects as { id: string }[])
+      : [];
+    const otherProjects = activeProjectId
+      ? projectsArr.filter((p) => p.id !== activeProjectId)
+      : projectsArr;
+    const existingProjectDashboard =
+      (state.projectDashboard as
+        | { widgets?: unknown[] }
+        | undefined) ?? {};
+    const projectDashboard = {
+      ...existingProjectDashboard,
+      otherProjects,
+      worktrees: projectDashboardWorktrees,
+      recentSessions: projectDashboardSessions,
+      widgets: existingProjectDashboard.widgets ?? [],
+    };
+    const existingProjectsDashboard =
+      (state.projectsDashboard as
+        | { extraCards?: unknown[] }
+        | undefined) ?? {};
+    const projectsDashboard = {
+      ...existingProjectsDashboard,
+      extraCards: existingProjectsDashboard.extraCards ?? [],
+    };
     return {
       ...state,
       hasTabs,
-      empty: !hasTabs,
-      agentTabActive,
-      shellTabActive,
-      editorTabActive,
+      empty,
+      emptyAndProject,
+      emptyAndNoProject,
+      agentTabActive: agentTabActive && !landingVisible,
+      shellTabActive: shellTabActive && !landingVisible,
+      editorTabActive: editorTabActive && !landingVisible,
+      landingVisible,
       sidebar: {
         ...sidebar,
         history,
       },
+      projectDashboard,
+      projectsDashboard,
     };
   }, [buildSidebarHistory, state]);
   const renderRecord = renderState as Record<string, unknown>;

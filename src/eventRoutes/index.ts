@@ -43,8 +43,28 @@ import {
   handleSidebarRenameSession,
   handleSidebarToggleExtension,
   handleSectionedSelect,
+  handleSidebarToggleProjectExpand,
+  handleSidebarCreateWorktree,
+  handleSidebarSwitchWorktree,
+  handleSidebarStartSession,
+  handleSidebarOpenWorktreeInNewTab,
+  handleSidebarRemoveWorktree,
+  handleSidebarCancelPendingWorktree,
+  handleSidebarRetryPendingWorktree,
+  handleSidebarRenameWorktree,
+  handleSidebarOpenProjectInFinder,
+  handleSidebarCopyProjectPath,
+  handleSidebarOpenWorktreeInFinder,
+  handleSidebarCopyWorktreePath,
+  handleSidebarRenameProject,
 } from "./sidebar";
 import { handleEditorCanvas, handleFileTree } from "./editor";
+import {
+  handleProjectsDashboard,
+  handleProjectDashboard,
+  handleTaskLauncher,
+  handleGhStatsStrip,
+} from "./dashboard";
 
 /** Lookup table for built-in routes. Keys are `id:<componentId>` or
  *  `type:<componentType>`. The dispatcher computes both keys for an
@@ -65,10 +85,30 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:command-palette", [handlePalette]],
     ["type:chat-input", [handleChatInput]],
     ["type:empty-state", [handleEmptyState]],
+    // Worktree landing — "Start Session" + "Open in Files" CTAs reuse
+    // the sidebar's worktree routes since the destination semantics
+    // are identical.
+    ["type:worktree-landing", [
+      handleSidebarStartSession,
+      handleSidebarOpenWorktreeInFinder,
+    ]],
     ["type:sidebar", [
       handleSidebarResize,
       handleSidebarResizeEnd,
+      handleSidebarToggleProjectExpand,
+      handleSidebarRenameProject,
       handleSidebarRemoveProject,
+      handleSidebarOpenProjectInFinder,
+      handleSidebarCopyProjectPath,
+      handleSidebarCreateWorktree,
+      handleSidebarSwitchWorktree,
+      handleSidebarOpenWorktreeInNewTab,
+      handleSidebarRemoveWorktree,
+      handleSidebarCancelPendingWorktree,
+      handleSidebarRetryPendingWorktree,
+      handleSidebarRenameWorktree,
+      handleSidebarOpenWorktreeInFinder,
+      handleSidebarCopyWorktreePath,
       handleSidebarDeleteSession,
       handleSidebarRenameSession,
       handleSidebarToggleExtension,
@@ -82,6 +122,20 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:share-mode-badge", [handleShareModeCycle]],
     ["type:editor-canvas", [handleEditorCanvas]],
     ["type:file-tree", [handleFileTree]],
+    // M9 dashboard surfaces. Keyed by type so a custom dashboard
+    // (registered via aethon.registerComponent) routes through the
+    // same handlers without an alias entry.
+    ["type:projects-dashboard", [handleProjectsDashboard]],
+    ["type:project-dashboard", [handleProjectDashboard]],
+    ["type:task-launcher", [handleTaskLauncher]],
+    ["type:gh-stats-strip", [handleGhStatsStrip]],
+    ["type:project-card", [handleProjectsDashboard]],
+    // Issues section emits the same `start-task` payload as the task
+    // launcher (when the user picks "Send to agent" on an issue row)
+    // and `open-url` for the in-menu "Open on GitHub" affordance.
+    // Reuse the existing handlers so the dispatch chain stays one
+    // implementation.
+    ["type:issues-section", [handleTaskLauncher, handleGhStatsStrip]],
   ]);
 
 /** Dispatch a renderer-side event through the precedence layers.

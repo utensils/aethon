@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "8"
 uuid = { version = "1.23.1", features = ["v4"] }
-tokio = { version = "1.52.1", features = ["net", "io-util", "time", "sync"] }
+tokio = { version = "1.52.1", features = ["net", "io-util", "time", "sync", "process", "macros"] }
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = "0.22"
 tauri-plugin-process = "2.3.1"
@@ -37,6 +37,10 @@ base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1.52.1", features = ["macros", "rt"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

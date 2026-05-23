@@ -46,6 +46,7 @@ export interface UseOsEdgesContext {
 
   // ─── Focus + chrome ─────────────────────────────────────────────────
   toggleTerminal: () => void;
+  toggleFilesSidebar: () => void;
 
   // ─── Notifications ──────────────────────────────────────────────────
   pushNotification: (n: NotificationInput) => string;
@@ -92,6 +93,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
     clearChat,
     stopPrompt,
     toggleTerminal,
+    toggleFilesSidebar,
     pushNotification,
     dismissNotification,
     checkForUpdates,
@@ -350,6 +352,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
           window.dispatchEvent(new Event("aethon:toggle-file-tree"));
           break;
         }
+        case "toggle_files_sidebar": toggleFilesSidebar(); break;
         case "clear_chat": clearChat(); break;
         case "stop_prompt": void stopPrompt(); break;
         case "check_updates": {

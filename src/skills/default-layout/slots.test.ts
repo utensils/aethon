@@ -15,6 +15,7 @@ describe("layout-slot catalogue", () => {
     expect(SLOT_NAMES).toEqual([
       "header",
       "sidebar",
+      "files-sidebar",
       "tabs",
       "canvas",
       "terminal",
@@ -55,6 +56,8 @@ describe("inspectLayoutSlotCoverage — built-in layouts", () => {
     // The redesign moves the chrome tab strip into the header container so
     // only seven of the eight canonical slots are filled. `tabs` is the
     // missing one — the slot stays canonical, just unused at this layer.
+    // tabs is hoisted into the header container, so it stays canonical
+    // but unfilled at this layer.
     const expected = [...SLOT_NAMES].filter((s) => s !== "tabs").sort();
     expect([...r.filledSlots].sort()).toEqual(expected);
     // workstation uses {$ref} for `areas` so the inspector tags it.

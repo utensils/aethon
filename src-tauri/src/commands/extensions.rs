@@ -138,6 +138,10 @@ pub fn install_app_menu(
     let toggle_files = MenuItemBuilder::with_id("toggle_files", "Toggle Files")
         .accelerator("CmdOrCtrl+J")
         .build(app)?;
+    let toggle_files_sidebar =
+        MenuItemBuilder::with_id("toggle_files_sidebar", "Toggle Files Sidebar")
+            .accelerator("CmdOrCtrl+D")
+            .build(app)?;
     let clear_chat = MenuItemBuilder::with_id("clear_chat", "Clear Chat")
         .accelerator("CmdOrCtrl+K")
         .build(app)?;
@@ -190,6 +194,7 @@ pub fn install_app_menu(
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
         .item(&toggle_files)
+        .item(&toggle_files_sidebar)
         .item(&clear_chat)
         .item(&stop_prompt)
         .build()?;
@@ -197,6 +202,7 @@ pub fn install_app_menu(
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&toggle_terminal)
         .item(&toggle_files)
+        .item(&toggle_files_sidebar)
         .item(&clear_chat)
         .item(&stop_prompt)
         .separator()
@@ -353,10 +359,11 @@ pub fn install_tray(
         // recognizable at status-bar size; template rendering would
         // strip the orange and lose the identity.
         .icon_as_template(false)
-        // macOS HIG: left-click activates, right-click shows the menu.
-        // On Linux/Windows the menu opens on left-click by default,
-        // which matches their conventions — leave as the platform default.
-        .show_menu_on_left_click(!cfg!(target_os = "macos"))
+        // Left + right click both open the menu — matches Linux / Windows
+        // out of the box and makes the macOS tray icon discoverable.
+        // (The earlier macOS-only left-click-to-activate handler felt
+        // broken to users because nothing visible happened.)
+        .show_menu_on_left_click(true)
         .menu(&menu)
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -521,8 +528,12 @@ pub fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
     if let Some(h) = home {
         // ~/.aethon/extensions belongs to us — create it on boot so a
         // first-time extension drop fires Create events and the agent
-        // hot-reloads without a manual restart.
-        let aethon_ext = h.join(".aethon/extensions");
+        // hot-reloads without a manual restart. `helpers::aethon_dir`
+        // honors the `AETHON_USER_DIR` override so `dev.sh --new` lands
+        // the sandboxed extensions in the per-PID tmp tree.
+        let aethon_root = crate::helpers::aethon_dir(Some(h.clone()))
+            .unwrap_or_else(|| h.join(".aethon"));
+        let aethon_ext = aethon_root.join("extensions");
         let _ = std::fs::create_dir_all(&aethon_ext);
         if aethon_ext.exists() {
             watch_paths.push(aethon_ext);
@@ -551,7 +562,7 @@ pub fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // retained for back-compat with existing installs. Pre-create so
         // a first `npm install --prefix ~/.aethon/skills <pkg>` triggers
         // a reload without needing to restart the app.
-        let skills_modules = h.join(".aethon/skills/node_modules");
+        let skills_modules = aethon_root.join("skills").join("node_modules");
         let _ = std::fs::create_dir_all(&skills_modules);
         if skills_modules.exists() {
             watch_paths.push(skills_modules);
@@ -560,7 +571,7 @@ pub fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         // extension packaging required). Pre-create so the first theme drop
         // fires Create events and triggers an agent respawn that picks it
         // up via loadAethonThemeDirectory.
-        let themes_dir = h.join(".aethon/themes");
+        let themes_dir = aethon_root.join("themes");
         let _ = std::fs::create_dir_all(&themes_dir);
         if themes_dir.exists() {
             watch_paths.push(themes_dir);
@@ -800,7 +811,9 @@ pub async fn install_aethon_extension(
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let skills_dir = home.join(".aethon").join("skills");
+    let skills_dir = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?
+        .join("skills");
     let install_dir = skills_dir.clone();
     let install_spec = spec.clone();
     let path_override = resolved_login_path();

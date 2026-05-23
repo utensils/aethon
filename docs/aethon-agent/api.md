@@ -590,6 +590,44 @@ so handlers can read or drive shells without going through the global.
 Tools `listShells` / `readShell` / `writeShell` register automatically;
 the model can use them via the standard tool-use protocol.
 
+### `tasks.start / dashboard.getRepoOverview / dashboard.refresh`
+
+Agent-side counterparts to the per-project dashboard's task launcher
++ stats strip + refresh affordance. Gives the model UI parity:
+whatever the user can do via the dashboard composer is reachable from
+a tool call.
+
+```ts
+aethon.tasks.start({
+  projectPath,                // absolute fs path of the target project
+  prompt,                     // the first chat message to send
+  newWorktree?: boolean,      // create a fresh git worktree first
+  branch?: string,            // required when newWorktree is true
+  baseBranch?: string,        // base to fork from (defaults to HEAD)
+});
+// → { ok: true, data: { projectId } }
+//   Worktree-create + new-tab + send first message run as one chain;
+//   the resolved Promise fires after the prompt lands in the new tab.
+
+aethon.dashboard.getRepoOverview({ projectPath });
+// → { ok: true, data: GhRepoOverview }
+//   Cached gh repo data: stars, forks, open issues, open PRs, default
+//   branch, last pushed timestamp. 5-minute live TTL.
+
+aethon.dashboard.refresh({ projectPath? });
+// → { ok: true }
+//   Bust the gh cache for one project (or omit projectPath to do nothing
+//   beyond a no-op ack — useful as a barrier after an external change).
+```
+
+The same three actions register as pi tools `startTask` /
+`getRepoOverview` / `refreshDashboard` so the model can drive them
+directly via the standard tool-use protocol. The matching UI events
+on the dashboard composites (`start-task`, `select-project-card`,
+`switch-worktree`, …) route through the same App-level
+`startTaskInProject` orchestrator, so a user click and an agent tool
+call follow identical code paths.
+
 ## Lifecycle
 
 ### `onUnload(fn)`

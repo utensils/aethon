@@ -55,7 +55,7 @@ export function filterExtensionSummariesByProject<
   });
 }
 
-/** Built-in themes always available. CSS for these lives in styles.css —
+/** Built-in themes always available. CSS for these lives in src/styles/themes.css —
  *  we don't inject a <style> tag for them. */
 export const BUILTIN_THEMES: { id: string; label: string }[] = [
   { id: "ember", label: "Ember — warm dark" },

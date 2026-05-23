@@ -11,7 +11,7 @@
  * from `getComputedStyle` introduced timing races on cold start
  * (theme persistence loaded after the canvas had already read the
  * default vars) and the reflection added more complexity than it
- * saved. The palette here is the same one in `src/styles.css` for
+ * saved. The palette here is the same one in `src/styles/themes.css` for
  * each `:root[data-theme="…"]` block — both should move together.
  *
  * Overrides: skills/extensions can replace any registered theme via

@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { removeProject, upsertProject, type ProjectsState } from "./projects";
+import {
+  emptyProjectsState,
+  migrateProjects,
+  removeProject,
+  setActiveWorktree,
+  setProjectUiExpanded,
+  setProjectWorktrees,
+  upsertProject,
+  type ProjectsState,
+} from "./projects";
 
 function stateWithProjects(): ProjectsState {
-  const first = upsertProject(
-    { projects: [], activeId: null },
-    "/Users/example/aethon",
-  ).state;
+  const first = upsertProject(emptyProjectsState(), "/Users/example/aethon").state;
   return upsertProject(first, "/Users/example/latentforge").state;
 }
 
@@ -38,5 +44,97 @@ describe("removeProject", () => {
     const result = removeProject(state, inactive.id);
 
     expect(result.state.activeId).toBe(activeId);
+  });
+
+  it("drops the project's worktrees + clears activeWorktreeId when removing", () => {
+    let state = stateWithProjects();
+    const target = state.projects[0];
+    state = setProjectWorktrees(state, target.id, [
+      {
+        id: "wt-x",
+        projectId: target.id,
+        path: "/Users/example/aethon",
+        branch: "main",
+        isMain: true,
+      },
+    ]);
+    state = setActiveWorktree(state, "wt-x");
+    const result = removeProject(state, target.id);
+    expect(result.state.worktreesByProject[target.id]).toBeUndefined();
+    expect(result.state.activeWorktreeId).toBeNull();
+  });
+});
+
+describe("migrateProjects", () => {
+  it("upgrades a v1 file (no schemaVersion, no worktreesByProject)", () => {
+    const v1 = {
+      projects: [
+        {
+          id: "a",
+          label: "aethon",
+          path: "/Users/example/aethon",
+          lastUsed: 1,
+        },
+      ],
+      activeId: "a",
+    };
+    const out = migrateProjects(v1);
+    expect(out.projects).toHaveLength(1);
+    expect(out.activeId).toBe("a");
+    expect(out.activeWorktreeId).toBeNull();
+    expect(out.worktreesByProject).toEqual({});
+  });
+
+  it("is idempotent on v2 data", () => {
+    const v2 = {
+      schemaVersion: 2,
+      projects: [
+        {
+          id: "a",
+          label: "aethon",
+          path: "/Users/example/aethon",
+          lastUsed: 1,
+        },
+      ],
+      activeId: "a",
+      activeWorktreeId: "wt-1",
+      worktreesByProject: {
+        a: [{ id: "wt-1", projectId: "a", path: "/a", branch: "main", isMain: true }],
+      },
+    };
+    const out = migrateProjects(v2);
+    expect(out).toEqual({
+      projects: v2.projects,
+      activeId: "a",
+      activeWorktreeId: "wt-1",
+      worktreesByProject: v2.worktreesByProject,
+    });
+  });
+
+  it("drops invalid worktree entries", () => {
+    const out = migrateProjects({
+      schemaVersion: 2,
+      projects: [{ id: "a", label: "a", path: "/a", lastUsed: 1 }],
+      activeId: "a",
+      activeWorktreeId: null,
+      worktreesByProject: {
+        a: [
+          { id: "wt-1", projectId: "a", path: "/a", branch: "main", isMain: true },
+          // Junk entries — missing id / path / projectId.
+          { branch: "x" } as never,
+        ],
+      },
+    });
+    expect(out.worktreesByProject.a).toHaveLength(1);
+  });
+});
+
+describe("setProjectUiExpanded", () => {
+  it("toggles uiExpanded on the target project only", () => {
+    const state = stateWithProjects();
+    const target = state.projects[0];
+    const next = setProjectUiExpanded(state, target.id, true);
+    expect(next.projects.find((p) => p.id === target.id)?.uiExpanded).toBe(true);
+    expect(next.projects.find((p) => p.id !== target.id)?.uiExpanded).toBeUndefined();
   });
 });

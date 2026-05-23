@@ -125,7 +125,8 @@ impl WindowStateStore {
 
 fn state_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     let home = app.path().home_dir().map_err(|e| format!("home_dir: {e}"))?;
-    let dir = home.join(".aethon");
+    let dir = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     Ok(dir.join(STATE_FILE))
 }

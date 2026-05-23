@@ -15,6 +15,19 @@ export interface ItemRowProps {
   renderChildWithState: BuiltinComponentProps["renderChildWithState"];
   state: BuiltinComponentProps["state"];
   index: number;
+  /** When set, render a disclosure caret in front of the label so the
+   *  caller can show / hide nested rows below this one. The caret reflects
+   *  the current state; the row itself stays clickable for "select". */
+  disclosure?: "expanded" | "collapsed";
+  /** Click handler for the disclosure caret only; toggles independent of
+   *  row selection so the user can expand without switching projects. */
+  onToggleDisclosure?: () => void;
+  /** Reserve the same horizontal space for the disclosure chevron and
+   *  the git dirty-dot whether or not this row actually has them.
+   *  Projects section sets this so a repo without worktrees aligns its
+   *  label at the same x-coordinate as a sibling project with worktrees.
+   *  Other sections (panels, history) leave it off so they stay tight. */
+  alignSlots?: boolean;
 }
 
 export function ItemRow({
@@ -27,6 +40,9 @@ export function ItemRow({
   renderChildWithState,
   state,
   index,
+  disclosure,
+  onToggleDisclosure,
+  alignSlots,
 }: ItemRowProps) {
   if (item.componentType && renderChildWithState) {
     const synthetic: A2UIComponent = {
@@ -73,6 +89,7 @@ export function ItemRow({
         "a2ui-sidebar-item",
         item.active ? "a2ui-sidebar-item-active" : "",
         monoItems ? "a2ui-sidebar-item-mono" : "",
+        disclosure ? `a2ui-sidebar-item-discl-${disclosure}` : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -80,12 +97,53 @@ export function ItemRow({
       onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
       onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
+      {disclosure ? (
+        <button
+          type="button"
+          className={`a2ui-sidebar-item-discl a2ui-sidebar-item-discl-${disclosure}`}
+          aria-label={disclosure === "expanded" ? "Collapse" : "Expand"}
+          aria-expanded={disclosure === "expanded"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDisclosure?.();
+          }}
+        >
+          {/* Inline SVG instead of Unicode ▸/▾ — the geometric glyphs
+              render tiny at any font size because their metric box is
+              vertically thin. SVG scales exactly to the 12×12 viewport
+              so the chevron actually reads on Paper / Ember alike.
+              `currentColor` so the parent's `color:` controls fill. */}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d={
+                disclosure === "expanded"
+                  ? "M2.5 4.5L6 8L9.5 4.5"
+                  : "M4.5 2.5L8 6L4.5 9.5"
+              }
+            />
+          </svg>
+        </button>
+      ) : alignSlots ? (
+        <span className="a2ui-sidebar-item-discl-spacer" aria-hidden="true" />
+      ) : null}
       {git?.dirty ? (
         <span
           className="a2ui-sidebar-item-git-dot"
           aria-hidden="true"
           title="Uncommitted changes"
         />
+      ) : alignSlots ? (
+        <span className="a2ui-sidebar-item-git-dot-spacer" aria-hidden="true" />
       ) : null}
       <span className="a2ui-sidebar-item-label">{item.label}</span>
       {git?.branch ? (

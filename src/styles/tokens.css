@@ -1,0 +1,85 @@
+/* Aethon design tokens — shape vocabulary.
+ *
+ * Theme-agnostic. Color + state colors live in themes.css; chrome rules
+ * consume both via var(--…). Extensions can override individual tokens
+ * either globally (:root) or per-theme (:root[data-theme="<id>"]).
+ *
+ * Categories: typography, spacing, radius, z-index, opacity, easing,
+ * motion timing, focus ring shape, app-level layout. */
+
+:root {
+  /* Typography — Geist (UI) + Geist Mono (mono); Inter and JetBrains
+     Mono fall back gracefully when Google Fonts is unreachable. */
+  --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:
+    "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+  --text-2xs: 0.72rem;
+  --text-xs: 0.78rem;
+  --text-sm: 0.86rem;
+  --text-md: 0.95rem;
+  --text-lg: 1.08rem;
+  --text-xl: 1.4rem;
+  --chrome-text: var(--text-sm);
+  --chrome-text-compact: var(--text-xs);
+  --chrome-text-muted: var(--text-2xs);
+  /* Shared by both sidebars (left projects/worktrees + right file tree)
+     so they read as one family. Density toggles can multiply this in
+     one place. */
+  --font-size-sidebar: var(--text-md);
+
+  /* Spacing — 4px base. Use these in chrome rules instead of magic px. */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius — pill for chips, circle for dots, sm/md for inputs/cards. */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  /* Z-index scale. Higher = on top. Used by overlays and popovers. */
+  --z-base: 0;
+  --z-elevated: 2;
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-sticky-strong: 200;
+  --z-overlay: 1000;
+  --z-popover: 1100;
+  --z-modal: 1200;
+  --z-toast: 1300;
+  --z-tooltip: 1400;
+
+  /* Opacity — semantic. */
+  --opacity-disabled: 0.45;
+  --opacity-muted: 0.7;
+  --opacity-overlay-scrim: 0.5;
+
+  /* Easing — paired with --motion-* below for transition shorthands. */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Motion timing — overridden by prefers-reduced-motion in themes.css. */
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-slow: 240ms;
+
+  /* App layout — UI scale + viewport normalization. */
+  --app-ui-scale: 1;
+  --app-viewport-width: 100dvw;
+  --app-viewport-height: 100dvh;
+
+  font-family: var(--font-ui);
+}

@@ -42,6 +42,21 @@ devshell exposes these helpers (defined in `flake.nix`):
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
 
+`scripts/dev.sh` carries two state-sandbox flags (mirroring Claudette):
+
+- `dev --new` — spin up against an empty `~/.aethon`. Points
+  `AETHON_USER_DIR` at `${TMPDIR}/aethon-dev/new-<pid>/` so the launch
+  sees no config, no projects, no window state, no themes. Removed on
+  exit. Use to exercise first-run UX, missing-config flows, fresh
+  extension loading, or to A/B against a real user dir without
+  copying. Most code that touches `~/.aethon` honors the override —
+  the resolver is `helpers::aethon_dir`, used by config / sessions /
+  pastes / logs / window state / extensions / skills.
+- `dev --clean` — standalone nuke. Wipes
+  `${TMPDIR}/aethon-dev/` (per-PID `--new` sandboxes + dev-info files)
+  and exits without launching. No PID checks; use after a SIGKILL
+  left stale state.
+
 To run a single test file: `bunx vitest run agent/terminal-stream.test.ts`.
 To run tests matching a name: `bunx vitest run -t "test name pattern"`.
 To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
@@ -143,9 +158,10 @@ helpers: `src/utils/jsonPointer.ts` and `src/utils/dataBinding.ts`.
 
 **3. Two registries.** Primitive React components live in
 `src/components/primitives/` (`text.tsx`, `controls.tsx`, `form.tsx`,
-`layout.tsx`, `media.tsx`); the registry that wires them is built in
-`src/components/builtins.tsx` and consumed by `A2UIRenderer.tsx` as a
-hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout primitives (`text`,
+`layout.tsx`, `media.tsx`, `context-menu.tsx`); the registry that wires
+them is built in `src/components/builtins.tsx` and consumed by
+`A2UIRenderer.tsx` as a hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout
+primitives (`text`,
 `heading`, `paragraph`, `code`, `card`, `button`, `container`,
 `divider`, `image`, `icon`, `text-input`, `date-picker`, `select`,
 `checkbox`, `slider`, `form`, `form-field`, `list`, `table`) — these
@@ -199,7 +215,8 @@ console) can swap chrome at runtime:
 | `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                        |
 | `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                         |
 | `Cmd+\``                      | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                              |
-| `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                |
+| `Cmd+B`                       | Toggle left sidebar (projects)                                                                                                                                                                |
+| `Cmd+D`                       | Toggle right sidebar (files)                                                                                                                                                                  |
 | `Cmd+K`                       | Clear chat                                                                                                                                                                                    |
 | `Cmd+.`                       | Stop current prompt                                                                                                                                                                           |
 | `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                 |
@@ -325,14 +342,36 @@ capture-phase keydown handler keyed off a `navRef` so focus theft and
 content swaps don't strand the selection — see the comments in
 `command-palette.tsx` before refactoring.
 
-### Projects
+### Projects and worktrees
 
 Pi sessions are scoped to a working directory. `src/projects.ts` persists
-the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) and
-the active project's path is passed as `cwd` on `tab_open`. **Existing
-tabs keep the cwd they were created with** — switching the active project
-only affects new tabs. When updating tab/session code, treat the per-tab
-cwd as immutable.
+the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) under
+schemaVersion 2; a v1→v2 migration runs on first read so older builds
+still resolve. The active project's path is passed as `cwd` on `tab_open`.
+**Existing tabs keep the cwd they were created with** — switching the
+active project only affects new tabs. When updating tab/session code,
+treat the per-tab cwd as immutable.
+
+Worktrees attach to projects via `src/worktrees.ts`. The Rust shell
+exposes `git_worktrees`, `git_worktree_add`, `git_worktree_remove`, and
+`git_branch_list` in `src-tauri/src/commands/git.rs`; the frontend
+reconciles fresh listings against in-memory state by path so stable ids
++ user labels survive polls. A "pending" worktree is a live UI object
+(queued → starting → succeeded | failed) — Codex pattern — that the
+user can cancel / retry / dismiss directly in the sidebar. The
+worktree-aware projects render nested under their parent project with
+a disclosure caret (sidebar item carries `worktrees` + `expanded`).
+
+### File icons (Material Icon Theme)
+
+The file tree renders Material Icon Theme SVGs vendored under
+`src/file-icons/icons/` (subset of PKief/vscode-material-icon-theme, MIT
+license — see `src/file-icons/LICENSE` + `SOURCE.md`). `iconForPath`
+(`src/file-icons/index.ts`) resolves a filesystem entry to a bundled
+asset URL via basename → extension → fallback. The `<FileIcon>` wrapper
+in `src/components/file-icon.tsx` is what file-tree rows use today.
+Adding new icons is a vendor-and-map operation: drop the SVG into
+`icons/`, add an import + mapping in `manifest.ts`.
 
 ### Monaco editor + file tree
 
@@ -402,6 +441,65 @@ Mutation: `registerComponent`, `setState`, `setLayout`, `patchLayout`,
 `getRuntimeSnapshot` — these let the agent answer "what's loaded?"
 without scraping the filesystem. The same data is also written to
 `$AETHON_STATE_FILE` so a `cat` works without an introspection round-trip.
+
+Per-surface subnamespaces — each backed by a `*_query` bridge message
+and matching frontend handler:
+
+- `aethon.shells.{list, read, write}` — opt-in shell-tab sharing.
+- `aethon.tasks.start({projectPath, prompt, newWorktree?, branch?, baseBranch?})`
+  — UI parity for the per-project dashboard composer. Spawns a
+  worktree (when requested), opens a new agent tab in the right cwd,
+  and forwards the prompt as the first user message.
+- `aethon.dashboard.{getRepoOverview, refresh, listIssues, getIssue}` —
+  cached gh repo data (stars/forks/issues/PRs/default branch/pushed),
+  cache-bust, the open issues list, and a single issue's body.
+  `listIssues` is the same data the per-project dashboard's Issues
+  section renders; `getIssue` returns the full body so the agent can
+  prepare a `startTask` payload from an issue.
+
+The five dashboard pi tools (`startTask`, `getRepoOverview`,
+`refreshDashboard`, `listOpenIssues`, `getOpenIssue`) register
+automatically in `agent/dashboard-tools.ts` so the model can drive
+them via the standard tool-use protocol.
+
+### Dashboard surfaces (M9)
+
+Empty-state replaced by two visibility-gated composites in
+`workstation.a2ui.json`: `projects-dashboard` (when `/empty && !/project`)
+and `project-dashboard` (when `/empty && /project`). Both target the
+`canvas` slot via the existing `empty-state` slotMap. Six chrome
+composite types — `projects-dashboard`, `project-dashboard`,
+`task-launcher`, `project-card`, `gh-stats-strip`, `issues-section`
+— all registered in `defaultLayoutSkill.components` and swappable via
+`aethon.registerComponent`. Live data via `$ref`:
+`/projectsDashboard/extraCards` (extension-injected tiles on the
+global dashboard) and `/projectDashboard/widgets` (extension-injected
+cards on the per-project dashboard); push entries with
+`aethon.patchState`. gh repo data is cached in
+`src/ghRepoOverviewCache.ts` (5-min live TTL, 30-min negative). Issues
+get their own cache in `src/ghIssuesCache.ts` (90-s live, 60-s
+negative; cap clamped server-side to 100 issues). Project cards
+lazy-fetch on IntersectionObserver entry; the per-project dashboard
+fetches eagerly on activation. Issues section lazy-fetches when it
+scrolls into view to keep the dashboard's initial paint cheap.
+
+Per the codex audit on PR #73 we use `gh issue list -q length` for
+the open-issue count instead of `repos/<r>.open_issues_count` (which
+counts PRs + issues together). Branch names with slashes are
+percent-encoded before going into `repos/<r>/branches/{x}` so
+`feat/foo` doesn't 404. Active worktree is mirrored to root state
+`/activeWorktreeId` so the file tree and `newTab` cwd both follow
+the sidebar selection (mirroring is in `useProjectOps.syncProjectsToState`).
+
+Issue row interaction model: left-click opens the issue in the user's
+browser (`tauri-plugin-opener|open_url`); right-click pops a
+lightweight context menu (Open on GitHub · Send to agent · Copy URL);
+the hover-revealed "→ Agent" button is the keyboard-equivalent for
+"Send to agent." The send-to-agent path forwards through the same
+`start-task` event the task launcher uses, so UI parity with the pi
+tool stays one code path. The agent receives a markdown-formatted
+prompt (title + url + author + body) and lands in whichever worktree
+the user has activated.
 
 ### Event flow gotcha
 

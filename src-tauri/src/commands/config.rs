@@ -26,7 +26,8 @@ pub(crate) fn aethon_state_path(app: &AppHandle, name: &str) -> Result<PathBuf, 
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let dir = home.join(".aethon");
+    let dir = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     Ok(dir.join(name))
 }
@@ -108,7 +109,8 @@ pub fn aethon_home_dir(app: AppHandle) -> Result<String, String> {
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let dir = home.join(".aethon");
+    let dir = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     Ok(dir.to_string_lossy().into_owned())
 }

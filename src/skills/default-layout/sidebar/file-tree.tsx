@@ -23,10 +23,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readState, writeState } from "../../../persist";
-import { clampFixedOverlay } from "../../../utils/zoom-probe";
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "../../../components/primitives/context-menu";
+import { FileIcon } from "../../../components/file-icon";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 interface FsEntry {
@@ -129,10 +132,41 @@ function readPanelPrefs(raw: string): PanelPrefs {
   return {};
 }
 
+
 export function FileTreePanel({ component, state, onEvent }: BuiltinComponentProps) {
-  void component;
+  const componentProps = (component.props as { embed?: string } | undefined) ?? {};
+  // When `embed === "right-sidebar"` the file tree fills its parent grid
+  // cell vertically — the parent area controls height, so the internal
+  // resize handle + hide button are dropped. The "left-stack" default
+  // (no embed prop) keeps the legacy resize-as-bottom-panel behavior
+  // for custom layouts still using the old shape.
+  const embedMode = componentProps.embed ?? "left-stack";
+  const fillsContainer = embedMode === "right-sidebar";
   const project = state["project"] as ProjectShape | undefined;
-  const projectPath = project?.path ?? "";
+  // Honor the active worktree when one is selected — `/activeWorktreeId`
+  // is mirrored onto root state by useProjectOps. The file tree should
+  // reflect whichever cwd new tabs would inherit so user mental model
+  // stays "file panel = where I'm working." Falls back to the project
+  // root when no worktree is active.
+  const activeWorktreeId = (state["activeWorktreeId"] as string | null) ?? null;
+  const projectPath = (() => {
+    if (activeWorktreeId) {
+      const sidebar = state["sidebar"] as
+        | {
+            projects?: {
+              id?: string;
+              worktrees?: { id?: string; path?: string }[];
+            }[];
+          }
+        | undefined;
+      const projects = sidebar?.projects ?? [];
+      for (const p of projects) {
+        const wt = p.worktrees?.find((w) => w.id === activeWorktreeId);
+        if (wt?.path) return wt.path;
+      }
+    }
+    return project?.path ?? "";
+  })();
 
   // Root node represents the project's working directory. Children are
   // loaded eagerly on mount; switching projects swaps roots.
@@ -393,33 +427,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const onRowContextMenu = (e: React.MouseEvent, node: TreeNode) => {
     e.preventDefault();
     e.stopPropagation();
-    // Translate clientX/Y into the layout frame `position: fixed`
-    // actually uses. On WebKit at zoom != 1 the two frames diverge,
-    // which previously left the menu drifted away from the cursor;
-    // `clampFixedOverlay` divides by zoom on the engines that need
-    // it (no-op on Chromium / at zoom 1). Same Claudette pattern the
-    // Monaco context-view fix uses.
-    const { x, y } = clampFixedOverlay(e.clientX, e.clientY, 220, 220);
-    setContextMenu({ x, y, node });
+    // Raw client coords; the ContextMenu primitive clamps + corrects
+    // for WebKit zoom-frame drift before positioning.
+    setContextMenu({ x: e.clientX, y: e.clientY, node });
   };
-
-  // Close the menu on any outside interaction. Mirrors the existing
-  // Sidebar context-menu UX so the pattern is consistent.
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("click", close);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("click", close);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", close);
-    };
-  }, [contextMenu]);
 
   // Pop a folder out of the tree's children cache so the next expand
   // re-fetches it. Used after create/rename/delete so the tree reflects
@@ -614,6 +625,36 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     }
   };
 
+  const onContextRevealInFinder = async () => {
+    if (!contextMenu) return;
+    const path = contextMenu.node.entry.path;
+    closeContextMenu();
+    // Rust command requires `root` so paths are gated by the active
+    // project root (matches the read/write/delete commands).
+    try {
+      await invoke("fs_reveal_in_file_manager", {
+        root: projectPath,
+        path,
+      });
+    } catch (err) {
+      window.alert(`Reveal failed: ${String(err)}`);
+    }
+  };
+
+  const onContextOpenWithDefault = async () => {
+    if (!contextMenu) return;
+    const path = contextMenu.node.entry.path;
+    closeContextMenu();
+    try {
+      await invoke("fs_open_in_default_app", {
+        root: projectPath,
+        path,
+      });
+    } catch (err) {
+      window.alert(`Open failed: ${String(err)}`);
+    }
+  };
+
   if (hidden) {
     // Panel toggled off. Render nothing so the flex container collapses
     // and other sidebar sections claim the space. The toggle event
@@ -646,6 +687,69 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     document.addEventListener("mouseup", onUp);
   };
 
+  // Items array for the right-click menu. Memoizing on the contextMenu
+  // identity is enough here — handlers reference state via closures and
+  // close over a stable `contextMenu` per render, so changing the menu
+  // target rebuilds the items, and `setContextMenu(null)` collapses
+  // them to an empty list.
+  const fileTreeMenuItems: ContextMenuItem[] = contextMenu
+    ? [
+        { id: "new-file", label: "New File…", onSelect: onContextNewFile },
+        {
+          id: "new-folder",
+          label: "New Folder…",
+          onSelect: onContextNewFolder,
+        },
+        { type: "separator" },
+        {
+          id: "reveal-in-finder",
+          label: "Reveal in File Manager",
+          onSelect: onContextRevealInFinder,
+        },
+        {
+          id: "open-with-default",
+          label: "Open with default app",
+          disabled: contextMenu.node.entry.kind !== "file",
+          onSelect: onContextOpenWithDefault,
+        },
+        { type: "separator" },
+        { id: "rename", label: "Rename…", onSelect: onContextRename },
+        {
+          id: "delete",
+          label: "Move to Trash…",
+          danger: true,
+          onSelect: onContextDelete,
+        },
+        { type: "separator" },
+        { id: "copy-path", label: "Copy Path", onSelect: onContextCopyPath },
+        {
+          id: "copy-rel",
+          label: "Copy Relative Path",
+          onSelect: onContextCopyRelativePath,
+        },
+      ]
+    : [];
+
+  // Project label + active worktree branch — shown in the panel header
+  // so the user always knows whose files they're looking at without
+  // hopping up to the sidebar projects list. Derived from the same
+  // /sidebar/projects path the sidebar reads from.
+  const sidebarProjects =
+    ((state.sidebar as Record<string, unknown> | undefined)?.projects as
+      | Array<{
+          id: string;
+          label?: string;
+          active?: boolean;
+          worktrees?: Array<{ id: string; label?: string; branch?: string; active?: boolean }>;
+          git?: { branch?: string };
+        }>
+      | undefined) ?? [];
+  const activeProject = sidebarProjects.find((p) => p.active === true);
+  const activeWorktree = activeProject?.worktrees?.find((w) => w.active === true);
+  const headerLabel = activeProject?.label ?? project?.name ?? "files";
+  const headerBranch =
+    activeWorktree?.label ?? activeWorktree?.branch ?? activeProject?.git?.branch;
+
   const titleRow = (
     <div className="ae-file-tree-titlebar">
       <button
@@ -659,24 +763,33 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         <span className="ae-file-tree-chevron" aria-hidden="true">
           {collapsed ? "▸" : "▾"}
         </span>
-        <span className="ae-file-tree-title">files</span>
+        <span className="ae-file-tree-title">{headerLabel}</span>
+        {headerBranch ? (
+          <span className="ae-file-tree-branch">{headerBranch}</span>
+        ) : null}
       </button>
-      <button
-        type="button"
-        className="ae-file-tree-hide"
-        aria-label="Hide files panel"
-        title="Hide files panel"
-        onClick={() => setHidden(true)}
-      >
-        ×
-      </button>
+      {fillsContainer ? null : (
+        <button
+          type="button"
+          className="ae-file-tree-hide"
+          aria-label="Hide files panel"
+          title="Hide files panel"
+          onClick={() => setHidden(true)}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 
-  // Style honors the collapsed (just header) + resizable (height) state.
-  const panelStyle: React.CSSProperties = collapsed
-    ? { flex: "0 0 auto" }
-    : { flex: `0 0 ${height}px` };
+  // In right-sidebar embed, the grid cell controls height — fill it.
+  // In legacy left-stack mode, use the resizable flex-basis pattern so
+  // custom layouts that haven't migrated keep working.
+  const panelStyle: React.CSSProperties = fillsContainer
+    ? { flex: "1 1 auto", minHeight: 0 }
+    : collapsed
+      ? { flex: "0 0 auto" }
+      : { flex: `0 0 ${height}px` };
 
   if (!projectPath) {
     return (
@@ -747,7 +860,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       aria-label="Project files"
       style={panelStyle}
     >
-      {!collapsed && (
+      {!collapsed && !fillsContainer && (
         <div
           className="ae-file-tree-resize-handle"
           role="separator"
@@ -770,68 +883,17 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           ))}
         </ul>
       )}
-      {contextMenu &&
-        createPortal(
-          <div
-            className="a2ui-sidebar-context-menu ae-file-tree-context-menu"
-            role="menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextNewFile}
-            >
-              New File…
-            </button>
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextNewFolder}
-            >
-              New Folder…
-            </button>
-            <div className="a2ui-sidebar-context-menu-sep" />
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextRename}
-            >
-              Rename…
-            </button>
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextDelete}
-            >
-              Move to Trash…
-            </button>
-            <div className="a2ui-sidebar-context-menu-sep" />
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextCopyPath}
-            >
-              Copy Path
-            </button>
-            <button
-              type="button"
-              className="a2ui-sidebar-context-menu-item"
-              role="menuitem"
-              onClick={onContextCopyRelativePath}
-            >
-              Copy Relative Path
-            </button>
-          </div>,
-          document.body,
-        )}
+      <ContextMenu
+        open={!!contextMenu}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        items={fileTreeMenuItems}
+        onClose={() => setContextMenu(null)}
+        ariaLabel="File operations"
+        className="ae-file-tree-context-menu"
+        estimatedWidth={240}
+        estimatedHeight={260}
+      />
     </div>
   );
 }
@@ -846,7 +908,6 @@ interface FileTreeRowProps {
 function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProps) {
   const indent = (node.depth - 1) * 12;
   const isDir = node.entry.kind === "dir";
-  const icon = isDir ? (expanded ? "▾" : "▸") : "  ";
   return (
     <li
       role="treeitem"
@@ -858,7 +919,22 @@ function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProp
       onContextMenu={onContextMenu}
       title={node.entry.path}
     >
-      <span className="ae-file-tree-icon" aria-hidden="true">{icon}</span>
+      {isDir ? (
+        <span
+          className="ae-file-tree-chevron-row"
+          aria-hidden="true"
+        >
+          {expanded ? "▾" : "▸"}
+        </span>
+      ) : (
+        <span className="ae-file-tree-chevron-row ae-file-tree-chevron-spacer" />
+      )}
+      <FileIcon
+        path={node.entry.path}
+        isDir={isDir}
+        open={isDir && expanded}
+        className="ae-file-tree-icon"
+      />
       <span className="ae-file-tree-label">{node.entry.name}</span>
       {node.loading && <span className="ae-file-tree-loading" aria-hidden="true">…</span>}
     </li>

@@ -11,6 +11,22 @@
 #   - The skill needs to know the actual debug port without the user
 #     typing it. dev-info.json gives it a single discovery file.
 #
+# Flags:
+#   --new       Spin up a fresh user — points AETHON_USER_DIR at a
+#               per-PID tmp tree so the launch sees no existing state
+#               and nothing it writes leaks back to the real user.
+#               Removed on exit. Useful for first-run UX checks
+#               (welcome card, onboarding, missing config), plugin /
+#               theme loaders against an empty install, and any flow
+#               that should exercise "what does a brand-new user see?"
+#               Modeled on claudette/scripts/dev.sh --new.
+#
+#   --clean     Standalone NUKE action — wipes ${TMPDIR:-/tmp}/aethon-dev/
+#               (the directory --new sandboxes live under) and exits
+#               without launching. No PID checks — running --new
+#               sandboxes get swept too. Use after a SIGKILL leaves a
+#               stale sandbox behind.
+#
 # Env vars consumed:
 #   AETHON_VITE_PORT_BASE      starting port for Vite (default 1420)
 #   AETHON_DEBUG_PORT_BASE     starting port for the debug server (default 19433)
@@ -19,13 +35,81 @@
 # Env vars set for the child:
 #   VITE_PORT                  the chosen Vite port (vite.config.ts honors this)
 #   AETHON_DEBUG_PORT          the chosen debug port (src-tauri/src/debug.rs honors this)
+#   AETHON_USER_DIR            (--new only) per-PID tmp ~/.aethon override
 #   TAURI_CONFIG               JSON patch overriding devUrl so Tauri loads the right port
 
 set -euo pipefail
 
 VITE_BASE="${AETHON_VITE_PORT_BASE:-1420}"
 DEBUG_BASE="${AETHON_DEBUG_PORT_BASE:-19433}"
-DEV_INFO="${HOME}/.aethon/dev-info.json"
+SANDBOX_ROOT_DIR="${TMPDIR:-/tmp}/aethon-dev"
+
+# Parse our own flags before forwarding the rest to `cargo tauri dev`.
+# Stashed in arrays so we keep ordering for the eventual `exec`.
+new_session=0
+clean_action=0
+passthrough_args=()
+while (( $# )); do
+  case "$1" in
+    --new)
+      new_session=1
+      ;;
+    --clean)
+      clean_action=1
+      ;;
+    -h|--help)
+      sed -n '2,40p' "$0"
+      exit 0
+      ;;
+    --)
+      shift
+      passthrough_args+=("$@")
+      break
+      ;;
+    *)
+      passthrough_args+=("$1")
+      ;;
+  esac
+  shift
+done
+set -- "${passthrough_args[@]+"${passthrough_args[@]}"}"
+
+# --clean: top-level nuke. Mirrors claudette's behavior — no PID checks,
+# so any --new run still in flight loses its sandbox. The user asked
+# for nuke; that's nuke. Runs before cwd is settled so `dev --clean`
+# works from anywhere.
+if (( clean_action )); then
+  if [[ ! -d "$SANDBOX_ROOT_DIR" ]]; then
+    echo "[dev.sh] no aethon-dev state at $SANDBOX_ROOT_DIR — nothing to clean"
+    exit 0
+  fi
+  echo "▸ Nuking $SANDBOX_ROOT_DIR"
+  removed=0
+  for entry in "$SANDBOX_ROOT_DIR"/* "$SANDBOX_ROOT_DIR"/.[!.]* "$SANDBOX_ROOT_DIR"/..?*; do
+    [[ -e "$entry" ]] || continue
+    echo "  removed: $(basename "$entry")"
+    rm -rf "$entry"
+    removed=$((removed + 1))
+  done
+  rmdir "$SANDBOX_ROOT_DIR" 2>/dev/null || true
+  echo "[dev.sh] nuked $removed entries under $SANDBOX_ROOT_DIR"
+  exit 0
+fi
+
+# Per-PID sandbox + the discovery file inside it. When --new is off
+# we stay on the real ~/.aethon and write the discovery file there.
+sandbox_dir=""
+if (( new_session )); then
+  mkdir -p "$SANDBOX_ROOT_DIR"
+  sandbox_dir="$SANDBOX_ROOT_DIR/new-$$"
+  mkdir -p "$sandbox_dir"
+  export AETHON_USER_DIR="$sandbox_dir"
+  DEV_INFO="$sandbox_dir/dev-info.json"
+  echo "▸ Fresh-user session: $sandbox_dir"
+  echo "▸ AETHON_USER_DIR=$AETHON_USER_DIR"
+else
+  DEV_INFO="${HOME}/.aethon/dev-info.json"
+fi
 
 ensure_frontend_deps() {
   if [[ "${AETHON_SKIP_BUN_INSTALL:-0}" == "1" ]]; then
@@ -105,7 +189,17 @@ cat >"$TMP" <<EOF
 }
 EOF
 mv "$TMP" "$DEV_INFO"
-trap 'rm -f "$DEV_INFO"' EXIT INT TERM
+
+# Cleanup: always remove the discovery file; remove the --new sandbox
+# tree too. INT / TERM forwarded so a SIGINT (Ctrl+C) doesn't leave a
+# stale tree behind on the user's next launch.
+cleanup() {
+  rm -f "$DEV_INFO"
+  if [[ -n "$sandbox_dir" && -d "$sandbox_dir" ]]; then
+    rm -rf "$sandbox_dir"
+  fi
+}
+trap cleanup EXIT INT TERM
 
 export VITE_PORT
 export AETHON_DEBUG_PORT="$DEBUG_PORT"

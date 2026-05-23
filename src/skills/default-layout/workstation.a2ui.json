@@ -84,40 +84,31 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
-                  },
-                  {
-                    "id": "extensions",
-                    "title": "extensions",
-                    "items": { "$ref": "/sidebar/extensions" }
-                  },
-                  {
-                    "id": "panels",
-                    "title": "panels",
-                    "items": [
-                      { "id": "toggle-terminal", "label": "Toggle Terminal", "hint": "⌘`" },
-                      { "id": "toggle-file-tree", "label": "Toggle Files", "hint": "⌘J" },
-                      { "id": "clear-chat", "label": "Clear Chat", "hint": "⌘K" }
-                    ]
-                  },
-                  {
-                    "id": "themes",
-                    "title": "themes",
-                    "monoItems": true,
-                    "items": { "$ref": "/sidebar/themes" }
-                  },
-                  {
-                    "id": "history",
-                    "title": "chat history",
-                    "items": { "$ref": "/sidebar/history" }
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }
               }
-            },
+            }
+          ]
+        },
+        {
+          "id": "files-sidebar-area",
+          "type": "container",
+          "props": {
+            "area": "files-sidebar",
+            "direction": "column",
+            "gap": 0,
+            "padding": 0,
+            "className": "ae-files-sidebar-area",
+            "visible": { "$ref": "/layout/filesSidebarVisible" }
+          },
+          "children": [
             {
               "id": "file-tree",
               "type": "file-tree",
-              "props": {}
+              "props": {
+                "embed": "right-sidebar"
+              }
             }
           ]
         },
@@ -141,18 +132,37 @@
           }
         },
         {
-          "id": "empty-state",
-          "type": "empty-state",
+          "id": "projects-dashboard",
+          "type": "projects-dashboard",
           "props": {
             "area": "empty-state",
-            "visible": { "$ref": "/empty" },
-            "title": "Welcome to Aethon",
-            "subtitle": "All tabs are closed. Start a new conversation or restore a recent session.",
-            "primaryButtonLabel": "New Tab",
-            "secondaryButtonLabel": "Open Project…",
+            "visible": { "$ref": "/emptyAndNoProject" },
+            "projects": { "$ref": "/projects" },
             "recentSessions": { "$ref": "/recentSessions" },
-            "recentProjects": { "$ref": "/projects" },
-            "activeProject": { "$ref": "/project" }
+            "extraCards": { "$ref": "/projectsDashboard/extraCards" }
+          }
+        },
+        {
+          "id": "project-dashboard",
+          "type": "project-dashboard",
+          "props": {
+            "area": "empty-state",
+            "visible": { "$ref": "/emptyAndProject" },
+            "project": { "$ref": "/project" },
+            "otherProjects": { "$ref": "/projectDashboard/otherProjects" },
+            "worktrees": { "$ref": "/projectDashboard/worktrees" },
+            "activeWorktreeId": { "$ref": "/activeWorktreeId" },
+            "recentSessions": { "$ref": "/projectDashboard/recentSessions" },
+            "widgets": { "$ref": "/projectDashboard/widgets" }
+          }
+        },
+        {
+          "id": "worktree-landing",
+          "type": "worktree-landing",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/landingVisible" },
+            "landing": { "$ref": "/landing" }
           }
         },
         {
@@ -205,6 +215,8 @@
     "agentTabActive": true,
     "shellTabActive": false,
     "editorTabActive": false,
+    "landingVisible": false,
+    "landing": null,
     "recentSessions": [],
     "agentStatus": {
       "label": "agent live",
@@ -212,14 +224,15 @@
     },
     "layout": {
       "sidebarVisible": true,
-      "columns": "220px minmax(0,1fr)",
+      "filesSidebarVisible": true,
+      "columns": "220px minmax(0,1fr) 280px",
       "rows": "38px minmax(0,1fr) auto auto auto",
       "areas": [
-        "sidebar header",
-        "sidebar canvas",
-        "sidebar terminal",
-        "sidebar composer",
-        "status status"
+        "sidebar header files-sidebar",
+        "sidebar canvas files-sidebar",
+        "sidebar terminal files-sidebar",
+        "sidebar composer files-sidebar",
+        "status status status"
       ]
     },
     "sidebar": {

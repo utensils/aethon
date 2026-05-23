@@ -41,7 +41,9 @@ describe("sessionUiSnapshot", () => {
         { id: "tab-a", label: "A", messages: [{ text: "hi" }] },
         { id: "tab-b", label: "B", canvas: { type: "card" } },
       ],
-      layout: { sidebarVisible: true, columns: "300px minmax(0,1fr)" },
+      // Legacy 2-column snapshot upgrades to the new 3-column shape on
+      // restore so older sessions still see the right files-sidebar.
+      layout: { sidebarVisible: true, columns: "300px minmax(0,1fr) 280px" },
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 240 },
       projectModels: { "project-1": "anthropic/claude-opus-4-7" },
@@ -116,7 +118,9 @@ describe("sessionUiSnapshot", () => {
 
     expect(loadSessionUiSnapshot()?.layout).toEqual({
       sidebarVisible: true,
-      columns: "256px minmax(0,1fr)",
+      // Canonical 3-column shape — left + right widths round-trip
+      // verbatim so the user's resize sticks.
+      columns: "256px minmax(0,1fr) 360px",
     });
   });
 });

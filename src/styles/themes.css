@@ -1,0 +1,306 @@
+/* Aethon theme palettes — color + state tokens per theme.
+ *
+ * Four ship-ready themes: `ember` (default), `paper`, `aether`/`signature`,
+ * `brink`. Each block sets the color tokens consumed by chrome.css. The
+ * App sets `data-theme="<id>"` on <html>; extensions can register new
+ * palettes via `aethon.registerTheme`.
+ *
+ * Each theme also defines interaction-color tokens (--bg-hover, --bg-active,
+ * --bg-selected, --border-hover, --border-strong) and shadow tokens
+ * (--shadow-1..3, --shadow-overlay) sized for the palette's mood. */
+
+/* Ember — warm near-black, cream Bodoni text, brass orange accent.
+   `:root` aliases ember so the app boots in ember even before
+   data-theme is set. */
+:root,
+:root[data-theme="ember"] {
+  color-scheme: dark;
+  --bg: #161618;
+  --bg-elev: #1f1f23;
+  --bg-input: #25252a;
+  --bg-hover: #26262a;
+  --bg-active: #2c2c30;
+  --bg-selected: rgba(255, 106, 24, 0.14);
+  --border: #2e2e34;
+  --border-hover: #38383e;
+  --border-strong: #4a4a50;
+  --text: #fef3e2;
+  --text-secondary: #c8c2b3;
+  --text-dim: #9c9a92;
+  --accent: #ff6a18;
+  --accent-soft: rgba(255, 106, 24, 0.18);
+  --accent-hover-tint: rgba(255, 106, 24, 0.08);
+  --accent-active-tint: rgba(255, 106, 24, 0.16);
+  --text-on-accent: #1f1f23;
+  --btn-text: #1f1f23;
+  --user-bubble: #2a2620;
+  --agent-bubble: #1f1f23;
+  --scrollbar-thumb: #2e2e34;
+  --scrollbar-thumb-hover: #3a3a40;
+  --success: #19c332;
+  --warn: #febc2e;
+  --error: #ff5d5d;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 20px 56px rgba(0, 0, 0, 0.7);
+  /* Syntax-highlighting palette — Ember. */
+  --syntax-text: #e7e1d2;
+  --syntax-comment: #6f6a5d;
+  --syntax-punctuation: #b8b1a1;
+  --syntax-keyword: #ff6a18;
+  --syntax-string: #c8d96a;
+  --syntax-number: #ffb968;
+  --syntax-symbol: #ffd28a;
+  --syntax-operator: #c8c1ad;
+  --syntax-function: #f5cf7d;
+  --syntax-variable: #ff9b6a;
+  /* xterm theme + ANSI palette — Ember. */
+  --terminal-bg: #161618;
+  --terminal-fg: #fef3e2;
+  --terminal-cursor: #ff6a18;
+  --terminal-selection: rgba(255, 106, 24, 0.32);
+  --ansi-black: #1a1a1c;
+  --ansi-red: #ff5c4d;
+  --ansi-green: #6ec85c;
+  --ansi-yellow: #ffb845;
+  --ansi-blue: #6ea7ff;
+  --ansi-magenta: #d97afa;
+  --ansi-cyan: #5fd5e0;
+  --ansi-white: #d6cfc1;
+  --ansi-bright-black: #4a4a4f;
+  --ansi-bright-red: #ff7a6f;
+  --ansi-bright-green: #88dd75;
+  --ansi-bright-yellow: #ffc870;
+  --ansi-bright-blue: #8fbeff;
+  --ansi-bright-magenta: #e69dff;
+  --ansi-bright-cyan: #82e1ea;
+  --ansi-bright-white: #fef3e2;
+}
+
+/* Paper — cream paper, ink type, brass accent darkened from #ff6a18
+   to #d4530c so the accent passes 4.5:1 against the cream background. */
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #fef3e2;
+  --bg-elev: #fffaee;
+  --bg-input: #f5e8d0;
+  --bg-hover: #f9eed8;
+  --bg-active: #f3e6cc;
+  --bg-selected: rgba(212, 83, 12, 0.12);
+  --border: #e3d8be;
+  --border-hover: #d4c8ac;
+  --border-strong: #bbac8b;
+  --text: #1f1f23;
+  --text-secondary: #4a4338;
+  --text-dim: #6a6356;
+  --accent: #d4530c;
+  --accent-soft: rgba(212, 83, 12, 0.16);
+  --accent-hover-tint: rgba(212, 83, 12, 0.06);
+  --accent-active-tint: rgba(212, 83, 12, 0.12);
+  --text-on-accent: #fef3e2;
+  --btn-text: #fef3e2;
+  --user-bubble: #fbe5c4;
+  --agent-bubble: #fffaee;
+  --scrollbar-thumb: #d8cdb3;
+  --scrollbar-thumb-hover: #b8ad94;
+  --success: #1a8a2a;
+  --warn: #c98a00;
+  --error: #c4322a;
+  --shadow-1: 0 1px 2px rgba(80, 60, 30, 0.08);
+  --shadow-2: 0 4px 12px rgba(80, 60, 30, 0.12);
+  --shadow-3: 0 12px 32px rgba(80, 60, 30, 0.18);
+  --shadow-overlay: 0 20px 56px rgba(80, 60, 30, 0.24);
+  /* Syntax-highlighting palette — Paper. */
+  --syntax-text: #2b261f;
+  --syntax-comment: #8a8170;
+  --syntax-punctuation: #5b5446;
+  --syntax-keyword: #b94000;
+  --syntax-string: #2f6b1f;
+  --syntax-number: #875000;
+  --syntax-symbol: #5a3b00;
+  --syntax-operator: #6c6353;
+  --syntax-function: #7c4a00;
+  --syntax-variable: #9a3b1f;
+  /* xterm theme + ANSI palette — Paper. */
+  --terminal-bg: #fffaee;
+  --terminal-fg: #1f1f23;
+  --terminal-cursor: #d4530c;
+  --terminal-selection: rgba(212, 83, 12, 0.24);
+  --ansi-black: #1f1f23;
+  --ansi-red: #c4322a;
+  --ansi-green: #2f6b1f;
+  --ansi-yellow: #875000;
+  --ansi-blue: #1a55a8;
+  --ansi-magenta: #8b3a96;
+  --ansi-cyan: #1a7080;
+  --ansi-white: #6a6356;
+  --ansi-bright-black: #4a4438;
+  --ansi-bright-red: #d63f37;
+  --ansi-bright-green: #3d8429;
+  --ansi-bright-yellow: #b06900;
+  --ansi-bright-blue: #2c6cc4;
+  --ansi-bright-magenta: #a04ba8;
+  --ansi-bright-cyan: #2c8da0;
+  --ansi-bright-white: #1f1f23;
+}
+
+/* Æther — deep ink-blue base, brighter brass accent, the signature theme.
+   `signature` is kept as a back-compat alias so persisted theme ids from
+   earlier builds still resolve. */
+:root[data-theme="aether"],
+:root[data-theme="signature"] {
+  color-scheme: dark;
+  --bg: #0e1118;
+  --bg-elev: #161a24;
+  --bg-input: #1c2030;
+  --bg-hover: #1c2030;
+  --bg-active: #222637;
+  --bg-selected: rgba(255, 138, 61, 0.14);
+  --border: #262b3a;
+  --border-hover: #323849;
+  --border-strong: #3e4558;
+  --text: #fef3e2;
+  --text-secondary: #b8bdd0;
+  --text-dim: #8b91a8;
+  --accent: #ff8a3d;
+  --accent-soft: rgba(255, 138, 61, 0.18);
+  --accent-hover-tint: rgba(255, 138, 61, 0.08);
+  --accent-active-tint: rgba(255, 138, 61, 0.16);
+  --text-on-accent: #0e1118;
+  --btn-text: #0e1118;
+  --user-bubble: #1f2436;
+  --agent-bubble: #161a24;
+  --scrollbar-thumb: #262b3a;
+  --scrollbar-thumb-hover: #323849;
+  --success: #3ad36f;
+  --warn: #ffc94e;
+  --error: #ff7777;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 12px 36px rgba(0, 0, 0, 0.65);
+  --shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.75);
+  /* Syntax-highlighting palette — Æther. */
+  --syntax-text: #d8dde9;
+  --syntax-comment: #5b6275;
+  --syntax-punctuation: #97a0b4;
+  --syntax-keyword: #ff8a3d;
+  --syntax-string: #7ad6a3;
+  --syntax-number: #ffc079;
+  --syntax-symbol: #ffd9a8;
+  --syntax-operator: #aab2c4;
+  --syntax-function: #f0c87b;
+  --syntax-variable: #ff9d6a;
+  /* xterm theme + ANSI palette — Æther. */
+  --terminal-bg: #0e1118;
+  --terminal-fg: #fef3e2;
+  --terminal-cursor: #ff8a3d;
+  --terminal-selection: rgba(255, 138, 61, 0.28);
+  --ansi-black: #181b25;
+  --ansi-red: #ff7a85;
+  --ansi-green: #6ed59f;
+  --ansi-yellow: #ffc070;
+  --ansi-blue: #82a8ff;
+  --ansi-magenta: #c890ff;
+  --ansi-cyan: #6dd6e6;
+  --ansi-white: #c0c5d3;
+  --ansi-bright-black: #4d536b;
+  --ansi-bright-red: #ff97a0;
+  --ansi-bright-green: #8ee0b4;
+  --ansi-bright-yellow: #ffd49a;
+  --ansi-bright-blue: #a6c2ff;
+  --ansi-bright-magenta: #dbb1ff;
+  --ansi-bright-cyan: #93e0ec;
+  --ansi-bright-white: #fef3e2;
+}
+
+/* Brink — mid-tone warm chrome (Ristretto base) with gold accent. Ported
+   from Claudette's brink theme; ANSI + syntax tokens derived to keep
+   the Ristretto/Tokyo-Night cohort cohesive (gold keywords, pink errors,
+   cyan functions, lavender symbols). */
+:root[data-theme="brink"] {
+  color-scheme: dark;
+  --bg: #2c2525;
+  --bg-elev: #504646;
+  --bg-input: #241e1e;
+  --bg-hover: #3a3030;
+  --bg-active: #46393a;
+  --bg-selected: rgba(249, 204, 108, 0.16);
+  --border: #6e6464;
+  --border-hover: #7a6e70;
+  --border-strong: #8b7c7e;
+  --text: #f1e5e7;
+  --text-secondary: #e0d4d6;
+  --text-dim: #d0c4c6;
+  --accent: #f9cc6c;
+  --accent-soft: rgba(249, 204, 108, 0.2);
+  --accent-hover-tint: rgba(249, 204, 108, 0.1);
+  --accent-active-tint: rgba(249, 204, 108, 0.16);
+  --text-on-accent: #2c2525;
+  --btn-text: #2c2525;
+  --user-bubble: #3a302f;
+  --agent-bubble: #3f3434;
+  --scrollbar-thumb: #6e6464;
+  --scrollbar-thumb-hover: #7a6e70;
+  --success: #adda78;
+  --warn: #f9cc6c;
+  --error: #fd6883;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 12px 36px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 20px 56px rgba(0, 0, 0, 0.7);
+  /* Syntax-highlighting palette — Brink. */
+  --syntax-text: #f1e5e7;
+  --syntax-comment: #907e80;
+  --syntax-punctuation: #b0a4a6;
+  --syntax-keyword: #f9cc6c;
+  --syntax-string: #adda78;
+  --syntax-number: #f38d70;
+  --syntax-symbol: #a8a9eb;
+  --syntax-operator: #d0c4c6;
+  --syntax-function: #85dacc;
+  --syntax-variable: #fd6883;
+  /* xterm theme + ANSI palette — Brink. */
+  --terminal-bg: #1e1818;
+  --terminal-fg: #f1e5e7;
+  --terminal-cursor: #f9cc6c;
+  --terminal-selection: rgba(249, 204, 108, 0.28);
+  --ansi-black: #241e1e;
+  --ansi-red: #fd6883;
+  --ansi-green: #adda78;
+  --ansi-yellow: #f9cc6c;
+  --ansi-blue: #82aaff;
+  --ansi-magenta: #a8a9eb;
+  --ansi-cyan: #85dacc;
+  --ansi-white: #d0c4c6;
+  --ansi-bright-black: #504646;
+  --ansi-bright-red: #ff8294;
+  --ansi-bright-green: #c2e893;
+  --ansi-bright-yellow: #ffd98a;
+  --ansi-bright-blue: #9bb8ff;
+  --ansi-bright-magenta: #c4c5f4;
+  --ansi-bright-cyan: #a8e8de;
+  --ansi-bright-white: #f1e5e7;
+}
+
+/* Focus ring depends on per-theme --accent-soft, so it lives here. */
+:root {
+  --focus-ring: 0 0 0 3px var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 60ms;
+  }
+  .a2ui-terminal,
+  .ae-agent-pill-dot,
+  .app-header-pill[data-state="thinking"]::before,
+  .ae-typing-dot,
+  .ae-tool-spinner {
+    animation: none !important;
+  }
+  .ae-typing-dot { opacity: 0.35; }
+  .ae-tool-spinner { opacity: 0.6; }
+}

@@ -35,7 +35,7 @@ import type {
   ThemeRecord,
 } from "./state";
 
-/** Theme ids the frontend ships built-in CSS for (see src/styles.css).
+/** Theme ids the frontend ships built-in CSS for (see src/styles/themes.css).
  *  Extensions can't reuse these — the frontend always seeds the sidebar
  *  with these labels and the rule comes from the static stylesheet. */
 export const RESERVED_THEME_IDS = new Set([

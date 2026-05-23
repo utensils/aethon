@@ -6,6 +6,78 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+### Added — Workstation layout redesign
+
+- **Design tokens.** New `src/styles/tokens.css` introduces shape vocabulary
+  (`--space-*`, `--radius-*`, `--shadow-*`, `--z-*`, `--opacity-*`,
+  `--ease-*`) on top of the existing typography + motion scale. Each
+  theme block (ember, paper, aether/signature, brink) gains interaction
+  colors (`--bg-hover`, `--bg-active`, `--bg-selected`, `--border-hover`,
+  `--border-strong`, `--text-on-accent`) and per-theme shadow tokens.
+  `src/styles.css` was split into `tokens.css` + `themes.css` + `chrome.css`
+  + `index.css`.
+- **Shared `ContextMenu` primitive.** `src/components/primitives/context-menu.tsx`
+  replaces the two ad-hoc inline portal menus (sidebar, file tree) with a
+  keyboard-navigable, viewport-clamped, focus-trapped menu. Separator /
+  header / note item kinds + danger styling. The old
+  `.a2ui-sidebar-context-menu` and `.ae-file-tree-context-menu` selectors
+  stay aliased so extensions that styled them keep working.
+- **Text-selection policy.** `docs/aethon-agent/text-selection.md` codifies
+  chrome=none, content=text, with an opt-in `data-selectable` attribute
+  for path-like strings inside chrome surfaces.
+- **Project + worktree backend.** Rust commands `git_worktrees`,
+  `git_worktree_add`, `git_worktree_remove`, `git_branch_list` (in
+  `src-tauri/src/commands/git.rs`) with cargo tests covering the
+  porcelain parser and an end-to-end add/remove round trip in a
+  temporary repo. Frontend model `src/worktrees.ts` owns the
+  `Worktree` shape + pending-state machine.
+- **Worktree-aware sidebar.** Projects expand to show their worktrees
+  inline. Pending worktrees render with live `queued → starting →
+  succeeded | failed` UI + cancel / retry / dismiss inline actions.
+  Right-click on a project opens Switch / Create worktree / Open in
+  Finder / Copy path / Rename / Remove; right-click on a worktree opens
+  Switch / Open in Finder / Copy path / Rename / Remove (main worktree
+  removal is guarded).
+- **Material Icon Theme file icons.** ~50 SVGs vendored under
+  `src/file-icons/icons/` (PKief/vscode-material-icon-theme, MIT). The
+  file tree's ASCII triangles are replaced with real per-language icons
+  (TypeScript blue, Rust orange, Python yellow, …) via `<FileIcon>`.
+  Folder icons get open/closed variants.
+- **Reveal / Open shell integration.** Rust commands
+  `fs_reveal_in_file_manager`, `fs_open_in_file_manager`,
+  `fs_open_in_default_app` hook the file-tree context menu's "Reveal in
+  File Manager" and "Open with default app" actions on macOS / Linux /
+  Windows.
+- **Empty state hero.** EmptyState renders a 64px AeMark monogram above
+  the welcome card with a `--shadow-2` elevation, putting more visual
+  weight on the first-launch surface.
+- **Status bar project / worktree chip.** A new chip between the status
+  pill and connection text surfaces the active project label, the active
+  worktree's branch (or the parent project's git branch when no worktree
+  is selected), and a dirty-state warn dot.
+
+### Changed — Workstation layout redesign
+
+- **Sidebar sections trimmed.** `themes` section dropped from the
+  default sidebar payload — themes remain accessible via the header
+  AppearanceMenu. Custom layouts can re-add the section by listing it
+  in the sidebar's `sections` array.
+- **Projects state.** `~/.aethon/projects.json` upgraded to
+  schemaVersion 2 with `activeWorktreeId` + `worktreesByProject` fields.
+  Pending-in-flight worktrees are filtered out at save time;
+  failed pending entries persist so the user can Dismiss them next
+  session. Migration is idempotent and survives malformed files.
+
+### Compatibility notes
+
+- New token vars (`--bg-hover`, `--space-*`, etc.) give extensions a
+  richer per-theme override surface.
+- Extensions that registered themselves against the `themes` sidebar
+  section ID are unaffected (the data path `/sidebar/themes` still
+  populates).
+- Chrome composite type strings are unchanged — registering an override
+  via `aethon.registerComponent(type, fn)` continues to work.
+
 ## [0.2.0] - 2026-04-28
 
 ### Changed

@@ -39,6 +39,7 @@ import { handleResponseDelta } from "./responseDelta";
 import { handleResponseEnd } from "./responseEnd";
 import { handleSessionHistory } from "./sessionHistory";
 import { handleShellQuery } from "./shellQuery";
+import { handleDashboardQuery } from "./dashboardQuery";
 import { handleStatePatch } from "./statePatch";
 import { handleTabClosed } from "./tabClosed";
 import { handleTabReady } from "./tabReady";
@@ -77,6 +78,7 @@ export const bridgeMessageHandlers: Readonly<
   response_end: handleResponseEnd,
   session_history: handleSessionHistory,
   shell_query: handleShellQuery,
+  dashboard_query: handleDashboardQuery,
   state_patch: handleStatePatch,
   tab_closed: handleTabClosed,
   tab_ready: handleTabReady,

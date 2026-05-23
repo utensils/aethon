@@ -32,7 +32,18 @@ export const handleSidebarResize: EventRouteHandler = (
         (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
       const tokens = current.trim().split(/\s+/);
       tokens[0] = `${next}px`;
-      return { ...prev, layout: { ...layout, columns: tokens.join(" ") } };
+      // Stash the new left width on the layout so a hide/show
+      // round-trip restores the user's sized sidebar instead of the
+      // boot default. The files sidebar carries its own memo via the
+      // toggle helpers.
+      return {
+        ...prev,
+        layout: {
+          ...layout,
+          columns: tokens.join(" "),
+          lastLeftWidth: `${next}px`,
+        },
+      };
     });
   }
   return true;
@@ -176,6 +187,265 @@ function applyOptimisticTabLabel(
   });
 }
 
+/** Sidebar disclosure on a project row — toggle the per-project
+ *  expanded state so worktrees show/hide nested under the row. */
+export const handleSidebarToggleProjectExpand: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "toggle-project-expand") return false;
+  const selected = data as { itemId?: string } | undefined;
+  if (!selected?.itemId) return true;
+  // Read current expanded flag from state.
+  const projects = (ctx.stateRef.current.projects as Array<{ id: string; uiExpanded?: boolean }> | undefined) ?? [];
+  const project = projects.find((p) => p.id === selected.itemId);
+  ctx.setProjectExpanded(selected.itemId, !(project?.uiExpanded ?? false));
+  return true;
+};
+
+/** Worktree event family — all routed through useProjectOps actions. */
+export const handleSidebarCreateWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "create-worktree") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (projectId) void ctx.createWorktreeForProject(projectId);
+  return true;
+};
+/**
+ * switch-worktree: route the user to a landing page for the selected
+ * worktree instead of activating it immediately. The landing presents
+ * a "Start Session" CTA that fires `start-session`, which is where the
+ * actual `activateWorktree` + new-tab flow happens. Pulling the landing
+ * in between gives us a place to surface branch metadata (cwd, branch
+ * name, GitHub status) before the user commits to a fresh session.
+ */
+export const handleSidebarSwitchWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "switch-worktree") return false;
+  const worktreeId =
+    (data as { worktreeId?: string } | undefined)?.worktreeId ?? null;
+  if (!worktreeId) {
+    ctx.activateWorktree(null);
+    ctx.setState((prev) => ({ ...prev, landing: null }));
+    return true;
+  }
+  // Find the worktree + its parent project in state. The sidebar's
+  // /sidebar/projects items carry the canonical worktrees array; we
+  // mirror its shape into /landing so the landing component can render
+  // without re-fetching.
+  const sidebar =
+    (ctx.stateRef.current.sidebar as
+      | {
+          projects?: {
+            id: string;
+            label: string;
+            worktrees?: {
+              id: string;
+              label?: string;
+              branch?: string;
+              path?: string;
+              isMain?: boolean;
+            }[];
+          }[];
+        }
+      | undefined) ?? {};
+  for (const project of sidebar.projects ?? []) {
+    const worktree = project.worktrees?.find((w) => w.id === worktreeId);
+    if (worktree) {
+      ctx.setState((prev) => ({
+        ...prev,
+        landing: {
+          kind: "worktree",
+          projectId: project.id,
+          projectLabel: project.label,
+          worktreeId: worktree.id,
+          worktreeLabel: worktree.label,
+          branch: worktree.branch,
+          path: worktree.path,
+          isMain: worktree.isMain === true,
+        },
+      }));
+      return true;
+    }
+  }
+  // Fallback when state doesn't have the worktree (race during refresh):
+  // activate directly so the click never becomes a no-op.
+  ctx.activateWorktree(worktreeId);
+  return true;
+};
+
+/**
+ * open-worktree-in-new-tab: double-click on a worktree row in the
+ * sidebar. CLAUDE.md's "Tab kinds" promise: single-click activates the
+ * worktree (renders the landing), double-click activates AND spawns a
+ * fresh agent tab pointing at the worktree's cwd. Mirrors the
+ * start-session route's chain so the two gestures stay symmetric.
+ */
+export const handleSidebarOpenWorktreeInNewTab: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "open-worktree-in-new-tab") return false;
+  const worktreeId =
+    (data as { worktreeId?: string } | undefined)?.worktreeId ?? null;
+  if (!worktreeId) return true;
+  // Walk /sidebar/projects to find the parent project + path. Matches
+  // the lookup pattern in handleSidebarSwitchWorktree above.
+  const sidebar =
+    (ctx.stateRef.current.sidebar as
+      | {
+          projects?: {
+            id: string;
+            worktrees?: { id: string; path?: string }[];
+          }[];
+        }
+      | undefined) ?? {};
+  let projectId: string | undefined;
+  let path: string | undefined;
+  for (const project of sidebar.projects ?? []) {
+    const wt = project.worktrees?.find((w) => w.id === worktreeId);
+    if (wt) {
+      projectId = project.id;
+      path = wt.path;
+      break;
+    }
+  }
+  ctx.activateWorktree(worktreeId);
+  if (projectId) ctx.setActiveProjectById(projectId);
+  ctx.setState((prev) => ({ ...prev, landing: null }));
+  ctx.newTab(undefined, undefined, path ? { cwd: path } : undefined);
+  return true;
+};
+
+/**
+ * start-session: emitted by the worktree landing's "Start Session" CTA.
+ * Activates the worktree (so subsequent new tabs inherit its cwd) and
+ * opens a fresh agent tab pointing at the worktree's path. Clears the
+ * landing so the new tab gets the chat canvas instead.
+ */
+export const handleSidebarStartSession: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "start-session") return false;
+  const payload =
+    (data as
+      | { worktreeId?: string; projectId?: string; path?: string }
+      | undefined) ?? {};
+  if (payload.worktreeId) ctx.activateWorktree(payload.worktreeId);
+  if (payload.projectId) ctx.setActiveProjectById(payload.projectId);
+  ctx.setState((prev) => ({ ...prev, landing: null }));
+  ctx.newTab(undefined, undefined, payload.path ? { cwd: payload.path } : undefined);
+  return true;
+};
+export const handleSidebarRemoveWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "remove-worktree") return false;
+  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
+  if (worktreeId) void ctx.removeWorktreeById(worktreeId);
+  return true;
+};
+export const handleSidebarCancelPendingWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "cancel-pending-worktree") return false;
+  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
+  if (worktreeId) ctx.dismissPendingWorktree(worktreeId);
+  return true;
+};
+export const handleSidebarRetryPendingWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "retry-pending-worktree") return false;
+  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
+  if (worktreeId) void ctx.retryPendingWorktree(worktreeId);
+  return true;
+};
+export const handleSidebarRenameWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "rename-worktree") return false;
+  const { worktreeId, label } =
+    (data as { worktreeId?: string; label?: string } | undefined) ?? {};
+  if (worktreeId && typeof label === "string") ctx.renameWorktree(worktreeId, label);
+  return true;
+};
+
+/** Filesystem helpers — open + copy on a project or worktree. The path
+ *  to act on is read from the projects state when only an id is given. */
+export const handleSidebarOpenProjectInFinder: EventRouteHandler = async (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "open-project-in-finder") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) return true;
+  const projects = (ctx.stateRef.current.projects as Array<{ id: string; path?: string }> | undefined) ?? [];
+  const path = projects.find((p) => p.id === projectId)?.path;
+  if (!path) return true;
+  await ctx
+    .invoke("fs_open_in_file_manager", { path })
+    .catch(() => {
+      /* command may not exist in older builds; ignore */
+    });
+  return true;
+};
+export const handleSidebarCopyProjectPath: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "copy-project-path") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) return true;
+  const projects = (ctx.stateRef.current.projects as Array<{ id: string; path?: string }> | undefined) ?? [];
+  const path = projects.find((p) => p.id === projectId)?.path;
+  if (path && navigator.clipboard) {
+    void navigator.clipboard.writeText(path).catch(() => {});
+  }
+  return true;
+};
+export const handleSidebarOpenWorktreeInFinder: EventRouteHandler = async (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "open-worktree-in-finder") return false;
+  const path = (data as { path?: string } | undefined)?.path;
+  if (!path) return true;
+  await ctx
+    .invoke("fs_open_in_file_manager", { path })
+    .catch(() => {});
+  return true;
+};
+export const handleSidebarCopyWorktreePath: EventRouteHandler = (
+  { eventType, data },
+) => {
+  if (eventType !== "copy-worktree-path") return false;
+  const path = (data as { path?: string } | undefined)?.path;
+  if (path && navigator.clipboard) {
+    void navigator.clipboard.writeText(path).catch(() => {});
+  }
+  return true;
+};
+export const handleSidebarRenameProject: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "rename-project") return false;
+  const { projectId, label } =
+    (data as { projectId?: string; label?: string } | undefined) ?? {};
+  if (projectId && typeof label === "string") ctx.renameProject(projectId, label);
+  return true;
+};
+
 /** sidebar toggle-extension: forward to the bridge so the user's
  *  disabled list is updated + persisted. The bridge re-emits `ready`
  *  on success so the sidebar entry shifts buckets without a refresh. */
@@ -244,7 +514,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
   }
   if (selected?.sectionId === "themes" && selected.itemId) {
     // Accept any registered theme id (built-ins + extension themes).
-    // Built-in CSS lives in styles.css; extension themes had their
+    // Built-in CSS lives in src/styles/themes.css; extension themes had their
     // <style> tag injected on hydrateThemes().
     ctx.setTheme(selected.itemId);
     return true;

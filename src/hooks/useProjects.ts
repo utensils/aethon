@@ -1,5 +1,9 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  loadCachedStatuses,
+  persistStatusesDebounced,
+} from "../gitStatusCache";
 
 export interface GitStatus {
   branch?: string;
@@ -64,6 +68,9 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
         gitStatusRef.current.delete(path);
       }
       ctx.onGitStatusChanged();
+      // Persist (debounced) so the next cold start can paint chips
+      // instantly from disk before any subprocess runs.
+      persistStatusesDebounced(gitStatusRef.current);
     } catch {
       // Tauri command threw — ignore so a transient git failure doesn't
       // blank the chip on subsequent successful polls.
@@ -72,9 +79,10 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
 
   async function refreshAllGitStatus(): Promise<void> {
     const paths = ctx.getProjectPaths();
-    for (const p of paths) {
-      await refreshGitStatusFor(p);
-    }
+    // Parallel — each project's git invocation is its own subprocess
+    // and the project list is capped at 16, so concurrency is bounded.
+    // Sequential previously meant the slowest repo gated all the rest.
+    await Promise.all(paths.map((p) => refreshGitStatusFor(p)));
   }
 
   function announceProjectToBridge(tabId: string, cwd: string | null) {
@@ -112,7 +120,23 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
         gitPollingRef.current = false;
       }
     };
-    void tick();
+    // 1. Hydrate from the disk-backed cache so chips paint with the
+    //    last-known status before any subprocess runs. 2. Kick off the
+    //    background refresh so anything that drifted since the last
+    //    persist catches up. The two phases are independent — a slow
+    //    refresh doesn't gate the cached paint.
+    const bootstrap = async () => {
+      const cached = await loadCachedStatuses();
+      if (cancelled) return;
+      if (cached.size > 0) {
+        for (const [path, status] of cached) {
+          gitStatusRef.current.set(path, status);
+        }
+        ctx.onGitStatusChanged();
+      }
+      void tick();
+    };
+    void bootstrap();
     const onFocus = () => void tick();
     window.addEventListener("focus", onFocus);
     const interval = window.setInterval(tick, 30_000);

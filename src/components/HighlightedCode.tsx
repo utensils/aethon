@@ -18,7 +18,7 @@ function trimSingleTrailingNewline(s: string): string {
 
 // Worker-backed Shiki highlighter (same pattern as Claudette's chat).
 // Renders dual-theme HTML: each token span carries `--shiki-light` +
-// `--shiki-dark` inline, and src/styles.css picks via `light-dark()` based
+// `--shiki-dark` inline, and src/styles/chrome.css picks via `light-dark()` based
 // on the active theme's `color-scheme`. Cache hit → render highlighted
 // immediately; miss → render plain text and force-update once the worker
 // resolves. A null worker result (unknown language, worker fault) keeps

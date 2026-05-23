@@ -39,6 +39,9 @@ export interface SlashCommandContext {
   // /layout/sidebarVisible / /layout/columns / /layout/areas $refs the
   // default layout binds to.
   toggleSidebar: () => void;
+  // Show / hide / toggle the right-hand files sidebar. Same template-swap
+  // semantics as toggleSidebar.
+  toggleFilesSidebar: () => void;
   // Swap to a registered layout by id. Returns true on success. Use
   // listLayouts() to discover available ids.
   activateLayout: (id: string) => boolean;
@@ -259,6 +262,11 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       name: "sidebar",
       description: "Toggle the sidebar",
       run: (_args, ctx) => ctx.toggleSidebar(),
+    },
+    {
+      name: "files",
+      description: "Toggle the right-hand files sidebar",
+      run: (_args, ctx) => ctx.toggleFilesSidebar(),
     },
     {
       name: "layout",

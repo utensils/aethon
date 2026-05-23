@@ -8,7 +8,7 @@ import { prewarmHighlighter } from "./utils/highlight";
 // editor mounts work offline / under Tauri's CSP. Must run before any
 // component imports a Monaco-backed surface.
 import "./monaco/setup";
-import "./styles.css";
+import "./styles/index.css";
 
 // Expose Tauri's invoke globally in dev so the aethon-debug skill's TCP eval
 // server can wrap user JS to call back via __AETHON_INVOKE__('debug_eval_result', ...).

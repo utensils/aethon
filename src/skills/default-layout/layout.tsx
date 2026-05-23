@@ -5,7 +5,12 @@
  * (`StatusBar`, `EmptyState`).
  */
 
+import { useEffect, useState } from "react";
 import { resolvePointer } from "../../utils/jsonPointer";
+import {
+  getGhBranchStatus,
+  type GhBranchStatus,
+} from "../../ghBranchStatusCache";
 import {
   resolveBoolean,
   resolveNumber,
@@ -14,6 +19,12 @@ import {
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { CSSProperties } from "react";
+
+// GhBranchStatus / GhPr types come from ../../ghBranchStatusCache so
+// the layout module doesn't re-declare the wire shape. The cache
+// module is the single source of truth for the gh_branch_status
+// contract on the frontend; the Rust struct in src-tauri/src/commands/git.rs
+// is the source of truth for the wire format.
 
 // eslint-disable-next-line react-refresh/only-export-components -- helper used by sibling chat module; doesn't affect HMR in practice
 export function readUiScale(): number {
@@ -183,19 +194,75 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     left?: StringValue;
     center?: StringValue;
     right?: StringValue;
+    /** Optional segments rendered between `left` and `center`. Each is
+     *  a small chip carrying project / worktree / branch context.
+     *  Resolved by reading the active project + active worktree from
+     *  /sidebar/projects. */
+    showProjectChip?: boolean;
   };
 
   const left = props.left ? resolveString(props.left, state) : "";
   const center = props.center ? resolveString(props.center, state) : "";
   const right = props.right ? resolveString(props.right, state) : "";
 
+  // Project / worktree / branch chip — derived from the live sidebar
+  // projects list so a single source of truth drives both the sidebar
+  // and the status bar. No-op when no project is active.
+  type SidebarProj = {
+    id: string;
+    label?: string;
+    active?: boolean;
+    tooltip?: string;
+    git?: { branch?: string; dirty?: boolean; ahead?: number; behind?: number };
+    worktrees?: Array<{ id: string; label?: string; branch?: string; active?: boolean }>;
+  };
+  const projects =
+    (resolveValue(state, "/sidebar/projects") as SidebarProj[] | undefined) ?? [];
+  const active = projects.find((p) => p.active === true);
+  const activeWt = active?.worktrees?.find((w) => w.active === true);
+  const showChip = props.showProjectChip !== false && !!active;
+
   return (
     <footer className="a2ui-status-bar">
       <span className="a2ui-status-left">{left}</span>
+      {showChip ? (
+        <span
+          className="a2ui-status-project-chip"
+          title={active?.tooltip ?? active?.label ?? ""}
+        >
+          <span className="a2ui-status-chip-dot" />
+          <span className="a2ui-status-chip-label">{active?.label}</span>
+          {activeWt ? (
+            <>
+              <span className="a2ui-status-chip-sep">/</span>
+              <span className="a2ui-status-chip-worktree">
+                {activeWt.label || activeWt.branch}
+              </span>
+            </>
+          ) : active?.git?.branch ? (
+            <>
+              <span className="a2ui-status-chip-sep">·</span>
+              <span className="a2ui-status-chip-branch">{active.git.branch}</span>
+              {active.git.dirty ? (
+                <span className="a2ui-status-chip-dirty" title="dirty">•</span>
+              ) : null}
+            </>
+          ) : null}
+        </span>
+      ) : null}
       <span className="a2ui-status-center">{center}</span>
       <span className="a2ui-status-right">{right}</span>
     </footer>
   );
+}
+
+/** Read a state pointer for non-string values (resolveString coerces). */
+function resolveValue(state: unknown, ptr: string): unknown {
+  try {
+    return resolvePointer(state as Record<string, unknown>, ptr);
+  } catch {
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +362,9 @@ export function EmptyState({
   return (
     <div className="a2ui-empty-state">
       <div className="a2ui-empty-state-card">
+        <div className="a2ui-empty-state-hero" aria-hidden="true">
+          <AeMarkInline size={64} radius={12} />
+        </div>
         <h1 className="a2ui-empty-state-title">{title}</h1>
         <p className="a2ui-empty-state-subtitle">{subtitle}</p>
         {activeProject && (
@@ -391,6 +461,255 @@ export function EmptyState({
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WorktreeLanding — full-canvas landing page shown when the user clicks a
+// worktree in the sidebar but hasn't yet started a session in it. Mirrors
+// EmptyState's visual shape (AeMark hero + active-target chip + CTAs) but
+// scoped to a single worktree. The "Start Session" CTA spawns a fresh
+// agent tab whose cwd is the worktree's path; "Open in Files" reveals it
+// in the system file manager.
+//
+// Visibility is driven by /landing/kind === "worktree" — sidebar emits the
+// "switch-worktree" event which the app handles by writing to /landing.
+// Selecting any tab clears /landing so the canvas snaps back.
+//
+// Octocrab-backed branch status (pushed / PR open / merged) lands here in a
+// follow-up; the placeholder slot below already reserves the layout.
+// ---------------------------------------------------------------------------
+export function WorktreeLanding({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
+  const props = component.props as {
+    landing?: { $ref: string };
+  };
+  const landing = (() => {
+    if (!props.landing) return null;
+    const raw = resolvePointer(state, props.landing.$ref);
+    if (!raw || typeof raw !== "object") return null;
+    return raw as {
+      kind?: string;
+      projectId?: string;
+      projectLabel?: string;
+      worktreeId?: string;
+      worktreeLabel?: string;
+      branch?: string;
+      path?: string;
+      isMain?: boolean;
+    };
+  })();
+  if (!landing || landing.kind !== "worktree") return null;
+
+  const title = landing.worktreeLabel ?? landing.branch ?? "worktree";
+  const projectLabel = landing.projectLabel ?? "";
+  const branch = landing.branch ?? "";
+  const path = landing.path ?? "";
+  const isMain = landing.isMain === true;
+
+  return (
+    <WorktreeLandingInner
+      title={title}
+      projectLabel={projectLabel}
+      branch={branch}
+      path={path}
+      isMain={isMain}
+      worktreeId={landing.worktreeId ?? null}
+      projectId={landing.projectId ?? null}
+      onEvent={onEvent}
+    />
+  );
+}
+
+function WorktreeLandingInner(props: {
+  title: string;
+  projectLabel: string;
+  branch: string;
+  path: string;
+  isMain: boolean;
+  worktreeId: string | null;
+  projectId: string | null;
+  onEvent: (
+    name: string,
+    data?: Record<string, unknown>,
+    descendantId?: string,
+  ) => void;
+}) {
+  const { title, projectLabel, branch, path, isMain, worktreeId, projectId, onEvent } = props;
+  const [gh, setGh] = useState<GhBranchStatus | null>(null);
+  const [ghLoading, setGhLoading] = useState(false);
+
+  // Fetch gh branch status whenever the active worktree changes. The
+  // cache module short-circuits within-session revisits (60s TTL for
+  // live repos, 5min for "no gh / no remote") so the landing paints
+  // instantly on a tab flip. Failure is silent — Rust always returns
+  // Ok with ghAvailable=false on any error path, so a missing/unauthed
+  // gh just collapses to "Connect GitHub" in the UI.
+  useEffect(() => {
+    if (!branch || !path) {
+      setGh(null);
+      return;
+    }
+    let cancelled = false;
+    setGhLoading(true);
+    void getGhBranchStatus(path, branch)
+      .then((status) => {
+        if (cancelled) return;
+        setGh(status);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGh(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGhLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [branch, path]);
+
+  return (
+    <div className="a2ui-empty-state a2ui-worktree-landing">
+      <div className="a2ui-empty-state-card">
+        <div className="a2ui-empty-state-hero" aria-hidden="true">
+          <AeMarkInline size={64} radius={12} />
+        </div>
+        <h1 className="a2ui-empty-state-title">{title}</h1>
+        <p className="a2ui-empty-state-subtitle">
+          {isMain ? "Main worktree of " : "Worktree of "}
+          <strong>{projectLabel}</strong>
+          {branch && (
+            <>
+              {" — "}
+              <code>{branch}</code>
+            </>
+          )}
+        </p>
+        <p className="a2ui-empty-state-active-project">
+          <span className="a2ui-empty-state-active-project-label">
+            {branch || title}
+          </span>
+          <span className="a2ui-empty-state-active-project-path">{path}</span>
+        </p>
+        <div className="a2ui-empty-state-actions">
+          <button
+            type="button"
+            className="a2ui-empty-state-primary"
+            onClick={() =>
+              onEvent("start-session", {
+                worktreeId: worktreeId ?? undefined,
+                projectId: projectId ?? undefined,
+                path,
+              })
+            }
+          >
+            Start Session
+          </button>
+          <button
+            type="button"
+            className="a2ui-empty-state-secondary"
+            onClick={() =>
+              onEvent("open-worktree-in-finder", {
+                worktreeId: worktreeId ?? undefined,
+                projectId: projectId ?? undefined,
+                path,
+              })
+            }
+          >
+            Open in Files
+          </button>
+        </div>
+        {/* Branch status via `gh` CLI. Silently absent when gh isn't
+            installed/authed or the repo has no GitHub remote — the
+            block just renders nothing (or "Not on GitHub" when we
+            know gh is present but the repo isn't tracked). */}
+        <GhBranchStatusBlock status={gh} loading={ghLoading} branch={branch} />
+      </div>
+    </div>
+  );
+}
+
+function GhBranchStatusBlock(props: {
+  status: GhBranchStatus | null;
+  loading: boolean;
+  branch: string;
+}) {
+  const { status, loading, branch } = props;
+  if (loading) {
+    return (
+      <div className="a2ui-worktree-landing-gh">
+        <h2>Branch status</h2>
+        <p className="a2ui-empty-state-subtitle">Checking GitHub…</p>
+      </div>
+    );
+  }
+  // Silent fall-through when gh isn't available — don't show a noisy
+  // "install gh" prompt. The landing should still feel useful without
+  // the integration.
+  if (!status || !status.ghAvailable) return null;
+  if (!status.repo) {
+    return (
+      <div className="a2ui-worktree-landing-gh">
+        <h2>Branch status</h2>
+        <p className="a2ui-empty-state-subtitle">
+          No GitHub remote detected for this worktree.
+        </p>
+      </div>
+    );
+  }
+  const pushedLabel = status.pushed ? "Pushed to remote" : "Not pushed";
+  return (
+    <div className="a2ui-worktree-landing-gh">
+      <h2>Branch status</h2>
+      <ul className="a2ui-worktree-landing-gh-list">
+        <li>
+          <span className="a2ui-worktree-landing-gh-label">{status.repo}</span>
+          <code>{branch}</code>
+        </li>
+        <li
+          className={`a2ui-worktree-landing-gh-pushed${
+            status.pushed ? " is-pushed" : ""
+          }`}
+        >
+          {pushedLabel}
+        </li>
+        {status.prs.map((pr) => (
+          <li key={pr.number} className="a2ui-worktree-landing-gh-pr">
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={pr.title}
+            >
+              <span
+                className={`a2ui-worktree-landing-gh-pr-state ae-pr-${
+                  pr.merged ? "merged" : pr.state.toLowerCase()
+                }`}
+              >
+                {pr.merged
+                  ? "merged"
+                  : pr.isDraft
+                    ? "draft"
+                    : pr.state.toLowerCase()}
+              </span>
+              <span className="a2ui-worktree-landing-gh-pr-number">
+                #{pr.number}
+              </span>
+              <span className="a2ui-worktree-landing-gh-pr-title">
+                {pr.title}
+              </span>
+            </a>
+          </li>
+        ))}
+        {status.prs.length === 0 && (
+          <li className="a2ui-empty-state-subtitle">No PRs for this branch.</li>
+        )}
+      </ul>
     </div>
   );
 }

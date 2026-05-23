@@ -12,6 +12,7 @@ import {
   ChatInput,
   EditorCanvas,
   EmptyState,
+  WorktreeLanding,
   FileTreePanel,
   ImageViewer,
   Layout,
@@ -35,6 +36,12 @@ import { NotificationStack } from "./notifications";
 import { SettingsPanel } from "./settings-panel";
 import { SearchPanel } from "./search-panel";
 import { ShareModeBadge } from "./share-mode-badge";
+import { GhStatsStrip } from "./dashboard/gh-stats-strip";
+import { ProjectCard } from "./dashboard/project-card";
+import { TaskLauncher } from "./dashboard/task-launcher";
+import { ProjectsDashboard } from "./dashboard/projects-dashboard";
+import { ProjectDashboard } from "./dashboard/project-dashboard";
+import { IssuesSection } from "./dashboard/issues-section";
 import workstationPayload from "./workstation.a2ui.json";
 
 export {
@@ -90,6 +97,11 @@ export const defaultLayoutSkill: A2UISkill = {
     // (replacing the plain `card` primitive in toolCardPayload).
     "tool-card": ToolCard,
     "empty-state": EmptyState,
+    // Worktree landing page — shown when the user clicks a worktree in
+    // the sidebar but hasn't yet started a session. Mirrors EmptyState
+    // shape but scoped to a single worktree (cwd + branch + GitHub
+    // status placeholder).
+    "worktree-landing": WorktreeLanding,
     // Workstation header chrome — agent-status pill (canonical
     // `agent-pulse`; legacy `agent-status-pill` alias kept so existing
     // layout payloads continue to render after the rename) plus the
@@ -107,6 +119,17 @@ export const defaultLayoutSkill: A2UISkill = {
     // custom click-flow or icon set) without rewriting the whole shell
     // status bar.
     "share-mode-badge": ShareModeBadge,
+    // M9 dashboard composites. Each is registered with a stable type so
+    // an extension can swap it via `aethon.registerComponent(<type>, …)`.
+    // gh-stats-strip + project-card are leaf composites; the dashboard
+    // surfaces (projects-dashboard, project-dashboard, task-launcher)
+    // mount alongside.
+    "gh-stats-strip": GhStatsStrip,
+    "project-card": ProjectCard,
+    "task-launcher": TaskLauncher,
+    "projects-dashboard": ProjectsDashboard,
+    "project-dashboard": ProjectDashboard,
+    "issues-section": IssuesSection,
   },
   layout: workstationPayload,
 };

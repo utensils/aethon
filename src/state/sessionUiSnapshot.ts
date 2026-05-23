@@ -67,10 +67,36 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
   if (typeof input.sidebarVisible === "boolean") {
     next.sidebarVisible = input.sidebarVisible;
   }
+  if (typeof input.filesSidebarVisible === "boolean") {
+    next.filesSidebarVisible = input.filesSidebarVisible;
+  }
   if (typeof input.columns === "string") {
-    const first = input.columns.trim().split(/\s+/)[0];
-    if (/^\d+px$/.test(first)) {
-      next.columns = `${first} minmax(0,1fr)`;
+    // Preserve fixed left + right column widths; reset the center to
+    // minmax(0,1fr) so the user's resize sticks across reloads. Three
+    // shapes are supported:
+    //   "<L>px minmax(0,1fr)"            (files sidebar hidden)
+    //   "<L>px minmax(0,1fr) <R>px"      (canonical: left + files-right)
+    //   (legacy: any old 2-col shape)    → upgrade to 3-col 280px
+    //
+    // Critically: when filesSidebarVisible is explicitly false, the live
+    // grid is 2-col, and we must keep it 2-col on restore — otherwise
+    // the right pane stays hidden but its 280px slot renders as blank
+    // space until the user toggles the panel back.
+    const filesHidden = input.filesSidebarVisible === false;
+    const tokens = input.columns.trim().split(/\s+/);
+    const first = tokens[0];
+    const last = tokens[tokens.length - 1];
+    if (tokens.length >= 2 && /^\d+px$/.test(first)) {
+      if (filesHidden) {
+        next.columns = `${first} minmax(0,1fr)`;
+      } else if (/^\d+px$/.test(last) && tokens.length >= 3) {
+        next.columns = `${first} minmax(0,1fr) ${last}`;
+      } else {
+        // Legacy snapshot — let the boot payload's default fill in
+        // the right column so the redesigned 3-column layout still
+        // surfaces on first restore after upgrade.
+        next.columns = `${first} minmax(0,1fr) 280px`;
+      }
     }
   }
   return Object.keys(next).length > 0 ? next : undefined;

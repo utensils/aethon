@@ -153,6 +153,16 @@ export interface BridgeMessageContext {
 
   // ─── Misc helpers (defined on App) ──────────────────────────────────
   routeShellWrite: (args: Record<string, unknown>) => Promise<{ ok: true }>;
+  /** End-to-end task launch — see App.tsx::startTaskInProject. Reused
+   *  by the agent-side `startTask` pi tool via `handleDashboardQuery`
+   *  so the bridge can drive the same chain as the UI composer. */
+  startTaskInProject: (opts: {
+    projectId: string;
+    prompt: string;
+    newWorktree?: boolean;
+    branch?: string;
+    baseBranch?: string;
+  }) => Promise<void>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────
   /** Ack a mutation back to the bridge. Provided by useBridgeMessages so
