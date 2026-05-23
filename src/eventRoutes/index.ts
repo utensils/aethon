@@ -58,6 +58,12 @@ import {
   handleSidebarRenameProject,
 } from "./sidebar";
 import { handleEditorCanvas, handleFileTree } from "./editor";
+import {
+  handleProjectsDashboard,
+  handleProjectDashboard,
+  handleTaskLauncher,
+  handleGhStatsStrip,
+} from "./dashboard";
 
 /** Lookup table for built-in routes. Keys are `id:<componentId>` or
  *  `type:<componentType>`. The dispatcher computes both keys for an
@@ -114,6 +120,14 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:share-mode-badge", [handleShareModeCycle]],
     ["type:editor-canvas", [handleEditorCanvas]],
     ["type:file-tree", [handleFileTree]],
+    // M9 dashboard surfaces. Keyed by type so a custom dashboard
+    // (registered via aethon.registerComponent) routes through the
+    // same handlers without an alias entry.
+    ["type:projects-dashboard", [handleProjectsDashboard]],
+    ["type:project-dashboard", [handleProjectDashboard]],
+    ["type:task-launcher", [handleTaskLauncher]],
+    ["type:gh-stats-strip", [handleGhStatsStrip]],
+    ["type:project-card", [handleProjectsDashboard]],
   ]);
 
 /** Dispatch a renderer-side event through the precedence layers.
