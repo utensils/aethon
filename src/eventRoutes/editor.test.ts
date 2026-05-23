@@ -71,6 +71,38 @@ describe("handleEditorCanvas", () => {
     );
   });
 
+  it("uses an editor tab root override when saving user-dir files", async () => {
+    const fx = buildRouteFixture({
+      state: {
+        project: { path: "/projects/aethon" },
+        tabs: [
+          {
+            id: "tab-1",
+            kind: "editor",
+            editor: {
+              filePath: "/Users/test/.aethon/system-prompt.md",
+              rootPath: "/Users/test/.aethon",
+            },
+          },
+        ],
+      },
+    });
+    const claimed = await handleEditorCanvas(
+      editorEvent("editor-save", {
+        tabId: "tab-1",
+        filePath: "/Users/test/.aethon/system-prompt.md",
+        content: "You are Aethon.",
+      }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.invoke).toHaveBeenCalledWith("fs_write_file", {
+      root: "/Users/test/.aethon",
+      path: "/Users/test/.aethon/system-prompt.md",
+      content: "You are Aethon.",
+    });
+  });
+
   it("surfaces a notification when fs_write_file errors", async () => {
     const fx = buildRouteFixture({
       state: { project: { path: "/projects/aethon" } },

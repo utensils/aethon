@@ -33,6 +33,10 @@
 .ae-settings-panel *,
 .ae-notification,
 .ae-notification *,
+.a2ui-projects-dashboard,
+.a2ui-projects-dashboard *,
+.a2ui-project-dashboard,
+.a2ui-project-dashboard *,
 .a2ui-empty-state,
 .a2ui-empty-state *,
 .a2ui-empty-state-card,
@@ -42,6 +46,15 @@
 }
 
 [data-selectable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.monaco-editor,
+.monaco-editor * {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -819,6 +832,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 .ae-worktree-branch {
   margin-left: auto;
 }
+.ae-worktree-remove-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 28px;
+  margin-left: var(--space-1);
+}
 .ae-worktree-row--pending {
   opacity: 0.8;
 }
@@ -852,6 +873,55 @@ body.ae-resizing-sidebar .a2ui-layout {
   outline: none;
   background: var(--accent-hover-tint);
   color: var(--accent);
+}
+.ae-worktree-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ae-worktree-row:hover .ae-worktree-remove,
+.ae-worktree-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.ae-worktree-remove:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.ae-worktree-remove:focus-visible,
+.ae-worktree-confirm-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-worktree-confirm-remove {
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+}
+.ae-worktree-confirm-remove:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
 }
 .ae-worktree-lock {
   flex-shrink: 0;
@@ -4665,6 +4735,57 @@ button.a2ui-gh-stat:hover {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+.a2ui-project-dashboard-worktree-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.a2ui-project-dashboard-worktree:hover .a2ui-project-dashboard-worktree-remove,
+.a2ui-project-dashboard-worktree-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.a2ui-project-dashboard-worktree-remove:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.a2ui-project-dashboard-worktree-confirm-remove {
+  height: 28px;
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+}
+.a2ui-project-dashboard-worktree-confirm-remove:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
+}
+.a2ui-project-dashboard-worktree-remove:focus-visible,
+.a2ui-project-dashboard-worktree-confirm-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .a2ui-project-dashboard-sessions {

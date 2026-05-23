@@ -63,7 +63,11 @@ export const handleEditorCanvas: EventRouteHandler = async (
       const content = typeof payload.content === "string" ? payload.content : "";
       if (!filePath) return true;
       const project = ctx.stateRef.current.project as { path?: string } | undefined;
-      const root = project?.path ?? "";
+      const tabs = (ctx.stateRef.current.tabs as
+        | Array<{ id: string; editor?: { rootPath?: string } }>
+        | undefined) ?? [];
+      const tabRoot = tabs.find((t) => t.id === tabId)?.editor?.rootPath;
+      const root = tabRoot ?? project?.path ?? "";
       try {
         await ctx.invoke("fs_write_file", { root, path: filePath, content });
         ctx.updateEditorMeta(tabId, { isDirty: false });

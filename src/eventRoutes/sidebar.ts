@@ -352,8 +352,13 @@ export const handleSidebarRemoveWorktree: EventRouteHandler = (
   ctx,
 ) => {
   if (eventType !== "remove-worktree") return false;
-  const worktreeId = (data as { worktreeId?: string } | undefined)?.worktreeId;
-  if (worktreeId) void ctx.removeWorktreeById(worktreeId);
+  const selected =
+    (data as { worktreeId?: string; confirmed?: boolean } | undefined) ?? {};
+  if (selected.worktreeId) {
+    void ctx.removeWorktreeById(selected.worktreeId, {
+      confirmed: selected.confirmed === true,
+    });
+  }
   return true;
 };
 export const handleSidebarCancelPendingWorktree: EventRouteHandler = (

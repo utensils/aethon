@@ -29,6 +29,9 @@ export interface ShellMeta {
  */
 export interface EditorMeta {
   filePath: string;
+  /** Optional filesystem root for files outside the active project tree
+   *  (for example ~/.aethon/system-prompt.md opened from Settings). */
+  rootPath?: string;
   language: string;
   isDirty: boolean;
   cursorLine?: number;

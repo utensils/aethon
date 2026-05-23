@@ -125,6 +125,47 @@ describe("handleProjectDashboard", () => {
     expect(handled).toBe(true);
     expect(ctx.activateWorktree).toHaveBeenCalledWith("w-1");
   });
+
+  it("forwards dashboard worktree removal to the shared remove route", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "remove-worktree",
+        data: { worktreeId: "wt-1", confirmed: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.removeWorktreeById).toHaveBeenCalledWith("wt-1", {
+      confirmed: true,
+    });
+  });
+
+  it("forwards issue-section start-task events emitted through the project dashboard", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "Please work on issue #927",
+          worktreeId: "wt-1",
+          source: "github-issue",
+        },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        prompt: "Please work on issue #927",
+        worktreeId: "wt-1",
+      }),
+    );
+  });
 });
 
 describe("handleTaskLauncher", () => {

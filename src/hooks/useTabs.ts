@@ -181,7 +181,7 @@ export interface UseTabsActions {
   /** Open (or focus, if already open) an editor tab for `filePath`.
    *  `filePath` must be inside the active project; the EditorCanvas
    *  composite handles the actual fs_read_file call on mount. */
-  newEditorTab: (filePath: string) => void;
+  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
   /** Set the dirty flag + cursor on the active editor tab. Used by
    *  EditorCanvas to mirror Monaco's model state back to the layout. */
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
@@ -563,11 +563,15 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   /** Open (or focus) an editor tab for the supplied absolute path. If a
    *  tab for the same path already exists in the current project bucket,
    *  switch to it instead of creating a duplicate. */
-  function newEditorTab(filePath: string) {
+  function newEditorTab(filePath: string, opts: { rootPath?: string } = {}) {
     if (!filePath) return;
+    const rootPath = opts.rootPath;
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     const existing = tabs.find(
-      (t) => t.kind === "editor" && t.editor?.filePath === filePath,
+      (t) =>
+        t.kind === "editor" &&
+        t.editor?.filePath === filePath &&
+        (t.editor.rootPath ?? "") === (rootPath ?? ""),
     );
     if (existing) {
       setActiveTab(existing.id);
@@ -580,6 +584,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       ...makeEmptyTab(id, editorLabelForPath(filePath), projectId, "editor"),
       editor: {
         filePath,
+        ...(rootPath ? { rootPath } : {}),
         language,
         isDirty: false,
       },

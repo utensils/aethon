@@ -118,14 +118,8 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
       console.warn("open config.toml failed:", err);
     }
   };
-  const openSystemPromptFile = async () => {
-    try {
-      const aethonDir = (await invoke<string>("aethon_home_dir")) ?? "";
-      const path = `${aethonDir}/system-prompt.md`;
-      await openUrl(`file://${path}`);
-    } catch (err) {
-      console.warn("open system-prompt.md failed:", err);
-    }
+  const openSystemPromptFile = () => {
+    onEvent("open-system-prompt");
   };
 
   return (

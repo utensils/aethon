@@ -3,6 +3,7 @@ import {
   handleSidebarResize,
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
+  handleSidebarRemoveWorktree,
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
   handleSidebarToggleExtension,
@@ -58,6 +59,24 @@ describe("handleSidebarRemoveProject", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.removeProjectById).toHaveBeenCalledWith("proj-1");
+  });
+});
+
+describe("handleSidebarRemoveWorktree", () => {
+  it("passes inline confirmation through to the project operation", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleSidebarRemoveWorktree(
+      {
+        component: { id: "sidebar" },
+        eventType: "remove-worktree",
+        data: { worktreeId: "wt-1", confirmed: true },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.removeWorktreeById).toHaveBeenCalledWith("wt-1", {
+      confirmed: true,
+    });
   });
 });
 

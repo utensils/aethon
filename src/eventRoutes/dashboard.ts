@@ -15,7 +15,10 @@
  * the same handlers.
  */
 import type { EventRouteHandler } from "./types";
-import { handleSidebarDeleteSession } from "./sidebar";
+import {
+  handleSidebarDeleteSession,
+  handleSidebarRemoveWorktree,
+} from "./sidebar";
 
 /** New-tab / Open Project… / restore-session / select-project-card
  *  for the global projects-dashboard surface. */
@@ -80,6 +83,12 @@ export const handleProjectDashboard: EventRouteHandler = (
   { eventType, data },
   ctx,
 ) => {
+  if (eventType === "start-task") {
+    return handleTaskLauncher(
+      { component: { id: "", type: "task-launcher" }, eventType, data },
+      ctx,
+    );
+  }
   if (eventType === "create-worktree") {
     const sel = data as { projectId?: string } | undefined;
     if (sel?.projectId) void ctx.createWorktreeForProject(sel.projectId);
@@ -89,6 +98,12 @@ export const handleProjectDashboard: EventRouteHandler = (
     const sel = data as { worktreeId?: string } | undefined;
     if (sel?.worktreeId) ctx.activateWorktree(sel.worktreeId);
     return true;
+  }
+  if (eventType === "remove-worktree") {
+    return handleSidebarRemoveWorktree(
+      { component: { id: "", type: "sidebar" }, eventType, data },
+      ctx,
+    );
   }
   if (eventType === "refresh-dashboard") {
     // Refresh path doesn't bust the gh cache directly from here — the

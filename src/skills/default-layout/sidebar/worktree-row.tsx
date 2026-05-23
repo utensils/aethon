@@ -10,6 +10,7 @@
  * joins the regular list.
  */
 
+import { useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
 export interface WorktreeSidebarItem {
@@ -43,9 +44,11 @@ export function WorktreeRow({
   onEvent,
   onItemContextMenu,
 }: WorktreeRowProps) {
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const pending = item.pendingState;
   const isPendingActive = pending === "queued" || pending === "starting";
   const isFailed = pending === "failed";
+  const canRemoveInline = !item.isMain && !isPendingActive && !isFailed;
 
   const className = [
     "a2ui-sidebar-item",
@@ -65,12 +68,13 @@ export function WorktreeRow({
     <li
       className={className}
       title={tooltip}
+      onMouseLeave={() => setConfirmingRemove(false)}
       onClick={() => {
-        if (isPendingActive || isFailed) return;
+        if (isPendingActive || isFailed || confirmingRemove) return;
         onEvent("switch-worktree", { sectionId, worktreeId: item.id }, item.id);
       }}
       onDoubleClick={() => {
-        if (isPendingActive || isFailed) return;
+        if (isPendingActive || isFailed || confirmingRemove) return;
         onEvent(
           "open-worktree-in-new-tab",
           { sectionId, worktreeId: item.id },
@@ -165,6 +169,55 @@ export function WorktreeRow({
           title="Worktree is locked"
         >
           ◆
+        </span>
+      ) : null}
+      {canRemoveInline ? (
+        <span className="ae-worktree-remove-slot">
+          {confirmingRemove ? (
+            <button
+              type="button"
+              className="ae-worktree-confirm-remove"
+              aria-label={`Confirm remove ${displayLabel}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEvent(
+                  "remove-worktree",
+                  { sectionId, worktreeId: item.id, confirmed: true },
+                  item.id,
+                );
+              }}
+            >
+              Confirm
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ae-worktree-remove"
+              aria-label={`Remove ${displayLabel}`}
+              title="Remove worktree"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmingRemove(true);
+              }}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M5.5 2.75h5M6.25 2.75l.5-1h2.5l.5 1M3.5 4.5h9M5 4.5l.55 9h4.9l.55-9M7 6.5v5M9 6.5v5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.35"
+                />
+              </svg>
+            </button>
+          )}
         </span>
       ) : null}
     </li>

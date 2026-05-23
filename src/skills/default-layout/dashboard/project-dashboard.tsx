@@ -82,6 +82,9 @@ export function ProjectDashboard({
   state,
   onEvent,
 }: BuiltinComponentProps) {
+  const [confirmingWorktreeId, setConfirmingWorktreeId] = useState<
+    string | null
+  >(null);
   const props = component.props as
     | {
         project?: unknown;
@@ -235,37 +238,94 @@ export function ProjectDashboard({
               </button>
             </header>
             <ul className="a2ui-project-dashboard-worktrees">
-              {worktrees.map((w) => (
-                <li
-                  key={w.id}
-                  className={
-                    "a2ui-project-dashboard-worktree" +
-                    (w.active ? " is-active" : "")
-                  }
-                  onClick={() =>
-                    onEvent(
-                      "switch-worktree",
-                      { worktreeId: w.id, projectId: project.id },
-                      w.id,
-                    )
-                  }
-                  title={w.path}
-                >
-                  <span className="a2ui-project-dashboard-worktree-label">
-                    {w.label || w.branch || "worktree"}
-                  </span>
-                  {w.branch && (
-                    <span className="a2ui-project-dashboard-worktree-branch">
-                      ⎇ {w.branch}
+              {worktrees.map((w) => {
+                const label = w.label || w.branch || "worktree";
+                const confirming = confirmingWorktreeId === w.id;
+                return (
+                  <li
+                    key={w.id}
+                    className={
+                      "a2ui-project-dashboard-worktree" +
+                      (w.active ? " is-active" : "") +
+                      (confirming ? " is-confirming" : "")
+                    }
+                    onMouseLeave={() => {
+                      if (confirming) setConfirmingWorktreeId(null);
+                    }}
+                    onClick={() => {
+                      if (confirming) return;
+                      onEvent(
+                        "switch-worktree",
+                        { worktreeId: w.id, projectId: project.id },
+                        w.id,
+                      );
+                    }}
+                    title={w.path}
+                  >
+                    <span className="a2ui-project-dashboard-worktree-label">
+                      {label}
                     </span>
-                  )}
-                  {w.isMain && (
-                    <span className="a2ui-project-dashboard-worktree-main">
-                      main
-                    </span>
-                  )}
-                </li>
-              ))}
+                    {w.branch && (
+                      <span className="a2ui-project-dashboard-worktree-branch">
+                        ⎇ {w.branch}
+                      </span>
+                    )}
+                    {w.isMain ? (
+                      <span className="a2ui-project-dashboard-worktree-main">
+                        main
+                      </span>
+                    ) : confirming ? (
+                      <button
+                        type="button"
+                        className="a2ui-project-dashboard-worktree-confirm-remove"
+                        aria-label={`Confirm remove ${label}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEvent(
+                            "remove-worktree",
+                            {
+                              worktreeId: w.id,
+                              projectId: project.id,
+                              confirmed: true,
+                            },
+                            w.id,
+                          );
+                        }}
+                      >
+                        Confirm
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="a2ui-project-dashboard-worktree-remove"
+                        aria-label={`Remove ${label}`}
+                        title="Remove worktree"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setConfirmingWorktreeId(w.id);
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 16 16"
+                          width="14"
+                          height="14"
+                          aria-hidden="true"
+                          focusable="false"
+                        >
+                          <path
+                            d="M5.5 2.75h5M6.25 2.75l.5-1h2.5l.5 1M3.5 4.5h9M5 4.5l.55 9h4.9l.55-9M7 6.5v5M9 6.5v5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.35"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}

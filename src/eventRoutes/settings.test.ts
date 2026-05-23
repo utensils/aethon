@@ -37,6 +37,58 @@ describe("handleSettings", () => {
     expect(mocks.saveSettings).toHaveBeenCalledTimes(1);
   });
 
+  it("opens system-prompt.md in an editor tab rooted at the Aethon dir", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    mocks.invoke
+      .mockResolvedValueOnce("/Users/test/.aethon")
+      .mockResolvedValueOnce("");
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "open-system-prompt",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "aethon_home_dir");
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "read_state", {
+      name: "system-prompt.md",
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(3, "write_state", {
+      name: "system-prompt.md",
+      content: "",
+    });
+    expect(mocks.newEditorTab).toHaveBeenCalledWith(
+      "/Users/test/.aethon/system-prompt.md",
+      { rootPath: "/Users/test/.aethon" },
+    );
+    expect(mocks.closeSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite an existing system prompt while opening it", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    mocks.invoke
+      .mockResolvedValueOnce("/Users/test/.aethon")
+      .mockResolvedValueOnce("custom prompt");
+    await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "open-system-prompt",
+      },
+      ctx,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("write_state", {
+      name: "system-prompt.md",
+      content: "",
+    });
+    expect(mocks.newEditorTab).toHaveBeenCalledWith(
+      "/Users/test/.aethon/system-prompt.md",
+      { rootPath: "/Users/test/.aethon" },
+    );
+  });
+
   it("reset-layout-prefs restores layout defaults and clears persisted prefs", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {

@@ -84,6 +84,53 @@ describe("WorktreeRow", () => {
     );
   });
 
+  it("opens inline confirmation from the remove icon", () => {
+    const { onEvent } = harness(wt({ label: "feature-x" }));
+    const row = screen.getByText("feature-x").closest("li")!;
+    fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Confirm remove feature-x" }).textContent,
+    ).toBe("Confirm");
+    fireEvent.click(row);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("confirms inline worktree removal without switching rows", () => {
+    const { onEvent } = harness(wt({ label: "feature-x" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm remove feature-x" }),
+    );
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith(
+      "remove-worktree",
+      expect.objectContaining({ worktreeId: "wt-1", confirmed: true }),
+      "wt-1",
+    );
+  });
+
+  it("clears inline remove confirmation when the pointer leaves", () => {
+    const { onEvent } = harness(wt({ label: "feature-x" }));
+    const row = screen.getByText("feature-x").closest("li")!;
+    fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
+    fireEvent.mouseLeave(row);
+    expect(
+      screen.queryByRole("button", { name: "Confirm remove feature-x" }),
+    ).toBeNull();
+    fireEvent.click(row);
+    expect(onEvent).toHaveBeenCalledWith(
+      "switch-worktree",
+      expect.objectContaining({ worktreeId: "wt-1" }),
+      "wt-1",
+    );
+  });
+
+  it("does not show inline remove for the main worktree", () => {
+    harness(wt({ isMain: true, label: "main" }));
+    expect(screen.queryByRole("button", { name: "Remove main" })).toBeNull();
+  });
+
   it("flags main worktree with accent glyph", () => {
     harness(wt({ isMain: true, label: "main" }));
     const row = screen.getByText("main").closest("li")!;
