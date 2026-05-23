@@ -7,6 +7,7 @@
 // they were created with — switching project doesn't retro-cwd live sessions.
 
 import { invoke } from "@tauri-apps/api/core";
+import { getLocalHostId } from "./hosts";
 import { readState, writeState } from "./persist";
 import {
   type Worktree,
@@ -23,6 +24,12 @@ export interface Project {
   lastUsed: number;
   /** Per-project disclosure state in the worktree-aware sidebar. */
   uiExpanded?: boolean;
+  /** Host this project lives on. Empty / missing => local. v3+ records
+   *  always carry one; v2 records inherit the local host id at migration. */
+  hostId?: string;
+  /** Cached discovered icon (absolute path or asset URL). Populated by
+   *  src/projectIcons.ts on hover/intersection. */
+  iconUrl?: string;
 }
 
 export interface ProjectsState {
@@ -32,11 +39,17 @@ export interface ProjectsState {
   activeWorktreeId: string | null;
   /** Worktrees keyed by projectId. Persisted alongside the projects array. */
   worktreesByProject: Record<string, Worktree[]>;
+  /** Active host id. Defaults to the local host id at migration time so
+   *  upgraded users land on their existing project list. */
+  activeHostId: string | null;
 }
 
 const FILE = "projects.json";
 const MAX_PROJECTS = 16;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+/** Fallback used when host_info IPC isn't reachable (tests, plain browser).
+ *  Real boots resolve a stable id via `commands::host::host_info`. */
+export const FALLBACK_LOCAL_HOST_ID = "local:unknown";
 
 function basename(path: string): string {
   // Last non-empty segment; tolerate `/` and `\` separators so the same code
@@ -46,12 +59,13 @@ function basename(path: string): string {
   return parts[parts.length - 1] || cleaned || "project";
 }
 
-export function emptyProjectsState(): ProjectsState {
+export function emptyProjectsState(localHostId?: string | null): ProjectsState {
   return {
     projects: [],
     activeId: null,
     activeWorktreeId: null,
     worktreesByProject: {},
+    activeHostId: localHostId ?? null,
   };
 }
 
@@ -66,31 +80,49 @@ interface PersistedV2 {
   activeWorktreeId?: string | null;
   worktreesByProject?: Record<string, Worktree[]>;
 }
+interface PersistedV3 extends PersistedV2 {
+  activeHostId?: string | null;
+}
 
-export async function loadProjects(): Promise<ProjectsState> {
+export async function loadProjects(localHostId?: string): Promise<ProjectsState> {
+  // Resolve the local host id from the bridge BEFORE migrating so v1/v2
+  // entries get stamped with the real id, not the FALLBACK placeholder
+  // — otherwise saveProjects persists "local:unknown" into projects.json
+  // and host-scoped views can never match the real host on next boot
+  // (codex P2 review finding).
+  const hostId = localHostId ?? (await getLocalHostId(FALLBACK_LOCAL_HOST_ID));
   const raw = await readState(FILE);
-  if (!raw) return emptyProjectsState();
+  if (!raw) return emptyProjectsState(hostId);
   try {
-    const parsed = JSON.parse(raw) as PersistedV2 | PersistedV1;
-    return migrateProjects(parsed);
+    const parsed = JSON.parse(raw) as PersistedV3 | PersistedV2 | PersistedV1;
+    return migrateProjects(parsed, hostId);
   } catch {
-    return emptyProjectsState();
+    return emptyProjectsState(hostId);
   }
 }
 
 /** Pure migration from any prior schema version to the current shape.
- *  Idempotent — applying it twice is a no-op. */
-export function migrateProjects(parsed: PersistedV2 | PersistedV1): ProjectsState {
+ *  Idempotent — applying it twice is a no-op. `localHostId` is stamped
+ *  onto v1/v2 entries that pre-date the host model. */
+export function migrateProjects(
+  parsed: PersistedV3 | PersistedV2 | PersistedV1,
+  localHostId: string = FALLBACK_LOCAL_HOST_ID,
+): ProjectsState {
   const projects = Array.isArray(parsed.projects) ? parsed.projects : [];
   // Defensive: drop entries with missing/invalid path or id rather than
   // letting them crash the picker. A malformed file is the user's
   // problem to fix; we surface what we can.
-  const valid = projects.filter(
-    (p): p is Project =>
-      typeof p?.id === "string" &&
-      typeof p?.path === "string" &&
-      typeof p?.label === "string",
-  );
+  const valid = projects
+    .filter(
+      (p): p is Project =>
+        typeof p?.id === "string" &&
+        typeof p?.path === "string" &&
+        typeof p?.label === "string",
+    )
+    .map((p) => ({
+      ...p,
+      hostId: typeof p.hostId === "string" && p.hostId.length > 0 ? p.hostId : localHostId,
+    }));
   const activeId =
     typeof parsed.activeId === "string" &&
     valid.some((p) => p.id === parsed.activeId)
@@ -111,7 +143,18 @@ export function migrateProjects(parsed: PersistedV2 | PersistedV1): ProjectsStat
   }
   const activeWorktreeId =
     typeof v2.activeWorktreeId === "string" ? v2.activeWorktreeId : null;
-  return { projects: valid, activeId, activeWorktreeId, worktreesByProject };
+  const v3 = parsed as PersistedV3;
+  const activeHostId =
+    typeof v3.activeHostId === "string" && v3.activeHostId.length > 0
+      ? v3.activeHostId
+      : localHostId;
+  return {
+    projects: valid,
+    activeId,
+    activeWorktreeId,
+    worktreesByProject,
+    activeHostId,
+  };
 }
 
 export async function saveProjects(state: ProjectsState): Promise<void> {
@@ -120,12 +163,13 @@ export async function saveProjects(state: ProjectsState): Promise<void> {
   for (const [pid, list] of Object.entries(state.worktreesByProject)) {
     worktreesByProject[pid] = worktreesForPersist(list);
   }
-  const payload: PersistedV2 = {
+  const payload: PersistedV3 = {
     schemaVersion: SCHEMA_VERSION,
     projects: state.projects,
     activeId: state.activeId,
     activeWorktreeId: state.activeWorktreeId,
     worktreesByProject,
+    activeHostId: state.activeHostId,
   };
   await writeState(FILE, JSON.stringify(payload));
 }
@@ -161,6 +205,26 @@ export function setProjectUiExpanded(
   };
 }
 
+/** Stamp a discovered icon URL onto the project record. Idempotent —
+ *  no state change when the same URL is already present, so callers
+ *  can fire after every discoverIcon without triggering a re-render
+ *  loop. */
+export function setProjectIconUrl(
+  state: ProjectsState,
+  projectId: string,
+  iconUrl: string | null,
+): ProjectsState {
+  let changed = false;
+  const projects = state.projects.map((p) => {
+    if (p.id !== projectId) return p;
+    const next = iconUrl ?? undefined;
+    if (p.iconUrl === next) return p;
+    changed = true;
+    return { ...p, iconUrl: next };
+  });
+  return changed ? { ...state, projects } : state;
+}
+
 /** Add a directory as a project. If a project at the same path already
  *  exists, that entry is reused (lastUsed bumped) so the picker doesn't
  *  collect duplicates when the user re-opens a familiar directory. */
@@ -168,11 +232,13 @@ export function upsertProject(
   state: ProjectsState,
   path: string,
   label?: string,
+  hostId?: string,
 ): { state: ProjectsState; id: string } {
   const existing = state.projects.find((p) => p.path === path);
   const now = Date.now();
+  const resolvedHostId = hostId ?? state.activeHostId ?? FALLBACK_LOCAL_HOST_ID;
   if (existing) {
-    const updated: Project = { ...existing, lastUsed: now };
+    const updated: Project = { ...existing, lastUsed: now, hostId: existing.hostId ?? resolvedHostId };
     if (label && label !== existing.label) updated.label = label;
     const projects = [updated, ...state.projects.filter((p) => p.id !== existing.id)];
     return {
@@ -186,6 +252,7 @@ export function upsertProject(
     label: label ?? basename(path),
     path,
     lastUsed: now,
+    hostId: resolvedHostId,
   };
   const projects = [next, ...state.projects].slice(0, MAX_PROJECTS);
   return { state: { ...state, projects, activeId: id }, id };
@@ -210,7 +277,13 @@ export function removeProject(
       ? null
       : state.activeWorktreeId;
   return {
-    state: { projects, activeId, activeWorktreeId, worktreesByProject },
+    state: {
+      projects,
+      activeId,
+      activeWorktreeId,
+      worktreesByProject,
+      activeHostId: state.activeHostId,
+    },
     removed,
   };
 }

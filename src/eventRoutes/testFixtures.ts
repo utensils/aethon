@@ -187,6 +187,7 @@ export function buildRouteFixture(
     openProjectFromPicker,
     setActiveProjectById,
     removeProjectById,
+    setActiveHost: vi.fn(),
     syncRecentSessionsToState,
     setProjectExpanded: vi.fn(),
     refreshProjectWorktrees: vi.fn(() => Promise.resolve()),

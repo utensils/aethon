@@ -25,7 +25,13 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // Cache pi's default model so new tabs created before `ready` fires
   // (or before a session's model initialises) can inherit it immediately
   // instead of showing blank "model ▼".
-  if (model) ctx.piDefaultModelRef.current = model;
+  if (model) {
+    ctx.piDefaultModelRef.current = model;
+    // Mirror to state so the header ModelPicker has something to render
+    // even when there is no active tab (fresh boot lands on the
+    // projects-dashboard, /model is undefined until a tab is opened).
+    ctx.setState((prev) => ({ ...prev, piDefaultModel: model }));
+  }
   const models = (data.models as ModelDescriptor[]) ?? [];
   // Hydrate any extension-registered component templates the bridge
   // discovered at boot. setTemplates is wholesale (bridge is the source

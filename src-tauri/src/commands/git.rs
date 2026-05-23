@@ -948,6 +948,35 @@ pub async fn gh_issue_view(project_path: String, number: i64) -> Result<GhIssueD
     })
 }
 
+/// Resolve a GitHub avatar URL for the repo at `project_path`. Returns
+/// `https://github.com/{owner}.png?size=200` when the repo is on GitHub
+/// (avatar URL is stable + cacheable + no API token required), else
+/// `None`. Used by `src/projectIcons.ts` as the network fallback after
+/// a local logo scan misses.
+#[tauri::command]
+pub async fn gh_repo_avatar_url(project_path: String) -> Option<String> {
+    use tokio::process::Command;
+    let dir = PathBuf::from(&project_path);
+    if !dir.is_dir() {
+        return None;
+    }
+    let out = Command::new("gh")
+        .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+        .current_dir(&dir)
+        .output()
+        .await
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name_with_owner = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let (owner, _) = name_with_owner.split_once('/')?;
+    if owner.is_empty() {
+        return None;
+    }
+    Some(format!("https://github.com/{owner}.png?size=200"))
+}
+
 /// Pop a native folder picker and return the chosen path (or None if the
 /// user cancelled). Wrapping `tauri-plugin-dialog::pick_folder` here keeps
 /// the frontend free of a direct dialog dependency — the projects feature

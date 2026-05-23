@@ -27,7 +27,24 @@ interface ProjectListItem {
   label: string;
   path: string;
   active?: boolean;
+  iconUrl?: string;
   gitStatus?: { branch?: string; dirty?: boolean; ahead?: number; behind?: number };
+}
+
+interface HostBannerInfo {
+  id: string;
+  hostname: string;
+  displayName: string;
+  isLocal: boolean;
+}
+
+function resolveOptional<T>(v: unknown, state: Record<string, unknown>): T | null {
+  if (!v) return null;
+  if (isRef(v)) {
+    const r = resolvePointer(state, v.$ref);
+    return (r as T) ?? null;
+  }
+  return v as T;
 }
 
 interface RecentSession {
@@ -66,6 +83,7 @@ export function ProjectsDashboard({
         projects?: unknown;
         recentSessions?: unknown;
         extraCards?: unknown;
+        host?: unknown;
         title?: string;
         subtitle?: string;
       }
@@ -74,6 +92,10 @@ export function ProjectsDashboard({
   const projects = useMemo(
     () => resolveArray<ProjectListItem>(props?.projects, state),
     [props?.projects, state],
+  );
+  const host = useMemo(
+    () => resolveOptional<HostBannerInfo>(props?.host, state),
+    [props?.host, state],
   );
   const recentSessions = useMemo(
     () => resolveArray<RecentSession>(props?.recentSessions, state),
@@ -87,6 +109,17 @@ export function ProjectsDashboard({
   return (
     <div className="a2ui-projects-dashboard">
       <div className="a2ui-projects-dashboard-card">
+        {host && (
+          <div className="a2ui-host-banner" data-host-id={host.id}>
+            <span className="a2ui-host-banner-dot" aria-hidden="true" />
+            <span className="a2ui-host-banner-text">
+              <strong>{host.displayName || host.hostname}</strong>
+              <span className="a2ui-host-banner-hint">
+                {host.isLocal ? "this mac" : host.hostname}
+              </span>
+            </span>
+          </div>
+        )}
         <div className="a2ui-projects-dashboard-hero" aria-hidden="true">
           <AeMarkInline size={56} radius={12} />
         </div>

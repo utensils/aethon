@@ -18,6 +18,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { getConfig, type AethonConfig } from "../../config";
 import { SHARE_MODES, type ShareMode } from "../../utils/shareMode";
+import { DropdownPickerCore } from "./variation-components";
 
 interface SettingsState {
   open: boolean;
@@ -481,6 +482,12 @@ function ModelPicker({
   value: string;
   onChange: (next: string) => void;
 }) {
+  // Reuses the same DropdownPickerCore the header model picker renders,
+  // so search/filter + keyboard nav + visual style stay in lockstep
+  // (replaces a bespoke <select>+custom-mode pair). A sentinel
+  // `__pi_default__` id maps back to `""` so "(pi default)" stays
+  // selectable; a sentinel `__custom__` id flips into a free-text
+  // input for the rare case a user wants a model not on the list.
   const sidebar =
     (state.sidebar as Record<string, unknown> | undefined) ?? {};
   const models =
@@ -489,16 +496,10 @@ function ModelPicker({
     );
   const trimmed = value.trim();
   const knownIds = new Set(models.map((m) => m.id));
-  // Auto-flip into custom mode when the saved id isn't on the loaded
-  // model list. Keeps the user's existing override visible instead of
-  // silently snapping to the first dropdown entry.
   const startsCustom = trimmed.length > 0 && !knownIds.has(trimmed);
   const [customMode, setCustomMode] = useState(startsCustom);
-  // Re-flip when the value or model list changes (e.g. extension that
-  // registers a new model loads, or the user saves and the input
-  // re-renders with a now-recognised id). Intentional state-resync —
-  // the dropdown ↔ free-text toggle is derived from the saved value
-  // and the loaded model list, so a change to either should re-sync.
+  // Re-flip when the value or model list changes (e.g. an extension
+  // registers a new model). Derived-state resync from external input.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- derived-state resync on external input change
     setCustomMode(startsCustom);
@@ -520,8 +521,6 @@ function ModelPicker({
           className="ae-settings-secondary ae-settings-model-picker-toggle"
           onClick={() => {
             setCustomMode(false);
-            // Snap to empty (pi default) so the dropdown has a valid
-            // selection; the user picks from the list next.
             onChange("");
           }}
           title="Pick from the loaded model list"
@@ -532,28 +531,46 @@ function ModelPicker({
     );
   }
 
+  const PI_DEFAULT = "__pi_default__";
+  const CUSTOM = "__custom__";
+  const activeMatch = knownIds.has(trimmed) ? trimmed : PI_DEFAULT;
+  const items = [
+    { id: PI_DEFAULT, label: "(pi default — picks from env vars)", active: activeMatch === PI_DEFAULT },
+    ...models.map((m) => ({
+      id: m.id,
+      label: m.label || m.id,
+      hint: m.label && m.label !== m.id ? m.id : undefined,
+      active: activeMatch === m.id,
+    })),
+    { id: CUSTOM, label: "Custom id…" },
+  ];
+  const activeItem = items.find((it) => it.active);
+  const buttonLabel = activeItem?.label || "(pi default)";
+
   return (
     <span className="ae-settings-model-picker">
-      <select
-        className="ae-settings-input"
-        value={knownIds.has(trimmed) ? trimmed : ""}
-        onChange={(e) => {
-          if (e.target.value === "__custom__") {
+      <DropdownPickerCore
+        className="a2ui-model-picker ae-settings-model-picker-dropdown"
+        buttonLabel={buttonLabel}
+        align="left"
+        sections={[
+          {
+            id: "models",
+            title: "models",
+            items,
+            searchable: true,
+            searchPlaceholder: "filter models — sonnet, gpt, qwen…",
+            emptyLabel: "no models match",
+          },
+        ]}
+        onSelect={(_sectionId, itemId) => {
+          if (itemId === CUSTOM) {
             setCustomMode(true);
             return;
           }
-          onChange(e.target.value);
+          onChange(itemId === PI_DEFAULT ? "" : itemId);
         }}
-        aria-label="Default model"
-      >
-        <option value="">(pi default — picks from env vars)</option>
-        {models.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label} — {m.id}
-          </option>
-        ))}
-        <option value="__custom__">Other…</option>
-      </select>
+      />
     </span>
   );
 }

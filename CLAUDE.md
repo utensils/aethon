@@ -5,726 +5,301 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 Aethon is a Tauri 2 + React + TypeScript desktop app. See `SPEC.md` for the
-design vision and `README.md` for the public-facing description.
+design vision and milestone checklist; `RELEASING.md` for the release flow.
 
-The Tauri shell is intentionally thin — agent logic lives elsewhere. The Rust
-side handles OS boundaries; the React frontend renders A2UI components emitted
-by the agent.
+The Tauri shell is intentionally thin — the Rust side handles OS boundaries
+and the React frontend renders A2UI payloads emitted by a TS agent
+subprocess. Business logic belongs in the agent, not the shell.
 
 ## Stack
 
-- **Backend**: Rust + Tauri 2, crate name `aethon`, lib name `aethon_lib`
+- **Backend**: Rust + Tauri 2 (crate `aethon`, lib `aethon_lib`)
 - **Frontend**: React 19, TypeScript, Vite, bun
-- **Agent**: TypeScript via `@mariozechner/pi-coding-agent`, run as a `bun`
-  subprocess spawned from the Rust shell
+- **Agent**: `@mariozechner/pi-coding-agent` run as a `bun` subprocess
 - **Dev env**: Nix flake (flake-parts + numtide/devshell + treefmt-nix +
-  rust-overlay), Rust toolchain pinned at **1.92.0** in `flake.nix` (via
-  rust-overlay); `rust-toolchain.toml` says `channel = "stable"` for non-Nix
-  builds — the Nix pin takes precedence inside the devshell
-- **Targets**: macOS (aarch64), Linux (x86_64 / aarch64), Windows (later)
+  rust-overlay). Rust pinned to **1.92.0** in `flake.nix`; bumping past 1.95
+  currently breaks `icu_provider` / `regex-automata` / `objc2` transitive
+  deps. `rust-toolchain.toml` is for non-Nix builds; the Nix pin wins inside
+  the devshell.
 
-## Common Commands
+## Common commands
 
-Run inside `nix develop` (or via direnv — `.envrc` bootstraps `nix-direnv`
-then `use flake`, so reentering the shell is cached and instant). The
-devshell exposes these helpers (defined in `flake.nix`):
+Run inside `nix develop` (direnv auto-activates via `.envrc`). Devshell
+helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                                  |
-| ----------- | ----------------------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                 |
-| `build-app` | `cargo tauri build` — release bundle                                          |
-| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                     |
-| `lint`      | ESLint frontend + agent (no auto-fix)                                         |
-| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                           |
-| `coverage`  | TS coverage report under `coverage/` (vitest v8)                              |
-| `fmt`       | `treefmt` (rustfmt + nixfmt + prettier for JSON/MD/YAML/CSS + taplo for TOML) |
+| Command     | What it does                                                    |
+| ----------- | --------------------------------------------------------------- |
+| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment   |
+| `build-app` | `cargo tauri build` — release bundle                            |
+| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest            |
+| `lint`      | ESLint (no auto-fix)                                            |
+| `test`      | `cargo test --lib` + `bunx vitest run`                          |
+| `coverage`  | TS coverage report (vitest v8) → `coverage/`                    |
+| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                   |
 
-`bun tauri dev` and `bun tauri build` also work (they go through the JS-side
-`@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
+ESLint is configured for **0 errors and 0 warnings**.
 
-`scripts/dev.sh` carries two state-sandbox flags (mirroring Claudette):
+Single tests:
+- TS file: `bunx vitest run agent/terminal-stream.test.ts`
+- TS by name: `bunx vitest run -t "test name pattern"`
+- Rust: `cargo test --lib -p aethon -- helpers::test_name`
 
-- `dev --new` — spin up against an empty `~/.aethon`. Points
-  `AETHON_USER_DIR` at `${TMPDIR}/aethon-dev/new-<pid>/` so the launch
-  sees no config, no projects, no window state, no themes. Removed on
-  exit. Use to exercise first-run UX, missing-config flows, fresh
-  extension loading, or to A/B against a real user dir without
-  copying. Most code that touches `~/.aethon` honors the override —
-  the resolver is `helpers::aethon_dir`, used by config / sessions /
-  pastes / logs / window state / extensions / skills.
-- `dev --clean` — standalone nuke. Wipes
-  `${TMPDIR}/aethon-dev/` (per-PID `--new` sandboxes + dev-info files)
-  and exits without launching. No PID checks; use after a SIGKILL
-  left stale state.
+`scripts/dev.sh` flags:
+- `dev --new` — sandbox launch under `${TMPDIR}/aethon-dev/new-<pid>/`
+  (empty `~/.aethon`, removed on exit). Resolver is `helpers::aethon_dir`,
+  honored by config / sessions / pastes / logs / window state / extensions / skills.
+- `dev --clean` — wipe `${TMPDIR}/aethon-dev/` and exit.
 
-To run a single test file: `bunx vitest run agent/terminal-stream.test.ts`.
-To run tests matching a name: `bunx vitest run -t "test name pattern"`.
-To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
+Vite defaults to port 1420 but `scripts/dev.sh` auto-increments and writes
+the chosen Vite + debug ports to `~/.aethon/dev-info.json`; `strictPort: true`
+stays on. The `aethon-debug` skill reads `dev-info.json` to follow the port.
 
 ## Architecture
 
-### Layer responsibilities
+Three layers:
 
-1. **Tauri shell** (`src-tauri/src/lib.rs` is now a thin entry — agent
-   supervisor + child IPC + `run()` builder; concern-grouped IPC commands
-   live under `src-tauri/src/commands/` (`config.rs`, `session.rs`,
-   `extensions.rs`, `git.rs`, `window.rs`, `fs.rs`); shell-tab PTY logic
-   lives under `src-tauri/src/shell/` (`lifecycle.rs`, `scrollback.rs`,
-   `sharemode.rs`); native window geometry persistence in
-   `window_state.rs`; pure helpers in `helpers.rs`; debug-only commands
-   - TCP eval server in `debug.rs` gated by `#[cfg(debug_assertions)]`)
-     — owns the OS boundary. Core agent commands: `send_message`
-     (forwards a chat string to the agent's stdin) and
-     `dispatch_a2ui_event` (forwards a structured event). On the first
-     `send_message` it spawns `bun run agent/main.ts` and starts a reader
-     thread that emits each stdout line as a Tauri `agent-response`
-     event. Shell-tab commands (`shell_open`, `shell_input`,
-     `shell_resize`, `shell_close`) sit behind a `ShellRegistry` (per-tab
-     `portable-pty` PTY + reader thread; emits `shell-output` /
-     `shell-exit` events). UTF-8 chunk boundaries are preserved across
-     reader-thread reads via a carry buffer + `Utf8Error::error_len()`
-     truncation/invalid split — don't replace this with per-chunk
-     `from_utf8_lossy`, multi-byte sequences will corrupt.
-2. **Agent bridge** (`agent/main.ts` is a thin entry-point — env wiring
-   - boot order; the readline loop and 14-case dispatcher live in
-     `agent/dispatcher.ts`) — JSON-lines over stdio. Reads
-     `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
-     with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes
-     from env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …); pi-ai
-     picks one up. Modules (each with a colocated `*.test.ts`):
-   * `state.ts` — the `AethonAgentState` data class (registries, tabs,
-     pending mutations, layout, themes).
-   * `aethon-api.ts` — `buildAethonApi` factory exposed on `globalThis`.
-   * `dispatcher.ts` — readline loop + per-message-type dispatch.
-   * `tab-lifecycle.ts` — `ensureTab` + the pi session subscriber +
-     `emitReady`.
-   * `extension-loader.ts` — discovers + loads extensions from four
-     sources + theme directories.
-   * `project-extensions.ts` — walks up from the active cwd looking
-     for `.aethon/extensions/`.
-   * `system-prompt.ts` — composes the layered system prompt.
-   * `runtime-snapshot.ts` — `getRuntimeSnapshot` + `$AETHON_STATE_FILE`
-     persistence.
-   * `layout-manager.ts` — `setLayout` / `patchLayout` /
-     `registerLayout` + summarize helpers.
-   * `state-mutation.ts` — extension `setState` (size guard + per-tab
-     mirror).
-   * `mutation-ack.ts` — Promise/timeout handshake for mutation acks.
-   * `event-routes.ts` — extension `onEvent` route table.
-   * `keybindings.ts` — extension keybinding registration.
-   * `notifications.ts` — agent-pushed toasts.
-   * `session-history.ts` — reads pi session transcripts under
-     `$AETHON_SESSIONS_DIR/<tabId>/` so the frontend can rehydrate
-     visible history on restart.
-   * `terminal-stream.ts` — buffers `bash`-tool output as an A2UI
-     terminal stream (the `BashTerminalStreamState` snapshot type).
-   * `canvas.ts` — helpers for building and patching A2UI canvas
-     payloads.
-   * `agent-errors.ts` — extracts structured error info from pi agent
-     end-of-run errors (wraps `AgentEndError` classification).
-   * `shell-tools.ts` — pi tool implementations for
-     `listShells`/`readShell`/`writeShell` (bridge-side counterpart to
-     the Rust `shell_query` Tauri command).
-3. **React frontend** (`src/`) — `App.tsx` is a thin shell of `useX()`
-   hooks (`src/hooks/`); event-routing logic lives in `src/eventRoutes/`
-   (one file per prefix family); `src/runtime/windowApi.ts` builds the
-   `window.aethon` runtime API. Listens for `agent-response` events,
-   parses each line, and routes it into the chat history or canvas.
+1. **Tauri shell** (`src-tauri/src/`). `lib.rs` is the thin entry (agent
+   supervisor, IPC, `run()` builder). IPC commands are grouped under
+   `commands/` (`config`, `session`, `extensions`, `git`, `window`, `fs`).
+   Shell-tab PTY logic under `shell/` (`lifecycle`, `scrollback`, `sharemode`).
+   Window geometry in `window_state.rs`. Pure helpers in `helpers.rs`.
+   Debug-only TCP eval server in `debug.rs` (gated by `cfg(debug_assertions)`).
+
+   Core agent commands: `send_message` (forwards chat to agent stdin),
+   `dispatch_a2ui_event` (forwards a structured event). First call spawns
+   `bun run agent/main.ts` and starts a reader thread emitting `agent-response`
+   Tauri events per stdout line. Shell-tab commands (`shell_open/input/
+   resize/close`) sit behind a `ShellRegistry` (per-tab `portable-pty` +
+   reader; emits `shell-output` / `shell-exit`).
+
+   The PTY reader preserves UTF-8 boundaries across reads via a carry buffer
+   + `Utf8Error::error_len()` split — **do not replace with per-chunk
+   `from_utf8_lossy`**; multi-byte sequences will corrupt.
+
+2. **Agent bridge** (`agent/`). JSON-lines over stdio. `main.ts` is a thin
+   entry; the readline loop and dispatcher live in `dispatcher.ts`. State is
+   the `AethonAgentState` class in `state.ts`. The bridge attaches
+   `globalThis.aethon` (built in `aethon-api.ts`) so pi tools and extensions
+   can mutate UI, register components/themes/keybindings, push notifications,
+   and introspect.
+
+   Each module has a colocated `*.test.ts`. Provider config comes from env
+   (`ANTHROPIC_API_KEY` etc.); pi-ai picks one up.
+
+3. **React frontend** (`src/`). `App.tsx` is a thin shell composed of
+   `useX()` hooks (`src/hooks/`). Event routing lives in `src/eventRoutes/`
+   (one file per prefix family). The `window.aethon` runtime API is
+   built in `src/runtime/windowApi.ts`.
 
 ### Frontend model — three things to know
 
-**1. Layout-as-payload.** The default UI is _not_ hardcoded React. It's
-`src/skills/default-layout/workstation.a2ui.json`, loaded as the boot payload
-and fed to the same `A2UIRenderer` that handles agent output. A skill is the
-extension primitive; the default-layout skill currently registers only
-`workstation` while we focus polish on a single surface (the earlier
-`command-deck` / `editorial` / `live-layout` variations were dropped from
-the catalogue — the variation chrome components stay registered so their
-`.a2ui.json` payloads can be re-added when we want sibling layouts back).
-Switching layouts (when more exist) is a sidebar/palette click that calls
-`window.aethon.activateLayout(id)`. Don't add static chrome in `App.tsx` —
-extend the layout JSON or register a new skill. Layouts must conform to
-the slot contract in `src/skills/default-layout/slots.json` + `slots.ts`
-(canonical area names: `header`, `sidebar`, `canvas`, `composer`,
-`terminal`, `status`; non-canonical layouts declare a `slotMap`).
+**1. Layout-as-payload.** The default UI is *not* hardcoded React —
+it's `src/skills/default-layout/workstation.a2ui.json`, fed to the same
+`A2UIRenderer` that handles agent output. Don't add static chrome in
+`App.tsx`; extend the layout JSON or register a skill. Layouts must
+match the slot contract in `src/skills/default-layout/slots.ts`
+(canonical slots: `header`, `sidebar`, `canvas`, `composer`, `terminal`,
+`status`); non-canonical layouts declare a `slotMap`.
 
-**2. Single state store, JSON Pointer addressed.** All app state lives in one
-object on `App` (`messages`, `draft`, `waiting`, `status`, `connection`,
-`canvas`, `terminal.open`, …). Components read it via `$ref` JSON Pointers
-(e.g. `{"value": {"$ref": "/draft"}}`). The renderer applies an _optimistic_
-write back to that path for `change`/`submit` events on inputs whose `value`
-is a `$ref` — see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. JSON Pointer
-helpers: `src/utils/jsonPointer.ts` and `src/utils/dataBinding.ts`.
+**2. Single state store, JSON Pointer addressed.** All app state lives in
+one object on `App`. Components read it via `$ref` JSON Pointers
+(`{"value": {"$ref": "/draft"}}`). The renderer applies an *optimistic*
+write back to that path for `change`/`submit` events on `$ref` inputs —
+see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. Pointer helpers in
+`src/utils/jsonPointer.ts` + `src/utils/dataBinding.ts`.
 
-**3. Two registries.** Primitive React components live in
-`src/components/primitives/` (`text.tsx`, `controls.tsx`, `form.tsx`,
-`layout.tsx`, `media.tsx`, `context-menu.tsx`); the registry that wires
-them is built in `src/components/builtins.tsx` and consumed by
-`A2UIRenderer.tsx` as a hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout
-primitives (`text`,
-`heading`, `paragraph`, `code`, `card`, `button`, `container`,
-`divider`, `image`, `icon`, `text-input`, `date-picker`, `select`,
-`checkbox`, `slider`, `form`, `form-field`, `list`, `table`) — these
-can't be overridden. Default-layout skill components are split per
-family under `src/skills/default-layout/` (`chat.tsx`, `terminal.tsx`,
-`command-palette.tsx`, `settings-panel.tsx`, `search-panel.tsx`,
-`notifications.tsx`, `share-mode-badge.tsx`, `variation-components.tsx`,
-`markdown-adapter.tsx`, plus `shell/`, `sidebar/`, and `editor/`
-sub-directories); `components.tsx` itself is the registration
-aggregator only. Everything else (`layout`, `sidebar`,
-`chat-history`, `chat-input`, `status-bar`, `terminal-panel`, `main-canvas`,
-`shell-canvas`, `tool-card`, `command-palette`, `notification-stack`,
-`settings-panel`, `search-panel`, `share-mode-badge`, …) comes from the
-`SkillRegistry`, exposed via React context (`useSkillRegistry`). App-root
-overlays mount through `<RegistryComponent type="…" />` (also exported
-from `A2UIRenderer.tsx`) so a skill can swap any of them with
-`aethon.registerComponent`. To add a new component type, register it on a
-skill, not in the primitives table.
+**3. Two registries.**
+- Primitive React components (`src/components/primitives/`) are wired
+  in `src/components/builtins.tsx` into a hardcoded 19-entry
+  `PRIMITIVE_REGISTRY`. **Can't be overridden by skills.**
+- Everything else (chrome composites like `sidebar`, `chat-input`,
+  `command-palette`, `terminal-panel`, `tab-strip`, `shell-canvas`, etc.)
+  comes from `SkillRegistry`. Mount via `<RegistryComponent type="…" />`
+  so a skill can swap them with `aethon.registerComponent`. New types
+  go on a skill, not in the primitives table.
+
+### Event routing
+
+`A2UIRenderer` accepts `onEvent`. Returning `true` marks an event handled
+and suppresses the default `dispatch_a2ui_event` forward to Rust.
+`App.tsx` delegates to `dispatchEvent` in `src/eventRoutes/index.ts`,
+with three precedence layers:
+1. Reserved shell-consent prefixes (`shell-write` / `shell-close` /
+   `session-delete`) MUST resolve before extension matchers.
+2. Extension-registered routes (returning `false` forwards to the bridge).
+3. Built-in routes keyed by `id:<componentId>` or `type:<componentType>`.
+
+**Always key chrome composites by `type:`, not `id:`** — that's how
+`registerComponent("<type>", custom)` and renamed instances stay routable.
+New handlers go in `eventRoutes/<name>.ts` + a happy-path test, then
+register in `BUILTIN_ROUTE_TABLE`.
 
 ### Runtime API
 
-`App.tsx` attaches a small API to `window.aethon` so skills (and the dev
-console) can swap chrome at runtime:
+`window.aethon` exposes: `setLayout`, `resetLayout`,
+`registerLayout({id, name, payload})` (id pattern `/^[A-Za-z][\w-]*$/`;
+`workstation` is reserved), `activateLayout`, `registerSkill`,
+`listSkills`, `openProject`. Mirrored agent-side on `globalThis.aethon`
+(see `agent/aethon-api.ts`).
 
-- `window.aethon.setLayout(payload)` — replace the active layout
-- `window.aethon.resetLayout()` — restore the default-layout boot payload
-- `window.aethon.registerLayout({ id, name, payload })` — register a layout
-  variation that appears in the sidebar's `layouts` section + palette.
-  Also exposed agent-side as `aethon.registerLayout` (bridge in
-  `agent/main.ts`). Reserved id: `workstation`
-  (`command-deck` / `editorial` / `live-layout` were trimmed from the
-  built-in catalogue and may be reintroduced later — keep the names
-  free). Id pattern: `/^[A-Za-z][\w-]*$/`.
-- `window.aethon.activateLayout(id)` — switch to a registered layout
-- `window.aethon.registerSkill(skill)` — register a skill; if it has a
-  `layout`, also activate it
-- `window.aethon.listSkills()` — names of currently registered skills
-- `window.aethon.openProject(path)` — register/activate a project
-
-### Keyboard shortcuts (current set)
-
-| Combo                         | Action                                                                                                                                                                                        |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Cmd+T`                       | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. `[shortcuts] new_tab_kind = "shell"` flips this to "always shell". |
-| `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                      |
-| `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                         |
-| `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                               |
-| `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. Matches the iTerm / Terminal.app convention. |
-| `Cmd+Opt+]` / `Cmd+Opt+[`     | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                   |
-| `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                  |
-| `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                        |
-| `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                         |
-| `Cmd+\``                      | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                              |
-| `Cmd+B`                       | Toggle left sidebar (projects)                                                                                                                                                                |
-| `Cmd+D`                       | Toggle right sidebar (files)                                                                                                                                                                  |
-| `Cmd+K`                       | Clear chat                                                                                                                                                                                    |
-| `Cmd+.`                       | Stop current prompt                                                                                                                                                                           |
-| `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                 |
-| `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                              |
-| `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                    |
-| `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                           |
-| `Cmd+,`                       | Open Settings panel                                                                                                                                                                           |
-| `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                  |
-| `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                            |
-| `Cmd+Ctrl+F` (mac) / `F11`    | Toggle fullscreen                                                                                                                                                                             |
-| `F12`                         | Toggle WebKit DevTools (debug builds)                                                                                                                                                         |
-| `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                         |
-
-`metaKey || ctrlKey` for cross-platform — Linux/Windows users get the
-same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
-mirror these. Extension `aethon.registerKeybinding` priority is
-unchanged: extensions run first and may override built-ins.
-
-### Terminal panel mental model
-
-The **bottom terminal panel** (toggle `Cmd+\``) is a tabbed surface
-hosting two kinds of sub-tabs:
-
-1. **Agent bash** (always present, sub-tab id `"agent-bash"`,
-   read-only). A live stream of the bash tool's stdout for the active
-   agent tab. Same content also appears in chat as a tool card; the
-   panel pins it visible while you scroll chat.
-2. **Shell sub-tabs** (zero or more). Full interactive PTYs backed by
-   `portable-pty`. TUI-capable (vim, htop, fzf), 256-color, mouse
-   reporting. Status line under the xterm shows
-   `cwd · command · share-mode badge · cols×rows`.
-
-The top tab strip carries **only agent tabs** (chat sessions). Shell
-sub-tabs render in the bottom panel; the `TabStrip` composite filters
-out `kind === "shell"` automatically.
-
-`Cmd+T` is **focus-aware**: focus inside the bottom panel → new shell
-sub-tab; focus elsewhere → new agent tab. `Cmd+Shift+T` always spawns
-a new shell sub-tab and auto-opens the panel. This matches the
-mental model "new tab of whatever surface I'm using".
-
-State paths: `/terminalPanel/activeSubId` tracks which sub-tab is
-visible (defaults to `"agent-bash"`). `/terminal/open` toggles the
-whole panel. Shells live in `/tabs` next to agents but with
-`kind === "shell"` — the rendering layer routes them to the correct
-surface.
-
-### Tab kinds — agent vs shell
-
-`Tab.kind` is `"agent" | "shell"`. Agent tabs carry chat-history fields
-(`messages`, `draft`, `waiting`, `queueCount`); shell tabs carry a
-`shell: ShellMeta` payload (`cwd`, `command`, `args`, `shareMode`,
-`shellState`, `exitCode?`). Share-mode UI helpers live in
-`src/utils/shareMode.ts` (`cycleShareMode`, `shareModeLabel`,
-`shareModeTooltip`); the security boundary is enforced Rust-side in
-`shell.rs` (`ShareState` + `Scrollback`). The bridge surface is `aethon.shells.{list, read, write}` — round-trips
-through the mutation-ack channel as `shell_query` ops with
-`MutationResult.data` populated. **Do not add an agent-driven
-`setShareMode`** — discoverable tab ids in `/tabs` plus a setter would
-defeat the opt-in boundary `list()` enforces (only the user's badge
-click may flip a mode). Reads are forward-paging from the caller's
-cursor; cold-start callers omit the cursor to get the latest
-`max_bytes`. Writes pop an Allow/Deny notification in `read-write` mode
-(reusing the existing notification primitive — `pushNotification` with
-`durationMs: null` + `actions`); `read-write-trusted` writes go through
-without prompting. Pre-frontend-ready callers awaiting
-`shells.list/read/write` block until the handshake completes (queries
-need real `data`, not the side-effect-mutation shortcut). Don't add a
-fast-path that lets the bridge invoke Tauri commands directly — the
-read clamp + privacy floor have to live where the PTY does. Most code paths special-case via
-`tab.kind === "shell"` checks (see `closeTab`, `newShellTab`,
-`/agentTabActive` + `/shellTabActive` derived flags). The shell-canvas
-composite (`ShellCanvas` in `default-layout/shell/canvas.tsx`) replaces the agent
-`main-canvas` + `chat-input` cells when a shell tab is active —
-controlled by the `/agentTabActive` / `/shellTabActive` `$ref` visibility
-flags in `workstation.a2ui.json`. Keybindings: `Cmd+T` = new agent tab (focus-aware — new shell sub-tab when
-focus is inside the bottom panel), `Cmd+Shift+T` = new shell sub-tab (always).
-
-### Slash commands (client-side)
-
-`src/slashCommands.ts` registers frontend-only slash commands that run
-without an LLM round-trip (e.g. `/clear`, `/theme`, `/extensions`). They
-receive a `SlashCommandContext` with `appendSystem`, `notify`, `clearChat`,
-`setTheme`, etc. Pi's server-side / native slash commands are also plumbed
-through: the bridge advertises them via `extension_slash_commands` events
-and the renderer dispatches them back through the
-`native_slash_command` → `native_slash_result` round-trip in
-`agent/dispatcher.ts`. They appear in the composer autocomplete next to the
-client-side ones. When adding a purely UI action, prefer the client-side
-registry; only go through the bridge when the agent needs to observe or
-act on the command.
-
-### Extension frontend loading
-
-Extensions can ship React components by setting `aethon.frontendEntry` in
-their `package.json` to a relative JS file path. The bridge reads that file
-and sends its contents as a string in `extension_frontend_modules` events.
-`src/skills/extensionFrontendLoader.ts` receives these events, wraps each
-body in `new Function("React", "skill", code)`, and calls the result with
-`React` + a `{ registerComponent(type, fn) }` API object. Components
-registered this way land in the `SkillRegistry` and are resolved alongside
-built-in skill components. A delta payload replaces the full previous set —
-re-evaluated modules hot-swap their components; removed modules unregister
-theirs. The trust model is identical to bridge-side extension code (user
-installed it, no sandbox).
-
-`SkillRegistry` also has a `.registerTemplate(type, payload)` path for
-declarative A2UI subtree templates — used when an extension provides a
-component as an A2UI JSON fragment rather than a React function. The
-renderer prefers React components when both exist for the same type.
-
-### Command palette
-
-`Cmd+P` opens the switcher (tabs / sessions / projects / layouts /
-themes / models first); `Cmd+Shift+P` opens it in commands mode (slash
-commands / keybindings first). The palette is a registered builtin
-component (`command-palette` type) in `defaultLayoutSkill` so a skill
-can override it via `aethon.registerComponent`. Pure ranking + section
-selectors live in `src/skills/default-layout/palette-items.ts` so vitest
-can exercise them without React. Query prefixes: `>` forces commands,
-`@` forces tabs, `?` forces keybindings. Arrow nav uses a document-level
-capture-phase keydown handler keyed off a `navRef` so focus theft and
-content swaps don't strand the selection — see the comments in
-`command-palette.tsx` before refactoring.
-
-### Projects and worktrees
-
-Pi sessions are scoped to a working directory. `src/projects.ts` persists
-the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) under
-schemaVersion 2; a v1→v2 migration runs on first read so older builds
-still resolve. The active project's path is passed as `cwd` on `tab_open`.
-**Existing tabs keep the cwd they were created with** — switching the
-active project only affects new tabs. When updating tab/session code,
-treat the per-tab cwd as immutable.
-
-Worktrees attach to projects via `src/worktrees.ts`. The Rust shell
-exposes `git_worktrees`, `git_worktree_add`, `git_worktree_remove`, and
-`git_branch_list` in `src-tauri/src/commands/git.rs`; the frontend
-reconciles fresh listings against in-memory state by path so stable ids
-+ user labels survive polls. A "pending" worktree is a live UI object
-(queued → starting → succeeded | failed) — Codex pattern — that the
-user can cancel / retry / dismiss directly in the sidebar. The
-worktree-aware projects render nested under their parent project with
-a disclosure caret (sidebar item carries `worktrees` + `expanded`).
-
-### File icons (Material Icon Theme)
-
-The file tree renders Material Icon Theme SVGs vendored under
-`src/file-icons/icons/` (subset of PKief/vscode-material-icon-theme, MIT
-license — see `src/file-icons/LICENSE` + `SOURCE.md`). `iconForPath`
-(`src/file-icons/index.ts`) resolves a filesystem entry to a bundled
-asset URL via basename → extension → fallback. The `<FileIcon>` wrapper
-in `src/components/file-icon.tsx` is what file-tree rows use today.
-Adding new icons is a vendor-and-map operation: drop the SVG into
-`icons/`, add an import + mapping in `manifest.ts`.
-
-### Monaco editor + file tree
-
-The editor surface (sidebar file tree + Monaco buffers + media/text
-viewers) is implemented as a default-layout sub-skill under
-`src/skills/default-layout/editor/`. Monaco glue lives in `src/monaco/`
-(`editor-buffers.ts` manages models per file, `setup.ts` configures
-workers + languages, `theme.ts` syncs to the active Aethon theme).
-File-system operations go through `src-tauri/src/commands/fs.rs` — a
-thin set of read/write/list/move/delete commands scoped to the active
-project's `cwd`. Two security layers gate every path: a lexical check
-(`helpers::resolve_inside_root`) catches `..` traversal without
-hitting disk, then a canonicalize-after-existing check catches
-symlinks that redirect outside the project root. Reads/writes are
-capped at 10 MB to keep the Tauri IPC bridge responsive. Deletes go
-to the OS trash via the `trash` crate, never `unlink`.
-
-### Window state persistence
-
-`src-tauri/src/window_state.rs` saves window position, size, and
-`maximized` flag to `~/.aethon/window-state.json` (keyed by window
-label). Everything is stored in **logical** units — physical pixels
-aren't portable across monitors with different scale factors, so a
-window saved on Retina (2×) would render at the wrong size when
-restored to a 1× monitor.
-
-Restore runs in `setup()` *before* the window becomes visible
-(`tauri.conf.json` sets `visible: false`), so there's no race or
-settle-debounce. Save is 250 ms-debounced on `Moved`/`Resized` and
-flushed synchronously on `CloseRequested`. Monitor matching is a
-three-tier fallback: exact-dimension → intersects → nearest by saved
-center, then the window is translated to preserve its
-offset-within-saved-monitor and clamped so the titlebar stays
-reachable. Fullscreen state is treated as transient and skipped on
-save. v0 (physical-unit) state files are migrated to v1 on first
-load. Spaces / virtual desktops aren't tracked — Tauri 2 doesn't
-expose a stable identifier.
-
-### Agent runtime contract
-
-The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
-
-| Env var               | Purpose                                                                                                                                                                                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AETHON_DOCS_DIR`     | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
-| `AETHON_USER_DIR`     | `~/.aethon/` — user extensions, skills, sessions, state file.                                                                                                                                                                                                |
-| `AETHON_STATE_FILE`   | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                                    |
-| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts.                                                                                                                                    |
-| `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
-| `AETHON_PROJECT_ROOT` | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
-
-The bridge's `agent/system-prompt.ts` composes a layered prompt:
-DEFAULT (static API + primitives reference, mentioning the docs/state-file
-paths) → optional user override at `~/.aethon/system-prompt.md` →
-optional user append at `~/.aethon/system-prompt-append.md` → **runtime
-snapshot** built from `getRuntimeSnapshot()` (extensions, themes,
-components, layout summary, tabs). The snapshot is rebuilt every time
-`resourceLoader.reload()` runs, so the bootstrap order is important —
-extensions load **before** the default tab is created so its session
-prompt sees them.
-
-### globalThis.aethon (bridge side, in agent/main.ts)
-
-Mutation: `registerComponent`, `setState`, `setLayout`, `patchLayout`,
-`registerSidebarSection`, `registerTheme`, `onEvent`. Introspection:
-`listExtensions`, `listComponents`, `listThemes`, `getLayout`,
-`getRuntimeSnapshot` — these let the agent answer "what's loaded?"
-without scraping the filesystem. The same data is also written to
-`$AETHON_STATE_FILE` so a `cat` works without an introspection round-trip.
-
-Per-surface subnamespaces — each backed by a `*_query` bridge message
-and matching frontend handler:
-
-- `aethon.shells.{list, read, write}` — opt-in shell-tab sharing.
+Per-surface subnamespaces, each backed by a `*_query` bridge message:
+- `aethon.shells.{list, read, write}` — opt-in shell sharing.
 - `aethon.tasks.start({projectPath, prompt, newWorktree?, branch?, baseBranch?})`
-  — UI parity for the per-project dashboard composer. Spawns a
-  worktree (when requested), opens a new agent tab in the right cwd,
-  and forwards the prompt as the first user message.
+  — task launcher parity.
 - `aethon.dashboard.{getRepoOverview, refresh, listIssues, getIssue}` —
-  cached gh repo data (stars/forks/issues/PRs/default branch/pushed),
-  cache-bust, the open issues list, and a single issue's body.
-  `listIssues` is the same data the per-project dashboard's Issues
-  section renders; `getIssue` returns the full body so the agent can
-  prepare a `startTask` payload from an issue.
+  cached gh repo data + issues.
 
-The five dashboard pi tools (`startTask`, `getRepoOverview`,
-`refreshDashboard`, `listOpenIssues`, `getOpenIssue`) register
-automatically in `agent/dashboard-tools.ts` so the model can drive
-them via the standard tool-use protocol.
+Pre-frontend-ready callers of `*_query` block until the handshake
+completes — queries need real `data`, not the side-effect-mutation
+shortcut. Do **not** add a fast-path letting the bridge invoke Tauri
+commands directly; security floors live with the data source.
 
-### Dashboard surfaces (M9)
+### Tab kinds + terminal panel
 
-Empty-state replaced by two visibility-gated composites in
-`workstation.a2ui.json`: `projects-dashboard` (when `/empty && !/project`)
-and `project-dashboard` (when `/empty && /project`). Both target the
-`canvas` slot via the existing `empty-state` slotMap. Six chrome
-composite types — `projects-dashboard`, `project-dashboard`,
-`task-launcher`, `project-card`, `gh-stats-strip`, `issues-section`
-— all registered in `defaultLayoutSkill.components` and swappable via
-`aethon.registerComponent`. Live data via `$ref`:
-`/projectsDashboard/extraCards` (extension-injected tiles on the
-global dashboard) and `/projectDashboard/widgets` (extension-injected
-cards on the per-project dashboard); push entries with
-`aethon.patchState`. gh repo data is cached in
-`src/ghRepoOverviewCache.ts` (5-min live TTL, 30-min negative). Issues
-get their own cache in `src/ghIssuesCache.ts` (90-s live, 60-s
-negative; cap clamped server-side to 100 issues). Project cards
-lazy-fetch on IntersectionObserver entry; the per-project dashboard
-fetches eagerly on activation. Issues section lazy-fetches when it
-scrolls into view to keep the dashboard's initial paint cheap.
+`Tab.kind` is `"agent" | "shell"`. The top tab strip carries only agent
+tabs (shells are filtered). The bottom panel (toggle `` Cmd+` ``) hosts
+two sub-tab kinds: the always-present read-only `agent-bash` stream
+(buffered tool stdout) and zero or more interactive `portable-pty` shells
+(TUI-capable, 256-color, mouse). State paths: `/terminalPanel/activeSubId`
+(defaults `"agent-bash"`), `/terminal/open`. Shells live in `/tabs` with
+`kind === "shell"`; the renderer routes them to the right surface via
+`/agentTabActive` / `/shellTabActive` derived flags in
+`workstation.a2ui.json`.
 
-Per the codex audit on PR #73 we use `gh issue list -q length` for
-the open-issue count instead of `repos/<r>.open_issues_count` (which
-counts PRs + issues together). Branch names with slashes are
-percent-encoded before going into `repos/<r>/branches/{x}` so
-`feat/foo` doesn't 404. Active worktree is mirrored to root state
-`/activeWorktreeId` so the file tree and `newTab` cwd both follow
-the sidebar selection (mirroring is in `useProjectOps.syncProjectsToState`).
+`Cmd+T` is focus-aware: focus inside the bottom panel = new shell sub-tab;
+elsewhere = new agent tab. `Cmd+Shift+T` always spawns a new shell sub-tab.
 
-Issue row interaction model: left-click opens the issue in the user's
-browser (`tauri-plugin-opener|open_url`); right-click pops a
-lightweight context menu (Open on GitHub · Send to agent · Copy URL);
-the hover-revealed "→ Agent" button is the keyboard-equivalent for
-"Send to agent." The send-to-agent path forwards through the same
-`start-task` event the task launcher uses, so UI parity with the pi
-tool stays one code path. The agent receives a markdown-formatted
-prompt (title + url + author + body) and lands in whichever worktree
-the user has activated.
+Per-tab `ShareMode` is the security boundary, enforced Rust-side in
+`shell/sharemode.rs`. The bridge surface (`aethon.shells.*`) rounds through
+the mutation-ack channel. **Do not add an agent-driven `setShareMode`** —
+discoverable tab ids + a setter would defeat the opt-in floor that `list()`
+enforces. Writes pop an Allow/Deny notification in `read-write` mode;
+`read-write-trusted` bypasses the prompt.
 
-### Event flow gotcha
-
-`A2UIRenderer` accepts an `onEvent` prop. Returning `true` from it marks the
-event as handled and _suppresses_ the default Tauri `dispatch_a2ui_event`
-forward. `App.tsx` delegates to `dispatchEvent` in `src/eventRoutes/` — a
-per-prefix route table with three precedence layers enforced in
-`eventRoutes/index.ts`: (1) shell-consent reserved prefixes
-(`shell-write` / `shell-close` / `session-delete`) MUST resolve before
-extension matchers; (2) extension-registered routes (returning `false`
-forwards to the bridge); (3) built-in routes keyed by `id:<componentId>`
-or `type:<componentType>`. New built-in handlers go in
-`eventRoutes/<name>.ts` + a happy-path test, then registered under the
-matching key(s) in `BUILTIN_ROUTE_TABLE`.
-
-**Always key chrome-composite handlers by `type:<componentType>`, not
-`id:`** — that's how `aethon.registerComponent("<type>", custom)` and
-custom-layout payloads with renamed instances stay routable. Use
-`id:<…>` only for genuine instance-specific dispatch (none today). The
-12 chrome composites (sidebar, command-palette, settings-panel,
-search-panel, notification-stack, chat-input, empty-state,
-terminal-panel, tab-strip, model-picker, appearance-menu,
-share-mode-badge, shell-canvas) all dispatch by type as of #N.
-
-### Hot-reload doesn't kill in-flight prompts
+### Hot reload doesn't kill in-flight prompts
 
 The Rust file-watcher (`commands/extensions.rs::run_debounce_worker`)
-no longer SIGKILLs the bun child when an extension file changes.
-Instead it writes `{"type":"reload_request"}` to the child's stdin.
-The bridge sets `state.reloadPending`, drains active
-`tab.promptInFlight`, writes a `{"type":"_reload_done"}` sentinel to
-stdout, and `process.exit(0)`s. The supervisor's stdout reader peeks
-for that sentinel, sets the reload-in-progress flag, emits
-`agent-reloaded`, and the next IPC call respawns. So an extension
-drop never aborts a user's LLM turn. The fallback hard-kill path
-remains for the case where stdin is wedged.
+writes `{"type":"reload_request"}` to the child's stdin instead of
+SIGKILL. The bridge drains active `tab.promptInFlight`, emits a
+`{"type":"_reload_done"}` sentinel, and exits. The supervisor's reader
+peeks for the sentinel, emits `agent-reloaded`, and respawns on the next
+IPC call. Extension drops never abort the user's LLM turn. The hard-kill
+fallback remains for wedged stdin.
 
-## Conventions
+`touch agent/main.ts` is the simplest manual restart.
 
-- **Conventional Commits** for all messages: `feat(scope):`, `fix(scope):`, etc.
-- **Two-space indent** for Nix; standard for everything else.
-- **TypeScript strict mode** + `verbatimModuleSyntax` + `erasableSyntaxOnly`.
-  Use `import type { ... }` for type-only imports.
-- **Vite port defaults to 1420 but auto-increments via `scripts/dev.sh`**
-  when busy. The wrapper finds free Vite + debug ports, writes them to
-  `~/.aethon/dev-info.json`, exports `VITE_PORT` + `AETHON_DEBUG_PORT`,
-  and overrides Tauri's `devUrl` via `$TAURI_CONFIG`. `strictPort: true`
-  stays on so Vite fails loudly if the wrapper hands it a busy port. The
-  aethon-debug skill reads `dev-info.json` to follow the chosen port.
-- **No global state in the Rust shell** beyond what Tauri's `Manager` exposes
-  (currently just the `AgentProcess` mutex). Business logic belongs in the
-  agent, not the shell.
-- **No emojis in code or commits** unless the user explicitly asks.
+### File-system safety (commands/fs.rs)
 
-## Editing Tauri Config
+Two layers gate every path: lexical (`helpers::resolve_inside_root`)
+catches `..` traversal without hitting disk; canonicalize-after-existing
+catches symlinks redirecting outside the project root. Read/write caps
+at 10 MB. Deletes go to the OS trash via the `trash` crate — never
+`unlink`.
 
-`src-tauri/tauri.conf.json` controls window, bundle, and security policy.
-Adding a Tauri plugin requires three steps:
+### Window geometry
 
-1. `cargo add tauri-plugin-X --manifest-path src-tauri/Cargo.toml`
-2. Register in `src-tauri/src/lib.rs` via `.plugin(tauri_plugin_X::init())`
-3. Add the plugin's permissions to `src-tauri/capabilities/default.json`
+`src-tauri/src/window_state.rs` persists position/size/maximized to
+`~/.aethon/window-state.json` in **logical** units (physical pixels are
+not portable across HiDPI). Restore runs in `setup()` before the window
+becomes visible (`tauri.conf.json` sets `visible: false`). Save is
+250 ms debounced on Moved/Resized; flushed synchronously on
+CloseRequested. Monitor matching is three-tier (exact → intersects →
+nearest by saved center) with titlebar-reachability clamp. Fullscreen
+is transient and skipped. v0 (physical) files migrate to v1.
 
-## Nix / Linux build notes
+### Projects + worktrees
 
-`flake.nix` carries platform-specific workarounds — read it before changing
-the toolchain or build inputs:
+Pi sessions are scoped to a cwd. `src/projects.ts` persists the project
+list at `~/.aethon/projects.json` (max 16, MRU, schemaVersion 2; v1→v2
+migrates on read). **Existing tabs keep the cwd they were created with**
+— switching the active project only affects new tabs. Worktrees attach
+via `src/worktrees.ts`, with Rust commands in `commands/git.rs`. Active
+worktree is mirrored to `/activeWorktreeId` so the file tree and new
+tabs follow the sidebar selection.
 
-- Rust is pinned at **1.92.0** because 1.95+ currently fails to compile
-  `icu_provider 2.2.0`, `regex-automata 0.4.14`, and `objc2` (transitive
-  Tauri 2.10 deps). The pin has a comment; bump only when upstream catches up.
-- Linux build needs `webkit2gtk_4_1` + GTK closure on `PKG_CONFIG_PATH`. The
-  flake sets these manually because numtide/devshell skips nixpkgs'
-  pkg-config setup hook. `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set to dodge
-  a Mesa/Wayland crash in WebKitGTK's DMA-BUF renderer.
-- macOS uses Apple's `/usr/bin/cc` (not Nix's CC wrapper) due to SDK
-  mismatches with current nixpkgs unstable, and pulls libiconv via
-  `LIBRARY_PATH` + `NIX_LDFLAGS`.
+### Dashboard caches (M9)
 
-## Reference Projects
+- `src/ghRepoOverviewCache.ts` — 5-min live TTL, 30-min negative.
+- `src/ghIssuesCache.ts` — 90-s live, 60-s negative; cap clamped to 100.
 
-- `~/Projects/utensils/Claudette` — sibling Tauri 2 + TS project with much
-  deeper integration (xterm, voice, mDNS). Good source of patterns for IPC,
-  window management, and the Nix Linux build closure.
-- `~/Projects/utensils/claudex` — sibling Rust-only project. Good source of
-  patterns for the flake skeleton (flake-parts + devshell + treefmt + crane).
+Use `gh issue list -q length` for the open-issue count, **not**
+`open_issues_count` (that counts PRs + issues). Percent-encode branch
+names with slashes before hitting `repos/<r>/branches/{x}`.
 
-## Hot reload
+## Agent runtime env
 
-Vite hot-reloads the frontend automatically. The agent subprocess (`bun run
-agent/main.ts`) is held alive across reloads in Tauri state, so editing the
-agent on its own would not pick up changes — to fix this, in debug builds
-the Rust shell uses `notify` to watch `agent/` recursively and kills the
-child whenever a file changes. The next Tauri command (e.g. `start_agent`,
-`send_message`) lazily respawns it with the new code, and the frontend
-receives an `agent-reloaded` event so it can show "agent reloaded" in the
-status bar. Production builds skip the watcher entirely.
+Tauri sets these when spawning `agent/main.ts`:
 
-If you find yourself wanting to manually restart the agent during dev, the
-simplest path is `touch agent/main.ts`.
+| Env var               | Purpose                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `AETHON_DOCS_DIR`     | Bundled docs (`docs/aethon-agent/`) — system prompt points the model here.                              |
+| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, skills, sessions, state file.                                                 |
+| `AETHON_STATE_FILE`   | `~/.aethon/state.json` snapshot, debounced 200 ms.                                                       |
+| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` — pi `SessionManager.continueRecent` per tab.                              |
+| `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release.                |
+| `AETHON_PROJECT_ROOT` | Source tree path in dev only.                                                                            |
+
+`agent/system-prompt.ts` composes DEFAULT → optional `~/.aethon/system-prompt.md`
+override → optional `~/.aethon/system-prompt-append.md` → runtime snapshot
+from `getRuntimeSnapshot()`. Snapshot rebuilds on every
+`resourceLoader.reload()`; extensions load **before** the default tab so
+its session prompt sees them.
 
 ## Logging
 
-Both the Rust shell and the bridge (TS) use leveled, scoped loggers and
-write to two sinks:
+Levels via `AETHON_LOG` (preferred) or `RUST_LOG` / `LOG_LEVEL`. Defaults
+`info` in dev, `warn` in release. The Rust subscriber uses
+`tracing-subscriber::EnvFilter` so target scopes work
+(`AETHON_LOG=aethon::agent_watch=debug,aethon::config=warn`).
 
-| Sink              | What goes there                       | When to use                                                          |
-| ----------------- | ------------------------------------- | -------------------------------------------------------------------- |
-| stderr            | Live stream as the app runs           | Watching `bun tauri dev` output, seeing what's happening right now   |
-| `~/.aethon/logs/` | Daily-rotating files, 7-day retention | Post-hoc investigation, release-build crashes, comparing across runs |
+Two sinks: stderr (live) and `~/.aethon/logs/` (daily-rotating, 7-day
+retention). Two file series share that directory:
+- `aethon.YYYY-MM-DD` — Rust (`tracing`)
+- `bridge.YYYY-MM-DD.log` — bun (`agent/logger.ts`)
 
-Two file series share that directory:
+## Driving the app from Claude
 
-- `aethon.YYYY-MM-DD` — Rust shell (`tracing` crate), covers agent
-  supervisor, file watcher, debug TCP server, Tauri commands.
-- `bridge.YYYY-MM-DD.log` — bun bridge (`agent/logger.ts`), covers
-  extension loaders, theme/skill discovery, system-prompt assembly,
-  per-tab session setup.
+`.claude/skills/aethon-debug/` is slash-commandable. In debug builds the
+Rust shell starts a TCP eval server on `127.0.0.1:19433` (override with
+`AETHON_DEBUG_PORT`); `scripts/debug-eval.sh` ships JS to it, which
+wraps in an async IIFE and evals inside the webview. Use proactively
+after touching UI or agent code.
 
-Files older than 7 days are pruned at app startup; rotation is per-day.
-Each line is `ISO_TS LEVEL scope: message` so `grep ext-loader …` works.
+Dev-only webview globals:
+- `window.__AETHON_STATE__()`, `window.__AETHON_SET_STATE__(next)`
+- `window.__AETHON_INVOKE__` (Tauri `invoke`)
+- `window.__AETHON_REGISTRY__` (`SkillRegistry`)
+- `window.aethon` (public runtime API)
 
-Levels follow `AETHON_LOG` (preferred) or `RUST_LOG` / `LOG_LEVEL` env
-vars. Defaults are `info` in dev and `warn` in release. Examples:
+The dev build must already be running — never launch a release build
+(debug server gated by `cfg(debug_assertions)`).
 
-```bash
-AETHON_LOG=debug bun tauri dev          # everything
-AETHON_LOG=warn bun tauri dev           # quiet — warnings + errors only
-AETHON_LOG=aethon::agent_watch=debug bun tauri dev  # one scope verbose
-```
+## Conventions
 
-The Rust subscriber uses `tracing-subscriber::EnvFilter` so target-scoped
-filters work (`aethon::agent_watch=debug,aethon::config=warn`).
+- **Conventional Commits** for all messages: `feat(scope):`, `fix(scope):`.
+- **TypeScript strict + `verbatimModuleSyntax` + `erasableSyntaxOnly`.**
+  Use `import type { ... }` for type-only imports.
+- **No global state in the Rust shell** beyond Tauri's `Manager`
+  (currently just the `AgentProcess` mutex).
+- **No emojis in code or commits** unless asked.
+- A few `react-hooks/*` per-line disables exist for set-state-in-effect
+  resync paths + intentionally-empty memo deps. Audit on touch; don't
+  broaden.
 
-## Driving the app from Claude (`aethon-debug` skill)
+## Adding a Tauri plugin
 
-`.claude/skills/aethon-debug/` ships a slash-commandable skill for inspecting
-and driving the running dev app. In debug builds the Rust shell starts a TCP
-eval server on `127.0.0.1:19433` (override with `AETHON_DEBUG_PORT`); the
-script `scripts/debug-eval.sh` ships JS to that server, which wraps it in
-an async IIFE, evals it inside the webview, and returns the stringified
-result. Patterned on Claudette's `claudette-debug` skill — see its `SKILL.md`
-for the full action list.
+1. `cargo add tauri-plugin-X --manifest-path src-tauri/Cargo.toml`
+2. Register in `src-tauri/src/lib.rs` via `.plugin(tauri_plugin_X::init())`
+3. Add permissions to `src-tauri/capabilities/default.json`
 
-Webview globals exposed in dev only:
+## Nix / Linux build notes
 
-- `window.__AETHON_STATE__()` — snapshot of the layout state object
-- `window.__AETHON_INVOKE__` — Tauri `invoke` (used by the eval wrapper)
-- `window.__AETHON_REGISTRY__` — `SkillRegistry` instance
-- `window.__AETHON_SET_STATE__(next)` — replace state (advanced)
-- `window.aethon` — public runtime API (`setLayout`, `registerSkill`, etc.)
+`flake.nix` carries platform-specific workarounds — read it before
+changing the toolchain or build inputs.
 
-Use this proactively after touching any UI / agent code: connect, send a
-chat, screenshot, verify. The dev build must already be running — never
-launch a release build (the debug server is gated by `cfg(debug_assertions)`).
-
-## Status — what is and isn't wired up
-
-The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
-keyed against milestones M1–M5). Update both that checklist and any
-relevant notes here when capabilities land.
-
-**Quick highlights as of writing:** M1–M6 complete, plus post-M6 polish.
-M6 shipped: interactive PTY-backed user shell tabs (`portable-pty`,
-`Tab.kind` discriminator, theme-agnostic xterm), per-tab `ShareMode`
-4-value enum with privacy-floor guardrail,
-`aethon.shells.{list, read, write}` bridge API with per-write Allow/Deny
-user confirmation, pi-tool registration of
-`listShells`/`readShell`/`writeShell` (in `agent/shell-tools.ts`),
-Settings UI overlay, fullscreen, search overlay, drag-and-drop into
-composer, bridge crash recovery, OS notifications. Post-M6: Monaco
-editor + file tree + media viewers (`src/skills/default-layout/editor/`,
-`src/monaco/`, `src-tauri/src/commands/fs.rs`), native window geometry
-persistence with multi-monitor restore (`src-tauri/src/window_state.rs`),
-pi native slash commands plumbed through to the composer autocomplete,
-left-edge sidebar resize, Brink theme palette.
-Tool execution surfaces as A2UI cards, multi-tab persistent
-sessions, light theme, system tray + native menu, slash command picker,
-real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
-`composer` required, `slotMap` for non-canonical layouts), generic
-`extension_lifecycle` feedback channel, registerable slash commands /
-keybindings / menu items / event routes / layouts (workstation only in
-the built-in catalogue today; extensions can register more via
-`aethon.registerLayout`), mutation-feedback channel (every mutation
-returns `Promise<MutationResult>`), command palette (Cmd+P switcher /
-Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
-.deb/AppImage + Windows NSIS bundles via Nix overlay.
-
-## State persistence
-
-`src/persist.ts` is the disk I/O layer for frontend state. It wraps Tauri
-`read_state` / `write_state` commands with a graceful no-op fallback when
-running outside Tauri (unit tests, plain browser). One-time migration: on
-first read it checks `localStorage` for the same key so users upgrading from
-the pre-Tauri build keep their history. All tab/canvas state serialisation
-goes through here; don't invoke Tauri storage commands directly from
-components.
-
-## Releases
-
-See `RELEASING.md` for the full release workflow: keypair generation,
-wiring the public key into `tauri.conf.json`, CI secrets, and how to cut a
-tag. Summary: push a `v*.*.*` tag → GitHub Actions builds signed macOS DMGs,
-Linux `.deb`/`.rpm`, and Windows NSIS, uploads `latest.json` for the
-in-app updater.
-
-## Test coverage + linting
-
-| Tool                         | Scope                                                     | Devshell command |
-| ---------------------------- | --------------------------------------------------------- | ---------------- |
-| `cargo clippy -D warnings`   | Rust shell + helpers                                      | `check`          |
-| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers.rs`          | `test`           |
-| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                       | `check`          |
-| `bunx eslint .`              | TS + React lint, type-aware via tsconfig                  | `lint`           |
-| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`) | `test`           |
-| `bunx vitest run --coverage` | TS coverage report (v8)                                   | `coverage`       |
-
-The `check` devshell command runs all of the above as a single CI gate.
-ESLint is configured for **0 errors and 0 warnings**. A handful of `react-hooks`
-disables (set-state-in-effect for state-resync paths, exhaustive-deps for
-intentionally-empty memo deps) are scoped per-line with author rationale —
-audit them on touch, don't broaden them.
-
-## Local-only files (gitignored)
-
-`run-phase*.sh` and `aethon-phase*.png` are ad-hoc test-harness artifacts —
-phase scripts spawn the dev server and Playwright-MCP grabs screenshots.
-Don't commit them and don't rely on them being present.
+- Linux needs `webkit2gtk_4_1` + GTK closure on `PKG_CONFIG_PATH` (set
+  manually because numtide/devshell skips pkg-config setup hooks).
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1` dodges a Mesa/Wayland crash.
+- macOS uses Apple's `/usr/bin/cc` (Nix CC wrapper has SDK mismatches
+  against current nixpkgs unstable), and pulls libiconv via
+  `LIBRARY_PATH` + `NIX_LDFLAGS`.

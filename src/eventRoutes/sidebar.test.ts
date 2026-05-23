@@ -280,6 +280,19 @@ describe("handleSectionedSelect", () => {
     expect(mocks.setActiveTab).toHaveBeenCalledWith("abc123");
   });
 
+  it("hosts section routes select to setActiveHost", async () => {
+    const { ctx } = buildRouteFixture();
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "hosts", itemId: "remote:bender" },
+      },
+      ctx,
+    );
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+  });
+
   it("projects open-project triggers the picker", async () => {
     const { ctx, mocks } = buildRouteFixture();
     await handleSectionedSelect(

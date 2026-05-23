@@ -163,6 +163,10 @@ export interface SidebarItem {
   id: string;
   label: string;
   icon?: string;
+  /** Resolved icon URL — bundled asset path, file://, or http(s). Rendered
+   *  as a small <img> before the label. Used by host rows and (when
+   *  src/projectIcons.ts populates iconUrl) project rows. */
+  iconUrl?: string;
   onClick?: string;
   // Optional active flag — true highlights the row.
   active?: boolean;

@@ -5,11 +5,13 @@ import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload } from "./types/a2ui";
-import { deriveTabActiveFlags, makeEmptyTab, type Tab } from "./types/tab";
+import { deriveTabActiveFlags, type Tab } from "./types/tab";
 import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
+import { useHostInfo } from "./hooks/useHostInfo";
 import { useProjects } from "./hooks/useProjects";
+import { discoverIcon } from "./projectIcons";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { TAB_MIRROR_KEYS, useTabs } from "./hooks/useTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
@@ -78,21 +80,27 @@ export default function App() {
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
-  // Initial state also seeds one default tab + the active-tab mirror keys.
+  // Initial state has NO tabs by default — the projects-dashboard is the
+  // canvas until the user opens a project or clicks "New Tab". A restored
+  // session snapshot rehydrates whatever tabs were open last; a fresh boot
+  // (or `dev --new`) lands on the dashboard with the canvas empty.
   const initialApp = useMemo(() => {
-    const tab0 = makeEmptyTab("default", "Tab 1");
     const restored = loadSessionUiSnapshot();
-    const tabs = restored?.tabs.length ? restored.tabs : [tab0];
+    const tabs = restored?.tabs.length ? restored.tabs : [];
     const activeTabId =
       restored?.activeTabId && tabs.some((t) => t.id === restored.activeTabId)
         ? restored.activeTabId
-        : tabs[0].id;
-    const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+        : (tabs[0]?.id ?? null);
+    const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
     const restoredLayout =
       restored?.layout && typeof restored.layout === "object"
         ? (restored.layout as Record<string, unknown>)
         : {};
-    const activeRecord = activeTab as unknown as Record<string, unknown>;
+    // When there is no active tab, the mirror keys point at undefined so
+    // layout `$ref`s resolve cleanly without throwing. The composer +
+    // chat surfaces are hidden via `/agentTabActive` in this state.
+    const activeRecord =
+      (activeTab as unknown as Record<string, unknown> | null) ?? {};
     const rootMirror = Object.fromEntries(
       TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
     );
@@ -385,6 +393,11 @@ export default function App() {
     onGitStatusChanged: () => projectsHandleRef.current.onGitStatusChanged(),
   });
 
+  // Host info (local + LAN-discovered) — drives the HOSTS sidebar
+  // section and the dashboard host banner. Stays passive: hosts come
+  // from Tauri events; the active host is a user-driven selection.
+  const hostInfo = useHostInfo();
+
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the
   // sub-tab switcher, the shell-/agent-tab-active mirror effect, and the
@@ -491,6 +504,7 @@ export default function App() {
     clearActiveProject,
     removeProjectById,
     setProjectExpanded,
+    setProjectIconUrl,
     refreshProjectWorktrees,
     activateWorktree,
     createWorktreeForProject,
@@ -526,6 +540,27 @@ export default function App() {
       onGitStatusChanged: () => syncProjectsToState(),
     };
   });
+
+  // Lazy project icon discovery — for each project missing an iconUrl,
+  // fire discoverIcon and persist the resolved url back to the project
+  // record. The in-process cache in src/projectIcons.ts memoizes by
+  // path so this effect is idempotent across re-runs. Runs whenever
+  // the projects list shape changes (new project, refresh, host swap).
+  const discoverIconsForProjects = useCallback(() => {
+    const ps = projectsRef.current.projects;
+    for (const project of ps) {
+      if (project.iconUrl) continue;
+      void (async () => {
+        const url = await discoverIcon(project);
+        if (!url) return;
+        if (!projectsRef.current.projects.some((p) => p.id === project.id)) return;
+        setProjectIconUrl(project.id, url);
+      })();
+    }
+  }, [setProjectIconUrl]);
+  useEffect(() => {
+    discoverIconsForProjects();
+  }, [discoverIconsForProjects, state.projects]);
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.
@@ -1067,6 +1102,12 @@ export default function App() {
       openProjectFromPicker,
       setActiveProjectById,
       removeProjectById,
+      setActiveHost: (id) => {
+        hostInfo.setActiveHost(id);
+        // Switching host clears the active project — projects are
+        // host-scoped (today: all local; future: filtered by hostId).
+        clearActiveProject();
+      },
       syncRecentSessionsToState,
       setProjectExpanded,
       refreshProjectWorktrees,
@@ -1190,6 +1231,21 @@ export default function App() {
       ...existingProjectsDashboard,
       extraCards: existingProjectsDashboard.extraCards ?? [],
     };
+    // HOSTS sidebar section — [local, ...remotes] with the active host
+    // flagged. The local host is always the first row; discovered
+    // remotes follow in arrival order. Active flag drives the
+    // .a2ui-sidebar-item-active style + the `host` derived record below
+    // (consumed by the dashboard host-banner).
+    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
+    const sidebarHosts = hostInfo.hosts.map((h) => ({
+      id: h.id,
+      label: h.displayName || h.hostname,
+      hint: h.isLocal ? "this mac" : h.hostname,
+      tooltip: h.hostname,
+      active: h.id === activeHostId,
+    }));
+    const activeHost =
+      hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
     return {
       ...state,
       hasTabs,
@@ -1203,11 +1259,15 @@ export default function App() {
       sidebar: {
         ...sidebar,
         history,
+        hosts: sidebarHosts,
       },
       projectDashboard,
       projectsDashboard,
+      hosts: hostInfo.hosts,
+      activeHostId,
+      host: activeHost,
     };
-  }, [buildSidebarHistory, state]);
+  }, [buildSidebarHistory, hostInfo.activeHostId, hostInfo.hosts, hostInfo.localHostId, state]);
   const renderRecord = renderState as Record<string, unknown>;
   const notificationsOpen =
     ((renderRecord.notifications as unknown[] | undefined) ?? []).length > 0;

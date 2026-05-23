@@ -84,7 +84,7 @@ interface DropdownPickerCoreProps {
   onSelect: (sectionId: string, itemId: string) => void;
 }
 
-function DropdownPickerCore({
+export function DropdownPickerCore({
   buttonLabel,
   sections,
   align = "right",
@@ -315,9 +315,17 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
       : resolvePointer(state, "/sidebar/models");
   const items = asDropdownItems(sourceRaw);
 
+  // Resolution chain: explicit `props.active` → active tab's model
+  // (`/model` mirror) → pi default (`/piDefaultModel`, seeded on
+  // `ready`). The default fallback covers the no-tab case so the
+  // header still shows the user's working model on a fresh boot.
+  const activeTabModel = resolvePointer(state, "/model") as string | undefined;
+  const piDefaultModel = resolvePointer(state, "/piDefaultModel") as
+    | string
+    | undefined;
   const activeId = props.active
     ? resolveString(props.active, state)
-    : (resolvePointer(state, "/model") as string | undefined) ?? "";
+    : (activeTabModel || piDefaultModel || "");
   const itemsWithActive = items.map((it) => ({
     ...it,
     active: it.id === activeId,

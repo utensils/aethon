@@ -32,6 +32,26 @@ interface ProjectCardData {
   path: string;
   active?: boolean;
   gitStatus?: GitStatus | null;
+  iconUrl?: string;
+}
+
+/** Deterministic accent color from the project id so the initial-tile
+ *  fallback feels intentional rather than random. Pulls from a small
+ *  palette of theme-friendly hues. */
+function initialTileColor(id: string): string {
+  const palette = [
+    "#c45f3b",
+    "#3b88c4",
+    "#5fa847",
+    "#9b6fc9",
+    "#c98c2b",
+    "#469da3",
+    "#b73c87",
+    "#6c7a89",
+  ];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
 }
 
 function isCardRef(v: unknown): v is { $ref: string } {
@@ -158,6 +178,23 @@ export function ProjectCard({
       title={project.path}
     >
       <div className="a2ui-project-card-head">
+        {project.iconUrl ? (
+          <img
+            src={project.iconUrl}
+            alt=""
+            aria-hidden="true"
+            className="a2ui-project-card-icon"
+            loading="lazy"
+          />
+        ) : (
+          <span
+            className="a2ui-project-card-icon a2ui-project-card-icon--initial"
+            aria-hidden="true"
+            style={{ backgroundColor: initialTileColor(project.id) }}
+          >
+            {project.label.slice(0, 1).toUpperCase()}
+          </span>
+        )}
         <span className="a2ui-project-card-label">{project.label}</span>
         {active && (
           <span className="a2ui-project-card-active-chip">active</span>

@@ -145,6 +145,15 @@ export function ItemRow({
       ) : alignSlots ? (
         <span className="a2ui-sidebar-item-git-dot-spacer" aria-hidden="true" />
       ) : null}
+      {item.iconUrl ? (
+        <img
+          src={item.iconUrl}
+          alt=""
+          aria-hidden="true"
+          className="a2ui-sidebar-item-icon"
+          loading="lazy"
+        />
+      ) : null}
       <span className="a2ui-sidebar-item-label">{item.label}</span>
       {git?.branch ? (
         <span className="a2ui-sidebar-item-git-branch" title={branchTitle}>

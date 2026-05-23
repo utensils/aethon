@@ -18,6 +18,7 @@ import {
   removeProject,
   saveProjects,
   setActiveWorktree as setActiveWorktreeState,
+  setProjectIconUrl as setProjectIconUrlState,
   setProjectUiExpanded,
   setProjectWorktrees,
   upsertProject,
@@ -36,6 +37,7 @@ import {
   type Worktree,
 } from "../worktrees";
 import { formatRelativeTime } from "../utils/time";
+import { pickWorktreeName } from "../worktreeNames";
 import { TAB_MIRROR_KEYS } from "./useTabs";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { recomputeModelPicker } from "../utils/modelPicker";
@@ -137,6 +139,11 @@ export interface UseProjectOpsActions {
   setActiveProjectById: (id: string) => boolean;
   clearActiveProject: () => void;
   removeProjectById: (id: string) => boolean;
+  /** Stamp a discovered icon (data: URL or remote URL) onto the
+   *  project record. Persists to ~/.aethon/projects.json so cold start
+   *  paints synchronously off disk next time. No-op when the iconUrl
+   *  is already set to the same value. */
+  setProjectIconUrl: (projectId: string, iconUrl: string | null) => void;
 
   // ─── Worktree ops ──────────────────────────────────────────────────
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
@@ -371,6 +378,7 @@ export function useProjectOps(
               // the row label stays compact even with deep paths.
               label: p.label,
               tooltip: p.path,
+              iconUrl: p.iconUrl,
               active: p.id === ps.activeId,
               git: gitStatusRef.current.get(p.path),
               expanded: p.uiExpanded === true,
@@ -709,6 +717,13 @@ export function useProjectOps(
     void persistProjects();
   }
 
+  function setProjectIconUrl(projectId: string, iconUrl: string | null): void {
+    const next = setProjectIconUrlState(projectsRef.current, projectId, iconUrl);
+    if (next === projectsRef.current) return;
+    projectsRef.current = next;
+    void persistProjects();
+  }
+
   function activateWorktree(worktreeId: string | null): void {
     projectsRef.current = setActiveWorktreeState(
       projectsRef.current,
@@ -725,70 +740,33 @@ export function useProjectOps(
     return `${projectPath.replace(/\/$/, "")}-${safe}`;
   }
 
+  /** One-click worktree create: picks a Helios-pantheon branch name
+   *  that's not already in use, then delegates to
+   *  `createWorktreeWithParams` so the optimistic-update + error-path
+   *  logic stays in exactly one place (this is the same code path the
+   *  task-launcher composer + pi `startTask` tool use). The previous
+   *  implementation used `window.prompt` which is unreliable inside the
+   *  Tauri webview — that's the bug the sidebar context menu hit. */
   async function createWorktreeForProject(projectId: string): Promise<void> {
     const project = findProject(projectId);
     if (!project) return;
-    // Lightweight prompt for now; a richer modal can replace this without
-    // changing the wire format. The branch name is required; target path
-    // defaults to <project>-<branch>.
-    const branch = window.prompt("New worktree branch name");
-    if (!branch) return;
-    const targetPath = window.prompt(
-      "Worktree path",
-      defaultWorktreePath(project.path, branch),
-    );
-    if (!targetPath) return;
-    const pending = newPendingWorktree(projectId, branch, targetPath);
-    // Optimistically show the pending row.
-    const before = projectsRef.current.worktreesByProject[projectId] ?? [];
-    projectsRef.current = setProjectWorktrees(
-      projectsRef.current,
-      projectId,
-      [...before, pending],
-    );
-    syncProjectsToState();
-    // Flip queued → starting and invoke.
-    projectsRef.current = setProjectWorktrees(
-      projectsRef.current,
-      projectId,
-      updateWorktreePendingState(
-        projectsRef.current.worktreesByProject[projectId] ?? [],
-        pending.id,
-        "starting",
-      ),
-    );
-    syncProjectsToState();
-    try {
-      await gitWorktreeAdd({
-        projectPath: project.path,
-        targetPath,
-        branch,
-      });
-      projectsRef.current = setProjectWorktrees(
-        projectsRef.current,
-        projectId,
-        updateWorktreePendingState(
-          projectsRef.current.worktreesByProject[projectId] ?? [],
-          pending.id,
-          "succeeded",
-        ),
-      );
-      // Re-fetch to canonicalize path / head fields.
-      await refreshProjectWorktrees(projectId);
-    } catch (err) {
-      const msg = String(err);
-      projectsRef.current = setProjectWorktrees(
-        projectsRef.current,
-        projectId,
-        updateWorktreePendingState(
-          projectsRef.current.worktreesByProject[projectId] ?? [],
-          pending.id,
-          "failed",
-          msg,
-        ),
-      );
-      syncProjectsToState();
+    // Build the "taken" set from every branch the local clone knows
+    // about (worktree dir names + git-tracked branches) so we don't
+    // collide with existing work.
+    const taken = new Set<string>();
+    for (const w of projectsRef.current.worktreesByProject[projectId] ?? []) {
+      if (w.branch) taken.add(w.branch);
+      if (w.label) taken.add(w.label);
     }
+    try {
+      const branches = await gitBranchList(project.path);
+      for (const b of branches) taken.add(b.name);
+    } catch {
+      // Branch list failed (non-git project, gh missing). Pool is
+      // large enough that pure-random pick still works fine.
+    }
+    const branch = pickWorktreeName(taken);
+    await createWorktreeWithParams({ projectId, branch });
   }
 
   async function createWorktreeWithParams(opts: {
@@ -1058,6 +1036,7 @@ export function useProjectOps(
     clearActiveProject,
     removeProjectById,
     setProjectExpanded,
+    setProjectIconUrl,
     refreshProjectWorktrees,
     activateWorktree,
     createWorktreeForProject,

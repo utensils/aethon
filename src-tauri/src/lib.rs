@@ -37,6 +37,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 mod commands;
 mod helpers;
+mod server;
 mod shell;
 mod window_state;
 use helpers::{parse_config_toml, sanitize_filename_segment};
@@ -699,6 +700,7 @@ pub fn run() {
         .manage(AgentReloadFlag(Arc::new(AtomicBool::new(false))))
         .manage(shell::ShellRegistry::new())
         .manage(window_state::WindowStateStore::new())
+        .manage(Arc::new(server::ServerState::new()))
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
                 window_state::schedule_save(window.app_handle().clone(), window.label().to_string());
@@ -749,9 +751,14 @@ pub fn run() {
             commands::git::git_branch_list,
             commands::git::gh_branch_status,
             commands::git::gh_repo_overview,
+            commands::git::gh_repo_avatar_url,
             commands::git::gh_issue_list,
             commands::git::gh_issue_view,
             commands::git::pick_project_directory,
+            commands::host::host_info,
+            commands::server::server_status,
+            commands::server::server_start,
+            commands::server::server_stop,
             commands::window::updater_available,
             commands::window::toggle_fullscreen,
             commands::window::toggle_devtools,
@@ -815,6 +822,11 @@ pub fn run() {
                     let _ = w.show();
                 }
             }
+            // Built-in HTTP + mDNS server. Failures inside `boot` are
+            // logged + swallowed so a port collision or LAN hiccup
+            // never blocks the UI.
+            let server_state = app.state::<Arc<server::ServerState>>().inner().clone();
+            server::boot(app.handle().clone(), server_state);
             Ok(())
         })
         .run(tauri::generate_context!())
