@@ -80,6 +80,34 @@ describe("sessionUiSnapshot", () => {
     expect(restored?.activeTabId).toBe("agent");
   });
 
+  it("preserves editor rootPath for files outside the active project", () => {
+    const tab = {
+      ...makeEmptyTab("editor", "system-prompt.md", null, "editor"),
+      editor: {
+        filePath: "/Users/test/.aethon/system-prompt.md",
+        rootPath: "/Users/test/.aethon",
+        language: "markdown",
+        isDirty: true,
+        cursorLine: 12,
+        cursorColumn: 4,
+      },
+    };
+
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "editor",
+    });
+
+    expect(loadSessionUiSnapshot()?.tabs[0]?.editor).toMatchObject({
+      filePath: "/Users/test/.aethon/system-prompt.md",
+      rootPath: "/Users/test/.aethon",
+      language: "markdown",
+      isDirty: false,
+      cursorLine: 12,
+      cursorColumn: 4,
+    });
+  });
+
   it("does not persist blank empty new tabs", () => {
     saveSessionUiSnapshot({
       tabs: [

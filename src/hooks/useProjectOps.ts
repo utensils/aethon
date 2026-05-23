@@ -609,12 +609,11 @@ export function useProjectOps(
       unwatchProjectForBridge(previousActive.path);
     }
     watchProjectForBridge(target.path);
-    // Fire-and-forget worktree refresh — populates the disclosure rows
-    // on first switch. The data lives in `worktreesByProject[id]` and
-    // surfaces through syncProjectsToState.
-    if (!projectsRef.current.worktreesByProject[id]) {
-      void refreshProjectWorktrees(id);
-    }
+    // Fire-and-forget worktree refresh on every switch. External git
+    // worktree adds/removes/locks can happen while the user is looking
+    // at another project, so cached rows are only a fast initial paint,
+    // not a reason to skip discovery.
+    void refreshProjectWorktrees(id);
     return true;
   }
 
@@ -752,11 +751,20 @@ export function useProjectOps(
       const listing = await gitWorktrees(project.path);
       const prior = projectsRef.current.worktreesByProject[projectId] ?? [];
       const next = reconcileWorktrees(projectId, prior, listing);
-      projectsRef.current = setProjectWorktrees(
+      let nextState = setProjectWorktrees(
         projectsRef.current,
         projectId,
         next,
       );
+      const activeWorktreeId = nextState.activeWorktreeId;
+      if (
+        nextState.activeId === projectId &&
+        activeWorktreeId &&
+        !next.some((w) => w.id === activeWorktreeId)
+      ) {
+        nextState = { ...nextState, activeWorktreeId: null };
+      }
+      projectsRef.current = nextState;
       void persistProjects();
     } catch {
       // Swallow; project might not be a git repo. The UI shows zero

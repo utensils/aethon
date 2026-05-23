@@ -151,6 +151,9 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
           ? {
               editor: {
                 filePath: t.editor.filePath,
+                ...(typeof t.editor.rootPath === "string" && t.editor.rootPath
+                  ? { rootPath: t.editor.rootPath }
+                  : {}),
                 language: typeof t.editor.language === "string"
                   ? t.editor.language
                   : "plaintext",
