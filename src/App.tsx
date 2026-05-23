@@ -5,7 +5,7 @@ import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload } from "./types/a2ui";
-import { deriveTabActiveFlags, makeEmptyTab, type Tab } from "./types/tab";
+import { deriveTabActiveFlags, type Tab } from "./types/tab";
 import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
@@ -80,21 +80,27 @@ export default function App() {
   // The layout's state IS the app state. Single source of truth, addressed by
   // JSON Pointer from the layout payload. We seed `logoUrl` here so the header
   // can $ref it without the layout JSON having to know the hashed asset path.
-  // Initial state also seeds one default tab + the active-tab mirror keys.
+  // Initial state has NO tabs by default — the projects-dashboard is the
+  // canvas until the user opens a project or clicks "New Tab". A restored
+  // session snapshot rehydrates whatever tabs were open last; a fresh boot
+  // (or `dev --new`) lands on the dashboard with the canvas empty.
   const initialApp = useMemo(() => {
-    const tab0 = makeEmptyTab("default", "Tab 1");
     const restored = loadSessionUiSnapshot();
-    const tabs = restored?.tabs.length ? restored.tabs : [tab0];
+    const tabs = restored?.tabs.length ? restored.tabs : [];
     const activeTabId =
       restored?.activeTabId && tabs.some((t) => t.id === restored.activeTabId)
         ? restored.activeTabId
-        : tabs[0].id;
-    const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+        : (tabs[0]?.id ?? null);
+    const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
     const restoredLayout =
       restored?.layout && typeof restored.layout === "object"
         ? (restored.layout as Record<string, unknown>)
         : {};
-    const activeRecord = activeTab as unknown as Record<string, unknown>;
+    // When there is no active tab, the mirror keys point at undefined so
+    // layout `$ref`s resolve cleanly without throwing. The composer +
+    // chat surfaces are hidden via `/agentTabActive` in this state.
+    const activeRecord =
+      (activeTab as unknown as Record<string, unknown> | null) ?? {};
     const rootMirror = Object.fromEntries(
       TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
     );
