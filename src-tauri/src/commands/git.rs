@@ -541,6 +541,180 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     status
 }
 
+/// Repo-level GitHub data for the per-project dashboard.
+///
+/// `gh_available = false` collapses every other field. Counts default to
+/// 0 on parse failure rather than panicking — the dashboard renders a
+/// dash for unknown values, never an error.
+#[derive(serde::Serialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GhRepoOverview {
+    pub gh_available: bool,
+    pub repo: Option<String>,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    pub default_branch: Option<String>,
+    pub stargazer_count: i64,
+    pub fork_count: i64,
+    pub open_issues_count: i64,
+    pub open_prs_count: i64,
+    /// ISO 8601 string of the last push to any branch.
+    pub pushed_at: Option<String>,
+}
+
+/// Parsed subset of `gh repo view --json …` output. Split into its own
+/// struct so a sync unit test can exercise the parser without shelling
+/// out to gh.
+#[derive(Debug, PartialEq)]
+pub(crate) struct RepoViewParts {
+    pub repo: Option<String>,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    pub default_branch: Option<String>,
+    pub stargazer_count: i64,
+    pub fork_count: i64,
+    pub pushed_at: Option<String>,
+}
+
+pub(crate) fn parse_repo_view_json(s: &str) -> Option<RepoViewParts> {
+    fn strip_empty(x: &serde_json::Value) -> Option<String> {
+        x.as_str().filter(|s| !s.is_empty()).map(String::from)
+    }
+    let v: serde_json::Value = serde_json::from_str(s).ok()?;
+    Some(RepoViewParts {
+        repo: v.get("nameWithOwner").and_then(strip_empty),
+        description: v.get("description").and_then(strip_empty),
+        url: v.get("url").and_then(strip_empty),
+        default_branch: v
+            .get("defaultBranchRef")
+            .and_then(|x| x.get("name"))
+            .and_then(strip_empty),
+        stargazer_count: v.get("stargazerCount").and_then(|x| x.as_i64()).unwrap_or(0),
+        fork_count: v.get("forkCount").and_then(|x| x.as_i64()).unwrap_or(0),
+        pushed_at: v.get("pushedAt").and_then(strip_empty),
+    })
+}
+
+/// Fetch repo-level GitHub data for the per-project dashboard. Three
+/// parallel `gh` calls inside `tokio::join!` so the total latency is
+/// max-of-three, not sum. Each is wrapped in a 4s timeout — partial
+/// data is fine, the UI shows dashes for fields that didn't come back.
+///
+/// Degrades silently on missing/un-authed gh, non-GitHub remotes, and
+/// timeouts. The `ghAvailable` flag is the UI's gate.
+#[tauri::command]
+pub async fn gh_repo_overview(project_path: String) -> Result<GhRepoOverview, String> {
+    Ok(gh_repo_overview_inner(&project_path).await)
+}
+
+async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
+    use std::time::Duration;
+    use tokio::process::Command;
+    let mut overview = GhRepoOverview::default();
+    let dir = PathBuf::from(project_path);
+    if !dir.is_dir() {
+        return overview;
+    }
+
+    // gh available + authed?
+    let auth = Command::new("gh").args(["auth", "status"]).output().await;
+    let Ok(out) = auth else { return overview };
+    if !out.status.success() {
+        return overview;
+    }
+    overview.gh_available = true;
+
+    let dir_a = dir.clone();
+    let repo_view_fut = async move {
+        Command::new("gh")
+            .args([
+                "repo",
+                "view",
+                "--json",
+                "nameWithOwner,description,url,defaultBranchRef,stargazerCount,forkCount,pushedAt",
+            ])
+            .current_dir(&dir_a)
+            .output()
+            .await
+    };
+
+    let dir_b = dir.clone();
+    let pr_count_fut = async move {
+        Command::new("gh")
+            .args([
+                "pr", "list", "--state", "open", "--json", "number", "-q", "length",
+            ])
+            .current_dir(&dir_b)
+            .output()
+            .await
+    };
+
+    // Issue count needs the <owner>/<repo>. Re-resolve inside this future
+    // so the three top-level calls still run in parallel — the sequential
+    // sub-pair here is still bounded by the same 4s timeout.
+    let dir_c = dir.clone();
+    let issue_count_fut = async move {
+        let repo_out = Command::new("gh")
+            .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+            .current_dir(&dir_c)
+            .output()
+            .await
+            .ok()?;
+        if !repo_out.status.success() {
+            return None::<i64>;
+        }
+        let repo = String::from_utf8_lossy(&repo_out.stdout).trim().to_string();
+        if repo.is_empty() {
+            return None;
+        }
+        let count_out = Command::new("gh")
+            .args(["api", &format!("repos/{repo}"), "-q", ".open_issues_count"])
+            .current_dir(&dir_c)
+            .output()
+            .await
+            .ok()?;
+        if !count_out.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&count_out.stdout)
+            .trim()
+            .parse::<i64>()
+            .ok()
+    };
+
+    let (repo_view, pr_count, issue_count) = tokio::join!(
+        tokio::time::timeout(Duration::from_secs(4), repo_view_fut),
+        tokio::time::timeout(Duration::from_secs(4), pr_count_fut),
+        tokio::time::timeout(Duration::from_secs(4), issue_count_fut),
+    );
+
+    if let Ok(Ok(o)) = repo_view
+        && o.status.success()
+        && let Some(parts) = parse_repo_view_json(&String::from_utf8_lossy(&o.stdout))
+    {
+        overview.repo = parts.repo;
+        overview.description = parts.description;
+        overview.url = parts.url;
+        overview.default_branch = parts.default_branch;
+        overview.stargazer_count = parts.stargazer_count;
+        overview.fork_count = parts.fork_count;
+        overview.pushed_at = parts.pushed_at;
+    }
+    if let Ok(Ok(o)) = pr_count
+        && o.status.success()
+    {
+        overview.open_prs_count = String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .parse::<i64>()
+            .unwrap_or(0);
+    }
+    if let Ok(Some(n)) = issue_count {
+        overview.open_issues_count = n;
+    }
+
+    overview
+}
+
 /// Pop a native folder picker and return the chosen path (or None if the
 /// user cancelled). Wrapping `tauri-plugin-dialog::pick_folder` here keeps
 /// the frontend free of a direct dialog dependency — the projects feature
@@ -651,6 +825,87 @@ mod tests {
         let text = "worktree /tmp/repo\nHEAD ddddddd\nbranch refs/heads/main\nlocked some reason\n\n";
         let out = parse_worktrees_porcelain(text);
         assert!(out[0].locked);
+    }
+
+    #[test]
+    fn parses_gh_repo_view_full_fixture() {
+        // Trimmed real `gh repo view --json …` output. Confirms field
+        // extraction lines up with the camelCase contract the TS side
+        // expects.
+        let fixture = r#"{
+            "nameWithOwner": "anthropics/claude-code",
+            "description": "Claude Code is the official CLI for Claude.",
+            "url": "https://github.com/anthropics/claude-code",
+            "defaultBranchRef": { "name": "main" },
+            "stargazerCount": 4321,
+            "forkCount": 87,
+            "pushedAt": "2026-05-21T19:04:11Z"
+        }"#;
+        let parts = parse_repo_view_json(fixture).expect("parse");
+        assert_eq!(parts.repo.as_deref(), Some("anthropics/claude-code"));
+        assert_eq!(
+            parts.description.as_deref(),
+            Some("Claude Code is the official CLI for Claude.")
+        );
+        assert_eq!(parts.default_branch.as_deref(), Some("main"));
+        assert_eq!(parts.stargazer_count, 4321);
+        assert_eq!(parts.fork_count, 87);
+        assert_eq!(parts.pushed_at.as_deref(), Some("2026-05-21T19:04:11Z"));
+    }
+
+    #[test]
+    fn parses_gh_repo_view_with_missing_optionals() {
+        // A brand-new repo: no description, never pushed beyond init,
+        // zero stars/forks. None of these should crash the parser; the
+        // dashboard shows dashes for missing values.
+        let fixture = r#"{
+            "nameWithOwner": "user/empty",
+            "description": null,
+            "url": "https://github.com/user/empty",
+            "defaultBranchRef": { "name": "main" },
+            "stargazerCount": 0,
+            "forkCount": 0,
+            "pushedAt": null
+        }"#;
+        let parts = parse_repo_view_json(fixture).expect("parse");
+        assert_eq!(parts.repo.as_deref(), Some("user/empty"));
+        assert_eq!(parts.description, None);
+        assert_eq!(parts.pushed_at, None);
+        assert_eq!(parts.stargazer_count, 0);
+    }
+
+    #[test]
+    fn parses_gh_repo_view_rejects_malformed_json() {
+        assert!(parse_repo_view_json("{ broken").is_none());
+        assert!(parse_repo_view_json("").is_none());
+    }
+
+    #[test]
+    fn gh_repo_overview_camel_case_wire_format() {
+        // The TS GhRepoOverview interface keys the cache + UI on
+        // camelCase; without rename_all the serializer would emit
+        // open_prs_count and the frontend would silently read undefined.
+        let o = GhRepoOverview {
+            gh_available: true,
+            repo: Some("a/b".into()),
+            description: None,
+            url: None,
+            default_branch: Some("main".into()),
+            stargazer_count: 10,
+            fork_count: 2,
+            open_issues_count: 5,
+            open_prs_count: 1,
+            pushed_at: None,
+        };
+        let json = serde_json::to_value(&o).unwrap();
+        assert!(json.get("ghAvailable").is_some());
+        assert!(json.get("openIssuesCount").is_some());
+        assert!(json.get("openPrsCount").is_some());
+        assert!(json.get("stargazerCount").is_some());
+        assert!(json.get("forkCount").is_some());
+        assert!(json.get("defaultBranch").is_some());
+        assert!(json.get("pushedAt").is_some());
+        assert!(json.get("open_issues_count").is_none());
     }
 
     #[tokio::test]

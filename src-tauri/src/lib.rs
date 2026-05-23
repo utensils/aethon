@@ -742,6 +742,7 @@ pub fn run() {
             commands::git::git_worktree_remove,
             commands::git::git_branch_list,
             commands::git::gh_branch_status,
+            commands::git::gh_repo_overview,
             commands::git::pick_project_directory,
             commands::window::updater_available,
             commands::window::toggle_fullscreen,
