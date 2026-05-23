@@ -427,6 +427,39 @@ Mutation: `registerComponent`, `setState`, `setLayout`, `patchLayout`,
 without scraping the filesystem. The same data is also written to
 `$AETHON_STATE_FILE` so a `cat` works without an introspection round-trip.
 
+Per-surface subnamespaces — each backed by a `*_query` bridge message
+and matching frontend handler:
+
+- `aethon.shells.{list, read, write}` — opt-in shell-tab sharing.
+- `aethon.tasks.start({projectPath, prompt, newWorktree?, branch?, baseBranch?})`
+  — UI parity for the per-project dashboard composer. Spawns a
+  worktree (when requested), opens a new agent tab in the right cwd,
+  and forwards the prompt as the first user message.
+- `aethon.dashboard.{getRepoOverview, refresh}` — cached gh repo data
+  (stars/forks/issues/PRs/default branch/pushed) and cache-bust.
+
+The three dashboard pi tools (`startTask`, `getRepoOverview`,
+`refreshDashboard`) register automatically in `agent/dashboard-tools.ts`
+so the model can drive them via the standard tool-use protocol.
+
+### Dashboard surfaces (M9)
+
+Empty-state replaced by two visibility-gated composites in
+`workstation.a2ui.json`: `projects-dashboard` (when `/empty && !/project`)
+and `project-dashboard` (when `/empty && /project`). Both target the
+`canvas` slot via the existing `empty-state` slotMap. Five new chrome
+composite types — `projects-dashboard`, `project-dashboard`,
+`task-launcher`, `project-card`, `gh-stats-strip` — all registered in
+`defaultLayoutSkill.components` and swappable via
+`aethon.registerComponent`. Live data via `$ref`:
+`/projectsDashboard/extraCards` (extension-injected tiles on the
+global dashboard) and `/projectDashboard/widgets` (extension-injected
+cards on the per-project dashboard); push entries with
+`aethon.patchState`. gh data is cached in `src/ghRepoOverviewCache.ts`
+(5-min live TTL, 30-min negative). Project cards lazy-fetch on
+IntersectionObserver entry; the per-project dashboard fetches eagerly
+on activation.
+
 ### Event flow gotcha
 
 `A2UIRenderer` accepts an `onEvent` prop. Returning `true` from it marks the

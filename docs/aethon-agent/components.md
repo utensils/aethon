@@ -838,6 +838,110 @@ the session scoped to its original project). Replace it by
 re-registering the `empty-state` component type from an extension if
 you want a different welcome surface.
 
+### `projects-dashboard`
+
+```ts
+{
+  area?: string,
+  projects?: ProjectListItem[] | { $ref },
+  recentSessions?: RecentSession[] | { $ref },
+  extraCards?: { id, type, props? }[] | { $ref },
+  title?: string,
+  subtitle?: string,
+}
+```
+
+Global overview shown when `/empty && !/project` (no active project).
+The default workstation payload binds `projects` to `/projects` and
+`recentSessions` to `/recentSessions`. Renders the AeMark hero, two
+CTAs (`new-tab`, `open-project`), a grid of `project-card`
+composites, and the recent-sessions rail. The `extraCards` array is
+an extension-injection slot — push `{id, type, props}` entries into
+`/projectsDashboard/extraCards` and they render inline alongside the
+project tiles using whatever component type you registered (e.g.
+`aethon.registerComponent("my-promo-card", …)`).
+
+Events emitted: `new-tab`, `open-project`, `select-project-card`
+(activates), `remove-project-card` (danger), `request-card-menu`
+(emitted on right-click — the dashboard handler swallows it today;
+plug a custom menu by registering an event route at
+`type:projects-dashboard`), `restore-session`.
+
+### `project-dashboard`
+
+```ts
+{
+  area?: string,
+  project: ProjectInfo | { $ref },
+  otherProjects?: ProjectInfo[] | { $ref },
+  worktrees?: WorktreeRowLite[] | { $ref },
+  activeWorktreeId?: string | { $ref },
+  recentSessions?: RecentSession[] | { $ref },
+  widgets?: DashboardWidget[] | { $ref },
+  repoOverview?: GhRepoOverview | { $ref },
+}
+```
+
+Per-project landing shown when `/empty && /project` (project active,
+no agent tab open in it). Composes the project header (label + path +
+gh description), a `gh-stats-strip`, a `task-launcher` composer, an
+inline worktree rail, recent sessions filtered to this project, and a
+`widgets` grid. The widgets array is the extension-injection slot —
+push to `/projectDashboard/widgets` with `{id, type, title?, props?}`
+entries and they render as cards beneath the rest.
+
+Events emitted: `create-worktree`, `switch-worktree`, `start-task`
+(via the nested task-launcher), `select-project-card` (via the
+launcher's project chip), `restore-session`.
+
+### `task-launcher`
+
+```ts
+{
+  project: ProjectInfo | { $ref },
+  otherProjects?: ProjectInfo[] | { $ref },
+  worktrees?: WorktreeRowLite[] | { $ref },
+  activeWorktreeId?: string | { $ref },
+  placeholder?: string,
+  prompt?: string | { $ref },
+}
+```
+
+Codex-style "do anything" composer. Textarea + chip row
+`[project ▾ worktree ▾ branch ▾]` + Start button. The worktree chip
+defaults to "project root"; selecting "+ New worktree" reveals the
+branch + base inputs. Submit emits `start-task` with `{projectId,
+prompt, newWorktree?, branch?, baseBranch?, worktreeId?}`; the
+dashboard handler routes this to the App-level `startTaskInProject`
+orchestrator (the same path the `aethon.tasks.start` pi tool calls).
+Reusable standalone in custom layouts.
+
+### `project-card`
+
+```ts
+{
+  project: { id, label, path, gitStatus?, active? } | { $ref },
+  active?: boolean,
+}
+```
+
+Grid tile for `projects-dashboard`. Lazy gh-overview fetch via
+IntersectionObserver, so 16 cards don't fan out subprocesses on cold
+start. Emits `select-project-card` on click and `request-card-menu`
+on right-click.
+
+### `gh-stats-strip`
+
+```ts
+{
+  overview: GhRepoOverview | { $ref } | null,
+}
+```
+
+Horizontal row of stat pills. Renders nothing when `ghAvailable=false`
+or `repo=null`. Emits `open-url` with `{ url }` on pill click; the
+default route shells through `plugin:opener|open_url`.
+
 ### `command-palette` and `notification-stack`
 
 Both render at App root, **not** inside layout JSON. The default
