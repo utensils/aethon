@@ -6,8 +6,11 @@
  */
 
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { resolvePointer } from "../../utils/jsonPointer";
+import {
+  getGhBranchStatus,
+  type GhBranchStatus,
+} from "../../ghBranchStatusCache";
 import {
   resolveBoolean,
   resolveNumber,
@@ -17,24 +20,11 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { CSSProperties } from "react";
 
-/** Wire shape of `gh_branch_status` — keep in lockstep with the Rust
- *  GhBranchStatus / GhPr structs. All fields are best-effort; the
- *  component never throws when any are missing. */
-interface GhBranchStatus {
-  ghAvailable: boolean;
-  repo: string | null;
-  pushed: boolean;
-  prs: GhPr[];
-}
-interface GhPr {
-  number: number;
-  state: string;
-  title: string;
-  url: string;
-  isDraft: boolean;
-  merged: boolean;
-  baseRefName: string;
-}
+// GhBranchStatus / GhPr types come from ../../ghBranchStatusCache so
+// the layout module doesn't re-declare the wire shape. The cache
+// module is the single source of truth for the gh_branch_status
+// contract on the frontend; the Rust struct in src-tauri/src/commands/git.rs
+// is the source of truth for the wire format.
 
 // eslint-disable-next-line react-refresh/only-export-components -- helper used by sibling chat module; doesn't affect HMR in practice
 export function readUiScale(): number {
@@ -553,10 +543,12 @@ function WorktreeLandingInner(props: {
   const [gh, setGh] = useState<GhBranchStatus | null>(null);
   const [ghLoading, setGhLoading] = useState(false);
 
-  // Fetch gh branch status whenever the active worktree changes. Failure
-  // is silent — the underlying Rust command always returns Ok with
-  // ghAvailable=false on any error path, so a missing/unauthed gh just
-  // collapses to "Connect GitHub" in the UI.
+  // Fetch gh branch status whenever the active worktree changes. The
+  // cache module short-circuits within-session revisits (60s TTL for
+  // live repos, 5min for "no gh / no remote") so the landing paints
+  // instantly on a tab flip. Failure is silent — Rust always returns
+  // Ok with ghAvailable=false on any error path, so a missing/unauthed
+  // gh just collapses to "Connect GitHub" in the UI.
   useEffect(() => {
     if (!branch || !path) {
       setGh(null);
@@ -564,10 +556,7 @@ function WorktreeLandingInner(props: {
     }
     let cancelled = false;
     setGhLoading(true);
-    void invoke<GhBranchStatus>("gh_branch_status", {
-      projectPath: path,
-      branch,
-    })
+    void getGhBranchStatus(path, branch)
       .then((status) => {
         if (cancelled) return;
         setGh(status);
