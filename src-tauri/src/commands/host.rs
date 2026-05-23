@@ -42,12 +42,12 @@ fn machine_uuid() -> Option<String> {
             .ok()?;
         let text = String::from_utf8_lossy(&out.stdout);
         for line in text.lines() {
-            if line.contains("IOPlatformUUID") {
-                if let Some(rhs) = line.split('=').nth(1) {
-                    let uuid = rhs.trim().trim_matches('"');
-                    if !uuid.is_empty() {
-                        return Some(uuid.to_string());
-                    }
+            if line.contains("IOPlatformUUID")
+                && let Some(rhs) = line.split('=').nth(1)
+            {
+                let uuid = rhs.trim().trim_matches('"');
+                if !uuid.is_empty() {
+                    return Some(uuid.to_string());
                 }
             }
         }

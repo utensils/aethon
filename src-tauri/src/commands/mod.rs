@@ -21,5 +21,6 @@ pub mod extensions;
 pub mod fs;
 pub mod git;
 pub mod host;
+pub mod server;
 pub mod session;
 pub mod window;
