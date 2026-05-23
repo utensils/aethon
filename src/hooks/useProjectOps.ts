@@ -143,6 +143,17 @@ export interface UseProjectOpsActions {
   refreshProjectWorktrees: (projectId: string) => Promise<void>;
   activateWorktree: (worktreeId: string | null) => void;
   createWorktreeForProject: (projectId: string) => Promise<void>;
+  /** Parameterised worktree-create. Used by the task-launcher composer
+   *  and the agent-side `startTask` pi tool; both pass real values
+   *  instead of prompting. Returns the path of the new worktree on
+   *  success, or null on failure (the pending-row state machine still
+   *  surfaces the error in the sidebar). */
+  createWorktreeWithParams: (opts: {
+    projectId: string;
+    branch: string;
+    targetPath?: string;
+    baseBranch?: string;
+  }) => Promise<string | null>;
   removeWorktreeById: (worktreeId: string) => Promise<void>;
   dismissPendingWorktree: (worktreeId: string) => void;
   retryPendingWorktree: (worktreeId: string) => Promise<void>;
@@ -779,6 +790,69 @@ export function useProjectOps(
     }
   }
 
+  async function createWorktreeWithParams(opts: {
+    projectId: string;
+    branch: string;
+    targetPath?: string;
+    baseBranch?: string;
+  }): Promise<string | null> {
+    const project = findProject(opts.projectId);
+    if (!project) return null;
+    const branch = opts.branch.trim();
+    if (!branch) return null;
+    const targetPath =
+      opts.targetPath?.trim() || defaultWorktreePath(project.path, branch);
+    const pending = newPendingWorktree(opts.projectId, branch, targetPath);
+    const before = projectsRef.current.worktreesByProject[opts.projectId] ?? [];
+    projectsRef.current = setProjectWorktrees(projectsRef.current, opts.projectId, [
+      ...before,
+      pending,
+    ]);
+    syncProjectsToState();
+    projectsRef.current = setProjectWorktrees(
+      projectsRef.current,
+      opts.projectId,
+      updateWorktreePendingState(
+        projectsRef.current.worktreesByProject[opts.projectId] ?? [],
+        pending.id,
+        "starting",
+      ),
+    );
+    syncProjectsToState();
+    try {
+      await gitWorktreeAdd({
+        projectPath: project.path,
+        targetPath,
+        branch,
+        base: opts.baseBranch,
+      });
+      projectsRef.current = setProjectWorktrees(
+        projectsRef.current,
+        opts.projectId,
+        updateWorktreePendingState(
+          projectsRef.current.worktreesByProject[opts.projectId] ?? [],
+          pending.id,
+          "succeeded",
+        ),
+      );
+      await refreshProjectWorktrees(opts.projectId);
+      return targetPath;
+    } catch (err) {
+      projectsRef.current = setProjectWorktrees(
+        projectsRef.current,
+        opts.projectId,
+        updateWorktreePendingState(
+          projectsRef.current.worktreesByProject[opts.projectId] ?? [],
+          pending.id,
+          "failed",
+          String(err),
+        ),
+      );
+      syncProjectsToState();
+      return null;
+    }
+  }
+
   async function removeWorktreeById(worktreeId: string): Promise<void> {
     const hit = findProjectOfWorktree(worktreeId);
     if (!hit) return;
@@ -986,6 +1060,7 @@ export function useProjectOps(
     refreshProjectWorktrees,
     activateWorktree,
     createWorktreeForProject,
+    createWorktreeWithParams,
     removeWorktreeById,
     dismissPendingWorktree,
     retryPendingWorktree,

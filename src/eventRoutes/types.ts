@@ -129,6 +129,17 @@ export interface EventRouteContext {
   refreshProjectWorktrees: (projectId: string) => Promise<void>;
   activateWorktree: (worktreeId: string | null) => void;
   createWorktreeForProject: (projectId: string) => Promise<void>;
+  /** End-to-end task launch from the dashboard composer (or the
+   *  agent-side `startTask` pi tool). Creates a worktree when
+   *  newWorktree is set, spawns a new agent tab with the right cwd,
+   *  and forwards the prompt as the tab's first user message. */
+  startTaskInProject: (opts: {
+    projectId: string;
+    prompt: string;
+    newWorktree?: boolean;
+    branch?: string;
+    baseBranch?: string;
+  }) => Promise<void>;
   removeWorktreeById: (worktreeId: string) => Promise<void>;
   dismissPendingWorktree: (worktreeId: string) => void;
   retryPendingWorktree: (worktreeId: string) => Promise<void>;

@@ -192,6 +192,7 @@ export function buildRouteFixture(
     refreshProjectWorktrees: vi.fn(() => Promise.resolve()),
     activateWorktree: vi.fn(),
     createWorktreeForProject: vi.fn(() => Promise.resolve()),
+    startTaskInProject: vi.fn(() => Promise.resolve()),
     removeWorktreeById: vi.fn(() => Promise.resolve()),
     dismissPendingWorktree: vi.fn(),
     retryPendingWorktree: vi.fn(() => Promise.resolve()),

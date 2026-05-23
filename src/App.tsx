@@ -494,6 +494,7 @@ export default function App() {
     refreshProjectWorktrees,
     activateWorktree,
     createWorktreeForProject,
+    createWorktreeWithParams,
     removeWorktreeById,
     dismissPendingWorktree,
     retryPendingWorktree,
@@ -586,6 +587,63 @@ export default function App() {
   useEffect(() => {
     chatActionsRef.current = { appendSystem };
   });
+
+  // ---------------------------------------------------------------------
+  // Dashboard task launch orchestrator. Shared by the per-project
+  // dashboard composer event route AND the agent-side `startTask` pi
+  // tool, so both surfaces drive the same worktree-create + new-tab +
+  // first-message chain.
+  // ---------------------------------------------------------------------
+  const startTaskInProject = useCallback(
+    async (opts: {
+      projectId: string;
+      prompt: string;
+      newWorktree?: boolean;
+      branch?: string;
+      baseBranch?: string;
+    }): Promise<void> => {
+      const project = projectsRef.current.projects.find(
+        (p) => p.id === opts.projectId,
+      );
+      if (!project) return;
+      let cwd = project.path;
+      if (opts.newWorktree) {
+        if (!opts.branch) return;
+        const created = await createWorktreeWithParams({
+          projectId: opts.projectId,
+          branch: opts.branch,
+          baseBranch: opts.baseBranch,
+        });
+        if (!created) return;
+        cwd = created;
+      }
+      // Ensure the project we're launching into is the active one so the
+      // new tab lands in the right per-project bucket.
+      if (projectsRef.current.activeId !== opts.projectId) {
+        setActiveProjectById(opts.projectId);
+      }
+      const tabId = crypto.randomUUID();
+      newTab(tabId, undefined, { cwd });
+      const opening = pendingTabOpens.current.get(tabId);
+      if (opening) {
+        try {
+          await opening;
+        } catch {
+          /* tab open failed; sendChat below will no-op */
+        }
+      }
+      const trimmed = opts.prompt.trim();
+      if (trimmed) await sendChat(trimmed);
+    },
+    [
+      createWorktreeWithParams,
+      newTab,
+      pendingTabOpens,
+      projectsRef,
+      sendChat,
+      setActiveProjectById,
+    ],
+  );
 
   // ---------------------------------------------------------------------
   // Focus + chrome toggles — terminal panel, composer/terminal focus
@@ -979,6 +1037,7 @@ export default function App() {
       refreshProjectWorktrees,
       activateWorktree,
       createWorktreeForProject,
+      startTaskInProject,
       removeWorktreeById,
       dismissPendingWorktree,
       retryPendingWorktree,
