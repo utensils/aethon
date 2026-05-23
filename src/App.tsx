@@ -11,6 +11,7 @@ import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useHostInfo } from "./hooks/useHostInfo";
 import { useProjects } from "./hooks/useProjects";
+import { discoverIcon } from "./projectIcons";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { TAB_MIRROR_KEYS, useTabs } from "./hooks/useTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
@@ -497,6 +498,7 @@ export default function App() {
     clearActiveProject,
     removeProjectById,
     setProjectExpanded,
+    setProjectIconUrl,
     refreshProjectWorktrees,
     activateWorktree,
     createWorktreeForProject,
@@ -532,6 +534,27 @@ export default function App() {
       onGitStatusChanged: () => syncProjectsToState(),
     };
   });
+
+  // Lazy project icon discovery — for each project missing an iconUrl,
+  // fire discoverIcon and persist the resolved url back to the project
+  // record. The in-process cache in src/projectIcons.ts memoizes by
+  // path so this effect is idempotent across re-runs. Runs whenever
+  // the projects list shape changes (new project, refresh, host swap).
+  const discoverIconsForProjects = useCallback(() => {
+    const ps = projectsRef.current.projects;
+    for (const project of ps) {
+      if (project.iconUrl) continue;
+      void (async () => {
+        const url = await discoverIcon(project);
+        if (!url) return;
+        if (!projectsRef.current.projects.some((p) => p.id === project.id)) return;
+        setProjectIconUrl(project.id, url);
+      })();
+    }
+  }, [setProjectIconUrl]);
+  useEffect(() => {
+    discoverIconsForProjects();
+  }, [discoverIconsForProjects, state.projects]);
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.

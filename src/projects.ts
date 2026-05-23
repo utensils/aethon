@@ -199,6 +199,26 @@ export function setProjectUiExpanded(
   };
 }
 
+/** Stamp a discovered icon URL onto the project record. Idempotent —
+ *  no state change when the same URL is already present, so callers
+ *  can fire after every discoverIcon without triggering a re-render
+ *  loop. */
+export function setProjectIconUrl(
+  state: ProjectsState,
+  projectId: string,
+  iconUrl: string | null,
+): ProjectsState {
+  let changed = false;
+  const projects = state.projects.map((p) => {
+    if (p.id !== projectId) return p;
+    const next = iconUrl ?? undefined;
+    if (p.iconUrl === next) return p;
+    changed = true;
+    return { ...p, iconUrl: next };
+  });
+  return changed ? { ...state, projects } : state;
+}
+
 /** Add a directory as a project. If a project at the same path already
  *  exists, that entry is reused (lastUsed bumped) so the picker doesn't
  *  collect duplicates when the user re-opens a familiar directory. */

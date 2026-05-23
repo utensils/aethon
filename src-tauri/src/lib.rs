@@ -751,6 +751,7 @@ pub fn run() {
             commands::git::git_branch_list,
             commands::git::gh_branch_status,
             commands::git::gh_repo_overview,
+            commands::git::gh_repo_avatar_url,
             commands::git::gh_issue_list,
             commands::git::gh_issue_view,
             commands::git::pick_project_directory,

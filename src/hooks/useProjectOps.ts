@@ -18,6 +18,7 @@ import {
   removeProject,
   saveProjects,
   setActiveWorktree as setActiveWorktreeState,
+  setProjectIconUrl as setProjectIconUrlState,
   setProjectUiExpanded,
   setProjectWorktrees,
   upsertProject,
@@ -137,6 +138,11 @@ export interface UseProjectOpsActions {
   setActiveProjectById: (id: string) => boolean;
   clearActiveProject: () => void;
   removeProjectById: (id: string) => boolean;
+  /** Stamp a discovered icon (data: URL or remote URL) onto the
+   *  project record. Persists to ~/.aethon/projects.json so cold start
+   *  paints synchronously off disk next time. No-op when the iconUrl
+   *  is already set to the same value. */
+  setProjectIconUrl: (projectId: string, iconUrl: string | null) => void;
 
   // ─── Worktree ops ──────────────────────────────────────────────────
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
@@ -371,6 +377,7 @@ export function useProjectOps(
               // the row label stays compact even with deep paths.
               label: p.label,
               tooltip: p.path,
+              iconUrl: p.iconUrl,
               active: p.id === ps.activeId,
               git: gitStatusRef.current.get(p.path),
               expanded: p.uiExpanded === true,
@@ -706,6 +713,13 @@ export function useProjectOps(
     if (expanded && !projectsRef.current.worktreesByProject[projectId]) {
       void refreshProjectWorktrees(projectId);
     }
+    void persistProjects();
+  }
+
+  function setProjectIconUrl(projectId: string, iconUrl: string | null): void {
+    const next = setProjectIconUrlState(projectsRef.current, projectId, iconUrl);
+    if (next === projectsRef.current) return;
+    projectsRef.current = next;
     void persistProjects();
   }
 
@@ -1058,6 +1072,7 @@ export function useProjectOps(
     clearActiveProject,
     removeProjectById,
     setProjectExpanded,
+    setProjectIconUrl,
     refreshProjectWorktrees,
     activateWorktree,
     createWorktreeForProject,

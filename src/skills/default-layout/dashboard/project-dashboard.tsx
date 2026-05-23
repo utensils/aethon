@@ -28,6 +28,7 @@ interface ProjectInfo {
   id: string;
   label: string;
   path: string;
+  iconUrl?: string;
 }
 
 interface WorktreeRowLite {
