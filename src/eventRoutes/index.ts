@@ -55,7 +55,6 @@ import {
   handleSidebarCopyProjectPath,
   handleSidebarOpenWorktreeInFinder,
   handleSidebarCopyWorktreePath,
-  handleSidebarSwitchToProject,
   handleSidebarRenameProject,
 } from "./sidebar";
 import { handleEditorCanvas, handleFileTree } from "./editor";
@@ -90,7 +89,6 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
       handleSidebarResize,
       handleSidebarResizeEnd,
       handleSidebarToggleProjectExpand,
-      handleSidebarSwitchToProject,
       handleSidebarRenameProject,
       handleSidebarRemoveProject,
       handleSidebarOpenProjectInFinder,

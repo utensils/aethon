@@ -392,15 +392,6 @@ export const handleSidebarCopyWorktreePath: EventRouteHandler = (
   }
   return true;
 };
-export const handleSidebarSwitchToProject: EventRouteHandler = (
-  { eventType, data },
-  ctx,
-) => {
-  if (eventType !== "switch-to-project") return false;
-  const projectId = (data as { projectId?: string } | undefined)?.projectId;
-  if (projectId) ctx.setActiveProjectById(projectId);
-  return true;
-};
 export const handleSidebarRenameProject: EventRouteHandler = (
   { eventType, data },
   ctx,

@@ -65,15 +65,15 @@ interface SidebarContextMenuState {
 }
 
 interface SidebarMenuHandlers {
-  // Project actions
-  switchToContextProject: () => void;
+  // Project actions — clicking a row switches; menu only surfaces
+  // verbs that aren't reachable from a plain click.
   createWorktreeForContextProject: () => void;
   openContextProjectInFinder: () => void;
   copyContextProjectPath: () => void;
   renameContextProject: () => void;
   removeContextProject: () => void;
-  // Worktree actions
-  switchToContextWorktree: () => void;
+  // Worktree actions — same convention as projects: row click handles
+  // activation/landing; menu omits a redundant "Switch to worktree".
   openContextWorktreeInFinder: () => void;
   copyContextWorktreePath: () => void;
   renameContextWorktree: () => void;
@@ -91,11 +91,6 @@ function buildSidebarMenuItems(
   switch (state.kind) {
     case "project":
       return [
-        {
-          id: "switch-project",
-          label: "Switch to project",
-          onSelect: h.switchToContextProject,
-        },
         {
           id: "create-worktree",
           label: "Create worktree…",
@@ -129,12 +124,6 @@ function buildSidebarMenuItems(
     case "worktree": {
       const isMain = state.worktree?.isMain === true;
       return [
-        {
-          id: "switch-worktree",
-          label: "Switch to worktree",
-          onSelect: h.switchToContextWorktree,
-        },
-        { type: "separator" },
         {
           id: "open-finder",
           label: "Open in Finder",
@@ -341,16 +330,9 @@ export function Sidebar({
   // Project + worktree context-menu handlers. Each fires an event the
   // App-side route table picks up via `type:sidebar`; the App handles
   // the actual git / clipboard / dialog work so this component stays
-  // surface-only.
-  const switchToContextProject = () => {
-    if (!contextMenu) return;
-    onEvent("switch-to-project", {
-      sectionId: contextMenu.sectionId,
-      itemId: contextMenu.itemId,
-      projectId: contextMenu.itemId,
-    });
-    setContextMenu(null);
-  };
+  // surface-only. The "Switch to project / worktree" entries were
+  // dropped — clicking the row already switches, so the menu only
+  // lists verbs that aren't reachable from a plain click.
   const createWorktreeForContextProject = () => {
     if (!contextMenu) return;
     onEvent("create-worktree", {
@@ -390,15 +372,6 @@ export function Sidebar({
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
       label: next,
-    });
-    setContextMenu(null);
-  };
-  const switchToContextWorktree = () => {
-    if (!contextMenu?.worktree) return;
-    onEvent("switch-worktree", {
-      sectionId: contextMenu.sectionId,
-      itemId: contextMenu.itemId,
-      worktreeId: contextMenu.worktree.id,
     });
     setContextMenu(null);
   };
@@ -684,13 +657,11 @@ export function Sidebar({
         items={
           contextMenu
             ? buildSidebarMenuItems(contextMenu, {
-                switchToContextProject,
                 createWorktreeForContextProject,
                 openContextProjectInFinder,
                 copyContextProjectPath,
                 renameContextProject,
                 removeContextProject,
-                switchToContextWorktree,
                 openContextWorktreeInFinder,
                 copyContextWorktreePath,
                 renameContextWorktree,
