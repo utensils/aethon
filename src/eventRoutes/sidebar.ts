@@ -534,6 +534,10 @@ export const handleSectionedSelect: EventRouteHandler = async (
     ctx.setActiveProjectById(selected.itemId);
     return true;
   }
+  if (selected?.sectionId === "hosts" && selected.itemId) {
+    ctx.setActiveHost(selected.itemId);
+    return true;
+  }
   if (selected?.sectionId === "history" && selected.itemId) {
     if (selected.itemId.startsWith("tab:")) {
       ctx.setActiveTab(selected.itemId.slice(4));

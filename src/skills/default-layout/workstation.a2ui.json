@@ -78,6 +78,11 @@
                 "brandMark": true,
                 "sections": [
                   {
+                    "id": "hosts",
+                    "title": "hosts",
+                    "items": { "$ref": "/sidebar/hosts" }
+                  },
+                  {
                     "id": "projects",
                     "title": "projects",
                     "items": { "$ref": "/sidebar/projects" },
@@ -225,7 +230,7 @@
     "layout": {
       "sidebarVisible": true,
       "filesSidebarVisible": true,
-      "columns": "220px minmax(0,1fr) 280px",
+      "columns": "220px minmax(0,1fr) 360px",
       "rows": "38px minmax(0,1fr) auto auto auto",
       "areas": [
         "sidebar header files-sidebar",
@@ -238,6 +243,7 @@
     "sidebar": {
       "history": [],
       "models": [],
+      "hosts": [],
       "projects": [],
       "extraSections": [],
       "themes": [
@@ -250,6 +256,9 @@
     "projects": [],
     "activeProjectId": null,
     "project": null,
+    "hosts": [],
+    "activeHostId": null,
+    "host": null,
     "terminal": {
       "open": false
     },

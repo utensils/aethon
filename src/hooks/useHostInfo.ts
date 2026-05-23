@@ -6,13 +6,15 @@
 // already debounces, so we just maintain a Map keyed by id and emit a
 // stable derived list `[local, ...remotes]`.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getLocalHost, type Host } from "../hosts";
 
 export interface UseHostInfo {
   hosts: Host[];
   activeHostId: string | null;
+  /** Stable across renders — wire directly into event-route ctx without
+   *  needing a ref bridge. */
   setActiveHost: (id: string | null) => void;
   localHostId: string | null;
 }
@@ -79,11 +81,14 @@ export function useHostInfo(): UseHostInfo {
   }, [localHost?.id]);
 
   const hosts: Host[] = localHost ? [localHost, ...remotes] : remotes;
+  const setActiveHost = useCallback((id: string | null) => {
+    setActiveHostState(id);
+  }, []);
 
   return {
     hosts,
     activeHostId,
-    setActiveHost: (id) => setActiveHostState(id),
+    setActiveHost,
     localHostId: localHost?.id ?? null,
   };
 }

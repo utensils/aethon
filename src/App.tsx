@@ -9,6 +9,7 @@ import { deriveTabActiveFlags, makeEmptyTab, type Tab } from "./types/tab";
 import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
+import { useHostInfo } from "./hooks/useHostInfo";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { TAB_MIRROR_KEYS, useTabs } from "./hooks/useTabs";
@@ -384,6 +385,11 @@ export default function App() {
     getProjectPaths: () => projectsHandleRef.current.getPaths(),
     onGitStatusChanged: () => projectsHandleRef.current.onGitStatusChanged(),
   });
+
+  // Host info (local + LAN-discovered) — drives the HOSTS sidebar
+  // section and the dashboard host banner. Stays passive: hosts come
+  // from Tauri events; the active host is a user-driven selection.
+  const hostInfo = useHostInfo();
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the
@@ -1067,6 +1073,12 @@ export default function App() {
       openProjectFromPicker,
       setActiveProjectById,
       removeProjectById,
+      setActiveHost: (id) => {
+        hostInfo.setActiveHost(id);
+        // Switching host clears the active project — projects are
+        // host-scoped (today: all local; future: filtered by hostId).
+        clearActiveProject();
+      },
       syncRecentSessionsToState,
       setProjectExpanded,
       refreshProjectWorktrees,
@@ -1190,6 +1202,21 @@ export default function App() {
       ...existingProjectsDashboard,
       extraCards: existingProjectsDashboard.extraCards ?? [],
     };
+    // HOSTS sidebar section — [local, ...remotes] with the active host
+    // flagged. The local host is always the first row; discovered
+    // remotes follow in arrival order. Active flag drives the
+    // .a2ui-sidebar-item-active style + the `host` derived record below
+    // (consumed by the dashboard host-banner).
+    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
+    const sidebarHosts = hostInfo.hosts.map((h) => ({
+      id: h.id,
+      label: h.displayName || h.hostname,
+      hint: h.isLocal ? "this mac" : h.hostname,
+      tooltip: h.hostname,
+      active: h.id === activeHostId,
+    }));
+    const activeHost =
+      hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
     return {
       ...state,
       hasTabs,
@@ -1203,11 +1230,15 @@ export default function App() {
       sidebar: {
         ...sidebar,
         history,
+        hosts: sidebarHosts,
       },
       projectDashboard,
       projectsDashboard,
+      hosts: hostInfo.hosts,
+      activeHostId,
+      host: activeHost,
     };
-  }, [buildSidebarHistory, state]);
+  }, [buildSidebarHistory, hostInfo.activeHostId, hostInfo.hosts, hostInfo.localHostId, state]);
   const renderRecord = renderState as Record<string, unknown>;
   const notificationsOpen =
     ((renderRecord.notifications as unknown[] | undefined) ?? []).length > 0;
