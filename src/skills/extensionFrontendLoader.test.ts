@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import type { FunctionComponent } from "react";
+import type { BuiltinComponentProps } from "../components/A2UIRenderer";
 import { SkillRegistry } from "./SkillRegistry";
 import {
   evaluateFrontendModule,
@@ -33,7 +35,8 @@ describe("evaluateFrontendModule", () => {
     evaluateFrontendModule({ name: "chrome-ext", code }, registry);
     const resolved = registry.resolve("chrome-card");
     expect(resolved).toBeDefined();
-    const element = resolved!({
+    const render = resolved as FunctionComponent<BuiltinComponentProps>;
+    const element = render({
       component: { id: "x", type: "chrome-card" },
       state: {},
       onEvent: () => {},
