@@ -51,9 +51,9 @@ function fakeTabRecord(overrides: Partial<TabRecord> = {}): TabRecord {
   return {
     id: "tab-1",
     session: {
-      prompt: async () => {},
-      steer: async () => {},
-      followUp: async () => {},
+      prompt: () => Promise.resolve(),
+      steer: () => Promise.resolve(),
+      followUp: () => Promise.resolve(),
     } as unknown as TabRecord["session"],
     toolArgsCache: new Map(),
     promptInFlight: false,
@@ -73,14 +73,17 @@ describe("handleChat", () => {
     const tab = fakeTabRecord({
       promptInFlight: true,
       session: {
-        prompt: async (...args: unknown[]) => {
+        prompt: (...args: unknown[]) => {
           promptCalls.push(args);
+          return Promise.resolve();
         },
-        followUp: async (...args: unknown[]) => {
+        followUp: (...args: unknown[]) => {
           followUpCalls.push(args);
+          return Promise.resolve();
         },
-        steer: async (...args: unknown[]) => {
+        steer: (...args: unknown[]) => {
           steerCalls.push(args);
+          return Promise.resolve();
         },
       } as unknown as TabRecord["session"],
     });
@@ -108,12 +111,14 @@ describe("handleChat", () => {
       promptInFlight: true,
       queuedCount: 2,
       session: {
-        prompt: async (...args: unknown[]) => {
+        prompt: (...args: unknown[]) => {
           promptCalls.push(args);
+          return Promise.resolve();
         },
-        followUp: async () => {},
-        steer: async (...args: unknown[]) => {
+        followUp: () => Promise.resolve(),
+        steer: (...args: unknown[]) => {
           steerCalls.push(args);
+          return Promise.resolve();
         },
       } as unknown as TabRecord["session"],
     });
@@ -143,9 +148,10 @@ describe("handleChat", () => {
           promptCalls.push(args);
           return pendingPrompt;
         },
-        followUp: async () => {},
-        steer: async (...args: unknown[]) => {
+        followUp: () => Promise.resolve(),
+        steer: (...args: unknown[]) => {
           steerCalls.push(args);
+          return Promise.resolve();
         },
       } as unknown as TabRecord["session"],
     });
@@ -174,8 +180,8 @@ describe("handleChat", () => {
           promptCalls.push(args);
           return new Promise<void>(() => {});
         },
-        followUp: async () => {},
-        steer: async () => {},
+        followUp: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
       } as unknown as TabRecord["session"],
     });
     f.state.tabs.set("tab-1", first);
