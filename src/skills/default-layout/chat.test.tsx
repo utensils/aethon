@@ -41,6 +41,7 @@ function renderInput(
 }
 
 function renderHistory(state: Record<string, unknown>) {
+  const onEvent = vi.fn();
   render(
     <ChatHistory
       component={{
@@ -49,9 +50,10 @@ function renderHistory(state: Record<string, unknown>) {
         props: { messages: { $ref: "/messages" } },
       }}
       state={state}
-      onEvent={vi.fn()}
+      onEvent={onEvent}
     />,
   );
+  return { onEvent };
 }
 
 describe("ChatInput", () => {
@@ -121,5 +123,20 @@ describe("ChatInput", () => {
 
     expect(screen.getByText("queued")).toBeTruthy();
     expect(screen.getByText("steered")).toBeTruthy();
+  });
+
+  it("renders retry actions for failed user messages", () => {
+    const { onEvent } = renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "again please", delivery: "failed" },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(onEvent).toHaveBeenCalledWith("retry", {
+      messageId: "1",
+      value: "again please",
+    });
   });
 });

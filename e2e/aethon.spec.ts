@@ -175,6 +175,36 @@ test("steers Command-Enter into the running turn without queuing it", async ({
   );
 });
 
+test("retries failed user sends from the transcript", async ({ page }) => {
+  await waitForAethonReady(page);
+
+  await page.getByRole("button", { name: "New Tab" }).click();
+  await page.evaluate(() => window.__AETHON_E2E__?.failNextSendMessage());
+  await page.locator(".a2ui-chat-input-field").fill("retry me");
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator(".a2ui-chat-delivery-failed")).toHaveText("failed");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Retry" }).click();
+
+  await expect(page.locator(".a2ui-chat-delivery-failed")).toHaveCount(0);
+  await expect
+    .poll(() => getActiveTurnState(page))
+    .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
+
+  await completeActiveTurn(page);
+  await expect
+    .poll(() => getActiveTurnState(page))
+    .toEqual({ waiting: false, queueCount: 0, status: "ready" });
+
+  const sends = (await getInvokeCalls(page)).filter((c) => c.cmd === "send_message");
+  expect(sends.map((c) => c.args)).toEqual([
+    expect.objectContaining({ message: "retry me", mode: "normal" }),
+    expect.objectContaining({ message: "retry me", mode: "normal" }),
+  ]);
+});
+
 test("steering during an existing follow-up queue preserves the queued turn", async ({
   page,
 }) => {

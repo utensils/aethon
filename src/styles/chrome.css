@@ -2352,6 +2352,27 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: color-mix(in srgb, var(--danger) 13%, transparent);
 }
 
+.a2ui-chat-retry {
+  appearance: none;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-elev));
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.a2ui-chat-retry:hover {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 16%, var(--bg-elev));
+}
+
 .a2ui-chat-empty {
   color: var(--text-dim);
   text-align: center;

@@ -57,6 +57,7 @@ declare global {
       emit: (event: string, payload: unknown) => void;
       emitAgent: (message: Record<string, unknown>) => void;
       completeActiveTurn: () => void;
+      failNextSendMessage: () => void;
       setDir: (root: string, path: string, entries: FsEntry[]) => void;
       getCalls: () => InvokeCall[];
       clearCalls: () => void;
@@ -86,6 +87,7 @@ export async function installAethonHarness(page: Page): Promise<void> {
       let nextListenerId = 1;
       let model = defaultModel;
       const promptStateByTab = new Map<string, { inFlight: boolean; queued: number }>();
+      let failNextSend = false;
 
       const key = (root: string, path: string) => `${root}\u0000${path}`;
       const stringArg = (value: unknown, fallback = ""): string =>
@@ -363,6 +365,10 @@ export async function installAethonHarness(page: Page): Promise<void> {
             return undefined;
           }
           case "send_message": {
+            if (failNextSend) {
+              failNextSend = false;
+              throw new Error("e2e send failure");
+            }
             const tabId = stringArg(args.tabId, "default");
             const mode = stringArg(args.mode, "normal");
             const turn = promptState(tabId);
@@ -419,6 +425,9 @@ export async function installAethonHarness(page: Page): Promise<void> {
         emit,
         emitAgent,
         completeActiveTurn,
+        failNextSendMessage: () => {
+          failNextSend = true;
+        },
         setDir,
         getCalls: () => calls.slice(),
         clearCalls: () => {

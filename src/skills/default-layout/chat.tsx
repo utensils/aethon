@@ -311,12 +311,14 @@ const ChatMessageRow = memo(
     tabId,
     className = "a2ui-chat-message",
     prevRole,
+    onEvent,
   }: {
     message: ChatMessage;
     state: Record<string, unknown>;
     tabId?: string;
     className?: string;
     prevRole?: string;
+    onEvent?: BuiltinComponentProps["onEvent"];
   }) {
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -343,6 +345,20 @@ const ChatMessageRow = memo(
                 {delivery}
               </span>
             )}
+            {delivery === "failed" && message.text && onEvent && (
+              <button
+                type="button"
+                className="a2ui-chat-retry"
+                onClick={() =>
+                  onEvent("retry", {
+                    messageId: message.id,
+                    value: message.text,
+                  })
+                }
+              >
+                Retry
+              </button>
+            )}
           </span>
         )}
         {message.thinking && (
@@ -366,6 +382,7 @@ const ChatMessageRow = memo(
     prev.tabId === next.tabId &&
     prev.className === next.className &&
     prev.prevRole === next.prevRole &&
+    prev.onEvent === next.onEvent &&
     (!next.message.a2ui || prev.state === next.state),
 );
 
@@ -373,6 +390,7 @@ export function ChatHistory({
   component,
   state,
   tabId,
+  onEvent,
 }: BuiltinComponentProps) {
   const props = component.props as {
     messages: { $ref: string };
@@ -487,6 +505,7 @@ export function ChatHistory({
               state={state}
               tabId={tabId}
               prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
+              onEvent={onEvent}
             />
           ))}
         </>
@@ -504,7 +523,12 @@ export function ChatHistory({
 // feed (history) plus a live "current canvas" subtree if state.canvas is set.
 // ---------------------------------------------------------------------------
 
-export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
+export function MainCanvas({
+  component,
+  state,
+  tabId,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     slot?: string;
     messages?: { $ref: string };
@@ -593,6 +617,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           tabId={tabId}
           className="a2ui-canvas-message"
           prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
+          onEvent={onEvent}
         />
       ))}
       {liveSubtree && (
