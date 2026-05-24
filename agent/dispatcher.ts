@@ -486,11 +486,11 @@ export async function handleSetModel(
   deps: DispatcherDeps,
   msg: InboundMessage,
 ): Promise<void> {
+  const tabId = msg.tabId ?? "default";
   if (!msg.id) {
-    deps.send({ type: "error", message: "set_model: missing id" });
+    deps.send({ type: "error", tabId, message: "set_model: missing id" });
     return;
   }
-  const tabId = msg.tabId ?? "default";
   const tab = await ensureTab(state, deps, tabId);
   if (tab.promptInFlight) {
     deps.send({

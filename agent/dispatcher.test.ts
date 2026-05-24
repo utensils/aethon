@@ -204,6 +204,21 @@ describe("handleChat", () => {
 });
 
 describe("handleSetModel", () => {
+  it("routes missing model ids to the originating tab", async () => {
+    const f = makeFixture();
+
+    await handleSetModel(f.state, f.deps, {
+      type: "set_model",
+      tabId: "tab-1",
+    });
+
+    expect(f.sent).toContainEqual({
+      type: "error",
+      tabId: "tab-1",
+      message: "set_model: missing id",
+    });
+  });
+
   it("reloads runtime prompt resources after the session model changes", async () => {
     const f = makeFixture();
     const nextModel = {
