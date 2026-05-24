@@ -157,4 +157,60 @@ describe("buildExtensionSidebarItems", () => {
 
     expect(items.map((item) => item.label)).toEqual(["mold:gallery"]);
   });
+
+  it("hides disabled project-directory rows when their project is not active", () => {
+    const items = buildExtensionSidebarItems(
+      [],
+      [],
+      [
+        {
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
+        },
+        { name: "@mold/repo-gallery", source: "extension-package" },
+        { name: "global-user-ext", source: "directory" },
+      ],
+      "/repo/claudette",
+    );
+
+    // Project-directory disabled row for mold is hidden under claudette;
+    // extension-package and user-directory entries stay visible.
+    expect(items.map((item) => item.id)).toEqual([
+      "ext-disabled:@mold/repo-gallery",
+      "ext-disabled:global-user-ext",
+    ]);
+  });
+
+  it("shows disabled project-directory rows when their project IS active", () => {
+    const items = buildExtensionSidebarItems(
+      [],
+      [],
+      [
+        {
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
+        },
+      ],
+      "/repo/mold",
+    );
+
+    expect(items.map((item) => item.id)).toEqual([
+      "ext-disabled:mold:image-gallery",
+    ]);
+  });
+
+  it("treats legacy string-only disabled entries as global", () => {
+    const items = buildExtensionSidebarItems(
+      [],
+      [],
+      ["legacy-no-source"],
+      "/repo/anything",
+    );
+
+    expect(items.map((item) => item.id)).toEqual([
+      "ext-disabled:legacy-no-source",
+    ]);
+  });
 });

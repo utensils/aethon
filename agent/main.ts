@@ -81,7 +81,7 @@ import {
   emitReady,
   tabSessionDir,
 } from "./tab-lifecycle";
-import { loadDisabledExtensions } from "./disabled-extensions";
+import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
 import {
   captureProjectExtensionBaseline,
   runDispatcher,
@@ -164,8 +164,14 @@ async function main(): Promise<void> {
 
   // -- User's persisted "disabled extensions" list -----------------------
   // Read before any extension load so the loader honors it on first pass.
-  const disabled = await loadDisabledExtensions(state.userDir);
-  for (const name of disabled) state.disabledExtensions.add(name);
+  // Hydrate both the name set (used by the loader to skip imports) and
+  // the per-entry meta map (used by the frontend to scope project-
+  // directory disabled rows to the active project).
+  const disabledSnapshot = await loadDisabledExtensionsSnapshot(state.userDir);
+  for (const name of disabledSnapshot.names) state.disabledExtensions.add(name);
+  for (const [name, meta] of disabledSnapshot.meta) {
+    state.disabledExtensionMeta.set(name, meta);
+  }
 
   // -- Bundled boot resources read synchronously --------------------------
   if (bootLayoutFile) {

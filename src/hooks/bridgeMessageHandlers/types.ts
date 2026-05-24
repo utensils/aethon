@@ -7,6 +7,7 @@ import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import type { SkillRegistry } from "../../skills/SkillRegistry";
 import type {
+  DisabledExtensionRecord,
   ExtensionFailureSummary,
   ExtensionSummary,
   ExtensionTheme,
@@ -84,7 +85,7 @@ export interface BridgeMessageContext {
   hydrateExtensions: (
     loaded: ExtensionSummary[],
     failed: ExtensionFailureSummary[],
-    disabled?: string[],
+    disabled?: ReadonlyArray<DisabledExtensionRecord | string>,
     activeProjectPath?: string | null,
   ) => void;
   hydrateSlashCommands: (

@@ -428,7 +428,13 @@ export function emitReady(
         ...(info.projectRoot ? { projectRoot: info.projectRoot } : {}),
       }),
     ),
-    disabledExtensionsList: [...state.disabledExtensions].sort(),
+    disabledExtensionsList: [...state.disabledExtensions].sort().map((name) => {
+      const meta = state.disabledExtensionMeta.get(name);
+      if (!meta) return { name };
+      return meta.projectRoot
+        ? { name, source: meta.source, projectRoot: meta.projectRoot }
+        : { name, source: meta.source };
+    }),
     discoveredTabs: state.discoveredTabs,
   });
 }

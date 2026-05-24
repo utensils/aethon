@@ -6,6 +6,7 @@ import type { Tab } from "../../types/tab";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
 import { deletePointer } from "../../utils/jsonPointer";
 import type {
+  DisabledExtensionRecord,
   ExtensionFailureSummary,
   ExtensionSummary,
   ExtensionTheme,
@@ -104,7 +105,9 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   ctx.hydrateExtensions(
     (data.extensionsList as ExtensionSummary[] | undefined) ?? [],
     (data.failedExtensionsList as ExtensionFailureSummary[] | undefined) ?? [],
-    (data.disabledExtensionsList as string[] | undefined) ?? [],
+    (data.disabledExtensionsList as
+      | ReadonlyArray<DisabledExtensionRecord | string>
+      | undefined) ?? [],
     activeProject(ctx.projectsRef.current)?.path ?? null,
   );
   ctx.registry.setTemplates(extComponents);

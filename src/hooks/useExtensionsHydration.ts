@@ -36,6 +36,17 @@ export interface ExtensionFailureSummary extends ExtensionSummary {
   error?: string;
 }
 
+/** Disabled-list entry shape after the v0.3 schema upgrade. The bridge
+ *  now ships source/projectRoot when known so the sidebar can hide
+ *  project-directory disabled rows when a different project is active.
+ *  Entries persisted under the old shape arrive here as bare names with
+ *  no metadata; those are treated as global and always shown. */
+export interface DisabledExtensionRecord {
+  name: string;
+  source?: string;
+  projectRoot?: string;
+}
+
 export type ExtensionSidebarItem = SidebarItem & {
   hint?: string;
 };
@@ -75,10 +86,34 @@ function extensionSourceLabel(source: string): string {
   }
 }
 
+function normalizeDisabledRecord(
+  entry: DisabledExtensionRecord | string,
+): DisabledExtensionRecord {
+  return typeof entry === "string" ? { name: entry } : entry;
+}
+
+/** Decide whether a disabled-row entry should appear given the active
+ *  project. Project-directory entries are scoped to their projectRoot;
+ *  everything else (user directory, npm package, pi-extension, or a
+ *  legacy entry with no source) is treated as global. */
+export function disabledExtensionMatchesProject(
+  record: DisabledExtensionRecord,
+  activeProjectPath: string | null,
+): boolean {
+  if (record.source !== "project-directory") return true;
+  const activePath = normalizeExtensionProjectPath(activeProjectPath);
+  const projectRoot = normalizeExtensionProjectPath(record.projectRoot);
+  return (
+    activePath.length > 0 &&
+    projectRoot.length > 0 &&
+    (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
+  );
+}
+
 export function buildExtensionSidebarItems(
   loaded: ExtensionSummary[],
   failed: ExtensionFailureSummary[],
-  disabled: string[] = [],
+  disabled: ReadonlyArray<DisabledExtensionRecord | string> = [],
   activeProjectPath: string | null = null,
 ): ExtensionSidebarItem[] {
   const scopedLoaded = filterExtensionSummariesByProject(
@@ -89,7 +124,11 @@ export function buildExtensionSidebarItems(
     failed,
     activeProjectPath,
   );
-  const disabledSet = new Set(disabled);
+  const disabledRecords = disabled.map(normalizeDisabledRecord);
+  const disabledSet = new Set(disabledRecords.map((d) => d.name));
+  const scopedDisabled = disabledRecords.filter((d) =>
+    disabledExtensionMatchesProject(d, activeProjectPath),
+  );
   // An extension may appear in `loaded` (live this run) but also be
   // marked disabled (toggle landed mid-session, takes effect after
   // restart). Show it in the disabled bucket so the user sees their
@@ -114,13 +153,13 @@ export function buildExtensionSidebarItems(
         hint: `${extensionSourceLabel(e.source)} · failed`,
         active: false,
       })),
-    ...disabled
-      .filter((name) => !CORE_EXTENSION_NAMES.has(name))
-      .map((name) => {
-        const stillLoaded = loaded.some((e) => e.name === name);
+    ...scopedDisabled
+      .filter((d) => !CORE_EXTENSION_NAMES.has(d.name))
+      .map((d) => {
+        const stillLoaded = loaded.some((e) => e.name === d.name);
         return {
-          id: `ext-disabled:${name}`,
-          label: name,
+          id: `ext-disabled:${d.name}`,
+          label: d.name,
           hint: stillLoaded ? "disabled · restart" : "disabled",
           active: false,
         };
@@ -168,7 +207,7 @@ export interface UseExtensionsHydrationActions {
   hydrateExtensions: (
     loaded: ExtensionSummary[],
     failed: ExtensionFailureSummary[],
-    disabled?: string[],
+    disabled?: ReadonlyArray<DisabledExtensionRecord | string>,
     activeProjectPath?: string | null,
   ) => void;
   hydrateEventRoutes: (
@@ -333,7 +372,7 @@ export function useExtensionsHydration(
   function hydrateExtensions(
     loaded: ExtensionSummary[],
     failed: ExtensionFailureSummary[],
-    disabled: string[] = [],
+    disabled: ReadonlyArray<DisabledExtensionRecord | string> = [],
     activeProjectPath: string | null = null,
   ) {
     const items = buildExtensionSidebarItems(
