@@ -58,7 +58,15 @@ export function formatToolDuration(ms: number): string {
 }
 
 // Status icons for tool card pill
-function ToolStatusIcon({ running, isError, isLongRunning }: { running: boolean; isError: boolean; isLongRunning: boolean }) {
+function ToolStatusIcon({
+  running,
+  isError,
+  isLongRunning,
+}: {
+  running: boolean;
+  isError: boolean;
+  isLongRunning: boolean;
+}) {
   if (running) {
     const label = isLongRunning ? "Tool long-running" : "Tool running";
     return (
@@ -73,13 +81,21 @@ function ToolStatusIcon({ running, isError, isLongRunning }: { running: boolean;
   }
   if (isError) {
     return (
-      <span role="img" aria-label="Tool failed" className="ae-tool-status-icon ae-tool-status-error">
+      <span
+        role="img"
+        aria-label="Tool failed"
+        className="ae-tool-status-icon ae-tool-status-error"
+      >
         <span aria-hidden="true">✕</span>
       </span>
     );
   }
   return (
-    <span role="img" aria-label="Tool completed" className="ae-tool-status-icon ae-tool-status-done">
+    <span
+      role="img"
+      aria-label="Tool completed"
+      className="ae-tool-status-icon ae-tool-status-done"
+    >
       <span aria-hidden="true">✓</span>
     </span>
   );
@@ -108,10 +124,10 @@ export function ToolCard({
   const startedAt = props.startedAt
     ? resolveNumber(props.startedAt, state)
     : undefined;
-  const endedAt = props.endedAt ? resolveNumber(props.endedAt, state) : undefined;
-  const isError = props.isError
-    ? resolveBoolean(props.isError, state)
-    : false;
+  const endedAt = props.endedAt
+    ? resolveNumber(props.endedAt, state)
+    : undefined;
+  const isError = props.isError ? resolveBoolean(props.isError, state) : false;
   const running = startedAt !== undefined && endedAt === undefined;
 
   // Tick at 4 Hz while running so the clock stays smooth without
@@ -150,20 +166,26 @@ export function ToolCard({
       data-error={isError ? "true" : "false"}
     >
       <summary className="ae-tool-card-summary">
-        <ToolStatusIcon running={running} isError={isError} isLongRunning={isLongRunning} />
+        <ToolStatusIcon
+          running={running}
+          isError={isError}
+          isLongRunning={isLongRunning}
+        />
         <span className="ae-tool-card-name">{baseTitle}</span>
         {description && (
           <span className="ae-tool-card-description">{description}</span>
         )}
-        {timeSuffix && (
-          <span className="ae-tool-card-time">{timeSuffix}</span>
-        )}
+        {timeSuffix && <span className="ae-tool-card-time">{timeSuffix}</span>}
         {isLongRunning && (
-          <span className="ae-tool-card-long-hint">long-running · <kbd>⌘.</kbd> to stop</span>
+          <span className="ae-tool-card-long-hint">
+            long-running · <kbd>⌘.</kbd> to stop
+          </span>
         )}
       </summary>
       <div className="ae-tool-card-body">
-        {hasChildren ? renderChildren?.() : (
+        {hasChildren ? (
+          renderChildren?.()
+        ) : (
           <div className="ae-tool-card-empty">No output</div>
         )}
       </div>
@@ -178,7 +200,11 @@ export function ToolCard({
 
 function TypingIndicator() {
   return (
-    <div role="status" aria-label="Agent is thinking" className="ae-typing-indicator">
+    <div
+      role="status"
+      aria-label="Agent is thinking"
+      className="ae-typing-indicator"
+    >
       <span className="ae-typing-dot" aria-hidden="true" />
       <span className="ae-typing-dot" aria-hidden="true" />
       <span className="ae-typing-dot" aria-hidden="true" />
@@ -233,7 +259,9 @@ function ThinkingBlock({
     <details className="a2ui-thinking-block" open={!complete}>
       <summary>{label}</summary>
       <div className="a2ui-thinking-content a2ui-markdown">
-        <ReactMarkdown components={MARKDOWN_COMPONENTS}>{children}</ReactMarkdown>
+        <ReactMarkdown components={MARKDOWN_COMPONENTS}>
+          {children}
+        </ReactMarkdown>
       </div>
     </details>
   );
@@ -279,11 +307,15 @@ const ChatMessageRow = memo(
   }) {
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
-    const textClass = isCanvas ? "a2ui-canvas-text a2ui-markdown" : "a2ui-chat-text a2ui-markdown";
+    const textClass = isCanvas
+      ? "a2ui-canvas-text a2ui-markdown"
+      : "a2ui-chat-text a2ui-markdown";
     // Suppress role label for consecutive messages from same sender
     const showRole = prevRole !== message.role;
     return (
-      <div className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}>
+      <div
+        className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}
+      >
         {showRole && message.role !== "system" && (
           <span className={roleClass}>{roleBadge(message.role)}</span>
         )}
@@ -311,14 +343,19 @@ const ChatMessageRow = memo(
     (!next.message.a2ui || prev.state === next.state),
 );
 
-export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) {
+export function ChatHistory({
+  component,
+  state,
+  tabId,
+}: BuiltinComponentProps) {
   const props = component.props as {
     messages: { $ref: string };
     emptyHint?: StringValue;
   };
 
   const listRef = useRef<HTMLDivElement>(null);
-  const { isAtBottom, scrollToBottom, handleContentChanged } = useStickyScroll(listRef);
+  const { isAtBottom, scrollToBottom, handleContentChanged } =
+    useStickyScroll(listRef);
 
   const messages = useMemo(
     () => (resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [],
@@ -344,7 +381,8 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
   const prevScrollToMatch = useRef<string | undefined>(undefined);
   useEffect(() => {
     const el = listRef.current;
-    if (!el || !scrollToMatch || scrollToMatch === prevScrollToMatch.current) return;
+    if (!el || !scrollToMatch || scrollToMatch === prevScrollToMatch.current)
+      return;
     prevScrollToMatch.current = scrollToMatch;
     const needle = scrollToMatch.toLowerCase();
     const idx = messages.findIndex((m) =>
@@ -427,7 +465,10 @@ export function ChatHistory({ component, state, tabId }: BuiltinComponentProps) 
           ))}
         </>
       )}
-      <ScrollToBottomPill visible={!isAtBottom && messages.length > 0} onClick={scrollToBottom} />
+      <ScrollToBottomPill
+        visible={!isAtBottom && messages.length > 0}
+        onClick={scrollToBottom}
+      />
     </div>
   );
 }
@@ -468,7 +509,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
   const liveSubtree =
-    live && typeof live === "object" && "components" in (live)
+    live && typeof live === "object" && "components" in live
       ? (live as { components: A2UIComponent[] })
       : null;
 
@@ -477,7 +518,8 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
     : "The agent's canvas is empty. Send a message to populate it.";
 
   const listRef = useRef<HTMLDivElement>(null);
-  const { isAtBottom, scrollToBottom, handleContentChanged } = useStickyScroll(listRef);
+  const { isAtBottom, scrollToBottom, handleContentChanged } =
+    useStickyScroll(listRef);
 
   const prevLength = useRef(messages.length);
   const prevLive = useRef(liveSubtree);
@@ -498,9 +540,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
 
   return (
     <main
-      className={
-        chatMode ? "a2ui-canvas" : "a2ui-canvas a2ui-canvas-bare"
-      }
+      className={chatMode ? "a2ui-canvas" : "a2ui-canvas a2ui-canvas-bare"}
       ref={listRef}
     >
       {chatMode && messages.length === 0 && !liveSubtree && (
@@ -511,7 +551,9 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           type="button"
           className="a2ui-chat-load-older"
           onClick={() =>
-            setVisibleCount((n) => Math.min(messages.length, n + MESSAGE_PAGE_SIZE))
+            setVisibleCount((n) =>
+              Math.min(messages.length, n + MESSAGE_PAGE_SIZE),
+            )
           }
         >
           Load older messages ({hiddenCount})
@@ -532,9 +574,10 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
-      {chatMode && state.waiting === true && !liveSubtree && messages.length > 0 && (
-        <TypingIndicator />
-      )}
+      {chatMode &&
+        state.waiting === true &&
+        !liveSubtree &&
+        messages.length > 0 && <TypingIndicator />}
       {chatMode && (
         <ScrollToBottomPill
           visible={!isAtBottom && (messages.length > 0 || !!liveSubtree)}
@@ -599,7 +642,11 @@ function normalizeArgChoices(raw: unknown): SlashArgChoice[] {
   return out;
 }
 
-export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) {
+export function ChatInput({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     value?: StringValue;
     placeholder?: StringValue;
@@ -701,9 +748,15 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     ? resolveString(props.placeholder, state)
     : "";
   const busy = props.disabled ? resolveBoolean(props.disabled, state) : false;
-  const queueCount = props.queueCount ? resolveNumber(props.queueCount, state) : 0;
-  const sendLabel = props.sendLabel ? resolveString(props.sendLabel, state) : "Send";
-  const stopLabel = props.stopLabel ? resolveString(props.stopLabel, state) : "Stop";
+  const queueCount = props.queueCount
+    ? resolveNumber(props.queueCount, state)
+    : 0;
+  const sendLabel = props.sendLabel
+    ? resolveString(props.sendLabel, state)
+    : "Send";
+  const stopLabel = props.stopLabel
+    ? resolveString(props.stopLabel, state)
+    : "Stop";
   const stopTitle = props.stopTitle
     ? resolveString(props.stopTitle, state)
     : "Stop the current prompt";
@@ -747,7 +800,11 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   // Both use the same picker UI; each match shape is normalized to a
   // common interface so the renderer below doesn't branch.
   type CommandMatch = { kind: "command"; cmd: SlashCommandHint };
-  type ArgMatch = { kind: "arg"; cmd: SlashCommandHint; choice: SlashArgChoice };
+  type ArgMatch = {
+    kind: "arg";
+    cmd: SlashCommandHint;
+    choice: SlashArgChoice;
+  };
   type PickerMatch = CommandMatch | ArgMatch;
 
   const slashMatch = useMemo((): {
@@ -816,7 +873,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   const COMPOSER_MIN_HEIGHT = 46;
   const COMPOSER_MAX_HEIGHT = 360;
   const [composerHeight, setComposerHeight] = useState<number>(70);
-  const composerResizeRef = useRef<{ startY: number; startH: number } | null>(null);
+  const composerResizeRef = useRef<{ startY: number; startH: number } | null>(
+    null,
+  );
 
   const startComposerResize = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -864,7 +923,10 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
       const scale = readUiScale();
       const viewportWidth = window.innerWidth / scale;
       const viewportHeight = window.innerHeight / scale;
-      const left = Math.max(8, Math.min(r.left / scale + 16, viewportWidth - 128));
+      const left = Math.max(
+        8,
+        Math.min(r.left / scale + 16, viewportWidth - 128),
+      );
       const availableWidth = Math.max(0, viewportWidth - left - 8);
       const preferredWidth = Math.max(160, r.width / scale - 32);
       setMenuAnchor({
@@ -887,7 +949,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   // to `/<name> <value>` ready to submit.
   const insertMatch = (m: PickerMatch) => {
     const text =
-      m.kind === "command" ? `/${m.cmd.name} ` : `/${m.cmd.name} ${m.choice.value}`;
+      m.kind === "command"
+        ? `/${m.cmd.name} `
+        : `/${m.cmd.name} ${m.choice.value}`;
     setLocalValue(text);
     commitDraft(text);
   };
@@ -899,6 +963,19 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const submit = (mode: "normal" | "steer") => {
+      const v = (e.target as HTMLTextAreaElement).value;
+      if (v.trim().length === 0) return;
+      commitDraft(v);
+      onEvent("submit", { value: v, mode });
+    };
+
+    if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      submit("steer");
+      return;
+    }
+
     if (slashMatch) {
       const list = slashMatch.matches;
       if (e.key === "ArrowDown") {
@@ -939,14 +1016,14 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           const submitText = `/${choice.cmd.name} ${choice.choice.value}`;
           setLocalValue(submitText);
           commitDraft(submitText);
-          onEvent("submit", { value: submitText });
+          onEvent("submit", { value: submitText, mode: "normal" });
           return;
         }
         const exact = (list as CommandMatch[]).find(
           (c) => v === `/${c.cmd.name}` || v.startsWith(`/${c.cmd.name} `),
         );
         if (exact && v.trim().length > 0) {
-          onEvent("submit", { value: v });
+          onEvent("submit", { value: v, mode: "normal" });
           return;
         }
         insertMatch(list[highlightIdx] ?? list[0]);
@@ -955,21 +1032,18 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      const v = (e.target as HTMLTextAreaElement).value;
-      if (v.trim().length > 0) {
-        // Always submit — the bridge uses pi's followUp queue when an
-        // earlier prompt is still in flight, so the user can keep
-        // typing without "agent busy" rejections.
-        commitDraft(v);
-        onEvent("submit", { value: v });
-      }
+      // Always submit — the bridge uses pi's followUp queue when an
+      // earlier prompt is still in flight, so the user can keep typing
+      // without "agent busy" rejections. Cmd/Ctrl+Enter above opts into
+      // mid-turn steering instead.
+      submit("normal");
     }
   };
 
   const handleClick = () => {
     if (value.trim().length > 0) {
       commitDraft(value);
-      onEvent("submit", { value });
+      onEvent("submit", { value, mode: "normal" });
     }
   };
 
@@ -981,7 +1055,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
     <div
       className="a2ui-chat-input"
       ref={inputContainerRef}
-      style={{ "--composer-height": `${composerHeight}px` } as React.CSSProperties}
+      style={
+        { "--composer-height": `${composerHeight}px` } as React.CSSProperties
+      }
     >
       {/* Resize handle — drag UP to grow, DOWN to shrink. Sits on the
           top edge so the cursor naturally targets it when the user
@@ -994,7 +1070,8 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
         title="Drag to resize composer"
         onMouseDown={startComposerResize}
       />
-      {slashMatch && menuAnchor &&
+      {slashMatch &&
+        menuAnchor &&
         createPortal(
           <div
             className="a2ui-slash-menu"
@@ -1008,7 +1085,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
           >
             {slashMatch.mode === "arg" && slashMatch.cmd && (
               <div className="a2ui-slash-arg-header">
-                <span className="a2ui-slash-arg-cmd">/{slashMatch.cmd.name}</span>
+                <span className="a2ui-slash-arg-cmd">
+                  /{slashMatch.cmd.name}
+                </span>
                 <span className="a2ui-slash-arg-hint">
                   {slashMatch.cmd.description ?? "select an option"}
                 </span>
@@ -1016,7 +1095,9 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
             )}
             {slashMatch.matches.map((m, i) => {
               const key =
-                m.kind === "command" ? m.cmd.name : `${m.cmd.name}::${m.choice.value}`;
+                m.kind === "command"
+                  ? m.cmd.name
+                  : `${m.cmd.name}::${m.choice.value}`;
               return (
                 <div
                   key={key}
@@ -1035,7 +1116,7 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
                       const submitText = `/${m.cmd.name} ${m.choice.value}`;
                       setLocalValue(submitText);
                       commitDraft(submitText);
-                      onEvent("submit", { value: submitText });
+                      onEvent("submit", { value: submitText, mode: "normal" });
                     } else {
                       insertMatch(m);
                     }
@@ -1044,22 +1125,38 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
                 >
                   {m.kind === "command" ? (
                     <>
-                      <span className="a2ui-slash-item-name">/{m.cmd.name}</span>
+                      <span className="a2ui-slash-item-name">
+                        /{m.cmd.name}
+                      </span>
                       {m.cmd.usage && (
-                        <span className="a2ui-slash-item-usage"> {m.cmd.usage}</span>
+                        <span className="a2ui-slash-item-usage">
+                          {" "}
+                          {m.cmd.usage}
+                        </span>
                       )}
                       {m.cmd.description && (
-                        <span className="a2ui-slash-item-desc"> — {m.cmd.description}</span>
+                        <span className="a2ui-slash-item-desc">
+                          {" "}
+                          — {m.cmd.description}
+                        </span>
                       )}
                     </>
                   ) : (
                     <>
-                      <span className="a2ui-slash-item-name">{m.choice.value}</span>
+                      <span className="a2ui-slash-item-name">
+                        {m.choice.value}
+                      </span>
                       {m.choice.label && m.choice.label !== m.choice.value && (
-                        <span className="a2ui-slash-item-desc"> — {m.choice.label}</span>
+                        <span className="a2ui-slash-item-desc">
+                          {" "}
+                          — {m.choice.label}
+                        </span>
                       )}
                       {m.choice.description && (
-                        <span className="a2ui-slash-item-desc"> — {m.choice.description}</span>
+                        <span className="a2ui-slash-item-desc">
+                          {" "}
+                          — {m.choice.description}
+                        </span>
                       )}
                     </>
                   )}
@@ -1107,7 +1204,14 @@ export function ChatInput({ component, state, onEvent }: BuiltinComponentProps) 
               viewBox="0 0 16 16"
               aria-hidden="true"
             >
-              <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+              <rect
+                x="3"
+                y="3"
+                width="10"
+                height="10"
+                rx="1.5"
+                fill="currentColor"
+              />
             </svg>
             <span className="a2ui-chat-input-send-label">{stopLabel}</span>
           </button>

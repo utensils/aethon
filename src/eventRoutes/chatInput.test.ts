@@ -3,7 +3,7 @@ import { handleChatInput } from "./chatInput";
 import { buildRouteFixture } from "./testFixtures";
 
 describe("handleChatInput", () => {
-  it("submit forwards value to sendChat", async () => {
+  it("submit forwards value to sendChat as a normal message", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await handleChatInput(
       {
@@ -14,7 +14,21 @@ describe("handleChatInput", () => {
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.sendChat).toHaveBeenCalledWith("hello");
+    expect(mocks.sendChat).toHaveBeenCalledWith("hello", { mode: "normal" });
+  });
+
+  it("submit forwards command-enter steering mode", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleChatInput(
+      {
+        component: { id: "chat-input" },
+        eventType: "submit",
+        data: { value: "look now", mode: "steer" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.sendChat).toHaveBeenCalledWith("look now", { mode: "steer" });
   });
 
   it("change persists draft into the active tab record", async () => {

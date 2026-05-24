@@ -35,8 +35,8 @@ const baseOpts: AethonAgentStateOptions = {
   statePayloadHardKb: 512,
 };
 
-function makeFixture() {
-  const state = new AethonAgentState(baseOpts);
+function makeFixture(opts: Partial<AethonAgentStateOptions> = {}) {
+  const state = new AethonAgentState({ ...baseOpts, ...opts });
   const sent: Record<string, unknown>[] = [];
   return {
     state,
@@ -57,6 +57,7 @@ function fakeRec(model = "anthropic/claude-x"): TabRecord {
     promptInFlight: false,
     agentEndFired: false,
     queuedCount: 0,
+    toolCardSeq: 0,
   };
 }
 
@@ -151,7 +152,7 @@ describe("extractToolContent", () => {
 describe("toolCardPayload", () => {
   it("renders a running card with title + description", () => {
     const payload = toolCardPayload({
-      callId: "c1",
+      id: "tool-c1",
       toolName: "bash",
       argsSummary: "echo hi",
       running: true,
@@ -176,7 +177,7 @@ describe("toolCardPayload", () => {
   it("appends a code child for text results, with a 1500 char cap", () => {
     const result = "x".repeat(2000);
     const payload = toolCardPayload({
-      callId: "c1",
+      id: "tool-c1",
       toolName: "read",
       argsSummary: "",
       result,
@@ -193,7 +194,7 @@ describe("toolCardPayload", () => {
 
   it("infers the code language for file-backed tool results", () => {
     const payload = toolCardPayload({
-      callId: "c1",
+      id: "tool-c1",
       toolName: "read",
       argsSummary: "src/App.tsx lines 1-end",
       result: "export function App() { return null; }",
@@ -205,7 +206,7 @@ describe("toolCardPayload", () => {
 
   it("appends image children with data: URLs", () => {
     const payload = toolCardPayload({
-      callId: "c1",
+      id: "tool-c1",
       toolName: "screenshot",
       argsSummary: "",
       result: {
@@ -244,8 +245,8 @@ describe("tabSessionDir", () => {
 });
 
 describe("emitReady", () => {
-  it("includes per-tab cwd so the frontend can keep project buckets isolated", () => {
-    const f = makeFixture();
+  it("includes project root and per-tab cwd so the frontend can keep cwd scoped", () => {
+    const f = makeFixture({ projectRoot: "/repo/aethon" });
     const rec = fakeRec("anthropic/claude-x");
     rec.id = "tab-1";
     f.state.tabs.set("tab-1", rec);
@@ -255,6 +256,7 @@ describe("emitReady", () => {
 
     expect(f.sent[0]).toMatchObject({
       type: "ready",
+      projectRoot: "/repo/aethon",
       tabs: [
         {
           id: "tab-1",
@@ -452,10 +454,36 @@ describe("handleSessionEvent", () => {
     });
     expect(rec.toolArgsCache.has("c1")).toBe(true);
     const a2uiMsg = f.sent.find((m) => m.type === "a2ui");
-    expect(a2uiMsg).toMatchObject({ id: "tool-c1" });
+    expect(a2uiMsg).toMatchObject({ id: "tool-1-c1" });
     expect(f.sent.find((m) => m.type === "terminal_output")).toMatchObject({
       content: "\r\n$ ls\r\n",
     });
+  });
+
+  it("keeps repeated SDK tool call ids as distinct chat cards", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "bash",
+      args: { command: "one" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_end",
+      toolCallId: "c1",
+      toolName: "bash",
+      result: "done",
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "bash",
+      args: { command: "two" },
+    });
+
+    const ids = f.sent.filter((m) => m.type === "a2ui").map((m) => m.id);
+    expect(ids).toEqual(["tool-1-c1", "tool-1-c1", "tool-2-c1"]);
   });
 
   it("agent_end clears promptInFlight, sets agentEndFired, emits response_end", () => {

@@ -358,6 +358,7 @@ fn start_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), Str
 fn send_message(
     message: String,
     tab_id: Option<String>,
+    mode: Option<String>,
     state: State<'_, AgentProcess>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -371,6 +372,7 @@ fn send_message(
     let payload = serde_json::json!({
         "type": "chat",
         "content": message,
+        "mode": mode.unwrap_or_else(|| "normal".to_string()),
         "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
     });
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;

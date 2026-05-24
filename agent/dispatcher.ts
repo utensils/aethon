@@ -28,10 +28,7 @@ import type {
 } from "./state";
 import type { AethonApi } from "./aethon-api";
 import { logger } from "./logger";
-import {
-  ackMutation,
-  markFrontendReady,
-} from "./mutation-ack";
+import { ackMutation, markFrontendReady } from "./mutation-ack";
 import { dismissNotification, notify } from "./notifications";
 import { setState, makeCanvasApi } from "./state-mutation";
 import {
@@ -41,9 +38,7 @@ import {
   modelKey,
   tabSessionDir,
 } from "./tab-lifecycle";
-import {
-  loadProjectAethonExtensions,
-} from "./extension-loader";
+import { loadProjectAethonExtensions } from "./extension-loader";
 import { patchLayoutTree } from "./layout-manager";
 import {
   appendLocalChatMessage,
@@ -259,9 +254,10 @@ export function unloadProjectExtensions(
   deps.scheduleStateFileWrite();
 }
 
-interface InboundMessage {
+export interface InboundMessage {
   type: string;
   content?: string;
+  mode?: "normal" | "steer";
   name?: string;
   args?: string;
   id?: string;
@@ -401,6 +397,90 @@ export function formatSessionStatsMessage(
   return lines.join("\n");
 }
 
+/** If a reload was requested AND no tab has a prompt in flight, write
+ *  the `_reload_done` sentinel and exit cleanly. The Rust supervisor's
+ *  stdout reader watches for the sentinel so it can flag the upcoming
+ *  EOF as an intentional reload instead of a crash. */
+function maybeExitForReload(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+): void {
+  if (!state.reloadPending) return;
+  for (const tab of state.tabs.values()) {
+    if (tab.promptInFlight) return;
+  }
+  deps.send({ type: "_reload_done" });
+  // Flush stdout before exiting so the supervisor sees the sentinel
+  // before the EOF.
+  if (typeof process.stdout.write === "function") {
+    try {
+      process.stdout.write("");
+    } catch {
+      /* ignore */
+    }
+  }
+  process.exit(0);
+}
+
+export async function handleChat(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  msg: InboundMessage,
+): Promise<void> {
+  if (!msg.content) {
+    deps.send({ type: "error", message: "chat: missing content" });
+    return;
+  }
+  const tabId = msg.tabId ?? "default";
+  const tab = await ensureTab(state, deps, tabId);
+  const wantsSteer = msg.mode === "steer";
+  if (wantsSteer && tab.promptInFlight) {
+    state.currentAgentTabId = tabId;
+    const content = msg.content;
+    state.tabContext
+      .run(tabId, () => tab.session.steer(content))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        deps.send({ type: "error", tabId, message: `steer: ${message}` });
+      });
+    return;
+  }
+  const queued = tab.promptInFlight;
+  if (queued) {
+    tab.queuedCount += 1;
+    const content = msg.content;
+    state.tabContext
+      .run(tabId, () => tab.session.followUp(content))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        deps.send({ type: "error", tabId, message: `followUp: ${message}` });
+      });
+    deps.send({ type: "queued", tabId });
+    return;
+  }
+
+  tab.promptInFlight = true;
+  tab.agentEndFired = false;
+  state.currentAgentTabId = tabId;
+  const content = msg.content;
+  state.tabContext
+    .run(tabId, () => tab.session.prompt(content))
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({ type: "error", tabId, message: `prompt: ${message}` });
+    })
+    .finally(() => {
+      if (!tab.agentEndFired) {
+        tab.promptInFlight = false;
+        deps.send({ type: "response_end", tabId });
+      }
+      if (state.currentAgentTabId === tabId) {
+        state.currentAgentTabId = undefined;
+      }
+      maybeExitForReload(state, deps);
+    });
+}
+
 /** Run the inbound dispatcher loop. Returns when stdin closes. */
 export async function runDispatcher(
   state: AethonAgentState,
@@ -411,37 +491,6 @@ export async function runDispatcher(
   const rl = createInterface({ input: process.stdin });
   const stateMutationDeps = { send: deps.send };
   const notifDeps = { send: deps.send };
-
-  /** If a reload was requested AND no tab has a prompt in flight, write
-   *  the `_reload_done` sentinel and exit cleanly. The Rust supervisor's
-   *  stdout reader watches for the sentinel so it can flag the upcoming
-   *  EOF as an intentional reload (not a crash) and emit `agent-reloaded`.
-   *  The next chat / agent_command request lazily respawns the bridge with
-   *  the new extension state.
-   *
-   *  Idempotent — safe to call after every prompt completion. */
-  function maybeExitForReload(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-  ): void {
-    if (!state.reloadPending) return;
-    for (const tab of state.tabs.values()) {
-      if (tab.promptInFlight) return;
-    }
-    deps.send({ type: "_reload_done" });
-    // Flush stdout before exiting so the supervisor sees the sentinel
-    // before the EOF. process.stdout is non-blocking on a pipe, so a
-    // synchronous .write() returning false would otherwise let the EOF
-    // race the sentinel line.
-    if (typeof process.stdout.write === "function") {
-      try {
-        process.stdout.write("");
-      } catch {
-        /* ignore */
-      }
-    }
-    process.exit(0);
-  }
 
   for await (const line of rl) {
     const trimmed = line.trim();
@@ -606,55 +655,6 @@ export async function runDispatcher(
 
   // ---- Per-message handlers -------------------------------------------
 
-  async function handleChat(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): Promise<void> {
-    if (!msg.content) {
-      deps.send({ type: "error", message: "chat: missing content" });
-      return;
-    }
-    const tabId = msg.tabId ?? "default";
-    const tab = await ensureTab(state, deps, tabId);
-    const queued = tab.promptInFlight;
-    if (!queued) {
-      tab.promptInFlight = true;
-      tab.agentEndFired = false;
-    } else {
-      tab.queuedCount += 1;
-    }
-    if (!queued) state.currentAgentTabId = tabId;
-    const content = msg.content;
-    state.tabContext
-      .run(tabId, () =>
-        tab.session.prompt(
-          content,
-          queued ? { streamingBehavior: "followUp" } : undefined,
-        ),
-      )
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        deps.send({ type: "error", tabId, message: `prompt: ${message}` });
-      })
-      .finally(() => {
-        if (!queued && !tab.agentEndFired) {
-          tab.promptInFlight = false;
-          deps.send({ type: "response_end", tabId });
-        }
-        if (!queued && state.currentAgentTabId === tabId) {
-          state.currentAgentTabId = undefined;
-        }
-        // If a hot-reload was deferred while this prompt was running,
-        // honor it now. Idempotent — does nothing if no reload is
-        // pending or another tab still has a prompt in flight.
-        maybeExitForReload(state, deps);
-      });
-    if (queued) {
-      deps.send({ type: "queued", tabId });
-    }
-  }
-
   async function handleSetModel(
     state: AethonAgentState,
     deps: DispatcherDeps,
@@ -670,8 +670,7 @@ export async function runDispatcher(
       deps.send({
         type: "notice",
         tabId,
-        message:
-          "agent busy — stop the current prompt before switching models",
+        message: "agent busy — stop the current prompt before switching models",
       });
       return;
     }
@@ -938,14 +937,15 @@ export async function runDispatcher(
     }
     const restoreHistory =
       (msg as { restoreHistory?: unknown }).restoreHistory === true;
-    let restoredMessages: Awaited<ReturnType<typeof readSessionTranscript>> = [];
+    let restoredMessages: Awaited<ReturnType<typeof readSessionTranscript>> =
+      [];
     if (restoreHistory) {
       try {
         const expectedCwd =
           cwdOverride ??
           state.tabProjectCwds.get(tabId) ??
           (tabId === "default"
-            ? state.currentProjectCwd ?? process.cwd()
+            ? (state.currentProjectCwd ?? process.cwd())
             : undefined);
         restoredMessages = await readSessionTranscript(
           tabSessionDir(state, tabId),
@@ -990,7 +990,10 @@ export async function runDispatcher(
       return;
     }
     if (typeof cwd !== "string" || cwd.length === 0) {
-      deps.send({ type: "error", message: "set_project: cwd must be string|null" });
+      deps.send({
+        type: "error",
+        message: "set_project: cwd must be string|null",
+      });
       return;
     }
     state.tabProjectCwds.set(tabId, cwd);
@@ -1136,7 +1139,10 @@ export async function runDispatcher(
         state.disabledExtensionMeta.set(
           name,
           failureInfo.projectRoot
-            ? { source: failureInfo.source, projectRoot: failureInfo.projectRoot }
+            ? {
+                source: failureInfo.source,
+                projectRoot: failureInfo.projectRoot,
+              }
             : { source: failureInfo.source },
         );
       }
@@ -1193,9 +1199,7 @@ export async function runDispatcher(
     // is rendered before agent-reloaded clears the in-flight UI state.
     void notify(state, notifDeps, {
       id: `aethon:extension-toggle:${name}`,
-      title: disabled
-        ? `Disabled \`${name}\``
-        : `Enabled \`${name}\``,
+      title: disabled ? `Disabled \`${name}\`` : `Enabled \`${name}\``,
       message: disabled
         ? "Reloading bridge to fully unload…"
         : "Reloading bridge to load…",
@@ -1270,11 +1274,7 @@ export async function runDispatcher(
     const record = payload as Record<string, unknown>;
     const role = record.role;
     const text = record.text;
-    if (
-      role !== "user" &&
-      role !== "agent" &&
-      role !== "system"
-    ) {
+    if (role !== "user" && role !== "agent" && role !== "system") {
       deps.send({
         type: "notice",
         tabId,
@@ -1293,7 +1293,9 @@ export async function runDispatcher(
     try {
       const localCwd =
         state.tabProjectCwds.get(tabId) ??
-        (tabId === "default" ? state.currentProjectCwd ?? process.cwd() : undefined);
+        (tabId === "default"
+          ? (state.currentProjectCwd ?? process.cwd())
+          : undefined);
       await appendLocalChatMessage(tabSessionDir(state, tabId), {
         id:
           typeof record.id === "string" && record.id.length > 0
@@ -1331,7 +1333,11 @@ export async function runDispatcher(
     const piCtx = buildPiHandlerCtx(state, deps, handlerTab, handlerTabId);
     const tabScopedSetState = (path: string, value: unknown) =>
       setState(state, stateMutationDeps, path, value, handlerTabId);
-    const tabScopedCanvas = makeCanvasApi(state, stateMutationDeps, handlerTabId);
+    const tabScopedCanvas = makeCanvasApi(
+      state,
+      stateMutationDeps,
+      handlerTabId,
+    );
 
     for (const { match, handler } of state.a2uiEventHandlers) {
       if (

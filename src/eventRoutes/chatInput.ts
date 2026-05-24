@@ -12,7 +12,11 @@ export const handleChatInput: EventRouteHandler = async (
 ) => {
   if (eventType === "submit") {
     const value = (data as { value?: string } | undefined)?.value ?? "";
-    await ctx.sendChat(value);
+    const mode =
+      (data as { mode?: unknown } | undefined)?.mode === "steer"
+        ? "steer"
+        : "normal";
+    await ctx.sendChat(value, { mode });
     return true;
   }
   if (eventType === "change") {

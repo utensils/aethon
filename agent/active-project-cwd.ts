@@ -64,3 +64,13 @@ export async function readActiveProjectCwd(
     return undefined;
   }
 }
+
+export function resolveStartupCwd(
+  activeProjectCwd: string | undefined,
+  projectRoot: string | undefined,
+  processCwd: string,
+): string {
+  if (activeProjectCwd && activeProjectCwd.length > 0) return activeProjectCwd;
+  if (projectRoot && projectRoot.length > 0) return projectRoot;
+  return processCwd;
+}

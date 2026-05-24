@@ -218,6 +218,7 @@ export interface TabRecord {
     {
       name: string;
       summary: string;
+      uiId: string;
       bashStream?: BashTerminalStreamState;
       /** Epoch ms — when tool_execution_start fired. Used by the M6 P4
        *  `tool-card` component to render a live elapsed-time clock. */
@@ -227,6 +228,7 @@ export interface TabRecord {
   promptInFlight: boolean;
   agentEndFired: boolean;
   queuedCount: number;
+  toolCardSeq: number;
 }
 
 export interface ProjectBaselineSnapshot {

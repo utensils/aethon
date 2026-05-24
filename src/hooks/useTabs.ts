@@ -92,6 +92,18 @@ export function modelForNewProjectTab(
   ).trim();
 }
 
+export function cwdForNewTab(
+  projects: ProjectsState,
+  appState: Record<string, unknown>,
+): string | null {
+  const projectCwd = activeCwd(projects);
+  if (projectCwd) return projectCwd;
+  const projectRoot = appState.projectRoot;
+  return typeof projectRoot === "string" && projectRoot.length > 0
+    ? projectRoot
+    : null;
+}
+
 export function recentSessionItemFromClosedTab(
   tab: Tab,
   projects: ProjectsState,
@@ -422,7 +434,9 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     // model, then pi's ready-reported default.
     const projectId = projectsRef.current.activeId;
     const inheritedCwd =
-      options?.cwd ?? activeCwd(projectsRef.current) ?? undefined;
+      options?.cwd ??
+      cwdForNewTab(projectsRef.current, stateRef.current) ??
+      undefined;
     const inheritedModel = modelForNewProjectTab(
       stateRef.current,
       projectId,
@@ -491,7 +505,9 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   }) {
     const id = crypto.randomUUID();
     const inheritedCwd =
-      options?.cwd ?? activeCwd(projectsRef.current) ?? undefined;
+      options?.cwd ??
+      cwdForNewTab(projectsRef.current, stateRef.current) ??
+      undefined;
     const seedShareMode = defaultShareModeRef.current;
     const resolvedCommand =
       options?.command ?? shellDefaultCommandRef.current ?? undefined;
