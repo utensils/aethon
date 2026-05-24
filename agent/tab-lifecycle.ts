@@ -22,6 +22,7 @@ import {
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "./shell-tools";
 import { buildDashboardTools } from "./dashboard-tools";
+import { wrapWithSourceGuard } from "./source-guard";
 import { logger } from "./logger";
 import { extractAgentEndError } from "./agent-errors";
 import { findSessionFileMatchingCwd } from "./session-history";
@@ -614,6 +615,7 @@ export async function ensureTab(
     customTools: [...buildShellTools(), ...buildDashboardTools()],
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });
+  wrapWithSourceGuard(session.agent, state.projectRoot);
 
   const rec: TabRecord = {
     id: tabId,

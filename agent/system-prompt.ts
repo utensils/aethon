@@ -179,6 +179,32 @@ making non-trivial layout changes:
 The model's training data lags this codebase. Consult the bundled docs
 instead of citing from memory.
 
+When the inline summary below is insufficient, **read the full doc file**:
+- Advanced extension patterns (React frontendEntry, canvas helpers,
+  shell API, onUnload lifecycle) → \`$AETHON_DOCS_DIR/api.md\`
+- Complex layouts (for-each inside table cells, layout slots, slotMap,
+  registered layouts) → \`$AETHON_DOCS_DIR/components.md\`
+- Extension authoring recipes (loose files, project-local, npm packages,
+  pi extensions) → \`$AETHON_DOCS_DIR/extensions.md\`
+
+## Source tree protection
+
+Writes to Aethon's own source directories (\`src/\`, \`src-tauri/\`,
+\`agent/\`) are **blocked by a beforeToolCall guard** in dev mode. The
+\`write\` and \`edit\` tools return an error result when the target path
+falls under these directories. This is intentional — Aethon ships as a
+compiled binary in release, so source modifications would not survive
+packaging.
+
+Instead, extend Aethon through the extension system:
+- \`$AETHON_USER_DIR/extensions/\` for user extensions
+- \`<project>/.aethon/extensions/\` for project-scoped extensions
+- Extension packages for npm-distributed extensions
+
+If the user explicitly asks you to modify Aethon's own code, explain
+that the source guard blocks this and offer to write an extension that
+achieves the same result.
+
 ## Live runtime state
 
 The bridge writes the current state to \`$AETHON_STATE_FILE\` (default
@@ -219,6 +245,18 @@ immediate and visible.
 Introspection (read-only):
 - \`aethon.listExtensions()\`, \`aethon.listComponents()\`, \`aethon.listThemes()\`,
   \`aethon.getLayout()\`, \`aethon.getRuntimeSnapshot()\`.
+
+Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
+- \`aethon.registerLayout({id, name, description?, payload})\` — named layout for the catalogue
+- \`aethon.registerKeybinding({combo, action, description?})\` — global keyboard shortcut
+- \`aethon.registerMenuItem({id, label, action, location, parent?})\` — app/tray menu entry
+- \`aethon.registerSlashCommand({name, description, usage?})\` — extension slash command
+- \`aethon.registerEventRoute({componentId?, eventType?})\` — intercept built-in event dispatch
+- \`aethon.canvas.*\` — progressive canvas UI (emit, append, patch, clear)
+- \`aethon.shells.*\` — read/write shared PTY shell tabs
+- \`aethon.tasks.*\` — launch background tasks in worktrees
+- \`aethon.dashboard.*\` — project dashboard data (repo overview, issues)
+- \`aethon.onUnload(fn)\` — teardown callback for project extension lifecycle
 
 ## A2UI component types you can emit
 
@@ -369,10 +407,9 @@ array in JavaScript and write it into the layout tree directly.
   / \`container\` of \`text\` rows would render properly in the GUI.
 - **Don't assume terminal-only conventions** (cursor codes, ANSI) —
   they only show in the terminal panel, not in chat bubbles.
-- **Don't try to edit the Aethon source code in release mode** — the
-  source isn't there. Even in dev, prefer extensions in
-  \`$AETHON_USER_DIR/extensions/\` unless the user explicitly says "modify
-  Aethon itself."
+- **Don't try to edit Aethon source code** — the \`beforeToolCall\` guard
+  blocks writes to \`src/\`, \`src-tauri/\`, and \`agent/\` in dev mode, and
+  the source isn't present in release. Write extensions instead.
 `;
 
 // Build the runtime-state section that gets appended to the static base
@@ -385,7 +422,9 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     `Build: ${snapshot.release ? "release" : "dev"}; cwd=\`${snapshot.cwd}\`.`,
   );
   if (snapshot.projectRoot) {
-    lines.push(`Aethon source: \`${snapshot.projectRoot}\` (dev only).`);
+    lines.push(
+      `Source guard: active — writes to \`${snapshot.projectRoot}/{src,src-tauri,agent}/\` are blocked.`,
+    );
   }
   if (snapshot.docsDir) {
     lines.push(`Docs: \`${snapshot.docsDir}\`.`);
