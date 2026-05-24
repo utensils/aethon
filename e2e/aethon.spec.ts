@@ -101,6 +101,25 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
 
+  await page.locator(".a2ui-chat-input-field").fill("second queued prompt");
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+2");
+  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText([
+    "queued #1",
+    "queued #2",
+  ]);
+  await expect
+    .poll(() => getActiveTurnState(page))
+    .toEqual({ waiting: true, queueCount: 2, status: "thinking…" });
+
+  await completeActiveTurn(page);
+  await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
+  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
+  await expect
+    .poll(() => getActiveTurnState(page))
+    .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
+
   await completeActiveTurn(page);
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
   await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveCount(0);
@@ -123,6 +142,10 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
     expect.arrayContaining([
       expect.objectContaining({ message: "first prompt", mode: "normal" }),
       expect.objectContaining({ message: "queued prompt", mode: "normal" }),
+      expect.objectContaining({
+        message: "second queued prompt",
+        mode: "normal",
+      }),
     ]),
   );
 });

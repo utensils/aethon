@@ -140,6 +140,19 @@ describe("ChatInput", () => {
     expect(screen.getByText("steered")).toBeTruthy();
   });
 
+  it("numbers queued delivery badges when multiple follow-ups are waiting", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "running", delivery: "sent" },
+        { id: "2", role: "user", text: "first queued", delivery: "queued" },
+        { id: "3", role: "user", text: "second queued", delivery: "queued" },
+      ],
+    });
+
+    expect(screen.getByText("queued #1")).toBeTruthy();
+    expect(screen.getByText("queued #2")).toBeTruthy();
+  });
+
   it("renders retry actions for failed user messages", () => {
     const { onEvent } = renderHistory({
       messages: [

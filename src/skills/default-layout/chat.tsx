@@ -260,6 +260,16 @@ function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {
   }
 }
 
+function queuedDeliveryLabels(messages: ChatMessage[]): Map<string, string> {
+  const queued = messages.filter(
+    (message) => message.role === "user" && message.delivery === "queued",
+  );
+  if (queued.length <= 1) return new Map();
+  return new Map(
+    queued.map((message, index) => [message.id, `queued #${index + 1}`]),
+  );
+}
+
 function ThinkingBlock({
   children,
   complete = true,
@@ -312,6 +322,7 @@ const ChatMessageRow = memo(
     className = "a2ui-chat-message",
     prevRole,
     onEvent,
+    deliveryText,
   }: {
     message: ChatMessage;
     state: Record<string, unknown>;
@@ -319,6 +330,7 @@ const ChatMessageRow = memo(
     className?: string;
     prevRole?: string;
     onEvent?: BuiltinComponentProps["onEvent"];
+    deliveryText?: string;
   }) {
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -328,7 +340,9 @@ const ChatMessageRow = memo(
     // Suppress role label for consecutive messages from same sender
     const showRole = prevRole !== message.role;
     const delivery =
-      message.role === "user" ? deliveryLabel(message.delivery) : null;
+      message.role === "user"
+        ? (deliveryText ?? deliveryLabel(message.delivery))
+        : null;
     return (
       <div
         className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}
@@ -383,6 +397,7 @@ const ChatMessageRow = memo(
     prev.className === next.className &&
     prev.prevRole === next.prevRole &&
     prev.onEvent === next.onEvent &&
+    prev.deliveryText === next.deliveryText &&
     (!next.message.a2ui || prev.state === next.state),
 );
 
@@ -410,6 +425,7 @@ export function ChatHistory({
     () => messages.slice(Math.max(0, messages.length - visibleCount)),
     [messages, visibleCount],
   );
+  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
   const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
   const emptyHint = props.emptyHint
     ? resolveString(props.emptyHint, state)
@@ -506,6 +522,7 @@ export function ChatHistory({
               tabId={tabId}
               prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
               onEvent={onEvent}
+              deliveryText={queuedLabels.get(m.id)}
             />
           ))}
         </>
@@ -555,6 +572,7 @@ export function MainCanvas({
     () => messages.slice(Math.max(0, messages.length - visibleCount)),
     [messages, visibleCount],
   );
+  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
   const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
@@ -618,6 +636,7 @@ export function MainCanvas({
           className="a2ui-canvas-message"
           prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
           onEvent={onEvent}
+          deliveryText={queuedLabels.get(m.id)}
         />
       ))}
       {liveSubtree && (
