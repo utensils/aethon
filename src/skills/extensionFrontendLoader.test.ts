@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import type { FunctionComponent } from "react";
+import type { BuiltinComponentProps } from "../components/A2UIRenderer";
 import { SkillRegistry } from "./SkillRegistry";
 import {
   evaluateFrontendModule,
@@ -24,6 +26,52 @@ describe("evaluateFrontendModule", () => {
     expect(registry.resolve("test-card")).toBeDefined();
   });
 
+  it("wraps native extension components in non-selectable chrome", () => {
+    const code = `
+      skill.registerComponent("chrome-card", function ChromeCard() {
+        return React.createElement("span", null, "chrome");
+      });
+    `;
+    evaluateFrontendModule({ name: "chrome-ext", code }, registry);
+    const resolved = registry.resolve("chrome-card");
+    expect(resolved).toBeDefined();
+    const render = resolved as FunctionComponent<BuiltinComponentProps>;
+    const element = render({
+      component: { id: "x", type: "chrome-card" },
+      state: {},
+      onEvent: () => {},
+      renderChild: () => null,
+      renderChildren: () => null,
+      renderChildWithState: () => null,
+    });
+    expect(element).toMatchObject({
+      type: "div",
+      props: {
+        className: "ae-extension-component",
+        "data-extension-module": "chrome-ext",
+        "data-extension-component": "chrome-card",
+      },
+    });
+  });
+
+  it("offers selectableProps for copyable text inside extension chrome", () => {
+    const code = `
+      const props = skill.selectableProps();
+      if (props["data-selectable"] !== "true") {
+        throw new Error("selectableProps missing");
+      }
+      skill.registerComponent("copy-path", function CopyPath() {
+        return React.createElement("code", props, "/tmp/aethon");
+      });
+    `;
+    const result = evaluateFrontendModule(
+      { name: "selectable", code },
+      registry,
+    );
+    expect(result.error).toBeUndefined();
+    expect(registry.resolve("copy-path")).toBeDefined();
+  });
+
   it("captures errors instead of throwing so one bad module can't kill others", () => {
     const code = `throw new Error("boom");`;
     const result = evaluateFrontendModule({ name: "broken", code }, registry);
@@ -33,7 +81,10 @@ describe("evaluateFrontendModule", () => {
 
   it("rejects non-string types with a helpful error", () => {
     const code = `skill.registerComponent(42, function () {});`;
-    const result = evaluateFrontendModule({ name: "bad-types", code }, registry);
+    const result = evaluateFrontendModule(
+      { name: "bad-types", code },
+      registry,
+    );
     expect(result.error).toContain("type must be a non-empty string");
   });
 
@@ -63,7 +114,10 @@ describe("evaluateFrontendModule", () => {
         return createElement("span", null, "ok");
       });
     `;
-    const result = evaluateFrontendModule({ name: "hook-test", code }, registry);
+    const result = evaluateFrontendModule(
+      { name: "hook-test", code },
+      registry,
+    );
     expect(result.error).toBeUndefined();
     expect(result.componentTypes).toEqual(["hooks-ok"]);
   });

@@ -47,6 +47,10 @@ interface FrontendModuleApi {
     type: string,
     component: ComponentType<BuiltinComponentProps>,
   ): void;
+  /** Mark nested text as copyable inside extension chrome. Extension
+   *  React components are wrapped in non-selectable app chrome by
+   *  default; use this for paths, ids, or output users should copy. */
+  selectableProps(): { "data-selectable": string };
 }
 
 export interface LoadedFrontendModule {
@@ -78,8 +82,11 @@ export function evaluateFrontendModule(
           `extension[${module.name}].registerComponent("${type}"): component must be a function`,
         );
       }
-      components[type] = component;
+      components[type] = wrapExtensionComponent(module.name, type, component);
       if (!componentTypes.includes(type)) componentTypes.push(type);
+    },
+    selectableProps() {
+      return { "data-selectable": "true" };
     },
   };
   try {
@@ -103,6 +110,26 @@ export function evaluateFrontendModule(
   // (handled by the caller via `unregister(name)` first).
   registry.register({ name: frontendModuleKey(module.name), components });
   return { name: module.name, componentTypes };
+}
+
+function wrapExtensionComponent(
+  moduleName: string,
+  type: string,
+  Component: ComponentType<BuiltinComponentProps>,
+): ComponentType<BuiltinComponentProps> {
+  function ExtensionComponentBoundary(props: BuiltinComponentProps) {
+    return React.createElement(
+      "div",
+      {
+        className: "ae-extension-component",
+        "data-extension-module": moduleName,
+        "data-extension-component": type,
+      },
+      React.createElement(Component, props),
+    );
+  }
+  ExtensionComponentBoundary.displayName = `AethonExtension(${type})`;
+  return ExtensionComponentBoundary;
 }
 
 /**
@@ -136,7 +163,11 @@ export function reconcileFrontendModules(
   previous: ReadonlyMap<string, string>,
   next: ExtensionFrontendModule[],
   registry: SkillRegistry,
-): { loaded: LoadedFrontendModule[]; unregistered: string[]; skipped: string[] } {
+): {
+  loaded: LoadedFrontendModule[];
+  unregistered: string[];
+  skipped: string[];
+} {
   const nextByName = new Map(next.map((m) => [m.name, m]));
   const unregistered: string[] = [];
   for (const name of previous.keys()) {

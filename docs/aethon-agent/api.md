@@ -336,6 +336,7 @@ interface FrontendModuleApi {
     type: string,
     component: React.ComponentType<BuiltinComponentProps>,
   ): void;
+  selectableProps(): { "data-selectable": "true" };
 }
 ```
 
@@ -352,6 +353,22 @@ The renderer resolves the type through the SkillRegistry just like
 any built-in. `examples/extension-package/src/frontend.js` ships a
 minimal `pulse-card` demo (CSS-keyframe pulse, hooks via
 `React.useEffect`).
+
+Frontend components are treated as app chrome by default: Aethon wraps
+them in `.ae-extension-component`, so text does not accidentally select
+while users drag or click floating surfaces. If a nested path, id, or
+log line should remain copyable, spread `skill.selectableProps()` onto
+that exact element:
+
+```js
+skill.registerComponent("path-chip", function PathChip({ component }) {
+  return React.createElement(
+    "code",
+    skill.selectableProps(),
+    component.props.path,
+  );
+});
+```
 
 **Authoring options.** The simplest path is plain JS — write
 `React.createElement(...)` directly. If you want JSX or imports, run

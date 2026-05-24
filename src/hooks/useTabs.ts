@@ -99,8 +99,12 @@ export function cwdForNewTab(
   const projectCwd = activeCwd(projects);
   if (projectCwd) return projectCwd;
   const projectRoot = appState.projectRoot;
-  return typeof projectRoot === "string" && projectRoot.length > 0
-    ? projectRoot
+  if (typeof projectRoot === "string" && projectRoot.length > 0) {
+    return projectRoot;
+  }
+  const aethonRoot = appState.aethonRoot;
+  return typeof aethonRoot === "string" && aethonRoot.length > 0
+    ? aethonRoot
     : null;
 }
 

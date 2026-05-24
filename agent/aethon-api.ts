@@ -71,6 +71,11 @@ const BUILTIN_SLASH_NAMES = new Set([
   "reset",
   "reload",
   "rename",
+  "context",
+  "session",
+  "compact",
+  "name",
+  "export",
   "terminal",
   "extensions",
   "sidebar",
@@ -108,9 +113,7 @@ export interface TasksApi {
  *  the dashboard. Lets the model answer "what's open right now?" without
  *  re-shelling `gh` itself. */
 export interface DashboardApi {
-  getRepoOverview(input: {
-    projectPath: string;
-  }): Promise<MutationResult>;
+  getRepoOverview(input: { projectPath: string }): Promise<MutationResult>;
   refresh(input?: { projectPath?: string }): Promise<MutationResult>;
   /** Cached open issues for the project. Same data the dashboard
    *  surface renders, served from the in-memory cache so the model
@@ -253,12 +256,7 @@ export function buildAethonApi(
       idx >= 0
         ? existing.map((s, i) => (i === idx ? section : s))
         : [...existing, section];
-    return setState(
-      state,
-      stateMutationDeps,
-      "/sidebar/extraSections",
-      next,
-    );
+    return setState(state, stateMutationDeps, "/sidebar/extraSections", next);
   }
 
   function _registerTheme(theme: unknown): Promise<MutationResult> {
@@ -314,7 +312,11 @@ export function buildAethonApi(
         error: "command requires { name }",
       });
     }
-    const obj = cmd as { name?: unknown; description?: unknown; usage?: unknown };
+    const obj = cmd as {
+      name?: unknown;
+      description?: unknown;
+      usage?: unknown;
+    };
     const name = typeof obj.name === "string" ? obj.name.trim() : "";
     if (!/^[A-Za-z][\w-]*$/.test(name)) {
       const errorMsg =
@@ -366,8 +368,7 @@ export function buildAethonApi(
     }
     const id =
       typeof obj.id === "string" && obj.id.trim() ? obj.id.trim() : action;
-    const location: "app" | "tray" =
-      obj.location === "tray" ? "tray" : "app";
+    const location: "app" | "tray" = obj.location === "tray" ? "tray" : "app";
     const parent = typeof obj.parent === "string" ? obj.parent : undefined;
     state.extensionMenuItems.set(id, {
       id,
@@ -448,7 +449,11 @@ export function buildAethonApi(
 
   const tasks: TasksApi = {
     start: (input) => {
-      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+      if (
+        !input ||
+        typeof input.projectPath !== "string" ||
+        !input.projectPath
+      ) {
         return Promise.resolve({ ok: false, error: "projectPath required" });
       }
       if (typeof input.prompt !== "string" || !input.prompt.trim()) {
@@ -477,7 +482,11 @@ export function buildAethonApi(
 
   const dashboard: DashboardApi = {
     getRepoOverview: (input) => {
-      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+      if (
+        !input ||
+        typeof input.projectPath !== "string" ||
+        !input.projectPath
+      ) {
         return Promise.resolve({ ok: false, error: "projectPath required" });
       }
       return _dashboardQuery("get_repo_overview", {
@@ -491,7 +500,11 @@ export function buildAethonApi(
           : {}),
       }),
     listIssues: (input) => {
-      if (!input || typeof input.projectPath !== "string" || !input.projectPath) {
+      if (
+        !input ||
+        typeof input.projectPath !== "string" ||
+        !input.projectPath
+      ) {
         return Promise.resolve({ ok: false, error: "projectPath required" });
       }
       return _dashboardQuery("list_issues", {
@@ -554,8 +567,7 @@ export function buildAethonApi(
     registerComponent: _registerComponent,
     setState: (path, value, sourceTabId) =>
       setState(state, stateMutationDeps, path, value, sourceTabId),
-    onEvent: (match, handler) =>
-      onEvent(state, eventDeps, match, handler),
+    onEvent: (match, handler) => onEvent(state, eventDeps, match, handler),
     onUnload: _onUnload,
     setLayout: (payload) => setLayout(state, layoutDeps, payload),
     patchLayout: (path, value) => patchLayout(state, layoutDeps, path, value),
@@ -578,8 +590,7 @@ export function buildAethonApi(
     unregisterEventRoute: (route) =>
       unregisterEventRoute(state, eventDeps, route),
     listEventRoutes: () => listEventRoutes(state),
-    setEventRoutingMode: (mode) =>
-      setEventRoutingMode(state, eventDeps, mode),
+    setEventRoutingMode: (mode) => setEventRoutingMode(state, eventDeps, mode),
     listExtensions: () =>
       [...state.loadedExtensions.entries()].map(([name, source]) => ({
         name,

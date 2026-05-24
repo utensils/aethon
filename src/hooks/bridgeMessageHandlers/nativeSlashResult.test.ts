@@ -28,7 +28,30 @@ describe("handleNativeSlashResult", () => {
       }),
       "tab-1",
     );
+    expect(mocks.updateTab).toHaveBeenCalledWith("tab-1", expect.any(Function));
     expect(mocks.pushNotification).not.toHaveBeenCalled();
+  });
+
+  it("clears the active spinner after a native command result", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "default" },
+    });
+    handleNativeSlashResult(
+      {
+        type: "native_slash_result",
+        command: "compact",
+        tabId: "default",
+        message: "Context compacted. 159,747 tokens were summarized.",
+      },
+      ctx,
+    );
+    const updater = mocks.updateTab.mock.calls[0][1] as Parameters<
+      typeof ctx.updateTab
+    >[1];
+    expect(updater({ waiting: true, queueCount: 0 } as never)).toMatchObject({
+      waiting: false,
+    });
+    expect(mocks.setStatusFlags).toHaveBeenCalledWith({ status: "ready" });
   });
 
   it("also raises an error toast for failed native commands", () => {

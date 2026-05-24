@@ -40,7 +40,9 @@
 .a2ui-empty-state,
 .a2ui-empty-state *,
 .a2ui-empty-state-card,
-.a2ui-empty-state-card * {
+.a2ui-empty-state-card *,
+.ae-extension-component,
+.ae-extension-component * {
   user-select: none;
   -webkit-user-select: none;
 }
@@ -1339,7 +1341,8 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .app-header .a2ui-tab-strip {
-  flex: 1 1 8rem;
+  flex: 1 1 24rem;
+  max-width: min(58rem, 58vw);
 }
 
 .app-header .a2ui-dropdown {
@@ -2643,10 +2646,9 @@ body.ae-resizing-composer * {
 
 .a2ui-status-bar {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr) minmax(
-      0,
-      auto
-    );
+  grid-template-columns:
+    minmax(0, auto) minmax(0, auto) minmax(10rem, 1fr)
+    minmax(0, auto);
   align-items: center;
   gap: var(--space-3);
   height: 22px;
@@ -2798,14 +2800,11 @@ body.ae-resizing-composer * {
   user-select: none;
   white-space: nowrap;
   position: relative;
-  /* Tabs share the strip evenly: `flex: 1 1 0` distributes remaining
-     space by grow factor with no per-item basis claim, so 1 tab takes
-     the whole strip (clamped by max-inline-size below) and 12 tabs each
-     get 1/12. min-inline-size keeps the close button reachable even
-     when squeezed; the label inside has overflow: hidden + ellipsis. */
-  min-inline-size: 4rem;
-  max-inline-size: min(18rem, 36vw);
-  flex: 1 1 0;
+  /* Keep open tabs readable and let the strip scroll horizontally when
+     many sessions exist instead of compressing labels to crumbs. */
+  min-inline-size: 8.5rem;
+  max-inline-size: min(16rem, 32vw);
+  flex: 0 0 clamp(8.5rem, 16vw, 16rem);
   transition:
     color 120ms var(--ease-out, ease),
     background-color 120ms var(--ease-out, ease);

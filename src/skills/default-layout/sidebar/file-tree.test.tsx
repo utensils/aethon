@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 
 import { FileTreePanel } from "./file-tree";
+import { visibleChangedDirs } from "./file-tree-watch";
 
 // Mock persist + tauri invoke per-test so the component sees a known
 // "empty" persisted-store + a controllable directory listing.
@@ -20,8 +21,10 @@ vi.mock("../../../persist", () => ({
 
 import { readState, writeState } from "../../../persist";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+const listenMock = listen as unknown as ReturnType<typeof vi.fn>;
 const readStateMock = readState as ReturnType<typeof vi.fn>;
 const writeStateMock = writeState as ReturnType<typeof vi.fn>;
 
@@ -37,6 +40,8 @@ function panelProps(overrides?: Partial<Parameters<typeof FileTreePanel>[0]>) {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  listenMock.mockReset();
+  listenMock.mockResolvedValue(() => {});
   readStateMock.mockReset();
   readStateMock.mockResolvedValue("");
   writeStateMock.mockReset();
@@ -49,6 +54,7 @@ afterEach(() => {
   // each test starts with an empty document.body.
   cleanup();
   invokeMock.mockReset();
+  listenMock.mockReset();
   vi.useRealTimers();
 });
 
@@ -63,11 +69,7 @@ describe("FileTreePanel", () => {
           kind: "file",
         },
       ]);
-    render(
-      <FileTreePanel
-        {...panelProps({ state: {} })}
-      />,
-    );
+    render(<FileTreePanel {...panelProps({ state: {} })} />);
     await waitFor(() => screen.getByText("system-prompt.md"));
     expect(screen.getByText(".aethon")).toBeTruthy();
     expect(invokeMock).toHaveBeenNthCalledWith(1, "aethon_home_dir");
@@ -80,7 +82,11 @@ describe("FileTreePanel", () => {
   it("lists the project root on mount", async () => {
     invokeMock.mockResolvedValueOnce([
       { name: "src", path: "/projects/aethon/src", kind: "dir" },
-      { name: "package.json", path: "/projects/aethon/package.json", kind: "file" },
+      {
+        name: "package.json",
+        path: "/projects/aethon/package.json",
+        kind: "file",
+      },
     ]);
     render(<FileTreePanel {...panelProps()} />);
     await waitFor(() => screen.getByText("src"));
@@ -90,6 +96,45 @@ describe("FileTreePanel", () => {
       root: "/projects/aethon",
       path: "/projects/aethon",
     });
+  });
+
+  it("watches the visible project directories without recursive scans", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      return Promise.resolve(1);
+    });
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("fs_watch_dirs", {
+        root: "/projects/aethon",
+        dirs: ["/projects/aethon"],
+      });
+    });
+  });
+
+  it("filters fs-tree-changed payloads to visible folders", () => {
+    expect(
+      visibleChangedDirs(
+        {
+          root: "/projects/aethon",
+          dirs: ["/projects/aethon", "/projects/aethon/node_modules"],
+        },
+        "/projects/aethon",
+        ["/projects/aethon", "/projects/aethon/src"],
+      ),
+    ).toEqual(["/projects/aethon"]);
+    expect(
+      visibleChangedDirs(
+        { root: "/projects/other", dirs: ["/projects/other"] },
+        "/projects/aethon",
+        ["/projects/aethon"],
+      ),
+    ).toEqual([]);
   });
 
   it("fires file-tree-open when a file row is clicked", async () => {
@@ -155,7 +200,9 @@ describe("FileTreePanel", () => {
     expect(screen.getByRole("menuitem", { name: /New File…/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /New Folder…/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Rename…/ })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /Move to Trash…/ })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: /Move to Trash…/ }),
+    ).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Copy Path/ })).toBeTruthy();
     expect(
       screen.getByRole("menuitem", { name: /Copy Relative Path/ }),

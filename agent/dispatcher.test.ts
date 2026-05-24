@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AethonAgentState,
   type AethonAgentStateOptions,
@@ -11,6 +11,7 @@ import {
   formatContextUsageMessage,
   formatSessionStatsMessage,
   handleChat,
+  handleSetModel,
   unloadProjectExtensions,
 } from "./dispatcher";
 
@@ -199,6 +200,106 @@ describe("handleChat", () => {
     expect(second.promptInFlight).toBe(true);
     expect(promptCalls).toEqual([["run in parallel"]]);
     expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-2" });
+  });
+});
+
+describe("handleSetModel", () => {
+  it("routes missing model ids to the originating tab", async () => {
+    const f = makeFixture();
+
+    await handleSetModel(f.state, f.deps, {
+      type: "set_model",
+      tabId: "tab-1",
+    });
+
+    expect(f.sent).toContainEqual({
+      type: "error",
+      tabId: "tab-1",
+      message: "set_model: missing id",
+    });
+  });
+
+  it("reloads runtime prompt resources after the session model changes", async () => {
+    const f = makeFixture();
+    const nextModel = {
+      provider: "openai",
+      id: "gpt-5.5",
+      name: "GPT 5.5",
+    };
+    const setModel = vi.fn(() => Promise.resolve());
+    const reload = vi.fn(() => Promise.resolve());
+    f.state.modelRegistry = {
+      find: vi.fn(() => nextModel),
+    } as unknown as AethonAgentState["modelRegistry"];
+    f.state.resourceLoader = {
+      reload,
+    } as unknown as AethonAgentState["resourceLoader"];
+    f.state.cachedModels = [];
+    f.state.tabs.set(
+      "tab-1",
+      fakeTabRecord({
+        session: {
+          prompt: () => Promise.resolve(),
+          steer: () => Promise.resolve(),
+          followUp: () => Promise.resolve(),
+          setModel,
+        } as unknown as TabRecord["session"],
+      }),
+    );
+
+    await handleSetModel(f.state, f.deps, {
+      type: "set_model",
+      id: "openai/gpt-5.5",
+      tabId: "tab-1",
+    });
+
+    expect(setModel).toHaveBeenCalledWith(nextModel);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(f.writes()).toBe(1);
+    expect(f.sent).toContainEqual({
+      type: "model_changed",
+      tabId: "tab-1",
+      model: "openai/gpt-5.5",
+    });
+  });
+
+  it("routes model switch failures to the originating tab", async () => {
+    const f = makeFixture();
+    const nextModel = {
+      provider: "openai",
+      id: "gpt-5.5",
+      name: "GPT 5.5",
+    };
+    f.state.modelRegistry = {
+      find: vi.fn(() => nextModel),
+    } as unknown as AethonAgentState["modelRegistry"];
+    f.state.resourceLoader = {
+      reload: vi.fn(() => Promise.resolve()),
+    } as unknown as AethonAgentState["resourceLoader"];
+    f.state.tabs.set(
+      "tab-1",
+      fakeTabRecord({
+        session: {
+          prompt: () => Promise.resolve(),
+          steer: () => Promise.resolve(),
+          followUp: () => Promise.resolve(),
+          setModel: () => Promise.reject(new Error("provider offline")),
+        } as unknown as TabRecord["session"],
+      }),
+    );
+
+    await handleSetModel(f.state, f.deps, {
+      type: "set_model",
+      id: "openai/gpt-5.5",
+      tabId: "tab-1",
+    });
+
+    expect(f.writes()).toBe(0);
+    expect(f.sent).toContainEqual({
+      type: "error",
+      tabId: "tab-1",
+      message: "set_model: provider offline",
+    });
   });
 });
 

@@ -50,13 +50,21 @@ describe("activeProjectCwdFromJson", () => {
 });
 
 describe("resolveStartupCwd", () => {
-  it("uses active project, then dev project root, then process cwd", () => {
-    expect(resolveStartupCwd("/repo/project", "/repo/aethon", "/")).toBe(
-      "/repo/project",
-    );
-    expect(resolveStartupCwd(undefined, "/repo/aethon", "/")).toBe(
-      "/repo/aethon",
-    );
-    expect(resolveStartupCwd(undefined, undefined, "/")).toBe("/");
+  it("uses active project, then dev project root, then user dir, then process cwd", () => {
+    expect(
+      resolveStartupCwd(
+        "/repo/project",
+        "/repo/aethon",
+        "/Users/me/.aethon",
+        "/",
+      ),
+    ).toBe("/repo/project");
+    expect(
+      resolveStartupCwd(undefined, "/repo/aethon", "/Users/me/.aethon", "/"),
+    ).toBe("/repo/aethon");
+    expect(
+      resolveStartupCwd(undefined, undefined, "/Users/me/.aethon", "/"),
+    ).toBe("/Users/me/.aethon");
+    expect(resolveStartupCwd(undefined, undefined, "", "/")).toBe("/");
   });
 });
