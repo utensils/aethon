@@ -87,6 +87,7 @@ export interface BridgeMessageContext {
     failed: ExtensionFailureSummary[],
     disabled?: ReadonlyArray<DisabledExtensionRecord | string>,
     activeProjectPath?: string | null,
+    knownProjectBasenames?: ReadonlySet<string>,
   ) => void;
   hydrateSlashCommands: (
     list: { name: string; description: string; usage?: string }[],

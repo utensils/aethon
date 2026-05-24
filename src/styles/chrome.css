@@ -805,28 +805,78 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 /* Worktree row — nested under a project row when worktrees are present
-   and the parent is expanded. Visually indented + has a connector glyph
-   so the relationship reads at a glance. */
+   and the parent is expanded. The whole group reads as one branch via
+   a continuous left guide line drawn by `::before` (one segment per
+   row, stacked tight so they fuse). Labels align under the parent
+   project's icon column. */
 .ae-worktree-row {
-  padding-left: var(--space-6);
+  position: relative;
+  /* Align the label under the parent project's LABEL column. The
+     project row internally pads through:
+       16 row padding + (20 chevron - 4 negative margin)
+       + 8 gap + 6 git-dot + 8 gap + 16 icon + 4 icon margin-right
+       = 74px from the row's inner edge.
+     Setting the worktree row's own left padding to the same value
+     keeps the label flush under the project's name. */
+  padding-left: 74px;
+  /* Tighter than full project rows — these are subordinate. */
+  padding-top: 4px;
+  padding-bottom: 4px;
   gap: var(--space-2);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
+/* Continuous vertical guide. Sits in the icon column (just left of
+   where the project icon would render) so it visually descends from
+   the project row's icon. Top/bottom flush across siblings so the
+   line fuses into one unbroken stroke. */
+.ae-worktree-row::before {
+  content: "";
+  position: absolute;
+  left: 56px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  transition: background var(--motion-fast) var(--ease-out);
+  pointer-events: none;
+}
+/* First child rounds the top of the line so it doesn't jut into the
+   project row's pill; last child does the same for the bottom. */
+.ae-worktree-row:first-of-type::before {
+  top: 2px;
+  border-top-left-radius: 1px;
+}
+.ae-worktree-row:last-of-type::before {
+  bottom: 2px;
+  border-bottom-left-radius: 1px;
+}
+.ae-worktree-row:hover {
+  color: var(--text);
+}
+.ae-worktree-row:hover::before,
+.ae-worktree-row.a2ui-sidebar-item-active::before {
+  background: var(--accent);
+}
+.ae-worktree-row.a2ui-sidebar-item-active {
+  color: var(--accent);
+}
+/* Main worktree (rarely rendered as a child — kept for layouts that
+   surface it explicitly). Small accent dot sits at the row's content
+   start; the guide line still runs left of it. */
 .ae-worktree-glyph {
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Inline SVG draws via currentColor — `--text` gives a confident
-     resting tone that doesn't fade against dark or cream backgrounds. */
-  color: var(--text);
+  margin-left: calc(-1 * var(--space-3));
 }
 .ae-worktree-glyph svg {
   display: block;
 }
-.ae-worktree-row--main .ae-worktree-glyph {
+.ae-worktree-glyph--main {
   color: var(--accent);
 }
 .ae-worktree-branch {

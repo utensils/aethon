@@ -8,7 +8,15 @@ import { prewarmHighlighter } from "./utils/highlight";
 // editor mounts work offline / under Tauri's CSP. Must run before any
 // component imports a Monaco-backed surface.
 import "./monaco/setup";
-import "./styles/index.css";
+// Style entry. Order matters: shape tokens first (theme-agnostic), then
+// theme color tokens, then chrome rules (consumes everything). Import
+// each file directly here instead of chaining through `@import` in a
+// single index.css — Vite's HMR dep graph tracks JS module imports
+// reliably, but `@import` chains in CSS files have produced silently
+// stale stylesheets in the webview after edits to chrome.css.
+import "./styles/tokens.css";
+import "./styles/themes.css";
+import "./styles/chrome.css";
 
 // Expose Tauri's invoke globally in dev so the aethon-debug skill's TCP eval
 // server can wrap user JS to call back via __AETHON_INVOKE__('debug_eval_result', ...).

@@ -209,10 +209,14 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     if (termRef.current) return;
 
     const baseTheme = readTerminalTheme();
+    // xterm.js validates `cols`/`rows` as soon as they appear in the
+    // options object — passing `cols: undefined` triggers
+    // "cols must be numeric, value: undefined". Build the option bag
+    // dynamically so only defined dimensions reach the constructor.
     const term = new XTerm({
       fontSize,
-      cols,
-      rows,
+      ...(typeof cols === "number" ? { cols } : {}),
+      ...(typeof rows === "number" ? { rows } : {}),
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       theme: readOnly
         ? // Hide the cursor in read-only mode by drawing it the same colour

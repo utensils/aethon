@@ -62,6 +62,10 @@ describe("handleReady", () => {
       [],
       [],
       null,
+      // Empty set — the testFixture's projectsRef has no projects loaded,
+      // so the npm-scope heuristic has no project basenames to match
+      // against and every @scope/pkg is treated as global.
+      new Set(),
     );
     expect(mocks.hydrateSlashCommands).toHaveBeenCalledWith(
       [],

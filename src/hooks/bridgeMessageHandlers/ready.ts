@@ -102,6 +102,15 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // the merge runs. hydrateThemes also injects the CSS so a saved
   // choice has the rule available before data-theme is read.
   ctx.hydrateThemes(extThemes);
+  // Set of known project basenames lets the sidebar's extension
+  // filter scope `@<project>/<pkg>` npm packages to that project even
+  // though they're installed globally — see
+  // `disabledExtensionMatchesProject`.
+  const knownProjectBasenames = new Set(
+    ctx.projectsRef.current.projects
+      .map((p) => p.path.split("/").filter(Boolean).pop() ?? "")
+      .filter((b) => b.length > 0),
+  );
   ctx.hydrateExtensions(
     (data.extensionsList as ExtensionSummary[] | undefined) ?? [],
     (data.failedExtensionsList as ExtensionFailureSummary[] | undefined) ?? [],
@@ -109,6 +118,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       | ReadonlyArray<DisabledExtensionRecord | string>
       | undefined) ?? [],
     activeProject(ctx.projectsRef.current)?.path ?? null,
+    knownProjectBasenames,
   );
   ctx.registry.setTemplates(extComponents);
   // Restore extension-registered slash commands so the picker shows them
