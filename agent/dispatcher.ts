@@ -481,6 +481,43 @@ export async function handleChat(
     });
 }
 
+export async function handleSetModel(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  msg: InboundMessage,
+): Promise<void> {
+  if (!msg.id) {
+    deps.send({ type: "error", message: "set_model: missing id" });
+    return;
+  }
+  const tabId = msg.tabId ?? "default";
+  const tab = await ensureTab(state, deps, tabId);
+  if (tab.promptInFlight) {
+    deps.send({
+      type: "notice",
+      tabId,
+      message: "agent busy — stop the current prompt before switching models",
+    });
+    return;
+  }
+  const [provider, ...rest] = msg.id.split("/");
+  const id = rest.join("/");
+  const next = state.modelRegistry.find(provider, id);
+  if (!next) {
+    deps.send({
+      type: "error",
+      tabId,
+      message: `set_model: unknown model ${msg.id}`,
+    });
+    return;
+  }
+  await tab.session.setModel(next);
+  await state.resourceLoader.reload();
+  deps.scheduleStateFileWrite();
+  ensurePickerHasModel(state, deps, next);
+  deps.send({ type: "model_changed", tabId, model: msg.id });
+}
+
 /** Run the inbound dispatcher loop. Returns when stdin closes. */
 export async function runDispatcher(
   state: AethonAgentState,
@@ -654,41 +691,6 @@ export async function runDispatcher(
   }
 
   // ---- Per-message handlers -------------------------------------------
-
-  async function handleSetModel(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): Promise<void> {
-    if (!msg.id) {
-      deps.send({ type: "error", message: "set_model: missing id" });
-      return;
-    }
-    const tabId = msg.tabId ?? "default";
-    const tab = await ensureTab(state, deps, tabId);
-    if (tab.promptInFlight) {
-      deps.send({
-        type: "notice",
-        tabId,
-        message: "agent busy — stop the current prompt before switching models",
-      });
-      return;
-    }
-    const [provider, ...rest] = msg.id.split("/");
-    const id = rest.join("/");
-    const next = state.modelRegistry.find(provider, id);
-    if (!next) {
-      deps.send({
-        type: "error",
-        tabId,
-        message: `set_model: unknown model ${msg.id}`,
-      });
-      return;
-    }
-    await tab.session.setModel(next);
-    ensurePickerHasModel(state, deps, next);
-    deps.send({ type: "model_changed", tabId, model: msg.id });
-  }
 
   function handleStop(
     state: AethonAgentState,
