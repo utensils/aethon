@@ -31,7 +31,11 @@ export interface RuntimeSnapshot {
   stateFile: string;
   extensions: {
     name: string;
-    source: "directory" | "project-directory" | "extension-package" | "pi-extension";
+    source:
+      | "directory"
+      | "project-directory"
+      | "extension-package"
+      | "pi-extension";
     projectRoot?: string;
   }[];
   // Extensions that failed to load (parse / runtime error during import or
@@ -257,6 +261,9 @@ Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
 - \`aethon.tasks.*\` — launch background tasks in worktrees
 - \`aethon.dashboard.*\` — project dashboard data (repo overview, issues)
 - \`aethon.onUnload(fn)\` — teardown callback for project extension lifecycle
+- Native frontend extension components (\`aethon.frontendEntry\`) are wrapped
+  as app chrome: text is non-selectable by default; use
+  \`skill.selectableProps()\` inside frontend JS only for copyable paths/output.
 
 ## A2UI component types you can emit
 
@@ -405,6 +412,9 @@ array in JavaScript and write it into the layout tree directly.
   applies live and survives reload.
 - **Don't print ASCII tables / boxes** for structured output when a \`card\`
   / \`container\` of \`text\` rows would render properly in the GUI.
+- **Don't build floating/status UI as raw selectable text** — use A2UI
+  components or frontendEntry chrome, and mark only copyable leaves with
+  \`data-selectable\` / \`skill.selectableProps()\`.
 - **Don't assume terminal-only conventions** (cursor codes, ANSI) —
   they only show in the terminal panel, not in chat bubbles.
 - **Don't try to edit Aethon source code** — the \`beforeToolCall\` guard
@@ -456,7 +466,9 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
 
   if (snapshot.themes.length > 0) {
     lines.push("");
-    lines.push("Registered themes (in addition to the built-in ember / paper / aether / brink palettes):");
+    lines.push(
+      "Registered themes (in addition to the built-in ember / paper / aether / brink palettes):",
+    );
     for (const t of snapshot.themes) {
       lines.push(`- \`${t.id}\` — ${t.label}`);
     }
@@ -476,7 +488,9 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     lines.push("Extension-registered slash commands:");
     for (const c of snapshot.slashCommands) {
       const usage = c.usage ? ` ${c.usage}` : "";
-      lines.push(`- \`/${c.name}${usage}\` — ${c.description || "(no description)"}`);
+      lines.push(
+        `- \`/${c.name}${usage}\` — ${c.description || "(no description)"}`,
+      );
     }
   }
 
@@ -494,7 +508,9 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
 
   if (snapshot.keybindings.length > 0) {
     lines.push("");
-    lines.push("Extension-registered keybindings (registered combos run before built-ins and can override them):");
+    lines.push(
+      "Extension-registered keybindings (registered combos run before built-ins and can override them):",
+    );
     for (const k of snapshot.keybindings) {
       const desc = k.description ? ` — ${k.description}` : "";
       lines.push(`- \`${k.combo}\` → action \`${k.action}\`${desc}`);
@@ -506,11 +522,16 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     lines.push("Extension-registered menu items:");
     for (const m of snapshot.menuItems) {
       const parent = m.parent ? ` under \`${m.parent}\`` : "";
-      lines.push(`- [${m.location}] \`${m.label}\` → action \`${m.action}\`${parent}`);
+      lines.push(
+        `- [${m.location}] \`${m.label}\` → action \`${m.action}\`${parent}`,
+      );
     }
   }
 
-  if (snapshot.eventRoutes.length > 0 || snapshot.eventRoutingMode !== "builtin") {
+  if (
+    snapshot.eventRoutes.length > 0 ||
+    snapshot.eventRoutingMode !== "builtin"
+  ) {
     lines.push("");
     lines.push(
       `Extension event routing mode: ${snapshot.eventRoutingMode}. Intercept routes:`,
@@ -528,11 +549,14 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     lines.push("Active onEvent handlers (match-shape only):");
     for (const h of snapshot.eventHandlers) {
       const parts: string[] = [];
-      if (h.templateRootType) parts.push(`templateRootType=${h.templateRootType}`);
+      if (h.templateRootType)
+        parts.push(`templateRootType=${h.templateRootType}`);
       if (h.componentType) parts.push(`componentType=${h.componentType}`);
       if (h.descendantId) parts.push(`descendantId=${h.descendantId}`);
       if (h.eventType) parts.push(`eventType=${h.eventType}`);
-      lines.push(`- ${parts.length ? parts.join(", ") : "(matches everything)"}`);
+      lines.push(
+        `- ${parts.length ? parts.join(", ") : "(matches everything)"}`,
+      );
     }
   }
 
@@ -612,9 +636,7 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
  * passes these into \`DefaultResourceLoader\`'s \`appendSystemPrompt\` option
  * so they survive every resourceLoader.reload().
  */
-export function resolveAethonSystemPrompt(
-  snapshot: RuntimeSnapshot,
-): string[] {
+export function resolveAethonSystemPrompt(snapshot: RuntimeSnapshot): string[] {
   const dir = join(homedir(), ".aethon");
   const overridePath = join(dir, "system-prompt.md");
   const appendPath = join(dir, "system-prompt-append.md");
@@ -624,14 +646,18 @@ export function resolveAethonSystemPrompt(
     override = readFileSync(overridePath, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger.scope("prompt").warn(`read ${overridePath}: ${(err as Error).message}`);
+      logger
+        .scope("prompt")
+        .warn(`read ${overridePath}: ${(err as Error).message}`);
     }
   }
   try {
     extra = readFileSync(appendPath, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger.scope("prompt").warn(`read ${appendPath}: ${(err as Error).message}`);
+      logger
+        .scope("prompt")
+        .warn(`read ${appendPath}: ${(err as Error).message}`);
     }
   }
   const base = override?.trim() || DEFAULT_AETHON_PROMPT;

@@ -385,6 +385,7 @@ export function emitReady(
     type: "ready",
     model: defaultModelKey(state),
     projectRoot: state.projectRoot,
+    userDir: state.userDir,
     models: state.cachedModels,
     tabs: [...state.tabs.values()].map((t) => ({
       id: t.id,
@@ -578,9 +579,13 @@ export async function ensureTab(
   if (existing) return existing;
 
   const resolvedCwd =
-    options.cwdOverride ?? state.tabProjectCwds.get(tabId) ?? process.cwd();
-  if (options.cwdOverride) {
-    state.tabProjectCwds.set(tabId, options.cwdOverride);
+    options.cwdOverride ??
+    state.tabProjectCwds.get(tabId) ??
+    state.currentProjectCwd ??
+    state.userDir ??
+    process.cwd();
+  if (options.cwdOverride || !state.tabProjectCwds.has(tabId)) {
+    state.tabProjectCwds.set(tabId, resolvedCwd);
   }
 
   let sessionManager;

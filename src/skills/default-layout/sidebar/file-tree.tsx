@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { readState, writeState } from "../../../persist";
 import {
   ContextMenu,
@@ -31,6 +32,10 @@ import {
 } from "../../../components/primitives/context-menu";
 import { FileIcon } from "../../../components/file-icon";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import {
+  visibleChangedDirs,
+  type FsTreeChangedPayload,
+} from "./file-tree-watch";
 
 interface FsEntry {
   name: string;
@@ -67,7 +72,12 @@ const EXPAND_STATE_FILE = "file-tree.json";
 const EXPANDED_CAP_PER_PROJECT = 200;
 
 function basename(path: string): string {
-  return path.split(/[/\\]+/).filter(Boolean).pop() ?? path;
+  return (
+    path
+      .split(/[/\\]+/)
+      .filter(Boolean)
+      .pop() ?? path
+  );
 }
 
 /** Return the directory of `node`'s entry: the node itself when it's a
@@ -146,9 +156,13 @@ function readPanelPrefs(raw: string): PanelPrefs {
   return {};
 }
 
-
-export function FileTreePanel({ component, state, onEvent }: BuiltinComponentProps) {
-  const componentProps = (component.props as { embed?: string } | undefined) ?? {};
+export function FileTreePanel({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
+  const componentProps =
+    (component.props as { embed?: string } | undefined) ?? {};
   // When `embed === "right-sidebar"` the file tree fills its parent grid
   // cell vertically — the parent area controls height, so the internal
   // resize handle + hide button are dropped. The "left-stack" default
@@ -229,6 +243,10 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
   const expandedStoreRef = useRef<ExpandedStore>({ byProject: {} });
   const projectPathRef = useRef<string>(projectPath);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchedRootRef = useRef<string>("");
+  const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRefreshDirsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     projectPathRef.current = projectPath;
@@ -330,9 +348,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     // project's expanded paths over — collapsed visually in the tree
     // but still present in the set, so the next toggle would write
     // them back into the wrong project's persist slot.
-    setExpanded(
-      new Set(expandedStoreRef.current.byProject[projectPath] ?? []),
-    );
+    setExpanded(new Set(expandedStoreRef.current.byProject[projectPath] ?? []));
     if (!projectPath) return;
     let cancelled = false;
     void invoke<FsEntry[]>("fs_list_dir", {
@@ -357,7 +373,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
         // descendants get their refreshFolder call. Capped against the
         // currently-known set so we don't try to load arbitrary paths
         // that no longer exist.
-        const expandedNow = expandedStoreRef.current.byProject[projectPath] ?? [];
+        const expandedNow =
+          expandedStoreRef.current.byProject[projectPath] ?? [];
         if (expandedNow.length === 0) return;
         const ordered = [...expandedNow].sort((a, b) => a.length - b.length);
         for (const folderPath of ordered) {
@@ -466,6 +483,15 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     return out;
   }, [root, expanded]);
 
+  const watchedDirs = useMemo(() => {
+    if (!projectPath || hidden) return [];
+    const dirs = new Set<string>([projectPath]);
+    for (const p of expanded) {
+      dirs.add(p);
+    }
+    return [...dirs].sort();
+  }, [expanded, hidden, projectPath]);
+
   const onItemClick = (node: TreeNode) => {
     if (node.entry.kind === "dir") {
       toggleFolder(node);
@@ -552,6 +578,97 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     [invalidateFolder],
   );
 
+  useEffect(() => {
+    if (watchSyncTimerRef.current) clearTimeout(watchSyncTimerRef.current);
+    const previousRoot = watchedRootRef.current;
+    if (!projectPath || watchedDirs.length === 0) {
+      if (previousRoot) {
+        watchedRootRef.current = "";
+        void invoke("fs_unwatch_root", { root: previousRoot }).catch(() => {
+          /* best-effort cleanup */
+        });
+      }
+      return;
+    }
+    watchedRootRef.current = projectPath;
+    watchSyncTimerRef.current = setTimeout(() => {
+      if (previousRoot && previousRoot !== projectPath) {
+        void invoke("fs_unwatch_root", { root: previousRoot }).catch(() => {
+          /* best-effort cleanup */
+        });
+      }
+      void invoke("fs_watch_dirs", {
+        root: projectPath,
+        dirs: watchedDirs,
+      }).catch(() => {
+        /* File watching is an enhancement; manual tree ops still refresh. */
+      });
+    }, 150);
+    return () => {
+      if (watchSyncTimerRef.current) {
+        clearTimeout(watchSyncTimerRef.current);
+        watchSyncTimerRef.current = null;
+      }
+    };
+  }, [projectPath, watchedDirs]);
+
+  useEffect(() => {
+    if (!projectPath) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const pendingRefreshDirs = pendingRefreshDirsRef.current;
+    void listen<FsTreeChangedPayload>("fs-tree-changed", (event) => {
+      if (disposed || event.payload.root !== projectPathRef.current) return;
+      for (const dir of event.payload.dirs) {
+        pendingRefreshDirs.add(dir);
+      }
+      if (refreshDebounceRef.current) return;
+      refreshDebounceRef.current = setTimeout(() => {
+        refreshDebounceRef.current = null;
+        const dirs = visibleChangedDirs(
+          {
+            root: event.payload.root,
+            dirs: [...pendingRefreshDirs],
+          },
+          projectPathRef.current,
+          watchedDirs,
+        );
+        pendingRefreshDirs.clear();
+        for (const dir of dirs) {
+          void refreshFolder(dir);
+        }
+      }, 120);
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+        return;
+      }
+      unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      if (refreshDebounceRef.current) {
+        clearTimeout(refreshDebounceRef.current);
+        refreshDebounceRef.current = null;
+      }
+      pendingRefreshDirs.clear();
+      unlisten?.();
+    };
+  }, [projectPath, refreshFolder, watchedDirs]);
+
+  useEffect(() => {
+    return () => {
+      const rootToUnwatch = watchedRootRef.current;
+      if (rootToUnwatch) {
+        void invoke("fs_unwatch_root", { root: rootToUnwatch }).catch(() => {
+          /* best-effort cleanup */
+        });
+      }
+      if (watchSyncTimerRef.current) clearTimeout(watchSyncTimerRef.current);
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+    };
+  }, []);
+
   const closeContextMenu = () => setContextMenu(null);
 
   const onContextNewFile = async () => {
@@ -604,7 +721,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       node.entry.path.lastIndexOf("/"),
       node.entry.path.lastIndexOf("\\"),
     );
-    const parentPath = dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
+    const parentPath =
+      dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
     const target = `${parentPath}/${name}`;
     try {
       await invoke("fs_rename", {
@@ -637,7 +755,8 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
       node.entry.path.lastIndexOf("/"),
       node.entry.path.lastIndexOf("\\"),
     );
-    const parentPath = dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
+    const parentPath =
+      dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
     try {
       await invoke("fs_delete", {
         root: projectPathRef.current,
@@ -672,7 +791,9 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
     if (!contextMenu) return;
     const root = projectPathRef.current.replace(/\/+$/, "");
     const path = contextMenu.node.entry.path;
-    const rel = path.startsWith(root + "/") ? path.slice(root.length + 1) : path;
+    const rel = path.startsWith(root + "/")
+      ? path.slice(root.length + 1)
+      : path;
     closeContextMenu();
     try {
       await navigator.clipboard.writeText(rel);
@@ -832,15 +953,24 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           id: string;
           label?: string;
           active?: boolean;
-          worktrees?: Array<{ id: string; label?: string; branch?: string; active?: boolean }>;
+          worktrees?: Array<{
+            id: string;
+            label?: string;
+            branch?: string;
+            active?: boolean;
+          }>;
           git?: { branch?: string };
         }>
       | undefined) ?? [];
   const activeProject = sidebarProjects.find((p) => p.active === true);
-  const activeWorktree = activeProject?.worktrees?.find((w) => w.active === true);
+  const activeWorktree = activeProject?.worktrees?.find(
+    (w) => w.active === true,
+  );
   const headerLabel = activeProject?.label ?? rootLabel;
   const headerBranch =
-    activeWorktree?.label ?? activeWorktree?.branch ?? activeProject?.git?.branch;
+    activeWorktree?.label ??
+    activeWorktree?.branch ??
+    activeProject?.git?.branch;
 
   const titleRow = (
     <div className="ae-file-tree-titlebar">
@@ -900,9 +1030,7 @@ export function FileTreePanel({ component, state, onEvent }: BuiltinComponentPro
           />
         )}
         {titleRow}
-        {!collapsed && (
-          <div className="a2ui-sidebar-empty">no project</div>
-        )}
+        {!collapsed && <div className="a2ui-sidebar-empty">no project</div>}
       </div>
     );
   }
@@ -1001,7 +1129,12 @@ interface FileTreeRowProps {
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProps) {
+function FileTreeRow({
+  node,
+  expanded,
+  onClick,
+  onContextMenu,
+}: FileTreeRowProps) {
   const indent = (node.depth - 1) * 12;
   const isDir = node.entry.kind === "dir";
   return (
@@ -1016,10 +1149,7 @@ function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProp
       title={node.entry.path}
     >
       {isDir ? (
-        <span
-          className="ae-file-tree-chevron-row"
-          aria-hidden="true"
-        >
+        <span className="ae-file-tree-chevron-row" aria-hidden="true">
           {expanded ? "▾" : "▸"}
         </span>
       ) : (
@@ -1032,7 +1162,11 @@ function FileTreeRow({ node, expanded, onClick, onContextMenu }: FileTreeRowProp
         className="ae-file-tree-icon"
       />
       <span className="ae-file-tree-label">{node.entry.name}</span>
-      {node.loading && <span className="ae-file-tree-loading" aria-hidden="true">…</span>}
+      {node.loading && (
+        <span className="ae-file-tree-loading" aria-hidden="true">
+          …
+        </span>
+      )}
     </li>
   );
 }

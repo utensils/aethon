@@ -68,9 +68,11 @@ export async function readActiveProjectCwd(
 export function resolveStartupCwd(
   activeProjectCwd: string | undefined,
   projectRoot: string | undefined,
+  userDir: string,
   processCwd: string,
 ): string {
   if (activeProjectCwd && activeProjectCwd.length > 0) return activeProjectCwd;
   if (projectRoot && projectRoot.length > 0) return projectRoot;
+  if (userDir.length > 0) return userDir;
   return processCwd;
 }

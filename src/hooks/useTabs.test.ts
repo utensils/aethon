@@ -127,4 +127,10 @@ describe("cwdForNewTab", () => {
       cwdForNewTab(emptyProjectsState(), { projectRoot: "/repo/aethon" }),
     ).toBe("/repo/aethon");
   });
+
+  it("falls back to the Aethon user dir in release when no project is selected", () => {
+    expect(
+      cwdForNewTab(emptyProjectsState(), { aethonRoot: "/Users/me/.aethon" }),
+    ).toBe("/Users/me/.aethon");
+  });
 });

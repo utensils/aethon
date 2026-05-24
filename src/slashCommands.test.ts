@@ -70,6 +70,9 @@ describe("buildBuiltinSlashCommands", () => {
       "help",
       "theme",
       "model",
+      "context",
+      "session",
+      "compact",
       "name",
       "export",
       "reset",
@@ -261,5 +264,47 @@ describe("buildBuiltinSlashCommands", () => {
     )!;
     await context.run("", ctx);
     expect(calls).toEqual([{ name: "context", args: "" }]);
+  });
+
+  it("/compact routes instructions through the native command bridge", async () => {
+    const calls: { name: string; args: string }[] = [];
+    const ctx: SlashCommandContext = {
+      appendSystem: () => {},
+      notify: () => {},
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      resetLayout: () => {},
+      listExtensions: () => [],
+      installExtension: () => Promise.resolve(""),
+      listModels: () => [],
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      toggleFilesSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+      reloadAgent: () => Promise.resolve(),
+      runNativeCommand: (name, args) => {
+        calls.push({ name, args });
+        return Promise.resolve();
+      },
+      renameSession: () => Promise.resolve(),
+      activeTabId: () => "default",
+    };
+    const compact = buildBuiltinSlashCommands().find(
+      (c) => c.name === "compact",
+    )!;
+    await compact.run("preserve release checklist", ctx);
+    expect(calls).toEqual([
+      { name: "compact", args: "preserve release checklist" },
+    ]);
   });
 });

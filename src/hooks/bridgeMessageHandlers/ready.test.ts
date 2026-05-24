@@ -24,6 +24,7 @@ describe("handleReady", () => {
         type: "ready",
         model: "claude",
         projectRoot: "/repo/aethon",
+        userDir: "/Users/me/.aethon",
         models: [
           { id: "claude", label: "Claude", provider: "anthropic" },
           { id: "gpt", label: "GPT", provider: "openai" },
@@ -93,6 +94,7 @@ describe("handleReady", () => {
     expect(next.connection).toBe("connected");
     expect(next.model).toBe("claude");
     expect(next.projectRoot).toBe("/repo/aethon");
+    expect(next.aethonRoot).toBe("/Users/me/.aethon");
     expect(
       (next.sidebar as { models: { id: string; active: boolean }[] }).models,
     ).toEqual([

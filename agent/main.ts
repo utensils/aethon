@@ -248,6 +248,7 @@ async function main(): Promise<void> {
   const startupCwd = resolveStartupCwd(
     activeProjectCwd,
     projectRoot,
+    userDir,
     process.cwd(),
   );
 

@@ -659,6 +659,7 @@ pub fn run() {
         .manage(AgentProcess(Mutex::new(None)))
         .manage(AgentReloadFlag(Arc::new(AtomicBool::new(false))))
         .manage(shell::ShellRegistry::new())
+        .manage(commands::fs::FsWatchState::default())
         .manage(window_state::WindowStateStore::new())
         .manage(Arc::new(server::ServerState::new()))
         .on_window_event(|window, event| match event {
@@ -696,6 +697,8 @@ pub fn run() {
             commands::extensions::watch_project_extensions,
             commands::extensions::unwatch_project_extensions,
             commands::fs::fs_list_dir,
+            commands::fs::fs_watch_dirs,
+            commands::fs::fs_unwatch_root,
             commands::fs::fs_read_file,
             commands::fs::fs_read_file_base64,
             commands::fs::fs_write_file,

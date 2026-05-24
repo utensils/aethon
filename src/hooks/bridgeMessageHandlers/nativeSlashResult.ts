@@ -5,7 +5,15 @@ export const handleNativeSlashResult: BridgeMessageHandler = (data, ctx) => {
   if (!message) return;
   const tabId = (data.tabId as string | undefined) ?? "default";
   const kind = data.kind === "error" ? "error" : "info";
-  const chatMessage = { id: crypto.randomUUID(), role: "system" as const, text: message };
+  const chatMessage = {
+    id: crypto.randomUUID(),
+    role: "system" as const,
+    text: message,
+  };
+  ctx.updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+  if (ctx.stateRef.current.activeTabId === tabId) {
+    ctx.setStatusFlags({ status: "ready" });
+  }
   ctx.appendMessage(chatMessage, tabId);
   ctx.persistLocalChatMessage(chatMessage, tabId);
   if (kind === "error") {

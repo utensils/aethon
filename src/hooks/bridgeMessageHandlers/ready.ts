@@ -27,6 +27,10 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     typeof data.projectRoot === "string" && data.projectRoot.length > 0
       ? data.projectRoot
       : undefined;
+  const userDir =
+    typeof data.userDir === "string" && data.userDir.length > 0
+      ? data.userDir
+      : undefined;
   // Cache pi's default model so new tabs created before `ready` fires
   // (or before a session's model initialises) can inherit it immediately
   // instead of showing blank "model ▼".
@@ -309,6 +313,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     next = {
       ...next,
       ...(projectRoot ? { projectRoot } : {}),
+      ...(userDir ? { aethonRoot: userDir } : {}),
       model: activeModel,
       status: "ready",
       connection: "connected",

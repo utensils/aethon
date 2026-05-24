@@ -17,13 +17,19 @@
 //! awkward for a per-project root the user picks at runtime. Hand-rolling
 //! is simpler and keeps the trust boundary in one place.
 //!
-//! Deletes go to the OS trash via the `trash` crate. The user can always
-//! recover, which matches Aethon's general "don't lose user work" stance.
+//! Deletes go to the OS trash via the `trash` crate, with a home-trash
+//! rename fallback for platform trash failures. The user can always recover,
+//! which matches Aethon's general "don't lose user work" stance.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, mpsc};
+use std::thread;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::helpers::resolve_inside_root;
+use tauri::Emitter;
 
 /// One entry in a directory listing. Returned by [`fs_list_dir`].
 #[derive(serde::Serialize)]
@@ -39,6 +45,22 @@ pub struct FsEntry {
     pub size: u64,
     /// Modified time as Unix epoch seconds, or 0 when unavailable.
     pub modified: u64,
+}
+
+struct FsWatchHandle {
+    watcher: notify::RecommendedWatcher,
+    watched: HashSet<PathBuf>,
+}
+
+#[derive(Default)]
+pub struct FsWatchState {
+    roots: Mutex<HashMap<String, FsWatchHandle>>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct FsTreeChanged {
+    root: String,
+    dirs: Vec<String>,
 }
 
 /// Hard ceiling on file reads/writes. Monaco renders multi-MB files but
@@ -116,6 +138,37 @@ fn canonical_root(root: &str) -> Result<PathBuf, String> {
     Ok(canon)
 }
 
+fn is_interesting_fs_event(kind: &notify::EventKind) -> bool {
+    use notify::EventKind;
+    matches!(
+        kind,
+        EventKind::Any | EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    )
+}
+
+fn changed_dirs_for_paths(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut dirs = HashSet::new();
+    for path in paths {
+        if !(path == root || path.starts_with(root)) {
+            continue;
+        }
+        let dir = if path.is_dir() {
+            path.as_path()
+        } else {
+            path.parent().unwrap_or(root)
+        };
+        let dir = if dir == root || dir.starts_with(root) {
+            dir
+        } else {
+            root
+        };
+        dirs.insert(dir.to_path_buf());
+    }
+    let mut out: Vec<PathBuf> = dirs.into_iter().collect();
+    out.sort();
+    out
+}
+
 /// Convert a `SystemTime` to Unix epoch seconds, defaulting to 0 when
 /// the platform reports a value before 1970 (shouldn't happen, but the
 /// API allows it).
@@ -176,6 +229,110 @@ pub fn fs_list_dir(root: String, path: String) -> Result<Vec<FsEntry>, String> {
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
     Ok(entries)
+}
+
+/// Watch the currently-visible file-tree directories for changes. The
+/// frontend sends the project root plus expanded folders, so we avoid a
+/// recursive whole-repo watcher on large worktrees while still refreshing
+/// everything the user can see. Re-calling replaces the watched set for
+/// `root`; stale dirs are unwatched, new dirs are added.
+#[tauri::command]
+pub fn fs_watch_dirs(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, FsWatchState>,
+    root: String,
+    dirs: Vec<String>,
+) -> Result<usize, String> {
+    use notify::{RecursiveMode, Watcher};
+
+    let root_canon = canonical_root(&root)?;
+    let mut requested = HashSet::new();
+    for dir in dirs {
+        let target = validated_target(&root, &dir)?;
+        ensure_symlink_safe(&target, &root_canon)?;
+        if target.is_dir() {
+            requested.insert(target);
+        }
+    }
+    requested.insert(PathBuf::from(&root));
+
+    let mut roots = state.roots.lock().map_err(|e| e.to_string())?;
+    let handle = if let Some(handle) = roots.get_mut(&root) {
+        handle
+    } else {
+        let (tx, rx) = mpsc::channel::<Vec<PathBuf>>();
+        let emit_root = root.clone();
+        let emit_root_path = PathBuf::from(&root);
+        thread::spawn(move || {
+            let mut pending: Vec<PathBuf> = Vec::new();
+            while let Ok(paths) = rx.recv() {
+                pending.extend(paths);
+                while let Ok(paths) = rx.recv_timeout(Duration::from_millis(120)) {
+                    pending.extend(paths);
+                }
+                let dirs = changed_dirs_for_paths(&emit_root_path, &pending);
+                pending.clear();
+                if dirs.is_empty() {
+                    continue;
+                }
+                let payload = FsTreeChanged {
+                    root: emit_root.clone(),
+                    dirs: dirs
+                        .into_iter()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .collect(),
+                };
+                let _ = app.emit("fs-tree-changed", payload);
+            }
+        });
+
+        let watcher_tx = tx.clone();
+        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            let Ok(event) = res else {
+                return;
+            };
+            if !is_interesting_fs_event(&event.kind) {
+                return;
+            }
+            let _ = watcher_tx.send(event.paths);
+        })
+        .map_err(|e| format!("create fs watcher: {e}"))?;
+        roots.insert(
+            root.clone(),
+            FsWatchHandle {
+                watcher,
+                watched: HashSet::new(),
+            },
+        );
+        roots
+            .get_mut(&root)
+            .ok_or_else(|| "fs watcher registration failed".to_string())?
+    };
+
+    let stale: Vec<PathBuf> = handle.watched.difference(&requested).cloned().collect();
+    for dir in stale {
+        let _ = handle.watcher.unwatch(&dir);
+        handle.watched.remove(&dir);
+    }
+    for dir in &requested {
+        if handle.watched.contains(dir) {
+            continue;
+        }
+        handle
+            .watcher
+            .watch(dir, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("watch {}: {e}", dir.display()))?;
+        handle.watched.insert(dir.clone());
+    }
+
+    Ok(handle.watched.len())
+}
+
+#[tauri::command]
+pub fn fs_unwatch_root(state: tauri::State<'_, FsWatchState>, root: String) -> Result<(), String> {
+    let mut roots = state.roots.lock().map_err(|e| e.to_string())?;
+    roots.remove(&root);
+    Ok(())
 }
 
 /// Read an arbitrary file from disk and return its bytes base64-encoded.
@@ -383,7 +540,59 @@ pub fn fs_delete(root: String, path: String) -> Result<(), String> {
     let target = validated_target(&root, &path)?;
     let root_canon = canonical_root(&root)?;
     ensure_symlink_safe(&target, &root_canon)?;
-    trash::delete(&target).map_err(|e| format!("trash {}: {e}", target.display()))
+    match trash::delete(&target) {
+        Ok(()) => Ok(()),
+        Err(trash_err) => move_to_home_trash(&target).map_err(|fallback_err| {
+            format!(
+                "trash {}: {trash_err}; fallback move to ~/.Trash failed: {fallback_err}",
+                target.display()
+            )
+        }),
+    }
+}
+
+fn home_dir_from_env() -> Result<PathBuf, String> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .ok_or_else(|| "home directory unavailable".to_string())
+}
+
+fn unique_trash_target(trash_dir: &Path, source: &Path) -> Result<PathBuf, String> {
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| format!("path has no file name: {}", source.display()))?;
+    let first = trash_dir.join(file_name);
+    if !first.exists() {
+        return Ok(first);
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    for i in 1..1000 {
+        let mut name = file_name.to_os_string();
+        name.push(format!(".aethon-trash-{now}-{i}"));
+        let candidate = trash_dir.join(name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "could not allocate unique trash path for {}",
+        source.display()
+    ))
+}
+
+fn move_to_home_trash(target: &Path) -> Result<(), String> {
+    let home = home_dir_from_env()?;
+    let trash_dir = home.join(".Trash");
+    std::fs::create_dir_all(&trash_dir)
+        .map_err(|e| format!("create {}: {e}", trash_dir.display()))?;
+    let dest = unique_trash_target(&trash_dir, target)?;
+    std::fs::rename(target, &dest)
+        .map_err(|e| format!("move {} -> {}: {e}", target.display(), dest.display()))
 }
 
 /// Directories pruned from the project walk. Reasons range from huge
@@ -720,6 +929,27 @@ mod tests {
         assert!(err.is_err(), "expected refusal; got {err:?}");
         // Original content untouched.
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "existing");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn unique_trash_target_avoids_collisions() {
+        let tmp = std::env::temp_dir().join(format!("aethon-fs-trash-name-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let source = tmp.join("current-context-panel.ts");
+        std::fs::write(&source, "x").unwrap();
+        std::fs::write(tmp.join("current-context-panel.ts"), "existing").unwrap();
+
+        let target = unique_trash_target(&tmp, &source).unwrap();
+        assert_ne!(target, tmp.join("current-context-panel.ts"));
+        assert!(
+            target
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("current-context-panel.ts.aethon-trash-")
+        );
 
         std::fs::remove_dir_all(&tmp).ok();
     }
