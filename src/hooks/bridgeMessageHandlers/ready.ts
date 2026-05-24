@@ -26,12 +26,18 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // Cache pi's default model so new tabs created before `ready` fires
   // (or before a session's model initialises) can inherit it immediately
   // instead of showing blank "model ▼".
-  if (model) {
+  if (model && !ctx.piDefaultModelRef.current) {
     ctx.piDefaultModelRef.current = model;
+  }
+  const fallbackModel = ctx.piDefaultModelRef.current || model;
+  if (fallbackModel) {
     // Mirror to state so the header ModelPicker has something to render
     // even when there is no active tab (fresh boot lands on the
     // projects-dashboard, /model is undefined until a tab is opened).
-    ctx.setState((prev) => ({ ...prev, piDefaultModel: model }));
+    ctx.setState((prev) => ({
+      ...prev,
+      piDefaultModel: prev.piDefaultModel || fallbackModel,
+    }));
   }
   const models = (data.models as ModelDescriptor[]) ?? [];
   // Hydrate any extension-registered component templates the bridge
@@ -231,27 +237,33 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     {
       const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
       const bridgeTabs =
-        (data.tabs as { id: string; model: string; cwd?: string }[] | undefined) ??
-        [];
+        (data.tabs as
+          | { id: string; model: string; cwd?: string }[]
+          | undefined) ?? [];
       const tabReplay =
         (data.extensionTabState as
           | Record<string, Record<string, unknown>>
           | undefined) ?? {};
       const dIdx = localTabs.findIndex((t) => t.id === "default");
-      if (dIdx >= 0) {
-        localTabs[dIdx] = { ...localTabs[dIdx], model };
+      if (dIdx >= 0 && !localTabs[dIdx].model && fallbackModel) {
+        localTabs[dIdx] = { ...localTabs[dIdx], model: fallbackModel };
       }
       // Backfill any tab that has no model yet (e.g. opened before ready
       // fired) with pi's default so the picker is never blank.
       for (let i = 0; i < localTabs.length; i++) {
-        if (!localTabs[i].model && model) {
-          localTabs[i] = { ...localTabs[i], model };
+        if (!localTabs[i].model && fallbackModel) {
+          localTabs[i] = { ...localTabs[i], model: fallbackModel };
         }
       }
       for (let i = 0; i < localTabs.length; i++) {
-        const bt = bridgeTabs.find((candidate) => candidate.id === localTabs[i].id);
+        const bt = bridgeTabs.find(
+          (candidate) => candidate.id === localTabs[i].id,
+        );
         if (bt?.model && !localTabs[i].model) {
           localTabs[i] = { ...localTabs[i], model: bt.model };
+        }
+        if (bt?.cwd && !localTabs[i].cwd) {
+          localTabs[i] = { ...localTabs[i], cwd: bt.cwd };
         }
       }
       // Apply the bridge's per-tab replay over each tab record. prev
@@ -289,7 +301,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     const activeId = (next.activeTabId as string | undefined) ?? "default";
     const tabsList = (next.tabs as Tab[] | undefined) ?? [];
     const activeTab = tabsList.find((t) => t.id === activeId);
-    const activeModel = activeTab?.model || model;
+    const activeModel = activeTab?.model || fallbackModel;
     next = {
       ...next,
       model: activeModel,
@@ -339,7 +351,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     const tabProject = t.projectId
       ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
       : null;
-    const restoredCwd = tabProject?.path;
+    const restoredCwd = t.cwd ?? tabProject?.path;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",

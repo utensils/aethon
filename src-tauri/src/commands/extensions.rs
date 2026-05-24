@@ -24,15 +24,13 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::{
-    AgentProcess, AgentReloadFlag, agent_reload_in_progress, project_root, resolved_login_path,
-};
+use crate::{AgentProcess, AgentReloadFlag, agent_reload_in_progress, env, project_root};
 
 // ─────────────────────────── menu items ────────────────────────────
 
@@ -815,12 +813,12 @@ pub async fn install_aethon_extension(
         .join("skills");
     let install_dir = skills_dir.clone();
     let install_spec = spec.clone();
-    let path_override = resolved_login_path();
+    let path_override = env::resolved_login_path();
 
     let install_result = tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("create {}: {e}", install_dir.display()))?;
-        let mut command = Command::new("npm");
+        let mut command = env::command("npm");
         command
             .arg("install")
             .arg("--prefix")

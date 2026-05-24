@@ -36,6 +36,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod commands;
+mod env;
 mod helpers;
 mod server;
 mod shell;
@@ -79,49 +80,6 @@ pub(crate) fn project_root() -> PathBuf {
         }
     }
     cwd
-}
-
-/// Capture the user's login-shell PATH so the sidecar can find tools that
-/// live outside launchd's minimal `/usr/bin:/bin:/usr/sbin:/sbin`. macOS
-/// .app launches inherit that minimal PATH and lose Homebrew, Nix profile
-/// dirs, `~/.npm-global/bin`, etc. — pi's package resolver hits this
-/// immediately with `npm root -g` when settings.json declares any npm
-/// package source. Mirrors the workaround VS Code / Sublime / iTerm use.
-///
-/// Cached forever once computed (the shell hop costs ~50–200 ms). Only
-/// runs on macOS in release builds — Linux/Windows GUI launchers preserve
-/// the inherited environment, and dev launches happen from a terminal that
-/// already has the right PATH.
-pub(crate) fn resolved_login_path() -> Option<String> {
-    static CACHED: OnceLock<Option<String>> = OnceLock::new();
-    CACHED
-        .get_or_init(|| {
-            if !cfg!(target_os = "macos") {
-                return None;
-            }
-            // SHELL points at the user's login shell; fall back to zsh
-            // (the macOS default since 10.15) when unset.
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-            // -i forces interactive mode so ~/.zshrc / ~/.bashrc /
-            // ~/.config/fish/config.fish are sourced. -l makes it a
-            // login shell so ~/.zprofile / ~/.bash_profile fire too.
-            //
-            // Run `env` instead of trying to `echo $PATH` directly: fish
-            // treats $PATH as a list and prints entries space-separated
-            // (POSIX wants colons), which would silently corrupt the
-            // recovered value. `env` always emits the actual exported
-            // environment with PATH= colon-separated, regardless of the
-            // shell that runs it.
-            let out = Command::new(&shell).args(["-ilc", "env"]).output().ok()?;
-            if !out.status.success() {
-                return None;
-            }
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let path_line = stdout.lines().find(|l| l.starts_with("PATH="))?;
-            let value = path_line.strip_prefix("PATH=")?.to_string();
-            if value.is_empty() { None } else { Some(value) }
-        })
-        .clone()
 }
 
 /// Locate the bundled `aethon-agent` sidecar binary. Tauri's externalBin
@@ -177,7 +135,7 @@ fn find_sidecar_binary() -> Result<PathBuf, String> {
 /// `aethon-agent` sidecar bundled by Tauri, with `PI_PACKAGE_DIR` set to
 /// the shipped pi metadata so `pi-coding-agent`'s package.json read at
 /// module load doesn't fail, plus an enriched PATH (see
-/// `resolved_login_path`) so pi can find npm/git when scanning user
+/// `env::resolved_login_path`) so pi can find npm/git when scanning user
 /// packages from `~/.pi/agent/settings.json`. Stdout is read on a
 /// background thread; each line is emitted as an `agent-response`
 /// Tauri event.
@@ -213,7 +171,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
             .join("skills")
             .join("default-layout")
             .join("slots.json");
-        let mut c = Command::new("bun");
+        let mut c = env::command("bun");
         c.current_dir(&root).arg("run").arg("agent/main.ts");
         c.env("AETHON_RELEASE_MODE", "0");
         c.env("AETHON_PROJECT_ROOT", &root);
@@ -251,7 +209,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         // pi's `npm root -g` (run when resolving user packages from
         // ~/.pi/agent/settings.json) fails with ENOENT. Source the user's
         // login shell once to recover the real PATH and inject it.
-        if let Some(path) = resolved_login_path() {
+        if let Some(path) = env::resolved_login_path() {
             c.env("PATH", path);
         }
         c

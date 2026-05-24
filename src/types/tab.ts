@@ -69,6 +69,9 @@ export interface Tab {
   // projects swaps `state.tabs` for the target project's bucket and
   // hides everyone else.
   projectId: string | null;
+  // Immutable working directory the bridge session was created with.
+  // For worktree sessions this is the worktree path, not the project root.
+  cwd?: string;
   /** Present iff kind === "shell". */
   shell?: ShellMeta;
   /** Present iff kind === "editor". */
@@ -89,7 +92,7 @@ export interface ClosedTabEntry {
   kind: TabKind;
   label: string;
   projectId: string | null;
-  /** Shell tabs only — passed back to newShellTab. */
+  /** Agent and shell tabs — passed back to reopen/restore paths. */
   cwd?: string;
   command?: string;
   args?: string[];

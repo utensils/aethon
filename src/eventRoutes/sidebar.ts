@@ -1,6 +1,7 @@
 import type { EventRouteContext, EventRouteHandler } from "./types";
 import { extractSessionId } from "../utils/sidebarHistory";
 import type { Tab } from "../types/tab";
+import { restoreSessionFromSelection } from "./sessionRestore";
 
 interface RecentSessionItem {
   id: string;
@@ -26,8 +27,7 @@ export const handleSidebarResize: EventRouteHandler = (
   const next = (data as { width?: number } | undefined)?.width;
   if (typeof next === "number") {
     ctx.setState((prev) => {
-      const layout =
-        (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
       const current =
         (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
       const tokens = current.trim().split(/\s+/);
@@ -51,9 +51,7 @@ export const handleSidebarResize: EventRouteHandler = (
 
 /** sidebar resize-end: handled for drag lifecycle symmetry. The app-wide
  *  session UI snapshot persists the final /layout/columns value. */
-export const handleSidebarResizeEnd: EventRouteHandler = (
-  { eventType },
-) => {
+export const handleSidebarResizeEnd: EventRouteHandler = ({ eventType }) => {
   if (eventType !== "resize-end") return false;
   return true;
 };
@@ -66,9 +64,7 @@ export const handleSidebarRemoveProject: EventRouteHandler = (
   ctx,
 ) => {
   if (eventType !== "remove-project") return false;
-  const selected = data as
-    | { projectId?: string; itemId?: string }
-    | undefined;
+  const selected = data as { projectId?: string; itemId?: string } | undefined;
   const projectId = selected?.projectId ?? selected?.itemId;
   return projectId ? ctx.removeProjectById(projectId) : true;
 };
@@ -82,7 +78,12 @@ export const handleSidebarDeleteSession: EventRouteHandler = (
 ) => {
   if (eventType !== "delete-session") return false;
   const selected = data as
-    | { sessionId?: string; itemId?: string; label?: string; confirmed?: boolean }
+    | {
+        sessionId?: string;
+        itemId?: string;
+        label?: string;
+        confirmed?: boolean;
+      }
     | undefined;
   // Strip the "session:" or "tab:" prefix defensively in case a future
   // caller forgets the split — the sidebar already strips it but we
@@ -178,8 +179,8 @@ function applyOptimisticTabLabel(
   label: string,
 ): void {
   ctx.setState((prev) => {
-    const tabs = (prev.tabs as { id: string; label: string }[] | undefined) ??
-      [];
+    const tabs =
+      (prev.tabs as { id: string; label: string }[] | undefined) ?? [];
     const idx = tabs.findIndex((t) => t.id === tabId);
     if (idx < 0) return prev;
     const trimmed = label.trim();
@@ -202,7 +203,10 @@ export const handleSidebarToggleProjectExpand: EventRouteHandler = (
   const selected = data as { itemId?: string } | undefined;
   if (!selected?.itemId) return true;
   // Read current expanded flag from state.
-  const projects = (ctx.stateRef.current.projects as Array<{ id: string; uiExpanded?: boolean }> | undefined) ?? [];
+  const projects =
+    (ctx.stateRef.current.projects as
+      | Array<{ id: string; uiExpanded?: boolean }>
+      | undefined) ?? [];
   const project = projects.find((p) => p.id === selected.itemId);
   ctx.setProjectExpanded(selected.itemId, !(project?.uiExpanded ?? false));
   return true;
@@ -344,7 +348,11 @@ export const handleSidebarStartSession: EventRouteHandler = (
   if (payload.projectId) ctx.setActiveProjectById(payload.projectId);
   if (payload.worktreeId) ctx.activateWorktree(payload.worktreeId);
   ctx.setState((prev) => ({ ...prev, landing: null }));
-  ctx.newTab(undefined, undefined, payload.path ? { cwd: payload.path } : undefined);
+  ctx.newTab(
+    undefined,
+    undefined,
+    payload.path ? { cwd: payload.path } : undefined,
+  );
   return true;
 };
 export const handleSidebarRemoveWorktree: EventRouteHandler = (
@@ -386,7 +394,8 @@ export const handleSidebarRenameWorktree: EventRouteHandler = (
   if (eventType !== "rename-worktree") return false;
   const { worktreeId, label } =
     (data as { worktreeId?: string; label?: string } | undefined) ?? {};
-  if (worktreeId && typeof label === "string") ctx.renameWorktree(worktreeId, label);
+  if (worktreeId && typeof label === "string")
+    ctx.renameWorktree(worktreeId, label);
   return true;
 };
 
@@ -399,14 +408,15 @@ export const handleSidebarOpenProjectInFinder: EventRouteHandler = async (
   if (eventType !== "open-project-in-finder") return false;
   const projectId = (data as { projectId?: string } | undefined)?.projectId;
   if (!projectId) return true;
-  const projects = (ctx.stateRef.current.projects as Array<{ id: string; path?: string }> | undefined) ?? [];
+  const projects =
+    (ctx.stateRef.current.projects as
+      | Array<{ id: string; path?: string }>
+      | undefined) ?? [];
   const path = projects.find((p) => p.id === projectId)?.path;
   if (!path) return true;
-  await ctx
-    .invoke("fs_open_in_file_manager", { path })
-    .catch(() => {
-      /* command may not exist in older builds; ignore */
-    });
+  await ctx.invoke("fs_open_in_file_manager", { path }).catch(() => {
+    /* command may not exist in older builds; ignore */
+  });
   return true;
 };
 export const handleSidebarCopyProjectPath: EventRouteHandler = (
@@ -416,7 +426,10 @@ export const handleSidebarCopyProjectPath: EventRouteHandler = (
   if (eventType !== "copy-project-path") return false;
   const projectId = (data as { projectId?: string } | undefined)?.projectId;
   if (!projectId) return true;
-  const projects = (ctx.stateRef.current.projects as Array<{ id: string; path?: string }> | undefined) ?? [];
+  const projects =
+    (ctx.stateRef.current.projects as
+      | Array<{ id: string; path?: string }>
+      | undefined) ?? [];
   const path = projects.find((p) => p.id === projectId)?.path;
   if (path && navigator.clipboard) {
     void navigator.clipboard.writeText(path).catch(() => {});
@@ -430,14 +443,13 @@ export const handleSidebarOpenWorktreeInFinder: EventRouteHandler = async (
   if (eventType !== "open-worktree-in-finder") return false;
   const path = (data as { path?: string } | undefined)?.path;
   if (!path) return true;
-  await ctx
-    .invoke("fs_open_in_file_manager", { path })
-    .catch(() => {});
+  await ctx.invoke("fs_open_in_file_manager", { path }).catch(() => {});
   return true;
 };
-export const handleSidebarCopyWorktreePath: EventRouteHandler = (
-  { eventType, data },
-) => {
+export const handleSidebarCopyWorktreePath: EventRouteHandler = ({
+  eventType,
+  data,
+}) => {
   if (eventType !== "copy-worktree-path") return false;
   const path = (data as { path?: string } | undefined)?.path;
   if (path && navigator.clipboard) {
@@ -452,7 +464,8 @@ export const handleSidebarRenameProject: EventRouteHandler = (
   if (eventType !== "rename-project") return false;
   const { projectId, label } =
     (data as { projectId?: string; label?: string } | undefined) ?? {};
-  if (projectId && typeof label === "string") ctx.renameProject(projectId, label);
+  if (projectId && typeof label === "string")
+    ctx.renameProject(projectId, label);
   return true;
 };
 
@@ -477,9 +490,7 @@ export const handleSidebarToggleExtension: EventRouteHandler = (
   ctx,
 ) => {
   if (eventType !== "toggle-extension") return false;
-  const selected = data as
-    | { name?: string; disabled?: boolean }
-    | undefined;
+  const selected = data as { name?: string; disabled?: boolean } | undefined;
   if (!selected?.name || typeof selected.disabled !== "boolean") return true;
   ctx
     .invoke("agent_command", {
@@ -512,9 +523,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
 ) => {
   if (eventType !== "select") return false;
 
-  const selected = data as
-    | { sectionId?: string; itemId?: string }
-    | undefined;
+  const selected = data as { sectionId?: string; itemId?: string } | undefined;
   if (selected?.itemId === "toggle-terminal") {
     ctx.toggleTerminal();
     return true;
@@ -575,14 +584,11 @@ export const handleSectionedSelect: EventRouteHandler = async (
           | RecentSessionItem[]
           | undefined) ?? [];
       const item = recentSessions.find((s) => s.id === sessionId);
-      ctx.newTab(
+      restoreSessionFromSelection(ctx, {
         sessionId,
-        item?.label ?? `Session ${sessionId.slice(0, 8)}`,
-        {
-          restoredSession: true,
-          ...(item?.cwd ? { cwd: item.cwd } : {}),
-        },
-      );
+        label: item?.label ?? `Session ${sessionId.slice(0, 8)}`,
+        cwd: item?.cwd,
+      });
       return true;
     }
     return true;

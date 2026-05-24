@@ -11,7 +11,8 @@
 
 use serde::Serialize;
 use sha1::{Digest, Sha1};
-use std::process::Command;
+
+use crate::env;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct HostInfo {
@@ -36,7 +37,7 @@ fn machine_uuid() -> Option<String> {
     } else if cfg!(target_os = "macos") {
         // `ioreg` is always present on macOS; output line looks like
         // `"IOPlatformUUID" = "ABC123-..."`.
-        let out = Command::new("ioreg")
+        let out = env::command("ioreg")
             .args(["-d2", "-c", "IOPlatformExpertDevice"])
             .output()
             .ok()?;

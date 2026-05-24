@@ -16,6 +16,7 @@ describe("sessionUiSnapshot", () => {
   it("round-trips open tabs, active tab, and chrome state", () => {
     const tabA = {
       ...makeEmptyTab("tab-a", "A"),
+      cwd: "/repo/a-worktree",
       messages: [{ id: "m1", role: "user" as const, text: "hi" }],
     };
     const tabB = {
@@ -38,7 +39,12 @@ describe("sessionUiSnapshot", () => {
     expect(loadSessionUiSnapshot()).toMatchObject({
       activeTabId: "tab-b",
       tabs: [
-        { id: "tab-a", label: "A", messages: [{ text: "hi" }] },
+        {
+          id: "tab-a",
+          label: "A",
+          cwd: "/repo/a-worktree",
+          messages: [{ text: "hi" }],
+        },
         { id: "tab-b", label: "B", canvas: { type: "card" } },
       ],
       // Legacy 2-column snapshot upgrades to the new 3-column shape on
@@ -114,7 +120,9 @@ describe("sessionUiSnapshot", () => {
         makeEmptyTab("blank", "Tab 1"),
         {
           ...makeEmptyTab("active-chat", "Tell me about this app"),
-          messages: [{ id: "m1", role: "user", text: "Tell me about this app" }],
+          messages: [
+            { id: "m1", role: "user", text: "Tell me about this app" },
+          ],
         },
       ],
       activeTabId: "blank",

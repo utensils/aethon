@@ -12,6 +12,7 @@ import type { ShellMeta } from "../types/tab";
 
 export interface UseBootConfigContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
+  piDefaultModelRef: MutableRefObject<string>;
 }
 
 export interface UseBootConfigActions {
@@ -59,10 +60,8 @@ export interface UseBootConfigActions {
  * see the latest values without re-binding listeners on every config
  * change.
  */
-export function useBootConfig(
-  ctx: UseBootConfigContext,
-): UseBootConfigActions {
-  const { setState } = ctx;
+export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
+  const { setState, piDefaultModelRef } = ctx;
 
   const defaultShareModeRef = useRef<ShellMeta["shareMode"]>("private");
   const notifyOnCompletionRef = useRef<boolean>(true);
@@ -96,6 +95,14 @@ export function useBootConfig(
     shellInheritEnvRef.current = fresh.shell.inheritEnv;
     shellPromptBeforeCloseRef.current = fresh.shell.promptBeforeClose;
     shortcutsNewTabKindRef.current = fresh.shortcuts.newTabKind;
+    if (fresh.agent.model) {
+      piDefaultModelRef.current = fresh.agent.model;
+      setState((prev) => ({
+        ...prev,
+        model: fresh.agent.model!,
+        piDefaultModel: fresh.agent.model!,
+      }));
+    }
   }
 
   useEffect(() => {
@@ -170,11 +177,14 @@ export function useBootConfig(
       // time, so writing /model here makes the next set_model dispatch
       // pick it up.
       if (config.agent.model) {
+        piDefaultModelRef.current = config.agent.model;
         setState((prev) => ({
           ...prev,
-          // Use as the initial display value; the actual session model
-          // is still authoritative and wins on `ready` hydration.
-          model: (prev.model) || config.agent.model!,
+          // Use as the initial display value and the new-tab fallback.
+          // Per-tab model_changed events remain authoritative after a
+          // session is actually running.
+          model: config.agent.model!,
+          piDefaultModel: config.agent.model!,
         }));
       }
       // Restore saved UI zoom (Cmd+/-). Stored as a string number on

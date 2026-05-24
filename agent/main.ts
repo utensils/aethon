@@ -57,6 +57,7 @@ import { logger } from "./logger";
 import { resolveStateLimits } from "./state-limits";
 import { resolveAethonSystemPrompt } from "./system-prompt";
 import { readSessionTranscript } from "./session-history";
+import { readActiveProjectCwd } from "./active-project-cwd";
 import {
   AethonAgentState,
   type ExtensionFailure,
@@ -76,53 +77,12 @@ import {
   discoverPersistedTabs,
   discoverPiAethonExtensions,
 } from "./extension-loader";
-import {
-  ensureTab,
-  emitReady,
-  tabSessionDir,
-} from "./tab-lifecycle";
+import { ensureTab, emitReady, tabSessionDir } from "./tab-lifecycle";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
-import {
-  captureProjectExtensionBaseline,
-  runDispatcher,
-} from "./dispatcher";
+import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
 
 function send(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
-}
-
-/**
- * Read the active project's cwd from `<userDir>/projects.json`.
- *
- * The frontend's `useProjectOps` boot effect sends `set_project` shortly
- * after the bridge is ready, but that arrives over the dispatcher loop —
- * which races the synchronous boot replay below. Reading projects.json
- * directly lets the bridge scope the default tab's `ensureTab` and
- * session replay to the right cwd on its very first paint, instead of
- * picking the most-recently-touched session in `sessions/default/`
- * regardless of which project produced it.
- *
- * Returns `undefined` if the file is missing, malformed, or has no
- * active project; the caller falls back to project-agnostic behaviour.
- */
-async function readActiveProjectCwd(userDir: string): Promise<string | undefined> {
-  try {
-    const text = await Bun.file(join(userDir, "projects.json")).text();
-    const parsed = JSON.parse(text) as {
-      activeId?: unknown;
-      projects?: { id?: unknown; path?: unknown }[];
-    };
-    if (typeof parsed.activeId !== "string" || !parsed.activeId) return undefined;
-    if (!Array.isArray(parsed.projects)) return undefined;
-    const active = parsed.projects.find(
-      (p) => p && typeof p.id === "string" && p.id === parsed.activeId,
-    );
-    return active && typeof active.path === "string" && active.path.length > 0
-      ? active.path
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 async function main(): Promise<void> {

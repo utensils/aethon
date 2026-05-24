@@ -1,0 +1,66 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+interface PersistedProject {
+  id?: unknown;
+  path?: unknown;
+}
+
+interface PersistedWorktree {
+  id?: unknown;
+  projectId?: unknown;
+  path?: unknown;
+}
+
+interface PersistedProjects {
+  activeId?: unknown;
+  activeWorktreeId?: unknown;
+  projects?: PersistedProject[];
+  worktreesByProject?: Record<string, PersistedWorktree[]>;
+}
+
+export function activeProjectCwdFromJson(text: string): string | undefined {
+  let parsed: PersistedProjects;
+  try {
+    parsed = JSON.parse(text) as PersistedProjects;
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed.activeId !== "string" || !parsed.activeId) return undefined;
+  if (!Array.isArray(parsed.projects)) return undefined;
+  const active = parsed.projects.find(
+    (p) => p && typeof p.id === "string" && p.id === parsed.activeId,
+  );
+  const projectPath =
+    active && typeof active.path === "string" && active.path.length > 0
+      ? active.path
+      : undefined;
+  if (!projectPath) return undefined;
+
+  if (typeof parsed.activeWorktreeId === "string" && parsed.activeWorktreeId) {
+    const worktrees = parsed.worktreesByProject?.[parsed.activeId] ?? [];
+    const activeWorktree = worktrees.find(
+      (w) =>
+        w &&
+        w.id === parsed.activeWorktreeId &&
+        w.projectId === parsed.activeId &&
+        typeof w.path === "string" &&
+        w.path.length > 0,
+    );
+    if (typeof activeWorktree?.path === "string") return activeWorktree.path;
+  }
+
+  return projectPath;
+}
+
+export async function readActiveProjectCwd(
+  userDir: string,
+): Promise<string | undefined> {
+  try {
+    return activeProjectCwdFromJson(
+      await readFile(join(userDir, "projects.json"), "utf8"),
+    );
+  } catch {
+    return undefined;
+  }
+}

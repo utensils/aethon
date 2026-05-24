@@ -7,7 +7,7 @@ import { vi, type Mock } from "vitest";
 import type { MutableRefObject } from "react";
 import type { EventRouteContext, DiscoveredSession } from "./types";
 
-const ref = <T,>(value: T): MutableRefObject<T> => ({ current: value });
+const ref = <T>(value: T): MutableRefObject<T> => ({ current: value });
 
 export interface FixtureOverrides {
   state?: Record<string, unknown>;
@@ -60,6 +60,7 @@ export interface RouteFixture {
     setActiveProjectById: Mock;
     removeProjectById: Mock;
     syncRecentSessionsToState: Mock;
+    activateWorktree: Mock;
     invoke: Mock;
     writeState: Mock;
   };
@@ -76,9 +77,9 @@ export function buildRouteFixture(
 
   const setState = vi.fn((arg: unknown) => {
     if (typeof arg === "function") {
-      stateRef.current = (arg as (
-        p: Record<string, unknown>,
-      ) => Record<string, unknown>)(stateRef.current);
+      stateRef.current = (
+        arg as (p: Record<string, unknown>) => Record<string, unknown>
+      )(stateRef.current);
     } else {
       stateRef.current = arg as Record<string, unknown>;
     }
@@ -94,11 +95,9 @@ export function buildRouteFixture(
   const resolveShellCloseConsent = vi.fn((id: string, _allowed: boolean) => {
     pendingClose.delete(id);
   });
-  const resolveSessionDeleteConsent = vi.fn(
-    (id: string, _allowed: boolean) => {
-      pendingDelete.delete(id);
-    },
-  );
+  const resolveSessionDeleteConsent = vi.fn((id: string, _allowed: boolean) => {
+    pendingDelete.delete(id);
+  });
   const promptDeleteSessionConfirmation = vi.fn(() =>
     Promise.resolve(overrides.promptDeleteAllow ?? false),
   );
@@ -137,6 +136,7 @@ export function buildRouteFixture(
   const setActiveProjectById = vi.fn();
   const removeProjectById = vi.fn(() => true);
   const syncRecentSessionsToState = vi.fn();
+  const activateWorktree = vi.fn();
   const invoke = vi.fn(() => Promise.resolve(undefined));
   const writeState = vi.fn(() => Promise.resolve(true));
 
@@ -191,7 +191,7 @@ export function buildRouteFixture(
     syncRecentSessionsToState,
     setProjectExpanded: vi.fn(),
     refreshProjectWorktrees: vi.fn(() => Promise.resolve()),
-    activateWorktree: vi.fn(),
+    activateWorktree,
     createWorktreeForProject: vi.fn(() => Promise.resolve()),
     startTaskInProject: vi.fn(() => Promise.resolve()),
     removeWorktreeById: vi.fn(() => Promise.resolve()),
@@ -210,9 +210,9 @@ export function buildRouteFixture(
     for (const call of setState.mock.calls) {
       const arg = call[0];
       if (typeof arg === "function") {
-        cur = (arg as (
-          p: Record<string, unknown>,
-        ) => Record<string, unknown>)(cur);
+        cur = (arg as (p: Record<string, unknown>) => Record<string, unknown>)(
+          cur,
+        );
       } else {
         cur = arg as Record<string, unknown>;
       }
@@ -238,7 +238,7 @@ export function buildRouteFixture(
       newEditorTab,
       updateEditorMeta,
       renameEditorTabsForPath,
-    closeEditorTabsForPath,
+      closeEditorTabsForPath,
       closeTab,
       setActiveTab,
       setActiveSubTab,
@@ -261,6 +261,7 @@ export function buildRouteFixture(
       setActiveProjectById,
       removeProjectById,
       syncRecentSessionsToState,
+      activateWorktree,
       invoke,
       writeState,
     },

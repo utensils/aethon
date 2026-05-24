@@ -11,7 +11,10 @@ describe("handleProjectsDashboard", () => {
   it("new-tab calls ctx.newTab", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await handleProjectsDashboard(
-      { component: { id: "projects-dashboard", type: "projects-dashboard" }, eventType: "new-tab" },
+      {
+        component: { id: "projects-dashboard", type: "projects-dashboard" },
+        eventType: "new-tab",
+      },
       ctx,
     );
     expect(handled).toBe(true);
@@ -21,7 +24,10 @@ describe("handleProjectsDashboard", () => {
   it("open-project calls openProjectFromPicker", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await handleProjectsDashboard(
-      { component: { id: "x", type: "projects-dashboard" }, eventType: "open-project" },
+      {
+        component: { id: "x", type: "projects-dashboard" },
+        eventType: "open-project",
+      },
       ctx,
     );
     expect(handled).toBe(true);
@@ -74,6 +80,44 @@ describe("handleProjectsDashboard", () => {
     expect(mocks.newTab).toHaveBeenCalledWith("tab-42", "Earlier", {
       restoredSession: true,
       cwd: "/p",
+    });
+  });
+
+  it("restore-session navigates to the matching worktree before opening", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        activeProjectId: "p1",
+        projects: [{ id: "p1", path: "/repo/app" }],
+        sidebar: {
+          projects: [
+            {
+              id: "p1",
+              worktrees: [
+                { id: "wt-1", path: "/repo/app-fix-session-restore" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const handled = await handleProjectsDashboard(
+      {
+        component: { id: "x", type: "projects-dashboard" },
+        eventType: "restore-session",
+        data: {
+          sessionId: "tab-42",
+          label: "Earlier",
+          cwd: "/repo/app-fix-session-restore",
+        },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.setActiveProjectById).not.toHaveBeenCalled();
+    expect(mocks.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(mocks.newTab).toHaveBeenCalledWith("tab-42", "Earlier", {
+      restoredSession: true,
+      cwd: "/repo/app-fix-session-restore",
     });
   });
 

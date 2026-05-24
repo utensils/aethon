@@ -99,6 +99,52 @@ describe("handleReady", () => {
     ]);
   });
 
+  it("keeps the configured default model ahead of the bridge fallback", () => {
+    const configuredModel = "openai/user-configured-model";
+    const bridgeFallbackModel = "anthropic/provider-default-model";
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [{ id: "default", model: "" }],
+        sidebar: {},
+        piDefaultModel: configuredModel,
+      },
+    });
+    ctx.piDefaultModelRef.current = configuredModel;
+    handleReady(
+      {
+        type: "ready",
+        model: bridgeFallbackModel,
+        models: [
+          {
+            id: bridgeFallbackModel,
+            label: "Provider Default",
+            provider: "anthropic",
+          },
+          { id: configuredModel, label: "Configured", provider: "openai" },
+        ],
+        extensionStateKeys: [],
+        discoveredTabs: [],
+        tabs: [{ id: "default", model: bridgeFallbackModel }],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect(ctx.piDefaultModelRef.current).toBe(configuredModel);
+    expect(next.model).toBe(configuredModel);
+    expect(next.piDefaultModel).toBe(configuredModel);
+    expect((next.tabs as { id: string; model: string }[])[0].model).toBe(
+      configuredModel,
+    );
+    expect(
+      (next.sidebar as { models: { id: string; active: boolean }[] }).models,
+    ).toEqual([
+      { id: bridgeFallbackModel, label: "Provider Default", active: false },
+      { id: configuredModel, label: "Configured", active: true },
+    ]);
+  });
+
   it("prunes extension state keys that disappeared between readies", () => {
     const { ctx, applySetState } = buildHandlerFixture({
       state: { activeTabId: "default", tabs: [{ id: "default" }], sidebar: {} },
@@ -253,6 +299,59 @@ describe("handleReady", () => {
         tabId: "tab-2",
         restoreHistory: true,
         cwd: "/repo/a",
+      }),
+    ]);
+  });
+
+  it("requests transcript replay for worktree tabs with their tab cwd", () => {
+    const harness = installTauriMocks();
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-2",
+        tabs: [
+          {
+            id: "tab-2",
+            model: "gpt",
+            projectId: "p1",
+            cwd: "/repo/a-fix-session-restore",
+          },
+        ],
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorktreeId: "wt-1",
+      worktreesByProject: {
+        p1: [
+          {
+            id: "wt-1",
+            projectId: "p1",
+            path: "/repo/a-fix-session-restore",
+            branch: "fix/session-restore",
+            isMain: false,
+          },
+        ],
+      },
+      activeHostId: null,
+      projects: [{ id: "p1", label: "A", path: "/repo/a", lastUsed: 1 }],
+    };
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [{ id: "default", model: "claude" }],
+      },
+      ctx,
+    );
+    const payloads = harness.invoke.mock.calls
+      .filter((call) => call[0] === "agent_command")
+      .map((call) => JSON.parse(call[1].payload as string));
+    expect(payloads).toEqual([
+      expect.objectContaining({
+        type: "tab_open",
+        tabId: "tab-2",
+        restoreHistory: true,
+        cwd: "/repo/a-fix-session-restore",
       }),
     ]);
   });
