@@ -247,6 +247,45 @@ describe("handleSetModel", () => {
       model: "openai/gpt-5.5",
     });
   });
+
+  it("routes model switch failures to the originating tab", async () => {
+    const f = makeFixture();
+    const nextModel = {
+      provider: "openai",
+      id: "gpt-5.5",
+      name: "GPT 5.5",
+    };
+    f.state.modelRegistry = {
+      find: vi.fn(() => nextModel),
+    } as unknown as AethonAgentState["modelRegistry"];
+    f.state.resourceLoader = {
+      reload: vi.fn(() => Promise.resolve()),
+    } as unknown as AethonAgentState["resourceLoader"];
+    f.state.tabs.set(
+      "tab-1",
+      fakeTabRecord({
+        session: {
+          prompt: () => Promise.resolve(),
+          steer: () => Promise.resolve(),
+          followUp: () => Promise.resolve(),
+          setModel: () => Promise.reject(new Error("provider offline")),
+        } as unknown as TabRecord["session"],
+      }),
+    );
+
+    await handleSetModel(f.state, f.deps, {
+      type: "set_model",
+      id: "openai/gpt-5.5",
+      tabId: "tab-1",
+    });
+
+    expect(f.writes()).toBe(0);
+    expect(f.sent).toContainEqual({
+      type: "error",
+      tabId: "tab-1",
+      message: "set_model: provider offline",
+    });
+  });
 });
 
 describe("captureProjectExtensionBaseline", () => {

@@ -511,8 +511,18 @@ export async function handleSetModel(
     });
     return;
   }
-  await tab.session.setModel(next);
-  await state.resourceLoader.reload();
+  try {
+    await tab.session.setModel(next);
+    await state.resourceLoader.reload();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({
+      type: "error",
+      tabId,
+      message: `set_model: ${message}`,
+    });
+    return;
+  }
   deps.scheduleStateFileWrite();
   ensurePickerHasModel(state, deps, next);
   deps.send({ type: "model_changed", tabId, model: msg.id });
