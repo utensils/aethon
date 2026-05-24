@@ -81,6 +81,7 @@ describe("AethonAgentState", () => {
       promptInFlight: false,
       agentEndFired: false,
       queuedCount: 0,
+      toolCardSeq: 0,
     });
     expect(s.extensionComponents.get("foo")).toEqual({ type: "card" });
     expect(s.tabs.get("default")?.id).toBe("default");

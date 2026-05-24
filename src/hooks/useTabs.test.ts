@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyProjectsState } from "../projects";
 import { makeEmptyTab } from "../types/tab";
 import {
+  cwdForNewTab,
   modelForNewProjectTab,
   recentSessionItemFromClosedTab,
 } from "./useTabs";
@@ -101,5 +102,29 @@ describe("modelForNewProjectTab", () => {
       modelForNewProjectTab({ model: "openai/gpt-5.5" }, "p1", "fallback"),
     ).toBe("openai/gpt-5.5");
     expect(modelForNewProjectTab({}, "p1", "fallback")).toBe("fallback");
+  });
+});
+
+describe("cwdForNewTab", () => {
+  it("prefers the active project cwd", () => {
+    const projects = {
+      activeId: "p1",
+      activeWorktreeId: null,
+      worktreesByProject: {},
+      activeHostId: null,
+      projects: [
+        { id: "p1", label: "Aethon", path: "/repo/aethon", lastUsed: 1 },
+      ],
+    };
+
+    expect(cwdForNewTab(projects, { projectRoot: "/fallback" })).toBe(
+      "/repo/aethon",
+    );
+  });
+
+  it("falls back to the dev project root when no project is selected", () => {
+    expect(
+      cwdForNewTab(emptyProjectsState(), { projectRoot: "/repo/aethon" }),
+    ).toBe("/repo/aethon");
   });
 });

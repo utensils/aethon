@@ -1,8 +1,4 @@
-import type {
-  Dispatch,
-  MutableRefObject,
-  SetStateAction,
-} from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { EditorMeta, Tab } from "../types/tab";
 import type { ShareMode } from "../utils/shareMode";
 import type {
@@ -67,7 +63,10 @@ export interface EventRouteContext {
   dismissNotification: (id: string) => void;
 
   // ─── Chat / prompt ──────────────────────────────────────────────────
-  sendChat: (text: string) => Promise<void>;
+  sendChat: (
+    text: string,
+    options?: { mode?: "normal" | "steer" },
+  ) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   updateActiveTab: (updater: (tab: Tab) => Tab) => void;
 

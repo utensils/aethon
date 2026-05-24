@@ -23,6 +23,10 @@ import type {
  *  the boot sequence. */
 export const handleReady: BridgeMessageHandler = (data, ctx) => {
   const model = (data.model as string) || "";
+  const projectRoot =
+    typeof data.projectRoot === "string" && data.projectRoot.length > 0
+      ? data.projectRoot
+      : undefined;
   // Cache pi's default model so new tabs created before `ready` fires
   // (or before a session's model initialises) can inherit it immediately
   // instead of showing blank "model ▼".
@@ -304,6 +308,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     const activeModel = activeTab?.model || fallbackModel;
     next = {
       ...next,
+      ...(projectRoot ? { projectRoot } : {}),
       model: activeModel,
       status: "ready",
       connection: "connected",

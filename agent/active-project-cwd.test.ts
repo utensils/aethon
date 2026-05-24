@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { activeProjectCwdFromJson } from "./active-project-cwd";
+import {
+  activeProjectCwdFromJson,
+  resolveStartupCwd,
+} from "./active-project-cwd";
 
 describe("activeProjectCwdFromJson", () => {
   it("uses the active project path when no worktree is active", () => {
@@ -13,25 +16,19 @@ describe("activeProjectCwdFromJson", () => {
     ).toBe("/repo/app");
   });
 
-  it("uses the active worktree path when one is selected", () => {
+  it("prefers the active worktree path when present", () => {
     expect(
       activeProjectCwdFromJson(
         JSON.stringify({
           activeId: "p1",
-          activeWorktreeId: "wt-1",
-          projects: [{ id: "p1", path: "/repo/app" }],
+          activeWorktreeId: "wt1",
+          projects: [{ id: "p1", path: "/repo/aethon" }],
           worktreesByProject: {
-            p1: [
-              {
-                id: "wt-1",
-                projectId: "p1",
-                path: "/repo/app-fix-session-restore",
-              },
-            ],
+            p1: [{ id: "wt1", projectId: "p1", path: "/repo/aethon-fix" }],
           },
         }),
       ),
-    ).toBe("/repo/app-fix-session-restore");
+    ).toBe("/repo/aethon-fix");
   });
 
   it("falls back to the project path when the active worktree is stale", () => {
@@ -49,5 +46,17 @@ describe("activeProjectCwdFromJson", () => {
 
   it("returns undefined for malformed project state", () => {
     expect(activeProjectCwdFromJson("{nope")).toBeUndefined();
+  });
+});
+
+describe("resolveStartupCwd", () => {
+  it("uses active project, then dev project root, then process cwd", () => {
+    expect(resolveStartupCwd("/repo/project", "/repo/aethon", "/")).toBe(
+      "/repo/project",
+    );
+    expect(resolveStartupCwd(undefined, "/repo/aethon", "/")).toBe(
+      "/repo/aethon",
+    );
+    expect(resolveStartupCwd(undefined, undefined, "/")).toBe("/");
   });
 });

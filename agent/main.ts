@@ -57,7 +57,7 @@ import { logger } from "./logger";
 import { resolveStateLimits } from "./state-limits";
 import { resolveAethonSystemPrompt } from "./system-prompt";
 import { readSessionTranscript } from "./session-history";
-import { readActiveProjectCwd } from "./active-project-cwd";
+import { readActiveProjectCwd, resolveStartupCwd } from "./active-project-cwd";
 import {
   AethonAgentState,
   type ExtensionFailure,
@@ -244,17 +244,24 @@ async function main(): Promise<void> {
   // restores the registries from this snapshot.
   captureProjectExtensionBaseline(state);
 
+  const activeProjectCwd = await readActiveProjectCwd(userDir);
+  const startupCwd = resolveStartupCwd(
+    activeProjectCwd,
+    projectRoot,
+    process.cwd(),
+  );
+
   await loadProjectAethonExtensions(
     state,
     extDeps,
-    process.cwd(),
+    startupCwd,
     extensionApi,
     state.loadedExtensions,
     state.loadedProjectExtensionFiles,
     state.failedProjectExtensionFiles,
     loadHooks,
   );
-  state.currentProjectCwd = process.cwd();
+  state.currentProjectCwd = startupCwd;
 
   // Reload so the appendSystemPromptOverride sees the populated extensions.
   await state.resourceLoader.reload();
@@ -265,10 +272,7 @@ async function main(): Promise<void> {
   // otherwise a `default` session from a previously-active project
   // leaks into whatever the user opens next (sessions/default/ is
   // shared across project buckets).
-  const activeProjectCwd = await readActiveProjectCwd(userDir);
-  if (activeProjectCwd) {
-    state.tabProjectCwds.set("default", activeProjectCwd);
-  }
+  state.tabProjectCwds.set("default", startupCwd);
   const tabDeps = { send };
   await ensureTab(state, tabDeps, "default");
 
@@ -281,13 +285,12 @@ async function main(): Promise<void> {
   // Replay the default tab's persisted pi session history so all tabs use
   // the same session_history IPC path. Scope the read by the SAME cwd
   // `ensureTab` resolved against — when no project is active, both fall
-  // back to `process.cwd()`. Passing `undefined` here would let the
+  // back to the startup cwd. Passing `undefined` here would let the
   // replay surface the latest JSONL from any cwd while `ensureTab` (which
   // filters via `findSessionFileMatchingCwd`) created an empty session,
   // leaving the UI showing a leaked transcript that the agent cannot
   // continue.
-  const defaultTabReplayCwd = activeProjectCwd ?? process.cwd();
-  readSessionTranscript(tabSessionDir(state, "default"), defaultTabReplayCwd)
+  readSessionTranscript(tabSessionDir(state, "default"), startupCwd)
     .then((messages) => {
       if (messages.length > 0) {
         send({ type: "session_history", tabId: "default", messages });

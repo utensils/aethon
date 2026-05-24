@@ -42,8 +42,7 @@ function buildContext(overrides: Record<string, unknown> = {}): {
     },
   };
   const setState: Dispatch<SetStateAction<Record<string, unknown>>> = (arg) => {
-    stateRef.current =
-      typeof arg === "function" ? arg(stateRef.current) : arg;
+    stateRef.current = typeof arg === "function" ? arg(stateRef.current) : arg;
   };
   const updateTab = (tabId: string, mutator: (tab: Tab) => Tab) => {
     setState((prev) => {
@@ -87,6 +86,36 @@ function buildContext(overrides: Record<string, unknown> = {}): {
 }
 
 describe("useChat setModel", () => {
+  it("sends normal chat messages with normal mode", async () => {
+    const { ctx } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("hello");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "hello",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+  });
+
+  it("sends command-enter messages with steer mode", async () => {
+    const { ctx } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("look now", { mode: "steer" });
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "look now",
+      tabId: "tab-1",
+      mode: "steer",
+    });
+  });
+
   it("optimistically mirrors the selected model into the active tab and picker", async () => {
     const { ctx, stateRef, recordProjectModel } = buildContext();
     const { result } = renderHook(() => useChat(ctx));
@@ -104,14 +133,13 @@ describe("useChat setModel", () => {
     });
     expect(recordProjectModel).toHaveBeenCalledWith("openai/gpt-5.5", "tab-1");
     expect(stateRef.current.model).toBe("openai/gpt-5.5");
-    expect(
-      (stateRef.current.tabs as Tab[])[0].model,
-    ).toBe("openai/gpt-5.5");
+    expect((stateRef.current.tabs as Tab[])[0].model).toBe("openai/gpt-5.5");
     expect(
       (
-        (stateRef.current.sidebar as { models: { id: string; active?: boolean }[] })
-          .models
-      ).find((m) => m.id === "openai/gpt-5.5")?.active,
+        stateRef.current.sidebar as {
+          models: { id: string; active?: boolean }[];
+        }
+      ).models.find((m) => m.id === "openai/gpt-5.5")?.active,
     ).toBe(true);
   });
 
@@ -131,8 +159,8 @@ describe("useChat setModel", () => {
       }),
     });
     expect(stateRef.current.model).toBe("anthropic/claude-opus-4-7");
-    expect(
-      (stateRef.current.tabs as Tab[])[0].model,
-    ).toBe("anthropic/claude-opus-4-7");
+    expect((stateRef.current.tabs as Tab[])[0].model).toBe(
+      "anthropic/claude-opus-4-7",
+    );
   });
 });

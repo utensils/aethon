@@ -3,12 +3,14 @@ import {
   AethonAgentState,
   type AethonAgentStateOptions,
   type ProjectBaselineSnapshot,
+  type TabRecord,
 } from "./state";
 import {
   captureProjectExtensionBaseline,
   exportTargetForSlashCommand,
   formatContextUsageMessage,
   formatSessionStatsMessage,
+  handleChat,
   unloadProjectExtensions,
 } from "./dispatcher";
 
@@ -44,6 +46,161 @@ function makeFixture() {
     writes: () => writes,
   };
 }
+
+function fakeTabRecord(overrides: Partial<TabRecord> = {}): TabRecord {
+  return {
+    id: "tab-1",
+    session: {
+      prompt: () => Promise.resolve(),
+      steer: () => Promise.resolve(),
+      followUp: () => Promise.resolve(),
+    } as unknown as TabRecord["session"],
+    toolArgsCache: new Map(),
+    promptInFlight: false,
+    agentEndFired: false,
+    queuedCount: 0,
+    toolCardSeq: 0,
+    ...overrides,
+  };
+}
+
+describe("handleChat", () => {
+  it("queues normal messages while a prompt is in flight", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const followUpCalls: unknown[][] = [];
+    const steerCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      promptInFlight: true,
+      session: {
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return Promise.resolve();
+        },
+        followUp: (...args: unknown[]) => {
+          followUpCalls.push(args);
+          return Promise.resolve();
+        },
+        steer: (...args: unknown[]) => {
+          steerCalls.push(args);
+          return Promise.resolve();
+        },
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "after this",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+
+    expect(tab.queuedCount).toBe(1);
+    expect(promptCalls).toEqual([]);
+    expect(followUpCalls).toEqual([["after this"]]);
+    expect(steerCalls).toEqual([]);
+    expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
+  });
+
+  it("steers command-enter messages into the active prompt", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const steerCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      promptInFlight: true,
+      queuedCount: 2,
+      session: {
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return Promise.resolve();
+        },
+        followUp: () => Promise.resolve(),
+        steer: (...args: unknown[]) => {
+          steerCalls.push(args);
+          return Promise.resolve();
+        },
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "look here now",
+      tabId: "tab-1",
+      mode: "steer",
+    });
+
+    expect(tab.queuedCount).toBe(2);
+    expect(promptCalls).toEqual([]);
+    expect(steerCalls).toEqual([["look here now"]]);
+    expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-1" });
+  });
+
+  it("treats steer as a normal prompt when the tab is idle", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const steerCalls: unknown[][] = [];
+    const pendingPrompt = new Promise<void>(() => {});
+    const tab = fakeTabRecord({
+      session: {
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return pendingPrompt;
+        },
+        followUp: () => Promise.resolve(),
+        steer: (...args: unknown[]) => {
+          steerCalls.push(args);
+          return Promise.resolve();
+        },
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "start fresh",
+      tabId: "tab-1",
+      mode: "steer",
+    });
+
+    expect(promptCalls).toEqual([["start fresh"]]);
+    expect(steerCalls).toEqual([]);
+    expect(tab.promptInFlight).toBe(true);
+  });
+
+  it("starts an idle tab immediately even while another tab is running", async () => {
+    const f = makeFixture();
+    const first = fakeTabRecord({ id: "tab-1", promptInFlight: true });
+    const promptCalls: unknown[][] = [];
+    const second = fakeTabRecord({
+      id: "tab-2",
+      session: {
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return new Promise<void>(() => {});
+        },
+        followUp: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", first);
+    f.state.tabs.set("tab-2", second);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "run in parallel",
+      tabId: "tab-2",
+      mode: "normal",
+    });
+
+    expect(first.queuedCount).toBe(0);
+    expect(second.queuedCount).toBe(0);
+    expect(second.promptInFlight).toBe(true);
+    expect(promptCalls).toEqual([["run in parallel"]]);
+    expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-2" });
+  });
+});
 
 describe("captureProjectExtensionBaseline", () => {
   it("snapshots every extension registry independently of the live one", () => {

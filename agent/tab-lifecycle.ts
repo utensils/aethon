@@ -72,11 +72,18 @@ export function summarizeToolArgs(toolName: string, args: unknown): string {
   const a = args as Record<string, unknown>;
   switch (toolName) {
     case "read":
-      return [a.path, a.startLine && `lines ${a.startLine}-${a.endLine ?? "end"}`]
+      return [
+        a.path,
+        a.startLine && `lines ${a.startLine}-${a.endLine ?? "end"}`,
+      ]
         .filter(Boolean)
         .join(" ");
     case "bash":
-      return String(a.command ?? "").split("\n")[0]?.slice(0, 200) ?? "";
+      return (
+        String(a.command ?? "")
+          .split("\n")[0]
+          ?.slice(0, 200) ?? ""
+      );
     case "edit":
     case "write":
       return String(a.path ?? "");
@@ -141,7 +148,8 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
 function languageFromPath(path: string): string | undefined {
   const clean = path.trim().replace(/^["'`]|["'`]$/g, "");
   const base = clean.split(/[\\/]/).pop()?.toLowerCase() ?? "";
-  if (base === "dockerfile" || base.endsWith(".dockerfile")) return "dockerfile";
+  if (base === "dockerfile" || base.endsWith(".dockerfile"))
+    return "dockerfile";
   if (base === "makefile") return "make";
   const ext = /\.([a-z0-9]+)$/.exec(base)?.[1];
   return ext ? EXTENSION_LANGUAGES[ext] : undefined;
@@ -159,7 +167,8 @@ export function inferToolResultLanguage(
 
   const trimmed = text.trimStart();
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return "json";
-  if (trimmed.startsWith("diff --git ") || trimmed.startsWith("--- ")) return "diff";
+  if (trimmed.startsWith("diff --git ") || trimmed.startsWith("--- "))
+    return "diff";
   return "text";
 }
 
@@ -219,7 +228,7 @@ export function extractToolContent(result: unknown): ExtractedResult {
 
 /** Build the A2UI payload for a tool-call card. */
 export function toolCardPayload(opts: {
-  callId: string;
+  id: string;
   toolName: string;
   argsSummary: string;
   result?: unknown;
@@ -228,21 +237,14 @@ export function toolCardPayload(opts: {
   startedAt?: number;
   endedAt?: number;
 }) {
-  const {
-    callId,
-    toolName,
-    argsSummary,
-    result,
-    isError,
-    startedAt,
-    endedAt,
-  } = opts;
+  const { id, toolName, argsSummary, result, isError, startedAt, endedAt } =
+    opts;
   const children: unknown[] = [];
   if (result !== undefined) {
     const extracted = extractToolContent(result);
     if (extracted.text) {
       children.push({
-        id: `tool-${callId}-result`,
+        id: `${id}-result`,
         type: "code",
         props: {
           content: truncate(extracted.text, 1500),
@@ -256,7 +258,7 @@ export function toolCardPayload(opts: {
     }
     extracted.images.forEach((img, i) => {
       children.push({
-        id: `tool-${callId}-image-${i}`,
+        id: `${id}-image-${i}`,
         type: "image",
         props: {
           src: `data:${img.mimeType};base64,${img.data}`,
@@ -268,7 +270,7 @@ export function toolCardPayload(opts: {
   return {
     components: [
       {
-        id: `tool-${callId}`,
+        id,
         type: "tool-card",
         props: {
           title: toolName,
@@ -332,9 +334,7 @@ export function buildPickerModels(
   let pickerModels: Model<Api>[];
   if (enabled && enabled.length > 0) {
     const patterns = enabled.map(compilePattern);
-    pickerModels = all.filter((m) =>
-      patterns.some((p) => p.test(modelKey(m))),
-    );
+    pickerModels = all.filter((m) => patterns.some((p) => p.test(modelKey(m))));
   } else {
     pickerModels = state.modelRegistry.getAvailable();
   }
@@ -384,6 +384,7 @@ export function emitReady(
   deps.send({
     type: "ready",
     model: defaultModelKey(state),
+    projectRoot: state.projectRoot,
     models: state.cachedModels,
     tabs: [...state.tabs.values()].map((t) => ({
       id: t.id,
@@ -493,7 +494,9 @@ export function collectPiSlashCommands(
     warnedMissingExtensionRunner = true;
     logger
       .scope("slash")
-      .warn("pi extension command discovery is using a private session API; _extensionRunner is unavailable");
+      .warn(
+        "pi extension command discovery is using a private session API; _extensionRunner is unavailable",
+      );
   }
   // TODO: switch extension command discovery to pi's public API once exposed.
   for (const command of runner?.getRegisteredCommands?.() ?? []) {
@@ -624,6 +627,7 @@ export async function ensureTab(
     promptInFlight: false,
     agentEndFired: false,
     queuedCount: 0,
+    toolCardSeq: 0,
   };
   state.tabs.set(tabId, rec);
   refreshPiSlashCommands(state, session);
@@ -668,9 +672,7 @@ function handleSessionEvent(
     case "agent_start": {
       state.currentAgentTabId = tabId;
       state.turnStartTimes.set(tabId, Date.now());
-      const model = rec.session.model
-        ? modelKey(rec.session.model)
-        : "unknown";
+      const model = rec.session.model ? modelKey(rec.session.model) : "unknown";
       turnLog.info(`start model=${model} tabId=${tabId}`);
       if (rec.queuedCount > 0) {
         rec.queuedCount -= 1;
@@ -690,8 +692,9 @@ function handleSessionEvent(
       break;
     }
     case "message_update": {
-      const ame = (event as { assistantMessageEvent?: { type?: string; delta?: string } })
-        .assistantMessageEvent;
+      const ame = (
+        event as { assistantMessageEvent?: { type?: string; delta?: string } }
+      ).assistantMessageEvent;
       const channel =
         ame?.type === "thinking_delta" || ame?.type === "reasoning_delta"
           ? "thinking"
@@ -704,8 +707,8 @@ function handleSessionEvent(
         const delta = ame.delta ?? "";
         if (delta) {
           const ts =
-            ((event as { message?: { timestamp?: number } }).message
-              ?.timestamp) ?? 0;
+            (event as { message?: { timestamp?: number } }).message
+              ?.timestamp ?? 0;
           const messageId = `text-${ts}`;
           deps.send({
             type: "response_delta",
@@ -726,19 +729,21 @@ function handleSessionEvent(
       };
       const summary = summarizeToolArgs(ev.toolName, ev.args);
       const startedAt = Date.now();
+      const uiId = `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
       rec.toolArgsCache.set(ev.toolCallId, {
         name: ev.toolName,
         summary,
+        uiId,
         startedAt,
       });
       const payload = toolCardPayload({
-        callId: ev.toolCallId,
+        id: uiId,
         toolName: ev.toolName,
         argsSummary: summary,
         running: true,
         startedAt,
       });
-      deps.send({ type: "a2ui", tabId, id: `tool-${ev.toolCallId}`, payload });
+      deps.send({ type: "a2ui", tabId, id: uiId, payload });
       if (ev.toolName === "bash") {
         const cmd = String(
           (ev.args as { command?: unknown } | undefined)?.command ?? "",
@@ -765,6 +770,7 @@ function handleSessionEvent(
           cached = {
             name: ev.toolName,
             summary: summarizeToolArgs(ev.toolName, ev.args),
+            uiId: `tool-${++rec.toolCardSeq}-${ev.toolCallId}`,
           };
           rec.toolArgsCache.set(ev.toolCallId, cached);
         }
@@ -786,8 +792,9 @@ function handleSessionEvent(
         isError?: boolean;
       };
       const cached = rec.toolArgsCache.get(ev.toolCallId);
+      const uiId = cached?.uiId ?? `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
       const payload = toolCardPayload({
-        callId: ev.toolCallId,
+        id: uiId,
         toolName: ev.toolName,
         argsSummary: cached?.summary ?? "",
         result: ev.result,
@@ -796,7 +803,7 @@ function handleSessionEvent(
           ? { startedAt: cached.startedAt, endedAt: Date.now() }
           : {}),
       });
-      deps.send({ type: "a2ui", tabId, id: `tool-${ev.toolCallId}`, payload });
+      deps.send({ type: "a2ui", tabId, id: uiId, payload });
       if (ev.toolName === "bash") {
         const extracted = extractToolContent(ev.result);
         const streamed = consumeBashTerminalSnapshot(
@@ -818,8 +825,12 @@ function handleSessionEvent(
       const startMs = state.turnStartTimes.get(tabId);
       state.turnStartTimes.delete(tabId);
       const durationMs = startMs !== undefined ? Date.now() - startMs : -1;
-      const modelStr = rec.session.model ? modelKey(rec.session.model) : "unknown";
-      const lastAssistant = [...((messages ?? []) as { role?: string; stopReason?: string }[])]
+      const modelStr = rec.session.model
+        ? modelKey(rec.session.model)
+        : "unknown";
+      const lastAssistant = [
+        ...((messages ?? []) as { role?: string; stopReason?: string }[]),
+      ]
         .reverse()
         .find((m) => m.role === "assistant");
       const reason = lastAssistant?.stopReason ?? "unknown";

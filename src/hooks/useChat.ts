@@ -59,7 +59,10 @@ export interface UseChatActions {
   ) => void;
 
   clearChat: () => void;
-  sendChat: (text: string) => Promise<void>;
+  sendChat: (
+    text: string,
+    options?: { mode?: "normal" | "steer" },
+  ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   exportActiveChatMarkdown: () => Promise<void>;
@@ -110,7 +113,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   // tabId routes to the right tab record; defaults to the active tab so
   // legacy callers that pre-date the multi-tab refactor stay correct.
   function appendMessage(msg: ChatMessage, tabId?: string) {
-    const id = tabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const id =
+      tabId ??
+      (stateRef.current.activeTabId as string | undefined) ??
+      "default";
     updateTab(id, (tab) => {
       const messages = [...tab.messages];
       const idx = messages.findIndex((m) => m.id === msg.id);
@@ -135,7 +141,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     tabId?: string,
     channel: "text" | "thinking" = "text",
   ) {
-    const id = tabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const id =
+      tabId ??
+      (stateRef.current.activeTabId as string | undefined) ??
+      "default";
     updateTab(id, (tab) => {
       const messages = [...tab.messages];
       if (messageId) {
@@ -189,7 +198,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
 
   async function stopPrompt(explicitTabId?: string) {
     const tabId =
-      explicitTabId ?? (stateRef.current.activeTabId as string | undefined) ?? "default";
+      explicitTabId ??
+      (stateRef.current.activeTabId as string | undefined) ??
+      "default";
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "stop", tabId }),
@@ -207,7 +218,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
   }
 
-  async function sendChat(text: string) {
+  async function sendChat(
+    text: string,
+    options?: { mode?: "normal" | "steer" },
+  ) {
     const trimmed = text.trim();
     if (!trimmed) return;
 
@@ -245,7 +259,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
-    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const mode = options?.mode === "steer" ? "steer" : "normal";
+    const tabId =
+      (stateRef.current.activeTabId as string | undefined) ?? "default";
     appendMessage(
       { id: crypto.randomUUID(), role: "user", text: sendText },
       tabId,
@@ -263,10 +279,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     // own error path below.
     const pending = pendingTabOpens.current.get(tabId);
     if (pending) {
-      try { await pending; } catch { /* ignore */ }
+      try {
+        await pending;
+      } catch {
+        /* ignore */
+      }
     }
     try {
-      await invoke("send_message", { message: sendText, tabId });
+      await invoke("send_message", { message: sendText, tabId, mode });
     } catch (err) {
       appendMessage(
         {
@@ -277,12 +297,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         tabId,
       );
       updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
-      if (stateRef.current.activeTabId === tabId) setStatusFlags({ status: "error" });
+      if (stateRef.current.activeTabId === tabId)
+        setStatusFlags({ status: "error" });
     }
   }
 
   async function setModel(id: string) {
-    const tabId = (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const tabId =
+      (stateRef.current.activeTabId as string | undefined) ?? "default";
     const previousModel = (stateRef.current.model as string | undefined) ?? "";
     const canOptimisticallyMirror = stateRef.current.waiting !== true;
     recordProjectModel(id, tabId);

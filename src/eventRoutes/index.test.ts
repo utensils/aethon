@@ -84,7 +84,7 @@ describe("dispatchEvent — precedence contract", () => {
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.sendChat).toHaveBeenCalledWith("hello");
+    expect(mocks.sendChat).toHaveBeenCalledWith("hello", { mode: "normal" });
   });
 
   it("Layer 3 lookup uses both id-key and type-key — type-keyed terminal-panel matches even when id differs across layouts", async () => {
@@ -242,6 +242,6 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.sendChat).toHaveBeenCalledWith("hello");
+    expect(mocks.sendChat).toHaveBeenCalledWith("hello", { mode: "normal" });
   });
 });
