@@ -27,24 +27,26 @@ subprocess. Business logic belongs in the agent, not the shell.
 Run inside `nix develop` (direnv auto-activates via `.envrc`). Devshell
 helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                    |
-| ----------- | --------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment   |
-| `build-app` | `cargo tauri build` — release bundle                            |
-| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest            |
-| `lint`      | ESLint (no auto-fix)                                            |
-| `test`      | `cargo test --lib` + `bunx vitest run`                          |
-| `coverage`  | TS coverage report (vitest v8) → `coverage/`                    |
-| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                   |
+| Command     | What it does                                                  |
+| ----------- | ------------------------------------------------------------- |
+| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment |
+| `build-app` | `cargo tauri build` — release bundle                          |
+| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest          |
+| `lint`      | ESLint (no auto-fix)                                          |
+| `test`      | `cargo test --lib` + `bunx vitest run`                        |
+| `coverage`  | TS coverage report (vitest v8) → `coverage/`                  |
+| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                 |
 
 ESLint is configured for **0 errors and 0 warnings**.
 
 Single tests:
+
 - TS file: `bunx vitest run agent/terminal-stream.test.ts`
 - TS by name: `bunx vitest run -t "test name pattern"`
 - Rust: `cargo test --lib -p aethon -- helpers::test_name`
 
 `scripts/dev.sh` flags:
+
 - `dev --new` — sandbox launch under `${TMPDIR}/aethon-dev/new-<pid>/`
   (empty `~/.aethon`, removed on exit). Resolver is `helpers::aethon_dir`,
   honored by config / sessions / pastes / logs / window state / extensions / skills.
@@ -69,12 +71,12 @@ Three layers:
    `dispatch_a2ui_event` (forwards a structured event). First call spawns
    `bun run agent/main.ts` and starts a reader thread emitting `agent-response`
    Tauri events per stdout line. Shell-tab commands (`shell_open/input/
-   resize/close`) sit behind a `ShellRegistry` (per-tab `portable-pty` +
+resize/close`) sit behind a `ShellRegistry` (per-tab `portable-pty` +
    reader; emits `shell-output` / `shell-exit`).
 
    The PTY reader preserves UTF-8 boundaries across reads via a carry buffer
-   + `Utf8Error::error_len()` split — **do not replace with per-chunk
-   `from_utf8_lossy`**; multi-byte sequences will corrupt.
+   - `Utf8Error::error_len()` split — **do not replace with per-chunk
+     `from_utf8_lossy`**; multi-byte sequences will corrupt.
 
 2. **Agent bridge** (`agent/`). JSON-lines over stdio. `main.ts` is a thin
    entry; the readline loop and dispatcher live in `dispatcher.ts`. State is
@@ -93,7 +95,7 @@ Three layers:
 
 ### Frontend model — three things to know
 
-**1. Layout-as-payload.** The default UI is *not* hardcoded React —
+**1. Layout-as-payload.** The default UI is _not_ hardcoded React —
 it's `src/skills/default-layout/workstation.a2ui.json`, fed to the same
 `A2UIRenderer` that handles agent output. Don't add static chrome in
 `App.tsx`; extend the layout JSON or register a skill. Layouts must
@@ -103,12 +105,13 @@ match the slot contract in `src/skills/default-layout/slots.ts`
 
 **2. Single state store, JSON Pointer addressed.** All app state lives in
 one object on `App`. Components read it via `$ref` JSON Pointers
-(`{"value": {"$ref": "/draft"}}`). The renderer applies an *optimistic*
+(`{"value": {"$ref": "/draft"}}`). The renderer applies an _optimistic_
 write back to that path for `change`/`submit` events on `$ref` inputs —
 see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. Pointer helpers in
 `src/utils/jsonPointer.ts` + `src/utils/dataBinding.ts`.
 
 **3. Two registries.**
+
 - Primitive React components (`src/components/primitives/`) are wired
   in `src/components/builtins.tsx` into a hardcoded 19-entry
   `PRIMITIVE_REGISTRY`. **Can't be overridden by skills.**
@@ -124,6 +127,7 @@ see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. Pointer helpers in
 and suppresses the default `dispatch_a2ui_event` forward to Rust.
 `App.tsx` delegates to `dispatchEvent` in `src/eventRoutes/index.ts`,
 with three precedence layers:
+
 1. Reserved shell-consent prefixes (`shell-write` / `shell-close` /
    `session-delete`) MUST resolve before extension matchers.
 2. Extension-registered routes (returning `false` forwards to the bridge).
@@ -143,6 +147,7 @@ register in `BUILTIN_ROUTE_TABLE`.
 (see `agent/aethon-api.ts`).
 
 Per-surface subnamespaces, each backed by a `*_query` bridge message:
+
 - `aethon.shells.{list, read, write}` — opt-in shell sharing.
 - `aethon.tasks.start({projectPath, prompt, newWorktree?, branch?, baseBranch?})`
   — task launcher parity.
@@ -230,14 +235,14 @@ names with slashes before hitting `repos/<r>/branches/{x}`.
 
 Tauri sets these when spawning `agent/main.ts`:
 
-| Env var               | Purpose                                                                                                  |
-| --------------------- | -------------------------------------------------------------------------------------------------------- |
-| `AETHON_DOCS_DIR`     | Bundled docs (`docs/aethon-agent/`) — system prompt points the model here.                              |
-| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, skills, sessions, state file.                                                 |
-| `AETHON_STATE_FILE`   | `~/.aethon/state.json` snapshot, debounced 200 ms.                                                       |
-| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` — pi `SessionManager.continueRecent` per tab.                              |
-| `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release.                |
-| `AETHON_PROJECT_ROOT` | Source tree path in dev only.                                                                            |
+| Env var               | Purpose                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| `AETHON_DOCS_DIR`     | Bundled docs (`docs/aethon-agent/`) — system prompt points the model here.                |
+| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, skills, sessions, state file.                                  |
+| `AETHON_STATE_FILE`   | `~/.aethon/state.json` snapshot, debounced 200 ms.                                        |
+| `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` — pi `SessionManager.continueRecent` per tab.               |
+| `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release. |
+| `AETHON_PROJECT_ROOT` | Source tree path in dev only.                                                             |
 
 `agent/system-prompt.ts` composes DEFAULT → optional `~/.aethon/system-prompt.md`
 override → optional `~/.aethon/system-prompt-append.md` → runtime snapshot
@@ -254,6 +259,7 @@ Levels via `AETHON_LOG` (preferred) or `RUST_LOG` / `LOG_LEVEL`. Defaults
 
 Two sinks: stderr (live) and `~/.aethon/logs/` (daily-rotating, 7-day
 retention). Two file series share that directory:
+
 - `aethon.YYYY-MM-DD` — Rust (`tracing`)
 - `bridge.YYYY-MM-DD.log` — bun (`agent/logger.ts`)
 
@@ -266,6 +272,7 @@ wraps in an async IIFE and evals inside the webview. Use proactively
 after touching UI or agent code.
 
 Dev-only webview globals:
+
 - `window.__AETHON_STATE__()`, `window.__AETHON_SET_STATE__(next)`
 - `window.__AETHON_INVOKE__` (Tauri `invoke`)
 - `window.__AETHON_REGISTRY__` (`SkillRegistry`)

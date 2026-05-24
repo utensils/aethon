@@ -14,8 +14,8 @@
 //! drops both `ServiceDaemon`s.
 
 use std::sync::Arc;
-use tauri::async_runtime::JoinHandle;
 use tauri::AppHandle;
+use tauri::async_runtime::JoinHandle;
 use tokio::sync::Mutex;
 
 pub mod http;

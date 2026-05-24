@@ -22,21 +22,21 @@ provider.
 
 Aethon's Tauri shell forwards all bun-bridge stderr to the OS console.
 
-| Platform | Where |
-|---|---|
-| macOS | **Console.app** → search for `aethon` |
-| Linux | `journalctl --user -t aethon` (if launched via `.desktop`) or stdout if launched from terminal |
-| Windows | `%LOCALAPPDATA%\aethon\` log files |
+| Platform | Where                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------------- |
+| macOS    | **Console.app** → search for `aethon`                                                          |
+| Linux    | `journalctl --user -t aethon` (if launched via `.desktop`) or stdout if launched from terminal |
+| Windows  | `%LOCALAPPDATA%\aethon\` log files                                                             |
 
 In a dev build (`dev`), stderr streams directly to your terminal.
 
 ## The agent's bash output isn't streaming
 
 The "Agent bash" sub-tab shows output for the **active** agent tab.
-Switching to a different agent tab swaps in *that* tab's bash buffer.
+Switching to a different agent tab swaps in _that_ tab's bash buffer.
 A tab whose agent hasn't run any bash yet shows the placeholder text.
 
-If a tab *has* run bash and the panel is still blank:
+If a tab _has_ run bash and the panel is still blank:
 
 - Toggle the panel (`Cmd+\``) to force a re-render.
 - Confirm the agent process is healthy — `/extensions` should list
@@ -108,7 +108,8 @@ Aethon recreates the directory on next launch with fresh defaults.
 Open an issue at <https://github.com/utensils/aethon/issues>. Include:
 
 - OS and version.
-- Aethon version (Settings → bottom-left, or `~/.aethon/state.json`'s `version`).
+- Aethon version (sidebar title row, macOS About dialog, or the
+  `version` field in `package.json` for local dev builds).
 - The contents of `~/.aethon/state.json` (sanitize keys if they contain
   anything sensitive).
 - Stderr from the bun bridge (Console.app / journalctl / log file).

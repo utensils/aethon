@@ -593,9 +593,10 @@ the model can use them via the standard tool-use protocol.
 ### `tasks.start / dashboard.getRepoOverview / dashboard.refresh`
 
 Agent-side counterparts to the per-project dashboard's task launcher
-+ stats strip + refresh affordance. Gives the model UI parity:
-whatever the user can do via the dashboard composer is reachable from
-a tool call.
+
+- stats strip + refresh affordance. Gives the model UI parity:
+  whatever the user can do via the dashboard composer is reachable from
+  a tool call.
 
 ```ts
 aethon.tasks.start({
@@ -603,7 +604,7 @@ aethon.tasks.start({
   prompt,                     // the first chat message to send
   newWorktree?: boolean,      // create a fresh git worktree first
   branch?: string,            // required when newWorktree is true
-  baseBranch?: string,        // base to fork from (defaults to HEAD)
+  baseBranch?: string,        // base to fork from (project default, then origin/main)
 });
 // → { ok: true, data: { projectId } }
 //   Worktree-create + new-tab + send first message run as one chain;

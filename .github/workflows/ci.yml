@@ -34,6 +34,8 @@ jobs:
           bun-version: 1.x
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Version files are synced
+        run: bun run version:check
       - name: TypeScript typecheck
         run: bunx tsc -b --noEmit
       - name: ESLint
@@ -80,6 +82,8 @@ jobs:
           bun-version: 1.x
       - name: Install JS deps so the agent sidecar build can find them
         run: bun install --frozen-lockfile
+      - name: Version files are synced
+        run: bun run version:check
       - name: Cargo clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Cargo test (lib only — no Tauri runtime needed)

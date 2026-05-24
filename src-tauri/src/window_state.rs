@@ -84,7 +84,11 @@ pub struct MonitorSnapshot {
 impl MonitorSnapshot {
     fn from_monitor(m: &Monitor) -> Self {
         let scale = m.scale_factor();
-        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
         Self {
             x: f64::from(m.position().x) / scale,
             y: f64::from(m.position().y) / scale,
@@ -124,7 +128,10 @@ impl WindowStateStore {
 }
 
 fn state_file_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let home = app.path().home_dir().map_err(|e| format!("home_dir: {e}"))?;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
     let dir = crate::helpers::aethon_dir(Some(home))
         .ok_or_else(|| "aethon dir unresolved".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
@@ -235,7 +242,10 @@ pub fn schedule_save(app: AppHandle, label: String) {
 
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(SAVE_DEBOUNCE_MS)).await;
-        let current = app.state::<WindowStateStore>().generation(&label).load(Ordering::SeqCst);
+        let current = app
+            .state::<WindowStateStore>()
+            .generation(&label)
+            .load(Ordering::SeqCst);
         if current != token {
             return;
         }
@@ -258,7 +268,10 @@ pub fn save_now(app: &AppHandle, label: &str) -> Result<(), String> {
     }
 
     let scale = window.scale_factor().map_err(|e| format!("scale: {e}"))?;
-    let Some(monitor) = window.current_monitor().map_err(|e| format!("current_monitor: {e}"))? else {
+    let Some(monitor) = window
+        .current_monitor()
+        .map_err(|e| format!("current_monitor: {e}"))?
+    else {
         return Ok(()); // transient detached state — skip
     };
     let monitor_snap = MonitorSnapshot::from_monitor(&monitor);
@@ -280,8 +293,12 @@ pub fn save_now(app: &AppHandle, label: &str) -> Result<(), String> {
             ..base
         }
     } else {
-        let outer = window.outer_position().map_err(|e| format!("outer_position: {e}"))?;
-        let inner = window.inner_size().map_err(|e| format!("inner_size: {e}"))?;
+        let outer = window
+            .outer_position()
+            .map_err(|e| format!("outer_position: {e}"))?;
+        let inner = window
+            .inner_size()
+            .map_err(|e| format!("inner_size: {e}"))?;
         WindowState {
             x: f64::from(outer.x) / scale,
             y: f64::from(outer.y) / scale,
@@ -365,7 +382,12 @@ pub fn restoreable_state(state: &WindowState, monitors: &[MonitorSnapshot]) -> L
         y = target.y;
     }
 
-    LogicalRect { x, y, width, height }
+    LogicalRect {
+        x,
+        y,
+        width,
+        height,
+    }
 }
 
 fn exact_match<'a>(
@@ -388,7 +410,10 @@ fn intersects<'a>(
 ) -> Option<&'a MonitorSnapshot> {
     let right = window.x + window.width;
     let bottom = window.y + window.height;
-    let window_center = (window.x + window.width / 2.0, window.y + window.height / 2.0);
+    let window_center = (
+        window.x + window.width / 2.0,
+        window.y + window.height / 2.0,
+    );
     // With mixed-scale monitor arrangements the per-monitor logical
     // rects can overlap numerically, so first-overlap could pick the
     // wrong display. Among all intersecting candidates, return the one
@@ -427,7 +452,13 @@ mod tests {
     use super::*;
 
     fn mon(x: f64, y: f64, w: f64, h: f64, scale: f64) -> MonitorSnapshot {
-        MonitorSnapshot { x, y, width: w, height: h, scale }
+        MonitorSnapshot {
+            x,
+            y,
+            width: w,
+            height: h,
+            scale,
+        }
     }
 
     fn state(x: f64, y: f64, w: f64, h: f64, monitor: MonitorSnapshot) -> WindowState {
@@ -477,8 +508,7 @@ mod tests {
         let a = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
         let b = mon(1920.0, 0.0, 1920.0, 1080.0, 1.0);
         let c = mon(3840.0, 0.0, 1920.0, 1080.0, 1.0);
-        let out =
-            restoreable_state(&state(2020.0, 100.0, 800.0, 600.0, b), &[a, b, c]);
+        let out = restoreable_state(&state(2020.0, 100.0, 800.0, 600.0, b), &[a, b, c]);
         assert!(approx_eq(out.x, 2020.0));
         assert!(approx_eq(out.y, 100.0));
     }
@@ -490,10 +520,7 @@ mod tests {
         // match → intersect / nearest fallback.
         let retina = mon(0.0, 0.0, 1500.0, 900.0, 2.0);
         let one_x = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
-        let out = restoreable_state(
-            &state(100.0, 100.0, 800.0, 600.0, retina),
-            &[one_x],
-        );
+        let out = restoreable_state(&state(100.0, 100.0, 800.0, 600.0, retina), &[one_x]);
         // Intersects → translate dx=0; size unchanged logical 800×600.
         assert!(approx_eq(out.width, 800.0));
         assert!(approx_eq(out.height, 600.0));
@@ -503,10 +530,7 @@ mod tests {
     fn missing_monitor_falls_back_to_nearest_center() {
         let external = mon(1920.0, 0.0, 2560.0, 1440.0, 1.0);
         let laptop = mon(0.0, 0.0, 1440.0, 900.0, 1.0);
-        let out = restoreable_state(
-            &state(2120.0, 200.0, 800.0, 600.0, external),
-            &[laptop],
-        );
+        let out = restoreable_state(&state(2120.0, 200.0, 800.0, 600.0, external), &[laptop]);
         // Offset (200, 200) preserved onto laptop origin (0, 0).
         assert!(approx_eq(out.x, 200.0));
         assert!(approx_eq(out.y, 200.0));
@@ -517,7 +541,13 @@ mod tests {
         // Saved on 1920×1080, that monitor's resolution toggled.
         let now = mon(0.0, 0.0, 2560.0, 1440.0, 1.0);
         let out = restoreable_state(
-            &state(100.0, 100.0, 800.0, 600.0, mon(0.0, 0.0, 1920.0, 1080.0, 1.0)),
+            &state(
+                100.0,
+                100.0,
+                800.0,
+                600.0,
+                mon(0.0, 0.0, 1920.0, 1080.0, 1.0),
+            ),
             &[now],
         );
         assert!(approx_eq(out.x, 100.0));
@@ -528,8 +558,7 @@ mod tests {
     fn oversize_window_clamped_to_target_monitor() {
         let small = mon(0.0, 0.0, 1920.0, 1080.0, 1.0);
         let big_phantom = mon(0.0, 0.0, 3840.0, 2160.0, 1.0);
-        let out =
-            restoreable_state(&state(100.0, 100.0, 3000.0, 1800.0, big_phantom), &[small]);
+        let out = restoreable_state(&state(100.0, 100.0, 3000.0, 1800.0, big_phantom), &[small]);
         assert!(out.width <= small.width + 0.5);
         assert!(out.height <= small.height + 0.5);
     }
@@ -547,7 +576,13 @@ mod tests {
         let mut store = PersistedStore::default();
         store.states.insert(
             "main".into(),
-            state(100.0, 200.0, 800.0, 600.0, mon(0.0, 0.0, 1920.0, 1080.0, 1.0)),
+            state(
+                100.0,
+                200.0,
+                800.0,
+                600.0,
+                mon(0.0, 0.0, 1920.0, 1080.0, 1.0),
+            ),
         );
         let back: PersistedStore =
             serde_json::from_str(&serde_json::to_string(&store).unwrap()).unwrap();
@@ -604,7 +639,13 @@ mod tests {
         let mut store = PersistedStore::default();
         store.states.insert(
             "main".into(),
-            state(300.0, 200.0, 1000.0, 700.0, mon(0.0, 0.0, 2056.0, 1329.0, 2.0)),
+            state(
+                300.0,
+                200.0,
+                1000.0,
+                700.0,
+                mon(0.0, 0.0, 2056.0, 1329.0, 2.0),
+            ),
         );
         let migrated = migrate(store);
         let m = migrated.states.get("main").unwrap();

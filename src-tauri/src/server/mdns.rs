@@ -74,7 +74,9 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
     // a remote (codex P2 review finding).
     let local_fingerprint = crate::commands::host::local_host_info().fingerprint;
     let mdns = ServiceDaemon::new().map_err(|e| format!("daemon: {e}"))?;
-    let receiver = mdns.browse(SERVICE_TYPE).map_err(|e| format!("browse: {e}"))?;
+    let receiver = mdns
+        .browse(SERVICE_TYPE)
+        .map_err(|e| format!("browse: {e}"))?;
     tauri::async_runtime::spawn(async move {
         // Hold the daemon alive for the task lifetime.
         let _mdns = mdns;

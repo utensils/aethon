@@ -914,6 +914,8 @@ branch + base inputs. Submit emits `start-task` with `{projectId,
 prompt, newWorktree?, branch?, baseBranch?, worktreeId?}`; the
 dashboard handler routes this to the App-level `startTaskInProject`
 orchestrator (the same path the `aethon.tasks.start` pi tool calls).
+When `baseBranch` is omitted, worktree creation uses the project's
+configured worktree base and then falls back to `origin/main`.
 Reusable standalone in custom layouts.
 
 ### `project-card`

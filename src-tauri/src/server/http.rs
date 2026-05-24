@@ -8,7 +8,7 @@
 
 use std::net::SocketAddr;
 
-use axum::{routing::get, Json, Router};
+use axum::{Json, Router, routing::get};
 use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpListener;
 
@@ -27,10 +27,13 @@ pub async fn serve(info: HostInfo) -> Result<(u16, JoinHandle<()>), String> {
         .port();
     let app = Router::new()
         .route("/health", get(|| async { "aethon" }))
-        .route("/status", get(move || {
-            let info = info.clone();
-            async move { Json(info) }
-        }));
+        .route(
+            "/status",
+            get(move || {
+                let info = info.clone();
+                async move { Json(info) }
+            }),
+        );
     let task = tauri::async_runtime::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
             tracing::warn!(target: "aethon::server::http", "serve ended: {e}");

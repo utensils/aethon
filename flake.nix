@@ -294,6 +294,8 @@
                 help = "Full CI gate: clippy + tsc + ESLint + cargo test + vitest";
                 command = ''
                   set -euo pipefail
+                  echo "==> node scripts/sync-version.mjs --check"
+                  node scripts/sync-version.mjs --check
                   echo "==> cargo clippy"
                   cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
                   echo "==> bunx tsc -b --noEmit"

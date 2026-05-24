@@ -120,7 +120,9 @@ fn canonical_root(root: &str) -> Result<PathBuf, String> {
 /// the platform reports a value before 1970 (shouldn't happen, but the
 /// API allows it).
 fn unix_seconds(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    time.duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Non-recursive directory listing. Hidden files (leading `.`) are
@@ -131,7 +133,8 @@ pub fn fs_list_dir(root: String, path: String) -> Result<Vec<FsEntry>, String> {
     let target = validated_target(&root, &path)?;
     let root_canon = canonical_root(&root)?;
     ensure_symlink_safe(&target, &root_canon)?;
-    let read = std::fs::read_dir(&target).map_err(|e| format!("read_dir {}: {e}", target.display()))?;
+    let read =
+        std::fs::read_dir(&target).map_err(|e| format!("read_dir {}: {e}", target.display()))?;
     let mut entries: Vec<FsEntry> = Vec::new();
     for entry in read.flatten() {
         let entry_path = entry.path();
@@ -152,16 +155,16 @@ pub fn fs_list_dir(root: String, path: String) -> Result<Vec<FsEntry>, String> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        let modified = metadata
-            .modified()
-            .ok()
-            .map(unix_seconds)
-            .unwrap_or(0);
+        let modified = metadata.modified().ok().map(unix_seconds).unwrap_or(0);
         entries.push(FsEntry {
             name,
             path: entry_path.to_string_lossy().into_owned(),
             kind,
-            size: if metadata.is_file() { metadata.len() } else { 0 },
+            size: if metadata.is_file() {
+                metadata.len()
+            } else {
+                0
+            },
             modified,
         });
     }
@@ -186,7 +189,8 @@ pub fn fs_read_file_base64(root: String, path: String) -> Result<String, String>
     let target = validated_target(&root, &path)?;
     let root_canon = canonical_root(&root)?;
     ensure_symlink_safe(&target, &root_canon)?;
-    let metadata = std::fs::metadata(&target).map_err(|e| format!("stat {}: {e}", target.display()))?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|e| format!("stat {}: {e}", target.display()))?;
     if metadata.is_dir() {
         return Err(format!("not a file: {}", target.display()));
     }
@@ -208,7 +212,8 @@ pub fn fs_read_file(root: String, path: String) -> Result<String, String> {
     let target = validated_target(&root, &path)?;
     let root_canon = canonical_root(&root)?;
     ensure_symlink_safe(&target, &root_canon)?;
-    let metadata = std::fs::metadata(&target).map_err(|e| format!("stat {}: {e}", target.display()))?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|e| format!("stat {}: {e}", target.display()))?;
     if metadata.is_dir() {
         return Err(format!("not a file: {}", target.display()));
     }
@@ -269,9 +274,9 @@ pub fn fs_write_file(root: String, path: String, content: String) -> Result<(), 
     // `ensure_symlink_safe` so even the lexical layer would catch a
     // traversal in the leaf name; the create-new flag closes the
     // TOCTOU window between validation and write.
-    let parent = target.parent().ok_or_else(|| {
-        format!("target has no parent dir: {}", target.display())
-    })?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("target has no parent dir: {}", target.display()))?;
     let target_name = target
         .file_name()
         .ok_or_else(|| format!("target has no leaf name: {}", target.display()))?
@@ -355,7 +360,10 @@ pub fn fs_rename(root: String, from: String, to: String) -> Result<(), String> {
     ensure_symlink_safe(&from_target, &root_canon)?;
     ensure_symlink_safe(&to_target, &root_canon)?;
     if to_target.exists() {
-        return Err(format!("destination already exists: {}", to_target.display()));
+        return Err(format!(
+            "destination already exists: {}",
+            to_target.display()
+        ));
     }
     std::fs::rename(&from_target, &to_target).map_err(|e| {
         format!(
@@ -500,9 +508,7 @@ pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), Strin
     let req = PathBuf::from(&path);
     let p = crate::helpers::resolve_inside_root(&root_path, &req)
         .ok_or_else(|| format!("path outside root: {path}"))?;
-    let canon = p
-        .canonicalize()
-        .map_err(|e| format!("canonicalize: {e}"))?;
+    let canon = p.canonicalize().map_err(|e| format!("canonicalize: {e}"))?;
     let root_canon = root_path
         .canonicalize()
         .map_err(|e| format!("canonicalize root: {e}"))?;
@@ -567,9 +573,7 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     if path.contains('\0') {
         return Err("path contains NUL".to_string());
     }
-    let canon = p
-        .canonicalize()
-        .map_err(|e| format!("canonicalize: {e}"))?;
+    let canon = p.canonicalize().map_err(|e| format!("canonicalize: {e}"))?;
     if !canon.is_dir() {
         return Err(format!("not a directory: {path}"));
     }
@@ -612,9 +616,7 @@ pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> 
     let req = PathBuf::from(&path);
     let p = crate::helpers::resolve_inside_root(&root_path, &req)
         .ok_or_else(|| format!("path outside root: {path}"))?;
-    let canon = p
-        .canonicalize()
-        .map_err(|e| format!("canonicalize: {e}"))?;
+    let canon = p.canonicalize().map_err(|e| format!("canonicalize: {e}"))?;
     let root_canon = root_path
         .canonicalize()
         .map_err(|e| format!("canonicalize root: {e}"))?;
@@ -750,7 +752,11 @@ mod tests {
         std::fs::write(canon.join("src").join("nested.ts"), "x").unwrap();
         // Should be skipped:
         std::fs::create_dir_all(canon.join("node_modules").join("foo")).unwrap();
-        std::fs::write(canon.join("node_modules").join("foo").join("ignored.js"), "x").unwrap();
+        std::fs::write(
+            canon.join("node_modules").join("foo").join("ignored.js"),
+            "x",
+        )
+        .unwrap();
 
         let paths = fs_walk_project(s(&canon)).unwrap();
         let leaves: Vec<&str> = paths

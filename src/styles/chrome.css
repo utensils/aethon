@@ -646,8 +646,9 @@ body.ae-resizing-sidebar .a2ui-layout {
   line-height: 1.25;
   cursor: pointer;
   color: var(--text);
-  transition: background var(--motion-fast) var(--ease-out),
-              color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
   user-select: none;
   min-width: 0;
   border-radius: var(--radius-sm);
@@ -785,8 +786,9 @@ body.ae-resizing-sidebar .a2ui-layout {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-xs);
-  transition: color var(--motion-fast) var(--ease-out),
-              background var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 .a2ui-sidebar-item-discl svg {
   display: block;
@@ -1742,10 +1744,22 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   flex-shrink: 0;
 }
-.ae-pr-merged { background: rgba(140, 82, 255, 0.15); color: #b58aff; }
-.ae-pr-open { background: rgba(46, 160, 67, 0.15); color: #56d364; }
-.ae-pr-closed { background: rgba(248, 81, 73, 0.15); color: #f97a73; }
-.ae-pr-draft { background: var(--bg-input); color: var(--text-dim); }
+.ae-pr-merged {
+  background: rgba(140, 82, 255, 0.15);
+  color: #b58aff;
+}
+.ae-pr-open {
+  background: rgba(46, 160, 67, 0.15);
+  color: #56d364;
+}
+.ae-pr-closed {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f97a73;
+}
+.ae-pr-draft {
+  background: var(--bg-input);
+  color: var(--text-dim);
+}
 .a2ui-worktree-landing-gh-pr-number {
   font-family: var(--font-mono);
   color: var(--text-dim);
@@ -2354,13 +2368,27 @@ body.ae-resizing-sidebar .a2ui-layout {
   opacity: 0.4;
   animation: ae-dot-pulse 1.2s ease-in-out infinite both;
 }
-.ae-typing-dot:nth-child(1) { animation-delay: 0s; }
-.ae-typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.ae-typing-dot:nth-child(3) { animation-delay: 0.4s; }
+.ae-typing-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+.ae-typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.ae-typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes ae-dot-pulse {
-  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
-  40%            { opacity: 0.9;  transform: scale(1.1); }
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 0.9;
+    transform: scale(1.1);
+  }
 }
 
 /* ---- Chat input --------------------------------------------------------- */
@@ -2540,10 +2568,11 @@ body.ae-resizing-composer * {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  transition: background var(--motion-fast) var(--ease-out),
-              transform var(--motion-fast) var(--ease-out),
-              opacity var(--motion-fast) var(--ease-out),
-              box-shadow var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 .a2ui-chat-input-send:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 90%, white);
@@ -2614,7 +2643,10 @@ body.ae-resizing-composer * {
 
 .a2ui-status-bar {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+  grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr) minmax(
+      0,
+      auto
+    );
   align-items: center;
   gap: var(--space-3);
   height: 22px;
@@ -2774,7 +2806,9 @@ body.ae-resizing-composer * {
   min-inline-size: 4rem;
   max-inline-size: min(18rem, 36vw);
   flex: 1 1 0;
-  transition: color 120ms var(--ease-out, ease), background-color 120ms var(--ease-out, ease);
+  transition:
+    color 120ms var(--ease-out, ease),
+    background-color 120ms var(--ease-out, ease);
 }
 
 /* Underline marker — sits flush with the strip's bottom border so a
@@ -2999,7 +3033,11 @@ body.ae-resizing-composer * {
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: color-mix(in srgb, var(--bg) calc(var(--opacity-overlay-scrim) * 100%), transparent);
+  background: color-mix(
+    in srgb,
+    var(--bg) calc(var(--opacity-overlay-scrim) * 100%),
+    transparent
+  );
   backdrop-filter: blur(6px);
   animation: ae-palette-fade var(--motion-fast) var(--ease-out);
 }
@@ -3018,7 +3056,9 @@ body.ae-resizing-composer * {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-overlay), 0 0 0 1px var(--accent-soft);
+  box-shadow:
+    var(--shadow-overlay),
+    0 0 0 1px var(--accent-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3828,7 +3868,9 @@ body.ae-resizing-terminal * {
   min-width: 0;
   max-width: 100%;
   width: fit-content;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 .ae-tool-card[open] {
   border-radius: 10px;
@@ -3916,7 +3958,9 @@ body.ae-resizing-terminal * {
 }
 
 @keyframes ae-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ae-tool-card-name {
@@ -4079,11 +4123,8 @@ body.ae-resizing-terminal * {
   align-items: center;
   justify-content: center;
   overflow: auto;
-  background:
-    repeating-conic-gradient(
-      var(--bg-elev) 0% 25%,
-      var(--bg) 0% 50%
-    ) 0 0 / 24px 24px;
+  background: repeating-conic-gradient(var(--bg-elev) 0% 25%, var(--bg) 0% 50%)
+    0 0 / 24px 24px;
 }
 .ae-image-viewer-img {
   max-width: 100%;
@@ -4411,8 +4452,12 @@ span.a2ui-project-card-icon--initial {
   cursor: pointer;
   transition: opacity var(--motion-fast) ease;
 }
-.a2ui-projects-dashboard-primary:hover { opacity: 0.88; }
-.a2ui-projects-dashboard-primary:active { opacity: 0.78; }
+.a2ui-projects-dashboard-primary:hover {
+  opacity: 0.88;
+}
+.a2ui-projects-dashboard-primary:active {
+  opacity: 0.78;
+}
 .a2ui-projects-dashboard-primary:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -4555,12 +4600,20 @@ span.a2ui-project-card-icon--initial {
     background var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out);
 }
-.a2ui-projects-dashboard-sessions li:hover .a2ui-projects-dashboard-session-delete,
+.a2ui-projects-dashboard-sessions
+  li:hover
+  .a2ui-projects-dashboard-session-delete,
 .a2ui-projects-dashboard-session-delete:focus-visible,
-.a2ui-projects-dashboard-sessions li.is-confirming .a2ui-projects-dashboard-session-delete,
-.a2ui-project-dashboard-sessions li:hover .a2ui-project-dashboard-session-delete,
+.a2ui-projects-dashboard-sessions
+  li.is-confirming
+  .a2ui-projects-dashboard-session-delete,
+.a2ui-project-dashboard-sessions
+  li:hover
+  .a2ui-project-dashboard-session-delete,
 .a2ui-project-dashboard-session-delete:focus-visible,
-.a2ui-project-dashboard-sessions li.is-confirming .a2ui-project-dashboard-session-delete {
+.a2ui-project-dashboard-sessions
+  li.is-confirming
+  .a2ui-project-dashboard-session-delete {
   opacity: 1;
   transform: scale(1);
 }
@@ -4991,7 +5044,9 @@ button.a2ui-gh-stat:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
 }
 .a2ui-dashboard-issue-row:hover {
   background: var(--bg-hover);
@@ -5053,7 +5108,9 @@ button.a2ui-gh-stat:hover {
   color: var(--text);
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--motion-fast) ease, background var(--motion-fast) ease;
+  transition:
+    opacity var(--motion-fast) ease,
+    background var(--motion-fast) ease;
 }
 .a2ui-dashboard-issue-row:hover .a2ui-dashboard-issue-send,
 .a2ui-dashboard-issue-row:focus-within .a2ui-dashboard-issue-send,
@@ -5238,7 +5295,9 @@ button.a2ui-gh-stat:hover {
   cursor: pointer;
   transition: opacity var(--motion-fast) ease;
 }
-.a2ui-task-launcher-submit:hover { opacity: 0.88; }
+.a2ui-task-launcher-submit:hover {
+  opacity: 0.88;
+}
 .a2ui-task-launcher-submit:disabled {
   opacity: 0.4;
   cursor: not-allowed;

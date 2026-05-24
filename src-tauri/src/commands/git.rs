@@ -174,9 +174,9 @@ pub async fn git_worktrees(project_path: String) -> Result<Vec<Worktree>, String
         // Non-zero usually means "not a git repo"; treat as empty.
         return Ok(Vec::new());
     }
-    Ok(parse_worktrees_porcelain(
-        &String::from_utf8_lossy(&output.stdout),
-    ))
+    Ok(parse_worktrees_porcelain(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
 }
 
 fn parse_worktrees_porcelain(text: &str) -> Vec<Worktree> {
@@ -274,9 +274,7 @@ pub async fn git_worktree_add(
     } else {
         cmd.arg(&target_path).arg(&branch);
     }
-    let output = cmd
-        .output()
-        .map_err(|e| format!("git worktree add: {e}"))?;
+    let output = cmd.output().map_err(|e| format!("git worktree add: {e}"))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -287,10 +285,7 @@ pub async fn git_worktree_add(
         .ok()
         .map(|p| p.to_string_lossy().to_string());
     list.into_iter()
-        .find(|w| {
-            w.path == target_path
-                || canonical.as_deref().is_some_and(|c| c == w.path)
-        })
+        .find(|w| w.path == target_path || canonical.as_deref().is_some_and(|c| c == w.path))
         .ok_or_else(|| "worktree created but missing from git worktree list".to_string())
 }
 
@@ -309,10 +304,7 @@ pub async fn git_worktree_remove(
         .map(|p| p.to_string_lossy().to_string());
     let target = list
         .iter()
-        .find(|w| {
-            w.path == worktree_path
-                || canonical.as_deref().is_some_and(|c| c == w.path)
-        })
+        .find(|w| w.path == worktree_path || canonical.as_deref().is_some_and(|c| c == w.path))
         .ok_or_else(|| format!("worktree not tracked: {worktree_path}"))?;
     if target.is_main {
         return Err("cannot remove the main worktree".to_string());
@@ -344,7 +336,11 @@ pub async fn git_branch_list(project_path: String) -> Result<Vec<BranchInfo>, St
     let output = Command::new("git")
         .arg("-C")
         .arg(&dir)
-        .args(["for-each-ref", "--format=%(HEAD) %(refname:short)", "refs/heads/"])
+        .args([
+            "for-each-ref",
+            "--format=%(HEAD) %(refname:short)",
+            "refs/heads/",
+        ])
         .output()
         .map_err(|e| format!("git for-each-ref: {e}"))?;
     if !output.status.success() {
@@ -426,9 +422,7 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
         return status;
     }
     // 1. gh available + authed?
-    let auth = Command::new("gh")
-        .args(["auth", "status"])
-        .output();
+    let auth = Command::new("gh").args(["auth", "status"]).output();
     let Ok(out) = auth else { return status };
     if !out.status.success() {
         return status;
@@ -442,13 +436,18 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     //    invocation. Output empty / non-zero on non-GitHub remotes,
     //    which doubles as our "is this on GitHub?" check.
     let repo_out = Command::new("gh")
-        .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+        .args([
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner",
+            "-q",
+            ".nameWithOwner",
+        ])
         .current_dir(&dir)
         .output();
     let repo_str = match repo_out {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim().to_string()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => return status,
     };
     if repo_str.is_empty() {
@@ -500,48 +499,47 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
         .output();
     if let Ok(o) = pr_out
         && o.status.success()
-        && let Ok(parsed) =
-            serde_json::from_slice::<Vec<serde_json::Value>>(&o.stdout)
+        && let Ok(parsed) = serde_json::from_slice::<Vec<serde_json::Value>>(&o.stdout)
     {
         for entry in parsed {
-                    let number = entry.get("number").and_then(|v| v.as_u64());
-                    let state = entry
-                        .get("state")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let title = entry
-                        .get("title")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let url = entry
-                        .get("url")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let is_draft = entry.get("isDraft").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let base_ref_name = entry
-                        .get("baseRefName")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let merged = entry
-                        .get("mergedAt")
-                        .map(|v| !v.is_null())
-                        .unwrap_or(false);
-                    if let Some(n) = number {
-                        status.prs.push(GhPr {
-                            number: n,
-                            state,
-                            title,
-                            url,
-                            is_draft,
-                            merged,
-                            base_ref_name,
-                        });
-                    }
-                }
+            let number = entry.get("number").and_then(|v| v.as_u64());
+            let state = entry
+                .get("state")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let title = entry
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let url = entry
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let is_draft = entry
+                .get("isDraft")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let base_ref_name = entry
+                .get("baseRefName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let merged = entry.get("mergedAt").map(|v| !v.is_null()).unwrap_or(false);
+            if let Some(n) = number {
+                status.prs.push(GhPr {
+                    number: n,
+                    state,
+                    title,
+                    url,
+                    is_draft,
+                    merged,
+                    base_ref_name,
+                });
+            }
+        }
     }
     status
 }
@@ -588,11 +586,8 @@ pub(crate) struct RepoViewParts {
 pub(crate) fn url_encode_path_segment(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
-        let unreserved = b.is_ascii_alphanumeric()
-            || b == b'-'
-            || b == b'_'
-            || b == b'.'
-            || b == b'~';
+        let unreserved =
+            b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~';
         if unreserved {
             out.push(b as char);
         } else {
@@ -615,7 +610,10 @@ pub(crate) fn parse_repo_view_json(s: &str) -> Option<RepoViewParts> {
             .get("defaultBranchRef")
             .and_then(|x| x.get("name"))
             .and_then(strip_empty),
-        stargazer_count: v.get("stargazerCount").and_then(|x| x.as_i64()).unwrap_or(0),
+        stargazer_count: v
+            .get("stargazerCount")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
         fork_count: v.get("forkCount").and_then(|x| x.as_i64()).unwrap_or(0),
         pushed_at: v.get("pushedAt").and_then(strip_empty),
     })
@@ -686,15 +684,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
     let issue_count_fut = async move {
         let count_out = Command::new("gh")
             .args([
-                "issue",
-                "list",
-                "--state",
-                "open",
-                "--limit",
-                "1000",
-                "--json",
-                "number",
-                "-q",
+                "issue", "list", "--state", "open", "--limit", "1000", "--json", "number", "-q",
                 "length",
             ])
             .current_dir(&dir_c)
@@ -807,10 +797,7 @@ pub(crate) fn parse_gh_issue_list(s: &str) -> Vec<GhIssue> {
                 .and_then(|a| a.get("login"))
                 .and_then(|s| s.as_str())
                 .map(String::from);
-            let comments = item
-                .get("comments")
-                .and_then(|x| x.as_i64())
-                .unwrap_or(0);
+            let comments = item.get("comments").and_then(|x| x.as_i64()).unwrap_or(0);
             let labels = item
                 .get("labels")
                 .and_then(|x| x.as_array())
@@ -819,10 +806,7 @@ pub(crate) fn parse_gh_issue_list(s: &str) -> Vec<GhIssue> {
                         .iter()
                         .filter_map(|l| {
                             let name = l.get("name")?.as_str()?.to_string();
-                            let color = l
-                                .get("color")
-                                .and_then(|c| c.as_str())
-                                .map(String::from);
+                            let color = l.get("color").and_then(|c| c.as_str()).map(String::from);
                             Some(GhIssueLabel { name, color })
                         })
                         .collect()
@@ -917,8 +901,8 @@ pub async fn gh_issue_view(project_path: String, number: i64) -> Result<GhIssueD
         return Err(format!("gh issue view: {}", stderr.trim()));
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let v: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| format!("gh issue view: bad json: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("gh issue view: bad json: {e}"))?;
     let title = v
         .get("title")
         .and_then(|x| x.as_str())
@@ -961,7 +945,14 @@ pub async fn gh_repo_avatar_url(project_path: String) -> Option<String> {
         return None;
     }
     let out = Command::new("gh")
-        .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+        .args([
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner",
+            "-q",
+            ".nameWithOwner",
+        ])
         .current_dir(&dir)
         .output()
         .await
@@ -1012,19 +1003,22 @@ mod tests {
         Command::new("git")
             .arg("-C")
             .arg(path)
-            .args([
-                "-c", "init.defaultBranch=main",
-                "init", "-q",
-            ])
+            .args(["-c", "init.defaultBranch=main", "init", "-q"])
             .status()
             .expect("git init");
         Command::new("git")
             .arg("-C")
             .arg(path)
             .args([
-                "-c", "user.name=test",
-                "-c", "user.email=test@example.com",
-                "commit", "--allow-empty", "-q", "-m", "init",
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-q",
+                "-m",
+                "init",
             ])
             .status()
             .expect("git commit");
@@ -1084,7 +1078,8 @@ mod tests {
 
     #[test]
     fn parses_locked_worktree() {
-        let text = "worktree /tmp/repo\nHEAD ddddddd\nbranch refs/heads/main\nlocked some reason\n\n";
+        let text =
+            "worktree /tmp/repo\nHEAD ddddddd\nbranch refs/heads/main\nlocked some reason\n\n";
         let out = parse_worktrees_porcelain(text);
         assert!(out[0].locked);
     }
@@ -1207,9 +1202,7 @@ mod tests {
         .await
         .expect("worktree add");
         assert_eq!(wt.branch.as_deref(), Some("feature-x"));
-        let listed = git_worktrees(project_path.clone())
-            .await
-            .expect("list");
+        let listed = git_worktrees(project_path.clone()).await.expect("list");
         assert_eq!(listed.len(), 2);
         git_worktree_remove(project_path.clone(), target_str, false)
             .await

@@ -302,6 +302,10 @@
   .ae-tool-spinner {
     animation: none !important;
   }
-  .ae-typing-dot { opacity: 0.35; }
-  .ae-tool-spinner { opacity: 0.6; }
+  .ae-typing-dot {
+    opacity: 0.35;
+  }
+  .ae-tool-spinner {
+    opacity: 0.6;
+  }
 }

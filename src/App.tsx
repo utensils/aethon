@@ -49,6 +49,7 @@ import {
   type ProjectsState,
 } from "./projects";
 import { shouldReloadForHmrPayload } from "./utils/hmr";
+import pkg from "../package.json" with { type: "json" };
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -140,9 +141,9 @@ export default function App() {
         logoUrl,
         // App version surfaced as a state slice so layout JSON can $ref it
         // (e.g. sidebar's `version` prop). Single source of truth is
-        // package.json — vite injects __APP_VERSION__ at build time. The
+        // package.json, imported directly so dev HMR sees bumps. The
         // "v" prefix matches the human-friendly format the UI used before.
-        appVersion: `v${__APP_VERSION__}`,
+        appVersion: `v${pkg.version}`,
         tabs,
         activeTabId,
         // Mirror keys point at the active tab's empty view so layout bindings
