@@ -6,5 +6,9 @@ import type { BridgeMessageHandler } from "./types";
  *  "queue > 0 keeps Stop" gate. */
 export const handleQueueReset: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
-  ctx.updateTab(tabId, (tab) => ({ ...tab, queueCount: 0 }));
+  const queued =
+    typeof data.queued === "number" && Number.isFinite(data.queued)
+      ? Math.max(0, Math.floor(data.queued))
+      : 0;
+  ctx.updateTab(tabId, (tab) => ({ ...tab, queueCount: queued }));
 };

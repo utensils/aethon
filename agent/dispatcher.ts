@@ -452,7 +452,13 @@ export async function handleChat(
     state.tabContext
       .run(tabId, () => tab.session.followUp(content))
       .catch((err: unknown) => {
+        tab.queuedCount = Math.max(0, tab.queuedCount - 1);
         const message = err instanceof Error ? err.message : String(err);
+        deps.send({
+          type: "queue_reset",
+          tabId,
+          queued: tab.queuedCount,
+        });
         deps.send({ type: "error", tabId, message: `followUp: ${message}` });
       });
     deps.send({ type: "queued", tabId });

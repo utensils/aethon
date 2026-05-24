@@ -126,6 +126,32 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("marks the local user message failed when send_message rejects", async () => {
+    invoke.mockRejectedValueOnce(new Error("bridge closed"));
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("lost in transit");
+    });
+
+    const messages = (stateRef.current.tabs as Tab[])[0].messages;
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          text: "lost in transit",
+          delivery: "failed",
+        }),
+        expect.objectContaining({
+          role: "agent",
+          text: expect.stringContaining("Connection error:"),
+        }),
+      ]),
+    );
+    expect((stateRef.current.tabs as Tab[])[0].waiting).toBe(false);
+  });
+
   it("sends command-enter messages with steer mode", async () => {
     const { ctx, stateRef } = buildContext({ waiting: true });
     const { result } = renderHook(() => useChat(ctx));

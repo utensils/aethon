@@ -104,6 +104,42 @@ describe("handleChat", () => {
     expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
   });
 
+  it("rolls back the queue count when followUp rejects", async () => {
+    const f = makeFixture();
+    const tab = fakeTabRecord({
+      promptInFlight: true,
+      queuedCount: 2,
+      session: {
+        prompt: () => Promise.resolve(),
+        followUp: () => Promise.reject(new Error("queue offline")),
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "after this",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+
+    expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
+    await vi.waitFor(() => {
+      expect(tab.queuedCount).toBe(2);
+      expect(f.sent).toContainEqual({
+        type: "queue_reset",
+        tabId: "tab-1",
+        queued: 2,
+      });
+      expect(f.sent).toContainEqual({
+        type: "error",
+        tabId: "tab-1",
+        message: "followUp: queue offline",
+      });
+    });
+  });
+
   it("steers command-enter messages into the active prompt", async () => {
     const f = makeFixture();
     const promptCalls: unknown[][] = [];
