@@ -14,8 +14,17 @@ function write(path, content) {
   writeFileSync(join(root, path), content);
 }
 
+function eolOf(content) {
+  return content.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function withEol(content, eol) {
+  return content.replace(/\r?\n/g, eol);
+}
+
 function update(path, next) {
   const before = read(path);
+  next = withEol(next, eolOf(before));
   if (before === next) return [];
   if (check) return [path];
   write(path, next);
@@ -61,7 +70,7 @@ mismatches.push(
   ...update(
     "src-tauri/Cargo.lock",
     read("src-tauri/Cargo.lock").replace(
-      /(\[\[package\]\]\nname = "aethon"\nversion = )"[^"]+"/,
+      /(\[\[package\]\]\r?\nname = "aethon"\r?\nversion = )"[^"]+"/,
       `$1"${version}"`,
     ),
   ),
