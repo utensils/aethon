@@ -96,6 +96,7 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
   await expect(page.locator(".a2ui-tab")).toContainText("+1");
   await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
+  await expect(page.getByRole("button", { name: "Stop + clear" })).toBeVisible();
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });

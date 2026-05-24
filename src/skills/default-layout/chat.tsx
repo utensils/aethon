@@ -811,6 +811,13 @@ export function ChatInput({
   const stopTitle = props.stopTitle
     ? resolveString(props.stopTitle, state)
     : "Stop the current prompt";
+  const queuedMessageLabel = `${queueCount} message${queueCount === 1 ? "" : "s"} queued`;
+  const effectiveStopLabel =
+    queueCount > 0 && !props.stopLabel ? "Stop + clear" : stopLabel;
+  const effectiveStopTitle =
+    queueCount > 0
+      ? `Stop the current prompt and clear ${queuedMessageLabel}`
+      : stopTitle;
   const queueBadgeFormat = props.queueBadgeFormat
     ? resolveString(props.queueBadgeFormat, state)
     : "+{n}";
@@ -1241,7 +1248,7 @@ export function ChatInput({
         {queueCount > 0 && (
           <span
             className="a2ui-chat-input-queue"
-            title={`${queueCount} message${queueCount === 1 ? "" : "s"} queued behind the current prompt`}
+            title={`${queuedMessageLabel} behind the current prompt`}
           >
             {queueBadgeFormat.replace("{n}", String(queueCount))}
           </span>
@@ -1251,8 +1258,8 @@ export function ChatInput({
             type="button"
             className="a2ui-chat-input-send a2ui-chat-input-stop"
             onClick={handleStop}
-            title={stopTitle}
-            aria-label={stopLabel}
+            title={effectiveStopTitle}
+            aria-label={effectiveStopLabel}
           >
             <svg
               className="a2ui-chat-input-send-icon"
@@ -1270,7 +1277,9 @@ export function ChatInput({
                 fill="currentColor"
               />
             </svg>
-            <span className="a2ui-chat-input-send-label">{stopLabel}</span>
+            <span className="a2ui-chat-input-send-label">
+              {effectiveStopLabel}
+            </span>
           </button>
         ) : (
           <button

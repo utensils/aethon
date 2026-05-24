@@ -113,6 +113,21 @@ describe("ChatInput", () => {
     expect(screen.queryByText("Enter queues")).toBeNull();
   });
 
+  it("makes stop queue-clearing behavior visible when follow-ups are queued", () => {
+    renderInput(
+      vi.fn(),
+      { disabled: { $ref: "/waiting" }, queueCount: { $ref: "/queueCount" } },
+      { waiting: true, queueCount: 2 },
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Stop + clear" }).getAttribute("title"),
+    ).toBe("Stop the current prompt and clear 2 messages queued");
+    expect(screen.getByText("+2").getAttribute("title")).toBe(
+      "2 messages queued behind the current prompt",
+    );
+  });
+
   it("renders queued and steered delivery badges on user messages", () => {
     renderHistory({
       messages: [
