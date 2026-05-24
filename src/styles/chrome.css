@@ -2646,10 +2646,9 @@ body.ae-resizing-composer * {
 
 .a2ui-status-bar {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(
-      10rem,
-      1fr
-    ) minmax(0, auto);
+  grid-template-columns:
+    minmax(0, auto) minmax(0, auto) minmax(10rem, 1fr)
+    minmax(0, auto);
   align-items: center;
   gap: var(--space-3);
   height: 22px;
