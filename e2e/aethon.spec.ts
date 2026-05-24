@@ -87,12 +87,15 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(page.getByText("Enter queues")).toBeVisible();
+  await expect(page.getByText("Cmd/Ctrl+Enter steers")).toBeVisible();
 
   await page.locator(".a2ui-chat-input-field").fill("queued prompt");
   await page.keyboard.press("Enter");
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
   await expect(page.locator(".a2ui-tab")).toContainText("+1");
+  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
@@ -110,6 +113,7 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
     .toEqual({ waiting: false, queueCount: 0, status: "ready" });
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
+  await expect(page.getByText("Enter queues")).toHaveCount(0);
 
   const calls = await getInvokeCalls(page);
   const sends = calls.filter((c) => c.cmd === "send_message");
@@ -140,6 +144,7 @@ test("steers Command-Enter into the running turn without queuing it", async ({
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
   await expect(page.locator(".a2ui-tab")).not.toContainText("+1");
+  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
@@ -189,6 +194,8 @@ test("steering during an existing follow-up queue preserves the queued turn", as
   );
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
+  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
+  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });

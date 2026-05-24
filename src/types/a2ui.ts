@@ -291,4 +291,5 @@ export interface ChatMessage {
   text?: string;
   thinking?: string;
   a2ui?: A2UIPayload;
+  delivery?: "sent" | "queued" | "steered" | "failed";
 }

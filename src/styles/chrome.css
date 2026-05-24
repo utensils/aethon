@@ -2306,6 +2306,52 @@ body.ae-resizing-sidebar .a2ui-layout {
   opacity: 0.55;
 }
 
+.a2ui-chat-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+
+.a2ui-chat-message.user .a2ui-chat-meta {
+  align-self: flex-end;
+}
+
+.a2ui-chat-delivery {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+  line-height: 1;
+  text-transform: lowercase;
+  user-select: none;
+}
+
+.a2ui-chat-delivery-queued {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-soft);
+}
+
+.a2ui-chat-delivery-steered {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 42%, transparent);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+}
+
+.a2ui-chat-delivery-failed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+
 .a2ui-chat-empty {
   color: var(--text-dim);
   text-align: center;
@@ -2458,6 +2504,24 @@ body.ae-resizing-composer * {
   width: 100%;
   height: var(--composer-height, 70px);
   min-height: 46px;
+}
+
+.a2ui-chat-input-hint {
+  display: inline-flex;
+  align-self: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 3px 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  line-height: 1;
+  user-select: none;
+}
+
+.a2ui-chat-input-hint span + span {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
 }
 
 /* Slash command autocomplete — portal-rendered to document.body and

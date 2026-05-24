@@ -1,19 +1,36 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatInput } from "./chat";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ChatHistory, ChatInput } from "./chat";
 
-afterEach(() => cleanup());
+class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
 
-function renderInput(onEvent = vi.fn()) {
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function renderInput(
+  onEvent = vi.fn(),
+  props: Record<string, unknown> = {},
+  state: Record<string, unknown> = {},
+) {
   render(
     <ChatInput
       component={{
         id: "chat-input",
         type: "chat-input",
-        props: { value: "", placeholder: "Message" },
+        props: { value: "", placeholder: "Message", ...props },
       }}
-      state={{}}
+      state={state}
       onEvent={onEvent}
     />,
   );
@@ -21,6 +38,20 @@ function renderInput(onEvent = vi.fn()) {
     input: screen.getByPlaceholderText("Message"),
     onEvent,
   };
+}
+
+function renderHistory(state: Record<string, unknown>) {
+  render(
+    <ChatHistory
+      component={{
+        id: "chat-history",
+        type: "chat-history",
+        props: { messages: { $ref: "/messages" } },
+      }}
+      state={state}
+      onEvent={vi.fn()}
+    />,
+  );
 }
 
 describe("ChatInput", () => {
@@ -67,5 +98,28 @@ describe("ChatInput", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
 
     expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
+  });
+
+  it("shows the running-turn shortcut hint only when busy", () => {
+    renderInput(vi.fn(), { disabled: { $ref: "/waiting" } }, { waiting: true });
+
+    expect(screen.getByText("Enter queues")).toBeTruthy();
+    expect(screen.getByText("Cmd/Ctrl+Enter steers")).toBeTruthy();
+
+    cleanup();
+    renderInput(vi.fn(), { disabled: { $ref: "/waiting" } }, { waiting: false });
+    expect(screen.queryByText("Enter queues")).toBeNull();
+  });
+
+  it("renders queued and steered delivery badges on user messages", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "after this", delivery: "queued" },
+        { id: "2", role: "user", text: "look now", delivery: "steered" },
+      ],
+    });
+
+    expect(screen.getByText("queued")).toBeTruthy();
+    expect(screen.getByText("steered")).toBeTruthy();
   });
 });

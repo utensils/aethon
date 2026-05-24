@@ -65,6 +65,13 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
       Array.isArray((record.a2ui as { components?: unknown }).components)
         ? (record.a2ui as A2UIPayload)
         : undefined;
+    const delivery =
+      record.delivery === "sent" ||
+      record.delivery === "queued" ||
+      record.delivery === "steered" ||
+      record.delivery === "failed"
+        ? record.delivery
+        : undefined;
     if (!text && !thinking && !a2ui) continue;
     messages.push(
       trimMessage({
@@ -76,6 +83,7 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
         ...(text ? { text } : {}),
         ...(thinking ? { thinking } : {}),
         ...(a2ui ? { a2ui } : {}),
+        ...(delivery ? { delivery } : {}),
       }),
     );
   }

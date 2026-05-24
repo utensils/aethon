@@ -247,6 +247,19 @@ function roleBadge(role: string): string {
   return "SYS";
 }
 
+function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {
+  switch (delivery) {
+    case "queued":
+      return "queued";
+    case "steered":
+      return "steered";
+    case "failed":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
 function ThinkingBlock({
   children,
   complete = true,
@@ -312,12 +325,25 @@ const ChatMessageRow = memo(
       : "a2ui-chat-text a2ui-markdown";
     // Suppress role label for consecutive messages from same sender
     const showRole = prevRole !== message.role;
+    const delivery =
+      message.role === "user" ? deliveryLabel(message.delivery) : null;
     return (
       <div
         className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}
       >
-        {showRole && message.role !== "system" && (
-          <span className={roleClass}>{roleBadge(message.role)}</span>
+        {message.role !== "system" && (showRole || delivery) && (
+          <span className="a2ui-chat-meta">
+            {showRole && (
+              <span className={roleClass}>{roleBadge(message.role)}</span>
+            )}
+            {delivery && (
+              <span
+                className={`a2ui-chat-delivery a2ui-chat-delivery-${delivery}`}
+              >
+                {delivery}
+              </span>
+            )}
+          </span>
         )}
         {message.thinking && (
           <ThinkingBlock complete={Boolean(message.text)}>
@@ -1166,6 +1192,12 @@ export function ChatInput({
           </div>,
           document.body,
         )}
+      {busy && (
+        <div className="a2ui-chat-input-hint">
+          <span>Enter queues</span>
+          <span>Cmd/Ctrl+Enter steers</span>
+        </div>
+      )}
       {/* Wrap the textarea and action button so Send sits INSIDE the
           textarea visually (absolute-positioned, bottom-right). Right
           padding on the textarea makes room for the button so text
