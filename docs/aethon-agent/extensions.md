@@ -342,6 +342,11 @@ result and the renderer expands the template.
 - The bridge dedupes event handlers by `(match, handler.toString())` so
   re-registering the same handler across reloads doesn't multiply side
   effects.
+- Project extensions can register a teardown callback via
+  `api.onUnload(fn)`. When the user switches projects, the bridge
+  calls each registered `onUnload` before loading the new project's
+  extensions. Use this to clear intervals, close connections, or
+  remove state paths that belong to the outgoing project.
 
 ## Debugging
 

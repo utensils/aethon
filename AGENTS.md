@@ -186,31 +186,31 @@ console) can swap chrome at runtime:
 
 ### Keyboard shortcuts (current set)
 
-| Combo                         | Action                                                                                                                                                                                        |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Cmd+T`                       | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. `[shortcuts] new_tab_kind = "shell"` flips this to "always shell". |
-| `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                      |
-| `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                         |
-| `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                               |
+| Combo                         | Action                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Cmd+T`                       | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. `[shortcuts] new_tab_kind = "shell"` flips this to "always shell".                |
+| `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                                     |
+| `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                                        |
+| `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                                              |
 | `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. Matches the iTerm / Terminal.app convention. |
-| `Cmd+Opt+]` / `Cmd+Opt+[`     | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                   |
-| `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                  |
-| `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                        |
-| `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                         |
-| `Cmd+\``                      | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                              |
-| `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                |
-| `Cmd+K`                       | Clear chat                                                                                                                                                                                    |
-| `Cmd+.`                       | Stop current prompt                                                                                                                                                                           |
-| `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                 |
-| `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                              |
-| `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                    |
-| `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                           |
-| `Cmd+,`                       | Open Settings panel                                                                                                                                                                           |
-| `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                  |
-| `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                            |
-| `Cmd+Ctrl+F` (mac) / `F11`    | Toggle fullscreen                                                                                                                                                                             |
-| `F12`                         | Toggle WebKit DevTools (debug builds)                                                                                                                                                         |
-| `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                         |
+| `Cmd+Opt+]` / `Cmd+Opt+[`     | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                                  |
+| `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                                 |
+| `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                                       |
+| `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                                        |
+| `Cmd+\``                      | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                                             |
+| `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                               |
+| `Cmd+K`                       | Clear chat                                                                                                                                                                                                   |
+| `Cmd+.`                       | Stop current prompt                                                                                                                                                                                          |
+| `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                                |
+| `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                                             |
+| `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                                   |
+| `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                                          |
+| `Cmd+,`                       | Open Settings panel                                                                                                                                                                                          |
+| `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                                 |
+| `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                                           |
+| `Cmd+Ctrl+F` (mac) / `F11`    | Toggle fullscreen                                                                                                                                                                                            |
+| `F12`                         | Toggle WebKit DevTools (debug builds)                                                                                                                                                                        |
+| `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                                        |
 
 `metaKey || ctrlKey` for cross-platform — Linux/Windows users get the
 same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
@@ -358,7 +358,7 @@ aren't portable across monitors with different scale factors, so a
 window saved on Retina (2×) would render at the wrong size when
 restored to a 1× monitor.
 
-Restore runs in `setup()` *before* the window becomes visible
+Restore runs in `setup()` _before_ the window becomes visible
 (`tauri.conf.json` sets `visible: false`), so there's no race or
 settle-debounce. Save is 250 ms-debounced on `Moved`/`Resized` and
 flushed synchronously on `CloseRequested`. Monitor matching is a

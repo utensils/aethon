@@ -151,7 +151,8 @@ describe("handleProjectDashboard", () => {
         data: {
           projectId: "p1",
           prompt: "Please work on issue #927",
-          worktreeId: "wt-1",
+          newWorktree: true,
+          branch: "fix/issue-927-crash-on-boot",
           source: "github-issue",
         },
       },
@@ -162,7 +163,8 @@ describe("handleProjectDashboard", () => {
       expect.objectContaining({
         projectId: "p1",
         prompt: "Please work on issue #927",
-        worktreeId: "wt-1",
+        newWorktree: true,
+        branch: "fix/issue-927-crash-on-boot",
       }),
     );
   });

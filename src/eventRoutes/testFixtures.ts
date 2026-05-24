@@ -199,6 +199,7 @@ export function buildRouteFixture(
     retryPendingWorktree: vi.fn(() => Promise.resolve()),
     renameWorktree: vi.fn(),
     renameProject: vi.fn(),
+    setProjectWorktreeBaseBranch: vi.fn(),
     invoke,
     writeState,
   };

@@ -2,7 +2,6 @@
 // the schema; Vite's own defineConfig narrows it away.
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import pkg from "./package.json" with { type: "json" };
 
 // Tauri requires a fixed dev port (devUrl in tauri.conf.json). For
 // auto-increment, the `dev` wrapper (scripts/dev.sh) finds a free port
@@ -15,15 +14,6 @@ const port = Number(process.env.VITE_PORT ?? 1420);
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
-  // Single source of truth for the displayed app version. Read from
-  // package.json at build time and exposed to the frontend as
-  // `__APP_VERSION__`. The UI's sidebar/header binds this via the
-  // `/appVersion` state path so the layout JSON doesn't have to
-  // hardcode anything. Cargo.toml + tauri.conf.json must stay in lock-
-  // step manually (the release script handles this).
-  define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
-  },
   server: {
     port,
     strictPort: true,

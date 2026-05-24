@@ -263,8 +263,8 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         // helpers::aethon_dir honors AETHON_USER_DIR so `scripts/dev.sh --new`
         // can route a session into a tmp sandbox without breaking the
         // signal chain into the bridge.
-        let user_dir = helpers::aethon_dir(Some(home.clone()))
-            .unwrap_or_else(|| home.join(".aethon"));
+        let user_dir =
+            helpers::aethon_dir(Some(home.clone())).unwrap_or_else(|| home.join(".aethon"));
         let state_file = user_dir.join("state.json");
         let sessions_dir = user_dir.join("sessions");
         command.env("AETHON_USER_DIR", &user_dir);
@@ -703,7 +703,10 @@ pub fn run() {
         .manage(Arc::new(server::ServerState::new()))
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
-                window_state::schedule_save(window.app_handle().clone(), window.label().to_string());
+                window_state::schedule_save(
+                    window.app_handle().clone(),
+                    window.label().to_string(),
+                );
             }
             tauri::WindowEvent::CloseRequested { .. } => {
                 if let Err(e) = window_state::save_now(window.app_handle(), window.label()) {

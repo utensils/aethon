@@ -28,6 +28,7 @@ import {
   SearchableSidebarSection,
   type SidebarSectionExt,
 } from "./searchable-section";
+import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure helpers re-exported from sibling module
 export { providerOf, filterItems } from "./filter";
@@ -52,6 +53,7 @@ interface SidebarContextMenuState {
   // on the section + item id.
   kind:
     | "project"
+    | "project-base"
     | "worktree"
     | "session"
     | "extension-enabled"
@@ -59,6 +61,7 @@ interface SidebarContextMenuState {
   /** For `extension-*` kinds, the extension's display name (item id
    *  minus the `ext:` / `ext-failed:` / `ext-disabled:` prefix). */
   extensionName?: string;
+  baseBranch?: string;
   /** For `worktree` kind: the full worktree shape so menu actions can
    *  surface path + branch + main-flag context without re-resolving. */
   worktree?: WorktreeSidebarItem;
@@ -68,6 +71,8 @@ interface SidebarMenuHandlers {
   // Project actions — clicking a row switches; menu only surfaces
   // verbs that aren't reachable from a plain click.
   createWorktreeForContextProject: () => void;
+  editContextProjectWorktreeBase: () => void;
+  submitContextProjectWorktreeBase: (baseBranch: string) => void;
   openContextProjectInFinder: () => void;
   copyContextProjectPath: () => void;
   renameContextProject: () => void;
@@ -96,6 +101,12 @@ function buildSidebarMenuItems(
           label: "Create worktree…",
           onSelect: h.createWorktreeForContextProject,
         },
+        {
+          id: "set-worktree-base",
+          label: "Set worktree base…",
+          keepOpenOnSelect: true,
+          onSelect: h.editContextProjectWorktreeBase,
+        },
         { type: "separator" },
         {
           id: "open-finder",
@@ -120,6 +131,23 @@ function buildSidebarMenuItems(
           onSelect: h.removeContextProject,
         },
         { type: "note", label: "Keeps files on disk" },
+      ];
+    case "project-base":
+      return [
+        { type: "header", label: "Worktree base" },
+        {
+          type: "input",
+          id: "worktree-base-input",
+          label: "Base branch",
+          defaultValue: state.baseBranch ?? DEFAULT_WORKTREE_BASE_BRANCH,
+          placeholder: DEFAULT_WORKTREE_BASE_BRANCH,
+          submitLabel: "Save",
+          onSubmit: h.submitContextProjectWorktreeBase,
+        },
+        {
+          type: "note",
+          label: "Blank or origin/main uses the default",
+        },
       ];
     case "worktree": {
       const isMain = state.worktree?.isMain === true;
@@ -339,6 +367,29 @@ export function Sidebar({
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
+    });
+    setContextMenu(null);
+  };
+  const editContextProjectWorktreeBase = () => {
+    if (!contextMenu) return;
+    const projects =
+      (state.projects as
+        | { id: string; worktreeBaseBranch?: string }[]
+        | undefined) ?? [];
+    const project = projects.find((p) => p.id === contextMenu.itemId);
+    setContextMenu({
+      ...contextMenu,
+      kind: "project-base",
+      baseBranch: project?.worktreeBaseBranch ?? DEFAULT_WORKTREE_BASE_BRANCH,
+    });
+  };
+  const submitContextProjectWorktreeBase = (baseBranch: string) => {
+    if (!contextMenu) return;
+    onEvent("set-project-worktree-base", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+      baseBranch,
     });
     setContextMenu(null);
   };
@@ -690,8 +741,10 @@ export function Sidebar({
         items={
           contextMenu
             ? buildSidebarMenuItems(contextMenu, {
-                createWorktreeForContextProject,
-                openContextProjectInFinder,
+        createWorktreeForContextProject,
+        editContextProjectWorktreeBase,
+        submitContextProjectWorktreeBase,
+        openContextProjectInFinder,
                 copyContextProjectPath,
                 renameContextProject,
                 removeContextProject,

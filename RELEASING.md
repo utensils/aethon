@@ -46,8 +46,10 @@ Intel, and Linux x86_64 artifacts with `tauri-apps/tauri-action@v0`, then
 publishes them to the matching GitHub release.
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+bun run version:sync
+bun run version:check
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 If `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are
@@ -63,7 +65,7 @@ Manual fallback (single-platform):
 ```sh
 bun tauri build
 # Bundles + signatures land in src-tauri/target/release/bundle/.
-# Upload them to a GitHub release named after the version (e.g. v0.2.0)
+# Upload them to a GitHub release named after the version (e.g. v0.3.0)
 # along with a hand-written latest.json that points at them.
 ```
 
@@ -71,13 +73,13 @@ bun tauri build
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "notes": "Release notes here.",
   "pub_date": "2026-04-26T12:00:00Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "<paste contents of Aethon_0.2.0_aarch64.app.tar.gz.sig here>",
-      "url": "https://github.com/utensils/aethon/releases/download/v0.2.0/Aethon_0.2.0_aarch64.app.tar.gz"
+      "signature": "<paste contents of Aethon_0.3.0_aarch64.app.tar.gz.sig here>",
+      "url": "https://github.com/utensils/aethon/releases/download/v0.3.0/Aethon_0.3.0_aarch64.app.tar.gz"
     }
   }
 }
@@ -96,8 +98,10 @@ relaunch.
 
 ## Notes
 
-- The `version` in `tauri.conf.json` is the source of truth — bump it when
-  cutting a release. The updater compares the manifest version against this.
+- `package.json` is the app-version source of truth. Bump it when cutting a
+  release, then run `bun run version:sync` so `tauri.conf.json`,
+  `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `package-lock.json`
+  match. CI and release builds run `bun run version:check`.
 - Updates are append-only by design; you can't roll back via the updater. To
   push a fix, ship a new release with a higher version that re-applies the
   fix.

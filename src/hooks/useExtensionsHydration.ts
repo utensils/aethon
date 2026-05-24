@@ -36,6 +36,17 @@ export interface ExtensionFailureSummary extends ExtensionSummary {
   error?: string;
 }
 
+/** Disabled-list entry shape after the v0.3 schema upgrade. The bridge
+ *  now ships source/projectRoot when known so the sidebar can hide
+ *  project-directory disabled rows when a different project is active.
+ *  Entries persisted under the old shape arrive here as bare names with
+ *  no metadata; those are treated as global and always shown. */
+export interface DisabledExtensionRecord {
+  name: string;
+  source?: string;
+  projectRoot?: string;
+}
+
 export type ExtensionSidebarItem = SidebarItem & {
   hint?: string;
 };
@@ -46,18 +57,49 @@ function normalizeExtensionProjectPath(path: string | undefined | null): string 
   return (path ?? "").replace(/[/\\]+$/, "");
 }
 
+/** Parse the scope segment from an npm-scoped package name
+ *  (`@scope/pkg` → `scope`). Returns null when the name isn't scoped. */
+function extractNpmScope(name: string): string | null {
+  if (!name.startsWith("@")) return null;
+  const slash = name.indexOf("/");
+  if (slash <= 1) return null;
+  return name.slice(1, slash);
+}
+
+function basenameOfPath(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? "";
+}
+
 export function filterExtensionSummariesByProject<
   T extends ExtensionSummary,
->(entries: T[], activeProjectPath: string | null = null): T[] {
+>(
+  entries: T[],
+  activeProjectPath: string | null = null,
+  knownProjectBasenames: ReadonlySet<string> = new Set(),
+): T[] {
   const activePath = normalizeExtensionProjectPath(activeProjectPath);
+  const activeBasename = basenameOfPath(activePath);
   return entries.filter((entry) => {
-    if (entry.source !== "project-directory") return true;
-    const projectRoot = normalizeExtensionProjectPath(entry.projectRoot);
-    return (
-      activePath.length > 0 &&
-      projectRoot.length > 0 &&
-      (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
-    );
+    if (entry.source === "project-directory") {
+      const projectRoot = normalizeExtensionProjectPath(entry.projectRoot);
+      return (
+        activePath.length > 0 &&
+        projectRoot.length > 0 &&
+        (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
+      );
+    }
+    // npm-scoped packages whose scope matches a known project basename
+    // are treated as belonging to that project — convention `@project/ext`.
+    // Other scopes (`@example/…`, `@me/…`) stay global because we have
+    // no reason to associate them with any specific project.
+    if (entry.source === "extension-package") {
+      const scope = extractNpmScope(entry.name);
+      if (scope && knownProjectBasenames.has(scope)) {
+        return scope === activeBasename;
+      }
+      return true;
+    }
+    return true;
   });
 }
 
@@ -75,21 +117,95 @@ function extensionSourceLabel(source: string): string {
   }
 }
 
+function normalizeDisabledRecord(
+  entry: DisabledExtensionRecord | string,
+): DisabledExtensionRecord {
+  return typeof entry === "string" ? { name: entry } : entry;
+}
+
+/** Extract the parent project root-name from a project-directory
+ *  display name. The bridge formats these as `<rootName>(/scope)?:<base>`
+ *  (see `projectExtensionDisplayName` in agent/extension-loader.ts).
+ *  Returns null if the name doesn't look like that format. */
+function extractProjectDirectoryRootName(name: string): string | null {
+  // npm-scoped names (`@scope/pkg`) are extension-packages, not
+  // project-directory entries — bail before they trip the `:` test.
+  if (name.startsWith("@")) return null;
+  const colonIdx = name.indexOf(":");
+  if (colonIdx <= 0) return null;
+  const prefix = name.slice(0, colonIdx);
+  const root = prefix.split("/")[0];
+  // Conservative shape: the root name comes from `basename(projectRoot)`,
+  // so it can include any filesystem-legal chars. Reject anything with
+  // whitespace or path separators that suggest the `:` was incidental
+  // (e.g. `windows:c\path` would be a malformed name, not a real
+  // project-directory display name).
+  return /^[^\s\\]+$/.test(root) ? root : null;
+}
+
+/** Decide whether a disabled-row entry should appear given the active
+ *  project. Project-directory entries with explicit `projectRoot`
+ *  metadata are scoped strictly. Legacy bare-name entries (no source —
+ *  written before the v0.3 schema upgrade) fall back to a name-shape
+ *  heuristic: if the name parses as a project-directory display name
+ *  (`<rootName>(/scope)?:<base>`), match `rootName` to the active
+ *  project's basename. npm-scoped extension-packages whose scope
+ *  matches a known project basename are also treated as project-scoped
+ *  (convention: `@project/ext`); other scopes stay global. */
+export function disabledExtensionMatchesProject(
+  record: DisabledExtensionRecord,
+  activeProjectPath: string | null,
+  knownProjectBasenames: ReadonlySet<string> = new Set(),
+): boolean {
+  if (record.source === "project-directory") {
+    const activePath = normalizeExtensionProjectPath(activeProjectPath);
+    const projectRoot = normalizeExtensionProjectPath(record.projectRoot);
+    return (
+      activePath.length > 0 &&
+      projectRoot.length > 0 &&
+      (activePath === projectRoot || activePath.startsWith(`${projectRoot}/`))
+    );
+  }
+  const activePath = normalizeExtensionProjectPath(activeProjectPath);
+  const activeBasename = basenameOfPath(activePath);
+  // npm scope → project name convention. Applies to extension-package
+  // entries AND to legacy bare entries whose name happens to start with
+  // `@scope/...` (both reach this branch).
+  const scope = extractNpmScope(record.name);
+  if (scope && knownProjectBasenames.has(scope)) {
+    return scope === activeBasename;
+  }
+  // Entries with an explicit non-project-directory source are global.
+  if (record.source) return true;
+  // Legacy heuristic — see comment above.
+  const heuristicRoot = extractProjectDirectoryRootName(record.name);
+  if (heuristicRoot === null) return true;
+  if (activePath.length === 0) return false;
+  return activeBasename === heuristicRoot;
+}
+
 export function buildExtensionSidebarItems(
   loaded: ExtensionSummary[],
   failed: ExtensionFailureSummary[],
-  disabled: string[] = [],
+  disabled: ReadonlyArray<DisabledExtensionRecord | string> = [],
   activeProjectPath: string | null = null,
+  knownProjectBasenames: ReadonlySet<string> = new Set(),
 ): ExtensionSidebarItem[] {
   const scopedLoaded = filterExtensionSummariesByProject(
     loaded,
     activeProjectPath,
+    knownProjectBasenames,
   );
   const scopedFailed = filterExtensionSummariesByProject(
     failed,
     activeProjectPath,
+    knownProjectBasenames,
   );
-  const disabledSet = new Set(disabled);
+  const disabledRecords = disabled.map(normalizeDisabledRecord);
+  const disabledSet = new Set(disabledRecords.map((d) => d.name));
+  const scopedDisabled = disabledRecords.filter((d) =>
+    disabledExtensionMatchesProject(d, activeProjectPath, knownProjectBasenames),
+  );
   // An extension may appear in `loaded` (live this run) but also be
   // marked disabled (toggle landed mid-session, takes effect after
   // restart). Show it in the disabled bucket so the user sees their
@@ -114,13 +230,13 @@ export function buildExtensionSidebarItems(
         hint: `${extensionSourceLabel(e.source)} · failed`,
         active: false,
       })),
-    ...disabled
-      .filter((name) => !CORE_EXTENSION_NAMES.has(name))
-      .map((name) => {
-        const stillLoaded = loaded.some((e) => e.name === name);
+    ...scopedDisabled
+      .filter((d) => !CORE_EXTENSION_NAMES.has(d.name))
+      .map((d) => {
+        const stillLoaded = loaded.some((e) => e.name === d.name);
         return {
-          id: `ext-disabled:${name}`,
-          label: name,
+          id: `ext-disabled:${d.name}`,
+          label: d.name,
           hint: stillLoaded ? "disabled · restart" : "disabled",
           active: false,
         };
@@ -168,8 +284,9 @@ export interface UseExtensionsHydrationActions {
   hydrateExtensions: (
     loaded: ExtensionSummary[],
     failed: ExtensionFailureSummary[],
-    disabled?: string[],
+    disabled?: ReadonlyArray<DisabledExtensionRecord | string>,
     activeProjectPath?: string | null,
+    knownProjectBasenames?: ReadonlySet<string>,
   ) => void;
   hydrateEventRoutes: (
     routes: { componentId?: string; eventType?: string }[],
@@ -333,14 +450,16 @@ export function useExtensionsHydration(
   function hydrateExtensions(
     loaded: ExtensionSummary[],
     failed: ExtensionFailureSummary[],
-    disabled: string[] = [],
+    disabled: ReadonlyArray<DisabledExtensionRecord | string> = [],
     activeProjectPath: string | null = null,
+    knownProjectBasenames: ReadonlySet<string> = new Set(),
   ) {
     const items = buildExtensionSidebarItems(
       loaded,
       failed,
       disabled,
       activeProjectPath,
+      knownProjectBasenames,
     );
     setState((prev) => {
       const sidebar = (prev.sidebar as Record<string, unknown>) ?? {};

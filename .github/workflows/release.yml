@@ -116,6 +116,10 @@ jobs:
         if: env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label
         run: bun install --frozen-lockfile
 
+      - name: Version files are synced
+        if: env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label
+        run: bun run version:check
+
       - name: Build signed updater release
         if: (env.RELEASE_PLATFORM == 'all' || env.RELEASE_PLATFORM == matrix.label) && env.HAS_UPDATER_SECRETS == 'true'
         uses: tauri-apps/tauri-action@v0

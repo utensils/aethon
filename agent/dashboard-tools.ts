@@ -68,7 +68,7 @@ const StartTaskParams = Type.Object({
   newWorktree: Type.Optional(
     Type.Boolean({
       description:
-        "When true, create a fresh git worktree off `baseBranch` (or HEAD) and start the task in that cwd. When false / omitted, use the project root.",
+        "When true, create a fresh git worktree off `baseBranch` (or the project's configured default, normally origin/main) and start the task in that cwd. When false / omitted, use the project root.",
     }),
   ),
   branch: Type.Optional(
@@ -80,7 +80,7 @@ const StartTaskParams = Type.Object({
   baseBranch: Type.Optional(
     Type.String({
       description:
-        "Base branch to fork the new worktree from. Defaults to the project's current HEAD when omitted.",
+        "Base branch to fork the new worktree from. Defaults to the project's configured worktree base when omitted.",
     }),
   ),
 });

@@ -34,6 +34,7 @@ The name comes from Greek mythology: _Αἴθων_, one of the horses that pulle
 ## What it can do
 
 - **Multi-tab workspace** — top-strip agent tabs (one pi conversation each) plus a bottom-panel terminal with sub-tabs: a read-only "Agent bash" stream and zero-or-more interactive PTY shells (xterm.js + WebGL, full TUI / 256-color / true-color). Focus-aware `⌘T`, `⌘1`–`⌘9` jump, `⌘W` close, `⌘⌥T` reopen.
+- **Project worktrees** — projects expand into git worktrees in the sidebar. New worktrees fork from `origin/main` by default, can be configured per project, and GitHub issue "Send to agent" always starts isolated work in a fresh worktree with a branch prefix inferred from the issue title/labels.
 - **Native shell integration** — system tray + macOS menu, auto-updater (`tauri-plugin-updater` against GitHub Releases), persistent chat history / tabs / themes / projects / `~/.aethon/config.toml`, per-tab pi session continuity.
 - **Agent-controlled UI** — themes (`aethon.registerTheme` or `~/.aethon/themes/*.json`) drive the whole palette including terminal ANSI; any A2UI built-in (composites or app-root overlays like `command-palette`, `notification-stack`, `settings-panel`, `search-panel`) is overridable via `aethon.registerComponent`. One built-in layout (`workstation`); extensions register more via `aethon.registerLayout`.
 - **Agent ↔ shell sharing** — four-value `shareMode` (`private` / `read` / `read-write` / `read-write-trusted`) per shell, clickable badge to cycle. Bridge surface `aethon.shells.{list, read, write}` exposes scrollback (forward-only, privacy floor enforced Rust-side) and keystroke injection (Allow/Deny prompt per write unless trusted).
@@ -85,6 +86,17 @@ input for Nix builds.
 | `coverage`  | TS coverage report under `coverage/` (vitest v8)                                            |
 | `fmt`       | Format Rust + Nix with treefmt                                                              |
 
+### Versioning
+
+`package.json` is the app-version source of truth. The sidebar version
+chip imports it directly, while `scripts/sync-version.mjs` mirrors it into
+Tauri and Cargo metadata.
+
+```bash
+bun run version:sync   # update package-lock, tauri.conf, Cargo.toml, Cargo.lock
+bun run version:check  # fail if any copy drifted from package.json
+```
+
 ---
 
 ## Architecture
@@ -127,7 +139,7 @@ aethon/
 ├── flake.nix            # Nix dev environment, package, and overlay
 ├── bun.lock             # Bun lockfile (used by `bun install` in the devshell)
 ├── package-lock.json    # npm dependency snapshot for reproducible Nix builds
-└── package.json         # Frontend deps + tauri CLI
+└── package.json         # App version source + frontend deps + tauri CLI
 ```
 
 For agent-side authoring docs (the API surface, A2UI components, extension recipes), see [`docs/aethon-agent/`](docs/aethon-agent/). The same files ship inside the binary as bundled resources so the agent can read them at runtime.

@@ -22,6 +22,7 @@ export interface ContextMenuOption {
   /** Visual treatment for destructive actions; doesn't change behavior. */
   danger?: boolean;
   disabled?: boolean;
+  keepOpenOnSelect?: boolean;
   onSelect: () => void;
 }
 export interface ContextMenuSeparator {
@@ -35,11 +36,21 @@ export interface ContextMenuNote {
   type: "note";
   label: string;
 }
+export interface ContextMenuInput {
+  type: "input";
+  id: string;
+  label: string;
+  defaultValue?: string;
+  placeholder?: string;
+  submitLabel?: string;
+  onSubmit: (value: string) => void;
+}
 export type ContextMenuItem =
   | ContextMenuOption
   | ContextMenuSeparator
   | ContextMenuHeader
-  | ContextMenuNote;
+  | ContextMenuNote
+  | ContextMenuInput;
 
 export interface ContextMenuProps {
   open: boolean;
@@ -198,7 +209,7 @@ export function ContextMenu({
           const it = items[focusedIndex];
           if (isOption(it) && !it.disabled) {
             it.onSelect();
-            onClose();
+            if (!it.keepOpenOnSelect) onClose();
           }
         }
       }
@@ -247,6 +258,31 @@ export function ContextMenu({
             </div>
           );
         }
+        if ("type" in item && item.type === "input") {
+          return (
+            <form
+              key={item.id}
+              className="a2ui-context-menu-input"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const data = new FormData(e.currentTarget);
+                item.onSubmit(String(data.get("value") ?? ""));
+                onClose();
+              }}
+            >
+              <label>
+                <span>{item.label}</span>
+                <input
+                  name="value"
+                  defaultValue={item.defaultValue}
+                  placeholder={item.placeholder}
+                  autoFocus
+                />
+              </label>
+              <button type="submit">{item.submitLabel ?? "Save"}</button>
+            </form>
+          );
+        }
         const isFocused = i === focusedIndex;
         return (
           <button
@@ -261,7 +297,7 @@ export function ContextMenu({
             onClick={() => {
               if (item.disabled) return;
               item.onSelect();
-              onClose();
+              if (!item.keepOpenOnSelect) onClose();
             }}
           >
             <span className="a2ui-context-menu-item-label">{item.label}</span>
@@ -275,4 +311,3 @@ export function ContextMenu({
     document.body,
   );
 }
-

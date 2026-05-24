@@ -14,9 +14,10 @@ import {
  *
  *  Three ops:
  *    - `start_task` — call the App-level `startTaskInProject` to spawn a
- *      worktree (if requested) + new tab + send first message. The
- *      caller passes `projectPath`; we resolve to a projectId from the
- *      live projects list.
+ *      worktree (if requested, using the project's configured base
+ *      when no baseBranch is supplied) + new tab + send first message.
+ *      The caller passes `projectPath`; we resolve to a projectId from
+ *      the live projects list.
  *    - `get_repo_overview` — return cached gh data for a project. Pure
  *      query; never triggers a worktree-create or tab spawn.
  *    - `refresh` — bust the gh cache for one project (or all if no

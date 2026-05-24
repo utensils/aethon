@@ -1,8 +1,11 @@
 /**
  * Worktree row — sibling of ItemRow, rendered as a nested child under a
- * project row when that project has worktrees attached. Visually
- * indented + decorated so the relationship to the parent project is
- * obvious.
+ * project row when that project has worktrees attached. The visual
+ * "this is a child of the project above" cue is a continuous vertical
+ * guide line drawn via `.ae-worktree-row::before` in chrome.css; each
+ * row contributes one segment that joins seamlessly with the next.
+ * The non-main rows therefore render *no* per-row glyph — the guide
+ * does the work.
  *
  * Pending worktrees (during `git worktree add`) get a distinct visual
  * treatment + a small Cancel / Retry / Dismiss button cluster. Once
@@ -83,25 +86,13 @@ export function WorktreeRow({
       }}
       onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
-      <span className="ae-worktree-glyph" aria-hidden="true">
-        {item.isMain ? (
-          // Main worktree — solid accent dot. Inline SVG so the dot
-          // stays crisp at any UI scale.
+      {item.isMain ? (
+        <span className="ae-worktree-glyph ae-worktree-glyph--main" aria-hidden="true">
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
             <circle cx="5" cy="5" r="3.5" fill="currentColor" />
           </svg>
-        ) : (
-          // Connector glyph — the Unicode `└` rendered at any sensible
-          // font size is barely visible because the box-drawing
-          // characters are vertically thin. SVG renders the L-corner
-          // at exact pixel coordinates.
-          <svg width="12" height="14" viewBox="0 0 12 14" fill="none"
-               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-               aria-hidden="true">
-            <path d="M3 0 V8 H10" />
-          </svg>
-        )}
-      </span>
+        </span>
+      ) : null}
       <span className="a2ui-sidebar-item-label">{displayLabel}</span>
       {item.branch && item.branch !== displayLabel ? (
         <span className="a2ui-sidebar-item-git-branch ae-worktree-branch">

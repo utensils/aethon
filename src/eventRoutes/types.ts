@@ -157,6 +157,10 @@ export interface EventRouteContext {
   retryPendingWorktree: (worktreeId: string) => Promise<void>;
   renameWorktree: (worktreeId: string, label: string) => void;
   renameProject: (projectId: string, label: string) => void;
+  setProjectWorktreeBaseBranch: (
+    projectId: string,
+    baseBranch: string | null,
+  ) => void;
 
   // ─── Tauri IPC (injected so tests can mock it) ─────────────────────
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;

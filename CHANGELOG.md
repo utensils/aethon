@@ -6,6 +6,8 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-24
+
 ### Added — Workstation layout redesign
 
 - **Design tokens.** New `src/styles/tokens.css` introduces shape vocabulary
@@ -15,7 +17,7 @@ All notable changes to Aethon. Format loosely follows
   colors (`--bg-hover`, `--bg-active`, `--bg-selected`, `--border-hover`,
   `--border-strong`, `--text-on-accent`) and per-theme shadow tokens.
   `src/styles.css` was split into `tokens.css` + `themes.css` + `chrome.css`
-  + `index.css`.
+  - `index.css`.
 - **Shared `ContextMenu` primitive.** `src/components/primitives/context-menu.tsx`
   replaces the two ad-hoc inline portal menus (sidebar, file tree) with a
   keyboard-navigable, viewport-clamped, focus-trapped menu. Separator /
@@ -33,7 +35,7 @@ All notable changes to Aethon. Format loosely follows
   `Worktree` shape + pending-state machine.
 - **Worktree-aware sidebar.** Projects expand to show their worktrees
   inline. Pending worktrees render with live `queued → starting →
-  succeeded | failed` UI + cancel / retry / dismiss inline actions.
+succeeded | failed` UI + cancel / retry / dismiss inline actions.
   Right-click on a project opens Switch / Create worktree / Open in
   Finder / Copy path / Rename / Remove; right-click on a worktree opens
   Switch / Open in Finder / Copy path / Rename / Remove (main worktree
@@ -55,6 +57,11 @@ All notable changes to Aethon. Format loosely follows
   pill and connection text surfaces the active project label, the active
   worktree's branch (or the parent project's git branch when no worktree
   is selected), and a dirty-state warn dot.
+- **Version sync guard.** `package.json` is the app-version source of
+  truth. `bun run version:sync` updates the npm lockfile, Tauri config,
+  Cargo manifest, and Cargo lockfile, while `bun run version:check` is
+  wired into CI/release checks so the sidebar chip, app metadata, and
+  Rust crate version stay aligned.
 
 ### Changed — Workstation layout redesign
 
@@ -67,6 +74,33 @@ All notable changes to Aethon. Format loosely follows
   Pending-in-flight worktrees are filtered out at save time;
   failed pending entries persist so the user can Dismiss them next
   session. Migration is idempotent and survives malformed files.
+- **Worktree creation defaults.** New worktrees now fork from
+  `origin/main` by default, with a per-project "Set worktree base..."
+  override. The task launcher also respects the project default unless
+  the user chooses an explicit base branch.
+- **Issue branch naming.** Sending a GitHub issue to the agent now
+  chooses the branch prefix from the issue title or labels: conventional
+  titles such as `feat(admin): ...` win, labels such as `bug`, `docs`,
+  `performance`, or `dependencies` provide fallback signals, and unknown
+  issue work still falls back to `fix/`.
+
+### Fixed — Worktrees, issues, and hot reload
+
+- **New worktree navigation.** Creating a worktree now activates and
+  navigates to the newly-created worktree instead of leaving the user on
+  the project root.
+- **Issue send-to-agent isolation.** "Send to agent" always creates a
+  fresh worktree before opening the task tab, so issue work no longer
+  lands in the project root by accident.
+- **Project worktree-base menu.** The sidebar's "Set worktree base..."
+  action now uses an inline menu input instead of a native prompt, so it
+  works reliably in the Tauri webview.
+- **Task-launcher menu dismissal.** Worktree/base-branch chip menus now
+  close on outside focus changes and Escape.
+- **Frontend hot reload state.** JS/TS HMR updates now persist the
+  session snapshot and reload the app shell, preventing stale global
+  hotkey/event-route listeners from surviving Fast Refresh. CSS-only
+  updates still hot-swap normally.
 
 ### Compatibility notes
 
@@ -541,6 +575,7 @@ error?: string}>`. Backwards compatible: sync callers ignore the
   "Terminal" + "xterm.js · WebGL" badge).
 - **`SPEC.md` checklist** reconciled with what's actually shipped.
 
-[Unreleased]: https://github.com/utensils/aethon/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/utensils/aethon/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/utensils/aethon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/utensils/aethon/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/utensils/aethon/releases/tag/v0.1.0

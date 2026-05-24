@@ -152,3 +152,45 @@ describe("Sidebar extension controls", () => {
     expect(screen.queryByText("extensions")).toBeNull();
   });
 });
+
+describe("Sidebar project menu", () => {
+  it("emits the project worktree base event", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "projects",
+            title: "projects",
+            items: [{ id: "project-1", label: "aethon" }],
+          },
+        ],
+      },
+      state: {
+        projects: [
+          {
+            id: "project-1",
+            label: "aethon",
+            path: "/projects/aethon",
+            worktreeBaseBranch: "origin/main",
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getAllByText("aethon")[1].closest("li")!);
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Set worktree base/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Base branch"), {
+      target: { value: "upstream/trunk" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onEvent).toHaveBeenCalledWith("set-project-worktree-base", {
+      sectionId: "projects",
+      itemId: "project-1",
+      projectId: "project-1",
+      baseBranch: "upstream/trunk",
+    });
+  });
+});

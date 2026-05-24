@@ -405,6 +405,17 @@ export class AethonAgentState {
    *  the loader to skip imports. The displayName is the same string the
    *  sidebar shows (e.g. `mold:image-gallery`, `my-user-ext`). */
   readonly disabledExtensions = new Set<string>();
+  /** Source + projectRoot for each disabled name, captured at toggle
+   *  time from the live loader registries. Lets the frontend scope
+   *  project-directory disabled rows to the active project (so a
+   *  `mold:image-gallery` disabled in mold doesn't appear under
+   *  Claudette). Empty for legacy on-disk entries that predate the
+   *  enriched format — those entries are treated as global and show
+   *  everywhere until the user re-toggles them. */
+  readonly disabledExtensionMeta = new Map<
+    string,
+    { source: ExtensionSource; projectRoot?: string }
+  >();
   readonly loadedProjectExtensionFiles = new Set<string>();
   /** Project extension files we already tried to load and that errored.
    *  Tracked separately from `loadedProjectExtensionFiles` so we don't

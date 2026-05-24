@@ -52,7 +52,7 @@ import {
   readSessionTranscript,
   writeSessionLabel,
 } from "./session-history";
-import { saveDisabledExtensions } from "./disabled-extensions";
+import { saveDisabledExtensionsSnapshot } from "./disabled-extensions";
 
 export interface DispatcherDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -1106,17 +1106,64 @@ export async function runDispatcher(
     }
     const wasDisabled = state.disabledExtensions.has(name);
     if (disabled === wasDisabled) return; // no-op
-    if (disabled) state.disabledExtensions.add(name);
-    else state.disabledExtensions.delete(name);
+    // Snapshot the prior meta so a save failure can restore both the
+    // name and any metadata we'd just dropped/added.
+    const priorMeta = state.disabledExtensionMeta.get(name);
+    if (disabled) {
+      state.disabledExtensions.add(name);
+      // Capture source + projectRoot from the live loader registries.
+      // `loadedExtensions` covers successful loads (this run); for the
+      // common case where the user just clicked disable, the extension
+      // is currently loaded. `loadFailures` covers extensions that
+      // surfaced in the sidebar via a failed status. Anything missing
+      // from both is preserved with its previous meta (if any) — we
+      // never wipe a known scope just because the user toggled while
+      // a different project was active.
+      const loadedSource = state.loadedExtensions.get(name);
+      const failureInfo = state.loadFailures.get(name);
+      if (loadedSource) {
+        const projectRoot =
+          loadedSource === "project-directory"
+            ? state.projectExtensionRoots.get(name)
+            : undefined;
+        state.disabledExtensionMeta.set(
+          name,
+          projectRoot
+            ? { source: loadedSource, projectRoot }
+            : { source: loadedSource },
+        );
+      } else if (failureInfo) {
+        state.disabledExtensionMeta.set(
+          name,
+          failureInfo.projectRoot
+            ? { source: failureInfo.source, projectRoot: failureInfo.projectRoot }
+            : { source: failureInfo.source },
+        );
+      }
+      // If neither registry knows the extension, leave whatever meta
+      // we already had (could be a legacy entry with no meta).
+    } else {
+      state.disabledExtensions.delete(name);
+      state.disabledExtensionMeta.delete(name);
+    }
     try {
-      await saveDisabledExtensions(state.userDir, state.disabledExtensions);
+      await saveDisabledExtensionsSnapshot(state.userDir, {
+        names: state.disabledExtensions,
+        meta: state.disabledExtensionMeta,
+      });
     } catch (err) {
       // Persistence failed — revert the in-memory toggle so the next
       // operation sees the on-disk truth, and surface a notice instead
       // of a misleading success toast + bridge reload that would
       // re-load the extension and silently lose the user's intent.
-      if (disabled) state.disabledExtensions.delete(name);
-      else state.disabledExtensions.add(name);
+      if (disabled) {
+        state.disabledExtensions.delete(name);
+        if (priorMeta) state.disabledExtensionMeta.set(name, priorMeta);
+        else state.disabledExtensionMeta.delete(name);
+      } else {
+        state.disabledExtensions.add(name);
+        if (priorMeta) state.disabledExtensionMeta.set(name, priorMeta);
+      }
       const message = err instanceof Error ? err.message : String(err);
       deps.send({
         type: "error",

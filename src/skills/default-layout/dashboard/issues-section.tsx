@@ -10,10 +10,8 @@
  *
  * The "send to agent" path fetches the full issue body and emits
  * `start-task` with a markdown-formatted prompt that includes title,
- * url, author, and body. The same chip selection (project / worktree /
- * branch) from the launcher applies — `worktreeId` is sourced from
- * `/activeWorktreeId` so the agent lands in whichever worktree the
- * user has activated.
+ * url, author, and body. Issue launches always ask the shared task path
+ * to create a fresh worktree so each issue starts isolated.
  *
  * Registered as the dashboard component type `issues-section` so
  * extensions can swap it with `aethon.registerComponent`. All data
@@ -37,6 +35,7 @@ import {
   refreshIssues,
 } from "../../../ghIssuesCache";
 import { formatRelativeTime } from "../../../utils/time";
+import { buildIssueBranch, buildIssuePrompt } from "./issue-task";
 
 interface ProjectInfo {
   id: string;
@@ -46,10 +45,6 @@ interface ProjectInfo {
 
 interface IssueSectionProps {
   project?: unknown;
-  /** Optional ref into state for the active worktree id, so "send to
-   *  agent" honors the current worktree selection. Default
-   *  `/activeWorktreeId`. */
-  activeWorktreeIdRef?: unknown;
   /** Issue list cap. Bumped from default for users with sprawling
    *  backlogs; clamped server-side anyway. */
   limit?: number;
@@ -77,32 +72,25 @@ interface ContextMenuState {
   y: number;
 }
 
-/** Build the prompt body sent to the agent when the user picks "Send
- *  to agent" — keeps GH formatting so the model can reason about
- *  checklists, links, mentions. */
-function buildIssuePrompt(detail: {
-  number: number;
-  title: string;
-  url: string;
-  body: string;
-  author: string | null;
-}): string {
-  const author = detail.author ? `@${detail.author}` : "the reporter";
-  const trimmedBody = detail.body.trim();
-  const bodyBlock =
-    trimmedBody.length === 0
-      ? "_(no body provided)_"
-      : trimmedBody;
-  return [
-    `Please work on GitHub issue #${detail.number}: **${detail.title}**.`,
-    "",
-    `Source: ${detail.url}`,
-    `Reported by ${author}.`,
-    "",
-    "---",
-    "",
-    bodyBlock,
-  ].join("\n");
+function projectWorktreeBranches(
+  state: Record<string, unknown>,
+  projectId: string,
+): Set<string> {
+  const sidebar =
+    (state.sidebar as
+      | {
+          projects?: {
+            id: string;
+            worktrees?: { branch?: string | null; label?: string }[];
+          }[];
+        }
+      | undefined) ?? {};
+  const project = sidebar.projects?.find((p) => p.id === projectId);
+  return new Set(
+    (project?.worktrees ?? [])
+      .flatMap((w) => [w.branch, w.label])
+      .filter((v): v is string => typeof v === "string" && v.length > 0),
+  );
 }
 
 export function IssuesSection({
@@ -115,10 +103,6 @@ export function IssuesSection({
     () => resolveOrInline<ProjectInfo>(props.project, state),
     [props.project, state],
   );
-  const activeWorktreeId = useMemo(() => {
-    const refSpec = props.activeWorktreeIdRef ?? { $ref: "/activeWorktreeId" };
-    return resolveOrInline<string>(refSpec, state);
-  }, [props.activeWorktreeIdRef, state]);
   const limit = typeof props.limit === "number" ? props.limit : 30;
 
   const [issues, setIssues] = useState<GhIssue[] | null>(null);
@@ -213,10 +197,11 @@ export function IssuesSection({
           {
             projectId: project.id,
             prompt,
-            // newWorktree / branch left undefined — we use the current
-            // worktree selection so the user can stack multiple issues
-            // into the same worktree before opening fresh ones.
-            worktreeId: activeWorktreeId ?? undefined,
+            newWorktree: true,
+            branch: buildIssueBranch(
+              issue,
+              projectWorktreeBranches(state, project.id),
+            ),
             // Tag the payload so the route handler / tests can spot
             // an issue-originated launch.
             source: "github-issue",
@@ -231,7 +216,7 @@ export function IssuesSection({
         setSending(null);
       }
     },
-    [project, onEvent, activeWorktreeId],
+    [project, onEvent, state],
   );
 
   const onRowContextMenu = (e: React.MouseEvent, issue: GhIssue) => {

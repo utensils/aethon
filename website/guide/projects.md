@@ -30,7 +30,7 @@ The project list is persisted at `~/.aethon/projects.json`. Maximum
 ## Active project vs tab project
 
 Aethon maintains an **active project** in the sidebar — that's where
-*newly opened* tabs start.
+_newly opened_ tabs start.
 
 ::: warning Tabs are immutable
 Once a tab is created, its `cwd` does not change — even if you switch
@@ -74,6 +74,23 @@ Click a project in the sidebar to make it active. The active state is
 persisted, so quitting and relaunching restores it.
 
 The MRU order is updated whenever you activate a project.
+
+## Worktrees
+
+Projects can expand into their git worktrees in the sidebar. Selecting a
+worktree makes it the active working directory for new tabs; existing tabs keep
+their original `cwd`.
+
+New worktrees fork from `origin/main` by default. To change that for a project,
+right-click the project and choose **Set worktree base...**. Leaving it blank
+restores the default. The task launcher inherits the project default, but its
+base-branch chip can override it for one launch.
+
+When a GitHub issue row is sent to the agent, Aethon always creates a fresh
+worktree first. The generated branch name uses the issue number and title, with
+the prefix inferred from conventional issue titles such as `feat(admin): ...`
+or labels such as `bug`, `enhancement`, `docs`, `performance`, and
+`dependencies`. Unknown issue work falls back to `fix/`.
 
 ## Removing a project
 
