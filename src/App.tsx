@@ -48,6 +48,7 @@ import {
   emptyProjectsState,
   type ProjectsState,
 } from "./projects";
+import { shouldReloadForHmrPayload } from "./utils/hmr";
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -286,7 +287,18 @@ export default function App() {
       window.addEventListener("beforeunload", persistNow);
     };
     const hot = import.meta.hot;
+    let hmrReloadQueued = false;
+    const reloadOnJsUpdate = (payload: unknown) => {
+      if (hmrReloadQueued || !shouldReloadForHmrPayload(payload)) return;
+      hmrReloadQueued = true;
+      persistNow();
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 0);
+    };
     hot?.dispose(persistNow);
+    hot?.on("vite:beforeUpdate", reloadOnJsUpdate);
+    hot?.on("vite:beforeFullReload", persistNow);
     if (hasSyncSessionSnapshot) {
       startPersistence();
     } else {
@@ -310,6 +322,8 @@ export default function App() {
         sessionSnapshotPersistTimerRef.current = null;
       }
       window.removeEventListener("beforeunload", persistNow);
+      hot?.off("vite:beforeUpdate", reloadOnJsUpdate);
+      hot?.off("vite:beforeFullReload", persistNow);
     };
   }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot]);
 
