@@ -27,6 +27,32 @@ describe("handlePromptStarted", () => {
     expect(mocks.setState).toHaveBeenCalledTimes(1);
   });
 
+  it("promotes the oldest queued user message when a queued prompt starts", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "default" },
+    });
+    handlePromptStarted(
+      { type: "prompt_started", tabId: "default", source: "queue", queued: 1 },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater({
+      ...makeEmptyTab("default", "Tab 1"),
+      messages: [
+        { id: "u1", role: "user", text: "running", delivery: "sent" },
+        { id: "u2", role: "user", text: "start me", delivery: "queued" },
+        { id: "u3", role: "user", text: "after me", delivery: "queued" },
+      ],
+      queueCount: 2,
+    });
+    expect(out.queueCount).toBe(1);
+    expect(out.messages).toEqual([
+      { id: "u1", role: "user", text: "running", delivery: "sent" },
+      { id: "u2", role: "user", text: "start me", delivery: "sent" },
+      { id: "u3", role: "user", text: "after me", delivery: "queued" },
+    ]);
+  });
+
   it("schedules a hang-warn notification after hangWarnMs", () => {
     const tabId = "default";
     const { ctx, mocks } = buildHandlerFixture({

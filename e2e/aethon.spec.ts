@@ -102,6 +102,7 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
 
   await completeActiveTurn(page);
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
+  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveCount(0);
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
@@ -201,6 +202,8 @@ test("steering during an existing follow-up queue preserves the queued turn", as
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
 
   await completeActiveTurn(page);
+  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveCount(0);
+  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
