@@ -19,6 +19,7 @@ import {
   handleSidebarDeleteSession,
   handleSidebarRemoveWorktree,
 } from "./sidebar";
+import { restoreSessionFromSelection } from "./sessionRestore";
 
 /** New-tab / Open Project… / restore-session / select-project-card
  *  for the global projects-dashboard surface. */
@@ -58,14 +59,7 @@ export const handleProjectsDashboard: EventRouteHandler = (
     const sel = data as
       | { sessionId?: string; label?: string; cwd?: string }
       | undefined;
-    if (sel?.sessionId) {
-      ctx.newTab(sel.sessionId, sel.label ?? "Restored Session", {
-        restoredSession: true,
-        ...(sel.cwd ? { cwd: sel.cwd } : {}),
-      });
-    } else {
-      ctx.newTab();
-    }
+    restoreSessionFromSelection(ctx, sel);
     return true;
   }
   if (eventType === "delete-session") {
@@ -119,7 +113,10 @@ export const handleProjectDashboard: EventRouteHandler = (
     return true;
   }
   // Reuse global handlers for shared events (restore-session etc).
-  return handleProjectsDashboard({ component: { id: "", type: "" }, eventType, data }, ctx);
+  return handleProjectsDashboard(
+    { component: { id: "", type: "" }, eventType, data },
+    ctx,
+  );
 };
 
 /** task-launcher submit — the heart of the per-project composer. */

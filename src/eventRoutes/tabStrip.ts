@@ -1,4 +1,5 @@
 import type { EventRouteHandler } from "./types";
+import { restoreSessionFromSelection } from "./sessionRestore";
 
 /** tab-strip: select / close / new. Tab events route by component
  *  *type* — id may vary across layouts (workstation hoists the strip
@@ -58,17 +59,7 @@ export const handleEmptyState: EventRouteHandler = (
     const sel = data as
       | { sessionId?: string; label?: string; cwd?: string }
       | undefined;
-    if (sel?.sessionId) {
-      // Re-open the persisted session by reusing the same tabId. The
-      // bridge's SessionManager.continueRecent reads the existing JSONL
-      // files so the LLM history is restored too.
-      ctx.newTab(sel.sessionId, sel.label ?? "Restored Session", {
-        restoredSession: true,
-        ...(sel.cwd ? { cwd: sel.cwd } : {}),
-      });
-    } else {
-      ctx.newTab();
-    }
+    restoreSessionFromSelection(ctx, sel);
     return true;
   }
   return false;

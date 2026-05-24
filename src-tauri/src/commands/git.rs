@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use tauri::AppHandle;
 
+use crate::env;
+
 /// Read minimal git status for a project directory. Used by the
 /// sidebar to surface a branch chip + dirty dot per project. Returns
 /// `None` when the path isn't a git repository so the caller can
@@ -34,14 +36,13 @@ pub struct GitStatus {
 
 #[tauri::command]
 pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
-    use std::process::Command;
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Ok(None);
     }
     // Quick presence check — `git rev-parse --is-inside-work-tree`.
     // Saves spawning the porcelain pass on a non-git directory.
-    let inside = Command::new("git")
+    let inside = env::command("git")
         .arg("-C")
         .arg(&dir)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -55,7 +56,7 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
     }
     // Branch: prefer the symbolic name. Falls back to a short SHA on
     // detached HEAD so the chip still says something useful.
-    let branch_out = Command::new("git")
+    let branch_out = env::command("git")
         .arg("-C")
         .arg(&dir)
         .args(["symbolic-ref", "--short", "HEAD"])
@@ -65,7 +66,7 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
         Some(o) if o.status.success() => {
             Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
         }
-        _ => Command::new("git")
+        _ => env::command("git")
             .arg("-C")
             .arg(&dir)
             .args(["rev-parse", "--short", "HEAD"])
@@ -80,7 +81,7 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
     //   …
     // The header line is parsed for ahead/behind (when an upstream is
     // configured). Any subsequent line means the worktree is dirty.
-    let porcelain = Command::new("git")
+    let porcelain = env::command("git")
         .arg("-C")
         .arg(&dir)
         .args(["status", "--porcelain=v1", "--branch"])
@@ -159,12 +160,11 @@ pub struct BranchInfo {
 /// record format. Returns an empty vec when the path isn't a git repo.
 #[tauri::command]
 pub async fn git_worktrees(project_path: String) -> Result<Vec<Worktree>, String> {
-    use std::process::Command;
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let output = Command::new("git")
+    let output = env::command("git")
         .arg("-C")
         .arg(&dir)
         .args(["worktree", "list", "--porcelain"])
@@ -250,13 +250,12 @@ pub async fn git_worktree_add(
     branch: String,
     base: Option<String>,
 ) -> Result<Worktree, String> {
-    use std::process::Command;
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return Err(format!("not a directory: {project_path}"));
     }
     // Detect whether the branch exists so we know whether to pass `-b`.
-    let exists = Command::new("git")
+    let exists = env::command("git")
         .arg("-C")
         .arg(&dir)
         .args(["rev-parse", "--verify", "--quiet"])
@@ -264,7 +263,7 @@ pub async fn git_worktree_add(
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    let mut cmd = Command::new("git");
+    let mut cmd = env::command("git");
     cmd.arg("-C").arg(&dir).args(["worktree", "add"]);
     if !exists {
         cmd.arg("-b").arg(&branch).arg(&target_path);
@@ -296,7 +295,6 @@ pub async fn git_worktree_remove(
     worktree_path: String,
     force: bool,
 ) -> Result<(), String> {
-    use std::process::Command;
     let dir = PathBuf::from(&project_path);
     let list = git_worktrees(project_path.clone()).await?;
     let canonical = std::fs::canonicalize(&worktree_path)
@@ -309,7 +307,7 @@ pub async fn git_worktree_remove(
     if target.is_main {
         return Err("cannot remove the main worktree".to_string());
     }
-    let mut cmd = Command::new("git");
+    let mut cmd = env::command("git");
     cmd.arg("-C").arg(&dir).args(["worktree", "remove"]);
     if force {
         cmd.arg("--force");
@@ -328,12 +326,11 @@ pub async fn git_worktree_remove(
 /// Used by the "create worktree from existing branch" picker.
 #[tauri::command]
 pub async fn git_branch_list(project_path: String) -> Result<Vec<BranchInfo>, String> {
-    use std::process::Command;
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let output = Command::new("git")
+    let output = env::command("git")
         .arg("-C")
         .arg(&dir)
         .args([
@@ -415,14 +412,13 @@ pub async fn gh_branch_status(
 }
 
 fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
-    use std::process::Command;
     let mut status = GhBranchStatus::default();
     let dir = PathBuf::from(project_path);
     if !dir.is_dir() || branch.is_empty() {
         return status;
     }
     // 1. gh available + authed?
-    let auth = Command::new("gh").args(["auth", "status"]).output();
+    let auth = env::command("gh").args(["auth", "status"]).output();
     let Ok(out) = auth else { return status };
     if !out.status.success() {
         return status;
@@ -435,7 +431,7 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     //    convention), so we rely on `current_dir(&dir)` and a bare
     //    invocation. Output empty / non-zero on non-GitHub remotes,
     //    which doubles as our "is this on GitHub?" check.
-    let repo_out = Command::new("gh")
+    let repo_out = env::command("gh")
         .args([
             "repo",
             "view",
@@ -462,7 +458,7 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     //    as a separate path element and returns 404 even when the
     //    branch exists.
     let branch_encoded = url_encode_path_segment(branch);
-    let pushed_out = Command::new("gh")
+    let pushed_out = env::command("gh")
         .args([
             "api",
             "-X",
@@ -480,7 +476,7 @@ fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     //    open + closed (incl. merged). Limit 5 keeps the call cheap and
     //    the UI tidy. `--json` makes parsing robust against future CLI
     //    output tweaks.
-    let pr_out = Command::new("gh")
+    let pr_out = env::command("gh")
         .args([
             "pr",
             "list",
@@ -633,7 +629,6 @@ pub async fn gh_repo_overview(project_path: String) -> Result<GhRepoOverview, St
 
 async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
     use std::time::Duration;
-    use tokio::process::Command;
     let mut overview = GhRepoOverview::default();
     let dir = PathBuf::from(project_path);
     if !dir.is_dir() {
@@ -641,7 +636,10 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
     }
 
     // gh available + authed?
-    let auth = Command::new("gh").args(["auth", "status"]).output().await;
+    let auth = env::tokio_command("gh")
+        .args(["auth", "status"])
+        .output()
+        .await;
     let Ok(out) = auth else { return overview };
     if !out.status.success() {
         return overview;
@@ -650,7 +648,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
 
     let dir_a = dir.clone();
     let repo_view_fut = async move {
-        Command::new("gh")
+        env::tokio_command("gh")
             .args([
                 "repo",
                 "view",
@@ -664,7 +662,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
 
     let dir_b = dir.clone();
     let pr_count_fut = async move {
-        Command::new("gh")
+        env::tokio_command("gh")
             .args([
                 "pr", "list", "--state", "open", "--json", "number", "-q", "length",
             ])
@@ -682,7 +680,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
     // which counts issues + PRs together and inflates the dashboard
     // figure when the repo has open PRs.
     let issue_count_fut = async move {
-        let count_out = Command::new("gh")
+        let count_out = env::tokio_command("gh")
             .args([
                 "issue", "list", "--state", "open", "--limit", "1000", "--json", "number", "-q",
                 "length",
@@ -833,7 +831,6 @@ pub(crate) fn parse_gh_issue_list(s: &str) -> Vec<GhIssue> {
 #[tauri::command]
 pub async fn gh_issue_list(project_path: String, limit: Option<u32>) -> Vec<GhIssue> {
     use std::time::Duration;
-    use tokio::process::Command;
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return Vec::new();
@@ -841,7 +838,7 @@ pub async fn gh_issue_list(project_path: String, limit: Option<u32>) -> Vec<GhIs
     let limit = limit.unwrap_or(30).clamp(1, 100);
     let limit_str = limit.to_string();
     tokio::time::timeout(Duration::from_secs(5), async {
-        let out = Command::new("gh")
+        let out = env::tokio_command("gh")
             .args([
                 "issue",
                 "list",
@@ -872,7 +869,6 @@ pub async fn gh_issue_list(project_path: String, limit: Option<u32>) -> Vec<GhIs
 #[tauri::command]
 pub async fn gh_issue_view(project_path: String, number: i64) -> Result<GhIssueDetail, String> {
     use std::time::Duration;
-    use tokio::process::Command;
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return Err(format!("not a directory: {project_path}"));
@@ -881,7 +877,7 @@ pub async fn gh_issue_view(project_path: String, number: i64) -> Result<GhIssueD
         return Err("issue number must be positive".into());
     }
     let out = tokio::time::timeout(Duration::from_secs(5), async {
-        Command::new("gh")
+        env::tokio_command("gh")
             .args([
                 "issue",
                 "view",
@@ -939,12 +935,11 @@ pub async fn gh_issue_view(project_path: String, number: i64) -> Result<GhIssueD
 /// a local logo scan misses.
 #[tauri::command]
 pub async fn gh_repo_avatar_url(project_path: String) -> Option<String> {
-    use tokio::process::Command;
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return None;
     }
-    let out = Command::new("gh")
+    let out = env::tokio_command("gh")
         .args([
             "repo",
             "view",

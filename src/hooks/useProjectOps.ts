@@ -6,13 +6,10 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import {
-  NO_PROJECT_KEY,
-  projectBucketKey,
-  type Tab,
-} from "../types/tab";
+import { NO_PROJECT_KEY, projectBucketKey, type Tab } from "../types/tab";
 import {
   DEFAULT_WORKTREE_BASE_BRANCH,
+  activeCwd,
   activeProject,
   loadProjects,
   pickProjectDirectory,
@@ -233,9 +230,7 @@ export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
  * branch is load-bearing: without it, a stale activeTabId would leave
  * `empty:true` with `tabs.length>0`.
  */
-export function useProjectOps(
-  ctx: UseProjectOpsContext,
-): UseProjectOpsActions {
+export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   const {
     setState,
     stateRef,
@@ -286,58 +281,70 @@ export function useProjectOps(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const buildSidebarHistory = useCallback((
-    tabs: Tab[],
-    activeTabId: string | undefined,
-    recentSessions: RecentSessionItem[],
-  ): SidebarHistoryItem[] => {
-    const openIds = new Set(tabs.map((t) => t.id));
-    const firstUserText = (messages: ChatMessage[]): string => {
-      const first = messages.find(
-        (m) => m.role === "user" && typeof m.text === "string" && m.text.trim().length > 0,
-      );
-      return first?.text?.replace(/\s+/g, " ").trim().slice(0, 48) ?? "";
-    };
-    const openHistory = tabs
-      .filter((t) => t.messages.length > 0)
-      .map((t) => {
-        const firstMsg = firstUserText(t.messages);
-        // Use first user message as the display label when the tab still has
-        // a generic sequential name (Tab 1, Tab 2, …). Explicit renames keep
-        // their name.
-        const label = /^Tab \d+$/.test(t.label) && firstMsg ? firstMsg : t.label;
-        const hint = t.id === activeTabId ? "active" : `${t.messages.length} msg`;
-        return {
-          id: `tab:${t.id}`,
-          label,
-          hint,
-          tooltip: firstMsg || label,
-          active: t.id === activeTabId,
-        };
-      });
-    const restoredHistory = recentSessions
-      .filter((s) => !openIds.has(s.id))
-      .map((s) => ({
-        id: `session:${s.id}`,
-        label: s.label,
-        hint: s.lastModified,
-        tooltip: s.cwd ? s.cwd : "Restore session",
-      }));
-    return [...openHistory, ...restoredHistory].slice(0, 16);
-  }, []);
+  const buildSidebarHistory = useCallback(
+    (
+      tabs: Tab[],
+      activeTabId: string | undefined,
+      recentSessions: RecentSessionItem[],
+    ): SidebarHistoryItem[] => {
+      const openIds = new Set(tabs.map((t) => t.id));
+      const firstUserText = (messages: ChatMessage[]): string => {
+        const first = messages.find(
+          (m) =>
+            m.role === "user" &&
+            typeof m.text === "string" &&
+            m.text.trim().length > 0,
+        );
+        return first?.text?.replace(/\s+/g, " ").trim().slice(0, 48) ?? "";
+      };
+      const openHistory = tabs
+        .filter((t) => t.messages.length > 0)
+        .map((t) => {
+          const firstMsg = firstUserText(t.messages);
+          // Use first user message as the display label when the tab still has
+          // a generic sequential name (Tab 1, Tab 2, …). Explicit renames keep
+          // their name.
+          const label =
+            /^Tab \d+$/.test(t.label) && firstMsg ? firstMsg : t.label;
+          const hint =
+            t.id === activeTabId ? "active" : `${t.messages.length} msg`;
+          return {
+            id: `tab:${t.id}`,
+            label,
+            hint,
+            tooltip: firstMsg || label,
+            active: t.id === activeTabId,
+          };
+        });
+      const restoredHistory = recentSessions
+        .filter((s) => !openIds.has(s.id))
+        .map((s) => ({
+          id: `session:${s.id}`,
+          label: s.label,
+          hint: s.lastModified,
+          tooltip: s.cwd ? s.cwd : "Restore session",
+        }));
+      return [...openHistory, ...restoredHistory].slice(0, 16);
+    },
+    [],
+  );
 
   function scopedDiscoveredSessions(
     discovered: DiscoveredSession[],
   ): DiscoveredSession[] {
-    const active = activeProject(projectsRef.current);
-    if (!active) return discovered;
-    const activePath = normalizeSessionPath(active.path);
-    return discovered.filter((session) => normalizeSessionPath(session.cwd) === activePath);
+    const activePath = normalizeSessionPath(
+      activeCwd(projectsRef.current) ?? undefined,
+    );
+    if (!activePath) return discovered;
+    return discovered.filter(
+      (session) => normalizeSessionPath(session.cwd) === activePath,
+    );
   }
 
   function knownTabIds(extraTabs: { id: string }[] = []): Set<string> {
     return new Set(
-      (((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id))
+      ((stateRef.current.tabs as Tab[] | undefined) ?? [])
+        .map((t) => t.id)
         .concat(extraTabs.map((t) => t.id))
         .concat(["default"]),
     );
@@ -356,7 +363,10 @@ export function useProjectOps(
         //   2. Project directory basename
         //   3. Fallback UUID prefix
         const cwdBasename = d.cwd
-          ? d.cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? ""
+          ? (d.cwd
+              .replace(/[/\\]+$/, "")
+              .split(/[/\\]/)
+              .pop() ?? "")
           : "";
         // Custom label (set via /rename or sidebar context menu) wins
         // over the auto-derived first-user-message label.
@@ -396,7 +406,7 @@ export function useProjectOps(
     const ps = projectsRef.current;
     const active = activeProject(ps);
     const sidebar = (prev.sidebar as Record<string, unknown> | undefined) ?? {};
-    const tabs = tabsForRecent ?? ((prev.tabs as Tab[] | undefined) ?? []);
+    const tabs = tabsForRecent ?? (prev.tabs as Tab[] | undefined) ?? [];
     const tabIds = new Set(tabs.map((t) => t.id).concat(["default"]));
     return {
       projects: ps.projects,
@@ -762,11 +772,7 @@ export function useProjectOps(
       const listing = await gitWorktrees(project.path);
       const prior = projectsRef.current.worktreesByProject[projectId] ?? [];
       const next = reconcileWorktrees(projectId, prior, listing);
-      let nextState = setProjectWorktrees(
-        projectsRef.current,
-        projectId,
-        next,
-      );
+      let nextState = setProjectWorktrees(projectsRef.current, projectId, next);
       const activeWorktreeId = nextState.activeWorktreeId;
       if (
         nextState.activeId === projectId &&
@@ -799,7 +805,11 @@ export function useProjectOps(
   }
 
   function setProjectIconUrl(projectId: string, iconUrl: string | null): void {
-    const next = setProjectIconUrlState(projectsRef.current, projectId, iconUrl);
+    const next = setProjectIconUrlState(
+      projectsRef.current,
+      projectId,
+      iconUrl,
+    );
     if (next === projectsRef.current) return;
     projectsRef.current = next;
     void persistProjects();
@@ -888,10 +898,11 @@ export function useProjectOps(
     const pending = newPendingWorktree(opts.projectId, branch, targetPath);
     const baseBranch = resolveWorktreeBaseBranch(project, opts.baseBranch);
     const before = projectsRef.current.worktreesByProject[opts.projectId] ?? [];
-    projectsRef.current = setProjectWorktrees(projectsRef.current, opts.projectId, [
-      ...before,
-      pending,
-    ]);
+    projectsRef.current = setProjectWorktrees(
+      projectsRef.current,
+      opts.projectId,
+      [...before, pending],
+    );
     syncProjectsToState();
     projectsRef.current = setProjectWorktrees(
       projectsRef.current,
@@ -978,10 +989,7 @@ export function useProjectOps(
         list,
       );
       if (projectsRef.current.activeWorktreeId === worktreeId) {
-        projectsRef.current = setActiveWorktreeState(
-          projectsRef.current,
-          null,
-        );
+        projectsRef.current = setActiveWorktreeState(projectsRef.current, null);
       }
       void persistProjects();
     } catch (err) {

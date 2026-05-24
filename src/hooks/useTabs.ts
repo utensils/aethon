@@ -14,10 +14,7 @@ import {
 } from "../types/tab";
 import { languageFromPath } from "../monaco/language-detection";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
-import {
-  activeCwd,
-  type ProjectsState,
-} from "../projects";
+import { activeCwd, type ProjectsState } from "../projects";
 import { getConfig } from "../config";
 import { recomputeModelPicker } from "../utils/modelPicker";
 
@@ -37,6 +34,7 @@ export const TAB_MIRROR_KEYS: (keyof Tab)[] = [
   "queueCount",
   "canvas",
   "model",
+  "cwd",
   // M6 P1: shell-tab fields. The "kind" + "shell" mirror lets layouts
   // bind `visible: { $ref: "/kind" }`-style toggles without running a
   // full /tabs/<idx> lookup on every render.
@@ -65,7 +63,9 @@ function sessionLabel(session: DiscoveredSession): string {
   return `Session ${session.tabId.slice(0, 8)}`;
 }
 
-function sessionLabelFromMessages(messages: Tab["messages"]): string | undefined {
+function sessionLabelFromMessages(
+  messages: Tab["messages"],
+): string | undefined {
   const first = messages.find(
     (m) =>
       m.role === "user" &&
@@ -97,14 +97,15 @@ export function recentSessionItemFromClosedTab(
   projects: ProjectsState,
 ): { id: string; label: string; lastModified: string; cwd?: string } | null {
   if (tab.kind !== "agent" || tab.messages.length === 0) return null;
-  const projectPath = tab.projectId
+  const fallbackProjectPath = tab.projectId
     ? projects.projects.find((p) => p.id === tab.projectId)?.path
     : undefined;
+  const cwd = tab.cwd ?? fallbackProjectPath;
   return {
     id: tab.id,
     label: sessionLabelFromMessages(tab.messages) ?? tab.label,
     lastModified: "now",
-    ...(projectPath ? { cwd: projectPath } : {}),
+    ...(cwd ? { cwd } : {}),
   };
 }
 
@@ -171,7 +172,11 @@ export interface UseTabsActions {
   newTab: (
     restoreId?: string,
     restoreLabel?: string,
-    options?: { restoredSession?: boolean; cwd?: string; scrollToMatch?: string },
+    options?: {
+      restoredSession?: boolean;
+      cwd?: string;
+      scrollToMatch?: string;
+    },
   ) => void;
   newShellTab: (options?: {
     command?: string;
@@ -363,7 +368,9 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       requestAnimationFrame(() => {
         const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
         const activeId = stateRef.current.activeTabId as string | undefined;
-        const active = activeId ? tabs.find((t) => t.id === activeId) : undefined;
+        const active = activeId
+          ? tabs.find((t) => t.id === activeId)
+          : undefined;
         const buffer = active?.terminalBuffer ?? "";
         dispatchTerminalReplay(buffer);
       });
@@ -414,6 +421,8 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     // the last model selected in that project, then the visible/global
     // model, then pi's ready-reported default.
     const projectId = projectsRef.current.activeId;
+    const inheritedCwd =
+      options?.cwd ?? activeCwd(projectsRef.current) ?? undefined;
     const inheritedModel = modelForNewProjectTab(
       stateRef.current,
       projectId,
@@ -428,10 +437,12 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       : undefined;
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-      const label = restoreLabel ?? existingSessionLabel ?? `Tab ${tabs.length + 1}`;
+      const label =
+        restoreLabel ?? existingSessionLabel ?? `Tab ${tabs.length + 1}`;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
+        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
       };
       tabs.push(tab);
       const result: Record<string, unknown> = {
@@ -454,8 +465,6 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     // Clear the shared xterm so it doesn't keep showing the previous
     // tab's scrollback until the next switch / output event.
     dispatchTerminalReplay("");
-    const inheritedCwd =
-      options?.cwd ?? activeCwd(projectsRef.current) ?? undefined;
     const opening = invoke("agent_command", {
       payload: JSON.stringify({
         type: "tab_open",
@@ -556,7 +565,10 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
   /** Compute a tab label from a file path: just the basename, since the
    *  full path is shown in the editor status strip. */
   function editorLabelForPath(filePath: string): string {
-    const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+    const slash = Math.max(
+      filePath.lastIndexOf("/"),
+      filePath.lastIndexOf("\\"),
+    );
     return slash >= 0 ? filePath.slice(slash + 1) : filePath;
   }
 
@@ -731,11 +743,11 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
         if (!config.ui.restoreTabs) return;
         const liveIds = new Set([
           ...knownIds,
-          ...(((stateRef.current.tabs as Tab[] | undefined) ?? []).map(
+          ...((stateRef.current.tabs as Tab[] | undefined) ?? []).map(
             (t) => t.id,
-          )),
+          ),
         ]);
-      const toRestore = discovered
+        const toRestore = discovered
           .filter((d) => !liveIds.has(d.tabId))
           .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
           .slice(0, 8);
@@ -773,6 +785,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
             args: tab.shell.args,
           }
         : {}),
+      ...(tab.kind === "agent" && tab.cwd ? { cwd: tab.cwd } : {}),
       ...(tab.kind === "editor" && tab.editor
         ? { filePath: tab.editor.filePath }
         : {}),
@@ -816,7 +829,10 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
       // unsaved buffer state is intentionally not preserved across close.
       newEditorTab(entry.filePath);
     } else {
-      newTab(entry.id, entry.label, { restoredSession: true });
+      newTab(entry.id, entry.label, {
+        restoredSession: true,
+        ...(entry.cwd ? { cwd: entry.cwd } : {}),
+      });
     }
   }
 

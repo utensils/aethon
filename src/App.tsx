@@ -137,7 +137,9 @@ export default function App() {
         ...(restored?.scrollToMatchByTab
           ? { scrollToMatchByTab: restored.scrollToMatchByTab }
           : {}),
-        ...(restored?.projectModels ? { projectModels: restored.projectModels } : {}),
+        ...(restored?.projectModels
+          ? { projectModels: restored.projectModels }
+          : {}),
         logoUrl,
         // App version surfaced as a state slice so layout JSON can $ref it
         // (e.g. sidebar's `version` prop). Single source of truth is
@@ -157,7 +159,9 @@ export default function App() {
         // Seed /sidebar/extensions so Settings and the sidebar have a stable
         // list shape before the bridge sends the first ready payload.
         sidebar: {
-          ...(BOOT_LAYOUT.state?.sidebar as Record<string, unknown> | undefined),
+          ...(BOOT_LAYOUT.state?.sidebar as
+            | Record<string, unknown>
+            | undefined),
           extensions: [],
         },
         layout: {
@@ -210,48 +214,52 @@ export default function App() {
     });
   }
 
-  const restoreSessionUiSnapshot = useCallback((snapshot: SessionUiSnapshot) => {
-    setState((prev) => {
-      const tabs = snapshot.tabs.length ? snapshot.tabs : [];
-      if (tabs.length === 0) return prev;
-      const activeTabId =
-        snapshot.activeTabId && tabs.some((t) => t.id === snapshot.activeTabId)
-          ? snapshot.activeTabId
-          : tabs[0].id;
-      const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-      const activeRecord = activeTab as unknown as Record<string, unknown>;
-      const rootMirror = Object.fromEntries(
-        TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
-      );
-      const restoredLayout =
-        snapshot.layout && typeof snapshot.layout === "object"
-          ? (snapshot.layout as Record<string, unknown>)
-          : {};
-      const currentLayout =
-        (prev.layout as Record<string, unknown> | undefined) ?? {};
-      return {
-        ...prev,
-        ...(snapshot.terminal ? { terminal: snapshot.terminal } : {}),
-        ...(snapshot.terminalPanel
-          ? { terminalPanel: snapshot.terminalPanel }
-          : {}),
-        ...(snapshot.scrollToMatchByTab
-          ? { scrollToMatchByTab: snapshot.scrollToMatchByTab }
-          : {}),
-        ...(snapshot.projectModels
-          ? { projectModels: snapshot.projectModels }
-          : {}),
-        ...(Object.keys(restoredLayout).length > 0
-          ? { layout: { ...currentLayout, ...restoredLayout } }
-          : {}),
-        tabs,
-        activeTabId,
-        empty: false,
-        hasTabs: true,
-        ...rootMirror,
-      };
-    });
-  }, [setState]);
+  const restoreSessionUiSnapshot = useCallback(
+    (snapshot: SessionUiSnapshot) => {
+      setState((prev) => {
+        const tabs = snapshot.tabs.length ? snapshot.tabs : [];
+        if (tabs.length === 0) return prev;
+        const activeTabId =
+          snapshot.activeTabId &&
+          tabs.some((t) => t.id === snapshot.activeTabId)
+            ? snapshot.activeTabId
+            : tabs[0].id;
+        const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+        const activeRecord = activeTab as unknown as Record<string, unknown>;
+        const rootMirror = Object.fromEntries(
+          TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
+        );
+        const restoredLayout =
+          snapshot.layout && typeof snapshot.layout === "object"
+            ? (snapshot.layout as Record<string, unknown>)
+            : {};
+        const currentLayout =
+          (prev.layout as Record<string, unknown> | undefined) ?? {};
+        return {
+          ...prev,
+          ...(snapshot.terminal ? { terminal: snapshot.terminal } : {}),
+          ...(snapshot.terminalPanel
+            ? { terminalPanel: snapshot.terminalPanel }
+            : {}),
+          ...(snapshot.scrollToMatchByTab
+            ? { scrollToMatchByTab: snapshot.scrollToMatchByTab }
+            : {}),
+          ...(snapshot.projectModels
+            ? { projectModels: snapshot.projectModels }
+            : {}),
+          ...(Object.keys(restoredLayout).length > 0
+            ? { layout: { ...currentLayout, ...restoredLayout } }
+            : {}),
+          tabs,
+          activeTabId,
+          empty: false,
+          hasTabs: true,
+          ...rootMirror,
+        };
+      });
+    },
+    [setState],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -354,7 +362,9 @@ export default function App() {
   // useOsEdges clears them on supervisor signals.
   const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
   const hangWarnActiveRef = useRef<Set<string>>(new Set());
-  const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
   const sessionSnapshotPersistTimerRef = useRef<number | null>(null);
 
   // Forward handles populated below as hooks construct. Lets earlier
@@ -392,7 +402,7 @@ export default function App() {
     shellPromptBeforeCloseRef,
     shortcutsNewTabKindRef,
     reapplyConfig,
-  } = useBootConfig({ setState });
+  } = useBootConfig({ setState, piDefaultModelRef });
 
   // ---------------------------------------------------------------------
   // UI zoom + theme switching are owned by useZoomAndTheme. The hook
@@ -601,7 +611,8 @@ export default function App() {
       void (async () => {
         const url = await discoverIcon(project);
         if (!url) return;
-        if (!projectsRef.current.projects.some((p) => p.id === project.id)) return;
+        if (!projectsRef.current.projects.some((p) => p.id === project.id))
+          return;
         setProjectIconUrl(project.id, url);
       })();
     }
@@ -1022,8 +1033,15 @@ export default function App() {
         return await invoke<string>("install_aethon_extension", { spec });
       },
       listModels: () => {
-        const sidebar = (stateRef.current.sidebar as Record<string, unknown>) ?? {};
-        return ((sidebar.models as { id: string; label: string; active?: boolean }[]) ?? []);
+        const sidebar =
+          (stateRef.current.sidebar as Record<string, unknown>) ?? {};
+        return (
+          (sidebar.models as {
+            id: string;
+            label: string;
+            active?: boolean;
+          }[]) ?? []
+        );
       },
       toggleTerminal,
       toggleSidebar,
@@ -1036,7 +1054,8 @@ export default function App() {
           description: l.description,
         })),
       pickProject: openProjectFromPicker,
-      openProject: (path: string, label?: string) => openProjectByPath(path, label),
+      openProject: (path: string, label?: string) =>
+        openProjectByPath(path, label),
       setActiveProject: setActiveProjectById,
       clearProject: clearActiveProject,
       removeProject: removeProjectById,
@@ -1131,7 +1150,7 @@ export default function App() {
       newEditorTab,
       updateEditorMeta,
       renameEditorTabsForPath,
-    closeEditorTabsForPath,
+      closeEditorTabsForPath,
       closeTab,
       setActiveTab,
       setActiveSubTab,
@@ -1189,7 +1208,8 @@ export default function App() {
         component: { id: string; type?: string },
         eventType: string,
         data?: unknown,
-      ) => dispatchEvent({ component, eventType, data }, eventRouteCtx),
+      ) =>
+        dispatchEvent({ component, eventType, data }, eventRouteCtx),
     [eventRouteCtx],
   );
 
@@ -1197,7 +1217,8 @@ export default function App() {
     const tabs = (state.tabs as Tab[] | undefined) ?? [];
     const recentSessions =
       (state.recentSessions as RecentSessionItem[] | undefined) ?? [];
-    const sidebar = (state.sidebar as Record<string, unknown> | undefined) ?? {};
+    const sidebar =
+      (state.sidebar as Record<string, unknown> | undefined) ?? {};
     const history = buildSidebarHistory(
       tabs,
       state.activeTabId as string | undefined,
@@ -1237,8 +1258,7 @@ export default function App() {
     const activeProjectId =
       (state.project as { id?: string } | null | undefined)?.id ?? null;
     const sidebarProjects =
-      ((state.sidebar as { projects?: unknown } | undefined)
-        ?.projects as
+      ((state.sidebar as { projects?: unknown } | undefined)?.projects as
         | { id: string; worktrees?: unknown }[]
         | undefined) ?? [];
     const activeProjectSidebarEntry = sidebarProjects.find(
@@ -1265,9 +1285,7 @@ export default function App() {
       ? projectsArr.filter((p) => p.id !== activeProjectId)
       : projectsArr;
     const existingProjectDashboard =
-      (state.projectDashboard as
-        | { widgets?: unknown[] }
-        | undefined) ?? {};
+      (state.projectDashboard as { widgets?: unknown[] } | undefined) ?? {};
     const projectDashboard = {
       ...existingProjectDashboard,
       otherProjects,
@@ -1276,9 +1294,7 @@ export default function App() {
       widgets: existingProjectDashboard.widgets ?? [],
     };
     const existingProjectsDashboard =
-      (state.projectsDashboard as
-        | { extraCards?: unknown[] }
-        | undefined) ?? {};
+      (state.projectsDashboard as { extraCards?: unknown[] } | undefined) ?? {};
     const projectsDashboard = {
       ...existingProjectsDashboard,
       extraCards: existingProjectsDashboard.extraCards ?? [],
@@ -1319,7 +1335,13 @@ export default function App() {
       activeHostId,
       host: activeHost,
     };
-  }, [buildSidebarHistory, hostInfo.activeHostId, hostInfo.hosts, hostInfo.localHostId, state]);
+  }, [
+    buildSidebarHistory,
+    hostInfo.activeHostId,
+    hostInfo.hosts,
+    hostInfo.localHostId,
+    state,
+  ]);
   const renderRecord = renderState as Record<string, unknown>;
   const notificationsOpen =
     ((renderRecord.notifications as unknown[] | undefined) ?? []).length > 0;

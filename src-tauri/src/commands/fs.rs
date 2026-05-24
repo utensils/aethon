@@ -503,7 +503,6 @@ pub fn fs_walk_project(root: String) -> Result<Vec<String>, String> {
 /// existence/non-existence info to the user-visible Finder window.
 #[tauri::command]
 pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), String> {
-    use std::process::Command;
     let root_path = PathBuf::from(&root);
     let req = PathBuf::from(&path);
     let p = crate::helpers::resolve_inside_root(&root_path, &req)
@@ -521,7 +520,7 @@ pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), Strin
     let p = canon;
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
+        crate::env::command("open")
             .arg("-R")
             .arg(&p)
             .spawn()
@@ -530,7 +529,7 @@ pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), Strin
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer.exe")
+        crate::env::command("explorer.exe")
             .arg(format!("/select,{}", p.display()))
             .spawn()
             .map_err(|e| format!("explorer.exe: {e}"))?;
@@ -540,7 +539,7 @@ pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), Strin
     {
         // No portable "select-this-file" on Linux; open the parent dir.
         let parent = p.parent().unwrap_or(&p);
-        Command::new("xdg-open")
+        crate::env::command("xdg-open")
             .arg(parent)
             .spawn()
             .map_err(|e| format!("xdg-open: {e}"))?;
@@ -565,7 +564,6 @@ pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), Strin
 /// Finder/Explorer/xdg-open, which is itself visible to the user.
 #[tauri::command]
 pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
-    use std::process::Command;
     let p = PathBuf::from(&path);
     if !p.is_absolute() {
         return Err(format!("path must be absolute: {path}"));
@@ -580,7 +578,7 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     let target = canon;
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
+        crate::env::command("open")
             .arg(&target)
             .spawn()
             .map_err(|e| format!("open: {e}"))?;
@@ -588,7 +586,7 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer.exe")
+        crate::env::command("explorer.exe")
             .arg(&target)
             .spawn()
             .map_err(|e| format!("explorer.exe: {e}"))?;
@@ -596,7 +594,7 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        Command::new("xdg-open")
+        crate::env::command("xdg-open")
             .arg(&target)
             .spawn()
             .map_err(|e| format!("xdg-open: {e}"))?;
@@ -611,7 +609,6 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
 /// applications on arbitrary files.
 #[tauri::command]
 pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> {
-    use std::process::Command;
     let root_path = PathBuf::from(&root);
     let req = PathBuf::from(&path);
     let p = crate::helpers::resolve_inside_root(&root_path, &req)
@@ -629,7 +626,7 @@ pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> 
     let p = canon;
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
+        crate::env::command("open")
             .arg(&p)
             .spawn()
             .map_err(|e| format!("open: {e}"))?;
@@ -638,7 +635,7 @@ pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> 
     #[cfg(target_os = "windows")]
     {
         // start "" "<file>" — the empty title argument is required by cmd.
-        Command::new("cmd")
+        crate::env::command("cmd")
             .args(["/C", "start", ""])
             .arg(&p)
             .spawn()
@@ -647,7 +644,7 @@ pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> 
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        Command::new("xdg-open")
+        crate::env::command("xdg-open")
             .arg(&p)
             .spawn()
             .map_err(|e| format!("xdg-open: {e}"))?;

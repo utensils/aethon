@@ -17,7 +17,7 @@ afterEach(() => {
   clearTauriMocks();
 });
 
-const ref = <T,>(value: T) => ({ current: value });
+const ref = <T>(value: T) => ({ current: value });
 
 function makeProjectsState(
   overrides: Partial<ProjectsState> = {},
@@ -86,9 +86,9 @@ describe("tabsForProjectBucket", () => {
     expect(tabsForProjectBucket(tabs, "project-1").map((t) => t.id)).toEqual([
       "p1",
     ]);
-    expect(tabsForProjectBucket(tabs, NO_PROJECT_KEY).map((t) => t.id)).toEqual([
-      "none",
-    ]);
+    expect(tabsForProjectBucket(tabs, NO_PROJECT_KEY).map((t) => t.id)).toEqual(
+      ["none"],
+    );
   });
 });
 
@@ -123,6 +123,45 @@ describe("nonEmptyProjectTabs", () => {
     expect(nonEmptyProjectTabs(tabs).map((t) => t.id)).toEqual([
       "chat",
       "shell",
+    ]);
+  });
+});
+
+describe("useProjectOps session scoping", () => {
+  it("scopes discovered sessions to the active worktree cwd", () => {
+    const { result } = renderProjectOps(
+      makeProjectsState({
+        activeId: "project-1",
+        activeWorktreeId: "wt-1",
+        worktreesByProject: {
+          "project-1": [
+            {
+              id: "wt-1",
+              projectId: "project-1",
+              path: "/projects/aethon-fix-session-restore",
+              branch: "fix/session-restore",
+              isMain: false,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(
+      result.current.scopedDiscoveredSessions([
+        { tabId: "main", lastModified: 1, cwd: "/projects/aethon" },
+        {
+          tabId: "worktree",
+          lastModified: 2,
+          cwd: "/projects/aethon-fix-session-restore",
+        },
+      ]),
+    ).toEqual([
+      {
+        tabId: "worktree",
+        lastModified: 2,
+        cwd: "/projects/aethon-fix-session-restore",
+      },
     ]);
   });
 });
@@ -214,7 +253,9 @@ describe("useProjectOps worktree refresh", () => {
 
     expect(projectsRef.current.activeWorktreeId).toBeNull();
     expect(projectsRef.current.worktreesByProject["project-1"]).toHaveLength(1);
-    expect(projectsRef.current.worktreesByProject["project-1"]?.[0]).toMatchObject({
+    expect(
+      projectsRef.current.worktreesByProject["project-1"]?.[0],
+    ).toMatchObject({
       path: "/projects/aethon",
       branch: "main",
       isMain: true,
@@ -311,17 +352,17 @@ describe("useProjectOps worktree creation", () => {
       return Promise.resolve(undefined);
     });
     const initial = makeProjectsState({
-        activeId: "project-1",
-        projects: [
-          {
-            id: "project-1",
-            label: "aethon",
-            path: "/projects/aethon",
-            lastUsed: 1,
-            worktreeBaseBranch: "upstream/trunk",
-          },
-        ],
-      });
+      activeId: "project-1",
+      projects: [
+        {
+          id: "project-1",
+          label: "aethon",
+          path: "/projects/aethon",
+          lastUsed: 1,
+          worktreeBaseBranch: "upstream/trunk",
+        },
+      ],
+    });
     const { result, projectsRef } = renderProjectOps(initial);
     await act(async () => {
       await Promise.resolve();

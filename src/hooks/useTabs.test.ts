@@ -23,9 +23,7 @@ describe("recentSessionItemFromClosedTab", () => {
       activeWorktreeId: null,
       worktreesByProject: {},
       activeHostId: null,
-      projects: [
-        { id: "p1", label: "mold", path: "/repo/mold", lastUsed: 1 },
-      ],
+      projects: [{ id: "p1", label: "mold", path: "/repo/mold", lastUsed: 1 }],
     };
 
     expect(recentSessionItemFromClosedTab(tab, projects)).toEqual({
@@ -36,9 +34,50 @@ describe("recentSessionItemFromClosedTab", () => {
     });
   });
 
+  it("keeps a closed worktree chat scoped to its original cwd", () => {
+    const tab = {
+      ...makeEmptyTab("worktree-tab", "Tab 1", "p1"),
+      cwd: "/repo/mold-fix-session-restore",
+      messages: [
+        {
+          id: "m1",
+          role: "user" as const,
+          text: "Recover this branch session",
+        },
+      ],
+    };
+    const projects = {
+      activeId: "p1",
+      activeWorktreeId: "wt-1",
+      worktreesByProject: {
+        p1: [
+          {
+            id: "wt-1",
+            projectId: "p1",
+            path: "/repo/mold-fix-session-restore",
+            branch: "fix/session-restore",
+            isMain: false,
+          },
+        ],
+      },
+      activeHostId: null,
+      projects: [{ id: "p1", label: "mold", path: "/repo/mold", lastUsed: 1 }],
+    };
+
+    expect(recentSessionItemFromClosedTab(tab, projects)).toEqual({
+      id: "worktree-tab",
+      label: "Recover this branch session",
+      lastModified: "now",
+      cwd: "/repo/mold-fix-session-restore",
+    });
+  });
+
   it("does not create history entries for empty tabs", () => {
     expect(
-      recentSessionItemFromClosedTab(makeEmptyTab("t1", "Tab 1"), emptyProjectsState()),
+      recentSessionItemFromClosedTab(
+        makeEmptyTab("t1", "Tab 1"),
+        emptyProjectsState(),
+      ),
     ).toBeNull();
   });
 });
