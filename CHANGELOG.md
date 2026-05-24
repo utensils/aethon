@@ -6,7 +6,7 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-05-24
+## [0.3.0] - 2026-05-24
 
 ### Added — Workstation layout redesign
 
@@ -575,7 +575,7 @@ error?: string}>`. Backwards compatible: sync callers ignore the
   "Terminal" + "xterm.js · WebGL" badge).
 - **`SPEC.md` checklist** reconciled with what's actually shipped.
 
-[Unreleased]: https://github.com/utensils/aethon/compare/v0.2.1...HEAD
-[0.2.1]: https://github.com/utensils/aethon/compare/v0.2.0...v0.2.1
+[Unreleased]: https://github.com/utensils/aethon/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/utensils/aethon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/utensils/aethon/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/utensils/aethon/releases/tag/v0.1.0

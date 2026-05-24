@@ -48,8 +48,8 @@ publishes them to the matching GitHub release.
 ```sh
 bun run version:sync
 bun run version:check
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 If `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are
@@ -65,7 +65,7 @@ Manual fallback (single-platform):
 ```sh
 bun tauri build
 # Bundles + signatures land in src-tauri/target/release/bundle/.
-# Upload them to a GitHub release named after the version (e.g. v0.2.1)
+# Upload them to a GitHub release named after the version (e.g. v0.3.0)
 # along with a hand-written latest.json that points at them.
 ```
 
@@ -73,13 +73,13 @@ bun tauri build
 
 ```json
 {
-  "version": "0.2.1",
+  "version": "0.3.0",
   "notes": "Release notes here.",
   "pub_date": "2026-04-26T12:00:00Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "<paste contents of Aethon_0.2.1_aarch64.app.tar.gz.sig here>",
-      "url": "https://github.com/utensils/aethon/releases/download/v0.2.1/Aethon_0.2.1_aarch64.app.tar.gz"
+      "signature": "<paste contents of Aethon_0.3.0_aarch64.app.tar.gz.sig here>",
+      "url": "https://github.com/utensils/aethon/releases/download/v0.3.0/Aethon_0.3.0_aarch64.app.tar.gz"
     }
   }
 }
