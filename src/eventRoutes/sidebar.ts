@@ -456,6 +456,19 @@ export const handleSidebarRenameProject: EventRouteHandler = (
   return true;
 };
 
+export const handleSidebarSetProjectWorktreeBase: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "set-project-worktree-base") return false;
+  const { projectId, baseBranch } =
+    (data as { projectId?: string; baseBranch?: string } | undefined) ?? {};
+  if (projectId && typeof baseBranch === "string") {
+    ctx.setProjectWorktreeBaseBranch(projectId, baseBranch);
+  }
+  return true;
+};
+
 /** sidebar toggle-extension: forward to the bridge so the user's
  *  disabled list is updated + persisted. The bridge re-emits `ready`
  *  on success so the sidebar entry shifts buckets without a refresh. */

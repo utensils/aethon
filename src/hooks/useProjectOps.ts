@@ -12,6 +12,7 @@ import {
   type Tab,
 } from "../types/tab";
 import {
+  DEFAULT_WORKTREE_BASE_BRANCH,
   activeProject,
   loadProjects,
   pickProjectDirectory,
@@ -20,6 +21,7 @@ import {
   setActiveWorktree as setActiveWorktreeState,
   setProjectIconUrl as setProjectIconUrlState,
   setProjectUiExpanded,
+  setProjectWorktreeBaseBranch as setProjectWorktreeBaseBranchState,
   setProjectWorktrees,
   upsertProject,
   type Project,
@@ -169,6 +171,10 @@ export interface UseProjectOpsActions {
   retryPendingWorktree: (worktreeId: string) => Promise<void>;
   renameWorktree: (worktreeId: string, label: string) => void;
   renameProject: (projectId: string, label: string) => void;
+  setProjectWorktreeBaseBranch: (
+    projectId: string,
+    baseBranch: string | null,
+  ) => void;
   fetchBranches: (projectId: string) => Promise<string[]>;
   findProjectOfWorktree: (
     worktreeId: string,
@@ -397,7 +403,12 @@ export function useProjectOps(
       activeProjectId: ps.activeId,
       activeWorktreeId: ps.activeWorktreeId,
       project: active
-        ? { id: active.id, label: active.label, path: active.path }
+        ? {
+            id: active.id,
+            label: active.label,
+            path: active.path,
+            worktreeBaseBranch: active.worktreeBaseBranch,
+          }
         : null,
       sessionLabel: active ? active.label : "",
       sidebar: {
@@ -804,6 +815,27 @@ export function useProjectOps(
     scheduleProjectsSave();
   }
 
+  function resolveWorktreeBaseBranch(
+    project: Project,
+    explicit?: string,
+  ): string {
+    const trimmed = explicit?.trim();
+    if (trimmed) return trimmed;
+    return project.worktreeBaseBranch?.trim() || DEFAULT_WORKTREE_BASE_BRANCH;
+  }
+
+  function navigateToWorktree(projectId: string, worktreeId: string): void {
+    if (projectsRef.current.activeId !== projectId) {
+      setActiveProjectById(projectId);
+    }
+    projectsRef.current = setProjectUiExpanded(
+      projectsRef.current,
+      projectId,
+      true,
+    );
+    activateWorktree(worktreeId);
+  }
+
   // Branch / target path defaults for the "Create worktree" prompt. The
   // target lives next to the project root with `-<branch>` suffix, mirroring
   // a common community convention (and matching Codex's default placement).
@@ -854,6 +886,7 @@ export function useProjectOps(
     const targetPath =
       opts.targetPath?.trim() || defaultWorktreePath(project.path, branch);
     const pending = newPendingWorktree(opts.projectId, branch, targetPath);
+    const baseBranch = resolveWorktreeBaseBranch(project, opts.baseBranch);
     const before = projectsRef.current.worktreesByProject[opts.projectId] ?? [];
     projectsRef.current = setProjectWorktrees(projectsRef.current, opts.projectId, [
       ...before,
@@ -871,11 +904,11 @@ export function useProjectOps(
     );
     syncProjectsToState();
     try {
-      await gitWorktreeAdd({
+      const created = await gitWorktreeAdd({
         projectPath: project.path,
         targetPath,
         branch,
-        base: opts.baseBranch,
+        base: baseBranch,
       });
       projectsRef.current = setProjectWorktrees(
         projectsRef.current,
@@ -887,7 +920,15 @@ export function useProjectOps(
         ),
       );
       await refreshProjectWorktrees(opts.projectId);
-      return targetPath;
+      const list = projectsRef.current.worktreesByProject[opts.projectId] ?? [];
+      const live = list.find(
+        (w) =>
+          w.id === pending.id ||
+          w.path === created.path ||
+          w.path === targetPath,
+      );
+      navigateToWorktree(opts.projectId, live?.id ?? pending.id);
+      return live?.path ?? created.path ?? targetPath;
     } catch (err) {
       projectsRef.current = setProjectWorktrees(
         projectsRef.current,
@@ -1027,6 +1068,7 @@ export function useProjectOps(
         projectPath: hit.project.path,
         targetPath: hit.worktree.path,
         branch: hit.worktree.branch,
+        base: resolveWorktreeBaseBranch(hit.project),
       });
       projectsRef.current = setProjectWorktrees(
         projectsRef.current,
@@ -1038,6 +1080,11 @@ export function useProjectOps(
         ),
       );
       await refreshProjectWorktrees(hit.project.id);
+      const list = projectsRef.current.worktreesByProject[hit.project.id] ?? [];
+      const live = list.find(
+        (w) => w.id === pending.id || w.path === hit.worktree.path,
+      );
+      navigateToWorktree(hit.project.id, live?.id ?? pending.id);
     } catch (err) {
       projectsRef.current = setProjectWorktrees(
         projectsRef.current,
@@ -1096,6 +1143,20 @@ export function useProjectOps(
     void persistProjects();
   }
 
+  function setProjectWorktreeBaseBranch(
+    projectId: string,
+    baseBranch: string | null,
+  ): void {
+    const next = setProjectWorktreeBaseBranchState(
+      projectsRef.current,
+      projectId,
+      baseBranch,
+    );
+    if (next === projectsRef.current) return;
+    projectsRef.current = next;
+    void persistProjects();
+  }
+
   return {
     projectsLoadedRef,
     allDiscoveredSessionsRef,
@@ -1122,6 +1183,7 @@ export function useProjectOps(
     dismissPendingWorktree,
     retryPendingWorktree,
     renameWorktree,
+    setProjectWorktreeBaseBranch,
     fetchBranches,
     renameProject,
     findProjectOfWorktree,

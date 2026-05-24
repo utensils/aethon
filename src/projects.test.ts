@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyProjectsState,
+  DEFAULT_WORKTREE_BASE_BRANCH,
   migrateProjects,
   removeProject,
   setActiveWorktree,
+  setProjectWorktreeBaseBranch,
   setProjectUiExpanded,
   setProjectWorktrees,
   upsertProject,
@@ -131,6 +133,27 @@ describe("migrateProjects", () => {
     expect(out.activeHostId).toBe("remote:peer");
   });
 
+  it("preserves non-default per-project worktree base branches", () => {
+    const out = migrateProjects({
+      schemaVersion: 3,
+      projects: [
+        {
+          id: "a",
+          label: "aethon",
+          path: "/Users/example/aethon",
+          lastUsed: 1,
+          worktreeBaseBranch: "upstream/trunk",
+        },
+      ],
+      activeId: "a",
+      activeWorktreeId: null,
+      activeHostId: "local:abc123",
+      worktreesByProject: {},
+    });
+
+    expect(out.projects[0].worktreeBaseBranch).toBe("upstream/trunk");
+  });
+
   it("drops invalid worktree entries", () => {
     const out = migrateProjects({
       schemaVersion: 2,
@@ -156,5 +179,38 @@ describe("setProjectUiExpanded", () => {
     const next = setProjectUiExpanded(state, target.id, true);
     expect(next.projects.find((p) => p.id === target.id)?.uiExpanded).toBe(true);
     expect(next.projects.find((p) => p.id !== target.id)?.uiExpanded).toBeUndefined();
+  });
+});
+
+describe("setProjectWorktreeBaseBranch", () => {
+  it("stores non-default project worktree bases", () => {
+    const state = stateWithProjects();
+    const target = state.projects[0];
+    const next = setProjectWorktreeBaseBranch(
+      state,
+      target.id,
+      "upstream/trunk",
+    );
+    expect(next.projects.find((p) => p.id === target.id)?.worktreeBaseBranch).toBe(
+      "upstream/trunk",
+    );
+  });
+
+  it("clears blank or default values so origin/main remains implicit", () => {
+    let state = stateWithProjects();
+    const target = state.projects[0];
+    state = setProjectWorktreeBaseBranch(state, target.id, "upstream/trunk");
+
+    const cleared = setProjectWorktreeBaseBranch(
+      state,
+      target.id,
+      DEFAULT_WORKTREE_BASE_BRANCH,
+    );
+    expect(
+      cleared.projects.find((p) => p.id === target.id)?.worktreeBaseBranch,
+    ).toBeUndefined();
+
+    const blank = setProjectWorktreeBaseBranch(state, target.id, " ");
+    expect(blank.projects.find((p) => p.id === target.id)?.worktreeBaseBranch).toBeUndefined();
   });
 });

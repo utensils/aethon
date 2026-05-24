@@ -546,6 +546,7 @@ export default function App() {
     retryPendingWorktree,
     renameWorktree,
     renameProject,
+    setProjectWorktreeBaseBranch,
   } = useProjectOps({
     setState,
     stateRef,
@@ -1154,6 +1155,7 @@ export default function App() {
       retryPendingWorktree,
       renameWorktree,
       renameProject,
+      setProjectWorktreeBaseBranch,
       invoke,
       writeState,
     }),

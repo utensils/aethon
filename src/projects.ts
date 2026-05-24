@@ -30,6 +30,9 @@ export interface Project {
   /** Cached discovered icon (absolute path or asset URL). Populated by
    *  src/projectIcons.ts on hover/intersection. */
   iconUrl?: string;
+  /** Default base passed to `git worktree add -b <branch> <path> <base>`.
+   *  Missing / blank falls back to DEFAULT_WORKTREE_BASE_BRANCH. */
+  worktreeBaseBranch?: string;
 }
 
 export interface ProjectsState {
@@ -47,6 +50,7 @@ export interface ProjectsState {
 const FILE = "projects.json";
 const MAX_PROJECTS = 16;
 const SCHEMA_VERSION = 3;
+export const DEFAULT_WORKTREE_BASE_BRANCH = "origin/main";
 /** Fallback used when host_info IPC isn't reachable (tests, plain browser).
  *  Real boots resolve a stable id via `commands::host::host_info`. */
 export const FALLBACK_LOCAL_HOST_ID = "local:unknown";
@@ -122,6 +126,11 @@ export function migrateProjects(
     .map((p) => ({
       ...p,
       hostId: typeof p.hostId === "string" && p.hostId.length > 0 ? p.hostId : localHostId,
+      worktreeBaseBranch:
+        typeof p.worktreeBaseBranch === "string" &&
+        p.worktreeBaseBranch.trim().length > 0
+          ? p.worktreeBaseBranch.trim()
+          : undefined,
     }));
   const activeId =
     typeof parsed.activeId === "string" &&
@@ -221,6 +230,26 @@ export function setProjectIconUrl(
     if (p.iconUrl === next) return p;
     changed = true;
     return { ...p, iconUrl: next };
+  });
+  return changed ? { ...state, projects } : state;
+}
+
+export function setProjectWorktreeBaseBranch(
+  state: ProjectsState,
+  projectId: string,
+  baseBranch: string | null,
+): ProjectsState {
+  const trimmed = (baseBranch ?? "").trim();
+  const nextBase =
+    trimmed.length > 0 && trimmed !== DEFAULT_WORKTREE_BASE_BRANCH
+      ? trimmed
+      : undefined;
+  let changed = false;
+  const projects = state.projects.map((p) => {
+    if (p.id !== projectId) return p;
+    if (p.worktreeBaseBranch === nextBase) return p;
+    changed = true;
+    return { ...p, worktreeBaseBranch: nextBase };
   });
   return changed ? { ...state, projects } : state;
 }

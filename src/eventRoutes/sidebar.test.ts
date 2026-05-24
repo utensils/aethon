@@ -6,6 +6,7 @@ import {
   handleSidebarRemoveWorktree,
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
+  handleSidebarSetProjectWorktreeBase,
   handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
@@ -59,6 +60,25 @@ describe("handleSidebarRemoveProject", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.removeProjectById).toHaveBeenCalledWith("proj-1");
+  });
+});
+
+describe("handleSidebarSetProjectWorktreeBase", () => {
+  it("delegates base branch changes to project ops", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleSidebarSetProjectWorktreeBase(
+      {
+        component: { id: "sidebar" },
+        eventType: "set-project-worktree-base",
+        data: { projectId: "proj-1", baseBranch: "upstream/trunk" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.setProjectWorktreeBaseBranch).toHaveBeenCalledWith(
+      "proj-1",
+      "upstream/trunk",
+    );
   });
 });
 

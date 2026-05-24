@@ -19,11 +19,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
+import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
 
 interface ProjectLite {
   id: string;
   label: string;
   path: string;
+  worktreeBaseBranch?: string;
 }
 
 interface WorktreeLite {
@@ -56,16 +58,6 @@ function resolveOrInline<T>(v: unknown, state: Record<string, unknown>): T | nul
   }
   return v as T;
 }
-
-/**
- * Default-branch fallback: empty string means "let the backend pick
- * HEAD." We deliberately do NOT pre-fill 'main' — many repos use
- * master/trunk/dev/misc-wip as their default, and `git worktree add
- * <target> main` fails when no local main exists. Backend's
- * git_worktree_add omits the base argument when this field is empty,
- * which is equivalent to "start from current HEAD".
- */
-const DEFAULT_BASE_BRANCH = "";
 
 type WorktreeChoice =
   | { kind: "current" }
@@ -139,7 +131,9 @@ export function TaskLauncher({
     if (!touched) setWorktreeChoice(initialChoice);
   }, [initialChoice, touched]);
   const [newBranch, setNewBranch] = useState("");
-  const [baseBranch, setBaseBranch] = useState(DEFAULT_BASE_BRANCH);
+  const defaultBaseBranch =
+    data.project?.worktreeBaseBranch ?? DEFAULT_WORKTREE_BASE_BRANCH;
+  const [baseBranch, setBaseBranch] = useState(defaultBaseBranch);
   const [submitting, setSubmitting] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -160,10 +154,6 @@ export function TaskLauncher({
     if (!data.project) return;
     if (worktreeChoice.kind === "new" && !newBranch.trim()) return;
     setSubmitting(true);
-    // baseBranch only sent when the user actually typed something — an
-    // empty / whitespace value means "off current HEAD", which is the
-    // backend's omit-the-argument path. Otherwise repos without a local
-    // 'main' would 404 on `git worktree add -b <new> <target> main`.
     const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
       projectId: data.project.id,
@@ -303,11 +293,11 @@ export function TaskLauncher({
             <input
               type="text"
               className="a2ui-task-launcher-base-input"
-              placeholder="base (current HEAD)"
+              placeholder={DEFAULT_WORKTREE_BASE_BRANCH}
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
-              aria-label="Base branch (empty = current HEAD)"
-              title="Base branch to fork from. Leave empty to use the current HEAD — useful when the repo's default isn't 'main'."
+              aria-label="Base branch (empty = project default)"
+              title="Base branch to fork from. Leave empty to use the project default."
             />
           </>
         )}
@@ -348,8 +338,36 @@ function ChipMenu({
   onSelect: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (target && wrapRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const closeOnFocusOut = (e: FocusEvent) => {
+      const target = e.target as Node | null;
+      if (target && wrapRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const closeOnEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer, true);
+    document.addEventListener("focusin", closeOnFocusOut, true);
+    document.addEventListener("keydown", closeOnEsc);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer, true);
+      document.removeEventListener("focusin", closeOnFocusOut, true);
+      document.removeEventListener("keydown", closeOnEsc);
+    };
+  }, [open]);
   return (
-    <span className="a2ui-task-launcher-chip-wrap">
+    <span className="a2ui-task-launcher-chip-wrap" ref={wrapRef}>
       <button
         type="button"
         className="a2ui-task-launcher-chip"

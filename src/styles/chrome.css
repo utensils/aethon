@@ -1145,6 +1145,44 @@ body.ae-resizing-sidebar .a2ui-layout {
   opacity: 0.6;
 }
 
+.a2ui-context-menu-input {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  min-width: 300px;
+}
+.a2ui-context-menu-input label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.a2ui-context-menu-input input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text);
+}
+.a2ui-context-menu-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.a2ui-context-menu-input button {
+  justify-self: end;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: inherit;
+  font-size: var(--chrome-text);
+  cursor: pointer;
+}
+
 /* File-tree context menu uses a wider min-width to fit the longest
    label ("Copy Relative Path") without truncation. */
 .ae-file-tree-context-menu {

@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { TaskLauncher } from "./task-launcher";
 import type { A2UIComponent } from "../../../types/a2ui";
 
@@ -10,6 +13,8 @@ function launcher(props: Record<string, unknown>): A2UIComponent {
     props,
   };
 }
+
+afterEach(() => cleanup());
 
 describe("TaskLauncher", () => {
   it("renders prompt placeholder with the project name", () => {
@@ -60,5 +65,32 @@ describe("TaskLauncher", () => {
     );
     expect(html).toContain("mold");
     expect(html).toContain("Start a task in mold…");
+  });
+
+  it("dismisses chip menus on Escape and focus outside", () => {
+    render(
+      <>
+        <TaskLauncher
+          component={launcher({
+            project: { id: "p1", label: "aethon", path: "/a" },
+            worktrees: [{ id: "wt-1", label: "main", path: "/a-wt" }],
+          })}
+          state={{}}
+          onEvent={() => {}}
+        />
+        <button type="button">outside</button>
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+    expect(screen.getByRole("menu").textContent).toContain("main");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.focusIn(screen.getByRole("button", { name: "outside" }));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });
