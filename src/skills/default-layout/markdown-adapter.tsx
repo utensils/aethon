@@ -139,7 +139,11 @@ function remarkLinkBareUrls(): (tree: MarkdownNode) => void {
 }
 
 function openExternalUrl(url: string): void {
-  void Promise.resolve(openUrl(url)).catch(() => undefined);
+  try {
+    void openUrl(url).catch(() => undefined);
+  } catch {
+    // Opener errors are not actionable from chat rendering.
+  }
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- remark plugin list consumed by ReactMarkdown callers

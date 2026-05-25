@@ -297,13 +297,32 @@ describe("ChatInput", () => {
       ],
     });
 
-    fireEvent.click(screen.getByRole("link", { name: "https://example.com/bare" }));
+    fireEvent.click(
+      screen.getByRole("link", { name: "https://example.com/bare" }),
+    );
     fireEvent.click(screen.getByRole("link", { name: "Issue" }));
 
     expect(openUrl).toHaveBeenCalledWith("https://example.com/bare");
     expect(openUrl).toHaveBeenCalledWith(
       "https://github.com/utensils/aethon/issues/94",
     );
+  });
+
+  it("ignores synchronous opener failures from link clicks", () => {
+    openUrl.mockImplementationOnce(() => {
+      throw new Error("opener failed");
+    });
+    renderHistory({
+      messages: [
+        { id: "1", role: "agent", text: "https://example.com/fail" },
+      ],
+    });
+
+    expect(() =>
+      fireEvent.click(
+        screen.getByRole("link", { name: "https://example.com/fail" }),
+      ),
+    ).not.toThrow();
   });
 
   it("does not linkify URLs in inline code or fenced code blocks", () => {
