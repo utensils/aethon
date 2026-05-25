@@ -184,7 +184,94 @@ describe("useChat setModel", () => {
     });
   });
 
-  it("marks normal messages as queued while the active prompt is busy", async () => {
+  it("steerQueuedMessage pops the entry, flips the spinner id, and ships it as steer", async () => {
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    // Pre-load two queued items.
+    await act(async () => {
+      await result.current.sendChat("first");
+      await result.current.sendChat("second");
+    });
+    const queued = (stateRef.current.tabs as Tab[])[0].queuedMessages;
+    expect(queued.map((m) => m.content)).toEqual(["first", "second"]);
+
+    await act(async () => {
+      await result.current.steerQueuedMessage("tab-1", queued[0].id);
+    });
+
+    // The steered message is no longer in the queue.
+    const finalTab = (stateRef.current.tabs as Tab[])[0];
+    expect(finalTab.queuedMessages.map((m) => m.content)).toEqual(["second"]);
+    // queuedSteeringId clears after the dispatch settles.
+    expect(finalTab.queuedSteeringId).toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "first",
+      tabId: "tab-1",
+      mode: "steer",
+    });
+  });
+
+  it("editQueuedMessage replaces the content of a queued entry in place", async () => {
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("orig");
+    });
+    const queued = (stateRef.current.tabs as Tab[])[0].queuedMessages;
+    expect(queued).toHaveLength(1);
+
+    await act(async () => {
+      result.current.editQueuedMessage("tab-1", queued[0].id, "rewritten");
+    });
+    expect((stateRef.current.tabs as Tab[])[0].queuedMessages[0].content).toBe(
+      "rewritten",
+    );
+  });
+
+  it("deleteQueuedMessage removes the entry from the queue", async () => {
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("drop me");
+      await result.current.sendChat("keep me");
+    });
+    const queued = (stateRef.current.tabs as Tab[])[0].queuedMessages;
+
+    await act(async () => {
+      result.current.deleteQueuedMessage("tab-1", queued[0].id);
+    });
+    expect(
+      (stateRef.current.tabs as Tab[])[0].queuedMessages.map((m) => m.content),
+    ).toEqual(["keep me"]);
+  });
+
+  it("clearQueuedMessages empties the queue", async () => {
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("a");
+      await result.current.sendChat("b");
+      await result.current.sendChat("c");
+    });
+    expect(
+      (stateRef.current.tabs as Tab[])[0].queuedMessages,
+    ).toHaveLength(3);
+
+    await act(async () => {
+      result.current.clearQueuedMessages("tab-1");
+    });
+    expect((stateRef.current.tabs as Tab[])[0].queuedMessages).toEqual([]);
+    expect((stateRef.current.tabs as Tab[])[0].queueCount).toBe(0);
+  });
+
+  it("holds normal messages in the client queue while the active prompt is busy", async () => {
+    // Claudette-style: a busy normal-mode send goes to the popover, not
+    // to the bridge. The user-bubble only enters history once
+    // useQueuedDispatch pops it on idle and re-fires sendChat.
     const { ctx, stateRef } = buildContext({ waiting: true });
     const { result } = renderHook(() => useChat(ctx));
 
@@ -192,16 +279,16 @@ describe("useChat setModel", () => {
       await result.current.sendChat("after this");
     });
 
-    expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "after this",
-      tabId: "tab-1",
-      mode: "normal",
-    });
-    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
-      role: "user",
-      text: "after this",
-      delivery: "queued",
-    });
+    expect(invoke).not.toHaveBeenCalledWith(
+      "send_message",
+      expect.objectContaining({ message: "after this" }),
+    );
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    expect(tab.queuedMessages.map((m) => m.content)).toEqual(["after this"]);
+    expect(tab.queueCount).toBe(1);
+    // No user bubble lands in history while queued — the popover owns
+    // the visual representation until drain.
+    expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
   });
 
   it("marks the local user message failed when send_message rejects", async () => {

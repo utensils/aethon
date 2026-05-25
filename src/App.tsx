@@ -22,6 +22,7 @@ import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
 import { useFocus, WORKSTATION_AREAS, workstationRows } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
+import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
@@ -705,6 +706,10 @@ export default function App() {
     setModel,
     stopPrompt,
     exportActiveChatMarkdown,
+    editQueuedMessage,
+    deleteQueuedMessage,
+    steerQueuedMessage,
+    clearQueuedMessages,
   } = useChat({
     setState,
     stateRef,
@@ -722,6 +727,16 @@ export default function App() {
   // before any of their handlers fire.
   useEffect(() => {
     chatActionsRef.current = { appendSystem };
+  });
+
+  // Drain the per-tab client-side message queues. The hook subscribes to
+  // tabs and re-fires its drain check on every commit; gating happens
+  // inside the hook against `waiting`, `queuedMessages.length`,
+  // `queuedSteeringId`, and a private in-flight set.
+  useQueuedDispatch({
+    tabs: (state.tabs as Tab[] | undefined) ?? [],
+    sendChat,
+    updateTab,
   });
 
   // ---------------------------------------------------------------------
@@ -1192,6 +1207,10 @@ export default function App() {
       sendChat,
       stopPrompt,
       updateActiveTab,
+      editQueuedMessage,
+      deleteQueuedMessage,
+      steerQueuedMessage,
+      clearQueuedMessages,
       newTab,
       newShellTab,
       newEditorTab,

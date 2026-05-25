@@ -219,6 +219,7 @@
     "draft": "",
     "waiting": false,
     "queueCount": 0,
+    "queuedMessages": [],
     "messages": [],
     "canvas": null,
     "empty": false,

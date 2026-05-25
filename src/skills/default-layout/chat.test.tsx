@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatHistory, ChatInput } from "./chat";
+import { ChatHistory, ChatInput, QueuedMessagesPopover } from "./chat";
+import { SkillRegistry } from "../../skills/SkillRegistry";
+import { SkillRegistryProvider } from "../../skills/registry";
 
 class ResizeObserverMock {
   observe = vi.fn();
@@ -23,16 +25,27 @@ function renderInput(
   props: Record<string, unknown> = {},
   state: Record<string, unknown> = {},
 ) {
+  // ChatInput now mounts a `<RegistryComponent type="queued-messages-popover">`
+  // inside itself, which requires the SkillRegistry context. We register the
+  // popover so the production wiring is exercised; tests that pass queued
+  // messages in state see the real popover render path.
+  const registry = new SkillRegistry();
+  registry.register({
+    name: "test-default-layout",
+    components: { "queued-messages-popover": QueuedMessagesPopover },
+  });
   render(
-    <ChatInput
-      component={{
-        id: "chat-input",
-        type: "chat-input",
-        props: { value: "", placeholder: "Message", ...props },
-      }}
-      state={state}
-      onEvent={onEvent}
-    />,
+    <SkillRegistryProvider registry={registry}>
+      <ChatInput
+        component={{
+          id: "chat-input",
+          type: "chat-input",
+          props: { value: "", placeholder: "Message", ...props },
+        }}
+        state={state}
+        onEvent={onEvent}
+      />
+    </SkillRegistryProvider>,
   );
   return {
     input: screen.getByPlaceholderText("Message"),

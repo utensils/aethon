@@ -70,6 +70,16 @@ export interface EventRouteContext {
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   updateActiveTab: (updater: (tab: Tab) => Tab) => void;
 
+  // ─── Queue (popover above composer) ─────────────────────────────────
+  editQueuedMessage: (
+    tabId: string,
+    messageId: string,
+    content: string,
+  ) => void;
+  deleteQueuedMessage: (tabId: string, messageId: string) => void;
+  steerQueuedMessage: (tabId: string, messageId: string) => Promise<void>;
+  clearQueuedMessages: (tabId: string) => void;
+
   // ─── Tab / shell actions (from useTabs) ─────────────────────────────
   newTab: (
     tabId?: string,

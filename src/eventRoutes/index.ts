@@ -30,6 +30,7 @@ import { handleShellConsent } from "./shellConsent";
 import { matchesExtensionRoute } from "./extensions";
 import { handleChatInput } from "./chatInput";
 import { handleChatMessages } from "./chatMessages";
+import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
 import { handleSearch } from "./search";
 import { handlePalette } from "./palette";
@@ -88,6 +89,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:chat-input", [handleChatInput]],
     ["type:chat-history", [handleChatMessages]],
     ["type:main-canvas", [handleChatMessages]],
+    ["type:queued-messages-popover", [handleQueuedMessages]],
     ["type:empty-state", [handleEmptyState]],
     // Worktree landing — "Start Session" + "Open in Files" CTAs reuse
     // the sidebar's worktree routes since the destination semantics

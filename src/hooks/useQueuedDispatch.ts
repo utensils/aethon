@@ -1,0 +1,76 @@
+import { useEffect, useRef } from "react";
+import type { Tab } from "../types/tab";
+
+/**
+ * Drains client-held queues. Watches every agent tab's `waiting` flag;
+ * when it transitions to false and the tab still has queued messages,
+ * the head pops and ships through `sendChat(..., { mode: "normal" })`.
+ *
+ * Coupling notes:
+ *
+ * - The pop and the `waiting = true` re-flip happen in a single
+ *   `updateTab` call so React commits them together. Without that, the
+ *   composer would flash Send → Stop on every queue transition.
+ * - `dispatching` tracks the tabs that are currently mid-dispatch
+ *   (sendChat is async). It guards against the effect running again
+ *   after the optimistic update and double-firing the same head.
+ * - `queuedSteeringId` blocks the drain while a manual steer is in
+ *   flight, so a user mashing Send-next-and-Steer doesn't fire two
+ *   chat sends at once.
+ * - The hook intentionally only inspects `kind === "agent"` tabs;
+ *   shell and editor tabs have queue arrays only because they share
+ *   the Tab interface.
+ */
+export interface UseQueuedDispatchParams {
+  tabs: Tab[];
+  sendChat: (
+    text: string,
+    options?: { mode?: "normal" | "steer"; tabId?: string },
+  ) => Promise<void>;
+  updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
+}
+
+export function useQueuedDispatch({
+  tabs,
+  sendChat,
+  updateTab,
+}: UseQueuedDispatchParams): void {
+  const dispatchingRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const tab of tabs) {
+      if (tab.kind !== "agent") continue;
+      if (tab.waiting) continue;
+      // Defensive: persisted tabs created before this feature don't have
+      // queuedMessages on disk. The sessionUiSnapshot loader now seeds
+      // [], but a tab created by the bridge / a hand-crafted state
+      // patch might still arrive without it.
+      const queue = tab.queuedMessages ?? [];
+      if (queue.length === 0) continue;
+      if (tab.queuedSteeringId) continue;
+      if (dispatchingRef.current.has(tab.id)) continue;
+
+      const head = queue[0];
+      dispatchingRef.current.add(tab.id);
+
+      // Optimistic: pop the head AND flip waiting back to true in a
+      // single render commit so the composer button doesn't flash from
+      // Stop → Send → Stop between turns.
+      updateTab(tab.id, (t) => {
+        const current = t.queuedMessages ?? [];
+        if (current.length === 0) return t;
+        const next = current.slice(1);
+        return {
+          ...t,
+          queuedMessages: next,
+          queueCount: next.length,
+          waiting: true,
+        };
+      });
+
+      sendChat(head.content, { mode: "normal", tabId: tab.id }).finally(() => {
+        dispatchingRef.current.delete(tab.id);
+      });
+    }
+  }, [tabs, sendChat, updateTab]);
+}

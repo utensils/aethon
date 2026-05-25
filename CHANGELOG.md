@@ -6,6 +6,23 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **Queued messages popover + steering (Claudette-style).** Messages typed
+  into the composer while the agent is busy now go to a client-held queue
+  rendered as a popover above the textarea instead of straight to pi's
+  `followUp`. Each queued row carries Edit / Steer / Delete affordances,
+  the header offers `Clear queue`, and a new `useQueuedDispatch` hook
+  drains the head on every idle transition. Cmd/Ctrl+Enter on the composer
+  still ships the current draft as a mid-turn steer.
+
+### Changed
+
+- **`response_end` no longer preserves `waiting` for queued sends.** Pi's
+  `followUp` queue is unused on the new client-held queue path; clearing
+  `waiting` on every turn end is what lets `useQueuedDispatch` see the
+  idle moment and pop the next message.
+
 ### Fixed
 
 - **Issue worktree task launches.** GitHub issue send-to-agent now targets
