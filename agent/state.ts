@@ -223,6 +223,10 @@ export interface TabRecord {
       /** Epoch ms — when tool_execution_start fired. Used by the M6 P4
        *  `tool-card` component to render a live elapsed-time clock. */
       startedAt?: number;
+      /** Epoch ms — when Aethon synthesized a terminal state before pi
+       *  emitted tool_execution_end (e.g. user pressed Stop). */
+      endedAt?: number;
+      status?: "cancelled";
     }
   >;
   promptInFlight: boolean;

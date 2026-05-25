@@ -32,6 +32,7 @@ import { ackMutation, markFrontendReady } from "./mutation-ack";
 import { dismissNotification, notify } from "./notifications";
 import { setState, makeCanvasApi } from "./state-mutation";
 import {
+  cancelRunningToolCards,
   emitReady,
   ensurePickerHasModel,
   ensureTab,
@@ -560,6 +561,44 @@ export async function handleSetModel(
   deps.send({ type: "model_changed", tabId, model: msg.id });
 }
 
+export function handleStop(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  msg: InboundMessage,
+): void {
+  const tabId = msg.tabId ?? "default";
+  const tab = state.tabs.get(tabId);
+  if (!tab) return;
+  if (
+    typeof (tab.session as { clearQueue?: () => unknown }).clearQueue ===
+    "function"
+  ) {
+    try {
+      (tab.session as { clearQueue: () => unknown }).clearQueue();
+    } catch {
+      /* best effort */
+    }
+  }
+  tab.queuedCount = 0;
+  deps.send({ type: "queue_reset", tabId });
+  cancelRunningToolCards(deps, tab, tabId);
+  if (
+    typeof (tab.session as { abortBash?: () => unknown }).abortBash ===
+    "function"
+  ) {
+    try {
+      (tab.session as { abortBash: () => unknown }).abortBash();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({ type: "error", tabId, message: `abort bash: ${message}` });
+    }
+  }
+  tab.session.abort().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({ type: "error", tabId, message: `abort: ${message}` });
+  });
+}
+
 /** Run the inbound dispatcher loop. Returns when stdin closes. */
 export async function runDispatcher(
   state: AethonAgentState,
@@ -733,32 +772,6 @@ export async function runDispatcher(
   }
 
   // ---- Per-message handlers -------------------------------------------
-
-  function handleStop(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): void {
-    const tabId = msg.tabId ?? "default";
-    const tab = state.tabs.get(tabId);
-    if (!tab) return;
-    if (
-      typeof (tab.session as { clearQueue?: () => unknown }).clearQueue ===
-      "function"
-    ) {
-      try {
-        (tab.session as { clearQueue: () => unknown }).clearQueue();
-      } catch {
-        /* best effort */
-      }
-    }
-    tab.queuedCount = 0;
-    deps.send({ type: "queue_reset", tabId });
-    tab.session.abort().catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({ type: "error", tabId, message: `abort: ${message}` });
-    });
-  }
 
   async function handleNativeSlashCommand(
     state: AethonAgentState,

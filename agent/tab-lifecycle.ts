@@ -112,6 +112,47 @@ export function emitBashResult(
   }
 }
 
+/** Stop visible timers for tools that were in-flight when the user aborted.
+ *  Pi normally emits tool_execution_end, but abort paths can terminate the
+ *  turn before that event reaches us. Re-emitting the same tool-card id with
+ *  endedAt freezes the frontend clock immediately; if pi later sends the real
+ *  end event, that result updates the same card instead of duplicating it. */
+export function cancelRunningToolCards(
+  deps: TabLifecycleDeps,
+  rec: TabRecord,
+  tabId: string,
+): number {
+  const endedAt = Date.now();
+  let count = 0;
+  for (const [toolCallId, cached] of rec.toolArgsCache) {
+    if (cached.startedAt === undefined || cached.endedAt !== undefined) {
+      continue;
+    }
+    cached.endedAt = endedAt;
+    cached.status = "cancelled";
+    count += 1;
+    const payload = toolCardPayload({
+      id: cached.uiId,
+      toolName: cached.name,
+      argsSummary: cached.summary,
+      result: "Cancelled by user.",
+      status: "cancelled",
+      startedAt: cached.startedAt,
+      endedAt,
+    });
+    deps.send({ type: "a2ui", tabId, id: cached.uiId, payload });
+    if (cached.name === "bash") {
+      deps.send({
+        type: "terminal_output",
+        tabId,
+        content: "\r\n[command cancelled]\r\n",
+      });
+    }
+    turnLog.debug(`cancelled running tool-card ${toolCallId} tabId=${tabId}`);
+  }
+  return count;
+}
+
 /** Filter the picker to the user's enabledModels patterns from
  *  ~/.pi/agent/settings.json. Always include the current model. */
 export function buildPickerModels(
@@ -593,8 +634,12 @@ function handleSessionEvent(
         argsSummary: cached?.summary ?? "",
         result: ev.result,
         isError: ev.isError,
+        ...(cached?.status !== undefined ? { status: cached.status } : {}),
         ...(cached?.startedAt !== undefined
-          ? { startedAt: cached.startedAt, endedAt: Date.now() }
+          ? {
+              startedAt: cached.startedAt,
+              endedAt: cached.endedAt ?? Date.now(),
+            }
           : {}),
       });
       deps.send({ type: "a2ui", tabId, id: uiId, payload });
@@ -633,6 +678,9 @@ function handleSessionEvent(
         turnLog.warn(log);
       } else {
         turnLog.info(log);
+      }
+      for (const [toolCallId, cached] of rec.toolArgsCache) {
+        if (cached.endedAt !== undefined) rec.toolArgsCache.delete(toolCallId);
       }
       rec.agentEndFired = true;
       rec.promptInFlight = false;

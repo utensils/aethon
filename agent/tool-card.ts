@@ -174,11 +174,20 @@ export function toolCardPayload(opts: {
   argsSummary: string;
   result?: unknown;
   isError?: boolean;
+  status?: "cancelled";
   startedAt?: number;
   endedAt?: number;
 }) {
-  const { id, toolName, argsSummary, result, isError, startedAt, endedAt } =
-    opts;
+  const {
+    id,
+    toolName,
+    argsSummary,
+    result,
+    isError,
+    status,
+    startedAt,
+    endedAt,
+  } = opts;
   const children: unknown[] = [];
   if (result !== undefined) {
     const extracted = extractToolContent(result);
@@ -219,6 +228,7 @@ export function toolCardPayload(opts: {
           ...(startedAt !== undefined ? { startedAt } : {}),
           ...(endedAt !== undefined ? { endedAt } : {}),
           ...(isError ? { isError: true } : {}),
+          ...(status !== undefined ? { status } : {}),
         },
         children,
       },

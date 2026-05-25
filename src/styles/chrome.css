@@ -4294,7 +4294,8 @@ body.ae-resizing-terminal * {
 .ae-tool-card[data-long-running="true"] {
   border-color: color-mix(in oklab, var(--warning, #d18a2c) 55%, var(--border));
 }
-.ae-tool-card[data-error="true"] {
+.ae-tool-card[data-error="true"],
+.ae-tool-card[data-cancelled="true"] {
   border-color: color-mix(in oklab, var(--danger, #c5494a) 55%, var(--border));
 }
 
@@ -4343,7 +4344,8 @@ body.ae-resizing-terminal * {
 .ae-tool-status-done {
   color: var(--text-dim);
 }
-.ae-tool-status-error {
+.ae-tool-status-error,
+.ae-tool-status-cancelled {
   color: var(--danger, #c5494a);
 }
 .ae-tool-status-running {
@@ -4412,7 +4414,8 @@ body.ae-resizing-terminal * {
 .ae-tool-card[data-running="true"] .ae-tool-card-time {
   color: var(--accent);
 }
-.ae-tool-card[data-error="true"] .ae-tool-card-time {
+.ae-tool-card[data-error="true"] .ae-tool-card-time,
+.ae-tool-card[data-cancelled="true"] .ae-tool-card-time {
   color: var(--danger, #c5494a);
 }
 
