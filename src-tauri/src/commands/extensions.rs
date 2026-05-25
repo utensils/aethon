@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::{AgentProcess, AgentReloadFlag, agent_reload_in_progress, env, project_root};
+use crate::{AgentProcesses, env, project_root};
 
 // ─────────────────────────── menu items ────────────────────────────
 
@@ -468,47 +468,73 @@ fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandl
                 Err(RecvTimeoutError::Disconnected) => return,
             }
         }
-        // Quiet — ask the bridge to drain & respawn. Holds the child
-        // alive (`as_mut`, not `take`) so an in-flight prompt's stdin
-        // pipe stays open while pi finishes the turn.
-        let state: State<'_, AgentProcess> = app.state();
-        if let Ok(mut guard) = state.0.lock()
-            && let Some(child) = guard.as_mut()
-        {
-            // Capture pid before the mutable borrow on `child.stdin`
-            // so we can log it without the borrow-checker complaining
-            // about overlapping immutable + mutable borrows of `child`.
-            let pid = child.id();
-            let write_result = match child.stdin.as_mut() {
-                Some(stdin) => {
-                    writeln!(stdin, "{{\"type\":\"reload_request\"}}").and_then(|_| stdin.flush())
+        // Quiet — ask each bridge to drain & respawn. Clone the per-child
+        // handles first so a wedged stdin only blocks that bridge, not the
+        // whole process table.
+        let state: State<'_, AgentProcesses> = app.state();
+        let children: Vec<_> = state
+            .children
+            .lock()
+            .map(|guard| {
+                guard
+                    .iter()
+                    .map(|(key, child)| (key.clone(), Arc::clone(child)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !children.is_empty() {
+            let mut kill_keys = Vec::new();
+            for (key, child) in children {
+                let Ok(mut child) = child.lock() else {
+                    kill_keys.push(key);
+                    continue;
+                };
+                // Capture pid before the mutable borrow on `child.stdin`
+                // so we can log it without the borrow-checker complaining
+                // about overlapping immutable + mutable borrows of `child`.
+                let pid = child.id();
+                let write_result = match child.stdin.as_mut() {
+                    Some(stdin) => writeln!(stdin, "{{\"type\":\"reload_request\"}}")
+                        .and_then(|_| stdin.flush()),
+                    None => Err(std::io::Error::other("agent stdin closed")),
+                };
+                match write_result {
+                    Ok(()) => {
+                        tracing::info!(
+                            target: "aethon::agent_watch",
+                            key = key,
+                            "asked pid={pid} to reload after {settle}ms settle (last paths={last_paths:?})",
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "aethon::agent_watch",
+                            key = key,
+                            "reload_request write failed for pid={pid}: {err}; falling back to kill",
+                        );
+                        kill_keys.push(key.clone());
+                    }
                 }
-                None => Err(std::io::Error::other("agent stdin closed")),
-            };
-            match write_result {
-                Ok(()) => {
-                    tracing::info!(
-                        target: "aethon::agent_watch",
-                        "asked pid={pid} to reload after {settle}ms settle (last paths={last_paths:?})",
-                    );
+            }
+            if !kill_keys.is_empty() {
+                if let Ok(mut exits) = state.intentional_exits.lock() {
+                    for key in &kill_keys {
+                        exits.insert(key.clone());
+                    }
                 }
-                Err(err) => {
-                    // Stdin is closed — child is gone or wedged. Fall
-                    // back to the legacy hard-kill so the next request
-                    // lazily respawns. Mark intentional so the stdout
-                    // reader emits agent-reloaded, not agent-crashed.
-                    tracing::warn!(
-                        target: "aethon::agent_watch",
-                        "reload_request write failed for pid={pid}: {err}; falling back to kill",
-                    );
-                    let reload_flag = agent_reload_in_progress(&app);
-                    reload_flag.store(true, std::sync::atomic::Ordering::Release);
-                    if let Some(mut dead) = guard.take() {
+                let mut guard = match state.children.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return,
+                };
+                for key in kill_keys {
+                    if let Some(dead) = guard.remove(&key)
+                        && let Ok(mut dead) = dead.lock()
+                    {
                         let _ = dead.kill();
                         let _ = dead.wait();
                     }
-                    let _ = app.emit("agent-reloaded", "");
                 }
+                let _ = app.emit("agent-reloaded", "");
             }
         }
     }
@@ -800,8 +826,7 @@ fn output_tail(stdout: &[u8], stderr: &[u8]) -> String {
 pub async fn install_aethon_extension(
     spec: String,
     app: AppHandle,
-    state: State<'_, AgentProcess>,
-    reload_flag: State<'_, AgentReloadFlag>,
+    state: State<'_, AgentProcesses>,
 ) -> Result<String, String> {
     let spec = validate_extension_install_spec(&spec)?;
     let home = app
@@ -847,23 +872,29 @@ pub async fn install_aethon_extension(
     .map_err(|e| format!("install task failed: {e}"))?;
 
     let install_output = install_result?;
-    if let Ok(mut guard) = state.0.lock()
-        && let Some(mut child) = guard.take()
-    {
-        let pid = child.id();
-        // Mark this kill as intentional BEFORE the actual kill — the
-        // stdout reader's EOF handler reads this flag to decide whether
-        // to fire `agent-crashed`. Without the flag, the EOF supervisor
-        // misclassifies the extension-install reload as a crash and the
-        // user sees both a crash toast and the auto-restart on top of
-        // the deliberate `agent-reloaded` flow.
-        reload_flag
-            .0
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        let _ = child.kill();
-        let _ = child.wait();
+    let children: Vec<_> = state
+        .children
+        .lock()
+        .map(|mut guard| guard.drain().collect())
+        .unwrap_or_default();
+    if !children.is_empty() {
+        if let Ok(mut exits) = state.intentional_exits.lock() {
+            for (key, _) in &children {
+                exits.insert(key.clone());
+            }
+        }
+        for (key, child) in children {
+            if let Ok(mut child) = child.lock() {
+                let pid = child.id();
+                let _ = child.kill();
+                let _ = child.wait();
+                tracing::info!(target: "aethon::ext_install", key = key, "killed pid={pid}; will respawn with {spec}");
+            }
+        }
+        if let Ok(mut routes) = state.mutation_routes.lock() {
+            routes.clear();
+        }
         let _ = app.emit("agent-reloaded", "");
-        tracing::info!(target: "aethon::ext_install", "killed pid={pid}; will respawn with {spec}");
     }
 
     Ok(if install_output.trim().is_empty() {

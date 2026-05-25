@@ -98,6 +98,7 @@ describe("useChat setModel", () => {
       message: "hello",
       tabId: "tab-1",
       mode: "normal",
+      model: "anthropic/claude-opus-4-7",
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       role: "user",
@@ -129,6 +130,7 @@ describe("useChat setModel", () => {
       tabId: "issue-tab",
       mode: "normal",
       cwd: "/projects/aethon-fix-86",
+      model: "anthropic/claude-opus-4-7",
     });
     const tabs = stateRef.current.tabs as Tab[];
     expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
@@ -173,6 +175,7 @@ describe("useChat setModel", () => {
       message: "/clear",
       tabId: "issue-tab",
       mode: "normal",
+      model: "anthropic/claude-opus-4-7",
     });
     const tabs = stateRef.current.tabs as Tab[];
     expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
@@ -209,6 +212,7 @@ describe("useChat setModel", () => {
       message: "first",
       tabId: "tab-1",
       mode: "steer",
+      model: "anthropic/claude-opus-4-7",
     });
   });
 
@@ -257,9 +261,7 @@ describe("useChat setModel", () => {
       await result.current.sendChat("b");
       await result.current.sendChat("c");
     });
-    expect(
-      (stateRef.current.tabs as Tab[])[0].queuedMessages,
-    ).toHaveLength(3);
+    expect((stateRef.current.tabs as Tab[])[0].queuedMessages).toHaveLength(3);
 
     act(() => {
       result.current.clearQueuedMessages("tab-1");
@@ -304,9 +306,7 @@ describe("useChat setModel", () => {
       await result.current.sendChat("b");
       await result.current.sendChat("c");
     });
-    expect(
-      (stateRef.current.tabs as Tab[])[0].queuedMessages,
-    ).toHaveLength(3);
+    expect((stateRef.current.tabs as Tab[])[0].queuedMessages).toHaveLength(3);
 
     await act(async () => {
       await result.current.stopPrompt("tab-1");
@@ -339,13 +339,17 @@ describe("useChat setModel", () => {
       }));
     });
     await act(async () => {
-      await result.current.sendChat("drained", { mode: "normal", tabId: "tab-1" });
+      await result.current.sendChat("drained", {
+        mode: "normal",
+        tabId: "tab-1",
+      });
     });
 
     expect(invoke).toHaveBeenCalledWith("send_message", {
       message: "drained",
       tabId: "tab-1",
       mode: "normal",
+      model: "anthropic/claude-opus-4-7",
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
     expect(tab.queuedMessages).toEqual([]);
@@ -391,6 +395,7 @@ describe("useChat setModel", () => {
       message: "look now",
       tabId: "tab-1",
       mode: "steer",
+      model: "anthropic/claude-opus-4-7",
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       role: "user",
@@ -404,8 +409,18 @@ describe("useChat setModel", () => {
     const { result } = renderHook(() => useChat(ctx));
 
     act(() => {
-      result.current.appendOrAmendAgentText("Inspecting", "agent-1", "tab-1", "thinking");
-      result.current.appendOrAmendAgentText("\nDone", "agent-1", "tab-1", "text");
+      result.current.appendOrAmendAgentText(
+        "Inspecting",
+        "agent-1",
+        "tab-1",
+        "thinking",
+      );
+      result.current.appendOrAmendAgentText(
+        "\nDone",
+        "agent-1",
+        "tab-1",
+        "text",
+      );
     });
 
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({

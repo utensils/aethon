@@ -21,7 +21,9 @@ export interface UseOsEdgesContext {
 
   // ─── Refs from useChat / useBridgeMessages ──────────────────────────
   activeResponseIdRef: MutableRefObject<string | null>;
-  hangWarnTimersRef: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+  hangWarnTimersRef: MutableRefObject<
+    Map<string, ReturnType<typeof setTimeout>>
+  >;
   hangWarnActiveRef: MutableRefObject<Set<string>>;
   hangWarnNotifId: (tabId: string) => string;
 
@@ -103,6 +105,19 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
   const { bootLayout } = ctx;
 
   useEffect(() => {
+    const restartAgentProcess = (tabId?: string) => {
+      if (!tabId) {
+        return invoke("start_agent");
+      }
+      const tab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+        (t) => t.id === tabId && t.kind === "agent",
+      );
+      const payload: Record<string, unknown> = { type: "tab_open", tabId };
+      if (tab?.cwd) payload.cwd = tab.cwd;
+      if (tab?.model) payload.model = tab.model;
+      return invoke("agent_command", { payload: JSON.stringify(payload) });
+    };
+
     // The boot sequence (start_agent → boot_layout → report) and the
     // `agent-response` listener live in `useBridgeMessages` — see the
     // call site near the bottom of App.tsx. The remaining listeners
@@ -123,9 +138,10 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         if (!tabId || typeof content !== "string") return;
         updateTab(tabId, (t) => {
           const next = t.terminalBuffer + content;
-          const trimmed = next.length > TERMINAL_REPLAY_MAX
-            ? next.slice(next.length - TERMINAL_REPLAY_MAX)
-            : next;
+          const trimmed =
+            next.length > TERMINAL_REPLAY_MAX
+              ? next.slice(next.length - TERMINAL_REPLAY_MAX)
+              : next;
           return { ...t, terminalBuffer: trimmed };
         });
         window.dispatchEvent(
@@ -180,7 +196,8 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
       activeResponseIdRef.current = null;
       for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
       hangWarnTimersRef.current.clear();
-      for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
+      for (const tid of hangWarnActiveRef.current)
+        dismissNotification(hangWarnNotifId(tid));
       hangWarnActiveRef.current.clear();
       setStatusFlags({ waiting: false, status: "agent reloaded" });
       // Re-prime the full bridge handshake. A bare start_agent emits the
@@ -207,62 +224,93 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
     // bun child exits unexpectedly (intentional hot-reload kills go
     // through `agent-reloaded` instead). Clear all per-tab waiting
     // state, surface a notice, and auto-restart per [shell] config.
-    const unlistenCrashed = listen<{ pid?: number; stderrTail?: string[] }>(
-      "agent-crashed",
-      (event) => {
-        const tail = event.payload?.stderrTail ?? [];
-        const lastLine = tail.length > 0 ? tail[tail.length - 1] : "no stderr";
-        activeResponseIdRef.current = null;
+    const unlistenCrashed = listen<{
+      pid?: number;
+      tabId?: string | null;
+      stderrTail?: string[];
+    }>("agent-crashed", (event) => {
+      const tail = event.payload?.stderrTail ?? [];
+      const crashedTabId =
+        typeof event.payload?.tabId === "string" &&
+        event.payload.tabId.length > 0
+          ? event.payload.tabId
+          : undefined;
+      const lastLine = tail.length > 0 ? tail[tail.length - 1] : "no stderr";
+      activeResponseIdRef.current = null;
+      if (crashedTabId) {
+        const h = hangWarnTimersRef.current.get(crashedTabId);
+        if (h !== undefined) clearTimeout(h);
+        hangWarnTimersRef.current.delete(crashedTabId);
+        if (hangWarnActiveRef.current.delete(crashedTabId)) {
+          dismissNotification(hangWarnNotifId(crashedTabId));
+        }
+      } else {
         for (const h of hangWarnTimersRef.current.values()) clearTimeout(h);
         hangWarnTimersRef.current.clear();
-        for (const tid of hangWarnActiveRef.current) dismissNotification(hangWarnNotifId(tid));
+        for (const tid of hangWarnActiveRef.current)
+          dismissNotification(hangWarnNotifId(tid));
         hangWarnActiveRef.current.clear();
-        // Clear waiting/queue across every tab — pi sessions are gone.
-        setState((prev) => {
-          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => ({
-            ...t,
-            waiting: false,
-            queueCount: 0,
-          }));
-          return {
-            ...prev,
-            tabs,
-            waiting: false,
-            queueCount: 0,
-            status: "agent crashed",
-          };
-        });
-        const willAutoRestart = autoRestartAgentRef.current;
-        pushNotification({
-          id: "ae-agent-crashed",
-          title: "Agent process exited unexpectedly",
-          message: lastLine.slice(0, 200),
-          kind: "error",
-          // Keep visible until the user dismisses or restart succeeds —
-          // a transient toast would race a user who's away from the
-          // keyboard while a long agent turn died.
-          durationMs: null,
-          actions: willAutoRestart
-            ? [{ label: "Dismiss", action: "ae-agent-crashed:dismiss" }]
-            : [
-                { label: "Restart", action: "ae-agent-crashed:restart" },
-                { label: "Dismiss", action: "ae-agent-crashed:dismiss" },
-              ],
-        });
-        if (willAutoRestart) {
-          // Brief delay so the user actually sees the notice flash
-          // before the next request silently respawns. The next chat
-          // send will respawn anyway via ensure_agent_spawned, but
-          // priming here means the system-prompt + ready handshake
-          // happens up-front.
-          window.setTimeout(() => {
-            invoke("start_agent").catch(() => {
-              /* respawn deferred to next user action */
-            });
-          }, 500);
-        }
-      },
-    );
+      }
+      // Clear waiting/queue for the affected process. A tab worker crash
+      // should not mark unrelated agents idle; the global bridge crash
+      // still clears all because app-wide state is gone.
+      setState((prev) => {
+        const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) =>
+          !crashedTabId || t.id === crashedTabId
+            ? {
+                ...t,
+                waiting: false,
+                queueCount: 0,
+              }
+            : t,
+        );
+        return {
+          ...prev,
+          tabs,
+          ...(!crashedTabId || prev.activeTabId === crashedTabId
+            ? { waiting: false, queueCount: 0 }
+            : {}),
+          status: "agent crashed",
+        };
+      });
+      const willAutoRestart = autoRestartAgentRef.current;
+      const notificationId = crashedTabId
+        ? `ae-agent-crashed:${crashedTabId}`
+        : "ae-agent-crashed";
+      pushNotification({
+        id: notificationId,
+        title: "Agent process exited unexpectedly",
+        message: lastLine.slice(0, 200),
+        kind: "error",
+        // Keep visible until the user dismisses or restart succeeds —
+        // a transient toast would race a user who's away from the
+        // keyboard while a long agent turn died.
+        durationMs: null,
+        actions: willAutoRestart
+          ? [{ label: "Dismiss", action: "ae-agent-crashed:dismiss" }]
+          : [
+              {
+                label: "Restart",
+                action: crashedTabId
+                  ? `ae-agent-crashed:restart:${crashedTabId}`
+                  : "ae-agent-crashed:restart",
+              },
+              { label: "Dismiss", action: "ae-agent-crashed:dismiss" },
+            ],
+      });
+      if (willAutoRestart) {
+        // Brief delay so the user actually sees the notice flash
+        // before the next request silently respawns. The next chat
+        // send will respawn anyway via ensure_agent_spawned, but
+        // priming here means the system-prompt + ready handshake
+        // happens up-front.
+        window.setTimeout(() => {
+          restartAgentProcess(crashedTabId).catch(() => {
+            /* respawn deferred to next user action */
+          });
+        }, 500);
+      }
+    });
 
     // Mirror agent stderr into the chat as a system message — when the bridge
     // dies on startup this is the only signal we have.
@@ -280,8 +328,12 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
       //      well-known prefixes, not loose substrings).
       const isLeveledFailure = /\b(WARN|ERROR|FATAL)\b/.test(text);
       const isRawCrash =
-        /^(Error|TypeError|ReferenceError|SyntaxError|RangeError|Uncaught|panic:)/i.test(text) ||
-        /\bthrow\s+new\s|\bCannot\s+find\s+(module|package)\b|\bEACCES\b|\bENOENT\b/i.test(text);
+        /^(Error|TypeError|ReferenceError|SyntaxError|RangeError|Uncaught|panic:)/i.test(
+          text,
+        ) ||
+        /\bthrow\s+new\s|\bCannot\s+find\s+(module|package)\b|\bEACCES\b|\bENOENT\b/i.test(
+          text,
+        );
       // Routine extension feedback (size-guard rejections, etc.) goes to bridge
       // logs only — surfacing it to chat would spam the feed when an extension
       // misbehaves on a setInterval.
@@ -344,9 +396,15 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
           if (activeId) closeTab(activeId);
           break;
         }
-        case "next_tab": nextTab(1); break;
-        case "prev_tab": nextTab(-1); break;
-        case "toggle_terminal": toggleTerminal(); break;
+        case "next_tab":
+          nextTab(1);
+          break;
+        case "prev_tab":
+          nextTab(-1);
+          break;
+        case "toggle_terminal":
+          toggleTerminal();
+          break;
         case "toggle_files": {
           // Forward to the FileTreePanel's hidden window event so the
           // panel toggles regardless of which surface (menu, sidebar
@@ -354,10 +412,18 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
           window.dispatchEvent(new Event("aethon:toggle-file-tree"));
           break;
         }
-        case "toggle_files_sidebar": toggleFilesSidebar(); break;
-        case "manage_extensions": openSettings("extensions"); break;
-        case "clear_chat": clearChat(); break;
-        case "stop_prompt": void stopPrompt(); break;
+        case "toggle_files_sidebar":
+          toggleFilesSidebar();
+          break;
+        case "manage_extensions":
+          openSettings("extensions");
+          break;
+        case "clear_chat":
+          clearChat();
+          break;
+        case "stop_prompt":
+          void stopPrompt();
+          break;
         case "check_updates": {
           checkForUpdates().catch((err) => {
             appendSystem(`Update check failed: ${err}`);
@@ -395,16 +461,12 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
     // drop directly onto the panel they want to receive the path.
     const dragDropDisposer = (async () => {
       try {
-        const { getCurrentWebview } = await import(
-          "@tauri-apps/api/webview"
-        );
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
         return await getCurrentWebview().onDragDropEvent((evt) => {
           if (evt.payload.type !== "drop") return;
           const paths = evt.payload.paths ?? [];
           if (paths.length === 0) return;
-          const activeId = stateRef.current.activeTabId as
-            | string
-            | undefined;
+          const activeId = stateRef.current.activeTabId as string | undefined;
           if (!activeId) return;
           const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
           const tab = tabs.find((t) => t.id === activeId);
@@ -425,9 +487,10 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
             const elem = document.elementFromPoint(cssX, cssY);
             const inPanel = elem?.closest(".ae-terminal-panel") ?? null;
             if (inPanel) {
-              const tp = (stateRef.current.terminalPanel as
-                | { activeSubId?: string }
-                | undefined) ?? {};
+              const tp =
+                (stateRef.current.terminalPanel as
+                  | { activeSubId?: string }
+                  | undefined) ?? {};
               const subId = tp.activeSubId;
               if (subId && subId !== "agent-bash") {
                 const subTab = tabs.find((t) => t.id === subId);
@@ -528,8 +591,9 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         // tokens are orphaned — better than appending to an unrelated
         // tab. The pasted file remains in ~/.aethon/pastes/ for manual
         // recovery.
-        const stillExists = (stateRef.current.tabs as Tab[] | undefined)
-          ?.some((t) => t.id === targetId);
+        const stillExists = (stateRef.current.tabs as Tab[] | undefined)?.some(
+          (t) => t.id === targetId,
+        );
         if (!stillExists) return;
         updateTab(targetId, (t) => ({
           ...t,

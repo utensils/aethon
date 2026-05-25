@@ -202,7 +202,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       } else {
         const newId = crypto.randomUUID();
         activeResponseIdRef.current = newId;
-        const nextMessage = { id: newId, role: "agent" as const, [channel]: delta };
+        const nextMessage = {
+          id: newId,
+          role: "agent" as const,
+          [channel]: delta,
+        };
         messages.push(nextMessage);
         persistLocalChatMessage(nextMessage, id);
       }
@@ -381,12 +385,20 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       typeof targetTab?.cwd === "string" && targetTab.cwd.length > 0
         ? targetTab.cwd
         : undefined;
+    const targetModel =
+      typeof targetTab?.model === "string" && targetTab.model.length > 0
+        ? targetTab.model
+        : typeof stateRef.current.model === "string" &&
+            stateRef.current.model.length > 0
+          ? stateRef.current.model
+          : undefined;
     try {
       await invoke("send_message", {
         message: sendText,
         tabId,
         mode,
         ...(targetCwd ? { cwd: targetCwd } : {}),
+        ...(targetModel ? { model: targetModel } : {}),
       });
     } catch (err) {
       updateTab(tabId, (tab) => ({

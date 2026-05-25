@@ -1,5 +1,25 @@
 import type { EventRouteHandler } from "./types";
 
+function restartAgentForAction(
+  action: string,
+  ctx: Parameters<EventRouteHandler>[1],
+) {
+  const tabPrefix = "ae-agent-crashed:restart:";
+  if (!action.startsWith(tabPrefix)) {
+    return ctx.invoke("start_agent");
+  }
+  const tabId = action.slice(tabPrefix.length);
+  const tab = (
+    (ctx.stateRef.current.tabs as
+      | { id: string; kind?: string; cwd?: string; model?: string }[]
+      | undefined) ?? []
+  ).find((candidate) => candidate.id === tabId && candidate.kind === "agent");
+  const payload: Record<string, unknown> = { type: "tab_open", tabId };
+  if (tab?.cwd) payload.cwd = tab.cwd;
+  if (tab?.model) payload.model = tab.model;
+  return ctx.invoke("agent_command", { payload: JSON.stringify(payload) });
+}
+
 /** General notification-stack handler. Runs AFTER `handleShellConsent`
  *  in the dispatch table — the consent gate has already short-circuited
  *  the three reserved action prefixes (shell-write-, shell-close-,
@@ -41,12 +61,9 @@ export const handleNotifications: EventRouteHandler = (
     } else if (action && action.startsWith("session-delete-")) {
       const allowed = action.startsWith("session-delete-allow:");
       ctx.resolveSessionDeleteConsent(id, allowed);
-    } else if (
-      action &&
-      action.startsWith("ae-agent-crashed:")
-    ) {
-      if (action === "ae-agent-crashed:restart") {
-        ctx.invoke("start_agent").catch((err: unknown) => {
+    } else if (action && action.startsWith("ae-agent-crashed:")) {
+      if (action.startsWith("ae-agent-crashed:restart")) {
+        restartAgentForAction(action, ctx).catch((err: unknown) => {
           console.warn("agent restart failed:", err);
         });
       }

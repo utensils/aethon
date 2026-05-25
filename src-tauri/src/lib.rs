@@ -26,11 +26,10 @@
 //! shell tabs live in [`shell`]; debug-only commands and the eval
 //! server live in [`debug`].
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -48,18 +47,27 @@ mod debug;
 
 // ─────────────────────────── agent process ────────────────────────────
 
-pub(crate) struct AgentProcess(pub(crate) Mutex<Option<Child>>);
+const GLOBAL_AGENT_KEY: &str = "__global__";
 
-/// Shared atomic flag set by the file-watcher debounce worker just
-/// before it kills the bun child for a hot-reload. The stdout reader
-/// checks this on EOF: if true, the kill was intentional (`agent-reloaded`
-/// was already emitted) — reset and stay silent. If false, the child
-/// died unexpectedly and we emit `agent-crashed` so the frontend can
-/// surface a notice + offer auto-restart.
-pub(crate) struct AgentReloadFlag(pub(crate) Arc<AtomicBool>);
+pub(crate) struct AgentProcesses {
+    pub(crate) children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
+    pub(crate) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
+    pub(crate) intentional_exits: Arc<Mutex<HashSet<String>>>,
+}
 
-pub(crate) fn agent_reload_in_progress(app: &AppHandle) -> Arc<AtomicBool> {
-    Arc::clone(&app.state::<AgentReloadFlag>().0)
+impl AgentProcesses {
+    fn new() -> Self {
+        Self {
+            children: Mutex::new(HashMap::new()),
+            mutation_routes: Arc::new(Mutex::new(HashMap::new())),
+            intentional_exits: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+}
+
+struct AgentWorker {
+    tab_id: String,
+    cwd: Option<String>,
 }
 
 /// Find the project root (the directory containing `agent/main.ts`). Tauri
@@ -139,16 +147,27 @@ fn find_sidecar_binary() -> Result<PathBuf, String> {
 /// packages from `~/.pi/agent/settings.json`. Stdout is read on a
 /// background thread; each line is emitted as an `agent-response`
 /// Tauri event.
-fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<(), String> {
+fn ensure_agent_spawned(
+    guard: &mut HashMap<String, Arc<Mutex<Child>>>,
+    key: &str,
+    app: &AppHandle,
+    mutation_routes: Arc<Mutex<HashMap<String, String>>>,
+    intentional_exits: Arc<Mutex<HashSet<String>>>,
+    worker: Option<AgentWorker>,
+) -> Result<(), String> {
     // Reap a dead child if present — try_wait returns Ok(Some(_)) when exited.
-    if let Some(child) = guard.as_mut()
-        && let Ok(Some(status)) = child.try_wait()
-    {
-        tracing::info!(target: "aethon::agent", "previous child exited with {status:?}; respawning");
-        *guard = None;
+    let exited_status = guard.get(key).and_then(|child| {
+        child
+            .lock()
+            .ok()
+            .and_then(|mut child| child.try_wait().ok().flatten())
+    });
+    if let Some(status) = exited_status {
+        tracing::info!(target: "aethon::agent", key = key, "previous child exited with {status:?}; respawning");
+        guard.remove(key);
     }
 
-    if guard.is_some() {
+    if guard.contains_key(key) {
         return Ok(());
     }
 
@@ -242,6 +261,14 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         command.env("AETHON_STATE_WARN_KB", warn_kb.to_string());
         command.env("AETHON_STATE_HARD_KB", hard_kb.to_string());
     }
+    if let Some(worker) = &worker {
+        command.env("AETHON_WORKER_TAB_ID", &worker.tab_id);
+        if let Some(cwd) = &worker.cwd
+            && !cwd.is_empty()
+        {
+            command.env("AETHON_WORKER_CWD", cwd);
+        }
+    }
 
     let mut child = command
         .stdin(Stdio::piped())
@@ -251,7 +278,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
         .map_err(|e| format!("failed to spawn agent: {e}"))?;
 
     let pid = child.id();
-    tracing::info!(target: "aethon::agent", "spawned pid={pid}");
+    tracing::info!(target: "aethon::agent", key = key, "spawned pid={pid}");
 
     // Tail-buffer of recent stderr lines. When the bun child crashes
     // unexpectedly, the supervisor emits an `agent-crashed` event with
@@ -263,38 +290,50 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
 
     let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
     let app_stdout = app.clone();
-    let reload_flag_stdout = agent_reload_in_progress(app);
     let stderr_tail_for_supervisor = Arc::clone(&stderr_tail);
+    let stdout_key = key.to_string();
+    let stdout_tab_id = worker.as_ref().map(|w| w.tab_id.clone());
+    let stdout_routes = Arc::clone(&mutation_routes);
+    let stdout_intentional_exits = Arc::clone(&intentional_exits);
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
+        let mut saw_reload_done = false;
         for line in reader.lines() {
             match line {
                 Ok(text) => {
                     // Sentinel from the bridge meaning "I'm about to
                     // exit cleanly because the watcher asked me to
-                    // reload." Set the flag BEFORE the EOF arrives so
-                    // the post-loop handler treats it as intentional,
-                    // and emit `agent-reloaded` here so the frontend
-                    // can clear waiting state and respawn lazily.
+                    // reload." Keep that decision local to this child
+                    // so concurrent worker reloads cannot consume a
+                    // shared marker out from under each other.
                     if text.contains("\"_reload_done\"") {
-                        reload_flag_stdout.store(true, std::sync::atomic::Ordering::Release);
+                        saw_reload_done = true;
                         let _ = app_stdout.emit("agent-reloaded", "");
                         // Don't forward the sentinel — it's bridge↔
                         // supervisor-internal and would confuse the
                         // frontend's agent-response router.
                         continue;
                     }
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+                        && let Some(mutation_id) = value.get("mutationId").and_then(|v| v.as_str())
+                        && let Ok(mut routes) = stdout_routes.lock()
+                    {
+                        routes.insert(mutation_id.to_string(), stdout_key.clone());
+                    }
                     let _ = app_stdout.emit("agent-response", text);
                 }
                 Err(_) => break,
             }
         }
-        tracing::debug!(target: "aethon::agent", "stdout reader for pid={pid} exited");
+        tracing::debug!(target: "aethon::agent", key = stdout_key, "stdout reader for pid={pid} exited");
         // Stdout reader exits when the child closes stdout — i.e. the
-        // child has died. Distinguish intentional kills (hot-reload via
-        // the file watcher, which sets `agent_reload_in_progress` first)
-        // from unexpected crashes. Reset the flag for the next cycle.
-        if reload_flag_stdout.swap(false, std::sync::atomic::Ordering::AcqRel) {
+        // child has died. Distinguish intentional per-child exits from
+        // unexpected crashes.
+        let intentional_exit = stdout_intentional_exits
+            .lock()
+            .map(|mut exits| exits.remove(&stdout_key))
+            .unwrap_or(false);
+        if intentional_exit || saw_reload_done {
             // Intentional kill — `agent-reloaded` was already emitted by
             // the watcher; nothing more to do.
             return;
@@ -309,6 +348,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
             "agent-crashed",
             serde_json::json!({
                 "pid": pid,
+                "tabId": stdout_tab_id,
                 "stderrTail": tail,
             }),
         );
@@ -321,6 +361,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
     let stderr = child.stderr.take().ok_or("no stderr on spawned agent")?;
     let app_stderr = app.clone();
     let stderr_tail_writer = Arc::clone(&stderr_tail);
+    let stderr_key = key.to_string();
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines() {
@@ -329,7 +370,7 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
                     // Bridge stderr — already prefixed by the bridge's logger
                     // since it now emits structured `LEVEL scope: msg` lines.
                     // We forward at info level and let the env filter throttle.
-                    tracing::info!(target: "aethon::agent::stderr", pid = pid, "{text}");
+                    tracing::info!(target: "aethon::agent::stderr", pid = pid, key = stderr_key, "{text}");
                     if let Ok(mut g) = stderr_tail_writer.lock() {
                         if g.len() >= STDERR_TAIL_CAP {
                             g.pop_front();
@@ -341,17 +382,105 @@ fn ensure_agent_spawned(guard: &mut Option<Child>, app: &AppHandle) -> Result<()
                 Err(_) => break,
             }
         }
-        tracing::debug!(target: "aethon::agent", "stderr reader for pid={pid} exited");
+        tracing::debug!(target: "aethon::agent", key = stderr_key, "stderr reader for pid={pid} exited");
     });
 
-    *guard = Some(child);
+    guard.insert(key.to_string(), Arc::new(Mutex::new(child)));
     Ok(())
 }
 
 #[tauri::command]
-fn start_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    ensure_agent_spawned(&mut guard, &app)
+fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> Result<(), String> {
+    let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+    ensure_agent_spawned(
+        &mut guard,
+        GLOBAL_AGENT_KEY,
+        &app,
+        Arc::clone(&state.mutation_routes),
+        Arc::clone(&state.intentional_exits),
+        None,
+    )
+}
+
+fn tab_agent_key(tab_id: &str) -> String {
+    format!("tab:{tab_id}")
+}
+
+fn write_agent_payload(
+    state: &State<'_, AgentProcesses>,
+    app: &AppHandle,
+    key: String,
+    payload: serde_json::Value,
+    worker: Option<AgentWorker>,
+) -> Result<(), String> {
+    let child = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        ensure_agent_spawned(
+            &mut guard,
+            &key,
+            app,
+            Arc::clone(&state.mutation_routes),
+            Arc::clone(&state.intentional_exits),
+            worker,
+        )?;
+        guard.get(&key).cloned().ok_or("agent not running")?
+    };
+
+    let mut child = child.lock().map_err(|e| e.to_string())?;
+    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
+    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+    Ok(())
+}
+
+fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> Result<(), String> {
+    let child = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard.remove(key)
+    };
+    let Some(child) = child else {
+        return Ok(());
+    };
+    if let Ok(mut exits) = state.intentional_exits.lock() {
+        exits.insert(key.to_string());
+    }
+    let mut child = child.lock().map_err(|e| e.to_string())?;
+    let pid = child.id();
+    tracing::info!(target: "aethon::agent", key = key, "retiring pid={pid}");
+    let _ = child.kill();
+    let _ = child.wait();
+    Ok(())
+}
+
+fn route_payload_key(state: &State<'_, AgentProcesses>, payload: &serde_json::Value) -> String {
+    if payload.get("type").and_then(|v| v.as_str()) == Some("mutation_ack")
+        && let Some(mutation_id) = payload.get("mutationId").and_then(|v| v.as_str())
+        && let Ok(mut routes) = state.mutation_routes.lock()
+        && let Some(key) = routes.remove(mutation_id)
+    {
+        return key;
+    }
+    let tab_scoped = matches!(
+        payload.get("type").and_then(|v| v.as_str()),
+        Some(
+            "a2ui_event"
+                | "chat"
+                | "local_chat_message"
+                | "native_slash_command"
+                | "set_model"
+                | "stop"
+                | "tab_close"
+                | "tab_open"
+        )
+    );
+    if tab_scoped
+        && let Some(tab_id) = payload.get("tabId").and_then(|v| v.as_str())
+        && !tab_id.is_empty()
+        && tab_id != "default"
+    {
+        return tab_agent_key(tab_id);
+    }
+    GLOBAL_AGENT_KEY.to_string()
 }
 
 #[tauri::command]
@@ -360,79 +489,103 @@ fn send_message(
     tab_id: Option<String>,
     mode: Option<String>,
     cwd: Option<String>,
-    state: State<'_, AgentProcess>,
+    model: Option<String>,
+    state: State<'_, AgentProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    ensure_agent_spawned(&mut guard, &app)?;
-
-    let child = guard.as_mut().ok_or("agent not running")?;
-    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+    let tab_id = tab_id.unwrap_or_else(|| "default".to_string());
     // tabId routes to a specific pi session; the bridge defaults to
     // "default" when omitted so legacy single-tab callers keep working.
     let mut payload = serde_json::json!({
         "type": "chat",
         "content": message,
         "mode": mode.unwrap_or_else(|| "normal".to_string()),
-        "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
+        "tabId": tab_id,
     });
     if let Some(cwd) = cwd
         && !cwd.is_empty()
     {
         payload["cwd"] = serde_json::Value::String(cwd);
     }
-    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
-    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
-    Ok(())
+    if let Some(model) = model
+        && !model.is_empty()
+    {
+        payload["model"] = serde_json::Value::String(model);
+    }
+
+    let key = route_payload_key(&state, &payload);
+    let worker = if key == GLOBAL_AGENT_KEY {
+        None
+    } else {
+        Some(AgentWorker {
+            tab_id: payload["tabId"].as_str().unwrap_or("default").to_string(),
+            cwd: payload
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        })
+    };
+    write_agent_payload(&state, &app, key, payload, worker)
 }
 
 /// Hard-kill the running agent child. Called by the frontend's hang-warn
-/// notification "Force restart" button. Unlike the file-watcher kill (which
-/// sets `agent_reload_in_progress` so EOF emits `agent-reloaded`), we
-/// intentionally let the crash path fire: the existing `agent-crashed`
-/// handler in App.tsx clears waiting state and (if auto_restart_agent = true)
-/// respawns automatically.
+/// notification "Force restart" button. We intentionally let the crash path
+/// fire: the existing `agent-crashed` handler clears waiting state and (if
+/// auto_restart_agent = true) respawns automatically.
 ///
 /// This bypasses blocked stdin — even if the Node event loop is frozen by
 /// backpressured stdout writes, Rust can still kill the child OS process.
 #[tauri::command]
-fn force_restart_agent(state: State<'_, AgentProcess>) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = guard.take() {
+fn force_restart_agent(state: State<'_, AgentProcesses>) -> Result<(), String> {
+    let children: Vec<_> = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard.drain().collect()
+    };
+    for (key, child) in children {
+        let mut child = child.lock().map_err(|e| e.to_string())?;
         let pid = child.id();
-        tracing::warn!(target: "aethon::agent", "force_restart_agent: killing pid={pid}");
+        tracing::warn!(target: "aethon::agent", key = key, "force_restart_agent: killing pid={pid}");
         let _ = child.kill();
         // Reap the child so it doesn't become a zombie while we wait for
         // the stdout reader thread to detect EOF and emit agent-crashed.
         let _ = child.wait();
     }
-    // If guard is None the agent wasn't running — no-op is correct.
+    if let Ok(mut routes) = state.mutation_routes.lock() {
+        routes.clear();
+    }
     Ok(())
 }
 
 /// Intentional kill-and-respawn for state changes the bridge can't apply
-/// hot (currently: the user toggling an extension via the sidebar). Sets
-/// the supervisor's `agent_reload_in_progress` flag BEFORE killing so the
-/// stdout reader treats EOF as a clean reload (emits `agent-reloaded`,
-/// not `agent-crashed`). The frontend's `agent-reloaded` handler then
-/// invokes `start_agent` and the new bridge boots fresh — for the
+/// hot (currently: the user toggling an extension via the sidebar). Marks
+/// each child key as an intentional exit BEFORE killing so the stdout reader
+/// treats EOF as a clean reload, not `agent-crashed`. The frontend's
+/// `agent-reloaded` handler then invokes `start_agent` and the new bridge
+/// boots fresh — for the
 /// disable-extension case, it reads `disabled-extensions.json` and the
 /// loader honors the user's intent.
 #[tauri::command]
-fn reload_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    // Only set the reload flag when there's actually a child to kill —
-    // the stdout reader thread is what resets the flag on EOF, so
-    // setting it without a child to die would leave it stale and the
-    // next genuine crash would be misclassified as an intentional
-    // reload (no agent-crashed notification).
-    if let Some(mut child) = guard.take() {
-        let pid = child.id();
-        let reload_flag = agent_reload_in_progress(&app);
-        reload_flag.store(true, std::sync::atomic::Ordering::Release);
-        tracing::info!(target: "aethon::agent", "reload_agent: killing pid={pid}");
-        let _ = child.kill();
-        let _ = child.wait();
+fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> Result<(), String> {
+    let children: Vec<_> = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard.drain().collect()
+    };
+    if !children.is_empty() {
+        if let Ok(mut exits) = state.intentional_exits.lock() {
+            for (key, _) in &children {
+                exits.insert(key.clone());
+            }
+        }
+        for (key, child) in children {
+            let mut child = child.lock().map_err(|e| e.to_string())?;
+            let pid = child.id();
+            tracing::info!(target: "aethon::agent", key = key, "reload_agent: killing pid={pid}");
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if let Ok(mut routes) = state.mutation_routes.lock() {
+            routes.clear();
+        }
     }
     // Emit agent-reloaded so the frontend re-primes via start_agent.
     // Safe to emit even when no child existed — the listener invokes
@@ -447,16 +600,32 @@ fn reload_agent(state: State<'_, AgentProcess>, app: AppHandle) -> Result<(), St
 #[tauri::command]
 fn agent_command(
     payload: String,
-    state: State<'_, AgentProcess>,
+    state: State<'_, AgentProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    ensure_agent_spawned(&mut guard, &app)?;
-
-    let child = guard.as_mut().ok_or("agent not running")?;
-    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
-    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+    let payload_value: serde_json::Value =
+        serde_json::from_str(&payload).map_err(|e| format!("invalid agent command: {e}"))?;
+    let key = route_payload_key(&state, &payload_value);
+    let worker = if key == GLOBAL_AGENT_KEY {
+        None
+    } else {
+        payload_value
+            .get("tabId")
+            .and_then(|v| v.as_str())
+            .map(|tab_id| AgentWorker {
+                tab_id: tab_id.to_string(),
+                cwd: payload_value
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            })
+    };
+    let should_retire = payload_value.get("type").and_then(|v| v.as_str()) == Some("tab_close")
+        && key != GLOBAL_AGENT_KEY;
+    write_agent_payload(&state, &app, key.clone(), payload_value, worker)?;
+    if should_retire {
+        retire_agent_key(&state, &key)?;
+    }
     Ok(())
 }
 
@@ -464,25 +633,28 @@ fn agent_command(
 fn dispatch_a2ui_event(
     event: String,
     tab_id: Option<String>,
-    state: State<'_, AgentProcess>,
+    state: State<'_, AgentProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    ensure_agent_spawned(&mut guard, &app)?;
-
-    let child = guard.as_mut().ok_or("agent not running")?;
-    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
     let event_value: serde_json::Value = serde_json::from_str(&event).map_err(|e| e.to_string())?;
+    let tab_id = tab_id.unwrap_or_else(|| "default".to_string());
     // tabId routes the event (and any handler-fired pi.prompt()) to the
     // originating tab's session instead of always defaulting to "default".
     let payload = serde_json::json!({
         "type": "a2ui_event",
         "event": event_value,
-        "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
+        "tabId": tab_id,
     });
-    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
-    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
-    Ok(())
+    let key = route_payload_key(&state, &payload);
+    let worker = if key == GLOBAL_AGENT_KEY {
+        None
+    } else {
+        Some(AgentWorker {
+            tab_id: payload["tabId"].as_str().unwrap_or("default").to_string(),
+            cwd: None,
+        })
+    };
+    write_agent_payload(&state, &app, key, payload, worker)
 }
 
 /// Persist an image paste from the clipboard to `~/.aethon/pastes/`.
@@ -662,8 +834,7 @@ pub fn run() {
         }
     }
     let builder = builder
-        .manage(AgentProcess(Mutex::new(None)))
-        .manage(AgentReloadFlag(Arc::new(AtomicBool::new(false))))
+        .manage(AgentProcesses::new())
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
         .manage(window_state::WindowStateStore::new())
