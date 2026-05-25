@@ -16,6 +16,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -102,7 +103,6 @@ describe("ToolCard", () => {
     vi.advanceTimersByTime(1_000);
 
     expect(screen.getByText("Cancelled in 2.0s")).toBeTruthy();
-    vi.useRealTimers();
   });
 
   it("renders completed and failed terminal states with stable durations", () => {
