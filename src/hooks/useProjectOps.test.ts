@@ -2,7 +2,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NO_PROJECT_KEY, type Tab } from "../types/tab";
+import { makeEmptyTab, NO_PROJECT_KEY, type Tab } from "../types/tab";
 import type { ProjectsState } from "../projects";
 import { installTauriMocks, clearTauriMocks } from "../test/tauriMocks";
 import {
@@ -51,6 +51,18 @@ function renderProjectOps(initialProjects: ProjectsState) {
     stateRef.current =
       typeof next === "function" ? next(stateRef.current) : next;
   });
+  const closeTabNow = vi.fn((tabId: string) => {
+    setState((prev: Record<string, unknown>) => {
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).filter(
+        (tab) => tab.id !== tabId,
+      );
+      const activeTabId =
+        prev.activeTabId === tabId
+          ? tabs[tabs.length - 1]?.id
+          : (prev.activeTabId as string | undefined);
+      return { ...prev, tabs, activeTabId };
+    });
+  });
   const ctx: UseProjectOpsContext = {
     setState,
     stateRef,
@@ -64,10 +76,11 @@ function renderProjectOps(initialProjects: ProjectsState) {
     unwatchProjectForBridge: vi.fn(),
     dispatchTerminalReplay: vi.fn(),
     autoRestoreDiscoveredSessions: vi.fn(),
+    closeTabNow,
   };
   const rendered = renderHook(() => useProjectOps(ctx));
   projectsRef.current = initialProjects;
-  return { ...rendered, projectsRef, stateRef, setState };
+  return { ...rendered, projectsRef, stateRef, setState, closeTabNow };
 }
 
 describe("projectIdFromBucketKey", () => {
@@ -545,5 +558,98 @@ describe("useProjectOps worktree creation", () => {
     );
     expect(addCalls[0]?.[1]).toMatchObject({ base: "upstream/trunk" });
     expect(addCalls[1]?.[1]).toMatchObject({ base: "release/next" });
+  });
+});
+
+describe("useProjectOps worktree removal", () => {
+  it("closes visible and stored session tabs for the removed worktree", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_worktree_remove") return Promise.resolve(undefined);
+      return Promise.resolve(undefined);
+    });
+    const worktree = {
+      id: "wt-issue",
+      projectId: "project-1",
+      path: "/projects/aethon-fix-issue",
+      branch: "fix/issue",
+      isMain: false,
+    };
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorktreeId: "wt-issue",
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          worktree,
+        ],
+      },
+    });
+    const { result, projectsRef, stateRef, closeTabNow } =
+      renderProjectOps(initial);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+    stateRef.current = {
+      activeTabId: "issue-tab",
+      tabs: [
+        {
+          ...makeEmptyTab("issue-tab", "Issue"),
+          messages: [],
+          projectId: "project-1",
+          cwd: "/projects/aethon-fix-issue",
+        },
+        {
+          ...makeEmptyTab("main-tab", "Main"),
+          messages: [],
+          projectId: "project-1",
+          cwd: "/projects/aethon",
+        },
+      ],
+    };
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-1", "wt-issue"),
+      {
+        activeTabId: "hidden-issue-tab",
+        tabs: [
+          {
+            ...makeEmptyTab("hidden-issue-tab", "Hidden issue"),
+            messages: [],
+            projectId: "project-1",
+            cwd: "/projects/aethon-fix-issue/",
+          },
+        ],
+      },
+    );
+
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+
+    expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove", {
+      projectPath: "/projects/aethon",
+      worktreePath: "/projects/aethon-fix-issue",
+      force: false,
+    });
+    expect(closeTabNow).toHaveBeenCalledWith("issue-tab");
+    expect(
+      result.current.tabBucketsRef.current.has(
+        projectScopeBucketKey("project-1", "wt-issue"),
+      ),
+    ).toBe(false);
+    expect(projectsRef.current.activeWorktreeId).toBeNull();
+    expect(
+      projectsRef.current.worktreesByProject["project-1"]?.some(
+        (wt) => wt.id === "wt-issue",
+      ),
+    ).toBe(false);
   });
 });

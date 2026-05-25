@@ -99,6 +99,10 @@ export interface UseProjectOpsContext {
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
   ) => void;
+  /** From useTabs: force-close visible tabs after their backing worktree
+   *  is removed. Worktree deletion is already destructive, so there is
+   *  no separate close confirmation for those session tabs. */
+  closeTabNow: (tabId: string) => void;
 }
 
 export interface UseProjectOpsActions {
@@ -284,6 +288,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     unwatchProjectForBridge,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
+    closeTabNow,
   } = ctx;
 
   const projectsLoadedRef = useRef(false);
@@ -905,6 +910,53 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     announceProjectToBridge(nextTabId ?? "default", nextCwd);
   }
 
+  function tabCwdMatches(tab: Tab, path: string): boolean {
+    if (tab.kind !== "agent") return false;
+    return normalizeSessionPath(tab.cwd) === normalizeSessionPath(path);
+  }
+
+  function removeStoredTabsForWorktreePath(
+    path: string,
+    removedBucketKey: string,
+  ): void {
+    tabBucketsRef.current.delete(removedBucketKey);
+    for (const [key, bucket] of tabBucketsRef.current.entries()) {
+      const tabs = bucket.tabs.filter((tab) => !tabCwdMatches(tab, path));
+      if (tabs.length === bucket.tabs.length) continue;
+      if (tabs.length === 0) {
+        tabBucketsRef.current.delete(key);
+        continue;
+      }
+      const activeTabId = tabs.some((tab) => tab.id === bucket.activeTabId)
+        ? bucket.activeTabId
+        : tabs[0]?.id;
+      tabBucketsRef.current.set(key, { tabs, activeTabId });
+    }
+  }
+
+  function closeVisibleTabsForWorktreePath(path: string): void {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const closing = tabs
+      .filter((tab) => tabCwdMatches(tab, path))
+      .map((tab) => tab.id);
+    for (const tabId of closing) closeTabNow(tabId);
+  }
+
+  function closeTabsForRemovedWorktree(
+    projectId: string,
+    worktreeId: string,
+    path: string,
+    wasActive: boolean,
+  ): void {
+    closeVisibleTabsForWorktreePath(path);
+    if (wasActive) activateWorktree(null);
+    removeStoredTabsForWorktreePath(
+      path,
+      projectScopeBucketKey(projectId, worktreeId),
+    );
+    syncRecentSessionsToState();
+  }
+
   function resolveWorktreeBaseBranch(
     project: Project,
     explicit?: string,
@@ -1058,7 +1110,12 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
         worktreePath: worktree.path,
         force: false,
       });
-      // Drop locally + clear active pointer if needed.
+      closeTabsForRemovedWorktree(
+        project.id,
+        worktreeId,
+        worktree.path,
+        projectsRef.current.activeWorktreeId === worktreeId,
+      );
       const list = removeWorktreeFromList(
         projectsRef.current.worktreesByProject[project.id] ?? [],
         worktreeId,
@@ -1068,9 +1125,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
         project.id,
         list,
       );
-      if (projectsRef.current.activeWorktreeId === worktreeId) {
-        projectsRef.current = setActiveWorktreeState(projectsRef.current, null);
-      }
+      syncProjectsToState();
       void persistProjects();
     } catch (err) {
       const msg = String(err);
@@ -1086,6 +1141,12 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
             worktreePath: worktree.path,
             force: true,
           });
+          closeTabsForRemovedWorktree(
+            project.id,
+            worktreeId,
+            worktree.path,
+            projectsRef.current.activeWorktreeId === worktreeId,
+          );
           const list = removeWorktreeFromList(
             projectsRef.current.worktreesByProject[project.id] ?? [],
             worktreeId,
@@ -1095,6 +1156,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
             project.id,
             list,
           );
+          syncProjectsToState();
           void persistProjects();
           return;
         } catch (e2) {

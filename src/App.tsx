@@ -486,6 +486,7 @@ export default function App() {
     autoRestoreDiscoveredSessions,
     reopenLastClosedTab,
     closeTab,
+    closeTabNow,
   } = useTabs({
     setState,
     stateRef,
@@ -592,6 +593,7 @@ export default function App() {
     unwatchProjectForBridge,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
+    closeTabNow,
   });
   // Wire forward handles now that the live functions exist. Ref writes
   // happen in commit phase (useEffect) — React disallows ref mutation
