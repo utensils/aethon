@@ -217,6 +217,76 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     expect(mocks.newTab).toHaveBeenCalledTimes(1);
   });
 
+  it("worktree landing routes session restore rows through the built-in restore handler", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        landing: {
+          kind: "worktree",
+          worktreeId: "wt-1",
+          path: "/repo/app-fix",
+        },
+        activeProjectId: "p1",
+        projects: [{ id: "p1", path: "/repo/app" }],
+        sidebar: {
+          projects: [
+            {
+              id: "p1",
+              worktrees: [{ id: "wt-1", path: "/repo/app-fix" }],
+            },
+          ],
+        },
+      },
+    });
+    const handled = await dispatchEvent(
+      {
+        component: { id: "worktree-landing", type: "worktree-landing" },
+        eventType: "restore-session",
+        data: {
+          sessionId: "session-1",
+          label: "Continue worktree fix",
+          cwd: "/repo/app-fix",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(mocks.newTab).toHaveBeenCalledWith(
+      "session-1",
+      "Continue worktree fix",
+      {
+        restoredSession: true,
+        cwd: "/repo/app-fix",
+      },
+    );
+    expect(applySetState().landing).toBeNull();
+  });
+
+  it("worktree landing routes inline session delete confirmations", async () => {
+    const { ctx, mocks } = buildRouteFixture({ promptDeleteAllow: true });
+    const handled = await dispatchEvent(
+      {
+        component: { id: "worktree-landing", type: "worktree-landing" },
+        eventType: "delete-session",
+        data: {
+          sessionId: "session-1",
+          label: "Continue worktree fix",
+          confirmed: true,
+        },
+      },
+      ctx,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handled).toBe(true);
+    expect(mocks.promptDeleteSessionConfirmation).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("delete_session", {
+      tabId: "session-1",
+    });
+  });
+
   it("renamed model-picker instance still routes setModel", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await dispatchEvent(

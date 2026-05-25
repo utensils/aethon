@@ -45,6 +45,31 @@ To run a single test file: `bunx vitest run agent/terminal-stream.test.ts`.
 To run tests matching a name: `bunx vitest run -t "test name pattern"`.
 To run a single Rust test: `cargo test --lib -p aethon -- helpers::test_name`.
 
+## Testing Discipline
+
+Treat bug fixes as TDD by default. Before changing implementation, write or
+tighten a regression test that fails for the reported behavior and proves the
+actual user-visible contract. Run that focused test and confirm it is red, then
+make the smallest fix that turns it green. Do not count a component-only test as
+coverage for an app workflow when the bug crosses component, route table, hook,
+bridge, or persisted-state boundaries; add the test at the layer where the
+contract actually broke, and keep lower-level tests only as supporting coverage.
+
+For UI/session/project/worktree bugs, regression tests must exercise the full
+state transition the user relies on: event dispatch, route handling, active
+project/worktree alignment, tab creation/selection, landing visibility, and any
+session-history restore flags. A test that only verifies a button emits an event
+is not enough if the app also needs to route that event and mutate state. When a
+fix changes a routed event or state mirror, include dispatcher/hook tests that
+would fail if the event fell through, the wrong cwd was selected, or stale UI
+state kept rendering over the restored surface.
+
+Every regression fix should end with the focused red-green test, the nearby test
+slice, and the relevant broader gate (`bunx vitest run`, `bun run typecheck`,
+`bun run lint`, `bun run build`, or `check` depending on blast radius). If a
+gate exits 0 with existing warnings, report those warnings clearly; do not treat
+new warnings as acceptable without addressing or justifying them.
+
 ## Architecture
 
 ### Layer responsibilities

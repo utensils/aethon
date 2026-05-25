@@ -83,6 +83,7 @@ export function restoreSessionFromSelection(
   ctx: EventRouteContext,
   selection: RestoreSelection | undefined,
 ): void {
+  ctx.setState((prev) => ({ ...prev, landing: null }));
   if (!selection?.sessionId) {
     ctx.newTab();
     return;
