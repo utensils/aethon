@@ -322,4 +322,41 @@ describe("ContextMenu", () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("clamps virtual focus when items change while the menu remains open", () => {
+    const onAlpha = vi.fn();
+    const onBeta = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={[
+          { id: "alpha", label: "Alpha", onSelect: onAlpha },
+          { id: "beta", label: "Beta", onSelect: onBeta },
+        ]}
+        onClose={onClose}
+      />,
+    );
+
+    const menu = screen.getByRole("menu");
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(menu.getAttribute("aria-activedescendant")).toMatch(/i1$/);
+
+    rerender(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={[{ id: "alpha", label: "Alpha", onSelect: onAlpha }]}
+        onClose={onClose}
+      />,
+    );
+
+    expect(menu.getAttribute("aria-activedescendant")).toMatch(/i0$/);
+    fireEvent.keyDown(menu, { key: "Enter" });
+    expect(onAlpha).toHaveBeenCalledTimes(1);
+    expect(onBeta).not.toHaveBeenCalled();
+  });
 });

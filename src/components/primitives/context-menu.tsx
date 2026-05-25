@@ -144,6 +144,15 @@ export function ContextMenu({
     (firstInput ?? menuRef.current)?.focus({ preventScroll: true });
   }, [open, firstFocusableIndex, hasInputItem]);
 
+  useEffect(() => {
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clamp virtual focus after item list changes without moving DOM focus
+    setFocusedIndex((current) => {
+      if (current === null || focusableIndices.includes(current)) return current;
+      return firstFocusableIndex;
+    });
+  }, [open, focusableIndices, firstFocusableIndex]);
+
   // Outside click + Esc/Tab dismiss. Listeners only mount while open.
   useEffect(() => {
     if (!open) return;
@@ -231,7 +240,7 @@ export function ContextMenu({
         e.preventDefault();
         if (focusedIndex !== null) {
           const it = items[focusedIndex];
-          if (isOption(it) && !it.disabled) {
+          if (it && isOption(it) && !it.disabled) {
             it.onSelect();
             if (!it.keepOpenOnSelect) onClose();
           }
