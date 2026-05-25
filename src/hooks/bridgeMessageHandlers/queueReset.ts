@@ -1,14 +1,13 @@
 import type { BridgeMessageHandler } from "./types";
 
-/** Bridge dropped this tab's pi follow-up queue (typically on Stop).
- *  Mirror by zeroing the local queueCount so the next response_end
- *  clears `waiting` instead of staying stuck on the
- *  "queue > 0 keeps Stop" gate. */
-export const handleQueueReset: BridgeMessageHandler = (data, ctx) => {
-  const tabId = (data.tabId as string | undefined) ?? "default";
-  const queued =
-    typeof data.queued === "number" && Number.isFinite(data.queued)
-      ? Math.max(0, Math.floor(data.queued))
-      : 0;
-  ctx.updateTab(tabId, (tab) => ({ ...tab, queueCount: queued }));
+/** Bridge `queue_reset` event — emitted when pi drops its followUp
+ *  queue (typically on Stop). On the Claudette-style client-held
+ *  queue path, pi's followUp queue is unused, so this event
+ *  effectively never fires. `tab.queueCount` derives from
+ *  `tab.queuedMessages.length` and is cleared by `stopPrompt`
+ *  directly when the user clicks Stop; mutating queueCount here
+ *  would desync the badge from the popover.
+ *  See: src/types/tab.ts contract on the `queueCount` field. */
+export const handleQueueReset: BridgeMessageHandler = (_data, _ctx) => {
+  // intentionally empty
 };

@@ -66,8 +66,13 @@ export function ToggleSwitch({
       aria-checked={checked}
       aria-label={ariaLabel}
       aria-disabled={disabled || undefined}
+      // Pair `disabled` (native semantics for assistive tech +
+      // browser-level focus/click suppression) with `aria-disabled`
+      // (announces the state explicitly). Matches the
+      // `disabled` + `aria-disabled` pattern other primitives in
+      // this codebase use (e.g. context-menu items).
+      disabled={disabled}
       title={title}
-      tabIndex={disabled ? -1 : 0}
       className={classes}
       style={style}
       onClick={handleClick}

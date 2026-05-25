@@ -70,7 +70,12 @@ export interface Tab {
   /** Derived: equals `queuedMessages.length`. Kept as a separate field so
    *  the existing `/queueCount` binding (badge in the composer) doesn't
    *  have to re-resolve through the array on every render. Writers must
-   *  set both in lockstep. */
+   *  set both in lockstep — `useChat`'s `withQueue()` helper is the
+   *  canonical writer and guarantees the invariant. Bridge handlers
+   *  for `queued` / `queue_reset` events are intentionally no-ops on
+   *  the new client-held queue path; mutating queueCount without
+   *  touching queuedMessages would desync the composer badge and
+   *  popover row count. */
   queueCount: number;
   /** Client-held queue of unsent user messages. Drained by
    *  `useQueuedDispatch` when the agent goes idle. Rendered as a popover

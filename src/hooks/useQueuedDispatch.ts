@@ -8,12 +8,17 @@ import type { Tab } from "../types/tab";
  *
  * Coupling notes:
  *
- * - The pop and the `waiting = true` re-flip happen in a single
- *   `updateTab` call so React commits them together. Without that, the
- *   composer would flash Send → Stop on every queue transition.
+ * - The hook pops the head ONLY — it deliberately does NOT pre-flip
+ *   `waiting` to true. `sendChat`'s normal-dispatch path is what flips
+ *   waiting; the pop + sendChat's three setState calls batch into a
+ *   single render commit, so the composer doesn't flash Send between
+ *   turns. Pre-flipping waiting here breaks the drain: `sendChat`
+ *   reads `stateRef` synchronously, would see the tab as busy, and
+ *   would route the popped message right back into the queue with a
+ *   new id (caught by peer-review P1).
  * - `dispatching` tracks the tabs that are currently mid-dispatch
  *   (sendChat is async). It guards against the effect running again
- *   after the optimistic update and double-firing the same head.
+ *   while sendChat is awaiting and double-firing the same head.
  * - `queuedSteeringId` blocks the drain while a manual steer is in
  *   flight, so a user mashing Send-next-and-Steer doesn't fire two
  *   chat sends at once.
