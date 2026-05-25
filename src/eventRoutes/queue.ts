@@ -3,18 +3,22 @@ import type { EventRouteHandler } from "./types";
 
 /**
  * `queued-messages-popover` events. The composite lives inside the
- * composer and emits four event types:
+ * composer and emits four event types (prefixed with `queue:` so they
+ * are routable when the popover is mounted inline inside another
+ * composite — events route by host component type, not by the
+ * popover's own identity in that case):
  *
- *   - `edit`   { messageId, content }  — replace a queued message body.
- *   - `delete` { messageId }           — drop a queued message.
- *   - `steer`  { messageId }           — pop + promote to mid-turn steer.
- *   - `clear`                          — empty the queue.
+ *   - `queue:edit`   { messageId, content }  — replace a queued message body.
+ *   - `queue:delete` { messageId }           — drop a queued message.
+ *   - `queue:steer`  { messageId }           — pop + promote to mid-turn steer.
+ *   - `queue:clear`                          — empty the queue.
  *
  * Routes to the active tab's queue (the popover only renders for the
- * active tab, so we never need an explicit tabId in the payload). Keyed
- * by `type:queued-messages-popover` so a custom override registered via
- * `aethon.registerComponent("queued-messages-popover", …)` still routes
- * through these handlers without an alias entry.
+ * active tab, so we never need an explicit tabId in the payload). The
+ * handler is registered under BOTH `type:chat-input` (where it lands
+ * when the default-layout host inlines the popover) AND
+ * `type:queued-messages-popover` (for skill-override mounts that
+ * synthesize a fresh A2UI subtree via RegistryComponent).
  */
 function activeTabId(state: Record<string, unknown>): string | undefined {
   return state.activeTabId as string | undefined;
@@ -32,11 +36,17 @@ export const handleQueuedMessages: EventRouteHandler = async (
   { eventType, data },
   ctx,
 ) => {
+  // Only match queue-namespaced events. The handler is registered
+  // under `type:chat-input` (alongside handleChatInput) so it gets
+  // first crack at events from the inlined popover; non-queue
+  // events fall through to handleChatInput.
+  if (!eventType.startsWith("queue:")) return false;
   const tab = activeAgentTab(ctx.stateRef.current);
   if (!tab) return false;
   const tabId = tab.id;
+  const action = eventType.slice("queue:".length);
 
-  if (eventType === "edit") {
+  if (action === "edit") {
     const payload = (data ?? {}) as { messageId?: string; content?: string };
     if (
       typeof payload.messageId === "string" &&
@@ -48,7 +58,7 @@ export const handleQueuedMessages: EventRouteHandler = async (
     return false;
   }
 
-  if (eventType === "delete") {
+  if (action === "delete") {
     const payload = (data ?? {}) as { messageId?: string };
     if (typeof payload.messageId === "string") {
       ctx.deleteQueuedMessage(tabId, payload.messageId);
@@ -57,7 +67,7 @@ export const handleQueuedMessages: EventRouteHandler = async (
     return false;
   }
 
-  if (eventType === "steer") {
+  if (action === "steer") {
     const payload = (data ?? {}) as { messageId?: string };
     if (typeof payload.messageId === "string") {
       await ctx.steerQueuedMessage(tabId, payload.messageId);
@@ -66,7 +76,7 @@ export const handleQueuedMessages: EventRouteHandler = async (
     return false;
   }
 
-  if (eventType === "clear") {
+  if (action === "clear") {
     ctx.clearQueuedMessages(tabId);
     return true;
   }

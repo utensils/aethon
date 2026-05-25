@@ -5,7 +5,15 @@
  * that pairs message history with a live-rendered A2UI subtree.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createElement,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import type {
@@ -22,10 +30,9 @@ import {
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
-import A2UIRenderer, {
-  RegistryComponent,
-} from "../../components/A2UIRenderer";
+import A2UIRenderer from "../../components/A2UIRenderer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import { useSkillRegistry } from "../../skills/SkillRegistry";
 import type { QueuedMessage } from "../../types/tab";
 import { useStickyScroll } from "../../utils/useStickyScroll";
 import { MARKDOWN_COMPONENTS } from "./markdown-adapter";
@@ -720,6 +727,15 @@ export function ChatInput({
   state,
   onEvent,
 }: BuiltinComponentProps) {
+  // Skill-registry lookup for the queued-messages popover so a skill
+  // can override the chrome via `aethon.registerComponent`. We render
+  // it inline (rather than going through RegistryComponent, which
+  // would synthesize a separate A2UI subtree and require the outer
+  // dispatcher's signature) — its events bubble through this
+  // composite's onEvent and route via `type:chat-input` with the
+  // `queue:*` prefix.
+  const skillRegistry = useSkillRegistry();
+  const QueuedPopover = skillRegistry.resolve("queued-messages-popover");
   const props = component.props as {
     value?: StringValue;
     placeholder?: StringValue;
@@ -1153,13 +1169,20 @@ export function ChatInput({
       {/* Queued messages popover. Rendered via the skill registry so a
           skill can swap the chrome by calling
           `aethon.registerComponent("queued-messages-popover", custom)`.
-          The composite hides itself when the queue is empty, so we
-          can mount it unconditionally. */}
-      <RegistryComponent
-        type="queued-messages-popover"
-        state={state}
-        onEvent={onEvent}
-      />
+          The composite hides itself when the queue is empty.
+          `createElement` (rather than `<QueuedPopover .../>` JSX) keeps
+          the react-hooks/component-during-render rule happy — the
+          runtime-resolved component is not a JSX-declared identifier. */}
+      {QueuedPopover
+        ? createElement(QueuedPopover, {
+            component: {
+              id: "queued-messages-popover",
+              type: "queued-messages-popover",
+            },
+            state,
+            onEvent,
+          })
+        : null}
       {slashMatch &&
         menuAnchor &&
         createPortal(
@@ -1631,17 +1654,25 @@ export function QueuedMessagesPopover({
   const steeringId = state.queuedSteeringId as string | undefined;
   if (items.length === 0) return null;
 
+  // Prefix the wire event names so they're unambiguous when they
+  // bubble up through the host composite's onEvent (events route by
+  // type:<host-type>, not by the popover's identity, when this
+  // composite is rendered inline inside another composite — the
+  // common case when a skill hosts the popover inside its own
+  // ChatInput replacement). The `queue:` prefix lets `queue.ts`
+  // route handler match without colliding with the host's own
+  // events.
   const onEdit = (id: string, content: string) => {
-    onEvent("edit", { messageId: id, content });
+    onEvent("queue:edit", { messageId: id, content });
   };
   const onDelete = (id: string) => {
-    onEvent("delete", { messageId: id });
+    onEvent("queue:delete", { messageId: id });
   };
   const onSteer = (id: string) => {
-    onEvent("steer", { messageId: id });
+    onEvent("queue:steer", { messageId: id });
   };
   const onClear = () => {
-    onEvent("clear");
+    onEvent("queue:clear");
   };
 
   return (

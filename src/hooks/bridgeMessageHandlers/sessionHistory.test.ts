@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { handleSessionHistory } from "./sessionHistory";
 import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
+import type { ChatMessage } from "../../types/a2ui";
 
 describe("handleSessionHistory", () => {
   it("replaces the tab's messages and triggers a recents resync", () => {
@@ -157,7 +158,7 @@ describe("handleSessionHistory", () => {
         },
       ],
     });
-    expect(out.messages.map((m) => m.id)).toEqual([
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
       "old-user",
       "old-agent",
       "local-prompt",

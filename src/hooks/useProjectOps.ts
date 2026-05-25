@@ -908,7 +908,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     const previousActive = activeProject(current);
     const crossingProjects =
       activeProjectId !== current.activeId &&
-      previousActive !== undefined &&
+      previousActive != null &&
       nextProjectPath !== null &&
       previousActive.path !== nextProjectPath;
     projectsRef.current = setActiveWorktreeState(

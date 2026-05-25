@@ -25,7 +25,7 @@ describe("handleQueuedMessages", () => {
     const handled = await handleQueuedMessages(
       {
         component: POPOVER,
-        eventType: "edit",
+        eventType: "queue:edit",
         data: { messageId: "q1", content: "rewritten" },
       },
       ctx,
@@ -41,7 +41,7 @@ describe("handleQueuedMessages", () => {
   it("forwards delete to ctx.deleteQueuedMessage", async () => {
     const { ctx, mocks } = fixtureWithActiveAgentTab();
     const handled = await handleQueuedMessages(
-      { component: POPOVER, eventType: "delete", data: { messageId: "q2" } },
+      { component: POPOVER, eventType: "queue:delete", data: { messageId: "q2" } },
       ctx,
     );
     expect(handled).toBe(true);
@@ -51,7 +51,7 @@ describe("handleQueuedMessages", () => {
   it("forwards steer to ctx.steerQueuedMessage", async () => {
     const { ctx, mocks } = fixtureWithActiveAgentTab();
     const handled = await handleQueuedMessages(
-      { component: POPOVER, eventType: "steer", data: { messageId: "q1" } },
+      { component: POPOVER, eventType: "queue:steer", data: { messageId: "q1" } },
       ctx,
     );
     expect(handled).toBe(true);
@@ -61,7 +61,7 @@ describe("handleQueuedMessages", () => {
   it("forwards clear to ctx.clearQueuedMessages", async () => {
     const { ctx, mocks } = fixtureWithActiveAgentTab();
     const handled = await handleQueuedMessages(
-      { component: POPOVER, eventType: "clear" },
+      { component: POPOVER, eventType: "queue:clear" },
       ctx,
     );
     expect(handled).toBe(true);
@@ -74,7 +74,7 @@ describe("handleQueuedMessages", () => {
       state: { tabs: [shellTab], activeTabId: "shell-1" },
     });
     const handled = await handleQueuedMessages(
-      { component: POPOVER, eventType: "clear" },
+      { component: POPOVER, eventType: "queue:clear" },
       ctx,
     );
     expect(handled).toBe(false);
@@ -84,7 +84,7 @@ describe("handleQueuedMessages", () => {
   it("ignores malformed edit payloads (missing messageId)", async () => {
     const { ctx, mocks } = fixtureWithActiveAgentTab();
     const handled = await handleQueuedMessages(
-      { component: POPOVER, eventType: "edit", data: { content: "x" } },
+      { component: POPOVER, eventType: "queue:edit", data: { content: "x" } },
       ctx,
     );
     expect(handled).toBe(false);

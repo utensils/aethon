@@ -86,7 +86,12 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:settings-panel", [handleSettings]],
     ["type:search-panel", [handleSearch]],
     ["type:command-palette", [handlePalette]],
-    ["type:chat-input", [handleChatInput]],
+    // Order matters: handleQueuedMessages runs FIRST and only matches
+    // `queue:*` events, returning false for everything else. That lets
+    // the inlined popover's events route correctly while normal chat
+    // input events (submit / change / cancel) still flow to
+    // handleChatInput unchanged.
+    ["type:chat-input", [handleQueuedMessages, handleChatInput]],
     ["type:chat-history", [handleChatMessages]],
     ["type:main-canvas", [handleChatMessages]],
     ["type:queued-messages-popover", [handleQueuedMessages]],
