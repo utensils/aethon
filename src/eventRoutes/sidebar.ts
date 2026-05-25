@@ -1,7 +1,8 @@
-import type { EventRouteContext, EventRouteHandler } from "./types";
+import type { EventRouteHandler } from "./types";
 import { extractSessionId } from "../utils/sidebarHistory";
 import type { Tab } from "../types/tab";
 import { restoreSessionFromSelection } from "./sessionRestore";
+import { renameSessionLabel } from "./sessionRename";
 
 interface RecentSessionItem {
   id: string;
@@ -148,50 +149,9 @@ export const handleSidebarRenameSession: EventRouteHandler = (
   const sessionId = extractSessionId(raw);
   const label = typeof selected?.label === "string" ? selected.label : "";
   if (!sessionId) return true;
-  applyOptimisticTabLabel(ctx, sessionId, label);
-  ctx
-    .invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "set_session_label",
-        tabId: sessionId,
-        label,
-      }),
-    })
-    .catch((err: unknown) => {
-      ctx.pushNotification({
-        title: "Rename session failed",
-        message: String(err),
-        kind: "error",
-      });
-    });
+  renameSessionLabel(ctx, sessionId, label);
   return true;
 };
-
-/** Update an open tab's `label` in App state when renaming a currently
- *  open session. Empty input restores the auto-derived sequential
- *  "Tab N" label using the tab's existing index in the array (matches
- *  the original useTabs naming convention so the auto-label fallback
- *  behaviour from `buildSidebarHistory` kicks in). No-op if no tab
- *  matches the id. */
-function applyOptimisticTabLabel(
-  ctx: EventRouteContext,
-  tabId: string,
-  label: string,
-): void {
-  ctx.setState((prev) => {
-    const tabs =
-      (prev.tabs as { id: string; label: string }[] | undefined) ?? [];
-    const idx = tabs.findIndex((t) => t.id === tabId);
-    if (idx < 0) return prev;
-    const trimmed = label.trim();
-    const fallback = `Tab ${idx + 1}`;
-    const nextLabel = trimmed.length > 0 ? trimmed : fallback;
-    if (tabs[idx].label === nextLabel) return prev;
-    const nextTabs = [...tabs];
-    nextTabs[idx] = { ...nextTabs[idx], label: nextLabel };
-    return { ...prev, tabs: nextTabs };
-  });
-}
 
 /** Sidebar disclosure on a project row — toggle the per-project
  *  expanded state so worktrees show/hide nested under the row. */
