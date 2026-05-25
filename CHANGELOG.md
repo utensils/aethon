@@ -59,6 +59,13 @@ All notable changes to Aethon. Format loosely follows
   section is declared explicitly in layout JSON, preserving the
   override path for skills that ship custom rendering.
 
+### Changed
+
+- **`response_end` no longer preserves `waiting` for queued sends.** Pi's
+  `followUp` queue is unused on the new client-held queue path; clearing
+  `waiting` on every turn end is what lets `useQueuedDispatch` see the
+  idle moment and pop the next message.
+
 ### Fixed
 
 - **Queue auto-drain reaches the bridge (peer-review P1).** The
@@ -74,16 +81,6 @@ All notable changes to Aethon. Format loosely follows
   bridge `stop` command, so a user who hits the composer's
   "Stop + clear" button actually clears the queue instead of letting
   the next queued message drain on the following idle.
-
-### Changed
-
-- **`response_end` no longer preserves `waiting` for queued sends.** Pi's
-  `followUp` queue is unused on the new client-held queue path; clearing
-  `waiting` on every turn end is what lets `useQueuedDispatch` see the
-  idle moment and pop the next message.
-
-### Fixed
-
 - **Issue worktree task launches.** GitHub issue send-to-agent now targets
   the newly-created task tab explicitly when forwarding the issue prompt,
   so the first agent session starts in the fresh worktree and the sent

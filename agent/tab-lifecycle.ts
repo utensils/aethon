@@ -535,7 +535,6 @@ function handleSessionEvent(
         id: uiId,
         toolName: ev.toolName,
         argsSummary: summary,
-        running: true,
         startedAt,
       });
       deps.send({ type: "a2ui", tabId, id: uiId, payload });

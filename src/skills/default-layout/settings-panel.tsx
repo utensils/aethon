@@ -651,7 +651,13 @@ function ExtensionsList({
               <ToggleSwitch
                 checked={kind === "enabled"}
                 disabled={kind === "failed"}
-                ariaLabel={`${kind === "disabled" ? "Enable" : "Disable"} extension ${name}`}
+                // Pick the verb from the actual checked state (not just
+                // the explicit "disabled" branch) — otherwise a failed
+                // extension renders unchecked but announces "Disable
+                // extension X" to assistive tech. Matches the sidebar
+                // toggle which keys off `extState.checked` for the
+                // same reason.
+                ariaLabel={`${kind === "enabled" ? "Disable" : "Enable"} extension ${name}`}
                 title={
                   kind === "failed"
                     ? "Extension failed to load — fix the error and reload to re-enable"

@@ -161,14 +161,19 @@ export function extractToolContent(result: unknown): ExtractedResult {
   }
 }
 
-/** Build the A2UI payload for a tool-call card. */
+/** Build the A2UI payload for a tool-call card.
+ *
+ *  The frontend `ToolCard` composite derives the running/done/failed
+ *  state from the `startedAt` and `endedAt` props (running iff
+ *  `startedAt !== undefined && endedAt === undefined`), so callers
+ *  signal "still running" by passing `startedAt` only — no separate
+ *  `running` flag is needed in the wire payload. */
 export function toolCardPayload(opts: {
   id: string;
   toolName: string;
   argsSummary: string;
   result?: unknown;
   isError?: boolean;
-  running?: boolean;
   startedAt?: number;
   endedAt?: number;
 }) {
