@@ -71,10 +71,12 @@ export function formatToolDuration(ms: number): string {
 function ToolStatusIcon({
   running,
   isError,
+  isCancelled,
   isLongRunning,
 }: {
   running: boolean;
   isError: boolean;
+  isCancelled: boolean;
   isLongRunning: boolean;
 }) {
   if (running) {
@@ -89,12 +91,15 @@ function ToolStatusIcon({
       </span>
     );
   }
-  if (isError) {
+  if (isError || isCancelled) {
+    const className = isCancelled
+      ? "ae-tool-status-icon ae-tool-status-cancelled"
+      : "ae-tool-status-icon ae-tool-status-error";
     return (
       <span
         role="img"
-        aria-label="Tool failed"
-        className="ae-tool-status-icon ae-tool-status-error"
+        aria-label={isCancelled ? "Tool cancelled" : "Tool failed"}
+        className={className}
       >
         <span aria-hidden="true">✕</span>
       </span>
@@ -126,6 +131,8 @@ export function ToolCard({
     isError?: BooleanValue;
     /** Tool name shown in the title; argsSummary as the description. */
     toolName?: StringValue;
+    /** Terminal state synthesized by the bridge when a turn is aborted. */
+    status?: StringValue;
   };
   const baseTitle = props.title ? resolveString(props.title, state) : "";
   const description = props.description
@@ -138,6 +145,8 @@ export function ToolCard({
     ? resolveNumber(props.endedAt, state)
     : undefined;
   const isError = props.isError ? resolveBoolean(props.isError, state) : false;
+  const status = props.status ? resolveString(props.status, state) : undefined;
+  const isCancelled = status === "cancelled";
   const running = startedAt !== undefined && endedAt === undefined;
 
   // Tick at 4 Hz while running so the clock stays smooth without
@@ -164,9 +173,12 @@ export function ToolCard({
 
   const timeSuffix = useMemo(() => {
     if (running) return formatToolDuration(elapsedMs);
-    if (startedAt !== undefined) return formatToolDuration(elapsedMs);
-    return "";
-  }, [running, startedAt, elapsedMs]);
+    if (startedAt === undefined) return "";
+    const duration = formatToolDuration(elapsedMs);
+    if (isCancelled) return `Cancelled in ${duration}`;
+    if (isError) return `Failed in ${duration}`;
+    return `Completed in ${duration}`;
+  }, [running, startedAt, elapsedMs, isCancelled, isError]);
 
   return (
     <details
@@ -174,11 +186,13 @@ export function ToolCard({
       data-running={running ? "true" : "false"}
       data-long-running={isLongRunning ? "true" : "false"}
       data-error={isError ? "true" : "false"}
+      data-cancelled={isCancelled ? "true" : "false"}
     >
       <summary className="ae-tool-card-summary">
         <ToolStatusIcon
           running={running}
           isError={isError}
+          isCancelled={isCancelled}
           isLongRunning={isLongRunning}
         />
         <span className="ae-tool-card-name">{baseTitle}</span>

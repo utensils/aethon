@@ -12,6 +12,7 @@ import {
   formatSessionStatsMessage,
   handleChat,
   handleSetModel,
+  handleStop,
   unloadProjectExtensions,
 } from "./dispatcher";
 
@@ -64,6 +65,61 @@ function fakeTabRecord(overrides: Partial<TabRecord> = {}): TabRecord {
     ...overrides,
   };
 }
+
+describe("handleStop", () => {
+  it("aborts bash and emits a terminal tool-card update for active tools", async () => {
+    const f = makeFixture();
+    const abort = vi.fn(() => Promise.resolve());
+    const abortBash = vi.fn();
+    const clearQueue = vi.fn();
+    const tab = fakeTabRecord({
+      queuedCount: 3,
+      session: {
+        abort,
+        abortBash,
+        clearQueue,
+      } as unknown as TabRecord["session"],
+      toolArgsCache: new Map([
+        [
+          "call-1",
+          {
+            name: "bash",
+            summary: "sleep 60",
+            uiId: "tool-1-call-1",
+            startedAt: 1_000,
+          },
+        ],
+      ]),
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    handleStop(f.state, f.deps, { type: "stop", tabId: "tab-1" });
+    await Promise.resolve();
+
+    expect(clearQueue).toHaveBeenCalledOnce();
+    expect(abortBash).toHaveBeenCalledOnce();
+    expect(abort).toHaveBeenCalledOnce();
+    expect(tab.queuedCount).toBe(0);
+    expect(f.sent).toContainEqual({ type: "queue_reset", tabId: "tab-1" });
+    expect(f.sent.find((m) => m.type === "a2ui")).toMatchObject({
+      id: "tool-1-call-1",
+      payload: {
+        components: [
+          {
+            props: {
+              status: "cancelled",
+              startedAt: 1_000,
+              endedAt: expect.any(Number),
+            },
+          },
+        ],
+      },
+    });
+    expect(f.sent.find((m) => m.type === "terminal_output")).toMatchObject({
+      content: "\r\n[command cancelled]\r\n",
+    });
+  });
+});
 
 describe("handleChat", () => {
   it("queues normal messages while a prompt is in flight", async () => {

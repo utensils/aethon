@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatHistory, ChatInput, QueuedMessagesPopover } from "./chat";
+import { ChatHistory, ChatInput, QueuedMessagesPopover, ToolCard } from "./chat";
 import { SkillRegistry } from "../../skills/SkillRegistry";
 import { SkillRegistryProvider } from "../../skills/registry";
 
@@ -16,6 +16,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -71,6 +72,65 @@ function renderHistory(state: Record<string, unknown>) {
   );
   return { onEvent };
 }
+
+function renderToolCard(props: Record<string, unknown>) {
+  return render(
+    <ToolCard
+      component={{
+        id: "tool-1",
+        type: "tool-card",
+        props: { title: "bash", description: "sleep 60", ...props },
+      }}
+      state={{}}
+      onEvent={vi.fn()}
+      renderChildren={() => <div>output</div>}
+    />,
+  );
+}
+
+describe("ToolCard", () => {
+  it("shows a cancelled terminal state and freezes elapsed time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+
+    renderToolCard({ startedAt: 1_000, endedAt: 3_000, status: "cancelled" });
+
+    expect(screen.getByText("Cancelled in 2.0s")).toBeTruthy();
+    expect(screen.queryByText(/long-running/)).toBeNull();
+    expect(screen.getByLabelText("Tool cancelled")).toBeTruthy();
+
+    vi.setSystemTime(30_000);
+    vi.advanceTimersByTime(1_000);
+
+    expect(screen.getByText("Cancelled in 2.0s")).toBeTruthy();
+  });
+
+  it("renders completed and failed terminal states with stable durations", () => {
+    const { rerender } = renderToolCard({ startedAt: 1_000, endedAt: 2_500 });
+    expect(screen.getByText("Completed in 1.5s")).toBeTruthy();
+
+    rerender(
+      <ToolCard
+        component={{
+          id: "tool-1",
+          type: "tool-card",
+          props: {
+            title: "bash",
+            description: "sleep 60",
+            startedAt: 1_000,
+            endedAt: 2_500,
+            isError: true,
+          },
+        }}
+        state={{}}
+        onEvent={vi.fn()}
+        renderChildren={() => <div>output</div>}
+      />,
+    );
+    expect(screen.getByText("Failed in 1.5s")).toBeTruthy();
+    expect(screen.getByLabelText("Tool failed")).toBeTruthy();
+  });
+});
 
 describe("ChatInput", () => {
   it("submits bare Enter as a normal queued-capable message", () => {

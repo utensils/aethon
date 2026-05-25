@@ -5,6 +5,7 @@ import {
   type TabRecord,
 } from "./state";
 import {
+  cancelRunningToolCards,
   compilePattern,
   collectPiSlashCommands,
   emitReady,
@@ -204,6 +205,31 @@ describe("toolCardPayload", () => {
     const root = payload.components[0] as { children: unknown[] };
     const code = root.children[0] as { props: { language: string } };
     expect(code.props.language).toBe("tsx");
+  });
+
+  it("marks cancelled cards as a terminal state", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "bash",
+      argsSummary: "sleep 60",
+      result: "Cancelled by user.",
+      status: "cancelled",
+      startedAt: 1_000,
+      endedAt: 2_500,
+    });
+
+    expect(payload).toMatchObject({
+      components: [
+        {
+          id: "tool-c1",
+          props: {
+            status: "cancelled",
+            startedAt: 1_000,
+            endedAt: 2_500,
+          },
+        },
+      ],
+    });
   });
 
   it("appends image children with data: URLs", () => {
@@ -488,6 +514,82 @@ describe("handleSessionEvent", () => {
 
     const ids = f.sent.filter((m) => m.type === "a2ui").map((m) => m.id);
     expect(ids).toEqual(["tool-1-c1", "tool-1-c1", "tool-2-c1"]);
+  });
+
+  it("cancelRunningToolCards freezes active tool-card timers", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    rec.toolArgsCache.set("c1", {
+      name: "bash",
+      summary: "sleep 60",
+      uiId: "tool-1-c1",
+      startedAt: 1_000,
+    });
+
+    const count = cancelRunningToolCards(f.deps, rec, "tab-1");
+
+    expect(count).toBe(1);
+    expect(rec.toolArgsCache.get("c1")).toMatchObject({
+      status: "cancelled",
+      endedAt: expect.any(Number),
+    });
+    const a2uiMsg = f.sent.find((m) => m.type === "a2ui");
+    expect(a2uiMsg).toMatchObject({
+      id: "tool-1-c1",
+      payload: {
+        components: [
+          {
+            id: "tool-1-c1",
+            props: {
+              status: "cancelled",
+              startedAt: 1_000,
+              endedAt: expect.any(Number),
+            },
+          },
+        ],
+      },
+    });
+    expect(f.sent.find((m) => m.type === "terminal_output")).toMatchObject({
+      content: "\r\n[command cancelled]\r\n",
+    });
+  });
+
+  it("tool_execution_end updates a cancelled synthetic card by id", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    rec.toolArgsCache.set("c1", {
+      name: "bash",
+      summary: "sleep 60",
+      uiId: "tool-1-c1",
+      startedAt: 1_000,
+    });
+    cancelRunningToolCards(f.deps, rec, "tab-1");
+    const endedAt = rec.toolArgsCache.get("c1")?.endedAt;
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_end",
+      toolCallId: "c1",
+      toolName: "bash",
+      result: "Command aborted",
+      isError: true,
+    });
+
+    const a2uiMessages = f.sent.filter((m) => m.type === "a2ui");
+    expect(a2uiMessages.map((m) => m.id)).toEqual(["tool-1-c1", "tool-1-c1"]);
+    expect(a2uiMessages.at(-1)).toMatchObject({
+      payload: {
+        components: [
+          {
+            props: {
+              status: "cancelled",
+              isError: true,
+              endedAt,
+            },
+          },
+        ],
+      },
+    });
+    expect(rec.toolArgsCache.has("c1")).toBe(false);
   });
 
   it("agent_end clears promptInFlight, sets agentEndFired, emits response_end", () => {
