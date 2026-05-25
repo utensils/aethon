@@ -19,6 +19,7 @@ import {
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { CSSProperties } from "react";
+import { DashboardSessionRow } from "./dashboard/session-row";
 
 // GhBranchStatus / GhPr types come from ../../ghBranchStatusCache so
 // the layout module doesn't re-declare the wire shape. The cache
@@ -498,6 +499,7 @@ export function WorktreeLanding({
 }: BuiltinComponentProps) {
   const props = component.props as {
     landing?: { $ref: string };
+    recentSessions?: { $ref: string } | WorktreeLandingSession[];
   };
   const landing = (() => {
     if (!props.landing) return null;
@@ -516,6 +518,22 @@ export function WorktreeLanding({
   })();
   if (!landing || landing.kind !== "worktree") return null;
 
+  const recentSessions = (() => {
+    const raw = props.recentSessions;
+    if (!raw) return [];
+    const resolved = Array.isArray(raw)
+      ? raw
+      : resolvePointer(state, raw.$ref);
+    if (!Array.isArray(resolved)) return [];
+    const landingPath = normalizeLandingPath(landing.path);
+    return (resolved as WorktreeLandingSession[])
+      .filter((session) => {
+        if (!landingPath) return true;
+        return normalizeLandingPath(session.cwd) === landingPath;
+      })
+      .slice(0, 8);
+  })();
+
   const title = landing.worktreeLabel ?? landing.branch ?? "worktree";
   const projectLabel = landing.projectLabel ?? "";
   const branch = landing.branch ?? "";
@@ -531,9 +549,21 @@ export function WorktreeLanding({
       isMain={isMain}
       worktreeId={landing.worktreeId ?? null}
       projectId={landing.projectId ?? null}
+      recentSessions={recentSessions}
       onEvent={onEvent}
     />
   );
+}
+
+interface WorktreeLandingSession {
+  id: string;
+  label: string;
+  lastModified?: string;
+  cwd?: string;
+}
+
+function normalizeLandingPath(path?: string): string {
+  return (path ?? "").replace(/[/\\]+$/, "");
 }
 
 function WorktreeLandingInner(props: {
@@ -544,13 +574,24 @@ function WorktreeLandingInner(props: {
   isMain: boolean;
   worktreeId: string | null;
   projectId: string | null;
+  recentSessions: WorktreeLandingSession[];
   onEvent: (
     name: string,
     data?: Record<string, unknown>,
     descendantId?: string,
   ) => void;
 }) {
-  const { title, projectLabel, branch, path, isMain, worktreeId, projectId, onEvent } = props;
+  const {
+    title,
+    projectLabel,
+    branch,
+    path,
+    isMain,
+    worktreeId,
+    projectId,
+    recentSessions,
+    onEvent,
+  } = props;
   const [gh, setGh] = useState<GhBranchStatus | null>(null);
   const [ghLoading, setGhLoading] = useState(false);
 
@@ -635,6 +676,42 @@ function WorktreeLandingInner(props: {
             Open in Files
           </button>
         </div>
+        {recentSessions.length > 0 && (
+          <div className="a2ui-worktree-landing-sessions">
+            <h2>Recent sessions</h2>
+            <ul className="a2ui-worktree-landing-session-list">
+              {recentSessions.map((session) => (
+                <DashboardSessionRow
+                  key={session.id}
+                  session={session}
+                  classPrefix="a2ui-worktree-landing"
+                  onRestore={() =>
+                    onEvent(
+                      "restore-session",
+                      {
+                        sessionId: session.id,
+                        label: session.label,
+                        cwd: session.cwd,
+                      },
+                      session.id,
+                    )
+                  }
+                  onDelete={() =>
+                    onEvent(
+                      "delete-session",
+                      {
+                        sessionId: session.id,
+                        label: session.label,
+                        confirmed: true,
+                      },
+                      session.id,
+                    )
+                  }
+                />
+              ))}
+            </ul>
+          </div>
+        )}
         {/* Branch status via `gh` CLI. Silently absent when gh isn't
             installed/authed or the repo has no GitHub remote — the
             block just renders nothing (or "Not on GitHub" when we

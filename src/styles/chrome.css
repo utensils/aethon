@@ -1679,20 +1679,91 @@ body.ae-resizing-sidebar .a2ui-layout {
   justify-content: center;
 }
 
-.a2ui-worktree-landing-gh {
+.a2ui-worktree-landing-gh,
+.a2ui-worktree-landing-sessions {
   width: 100%;
   text-align: left;
   border-top: 1px solid var(--border);
   padding-top: var(--space-4);
   margin-top: var(--space-4);
 }
-.a2ui-worktree-landing-gh h2 {
+.a2ui-worktree-landing-gh h2,
+.a2ui-worktree-landing-sessions h2 {
   margin: 0 0 var(--space-2) 0;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.a2ui-worktree-landing-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-worktree-landing-session-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-worktree-landing-session-list li:hover,
+.a2ui-worktree-landing-session-list li.is-confirming {
+  background: var(--bg-hover);
+}
+.a2ui-worktree-landing-session-list li.is-confirming {
+  cursor: default;
+}
+.a2ui-worktree-landing-session-label {
+  font-size: var(--text-md);
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-worktree-landing-session-meta {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.a2ui-worktree-landing-session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+.a2ui-worktree-landing-session-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.a2ui-worktree-landing-session-delete:hover {
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 26%, var(--border));
+  color: var(--error);
+}
+.a2ui-worktree-landing-session-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .a2ui-worktree-landing-gh-list {
   list-style: none;
