@@ -52,7 +52,6 @@
           "type": "tab-strip",
           "props": {
             "area": "tabs",
-            "visible": { "$ref": "/hasTabs" },
             "tabs": { "$ref": "/tabs" },
             "activeId": { "$ref": "/activeTabId" }
           }

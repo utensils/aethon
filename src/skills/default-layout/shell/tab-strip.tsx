@@ -159,7 +159,7 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
         type="button"
         className="a2ui-tab-new"
         title="New tab (⌘T)"
-        aria-label="New tab"
+        aria-label="New Tab"
         onClick={() => onEvent("new")}
       >
         +
