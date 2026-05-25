@@ -15,6 +15,13 @@ All notable changes to Aethon. Format loosely follows
   the header offers `Clear queue`, and a new `useQueuedDispatch` hook
   drains the head on every idle transition. Cmd/Ctrl+Enter on the composer
   still ships the current draft as a mid-turn steer.
+- **Inline extension toggle.** Each row in the sidebar's `extensions`
+  section now renders a pill-shaped toggle switch — flip an extension
+  on or off in one click without diving into the right-click menu or
+  the settings panel. The same toggle replaces the Enable/Disable text
+  button inside the settings panel's Extensions list for visual
+  consistency. Failed-to-load extensions render the switch in a muted
+  disabled state.
 
 ### Changed
 

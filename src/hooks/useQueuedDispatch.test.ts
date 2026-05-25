@@ -17,7 +17,7 @@ function tabWithQueue(
 }
 
 describe("useQueuedDispatch", () => {
-  it("drains the head when waiting transitions false", async () => {
+  it("drains the head when waiting transitions false", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();
 

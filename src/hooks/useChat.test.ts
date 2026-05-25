@@ -222,7 +222,7 @@ describe("useChat setModel", () => {
     const queued = (stateRef.current.tabs as Tab[])[0].queuedMessages;
     expect(queued).toHaveLength(1);
 
-    await act(async () => {
+    act(() => {
       result.current.editQueuedMessage("tab-1", queued[0].id, "rewritten");
     });
     expect((stateRef.current.tabs as Tab[])[0].queuedMessages[0].content).toBe(
@@ -240,7 +240,7 @@ describe("useChat setModel", () => {
     });
     const queued = (stateRef.current.tabs as Tab[])[0].queuedMessages;
 
-    await act(async () => {
+    act(() => {
       result.current.deleteQueuedMessage("tab-1", queued[0].id);
     });
     expect(
@@ -261,7 +261,7 @@ describe("useChat setModel", () => {
       (stateRef.current.tabs as Tab[])[0].queuedMessages,
     ).toHaveLength(3);
 
-    await act(async () => {
+    act(() => {
       result.current.clearQueuedMessages("tab-1");
     });
     expect((stateRef.current.tabs as Tab[])[0].queuedMessages).toEqual([]);

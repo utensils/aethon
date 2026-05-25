@@ -2913,6 +2913,76 @@ body.ae-resizing-composer * {
   color: var(--bg);
 }
 
+/* ---- Toggle switch (extensions inline, settings panel) ------------------ */
+
+/* Compact pill switch — amber track when on (matches the accent), the
+   thumb slides between left and right. Inline-friendly: flex: 0 0 auto
+   so it sits beside text without competing for row height. */
+.ae-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  outline: none;
+  /* Click target slightly larger than the visual track. */
+  padding: 2px;
+  border-radius: 999px;
+}
+.ae-toggle:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(255, 184, 76, 0.32));
+}
+
+.ae-toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  transition:
+    background-color 120ms var(--ease-out, ease),
+    border-color 120ms var(--ease-out, ease);
+}
+
+.ae-toggle-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition:
+    transform 140ms var(--ease-out, ease),
+    background-color 120ms var(--ease-out, ease);
+}
+
+.ae-toggle-on .ae-toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ae-toggle-on .ae-toggle-thumb {
+  /* Travel = track width (28) - thumb width (12) - left inset (1) - right inset (1) - border (1+1) */
+  transform: translateX(12px);
+  background: var(--bg);
+}
+
+.ae-toggle-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.ae-toggle-disabled .ae-toggle-track {
+  background: var(--bg-elev);
+}
+
+.ae-toggle:not(.ae-toggle-disabled):hover .ae-toggle-track {
+  border-color: var(--accent);
+}
+
 /* ---- Status bar --------------------------------------------------------- */
 
 .a2ui-status-bar {

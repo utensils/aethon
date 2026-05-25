@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { A2UIComponent, SidebarItem } from "../../../types/a2ui";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
@@ -28,6 +29,11 @@ export interface ItemRowProps {
    *  label at the same x-coordinate as a sibling project with worktrees.
    *  Other sections (panels, history) leave it off so they stay tight. */
   alignSlots?: boolean;
+  /** Optional trailing control rendered after the hint (e.g. a toggle
+   *  switch for extension rows). Click propagation is the caller's
+   *  responsibility — `ToggleSwitch` already stops propagation so the
+   *  outer row's "select" click doesn't fire on toggle activation. */
+  trailingControl?: ReactNode;
 }
 
 export function ItemRow({
@@ -43,6 +49,7 @@ export function ItemRow({
   disclosure,
   onToggleDisclosure,
   alignSlots,
+  trailingControl,
 }: ItemRowProps) {
   if (item.componentType && renderChildWithState) {
     const synthetic: A2UIComponent = {
@@ -161,6 +168,7 @@ export function ItemRow({
         </span>
       ) : null}
       {hint && <span className="a2ui-sidebar-item-hint">{hint}</span>}
+      {trailingControl}
     </li>
   );
 }

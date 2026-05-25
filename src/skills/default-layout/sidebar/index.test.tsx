@@ -100,6 +100,102 @@ describe("Sidebar extension controls", () => {
     );
   });
 
+  it("renders an inline toggle switch on each extension row", () => {
+    renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:mold-gallery",
+              label: "mold-gallery",
+              hint: "project",
+            },
+            {
+              id: "ext-disabled:silenced",
+              label: "silenced",
+              hint: "disabled",
+            },
+            {
+              id: "ext-failed:boom",
+              label: "boom",
+              hint: "load failed",
+            },
+          ],
+        },
+      },
+    });
+
+    const switches = screen.getAllByRole("switch");
+    expect(switches).toHaveLength(3);
+    expect(switches[0].getAttribute("aria-checked")).toBe("true"); // ext: → on
+    expect(switches[1].getAttribute("aria-checked")).toBe("false"); // ext-disabled: → off
+    expect(switches[2].getAttribute("aria-checked")).toBe("false"); // ext-failed: → off
+    expect(switches[2].getAttribute("aria-disabled")).toBe("true"); // failed is interactive-disabled
+  });
+
+  it("flips an enabled extension via the inline toggle without firing the row's select", () => {
+    const { onEvent } = renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:mold-gallery",
+              label: "mold-gallery",
+              hint: "project",
+            },
+          ],
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("switch"));
+
+    // Toggle emits toggle-extension with the *target* disabled flag.
+    expect(onEvent).toHaveBeenCalledWith(
+      "toggle-extension",
+      {
+        sectionId: "extensions",
+        itemId: "ext:mold-gallery",
+        name: "mold-gallery",
+        disabled: true,
+      },
+      "ext:mold-gallery",
+    );
+    // The outer row's "select" handler must not fire — that would
+    // bounce the user into the extension's pane on every toggle.
+    const selectCalls = onEvent.mock.calls.filter(
+      (call) => call[0] === "select",
+    );
+    expect(selectCalls).toHaveLength(0);
+  });
+
+  it("re-enables a disabled extension via the inline toggle", () => {
+    const { onEvent } = renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext-disabled:silenced",
+              label: "silenced",
+            },
+          ],
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onEvent).toHaveBeenCalledWith(
+      "toggle-extension",
+      {
+        sectionId: "extensions",
+        itemId: "ext-disabled:silenced",
+        name: "silenced",
+        disabled: false,
+      },
+      "ext-disabled:silenced",
+    );
+  });
+
   it("does not duplicate a layout-provided extensions section", () => {
     renderSidebar({
       props: {

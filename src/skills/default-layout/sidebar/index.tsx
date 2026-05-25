@@ -24,6 +24,7 @@ import {
 } from "../../../utils/sidebarHistory";
 import { AeMarkInline } from "../layout";
 import { ItemRow, type ItemRowProps } from "./item-row";
+import { ToggleSwitch } from "../toggle-switch";
 import {
   SearchableSidebarSection,
   type SidebarSectionExt,
@@ -87,6 +88,36 @@ interface SidebarMenuHandlers {
   renameContextSession: () => void;
   deleteContextSession: () => void;
   toggleContextExtension: (disabled: boolean) => void;
+}
+
+/** Classify an extension item by its id prefix. The bridge encodes the
+ *  state in the id (`ext:` = enabled, `ext-disabled:` = disabled,
+ *  `ext-failed:` = load failed) so the toggle has to invert that to
+ *  drive the switch. Returns null for non-extension items so the caller
+ *  can skip rendering the trailing toggle slot entirely. */
+function extensionToggleState(item: SidebarItem): {
+  name: string;
+  checked: boolean;
+  failed: boolean;
+} | null {
+  if (item.id.startsWith("ext:")) {
+    return { name: item.id.slice("ext:".length), checked: true, failed: false };
+  }
+  if (item.id.startsWith("ext-disabled:")) {
+    return {
+      name: item.id.slice("ext-disabled:".length),
+      checked: false,
+      failed: false,
+    };
+  }
+  if (item.id.startsWith("ext-failed:")) {
+    return {
+      name: item.id.slice("ext-failed:".length),
+      checked: false,
+      failed: true,
+    };
+  }
+  return null;
 }
 
 function buildSidebarMenuItems(
@@ -634,6 +665,39 @@ export function Sidebar({
                       : null;
                     const worktrees = projectItem?.worktrees;
                     const expanded = projectItem?.expanded === true;
+                    // Inline toggle for extension rows — quick on/off
+                    // without diving into the right-click menu. The
+                    // context menu stays as a secondary affordance.
+                    const extState =
+                      section.id === "extensions"
+                        ? extensionToggleState(item)
+                        : null;
+                    const trailingControl = extState ? (
+                      <ToggleSwitch
+                        checked={extState.checked}
+                        disabled={extState.failed}
+                        ariaLabel={`${extState.checked ? "Disable" : "Enable"} extension ${extState.name}`}
+                        title={
+                          extState.failed
+                            ? "Extension failed to load — fix the error and reload to re-enable"
+                            : extState.checked
+                              ? `Disable ${extState.name}`
+                              : `Enable ${extState.name}`
+                        }
+                        onChange={(next) => {
+                          onEvent(
+                            "toggle-extension",
+                            {
+                              sectionId: section.id,
+                              itemId: item.id,
+                              name: extState.name,
+                              disabled: !next,
+                            },
+                            item.id,
+                          );
+                        }}
+                      />
+                    ) : undefined;
                     // Only show the disclosure when there are EXTRA worktrees
                     // beyond the main one — every git repo returns ≥1 entry
                     // (the project's primary checkout), so a 1-element list
@@ -685,6 +749,7 @@ export function Sidebar({
                           // regardless of which rows happen to have
                           // worktrees or uncommitted changes.
                           alignSlots={isProjects}
+                          trailingControl={trailingControl}
                         />
                         {hasExtraWorktrees && expanded
                           ? extraWorktrees.map((wt) => (
