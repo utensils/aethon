@@ -69,6 +69,18 @@ function isOption(item: ContextMenuItem): item is ContextMenuOption {
   return !("type" in item);
 }
 
+function isInputItem(item: ContextMenuItem): item is ContextMenuInput {
+  return "type" in item && item.type === "input";
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
+}
+
 export function ContextMenu({
   open,
   x,
@@ -83,6 +95,7 @@ export function ContextMenu({
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const opener = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
 
   // Indices in `items` that map to focusable buttons (skips separator /
@@ -95,31 +108,41 @@ export function ContextMenu({
     }
     return out;
   }, [items]);
+  const firstFocusableIndex = focusableIndices[0] ?? null;
+  const hasInputItem = useMemo(() => items.some(isInputItem), [items]);
 
   // Capture the originating focus owner + seed the focused item when the
   // menu opens. setState-in-effect is the right shape here: open is a
   // boolean prop coming from the caller and we want to mirror it onto
   // the internal focus state machine, not derive it on every render.
   //
-  // Also move keyboard focus into the menu element itself so the
-  // `onKeyDown={onMenuKey}` on the root receives ArrowUp/ArrowDown/Enter.
-  // Without this, focus stayed on the originating row, the document-level
-  // keyboard listener only caught Esc/Tab, and arrow navigation never
-  // reached the menu — the "advertised keyboard navigation" stayed dead.
+  // Also move keyboard focus into the menu (or its inline input) so
+  // keyboard interactions do not stay on the originating row. Without
+  // this, the document-level keyboard listener only caught Esc/Tab, and
+  // arrow navigation never reached option-only menus — the "advertised
+  // keyboard navigation" stayed dead.
+  //
+  // Run only on closed -> open transitions. Parent chrome (notably the
+  // tab strip while an agent is streaming) can re-render the menu many
+  // times with fresh `items` arrays; re-focusing on every such render
+  // steals focus back from inline rename inputs and makes typing unusable.
   useEffect(() => {
-    if (open) {
-      opener.current = document.activeElement;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed focus on open
-      setFocusedIndex(focusableIndices[0] ?? null);
-      // Defer to the next tick so the menu element is in the DOM.
-      const t = window.setTimeout(() => {
-        menuRef.current?.focus({ preventScroll: true });
-      }, 0);
-      return () => window.clearTimeout(t);
-    } else {
+    if (!open) {
+      wasOpenRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear mirrored focus state on close
       setFocusedIndex(null);
+      return;
     }
-  }, [open, focusableIndices]);
+    if (wasOpenRef.current) return;
+
+    wasOpenRef.current = true;
+    opener.current = document.activeElement;
+    setFocusedIndex(firstFocusableIndex);
+    const firstInput = hasInputItem
+      ? menuRef.current?.querySelector<HTMLElement>("input, textarea, select")
+      : null;
+    (firstInput ?? menuRef.current)?.focus({ preventScroll: true });
+  }, [open, firstFocusableIndex, hasInputItem]);
 
   // Outside click + Esc/Tab dismiss. Listeners only mount while open.
   useEffect(() => {
@@ -191,6 +214,7 @@ export function ContextMenu({
 
   const onMenuKey = useCallback(
     (e: React.KeyboardEvent) => {
+      if (isTextEntryTarget(e.target)) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         moveFocus(1);

@@ -23,6 +23,9 @@ All notable changes to Aethon. Format loosely follows
   Restored transcript now lands first, with pending local messages —
   user prompts AND streaming assistant bubbles — appended after, so
   ordering stays chronological and live output isn't wiped mid-stream.
+- **Session tab rename focus.** Tab context-menu rename inputs now keep focus
+  while an agent is running and streaming state updates, so session names can
+  be edited without interruption.
 
 ## [0.3.3] - 2026-05-25
 
