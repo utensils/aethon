@@ -21,6 +21,16 @@ type ActiveTurnState = {
   status?: string;
 };
 
+function isTransientNavigationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Execution context was destroyed") ||
+    message.includes("Cannot find context with specified id") ||
+    message.includes("Target closed") ||
+    message.includes("Page closed")
+  );
+}
+
 function parseAgentCommandPayload(payload: unknown): AgentCommandPayload {
   if (typeof payload !== "string") return {};
   const parsed: unknown = JSON.parse(payload);
@@ -34,14 +44,21 @@ function parseAgentCommandPayload(payload: unknown): AgentCommandPayload {
 }
 
 async function getActiveTurnState(page: Page): Promise<ActiveTurnState> {
-  return page.evaluate(() => {
-    const state = window.__AETHON_STATE__?.();
-    return {
-      waiting: state?.waiting,
-      queueCount: state?.queueCount,
-      status: state?.status,
-    };
-  });
+  try {
+    return await page.evaluate(() => {
+      const state = window.__AETHON_STATE__?.();
+      return {
+        waiting: state?.waiting,
+        queueCount: state?.queueCount,
+        status: state?.status,
+      };
+    });
+  } catch (error) {
+    if (isTransientNavigationError(error)) {
+      return {};
+    }
+    throw error;
+  }
 }
 
 async function completeActiveTurn(page: Page): Promise<void> {
