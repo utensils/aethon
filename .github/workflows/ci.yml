@@ -19,6 +19,8 @@ concurrency:
 jobs:
   ts:
     name: ts (typecheck + eslint + vitest)
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
     # macOS for parity with the dev environment + Bun's native target
     # is well-supported here. Linux mirrors the Tauri release target.
     strategy:
