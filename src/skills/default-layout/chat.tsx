@@ -35,7 +35,10 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { useSkillRegistry } from "../../skills/SkillRegistry";
 import type { QueuedMessage } from "../../types/tab";
 import { useStickyScroll } from "../../utils/useStickyScroll";
-import { MARKDOWN_COMPONENTS } from "./markdown-adapter";
+import {
+  CHAT_MARKDOWN_COMPONENTS,
+  MARKDOWN_REMARK_PLUGINS,
+} from "./markdown-adapter";
 import { readUiScale } from "./layout";
 
 // ---------------------------------------------------------------------------
@@ -306,7 +309,10 @@ function ThinkingBlock({
     <details className="a2ui-thinking-block" open={!complete}>
       <summary>{label}</summary>
       <div className="a2ui-thinking-content a2ui-markdown">
-        <ReactMarkdown components={MARKDOWN_COMPONENTS}>
+        <ReactMarkdown
+          components={CHAT_MARKDOWN_COMPONENTS}
+          remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+        >
           {children}
         </ReactMarkdown>
       </div>
@@ -327,7 +333,11 @@ function MarkdownWithThinking({ text }: { text: string }) {
           );
         }
         return (
-          <ReactMarkdown key={index} components={MARKDOWN_COMPONENTS}>
+          <ReactMarkdown
+            key={index}
+            components={CHAT_MARKDOWN_COMPONENTS}
+            remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+          >
             {segment.content}
           </ReactMarkdown>
         );

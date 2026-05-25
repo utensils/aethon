@@ -12,7 +12,144 @@
  * isn't `<pre><pre>...</pre></pre>` (invalid + double-padded).
  */
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { HighlightedCode } from "../../components/HighlightedCode";
+
+interface MarkdownNode {
+  type?: string;
+  value?: string;
+  url?: string;
+  children?: MarkdownNode[];
+}
+
+type MarkdownRemarkPlugin = () => (tree: MarkdownNode) => void;
+
+const BARE_HTTP_URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+const TRAILING_PUNCTUATION = new Set([".", ",", "!", "?", ":", ";"]);
+const CLOSING_BRACKETS: Record<string, string> = {
+  ")": "(",
+  "]": "[",
+  "}": "{",
+};
+
+function countChar(value: string, char: string): number {
+  return [...value].filter((candidate) => candidate === char).length;
+}
+
+function splitTrailingUrlPunctuation(value: string): {
+  url: string;
+  trailing: string;
+} {
+  let url = value;
+  let trailing = "";
+
+  while (url.length > 0) {
+    const last = url.at(-1);
+    if (!last) break;
+
+    if (TRAILING_PUNCTUATION.has(last)) {
+      trailing = last + trailing;
+      url = url.slice(0, -1);
+      continue;
+    }
+
+    const opening = CLOSING_BRACKETS[last];
+    if (opening && countChar(url, last) > countChar(url, opening)) {
+      trailing = last + trailing;
+      url = url.slice(0, -1);
+      continue;
+    }
+
+    break;
+  }
+
+  return { url, trailing };
+}
+
+function safeHttpUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function linkifyTextNode(node: MarkdownNode): MarkdownNode[] {
+  const value = node.value ?? "";
+  const replacements: MarkdownNode[] = [];
+  let lastIndex = 0;
+
+  BARE_HTTP_URL_RE.lastIndex = 0;
+  for (
+    let match = BARE_HTTP_URL_RE.exec(value);
+    match;
+    match = BARE_HTTP_URL_RE.exec(value)
+  ) {
+    const rawMatch = match[0];
+    const { url, trailing } = splitTrailingUrlPunctuation(rawMatch);
+    const safeUrl = safeHttpUrl(url);
+    if (!safeUrl) continue;
+
+    if (match.index > lastIndex) {
+      replacements.push({
+        type: "text",
+        value: value.slice(lastIndex, match.index),
+      });
+    }
+    replacements.push({
+      type: "link",
+      url: safeUrl,
+      children: [{ type: "text", value: url }],
+    });
+    if (trailing) {
+      replacements.push({ type: "text", value: trailing });
+    }
+    lastIndex = match.index + rawMatch.length;
+  }
+
+  if (replacements.length === 0) return [node];
+  if (lastIndex < value.length) {
+    replacements.push({ type: "text", value: value.slice(lastIndex) });
+  }
+  return replacements;
+}
+
+function linkifyBareUrls(node: MarkdownNode): void {
+  if (!node.children || node.type === "link" || node.type === "linkReference") {
+    return;
+  }
+
+  const nextChildren: MarkdownNode[] = [];
+  for (const child of node.children) {
+    if (child.type === "text") {
+      nextChildren.push(...linkifyTextNode(child));
+      continue;
+    }
+    linkifyBareUrls(child);
+    nextChildren.push(child);
+  }
+  node.children = nextChildren;
+}
+
+function remarkLinkBareUrls(): (tree: MarkdownNode) => void {
+  return (tree) => linkifyBareUrls(tree);
+}
+
+function openExternalUrl(url: string): void {
+  try {
+    void openUrl(url).catch(() => undefined);
+  } catch {
+    // Opener errors are not actionable from chat rendering.
+  }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- remark plugin list consumed by ReactMarkdown callers
+export const MARKDOWN_REMARK_PLUGINS: MarkdownRemarkPlugin[] = [
+  remarkLinkBareUrls,
+];
 
 // eslint-disable-next-line react-refresh/only-export-components -- helper consumed by the markdown-adapter map below
 export function isHighlightedFenceChild(node: React.ReactNode): boolean {
@@ -49,6 +186,37 @@ export const MARKDOWN_COMPONENTS = {
     }
     return (
       <HighlightedFence code={text} language={langMatch[1]} />
+    );
+  },
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- chat-specific adapter map for react-markdown; not a component module
+export const CHAT_MARKDOWN_COMPONENTS = {
+  ...MARKDOWN_COMPONENTS,
+  a({
+    children,
+    href,
+    node,
+    ...rest
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
+    void node;
+    const safeHref = safeHttpUrl(href);
+    if (!safeHref) return <span>{children}</span>;
+
+    return (
+      <a
+        {...rest}
+        href={safeHref}
+        rel="noopener noreferrer"
+        target="_blank"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openExternalUrl(safeHref);
+        }}
+      >
+        {children}
+      </a>
     );
   },
 };
