@@ -266,4 +266,54 @@ describe("FileTreePanel", () => {
       }),
     );
   });
+
+  it("keeps expanded descendants visible when the root listing refreshes", async () => {
+    let fsTreeChangedListener:
+      | ((event: { payload: { root: string; dirs: string[] } }) => void)
+      | undefined;
+    listenMock.mockImplementation((eventName: string, listener) => {
+      if (eventName === "fs-tree-changed") {
+        fsTreeChangedListener = listener as typeof fsTreeChangedListener;
+      }
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd !== "fs_list_dir") return Promise.resolve(1);
+      if (args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          {
+            name: "App.tsx",
+            path: "/projects/aethon/src/App.tsx",
+            kind: "file",
+          },
+        ]);
+      }
+      return Promise.resolve([
+        { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        {
+          name: "package.json",
+          path: "/projects/aethon/package.json",
+          kind: "file",
+        },
+      ]);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    const srcRow = await waitFor(() => screen.getByText("src"));
+    fireEvent.click(srcRow);
+    await waitFor(() => screen.getByText("App.tsx"));
+
+    act(() => {
+      fsTreeChangedListener?.({
+        payload: { root: "/projects/aethon", dirs: ["/projects/aethon"] },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("App.tsx")).toBeTruthy();
+      expect(
+        screen.getByText("src").closest("li")?.getAttribute("aria-expanded"),
+      ).toBe("true");
+    });
+  });
 });

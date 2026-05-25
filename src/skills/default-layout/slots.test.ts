@@ -49,17 +49,11 @@ describe("layout-slot catalogue", () => {
 });
 
 describe("inspectLayoutSlotCoverage — built-in layouts", () => {
-  it("workstation fills every canonical slot except `tabs` (hoisted into header)", () => {
+  it("workstation fills every canonical slot", () => {
     const r = inspectLayoutSlotCoverage(workstationPayload);
     expect(r.missingRequired).toEqual([]);
     expect(r.unknownAreasUsed).toEqual([]);
-    // The redesign moves the chrome tab strip into the header container so
-    // only seven of the eight canonical slots are filled. `tabs` is the
-    // missing one — the slot stays canonical, just unused at this layer.
-    // tabs is hoisted into the header container, so it stays canonical
-    // but unfilled at this layer.
-    const expected = [...SLOT_NAMES].filter((s) => s !== "tabs").sort();
-    expect([...r.filledSlots].sort()).toEqual(expected);
+    expect([...r.filledSlots].sort()).toEqual([...SLOT_NAMES].sort());
     // workstation uses {$ref} for `areas` so the inspector tags it.
     expect(r.dynamicAreas).toBe(true);
   });

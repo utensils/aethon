@@ -88,7 +88,7 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
         // Legacy snapshot — let the boot payload's default fill in
         // the right column so the redesigned 3-column layout still
         // surfaces on first restore after upgrade.
-        next.columns = `${first} minmax(0,1fr) 280px`;
+        next.columns = `${first} minmax(0,1fr) 360px`;
       }
     }
   }

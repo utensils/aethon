@@ -47,7 +47,6 @@ describe("layoutPrefs", () => {
         columns: "302px minmax(0,1fr) 480px",
         lastLeftWidth: "302px",
         lastRightWidth: "480px",
-        areas: ["header header", "canvas files-sidebar"],
       },
       terminalPanel: { height: 360 },
     });
@@ -86,8 +85,16 @@ describe("layoutPrefs", () => {
     );
     expect(next).toEqual({
       layout: {
-        rows: "38px minmax(0,1fr) 410px auto auto",
+        rows: "38px 38px minmax(0,1fr) 410px auto auto",
         columns: "300px minmax(0,1fr) 500px",
+        areas: [
+          "sidebar header files-sidebar",
+          "sidebar tabs files-sidebar",
+          "sidebar canvas files-sidebar",
+          "sidebar terminal files-sidebar",
+          "sidebar composer files-sidebar",
+          "status status status",
+        ],
       },
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 410 },
@@ -114,9 +121,17 @@ describe("layoutPrefs", () => {
     expect(next.layout).toEqual(
       expect.objectContaining({
         columns: "220px minmax(0,1fr) 360px",
-        rows: "38px minmax(0,1fr) 0px auto auto",
+        rows: "38px 38px minmax(0,1fr) 0px auto auto",
         sidebarVisible: true,
         filesSidebarVisible: true,
+        areas: [
+          "sidebar header files-sidebar",
+          "sidebar tabs files-sidebar",
+          "sidebar canvas files-sidebar",
+          "sidebar terminal files-sidebar",
+          "sidebar composer files-sidebar",
+          "status status status",
+        ],
       }),
     );
     expect(next.terminalPanel).toEqual({ activeSubId: "agent-bash" });

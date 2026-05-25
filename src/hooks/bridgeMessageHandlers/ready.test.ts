@@ -3,6 +3,7 @@ import { handleReady } from "./ready";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 import { makeEmptyTab } from "../../types/tab";
+import { defaultLayoutSkill } from "../../skills/default-layout";
 
 describe("handleReady", () => {
   beforeEach(() => {
@@ -219,18 +220,7 @@ describe("handleReady", () => {
         },
       },
     });
-    ctx.bootLayout = {
-      components: [{ id: "root", type: "container" }],
-      state: {
-        layout: {
-          columns: "220px minmax(0,1fr)",
-          areas: ["sidebar header", "sidebar canvas", "sidebar composer"],
-        },
-        sidebar: {
-          extraSections: [],
-        },
-      },
-    };
+    ctx.bootLayout = defaultLayoutSkill.layout!;
     ctx.lastExtensionStateKeysRef.current = new Set([
       "/layout/columns",
       "/layout/areas",
@@ -250,10 +240,63 @@ describe("handleReady", () => {
 
     const next = applySetState();
     expect(next.layout).toMatchObject({
-      columns: "220px minmax(0,1fr)",
-      areas: ["sidebar header", "sidebar canvas", "sidebar composer"],
+      columns: "220px minmax(0,1fr) 360px",
+      rows: "38px 38px minmax(0,1fr) 0px auto auto",
+      areas: [
+        "sidebar header files-sidebar",
+        "sidebar tabs files-sidebar",
+        "sidebar canvas files-sidebar",
+        "sidebar terminal files-sidebar",
+        "sidebar composer files-sidebar",
+        "status status status",
+      ],
     });
     expect(next.sidebar).toMatchObject({ extraSections: [] });
+  });
+
+  it("normalizes stale workstation grid state so the top tab strip has a row", () => {
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [{ id: "default" }],
+        layout: {
+          columns: "220px minmax(0,1fr) 360px",
+          rows: "38px minmax(0,1fr) 0px auto auto",
+          areas: [
+            "sidebar header files-sidebar",
+            "sidebar canvas files-sidebar",
+            "sidebar terminal files-sidebar",
+            "sidebar composer files-sidebar",
+            "status status status",
+          ],
+        },
+      },
+    });
+    ctx.bootLayout = defaultLayoutSkill.layout!;
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        models: [],
+        extensionStateKeys: [],
+        tabs: [{ id: "default", model: "claude" }],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect(next.layout).toMatchObject({
+      rows: "38px 38px minmax(0,1fr) 0px auto auto",
+      areas: [
+        "sidebar header files-sidebar",
+        "sidebar tabs files-sidebar",
+        "sidebar canvas files-sidebar",
+        "sidebar terminal files-sidebar",
+        "sidebar composer files-sidebar",
+        "status status status",
+      ],
+    });
   });
 
   it("calls auto-restore only after projects are loaded", () => {

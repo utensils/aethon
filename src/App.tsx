@@ -20,7 +20,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
 import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
-import { useFocus, workstationRows } from "./hooks/useFocus";
+import { useFocus, WORKSTATION_AREAS, workstationRows } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { useUiOverlays } from "./hooks/useUiOverlays";
@@ -169,6 +169,7 @@ export default function App() {
           ...restoredLayout,
           ...(layoutPrefs?.layout ?? {}),
           rows: workstationRows(terminalOpen, terminalHeight),
+          areas: WORKSTATION_AREAS,
         },
       }),
       hasSyncSessionSnapshot: Boolean(restored),
@@ -248,7 +249,13 @@ export default function App() {
             ? { projectModels: snapshot.projectModels }
             : {}),
           ...(Object.keys(restoredLayout).length > 0
-            ? { layout: { ...currentLayout, ...restoredLayout } }
+            ? {
+                layout: {
+                  ...currentLayout,
+                  ...restoredLayout,
+                  areas: WORKSTATION_AREAS,
+                },
+              }
             : {}),
           tabs,
           activeTabId,

@@ -6,6 +6,27 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-25
+
+### Fixed — Patch release
+
+- **Top tab strip restored.** The workstation layout now gives tabs a
+  dedicated grid row below the header controls, matching the Claudette-style
+  chrome shape and preventing model / appearance controls from covering
+  session tabs.
+- **Stale layout snapshots repaired on ready.** Bridge `ready` hydration now
+  normalizes the default workstation grid back to the canonical
+  header / tabs / canvas / terminal / composer / status rows, so older
+  persisted layout state cannot auto-place tabs at the bottom or hide them.
+- **File tree expansion is stable across refreshes.** Directory refreshes
+  now merge fresh filesystem listings with the existing tree by path, keeping
+  expanded descendants loaded and visible instead of collapsing immediately
+  after expansion.
+- **Files sidebar resize restored.** The right files sidebar now keeps the
+  canonical workstation areas through resize, terminal toggles, layout prefs,
+  and session restore, preventing Monaco/editor tabs from shifting or growing
+  the sidebar unexpectedly.
+
 ## [0.3.0] - 2026-05-24
 
 ### Added — Workstation layout redesign
@@ -575,7 +596,8 @@ error?: string}>`. Backwards compatible: sync callers ignore the
   "Terminal" + "xterm.js · WebGL" badge).
 - **`SPEC.md` checklist** reconciled with what's actually shipped.
 
-[Unreleased]: https://github.com/utensils/aethon/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/utensils/aethon/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/utensils/aethon/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/utensils/aethon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/utensils/aethon/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/utensils/aethon/releases/tag/v0.1.0

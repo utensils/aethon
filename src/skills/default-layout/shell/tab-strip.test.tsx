@@ -68,4 +68,19 @@ describe("TabStrip", () => {
     expect(screen.getByText("Tab 1")).toBeTruthy();
     expect(screen.queryByText("Shell 1")).toBeNull();
   });
+
+  it("keeps the new-tab affordance available when no tabs are open", () => {
+    const onEvent = vi.fn<TabStripOnEvent>();
+    render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{ activeTabId: null, tabs: [] }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "New Tab" }));
+    expect(onEvent).toHaveBeenCalledWith("new");
+  });
 });

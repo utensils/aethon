@@ -49,7 +49,7 @@ describe("sessionUiSnapshot", () => {
       ],
       // Legacy 2-column snapshot upgrades to the new 3-column shape on
       // restore so older sessions still see the right files-sidebar.
-      layout: { sidebarVisible: true, columns: "300px minmax(0,1fr) 280px" },
+      layout: { sidebarVisible: true, columns: "300px minmax(0,1fr) 360px" },
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 240 },
       projectModels: { "project-1": "anthropic/claude-opus-4-7" },

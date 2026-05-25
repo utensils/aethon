@@ -23,8 +23,17 @@ export interface UseFocusActions {
 }
 
 const DEFAULT_LEFT_WIDTH = "220px";
-const DEFAULT_RIGHT_WIDTH = "280px";
+const DEFAULT_RIGHT_WIDTH = "360px";
 const DEFAULT_TERMINAL_HEIGHT = 240;
+
+export const WORKSTATION_AREAS = [
+  "sidebar header files-sidebar",
+  "sidebar tabs files-sidebar",
+  "sidebar canvas files-sidebar",
+  "sidebar terminal files-sidebar",
+  "sidebar composer files-sidebar",
+  "status status status",
+];
 
 function parseWidth(token: string | undefined, fallback: string): string {
   return token && /^\d+px$/.test(token) ? token : fallback;
@@ -113,25 +122,9 @@ export function workstationLayout(
     "minmax(0,1fr)",
     rightVisible ? right : "0px",
   ];
-  const areaCols = ["sidebar", "__center__", "files-sidebar"];
-  const centerIndex = 1;
-
-  const rowFor = (centerName: string) => {
-    const cols = [...areaCols];
-    cols[centerIndex] = centerName;
-    return cols.join(" ");
-  };
-  const statusRow = areaCols.map(() => "status").join(" ");
-
   return {
     columns: parts.join(" "),
-    areas: [
-      rowFor("header"),
-      rowFor("canvas"),
-      rowFor("terminal"),
-      rowFor("composer"),
-      statusRow,
-    ],
+    areas: WORKSTATION_AREAS,
     lastLeftWidth: left,
     lastRightWidth: right,
   };
@@ -152,7 +145,7 @@ export function workstationRows(
   const terminalTrack = terminalOpen
     ? `${Math.max(120, Math.min(720, Math.round(terminalHeight)))}px`
     : "0px";
-  return `38px minmax(0,1fr) ${terminalTrack} auto auto`;
+  return `38px 38px minmax(0,1fr) ${terminalTrack} auto auto`;
 }
 
 /**
@@ -181,6 +174,7 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
         layout: {
           ...layout,
           rows: workstationRows(nextOpen, terminalHeightFromState(prev)),
+          areas: WORKSTATION_AREAS,
         },
       };
     });
@@ -256,6 +250,7 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
           layout: {
             ...layout,
             rows: workstationRows(true, terminalHeightFromState(prev)),
+            areas: WORKSTATION_AREAS,
           },
         };
       });
@@ -285,6 +280,7 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
             layout: {
               ...layout,
               rows: workstationRows(true, terminalHeightFromState(prev)),
+              areas: WORKSTATION_AREAS,
             },
           };
         });

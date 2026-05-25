@@ -62,7 +62,7 @@ describe("handleTerminalPanel", () => {
       state: {
         terminal: { open: true },
         terminalPanel: { activeSubId: "agent-bash" },
-        layout: { rows: "38px minmax(0,1fr) 240px auto auto" },
+        layout: { rows: "38px 38px minmax(0,1fr) 240px auto auto" },
       },
     });
     const handled = await handleTerminalPanel(
@@ -77,7 +77,10 @@ describe("handleTerminalPanel", () => {
     const next = applySetState();
     expect((next.terminalPanel as { height?: number }).height).toBe(360);
     expect((next.layout as { rows?: string }).rows).toBe(
-      "38px minmax(0,1fr) 360px auto auto",
+      "38px 38px minmax(0,1fr) 360px auto auto",
+    );
+    expect((next.layout as { areas?: string[] }).areas).toContain(
+      "sidebar tabs files-sidebar",
     );
   });
 

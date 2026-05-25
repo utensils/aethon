@@ -1,6 +1,7 @@
 import type { EventRouteHandler } from "./types";
 import { cycleShareMode } from "../utils/shareMode";
 import type { Tab } from "../types/tab";
+import { WORKSTATION_AREAS, workstationRows } from "../hooks/useFocus";
 
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
@@ -56,7 +57,8 @@ export const handleTerminalPanel: EventRouteHandler = (
           layout: terminal.open
             ? {
                 ...layout,
-                rows: `38px minmax(0,1fr) ${next}px auto auto`,
+                rows: workstationRows(true, next),
+                areas: WORKSTATION_AREAS,
               }
             : layout,
         };
