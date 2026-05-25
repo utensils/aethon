@@ -98,6 +98,159 @@ describe("FileTreePanel", () => {
     });
   });
 
+  it("renders Git status decorations for changed files and folders", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+          {
+            name: "README.md",
+            path: "/projects/aethon/README.md",
+            kind: "file",
+          },
+          {
+            name: "package.json",
+            path: "/projects/aethon/package.json",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          {
+            name: "App.tsx",
+            path: "/projects/aethon/src/App.tsx",
+            kind: "file",
+          },
+          {
+            name: "new.ts",
+            path: "/projects/aethon/src/new.ts",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status") {
+        return Promise.resolve([
+          { path: "README.md", status: "modified" },
+          { path: "src/new.ts", status: "untracked" },
+        ]);
+      }
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByLabelText("Modified"));
+    expect(screen.getByText("README.md").closest("li")?.className).toContain(
+      "git-status-modified",
+    );
+    expect(screen.getByText("src").closest("li")?.className).toContain(
+      "git-status-descendant",
+    );
+
+    fireEvent.click(screen.getByText("src"));
+    await waitFor(() => screen.getByLabelText("Untracked"));
+    expect(screen.getByText("new.ts").closest("li")?.className).toContain(
+      "git-status-untracked",
+    );
+    expect(screen.queryByLabelText("Added")).toBeNull();
+  });
+
+  it("renders deleted Git entries that are missing from fs_list_dir", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([]);
+      }
+      if (cmd === "git_file_status") {
+        return Promise.resolve([{ path: "src/old.ts", status: "deleted" }]);
+      }
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    fireEvent.click(screen.getByText("src"));
+    await waitFor(() => screen.getByText("old.ts"));
+    expect(screen.getByLabelText("Deleted")).toBeTruthy();
+  });
+
+  it("uses the project path separator for synthetic deleted rows", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "C:\\repo") {
+        return Promise.resolve([
+          { name: "src", path: "C:\\repo\\src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "C:\\repo\\src") {
+        return Promise.resolve([]);
+      }
+      if (cmd === "git_file_status") {
+        return Promise.resolve([{ path: "src/old.ts", status: "deleted" }]);
+      }
+      return Promise.resolve(1);
+    });
+
+    render(
+      <FileTreePanel
+        {...panelProps({
+          state: { project: { path: "C:\\repo", name: "repo" } },
+        })}
+      />,
+    );
+    await waitFor(() => screen.getByText("src"));
+    fireEvent.click(screen.getByText("src"));
+    const deleted = await waitFor(() => screen.getByText("old.ts"));
+    expect(deleted.closest("li")?.getAttribute("title")).toContain(
+      "C:\\repo\\src\\old.ts",
+    );
+  });
+
+  it("renders clean Git file trees without decorations", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          {
+            name: "README.md",
+            path: "/projects/aethon/README.md",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("README.md"));
+    expect(screen.queryByLabelText("Modified")).toBeNull();
+    expect(screen.queryByLabelText("Untracked")).toBeNull();
+  });
+
+  it("renders non-git file trees without decorations", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          {
+            name: "README.md",
+            path: "/projects/aethon/README.md",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve(null);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("README.md"));
+    expect(screen.queryByLabelText("Modified")).toBeNull();
+    expect(screen.queryByLabelText("Untracked")).toBeNull();
+  });
+
   it("watches the visible project directories without recursive scans", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "fs_list_dir") {

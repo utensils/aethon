@@ -43,6 +43,51 @@ interface FsEntry {
   kind: "file" | "dir";
 }
 
+type GitFileStatusKind =
+  | "modified"
+  | "added"
+  | "untracked"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "conflicted";
+
+interface GitFileStatusEntry {
+  path: string;
+  status: GitFileStatusKind;
+  originalPath?: string | null;
+}
+
+interface GitDecoration {
+  status: GitFileStatusKind;
+  source: "direct" | "descendant";
+}
+
+interface GitStatusMeta {
+  label: string;
+  title: string;
+}
+
+const GIT_STATUS_META: Record<GitFileStatusKind, GitStatusMeta> = {
+  modified: { label: "M", title: "Modified" },
+  added: { label: "A", title: "Added" },
+  untracked: { label: "U", title: "Untracked" },
+  deleted: { label: "D", title: "Deleted" },
+  renamed: { label: "R", title: "Renamed" },
+  copied: { label: "C", title: "Copied" },
+  conflicted: { label: "!", title: "Conflicted" },
+};
+
+const GIT_STATUS_PRIORITY: Record<GitFileStatusKind, number> = {
+  conflicted: 70,
+  deleted: 60,
+  renamed: 50,
+  added: 40,
+  untracked: 30,
+  copied: 20,
+  modified: 10,
+};
+
 /** A node in the in-memory tree. `children` is undefined until the
  *  folder has been loaded; null means "load attempted, no children". */
 interface TreeNode {
@@ -78,6 +123,74 @@ function basename(path: string): string {
       .filter(Boolean)
       .pop() ?? path
   );
+}
+
+function dirname(path: string): string {
+  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return slash >= 0 ? path.slice(0, slash) : "";
+}
+
+function normalizeRelativePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+function relativePathFor(rootPath: string, path: string): string | null {
+  if (!rootPath || !path) return null;
+  const root = rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const target = path.replace(/\\/g, "/");
+  if (target === root) return "";
+  if (target.startsWith(`${root}/`)) {
+    return normalizeRelativePath(target.slice(root.length + 1));
+  }
+  return null;
+}
+
+function absolutePathFor(rootPath: string, relativePath: string): string {
+  const separator =
+    rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
+  const normalizedRelative = normalizeRelativePath(relativePath).replace(
+    /\//g,
+    separator,
+  );
+  return `${rootPath.replace(/[\\/]+$/, "")}${separator}${normalizedRelative}`;
+}
+
+function normalizeAbsolutePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function parentRelativePath(relativePath: string): string {
+  return dirname(normalizeRelativePath(relativePath)).replace(/^\/+/, "");
+}
+
+function strongerGitStatus(
+  a: GitFileStatusKind | undefined,
+  b: GitFileStatusKind,
+): GitFileStatusKind {
+  if (!a) return b;
+  return GIT_STATUS_PRIORITY[b] > GIT_STATUS_PRIORITY[a] ? b : a;
+}
+
+function sortTreeNodes(nodes: TreeNode[]): TreeNode[] {
+  return [...nodes].sort((a, b) => {
+    if (a.entry.kind !== b.entry.kind) {
+      return a.entry.kind === "dir" ? -1 : 1;
+    }
+    return a.entry.name.toLowerCase().localeCompare(b.entry.name.toLowerCase());
+  });
+}
+
+function gitStatusesFromEntries(
+  entries: GitFileStatusEntry[] | null | undefined,
+): Map<string, GitFileStatusEntry> {
+  const map = new Map<string, GitFileStatusEntry>();
+  if (!Array.isArray(entries)) return map;
+  for (const entry of entries) {
+    const path = normalizeRelativePath(entry.path);
+    if (!path) continue;
+    map.set(path, { ...entry, path });
+  }
+  return map;
 }
 
 /** Return the directory of `node`'s entry: the node itself when it's a
@@ -258,6 +371,9 @@ export function FileTreePanel({
   const [root, setRoot] = useState<TreeNode | null>(null);
   // Set of expanded absolute paths. Driving render, mirror-saved to disk.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [gitStatuses, setGitStatuses] = useState<
+    Map<string, GitFileStatusEntry>
+  >(new Map());
   const [error, setError] = useState<string>("");
   // Panel chrome state — collapsed header (just shows the "files" row,
   // hides the tree), hidden entirely (panel offscreen), and the panel
@@ -277,6 +393,9 @@ export function FileTreePanel({
   const watchedRootRef = useRef<string>("");
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRefreshDirsRef = useRef<Set<string>>(new Set());
+  const gitStatusRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   useEffect(() => {
     projectPathRef.current = projectPath;
@@ -362,6 +481,38 @@ export function FileTreePanel({
     }, 250);
   }, []);
 
+  const refreshGitStatuses = useCallback(async (rootPath: string) => {
+    if (!rootPath) {
+      setGitStatuses(new Map());
+      return;
+    }
+    try {
+      const entries = await invoke<GitFileStatusEntry[] | null>(
+        "git_file_status",
+        { root: rootPath },
+      );
+      if (projectPathRef.current !== rootPath) return;
+      setGitStatuses(gitStatusesFromEntries(entries));
+    } catch {
+      // Non-git directories, missing git binary, or transient status errors
+      // should never block the file tree; just render without decorations.
+      if (projectPathRef.current === rootPath) setGitStatuses(new Map());
+    }
+  }, []);
+
+  const scheduleGitStatusRefresh = useCallback(
+    (rootPath = projectPathRef.current) => {
+      if (gitStatusRefreshTimerRef.current) {
+        clearTimeout(gitStatusRefreshTimerRef.current);
+      }
+      gitStatusRefreshTimerRef.current = setTimeout(() => {
+        gitStatusRefreshTimerRef.current = null;
+        void refreshGitStatuses(rootPath);
+      }, 180);
+    },
+    [refreshGitStatuses],
+  );
+
   // Fetch the root directory listing whenever the active project changes.
   // The two synchronous setState calls here are intentional: they reset
   // local in-effect state (last project's tree + error) before kicking
@@ -369,8 +520,13 @@ export function FileTreePanel({
   // props pattern would force a re-render dance every time the user
   // expands a folder elsewhere.
   useEffect(() => {
+    if (gitStatusRefreshTimerRef.current) {
+      clearTimeout(gitStatusRefreshTimerRef.current);
+      gitStatusRefreshTimerRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoot(null);
+    setGitStatuses(new Map());
     setError("");
     // Reset the expanded set to the new project's persisted entries
     // (or empty when this is the first time the user has opened it).
@@ -397,6 +553,7 @@ export function FileTreePanel({
           children: nodesFromEntries(entries, 1),
         };
         setRoot(rootNode);
+        void refreshGitStatuses(projectPath);
         // Hydrate any persisted-expanded folders so the user comes back
         // to the same view they left. We fetch from the outside in
         // (shorter paths first) so a parent's children land before its
@@ -446,7 +603,7 @@ export function FileTreePanel({
     return () => {
       cancelled = true;
     };
-  }, [projectPath, rootLabel]);
+  }, [projectPath, refreshGitStatuses, rootLabel]);
 
   // Load a folder's children on demand. No-op if already loaded.
   const loadFolderChildren = useCallback(
@@ -497,22 +654,69 @@ export function FileTreePanel({
     [loadFolderChildren, schedulePersist],
   );
 
+  const gitDecorations = useMemo(() => {
+    const direct = new Map<string, GitFileStatusKind>();
+    const descendants = new Map<string, GitFileStatusKind>();
+    for (const [path, entry] of gitStatuses) {
+      direct.set(path, entry.status);
+      const parts = path.split("/").filter(Boolean);
+      for (let i = 1; i < parts.length; i += 1) {
+        const dir = parts.slice(0, i).join("/");
+        descendants.set(
+          dir,
+          strongerGitStatus(descendants.get(dir), entry.status),
+        );
+      }
+    }
+    return { direct, descendants };
+  }, [gitStatuses]);
+
+  const deletedChildrenByParent = useMemo(() => {
+    const byParent = new Map<string, FsEntry[]>();
+    if (!projectPath) return byParent;
+    for (const [path, entry] of gitStatuses) {
+      if (entry.status !== "deleted") continue;
+      const parent = parentRelativePath(path);
+      const children = byParent.get(parent) ?? [];
+      children.push({
+        name: basename(path),
+        path: absolutePathFor(projectPath, path),
+        kind: "file",
+      });
+      byParent.set(parent, children);
+    }
+    return byParent;
+  }, [gitStatuses, projectPath]);
+
   // Flatten the tree into a render list of currently-visible nodes.
   const visibleNodes = useMemo(() => {
     if (!root) return [];
     const out: TreeNode[] = [];
+    const childrenFor = (node: TreeNode): TreeNode[] => {
+      const children = node.children ?? [];
+      const parentRel = projectPath
+        ? relativePathFor(projectPath, node.entry.path)
+        : null;
+      const deleted =
+        parentRel == null ? [] : (deletedChildrenByParent.get(parentRel) ?? []);
+      if (deleted.length === 0) return children;
+      const existing = new Set(
+        children.map((child) => normalizeAbsolutePath(child.entry.path)),
+      );
+      const synthetic = deleted
+        .filter((entry) => !existing.has(normalizeAbsolutePath(entry.path)))
+        .map((entry) => ({ entry, depth: node.depth + 1 }));
+      return sortTreeNodes([...children, ...synthetic]);
+    };
     const walk = (node: TreeNode) => {
       out.push(node);
       if (node.entry.kind !== "dir") return;
       if (!expanded.has(node.entry.path)) return;
-      if (!node.children) return;
-      for (const child of node.children) walk(child);
+      for (const child of childrenFor(node)) walk(child);
     };
-    if (root.children) {
-      for (const child of root.children) walk(child);
-    }
+    for (const child of childrenFor(root)) walk(child);
     return out;
-  }, [root, expanded]);
+  }, [deletedChildrenByParent, expanded, projectPath, root]);
 
   const watchedDirs = useMemo(() => {
     if (!projectPath || hidden) return [];
@@ -603,11 +807,13 @@ export function FileTreePanel({
           };
           return { ...r, children: r.children?.map(walk) ?? undefined };
         });
+        scheduleGitStatusRefresh();
       } catch {
         invalidateFolder(folderPath);
+        scheduleGitStatusRefresh();
       }
     },
-    [invalidateFolder],
+    [invalidateFolder, scheduleGitStatusRefresh],
   );
 
   useEffect(() => {
@@ -698,6 +904,9 @@ export function FileTreePanel({
       }
       if (watchSyncTimerRef.current) clearTimeout(watchSyncTimerRef.current);
       if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+      if (gitStatusRefreshTimerRef.current) {
+        clearTimeout(gitStatusRefreshTimerRef.current);
+      }
     };
   }, []);
 
@@ -1134,15 +1343,28 @@ export function FileTreePanel({
       {titleRow}
       {!collapsed && (
         <ul className="ae-file-tree-list">
-          {visibleNodes.map((node) => (
-            <FileTreeRow
-              key={node.entry.path}
-              node={node}
-              expanded={expanded.has(node.entry.path)}
-              onClick={() => onItemClick(node)}
-              onContextMenu={(e) => onRowContextMenu(e, node)}
-            />
-          ))}
+          {visibleNodes.map((node) => {
+            const rel = relativePathFor(projectPath, node.entry.path);
+            const direct =
+              rel == null ? undefined : gitDecorations.direct.get(rel);
+            const descendant =
+              rel == null ? undefined : gitDecorations.descendants.get(rel);
+            const decoration = direct
+              ? ({ status: direct, source: "direct" } as const)
+              : descendant
+                ? ({ status: descendant, source: "descendant" } as const)
+                : undefined;
+            return (
+              <FileTreeRow
+                key={node.entry.path}
+                node={node}
+                expanded={expanded.has(node.entry.path)}
+                decoration={decoration}
+                onClick={() => onItemClick(node)}
+                onContextMenu={(e) => onRowContextMenu(e, node)}
+              />
+            );
+          })}
         </ul>
       )}
       <ContextMenu
@@ -1163,6 +1385,7 @@ export function FileTreePanel({
 interface FileTreeRowProps {
   node: TreeNode;
   expanded: boolean;
+  decoration?: GitDecoration;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
@@ -1170,21 +1393,34 @@ interface FileTreeRowProps {
 function FileTreeRow({
   node,
   expanded,
+  decoration,
   onClick,
   onContextMenu,
 }: FileTreeRowProps) {
   const indent = (node.depth - 1) * 12;
   const isDir = node.entry.kind === "dir";
+  const statusMeta = decoration ? GIT_STATUS_META[decoration.status] : null;
+  const statusTitle = statusMeta
+    ? `${statusMeta.title}${
+        decoration?.source === "descendant" ? " descendant" : ""
+      }`
+    : "";
   return (
     <li
       role="treeitem"
       aria-level={node.depth}
       aria-expanded={isDir ? expanded : undefined}
-      className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}`}
+      className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}${
+        decoration
+          ? ` has-git-status git-status-${decoration.status} git-status-${decoration.source}`
+          : ""
+      }`}
       style={{ paddingLeft: indent }}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      title={node.entry.path}
+      title={
+        statusTitle ? `${node.entry.path} — ${statusTitle}` : node.entry.path
+      }
     >
       {isDir ? (
         <span className="ae-file-tree-chevron-row" aria-hidden="true">
@@ -1200,6 +1436,15 @@ function FileTreeRow({
         className="ae-file-tree-icon"
       />
       <span className="ae-file-tree-label">{node.entry.name}</span>
+      {statusMeta && (
+        <span
+          className="ae-file-tree-git-decoration"
+          aria-label={statusTitle}
+          title={statusTitle}
+        >
+          {decoration?.source === "descendant" ? "•" : statusMeta.label}
+        </span>
+      )}
       {node.loading && (
         <span className="ae-file-tree-loading" aria-hidden="true">
           …

@@ -441,6 +441,43 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ae-file-tree-row.has-git-status .ae-file-tree-label {
+  color: var(--text);
+}
+.ae-file-tree-row.git-status-deleted .ae-file-tree-label {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+.ae-file-tree-git-decoration {
+  flex: 0 0 auto;
+  min-width: 1.2em;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  line-height: 1;
+  text-align: right;
+  color: var(--accent);
+  opacity: 0.95;
+}
+.ae-file-tree-row.git-status-descendant .ae-file-tree-git-decoration {
+  min-width: auto;
+  opacity: 0.7;
+}
+.ae-file-tree-row.git-status-added .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-untracked .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-copied .ae-file-tree-git-decoration {
+  color: var(--success, #3fb950);
+}
+.ae-file-tree-row.git-status-deleted .ae-file-tree-git-decoration {
+  color: var(--error);
+}
+.ae-file-tree-row.git-status-renamed .ae-file-tree-git-decoration {
+  color: var(--warn);
+}
+.ae-file-tree-row.git-status-conflicted .ae-file-tree-git-decoration {
+  color: var(--error);
+  font-weight: 700;
+}
 .ae-file-tree-loading {
   opacity: var(--opacity-muted);
 }

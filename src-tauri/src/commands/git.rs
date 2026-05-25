@@ -6,7 +6,7 @@
 //! too hairy to recreate. `pick_project_directory` wraps the dialog
 //! plugin so the JS side doesn't pull in a direct dialog dependency.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 
@@ -32,6 +32,17 @@ pub struct GitStatus {
     dirty: bool,
     ahead: u32,
     behind: u32,
+}
+
+/// One per-file worktree change as reported by `git status --porcelain`.
+/// Paths are normalized to be relative to the active project/worktree root
+/// passed by the frontend (not necessarily the repository top-level).
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileStatusEntry {
+    pub path: String,
+    pub status: &'static str,
+    pub original_path: Option<String>,
 }
 
 #[tauri::command]
@@ -124,6 +135,157 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
         ahead,
         behind,
     }))
+}
+
+/// Return per-file Git decorations for the active file tree root. `None`
+/// means the directory is not inside a Git worktree; callers should render
+/// the plain filesystem tree in that case.
+#[tauri::command]
+pub async fn git_file_status(root: String) -> Result<Option<Vec<GitFileStatusEntry>>, String> {
+    let dir = PathBuf::from(&root);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+
+    let inside = env::command("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output();
+    let inside_ok = match inside {
+        Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true",
+        Err(_) => false,
+    };
+    if !inside_ok {
+        return Ok(None);
+    }
+
+    let top_level = env::command("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| format!("git rev-parse --show-toplevel: {e}"))?;
+    if !top_level.status.success() {
+        return Ok(None);
+    }
+    let repo_root_raw = PathBuf::from(
+        String::from_utf8_lossy(&top_level.stdout)
+            .trim()
+            .to_string(),
+    );
+    let repo_root = repo_root_raw.canonicalize().unwrap_or(repo_root_raw);
+    let active_root = dir
+        .canonicalize()
+        .map_err(|e| format!("root canonicalize {}: {e}", dir.display()))?;
+
+    // `--porcelain=v1 -z` gives a stable, NUL-delimited format whose paths
+    // are not quoted, so spaces and unusual characters do not need a fragile
+    // line parser. `-- .` scopes the result to the active root when the user
+    // opened a repository subdirectory as the project.
+    let porcelain = env::command("git")
+        .arg("-C")
+        .arg(&active_root)
+        .args([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--renames",
+            "--",
+            ".",
+        ])
+        .output()
+        .map_err(|e| format!("git status: {e}"))?;
+    if !porcelain.status.success() {
+        return Ok(Some(Vec::new()));
+    }
+
+    let entries = parse_git_file_status_porcelain_z(&porcelain.stdout)
+        .into_iter()
+        .filter_map(|mut entry| {
+            entry.path = path_relative_to_active_root(&repo_root, &active_root, &entry.path)?;
+            entry.original_path = entry
+                .original_path
+                .as_deref()
+                .and_then(|p| path_relative_to_active_root(&repo_root, &active_root, p));
+            Some(entry)
+        })
+        .collect();
+    Ok(Some(entries))
+}
+
+fn path_relative_to_active_root(
+    repo_root: &Path,
+    active_root: &Path,
+    git_path: &str,
+) -> Option<String> {
+    let abs = repo_root.join(git_path);
+    let rel = abs.strip_prefix(active_root).ok()?;
+    let s = rel.to_string_lossy().replace('\\', "/");
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn classify_git_status(x: u8, y: u8) -> Option<&'static str> {
+    if x == b'!' && y == b'!' {
+        return None;
+    }
+    if x == b'?' && y == b'?' {
+        return Some("untracked");
+    }
+    if x == b'U' || y == b'U' || (x == b'A' && y == b'A') || (x == b'D' && y == b'D') {
+        return Some("conflicted");
+    }
+    if x == b'R' || y == b'R' {
+        return Some("renamed");
+    }
+    if x == b'C' || y == b'C' {
+        return Some("copied");
+    }
+    if x == b'D' || y == b'D' {
+        return Some("deleted");
+    }
+    if x == b'A' || y == b'A' {
+        return Some("added");
+    }
+    if x == b'M' || y == b'M' || x == b'T' || y == b'T' {
+        return Some("modified");
+    }
+    if x != b' ' || y != b' ' {
+        return Some("modified");
+    }
+    None
+}
+
+fn parse_git_file_status_porcelain_z(bytes: &[u8]) -> Vec<GitFileStatusEntry> {
+    let mut out = Vec::new();
+    let mut parts = bytes.split(|b| *b == 0).filter(|part| !part.is_empty());
+    while let Some(record) = parts.next() {
+        if record.len() < 4 {
+            continue;
+        }
+        let x = record[0];
+        let y = record[1];
+        let Some(status) = classify_git_status(x, y) else {
+            continue;
+        };
+        // Shape is `XY path`. In `-z` mode, rename/copy records are followed
+        // by a second NUL-delimited path containing the original location.
+        let path = String::from_utf8_lossy(&record[3..]).to_string();
+        let original_path = if x == b'R' || y == b'R' || x == b'C' || y == b'C' {
+            parts
+                .next()
+                .map(|original| String::from_utf8_lossy(original).to_string())
+        } else {
+            None
+        };
+        out.push(GitFileStatusEntry {
+            path,
+            status,
+            original_path,
+        });
+    }
+    out
 }
 
 /// One worktree row as reported by `git worktree list --porcelain`.
@@ -1039,6 +1201,40 @@ mod tests {
         assert_eq!(json["isMain"], serde_json::json!(true));
         assert_eq!(json["path"], serde_json::json!("/x"));
         assert_eq!(json["branch"], serde_json::json!("main"));
+    }
+
+    #[test]
+    fn parses_git_file_status_porcelain_entries() {
+        let text = b" M src/app.ts\0?? src/new file.ts\0A  src/added.ts\0 D src/missing.ts\0";
+        let out = parse_git_file_status_porcelain_z(text);
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[0].path, "src/app.ts");
+        assert_eq!(out[0].status, "modified");
+        assert_eq!(out[1].path, "src/new file.ts");
+        assert_eq!(out[1].status, "untracked");
+        assert_eq!(out[2].status, "added");
+        assert_eq!(out[3].status, "deleted");
+    }
+
+    #[test]
+    fn parses_git_file_status_rename_porcelain_entry() {
+        let text = b"R  src/new.ts\0src/old.ts\0";
+        let out = parse_git_file_status_porcelain_z(text);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].path, "src/new.ts");
+        assert_eq!(out[0].status, "renamed");
+        assert_eq!(out[0].original_path.as_deref(), Some("src/old.ts"));
+    }
+
+    #[test]
+    fn git_file_status_paths_are_relative_to_active_root() {
+        let repo = PathBuf::from("/repo");
+        let active = PathBuf::from("/repo/packages/app");
+        assert_eq!(
+            path_relative_to_active_root(&repo, &active, "packages/app/src/main.ts").as_deref(),
+            Some("src/main.ts")
+        );
+        assert!(path_relative_to_active_root(&repo, &active, "other/file.ts").is_none());
     }
 
     #[test]
