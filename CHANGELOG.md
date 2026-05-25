@@ -6,6 +6,8 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-25
+
 ### Added
 
 - **Queued messages popover + steering (Claudette-style).** Messages typed
