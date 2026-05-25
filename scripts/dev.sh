@@ -190,95 +190,16 @@ cat >"$TMP" <<EOF
 EOF
 mv "$TMP" "$DEV_INFO"
 
-# Cleanup: always remove the discovery file; remove the --new sandbox tree too.
+# Pre-exec cleanup: only triggers if we exit before exec'ing cargo (e.g.
+# port allocation fails, --help, etc.). The post-exec cleanup path is
+# the watchdog below.
 cleanup() {
   rm -f "$DEV_INFO"
   if [[ -n "$sandbox_dir" && -d "$sandbox_dir" ]]; then
     rm -rf "$sandbox_dir"
   fi
 }
-
-child_pid=""
-
-descendant_pids() {
-  local root="$1"
-  local child
-  while read -r child; do
-    [[ -n "$child" ]] || continue
-    descendant_pids "$child"
-    printf '%s\n' "$child"
-  done < <(pgrep -P "$root" 2>/dev/null || true)
-}
-
-signal_child_tree() {
-  local signal="$1"
-  [[ -n "$child_pid" ]] || return 0
-
-  # Prefer a process-group signal when the shell/OS happened to give the child
-  # its own group. This is best-effort; the parent/descendant walk below is the
-  # reliable path for non-interactive shells where background jobs inherit the
-  # wrapper's process group.
-  kill "-$signal" -- "-$child_pid" 2>/dev/null || true
-
-  # macOS fallback: walk descendants by parent PID so Ctrl+C still tears down
-  # Cargo, Tauri, Vite, and the agent sidecar when one layer swallows SIGINT.
-  while read -r pid; do
-    [[ -n "$pid" ]] || continue
-    kill "-$signal" "$pid" 2>/dev/null || true
-  done < <(descendant_pids "$child_pid")
-  kill "-$signal" "$child_pid" 2>/dev/null || true
-}
-
-child_is_running() {
-  [[ -n "$child_pid" ]] || return 1
-  local state
-  state="$(ps -p "$child_pid" -o stat= 2>/dev/null || true)"
-  [[ -n "$state" && "$state" != *Z* ]]
-}
-
-wait_for_child_to_stop() {
-  [[ -n "$child_pid" ]] || return 0
-  local attempts="$1"
-  local i
-  for ((i = 0; i < attempts; i++)); do
-    if ! child_is_running; then
-      return 0
-    fi
-    sleep 0.1
-  done
-  return 1
-}
-
-stop_child_tree() {
-  local first_signal="$1"
-  [[ -n "$child_pid" ]] || return 0
-
-  signal_child_tree "$first_signal"
-  wait_for_child_to_stop 20 && return 0
-
-  signal_child_tree TERM
-  wait_for_child_to_stop 20 && return 0
-
-  signal_child_tree KILL
-}
-
-handle_int() {
-  trap - INT TERM
-  stop_child_tree INT
-  cleanup
-  exit 130
-}
-
-handle_term() {
-  trap - INT TERM
-  stop_child_tree TERM
-  cleanup
-  exit 143
-}
-
 trap cleanup EXIT
-trap handle_int INT
-trap handle_term TERM
 
 export VITE_PORT
 export AETHON_DEBUG_PORT="$DEBUG_PORT"
@@ -291,14 +212,71 @@ if [[ "$VITE_PORT" != "$VITE_BASE" || "$DEBUG_PORT" != "$DEBUG_BASE" ]]; then
   echo "[dev] vite=${VITE_PORT} (was ${VITE_BASE}) debug=${DEBUG_PORT} (was ${DEBUG_BASE})" >&2
 fi
 
-# Run under supervision so Ctrl+C can escalate through the child tree if one
-# layer ignores SIGINT. Keep job control off; Cargo/Vite should retain normal
-# terminal stdin behavior.
-cargo tauri dev "$@" &
-child_pid=$!
-set +e
-wait "$child_pid"
-status=$?
-set -e
-child_pid=""
-exit "$status"
+# Watchdog: a tiny background process that outlives our `exec` and
+# performs the full session cleanup once cargo has exited.
+#
+# Why a watchdog instead of bash signal traps:
+#   `cargo tauri dev` (via the cargo it spawns, or Vite, or the aethon
+#   binary's pty handling) takes over the terminal's foreground process
+#   group via tcsetpgrp(). After that, Ctrl+C delivers SIGINT to *cargo's*
+#   PG, not to this script's PG, so any `trap INT` we install here is
+#   never invoked. The previous PG-and-pattern teardown was correct in
+#   spirit but the handler that called it was never reached.
+#
+# How this watchdog finds survivors:
+#   AETHON_DEBUG_PORT is exported below and is unique to this dev
+#   session (find_free_port auto-increments per concurrent run). Every
+#   process in the session inherits it in its environment, so a single
+#   `ps -axwwE | grep AETHON_DEBUG_PORT=<port>` sweep catches cargo's
+#   child cargo, the aethon binary, vite, the bun agent, and anything
+#   else they spawned — even orphans whose PPID is now launchd.
+parent_pid=$$
+debug_port="$DEBUG_PORT"
+dev_info_path="$DEV_INFO"
+sandbox_dir_path="$sandbox_dir"
+
+(
+  # Detach the watchdog from stdio + the terminal: it must survive even
+  # after the user's shell prompt returns, and we don't want it to take
+  # SIGINT itself.
+  exec </dev/null >/dev/null 2>&1
+  trap '' INT TERM HUP
+
+  while kill -0 "$parent_pid" 2>/dev/null; do
+    sleep 0.2
+  done
+
+  # Survivor sweep, scoped to processes with our exact debug-port env var
+  # so a second concurrent `dev` instance (on a different port) is
+  # untouched. Excludes our own watchdog PID for paranoia.
+  watchdog_pid=$$
+  sweep_pids() {
+    ps -axwwE 2>/dev/null \
+      | awk -v needle="AETHON_DEBUG_PORT=$debug_port" -v me="$watchdog_pid" \
+          'index($0, needle) && $1 != me { print $1 }'
+  }
+  sweep_round() {
+    local sig="$1" pid
+    while read -r pid; do
+      [[ -n "$pid" ]] || continue
+      kill "-$sig" "$pid" 2>/dev/null || true
+    done < <(sweep_pids)
+  }
+
+  sweep_round INT
+  sleep 0.2
+  sweep_round TERM
+  sleep 0.2
+  sweep_round KILL
+
+  rm -f "$dev_info_path"
+  if [[ -n "$sandbox_dir_path" && -d "$sandbox_dir_path" ]]; then
+    rm -rf "$sandbox_dir_path"
+  fi
+) &
+disown
+
+# Hand the terminal to cargo. After exec, this script's PID *is* cargo —
+# the watchdog watches that PID, and Ctrl+C goes straight to cargo with
+# zero bash signal-routing in the middle.
+exec cargo tauri dev "$@"
