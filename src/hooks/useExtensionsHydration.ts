@@ -47,8 +47,22 @@ export interface DisabledExtensionRecord {
   projectRoot?: string;
 }
 
+/** User-visible scope buckets for the sidebar grouping. Two buckets,
+ *  because the meaningful distinction is "is this scoped to the
+ *  project I'm working on right now?" — packaged npm extensions can
+ *  belong to either group depending on whether their scope matches the
+ *  active project (e.g. `@mold/image-gallery-ui` is project-scoped
+ *  under the `mold` project, but `@brink/current-context-widget` is
+ *  user-level). See `classifyExtensionSource` for the mapping. */
+export type ExtensionKind = "project" | "user";
+
 export type ExtensionSidebarItem = SidebarItem & {
   hint?: string;
+  /** Origin bucket. Carried alongside the item so the sidebar can
+   *  split the auto-injected EXTENSIONS section into per-origin
+   *  sub-sections without re-deriving the source from the id prefix
+   *  on every render. */
+  kind?: ExtensionKind;
 };
 
 const CORE_EXTENSION_NAMES = new Set(["default-layout"]);
@@ -103,18 +117,71 @@ export function filterExtensionSummariesByProject<
   });
 }
 
-function extensionSourceLabel(source: string): string {
-  switch (source) {
-    case "directory":
-    case "global-directory":
-      return "user";
-    case "project-directory":
-      return "project";
-    case "extension-package":
-      return "package";
-    default:
-      return source;
+/** Map the bridge-side `ExtensionSource` enum onto the two user-visible
+ *  buckets. Project-scoped covers both `.aethon/extensions` inside the
+ *  active project AND npm packages whose `@scope` matches the active
+ *  project's basename (the `@<project>/<ext>` convention). Everything
+ *  else — global `~/.aethon/extensions`, npm packages with an unrelated
+ *  scope, and legacy disabled records lacking source metadata — falls
+ *  into the user bucket. */
+export function classifyExtensionSource(
+  source: string | undefined,
+  options?: {
+    name?: string;
+    activeBasename?: string;
+    knownProjectBasenames?: ReadonlySet<string>;
+  },
+): ExtensionKind {
+  if (source === "project-directory") return "project";
+  if (source === "extension-package") {
+    // `@<project>/<ext>` npm convention — when the npm scope matches
+    // the active project's directory basename, surface it under the
+    // project group. The knownProjectBasenames guard prevents a
+    // random `@<anything>/...` package from masquerading as
+    // project-scoped just because its scope happens to share a name
+    // with no real project.
+    const name = options?.name;
+    const activeBasename = options?.activeBasename;
+    const known = options?.knownProjectBasenames;
+    if (name && activeBasename) {
+      const scope = extractNpmScope(name);
+      if (
+        scope &&
+        scope === activeBasename &&
+        (known?.has(scope) ?? false)
+      ) {
+        return "project";
+      }
+    }
+    return "user";
   }
+  return "user";
+}
+
+/** Short label rendered in the per-row hint. Mirrors the `kind` so the
+ *  user can tell scope at a glance — `mold:image-gallery` shows
+ *  `project`, `@brink/current-context-widget` shows `user`. */
+function extensionScopeLabel(kind: ExtensionKind): string {
+  return kind;
+}
+
+/** Sort comparator for the sidebar extensions list. Project-scoped
+ *  rows float to the top (those are the ones the user is most likely
+ *  acting on right now), user-scoped come second, alphabetical within
+ *  each group. */
+const KIND_ORDER: Record<ExtensionKind, number> = {
+  project: 0,
+  user: 1,
+};
+
+function compareSidebarItems(
+  a: { kind: ExtensionKind; label: string },
+  b: { kind: ExtensionKind; label: string },
+): number {
+  const ka = KIND_ORDER[a.kind] ?? 99;
+  const kb = KIND_ORDER[b.kind] ?? 99;
+  if (ka !== kb) return ka - kb;
+  return a.label.localeCompare(b.label);
 }
 
 function normalizeDisabledRecord(
@@ -211,37 +278,80 @@ export function buildExtensionSidebarItems(
   // restart). Show it in the disabled bucket so the user sees their
   // pending intent, with a hint that a restart is needed to fully
   // unload it.
-  return [
+  //
+  // Each row carries `kind` so the sidebar can split into per-origin
+  // sub-sections without re-deriving the source on every render.
+  // npm packages can land in either bucket: `@<project>/<ext>` where
+  // <project> matches the active project's basename folds into the
+  // project bucket; everything else (including `@<scope>/...` with an
+  // unrelated scope, plain `package-name`, and `~/.aethon/extensions`
+  // entries) folds into user. Disabled records carry source through
+  // DisabledExtensionRecord.source when known; otherwise we look it
+  // up by name against `loaded` for mid-session toggles.
+  const activePathForClassify =
+    normalizeExtensionProjectPath(activeProjectPath);
+  const activeBasenameForClassify = basenameOfPath(activePathForClassify);
+  const classifyOpts = (name: string) => ({
+    name,
+    activeBasename: activeBasenameForClassify,
+    knownProjectBasenames,
+  });
+  const decorated: Array<ExtensionSidebarItem & { kind: ExtensionKind }> = [
     ...scopedLoaded
       .filter((e) => !CORE_EXTENSION_NAMES.has(e.name))
       .filter((e) => !disabledSet.has(e.name))
-      .map((e) => ({
-        id: `ext:${e.name}`,
-        label: e.name,
-        hint: extensionSourceLabel(e.source),
-        active: true,
-      })),
+      .map((e) => {
+        const kind = classifyExtensionSource(e.source, classifyOpts(e.name));
+        return {
+          id: `ext:${e.name}`,
+          label: e.name,
+          hint: extensionScopeLabel(kind),
+          active: true,
+          kind,
+        };
+      }),
     ...scopedFailed
       .filter((e) => !CORE_EXTENSION_NAMES.has(e.name))
       .filter((e) => !disabledSet.has(e.name))
-      .map((e) => ({
-        id: `ext-failed:${e.name}`,
-        label: e.name,
-        hint: `${extensionSourceLabel(e.source)} · failed`,
-        active: false,
-      })),
+      .map((e) => {
+        const kind = classifyExtensionSource(e.source, classifyOpts(e.name));
+        return {
+          id: `ext-failed:${e.name}`,
+          label: e.name,
+          hint: `${extensionScopeLabel(kind)} · failed`,
+          active: false,
+          kind,
+        };
+      }),
     ...scopedDisabled
       .filter((d) => !CORE_EXTENSION_NAMES.has(d.name))
       .map((d) => {
         const stillLoaded = loaded.some((e) => e.name === d.name);
+        // Prefer the source persisted with the disabled record; fall
+        // back to the live `loaded` entry for the same name so a
+        // mid-session toggle keeps its origin label, then to "user"
+        // for legacy records that pre-date source tracking.
+        const inferredSource =
+          d.source ?? loaded.find((e) => e.name === d.name)?.source;
+        const kind = classifyExtensionSource(
+          inferredSource,
+          classifyOpts(d.name),
+        );
+        const origin = extensionScopeLabel(kind);
         return {
           id: `ext-disabled:${d.name}`,
           label: d.name,
-          hint: stillLoaded ? "disabled · restart" : "disabled",
+          hint: stillLoaded
+            ? `${origin} · disabled · restart`
+            : `${origin} · disabled`,
           active: false,
+          kind,
         };
       }),
   ];
+  // Keep `kind` on the returned items so the sidebar can split into
+  // per-origin sub-sections without re-deriving the source.
+  return decorated.sort(compareSidebarItems);
 }
 
 /** Built-in themes always available. CSS for these lives in src/styles/themes.css —

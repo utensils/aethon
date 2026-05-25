@@ -155,7 +155,9 @@ describe("toolCardPayload", () => {
       id: "tool-c1",
       toolName: "bash",
       argsSummary: "echo hi",
-      running: true,
+      // Running is derived from `startedAt` (set) + `endedAt`
+      // (omitted) on the frontend — no explicit flag in the wire
+      // payload.
       startedAt: 12345,
     });
     expect(payload).toMatchObject({

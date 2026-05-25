@@ -400,6 +400,54 @@ describe("handleReady", () => {
     );
   });
 
+  it("re-announces the active tab cwd even when the project worktree selection was cleared", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-1",
+        tabs: [
+          {
+            id: "tab-1",
+            kind: "agent",
+            projectId: "p1",
+            cwd: "/tmp/p1-fix",
+          },
+        ],
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorktreeId: null,
+      activeHostId: null,
+      projects: [{ id: "p1", label: "p1", path: "/tmp/p1", lastUsed: 1 }],
+      worktreesByProject: {
+        p1: [
+          {
+            id: "wt-1",
+            projectId: "p1",
+            path: "/tmp/p1-fix",
+            branch: "fix/reload",
+            isMain: false,
+          },
+        ],
+      },
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [{ id: "tab-1", model: "claude", cwd: "/tmp/p1-fix" }],
+        currentProjectCwd: "/tmp/p1",
+      },
+      ctx,
+    );
+
+    expect(mocks.announceProjectToBridge).toHaveBeenCalledWith(
+      "tab-1",
+      "/tmp/p1-fix",
+    );
+  });
+
   it("requests transcript replay for non-default open tabs after ready", () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({

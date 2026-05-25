@@ -24,6 +24,7 @@ import {
 } from "../../../utils/sidebarHistory";
 import { AeMarkInline } from "../layout";
 import { ItemRow, type ItemRowProps } from "./item-row";
+import { ToggleSwitch } from "../toggle-switch";
 import {
   SearchableSidebarSection,
   type SidebarSectionExt,
@@ -87,6 +88,36 @@ interface SidebarMenuHandlers {
   renameContextSession: () => void;
   deleteContextSession: () => void;
   toggleContextExtension: (disabled: boolean) => void;
+}
+
+/** Classify an extension item by its id prefix. The bridge encodes the
+ *  state in the id (`ext:` = enabled, `ext-disabled:` = disabled,
+ *  `ext-failed:` = load failed) so the toggle has to invert that to
+ *  drive the switch. Returns null for non-extension items so the caller
+ *  can skip rendering the trailing toggle slot entirely. */
+function extensionToggleState(item: SidebarItem): {
+  name: string;
+  checked: boolean;
+  failed: boolean;
+} | null {
+  if (item.id.startsWith("ext:")) {
+    return { name: item.id.slice("ext:".length), checked: true, failed: false };
+  }
+  if (item.id.startsWith("ext-disabled:")) {
+    return {
+      name: item.id.slice("ext-disabled:".length),
+      checked: false,
+      failed: false,
+    };
+  }
+  if (item.id.startsWith("ext-failed:")) {
+    return {
+      name: item.id.slice("ext-failed:".length),
+      checked: false,
+      failed: true,
+    };
+  }
+  return null;
 }
 
 function buildSidebarMenuItems(
@@ -269,7 +300,10 @@ export function Sidebar({
       kind = "project";
     } else if (sectionId === "history" && canDeleteHistoryItem(item.id)) {
       kind = "session";
-    } else if (sectionId === "extensions") {
+    } else if (
+      sectionId === "extensions" ||
+      sectionId === "extensions-user"
+    ) {
       if (item.id.startsWith("ext:")) {
         kind = "extension-enabled";
         extensionName = item.id.slice("ext:".length);
@@ -555,15 +589,51 @@ export function Sidebar({
     ...(props.sections ?? []),
     ...(extraSections as SidebarSectionExt[]),
   ].some((section) => section.id === "extensions");
+  // Split the auto-injected extensions list into one section per
+  // origin (project / user). Each sub-section auto-hides when empty.
+  // Items carry `kind` from buildExtensionSidebarItems; legacy items
+  // lacking the field fall back to "user" so a stale upstream array
+  // still groups sensibly. The classifier folds `@<project>/<ext>`
+  // npm packages into the project bucket when the scope matches the
+  // active project's basename — so `@mold/image-gallery-ui` reads as
+  // a project extension under mold, while `@brink/widget` stays user.
   const extensionSections: SidebarSectionExt[] =
     extensionItems.length > 0 && !hasExplicitExtensionSection
-      ? [
-          {
-            id: "extensions",
-            title: "extensions",
-            items: extensionItems,
-          },
-        ]
+      ? (() => {
+          const buckets: Record<"project" | "user", SidebarItem[]> = {
+            project: [],
+            user: [],
+          };
+          for (const item of extensionItems) {
+            const kind = ((item as { kind?: string }).kind ?? "user") as
+              | "project"
+              | "user";
+            (buckets[kind] ?? buckets.user).push(item);
+          }
+          // Always show the qualified group title so the user can tell
+          // scope at a glance even when only one bucket has rows. The
+          // alternative — collapsing to a bare "extensions" — loses
+          // that information exactly when there's only one extension
+          // loaded, which is when its origin is most informative.
+          const titleFor = (kind: "project" | "user"): string =>
+            kind === "project" ? "project extensions" : "user extensions";
+          const sections: SidebarSectionExt[] = [];
+          if (buckets.project.length > 0) {
+            sections.push({
+              id: "extensions",
+              title: titleFor("project"),
+              items: buckets.project,
+            });
+          }
+          if (buckets.user.length > 0) {
+            sections.push({
+              id: "extensions-user",
+              title: titleFor("user"),
+              items: buckets.user,
+            });
+          }
+          return sections;
+        })()
       : [];
   const allSections: SidebarSectionExt[] = [
     ...(props.sections ?? []),
@@ -634,6 +704,44 @@ export function Sidebar({
                       : null;
                     const worktrees = projectItem?.worktrees;
                     const expanded = projectItem?.expanded === true;
+                    // Inline toggle for extension rows — quick on/off
+                    // without diving into the right-click menu. The
+                    // context menu stays as a secondary affordance.
+                    // Match both auto-injected sub-sections
+                    // (project / user) so the toggle shows on every
+                    // extension row regardless of bucket.
+                    const isExtensionsSection =
+                      section.id === "extensions" ||
+                      section.id === "extensions-user";
+                    const extState = isExtensionsSection
+                      ? extensionToggleState(item)
+                      : null;
+                    const trailingControl = extState ? (
+                      <ToggleSwitch
+                        checked={extState.checked}
+                        disabled={extState.failed}
+                        ariaLabel={`${extState.checked ? "Disable" : "Enable"} extension ${extState.name}`}
+                        title={
+                          extState.failed
+                            ? "Extension failed to load — fix the error and reload to re-enable"
+                            : extState.checked
+                              ? `Disable ${extState.name}`
+                              : `Enable ${extState.name}`
+                        }
+                        onChange={(next) => {
+                          onEvent(
+                            "toggle-extension",
+                            {
+                              sectionId: section.id,
+                              itemId: item.id,
+                              name: extState.name,
+                              disabled: !next,
+                            },
+                            item.id,
+                          );
+                        }}
+                      />
+                    ) : undefined;
                     // Only show the disclosure when there are EXTRA worktrees
                     // beyond the main one — every git repo returns ≥1 entry
                     // (the project's primary checkout), so a 1-element list
@@ -685,6 +793,7 @@ export function Sidebar({
                           // regardless of which rows happen to have
                           // worktrees or uncommitted changes.
                           alignSlots={isProjects}
+                          trailingControl={trailingControl}
                         />
                         {hasExtraWorktrees && expanded
                           ? extraWorktrees.map((wt) => (

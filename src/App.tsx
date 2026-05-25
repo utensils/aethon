@@ -22,10 +22,11 @@ import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
 import { useFocus, WORKSTATION_AREAS, workstationRows } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
+import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
-import { useProjectOps } from "./hooks/useProjectOps";
+import { useProjectOps, worktreeIdForCwd } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import type { SlashCommandContext } from "./slashCommands";
 import { readState, writeState } from "./persist";
@@ -486,6 +487,7 @@ export default function App() {
     autoRestoreDiscoveredSessions,
     reopenLastClosedTab,
     closeTab,
+    closeTabNow,
   } = useTabs({
     setState,
     stateRef,
@@ -592,6 +594,7 @@ export default function App() {
     unwatchProjectForBridge,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
+    closeTabNow,
   });
   // Wire forward handles now that the live functions exist. Ref writes
   // happen in commit phase (useEffect) — React disallows ref mutation
@@ -605,6 +608,39 @@ export default function App() {
       onGitStatusChanged: () => syncProjectsToState(),
     };
   });
+
+  const syncActiveWorktreeToActiveTab = useCallback(() => {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const active = activeId ? tabs.find((t) => t.id === activeId) : undefined;
+    if (!active || active.kind !== "agent") return;
+    const resolved = worktreeIdForCwd(
+      projectsRef.current,
+      active.cwd,
+      active.projectId,
+    );
+    if (resolved === undefined) return;
+    if (
+      active.projectId &&
+      projectsRef.current.activeId !== active.projectId
+    ) {
+      if (!setActiveProjectById(active.projectId)) return;
+    }
+    if (projectsRef.current.activeWorktreeId !== resolved) {
+      activateWorktree(resolved);
+    }
+  }, [activateWorktree, setActiveProjectById]);
+
+  useEffect(() => {
+    syncActiveWorktreeToActiveTab();
+  }, [
+    syncActiveWorktreeToActiveTab,
+    state.activeTabId,
+    state.activeWorktreeId,
+    state.cwd,
+    state.projects,
+    state.sidebar,
+  ]);
 
   // Lazy project icon discovery — for each project missing an iconUrl,
   // fire discoverIcon and persist the resolved url back to the project
@@ -670,6 +706,10 @@ export default function App() {
     setModel,
     stopPrompt,
     exportActiveChatMarkdown,
+    editQueuedMessage,
+    deleteQueuedMessage,
+    steerQueuedMessage,
+    clearQueuedMessages,
   } = useChat({
     setState,
     stateRef,
@@ -687,6 +727,16 @@ export default function App() {
   // before any of their handlers fire.
   useEffect(() => {
     chatActionsRef.current = { appendSystem };
+  });
+
+  // Drain the per-tab client-side message queues. The hook subscribes to
+  // tabs and re-fires its drain check on every commit; gating happens
+  // inside the hook against `waiting`, `queuedMessages.length`,
+  // `queuedSteeringId`, and a private in-flight set.
+  useQueuedDispatch({
+    tabs: (state.tabs as Tab[] | undefined) ?? [],
+    sendChat,
+    updateTab,
   });
 
   // ---------------------------------------------------------------------
@@ -715,6 +765,12 @@ export default function App() {
         });
         return;
       }
+      // Ensure the project we're launching into is the active one before
+      // selecting a worktree; setActiveProjectById intentionally clears the
+      // active worktree as part of switching buckets.
+      if (projectsRef.current.activeId !== opts.projectId) {
+        setActiveProjectById(opts.projectId);
+      }
       let cwd = project.path;
       if (opts.newWorktree) {
         const branch = (opts.branch ?? "").trim();
@@ -740,6 +796,11 @@ export default function App() {
           return;
         }
         cwd = created;
+        const createdWorktree =
+          projectsRef.current.worktreesByProject[opts.projectId]?.find(
+            (w) => w.path === created,
+          );
+        if (createdWorktree) activateWorktree(createdWorktree.id);
       } else if (opts.worktreeId) {
         // Existing-worktree path — switch the active worktree and use
         // its path as the new tab's cwd.
@@ -750,11 +811,6 @@ export default function App() {
           cwd = wt.path;
           activateWorktree(wt.id);
         }
-      }
-      // Ensure the project we're launching into is the active one so the
-      // new tab lands in the right per-project bucket.
-      if (projectsRef.current.activeId !== opts.projectId) {
-        setActiveProjectById(opts.projectId);
       }
       const tabId = crypto.randomUUID();
       newTab(tabId, undefined, { cwd });
@@ -998,7 +1054,7 @@ export default function App() {
   // Build the dispatch context fresh per invocation so handlers see latest
   // state (model list, skills) without re-creating the command registry.
   function persistLocalChatMessage(msg: ChatMessage, tabId: string) {
-    if (!msg.text) return;
+    if (!msg.text && !msg.thinking) return;
     invoke("agent_command", {
       payload: JSON.stringify({
         type: "local_chat_message",
@@ -1006,7 +1062,8 @@ export default function App() {
         payload: {
           id: msg.id,
           role: msg.role,
-          text: msg.text,
+          ...(msg.text ? { text: msg.text } : {}),
+          ...(msg.thinking ? { thinking: msg.thinking } : {}),
           ...(msg.delivery ? { delivery: msg.delivery } : {}),
           createdAt: Date.now(),
         },
@@ -1150,6 +1207,10 @@ export default function App() {
       sendChat,
       stopPrompt,
       updateActiveTab,
+      editQueuedMessage,
+      deleteQueuedMessage,
+      steerQueuedMessage,
+      clearQueuedMessages,
       newTab,
       newShellTab,
       newEditorTab,

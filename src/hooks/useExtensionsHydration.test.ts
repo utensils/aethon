@@ -85,36 +85,46 @@ describe("buildExtensionSidebarItems", () => {
       "/repo/mold",
     );
 
+    // Sorted: project → user, alphabetical within each bucket.
+    // Disabled rows preserve their inferred source so the user can
+    // still tell a disabled project-extension apart from a disabled
+    // user-extension. Bare-name npm packages fall into "user"
+    // (they have no @scope to indicate project membership).
     expect(items).toEqual([
-      {
-        id: "ext:user-ext",
-        label: "user-ext",
-        hint: "user",
-        active: true,
-      },
       {
         id: "ext:mold:gallery",
         label: "mold:gallery",
         hint: "project",
         active: true,
-      },
-      {
-        id: "ext:package-ext",
-        label: "package-ext",
-        hint: "package",
-        active: true,
+        kind: "project",
       },
       {
         id: "ext-failed:broken-ext",
         label: "broken-ext",
         hint: "user · failed",
         active: false,
+        kind: "user",
       },
       {
         id: "ext-disabled:disabled-ext",
         label: "disabled-ext",
-        hint: "disabled",
+        hint: "user · disabled",
         active: false,
+        kind: "user",
+      },
+      {
+        id: "ext:package-ext",
+        label: "package-ext",
+        hint: "user",
+        active: true,
+        kind: "user",
+      },
+      {
+        id: "ext:user-ext",
+        label: "user-ext",
+        hint: "user",
+        active: true,
+        kind: "user",
       },
     ]);
   });
@@ -130,8 +140,12 @@ describe("buildExtensionSidebarItems", () => {
       {
         id: "ext-disabled:user-ext",
         label: "user-ext",
-        hint: "disabled · restart",
+        // Source is inferred from the still-loaded entry's source so
+        // the row labels its origin even though the disable record
+        // was a bare name.
+        hint: "user · disabled · restart",
         active: false,
+        kind: "user",
       },
     ]);
   });
@@ -175,11 +189,16 @@ describe("buildExtensionSidebarItems", () => {
     );
 
     // Project-directory disabled row for mold is hidden under claudette;
-    // extension-package and user-directory entries stay visible.
-    expect(items.map((item) => item.id)).toEqual([
-      "ext-disabled:@mold/repo-gallery",
-      "ext-disabled:global-user-ext",
-    ]);
+    // extension-package and user-directory entries stay visible. With
+    // the two-bucket scheme, neither survivor matches the active
+    // project's basename, so both fall into the user bucket and sort
+    // alphabetically.
+    expect(items.map((item) => item.id).sort()).toEqual(
+      [
+        "ext-disabled:@mold/repo-gallery",
+        "ext-disabled:global-user-ext",
+      ].sort(),
+    );
   });
 
   it("shows disabled project-directory rows when their project IS active", () => {
@@ -312,5 +331,80 @@ describe("buildExtensionSidebarItems", () => {
     );
     // mold-scoped package hidden under nyc-real-estate; example stays.
     expect(items.map((item) => item.label)).toEqual(["@example/global-helper"]);
+  });
+
+  it("groups project extensions above user extensions, alphabetically within each group", () => {
+    const items = buildExtensionSidebarItems(
+      [
+        // Deliberately shuffled load order — sort should reset it.
+        { name: "@brink/current-context-widget", source: "directory" },
+        { name: "@mold/project-background-ui", source: "extension-package" },
+        {
+          name: "mold:project-background",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
+        },
+        { name: "@mold/image-gallery-ui", source: "extension-package" },
+        {
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
+        },
+      ],
+      [],
+      [],
+      "/repo/mold",
+      new Set(["mold"]),
+    );
+    // Project first, then user. `@mold/...` npm packages fold INTO
+    // the project bucket because their scope matches the active
+    // project's basename. `@brink/...` stays user (scope unrelated).
+    // Each group sorted A→Z.
+    expect(items.map((item) => item.label)).toEqual([
+      "@mold/image-gallery-ui",
+      "@mold/project-background-ui",
+      "mold:image-gallery",
+      "mold:project-background",
+      "@brink/current-context-widget",
+    ]);
+    expect(items.map((item) => item.hint)).toEqual([
+      "project",
+      "project",
+      "project",
+      "project",
+      "user",
+    ]);
+  });
+
+  it("preserves source label on disabled rows so 'project' vs 'user' is visible even when all are off", () => {
+    // Mirrors the screenshot the user reported: every extension is
+    // disabled — without source preservation the user couldn't tell
+    // which were project-scoped vs user-scoped.
+    const items = buildExtensionSidebarItems(
+      [],
+      [],
+      [
+        {
+          name: "mold:image-gallery",
+          source: "project-directory",
+          projectRoot: "/repo/mold",
+        },
+        { name: "@brink/current-context-widget", source: "directory" },
+        {
+          name: "@mold/image-gallery-ui",
+          source: "extension-package",
+        },
+      ],
+      "/repo/mold",
+      new Set(["mold"]),
+    );
+    // `@mold/...` folds into project (scope matches active project);
+    // `@brink/...` stays user (unrelated scope). Sort order: project
+    // bucket first, alphabetical within.
+    expect(items.map((item) => ({ label: item.label, hint: item.hint }))).toEqual([
+      { label: "@mold/image-gallery-ui", hint: "project · disabled" },
+      { label: "mold:image-gallery", hint: "project · disabled" },
+      { label: "@brink/current-context-widget", hint: "user · disabled" },
+    ]);
   });
 });

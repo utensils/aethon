@@ -18,6 +18,7 @@ import {
   Layout,
   MainCanvas,
   MarkdownPreview,
+  QueuedMessagesPopover,
   ShellCanvas,
   Sidebar,
   StatusBar,
@@ -64,6 +65,11 @@ export const defaultLayoutSkill: A2UISkill = {
     sidebar: Sidebar,
     "chat-history": ChatHistory,
     "chat-input": ChatInput,
+    // Popover above the composer listing client-held queued messages
+    // with per-row edit / steer / delete. Drained by `useQueuedDispatch`
+    // on the next idle. Replaceable via
+    // `aethon.registerComponent("queued-messages-popover", custom)`.
+    "queued-messages-popover": QueuedMessagesPopover,
     "status-bar": StatusBar,
     "tab-strip": TabStrip,
     terminal: Terminal,

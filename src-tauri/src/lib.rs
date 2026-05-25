@@ -359,6 +359,7 @@ fn send_message(
     message: String,
     tab_id: Option<String>,
     mode: Option<String>,
+    cwd: Option<String>,
     state: State<'_, AgentProcess>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -369,12 +370,17 @@ fn send_message(
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
     // tabId routes to a specific pi session; the bridge defaults to
     // "default" when omitted so legacy single-tab callers keep working.
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "type": "chat",
         "content": message,
         "mode": mode.unwrap_or_else(|| "normal".to_string()),
         "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
     });
+    if let Some(cwd) = cwd
+        && !cwd.is_empty()
+    {
+        payload["cwd"] = serde_json::Value::String(cwd);
+    }
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
     Ok(())

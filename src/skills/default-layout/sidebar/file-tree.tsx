@@ -994,7 +994,13 @@ export function FileTreePanel({
           git?: { branch?: string };
         }>
       | undefined) ?? [];
-  const activeProject = sidebarProjects.find((p) => p.active === true);
+  const activeProjectId =
+    typeof state["activeProjectId"] === "string"
+      ? state["activeProjectId"]
+      : null;
+  const activeProject =
+    sidebarProjects.find((p) => p.id === activeProjectId) ??
+    sidebarProjects.find((p) => p.active === true);
   const activeWorktree = activeProject?.worktrees?.find(
     (w) => w.active === true,
   );

@@ -166,7 +166,15 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         kind: t.kind ?? "agent",
         draft: t.draft ?? "",
         waiting: Boolean(t.waiting),
-        queueCount: typeof t.queueCount === "number" ? t.queueCount : 0,
+        // Client-held queue is intentionally NOT restored: queued
+        // messages are ephemeral, and a user who closed the app while
+        // queue items were pending probably abandoned them. The next
+        // run starts with a clean queue. `queueCount` is derived from
+        // `queuedMessages.length`, so zero it in lockstep — otherwise
+        // the composer badge / "Stop + clear" label would read as
+        // non-empty against an empty popover.
+        queueCount: 0,
+        queuedMessages: [],
         canvas: t.canvas ?? null,
         model: t.model ?? "",
         terminalBuffer: t.terminalBuffer ?? "",

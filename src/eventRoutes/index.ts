@@ -30,6 +30,7 @@ import { handleShellConsent } from "./shellConsent";
 import { matchesExtensionRoute } from "./extensions";
 import { handleChatInput } from "./chatInput";
 import { handleChatMessages } from "./chatMessages";
+import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
 import { handleSearch } from "./search";
 import { handlePalette } from "./palette";
@@ -85,9 +86,15 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:settings-panel", [handleSettings]],
     ["type:search-panel", [handleSearch]],
     ["type:command-palette", [handlePalette]],
-    ["type:chat-input", [handleChatInput]],
+    // Order matters: handleQueuedMessages runs FIRST and only matches
+    // `queue:*` events, returning false for everything else. That lets
+    // the inlined popover's events route correctly while normal chat
+    // input events (submit / change / cancel) still flow to
+    // handleChatInput unchanged.
+    ["type:chat-input", [handleQueuedMessages, handleChatInput]],
     ["type:chat-history", [handleChatMessages]],
     ["type:main-canvas", [handleChatMessages]],
+    ["type:queued-messages-popover", [handleQueuedMessages]],
     ["type:empty-state", [handleEmptyState]],
     // Worktree landing — "Start Session" + "Open in Files" CTAs reuse
     // the sidebar's worktree routes since the destination semantics

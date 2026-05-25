@@ -6,7 +6,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatMessage } from "../types/a2ui";
-import type { Tab } from "../types/tab";
+import type { QueuedMessage, Tab } from "../types/tab";
 import {
   parseSlashCommand,
   type SlashCommand,
@@ -14,6 +14,17 @@ import {
 } from "../slashCommands";
 import type { NotificationInput } from "./useNotifications";
 import { recomputeModelPicker } from "../utils/modelPicker";
+
+/** Patch `queuedMessages` and the derived `queueCount` together so the
+ *  composer badge can't drift out of sync with the popover list. */
+function withQueue(tab: Tab, next: QueuedMessage[]): Tab {
+  return { ...tab, queuedMessages: next, queueCount: next.length };
+}
+
+/** Tolerant accessor for tabs that pre-date the field. */
+function queueOf(tab: Tab): QueuedMessage[] {
+  return tab.queuedMessages ?? [];
+}
 
 export interface UseChatContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -66,6 +77,21 @@ export interface UseChatActions {
   setModel: (id: string) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   exportActiveChatMarkdown: () => Promise<void>;
+  /** Replace the body of a queued message in place. No-op if the id has
+   *  already been drained or removed (e.g. a stale popover click). */
+  editQueuedMessage: (
+    tabId: string,
+    messageId: string,
+    content: string,
+  ) => void;
+  /** Drop a queued message before it ships. No-op for unknown ids. */
+  deleteQueuedMessage: (tabId: string, messageId: string) => void;
+  /** Promote a queued message to a mid-turn steer. Pops it from the queue,
+   *  flips `queuedSteeringId` for the popover spinner, then dispatches via
+   *  `sendChat(..., { mode: "steer" })`. */
+  steerQueuedMessage: (tabId: string, messageId: string) => Promise<void>;
+  /** Empty the queue for a tab. */
+  clearQueuedMessages: (tabId: string) => void;
 }
 
 /**
@@ -149,28 +175,36 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       const messages = [...tab.messages];
       if (messageId) {
         const idx = messages.findIndex((m) => m.id === messageId);
+        let nextMessage: ChatMessage;
         if (idx >= 0) {
-          messages[idx] = {
+          nextMessage = {
             ...messages[idx],
             [channel]: (messages[idx][channel] ?? "") + delta,
           };
+          messages[idx] = nextMessage;
         } else {
-          messages.push({ id: messageId, role: "agent", [channel]: delta });
+          nextMessage = { id: messageId, role: "agent", [channel]: delta };
+          messages.push(nextMessage);
         }
         activeResponseIdRef.current = messageId;
+        persistLocalChatMessage(nextMessage, id);
         return { ...tab, messages };
       }
       const activeId = activeResponseIdRef.current;
       const last = messages[messages.length - 1];
       if (activeId && last && last.id === activeId && last.role === "agent") {
-        messages[messages.length - 1] = {
+        const nextMessage = {
           ...last,
           [channel]: (last[channel] ?? "") + delta,
         };
+        messages[messages.length - 1] = nextMessage;
+        persistLocalChatMessage(nextMessage, id);
       } else {
         const newId = crypto.randomUUID();
         activeResponseIdRef.current = newId;
-        messages.push({ id: newId, role: "agent", [channel]: delta });
+        const nextMessage = { id: newId, role: "agent" as const, [channel]: delta };
+        messages.push(nextMessage);
+        persistLocalChatMessage(nextMessage, id);
       }
       return { ...tab, messages };
     });
@@ -201,6 +235,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       explicitTabId ??
       (stateRef.current.activeTabId as string | undefined) ??
       "default";
+    // The composer's Stop button advertises "Stop + clear" when the
+    // queue is non-empty; clear the client-held queue here so a user
+    // who stopped because they wanted *out* of the train can't have
+    // the next queued message drain on the following idle.
+    updateTab(tabId, (tab) =>
+      tab.queuedMessages.length === 0 ? tab : withQueue(tab, []),
+    );
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "stop", tabId }),
@@ -276,17 +317,42 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       targetTab?.waiting === true ||
       ((targetTab === undefined || tabId === activeTabId) &&
         stateRef.current.waiting === true);
+
+    // Client-side queue: a normal-mode submit while the agent is busy lands
+    // in `tab.queuedMessages` instead of going to the bridge. The popover
+    // above the composer renders the list, lets the user edit / delete /
+    // promote-to-steer each entry, and `useQueuedDispatch` drains the head
+    // on the next idle. Skipping history here is intentional — Claudette
+    // shows queued items only in the popover, then they enter history as
+    // normal user bubbles once the auto-drain fires.
+    if (
+      mode === "normal" &&
+      wasBusy &&
+      targetTab !== undefined &&
+      targetTab.kind === "agent"
+    ) {
+      const entry: QueuedMessage = {
+        id: crypto.randomUUID(),
+        content: sendText,
+      };
+      updateTab(tabId, (tab) => withQueue(tab, [...queueOf(tab), entry]));
+      // Clear the draft on the originating tab so the textarea empties
+      // even though we didn't ship the message. Mirrors the normal-send
+      // behavior below.
+      updateTab(tabId, (tab) => ({ ...tab, draft: "" }));
+      return;
+    }
+
     const delivery: ChatMessage["delivery"] =
-      mode === "steer" && wasBusy
-        ? "steered"
-        : mode === "normal" && wasBusy
-          ? "queued"
-          : "sent";
+      mode === "steer" && wasBusy ? "steered" : "sent";
     const userMessageId = crypto.randomUUID();
-    appendMessage(
-      { id: userMessageId, role: "user", text: sendText, delivery },
-      tabId,
-    );
+    const userMessage = {
+      id: userMessageId,
+      role: "user" as const,
+      text: sendText,
+      delivery,
+    };
+    appendMessage(userMessage, tabId);
     updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
     setState((prev) =>
       prev.activeTabId === tabId
@@ -310,8 +376,18 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         /* ignore */
       }
     }
+    persistLocalChatMessage(userMessage, tabId);
+    const targetCwd =
+      typeof targetTab?.cwd === "string" && targetTab.cwd.length > 0
+        ? targetTab.cwd
+        : undefined;
     try {
-      await invoke("send_message", { message: sendText, tabId, mode });
+      await invoke("send_message", {
+        message: sendText,
+        tabId,
+        mode,
+        ...(targetCwd ? { cwd: targetCwd } : {}),
+      });
     } catch (err) {
       updateTab(tabId, (tab) => ({
         ...tab,
@@ -445,6 +521,67 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
   }
 
+  function editQueuedMessage(
+    tabId: string,
+    messageId: string,
+    content: string,
+  ) {
+    updateTab(tabId, (tab) => {
+      const current = queueOf(tab);
+      if (current.length === 0) return tab;
+      const idx = current.findIndex((m) => m.id === messageId);
+      if (idx < 0) return tab;
+      const next = current.slice();
+      next[idx] = { ...next[idx], content };
+      return withQueue(tab, next);
+    });
+  }
+
+  function deleteQueuedMessage(tabId: string, messageId: string) {
+    updateTab(tabId, (tab) => {
+      const current = queueOf(tab);
+      if (current.length === 0) return tab;
+      const next = current.filter((m) => m.id !== messageId);
+      if (next.length === current.length) return tab;
+      return withQueue(tab, next);
+    });
+  }
+
+  function clearQueuedMessages(tabId: string) {
+    updateTab(tabId, (tab) => {
+      if (queueOf(tab).length === 0) return tab;
+      return withQueue(tab, []);
+    });
+  }
+
+  async function steerQueuedMessage(tabId: string, messageId: string) {
+    const tab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+      (t) => t.id === tabId,
+    );
+    if (!tab) return;
+    const entry = queueOf(tab).find((m) => m.id === messageId);
+    if (!entry) return;
+    // Pop the message from the queue and flip the spinner id in one render
+    // commit so the popover row replaces itself with the spinner instead
+    // of briefly showing nothing.
+    updateTab(tabId, (t) => ({
+      ...withQueue(
+        t,
+        queueOf(t).filter((m) => m.id !== messageId),
+      ),
+      queuedSteeringId: messageId,
+    }));
+    try {
+      await sendChat(entry.content, { mode: "steer", tabId });
+    } finally {
+      updateTab(tabId, (t) =>
+        t.queuedSteeringId === messageId
+          ? { ...t, queuedSteeringId: undefined }
+          : t,
+      );
+    }
+  }
+
   return {
     activeResponseIdRef,
     turnStartedAtRef,
@@ -457,5 +594,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     setModel,
     stopPrompt,
     exportActiveChatMarkdown,
+    editQueuedMessage,
+    deleteQueuedMessage,
+    steerQueuedMessage,
+    clearQueuedMessages,
   };
 }

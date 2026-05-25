@@ -46,6 +46,18 @@ export interface EditorMeta {
 
 export type TabKind = "agent" | "shell" | "editor";
 
+/**
+ * A user message held on the client-side queue while a turn is in flight.
+ * The popover above the composer renders the list, and the user can edit /
+ * delete / promote-to-steer each entry before `useQueuedDispatch` drains the
+ * head on the next idle. The message only enters chat history once it is
+ * actually dispatched — Claudette-style.
+ */
+export interface QueuedMessage {
+  id: string;
+  content: string;
+}
+
 export interface Tab {
   id: string;
   /** "agent" (chat session) or "shell" (interactive PTY). Default "agent"
@@ -55,7 +67,24 @@ export interface Tab {
   messages: ChatMessage[];
   draft: string;
   waiting: boolean;
+  /** Derived: equals `queuedMessages.length`. Kept as a separate field so
+   *  the existing `/queueCount` binding (badge in the composer) doesn't
+   *  have to re-resolve through the array on every render. Writers must
+   *  set both in lockstep — `useChat`'s `withQueue()` helper is the
+   *  canonical writer and guarantees the invariant. Bridge handlers
+   *  for `queued` / `queue_reset` events are intentionally no-ops on
+   *  the new client-held queue path; mutating queueCount without
+   *  touching queuedMessages would desync the composer badge and
+   *  popover row count. */
   queueCount: number;
+  /** Client-held queue of unsent user messages. Drained by
+   *  `useQueuedDispatch` when the agent goes idle. Rendered as a popover
+   *  above the composer. Only agent tabs ever populate this. */
+  queuedMessages: QueuedMessage[];
+  /** Id of the queued message currently being promoted via steer. Drives
+   *  the per-row spinner so the user knows the click landed before pi
+   *  acknowledges. Cleared by the dispatch path on success or error. */
+  queuedSteeringId?: string;
   canvas: unknown;
   model: string;
   // Rolling buffer of bash output for this tab. The Terminal component
@@ -123,6 +152,7 @@ export function makeEmptyTab(
     draft: "",
     waiting: false,
     queueCount: 0,
+    queuedMessages: [],
     canvas: null,
     model: "",
     terminalBuffer: "",

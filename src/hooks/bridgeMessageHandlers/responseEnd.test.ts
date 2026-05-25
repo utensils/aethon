@@ -24,13 +24,22 @@ describe("handleResponseEnd", () => {
     expect(mocks.maybeFireCompletionNotification).toHaveBeenCalled();
   });
 
-  it("preserves waiting when queueCount > 0", () => {
+  it("clears waiting even when a client-side queue is non-empty", () => {
+    // The client-side queue is drained by useQueuedDispatch on the
+    // waiting=true→false transition, so we MUST clear waiting here —
+    // otherwise the dispatch effect never sees the idle moment and the
+    // queue stalls.
     const { ctx, mocks } = buildHandlerFixture({
       state: { activeTabId: "default" },
     });
     handleResponseEnd({ type: "response_end", tabId: "default" }, ctx);
     const [, updater] = mocks.updateTab.mock.calls[0];
-    const seed = { ...makeEmptyTab("default", "Tab 1"), queueCount: 1, waiting: true };
-    expect(updater(seed)).toEqual(seed);
+    const seed = {
+      ...makeEmptyTab("default", "Tab 1"),
+      queueCount: 1,
+      queuedMessages: [{ id: "q1", content: "next" }],
+      waiting: true,
+    };
+    expect(updater(seed).waiting).toBe(false);
   });
 });

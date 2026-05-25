@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Aethon dev launcher — finds free ports for Vite and the debug TCP server,
 # writes them to ~/.aethon/dev-info.json so the aethon-debug skill can
-# discover the running instance, then execs `cargo tauri dev`.
+# discover the running instance, then supervises `cargo tauri dev`.
 #
 # Why this exists:
 #   - Tauri requires a fixed devUrl (Vite's `strictPort: true`) so a leaked
@@ -45,7 +45,7 @@ DEBUG_BASE="${AETHON_DEBUG_PORT_BASE:-19433}"
 SANDBOX_ROOT_DIR="${TMPDIR:-/tmp}/aethon-dev"
 
 # Parse our own flags before forwarding the rest to `cargo tauri dev`.
-# Stashed in arrays so we keep ordering for the eventual `exec`.
+# Stashed in arrays so we keep ordering for the eventual launch.
 new_session=0
 clean_action=0
 passthrough_args=()
@@ -190,16 +190,16 @@ cat >"$TMP" <<EOF
 EOF
 mv "$TMP" "$DEV_INFO"
 
-# Cleanup: always remove the discovery file; remove the --new sandbox
-# tree too. INT / TERM forwarded so a SIGINT (Ctrl+C) doesn't leave a
-# stale tree behind on the user's next launch.
+# Pre-exec cleanup: only triggers if we exit before exec'ing cargo (e.g.
+# port allocation fails, --help, etc.). The post-exec cleanup path is
+# the watchdog below.
 cleanup() {
   rm -f "$DEV_INFO"
   if [[ -n "$sandbox_dir" && -d "$sandbox_dir" ]]; then
     rm -rf "$sandbox_dir"
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
 
 export VITE_PORT
 export AETHON_DEBUG_PORT="$DEBUG_PORT"
@@ -212,4 +212,71 @@ if [[ "$VITE_PORT" != "$VITE_BASE" || "$DEBUG_PORT" != "$DEBUG_BASE" ]]; then
   echo "[dev] vite=${VITE_PORT} (was ${VITE_BASE}) debug=${DEBUG_PORT} (was ${DEBUG_BASE})" >&2
 fi
 
+# Watchdog: a tiny background process that outlives our `exec` and
+# performs the full session cleanup once cargo has exited.
+#
+# Why a watchdog instead of bash signal traps:
+#   `cargo tauri dev` (via the cargo it spawns, or Vite, or the aethon
+#   binary's pty handling) takes over the terminal's foreground process
+#   group via tcsetpgrp(). After that, Ctrl+C delivers SIGINT to *cargo's*
+#   PG, not to this script's PG, so any `trap INT` we install here is
+#   never invoked. The previous PG-and-pattern teardown was correct in
+#   spirit but the handler that called it was never reached.
+#
+# How this watchdog finds survivors:
+#   AETHON_DEBUG_PORT is exported below and is unique to this dev
+#   session (find_free_port auto-increments per concurrent run). Every
+#   process in the session inherits it in its environment, so a single
+#   `ps -axwwE | grep AETHON_DEBUG_PORT=<port>` sweep catches cargo's
+#   child cargo, the aethon binary, vite, the bun agent, and anything
+#   else they spawned — even orphans whose PPID is now launchd.
+parent_pid=$$
+debug_port="$DEBUG_PORT"
+dev_info_path="$DEV_INFO"
+sandbox_dir_path="$sandbox_dir"
+
+(
+  # Detach the watchdog from stdio + the terminal: it must survive even
+  # after the user's shell prompt returns, and we don't want it to take
+  # SIGINT itself.
+  exec </dev/null >/dev/null 2>&1
+  trap '' INT TERM HUP
+
+  while kill -0 "$parent_pid" 2>/dev/null; do
+    sleep 0.2
+  done
+
+  # Survivor sweep, scoped to processes with our exact debug-port env var
+  # so a second concurrent `dev` instance (on a different port) is
+  # untouched. Excludes our own watchdog PID for paranoia.
+  watchdog_pid=$$
+  sweep_pids() {
+    ps -axwwE 2>/dev/null \
+      | awk -v needle="AETHON_DEBUG_PORT=$debug_port" -v me="$watchdog_pid" \
+          'index($0, needle) && $1 != me { print $1 }'
+  }
+  sweep_round() {
+    local sig="$1" pid
+    while read -r pid; do
+      [[ -n "$pid" ]] || continue
+      kill "-$sig" "$pid" 2>/dev/null || true
+    done < <(sweep_pids)
+  }
+
+  sweep_round INT
+  sleep 0.2
+  sweep_round TERM
+  sleep 0.2
+  sweep_round KILL
+
+  rm -f "$dev_info_path"
+  if [[ -n "$sandbox_dir_path" && -d "$sandbox_dir_path" ]]; then
+    rm -rf "$sandbox_dir_path"
+  fi
+) &
+disown
+
+# Hand the terminal to cargo. After exec, this script's PID *is* cargo —
+# the watchdog watches that PID, and Ctrl+C goes straight to cargo with
+# zero bash signal-routing in the middle.
 exec cargo tauri dev "$@"

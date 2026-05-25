@@ -59,13 +59,16 @@ describe("Sidebar extension controls", () => {
               label: "mold-gallery",
               hint: "project",
               active: true,
+              kind: "project",
             },
           ],
         },
       },
     });
 
-    expect(screen.getByText("extensions")).toBeTruthy();
+    // Qualified section title — always present even when only one
+    // bucket has rows so scope is never ambiguous.
+    expect(screen.getByText("project extensions")).toBeTruthy();
     expect(screen.getByText("mold-gallery")).toBeTruthy();
     expect(screen.getByText("project")).toBeTruthy();
   });
@@ -80,6 +83,7 @@ describe("Sidebar extension controls", () => {
               label: "mold-gallery",
               hint: "project",
               active: true,
+              kind: "project",
             },
           ],
         },
@@ -98,6 +102,164 @@ describe("Sidebar extension controls", () => {
         disabled: true,
       },
     );
+  });
+
+  it("renders an inline toggle switch on each extension row", () => {
+    renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:mold-gallery",
+              label: "mold-gallery",
+              hint: "project",
+            },
+            {
+              id: "ext-disabled:silenced",
+              label: "silenced",
+              hint: "disabled",
+            },
+            {
+              id: "ext-failed:boom",
+              label: "boom",
+              hint: "load failed",
+            },
+          ],
+        },
+      },
+    });
+
+    const switches = screen.getAllByRole("switch");
+    expect(switches).toHaveLength(3);
+    expect(switches[0].getAttribute("aria-checked")).toBe("true"); // ext: → on
+    expect(switches[1].getAttribute("aria-checked")).toBe("false"); // ext-disabled: → off
+    expect(switches[2].getAttribute("aria-checked")).toBe("false"); // ext-failed: → off
+    expect(switches[2].getAttribute("aria-disabled")).toBe("true"); // failed is interactive-disabled
+  });
+
+  it("flips an enabled extension via the inline toggle without firing the row's select", () => {
+    const { onEvent } = renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:mold-gallery",
+              label: "mold-gallery",
+              hint: "project",
+              kind: "project",
+            },
+          ],
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("switch"));
+
+    // Toggle emits toggle-extension with the *target* disabled flag.
+    // SectionId reflects the bucket the item lands in (`extensions` for
+    // project, `extensions-user` for user, `extensions-package` for npm).
+    expect(onEvent).toHaveBeenCalledWith(
+      "toggle-extension",
+      {
+        sectionId: "extensions",
+        itemId: "ext:mold-gallery",
+        name: "mold-gallery",
+        disabled: true,
+      },
+      "ext:mold-gallery",
+    );
+    // The outer row's "select" handler must not fire — that would
+    // bounce the user into the extension's pane on every toggle.
+    const selectCalls = onEvent.mock.calls.filter(
+      (call) => call[0] === "select",
+    );
+    expect(selectCalls).toHaveLength(0);
+  });
+
+  it("re-enables a disabled extension via the inline toggle", () => {
+    const { onEvent } = renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext-disabled:silenced",
+              label: "silenced",
+              kind: "user",
+            },
+          ],
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("switch"));
+    // User-bucket items live in the extensions-user sub-section.
+    expect(onEvent).toHaveBeenCalledWith(
+      "toggle-extension",
+      {
+        sectionId: "extensions-user",
+        itemId: "ext-disabled:silenced",
+        name: "silenced",
+        disabled: false,
+      },
+      "ext-disabled:silenced",
+    );
+  });
+
+  it("splits the auto-injected EXTENSIONS section by origin (project / user)", () => {
+    renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:mold:gallery",
+              label: "mold:gallery",
+              hint: "project",
+              kind: "project",
+            },
+            {
+              id: "ext:user-helper",
+              label: "user-helper",
+              hint: "user",
+              kind: "user",
+            },
+            {
+              id: "ext:@brink/widget",
+              label: "@brink/widget",
+              hint: "user",
+              kind: "user",
+            },
+          ],
+        },
+      },
+    });
+
+    // Two subgroup titles appear; the user can tell scope at a glance
+    // even without reading the per-row hints.
+    expect(screen.getByText("project extensions")).toBeTruthy();
+    expect(screen.getByText("user extensions")).toBeTruthy();
+  });
+
+  it("keeps the qualified group title even when only one origin bucket has items", () => {
+    renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:user-only",
+              label: "user-only",
+              hint: "user",
+              kind: "user",
+            },
+          ],
+        },
+      },
+    });
+
+    // Origin label stays so the user can read scope at a glance even
+    // with a single extension loaded — that's exactly when knowing
+    // whether it's a user-level or project-level addition matters.
+    expect(screen.getByText("user extensions")).toBeTruthy();
+    expect(screen.queryByText("project extensions")).toBeNull();
   });
 
   it("does not duplicate a layout-provided extensions section", () => {

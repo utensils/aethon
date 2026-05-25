@@ -107,12 +107,18 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await expect(page.getByText("Enter queues")).toBeVisible();
   await expect(page.getByText("Cmd/Ctrl+Enter steers")).toBeVisible();
 
+  // Stack two prompts while the first turn is still in flight. With
+  // the client-held queue UX, these land in the popover above the
+  // composer — NOT in chat history — and only become history bubbles
+  // once the auto-drain pops them on the next idle.
   await page.locator(".a2ui-chat-input-field").fill("queued prompt");
   await page.keyboard.press("Enter");
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
   await expect(page.locator(".a2ui-tab")).toContainText("+1");
-  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
+  await expect(page.locator(".a2ui-queued-popover")).toBeVisible();
+  await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);
+  await expect(page.locator(".a2ui-queued-content")).toHaveText("queued prompt");
   await expect(page.getByRole("button", { name: "Stop + clear" })).toBeVisible();
   await expect
     .poll(() => getActiveTurnState(page))
@@ -122,34 +128,43 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await page.keyboard.press("Enter");
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+2");
-  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText([
-    "queued #1",
-    "queued #2",
+  await expect(page.locator(".a2ui-queued-message")).toHaveCount(2);
+  await expect(page.locator(".a2ui-queued-content")).toHaveText([
+    "queued prompt",
+    "second queued prompt",
   ]);
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 2, status: "thinking…" });
 
+  // First turn ends → head of queue drains → second user bubble lands
+  // in history, popover shrinks to one row.
   await completeActiveTurn(page);
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
-  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
+  await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);
+  await expect(page.locator(".a2ui-queued-content")).toHaveText(
+    "second queued prompt",
+  );
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
 
+  // Second turn ends → last queued message drains → popover empties.
   await completeActiveTurn(page);
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
-  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveCount(0);
+  await expect(page.locator(".a2ui-queued-popover")).toHaveCount(0);
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
 
+  // Third turn ends → idle.
   await completeActiveTurn(page);
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: false, queueCount: 0, status: "ready" });
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
+  await expect(page.locator(".a2ui-queued-popover")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
   await expect(page.getByText("Enter queues")).toHaveCount(0);
 
@@ -265,15 +280,20 @@ test("steering during an existing follow-up queue preserves the queued turn", as
     process.platform === "darwin" ? "Meta+Enter" : "Control+Enter",
   );
 
+  // Steer mid-turn — adds a steered bubble to history, leaves the
+  // queued message in the popover untouched.
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
-  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveText("queued");
+  await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);
+  await expect(page.locator(".a2ui-queued-content")).toHaveText("queued prompt");
   await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
 
+  // First turn ends → queued message drains; steered bubble stays
+  // as historical record of the mid-turn interjection.
   await completeActiveTurn(page);
-  await expect(page.locator(".a2ui-chat-delivery-queued")).toHaveCount(0);
+  await expect(page.locator(".a2ui-queued-popover")).toHaveCount(0);
   await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
   await expect
     .poll(() => getActiveTurnState(page))
@@ -287,8 +307,8 @@ test("steering during an existing follow-up queue preserves the queued turn", as
   const sends = (await getInvokeCalls(page)).filter((c) => c.cmd === "send_message");
   expect(sends.map((c) => c.args)).toEqual([
     expect.objectContaining({ message: "first prompt", mode: "normal" }),
-    expect.objectContaining({ message: "queued prompt", mode: "normal" }),
     expect.objectContaining({ message: "steer current turn", mode: "steer" }),
+    expect.objectContaining({ message: "queued prompt", mode: "normal" }),
   ]);
 });
 

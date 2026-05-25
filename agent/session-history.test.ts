@@ -53,10 +53,10 @@ describe("parseSessionHistoryLines", () => {
       }),
       JSON.stringify({
         type: "message",
-        id: "tool-1",
+        id: "empty",
         message: {
-          role: "toolResult",
-          content: [{ type: "text", text: "tool output" }],
+          role: "assistant",
+          content: [],
         },
       }),
       "not-json",
@@ -64,7 +64,162 @@ describe("parseSessionHistoryLines", () => {
 
     expect(parseSessionHistoryLines(lines)).toEqual([
       { id: "u1", role: "user", text: "hello" },
-      { id: "a1", role: "agent", text: "Hi there." },
+      {
+        id: "a1",
+        role: "agent",
+        text: "Hi there.",
+        thinking: "hidden reasoning",
+      },
+    ]);
+  });
+
+  it("restores completed tool calls as stable tool-card messages", () => {
+    const lines = [
+      JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        message: {
+          role: "assistant",
+          timestamp: 1_000,
+          content: [
+            {
+              type: "toolCall",
+              id: "call-read-1",
+              name: "read",
+              arguments: { path: "src/App.tsx" },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "result-tool",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-read-1",
+          toolName: "read",
+          content: [{ type: "text", text: "export function App() {}" }],
+          isError: false,
+          timestamp: 2_500,
+        },
+      }),
+    ];
+
+    expect(parseSessionHistoryLines(lines)).toEqual([
+      {
+        id: "restored-tool-call-read-1",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "restored-tool-call-read-1",
+              type: "tool-card",
+              props: {
+                title: "read",
+                toolName: "read",
+                description: "src/App.tsx",
+                startedAt: 1_000,
+                endedAt: 2_500,
+              },
+              children: [
+                {
+                  id: "restored-tool-call-read-1-result",
+                  type: "code",
+                  props: {
+                    content: "export function App() {}",
+                    language: "tsx",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("preserves failed tool result state when restoring tool cards", () => {
+    const restored = parseSessionHistoryLines([
+      JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-bash-1",
+              name: "bash",
+              arguments: { command: "false" },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "result-tool",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-bash-1",
+          toolName: "bash",
+          content: [{ type: "text", text: "Command failed" }],
+          isError: true,
+        },
+      }),
+    ]);
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      type: "tool-card",
+      props: {
+        title: "bash",
+        toolName: "bash",
+        description: "false",
+        isError: true,
+      },
+    });
+  });
+
+  it("keeps unmatched historical tool calls visible while waiting for a result", () => {
+    const restored = parseSessionHistoryLines([
+      JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        message: {
+          role: "assistant",
+          timestamp: 7_000,
+          content: [
+            {
+              type: "toolCall",
+              id: "call-grep-1",
+              name: "grep",
+              arguments: { pattern: "needle", path: "src" },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(restored).toEqual([
+      {
+        id: "restored-tool-call-grep-1",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "restored-tool-call-grep-1",
+              type: "tool-card",
+              props: {
+                title: "grep",
+                toolName: "grep",
+                description: "needle in src",
+                startedAt: 7_000,
+              },
+              children: [],
+            },
+          ],
+        },
+      },
     ]);
   });
 
@@ -146,6 +301,67 @@ describe("readSessionTranscript", () => {
         id: "slash-output",
         role: "system",
         text: "## Context",
+        createdAt: 2,
+      },
+    ]);
+  });
+
+  it("does not duplicate local prompt snapshots already present in pi history", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Please work on issue 85" }],
+        },
+      })}\n${JSON.stringify({
+        type: "message",
+        id: "pi-agent",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Working on it" }],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "local-user",
+      role: "user",
+      text: "Please work on issue 85",
+      createdAt: 1,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-user", role: "user", text: "Please work on issue 85" },
+      { id: "pi-agent", role: "agent", text: "Working on it" },
+    ]);
+  });
+
+  it("keeps the latest local assistant snapshot for stopped turns", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "agent-live",
+      role: "agent",
+      thinking: "Inspecting",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "agent-live",
+      role: "agent",
+      thinking: "Inspecting\nReading files",
+      text: "Partial answer",
+      createdAt: 2,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "agent-live",
+        role: "agent",
+        thinking: "Inspecting\nReading files",
+        text: "Partial answer",
         createdAt: 2,
       },
     ]);

@@ -19,6 +19,7 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { getConfig, type AethonConfig } from "../../config";
 import { SHARE_MODES, type ShareMode } from "../../utils/shareMode";
 import { DropdownPickerCore } from "./variation-components";
+import { ToggleSwitch } from "./toggle-switch";
 
 interface SettingsState {
   open: boolean;
@@ -637,7 +638,6 @@ function ExtensionsList({
                 ? item.id.slice("ext-disabled:".length)
                 : item.label;
         const canToggle = kind !== "core";
-        const targetDisabled = kind !== "disabled";
         return (
           <li
             key={item.id}
@@ -648,20 +648,32 @@ function ExtensionsList({
               <span className="ae-settings-ext-hint">{item.hint}</span>
             ) : null}
             {canToggle ? (
-              <button
-                type="button"
-                className="ae-settings-secondary ae-settings-ext-action"
-                onClick={() =>
+              <ToggleSwitch
+                checked={kind === "enabled"}
+                disabled={kind === "failed"}
+                // Pick the verb from the actual checked state (not just
+                // the explicit "disabled" branch) — otherwise a failed
+                // extension renders unchecked but announces "Disable
+                // extension X" to assistive tech. Matches the sidebar
+                // toggle which keys off `extState.checked` for the
+                // same reason.
+                ariaLabel={`${kind === "enabled" ? "Disable" : "Enable"} extension ${name}`}
+                title={
+                  kind === "failed"
+                    ? "Extension failed to load — fix the error and reload to re-enable"
+                    : kind === "disabled"
+                      ? `Enable ${name}`
+                      : `Disable ${name}`
+                }
+                onChange={(next) => {
                   onEvent("toggle-extension", {
                     sectionId: "extensions",
                     itemId: item.id,
                     name,
-                    disabled: targetDisabled,
-                  })
-                }
-              >
-                {kind === "disabled" ? "Enable" : "Disable"}
-              </button>
+                    disabled: !next,
+                  });
+                }}
+              />
             ) : (
               <span
                 className="ae-settings-ext-hint"

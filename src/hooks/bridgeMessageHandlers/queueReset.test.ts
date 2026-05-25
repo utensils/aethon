@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { handleQueueReset } from "./queueReset";
 import { buildHandlerFixture } from "./testFixtures";
-import { makeEmptyTab } from "../../types/tab";
 
 describe("handleQueueReset", () => {
-  it("zeroes the per-tab queueCount", () => {
+  it("is a no-op — the client-held queue is the source of truth", () => {
+    // pi's followUp queue is unused on the new flow; stopPrompt
+    // clears the client queue directly. Mutating queueCount from a
+    // bridge event would desync the badge from queuedMessages.
     const { ctx, mocks } = buildHandlerFixture();
     handleQueueReset({ type: "queue_reset", tabId: "default" }, ctx);
-    const [, updater] = mocks.updateTab.mock.calls[0];
-    const seed = { ...makeEmptyTab("default", "Tab 1"), queueCount: 7 };
-    expect(updater(seed).queueCount).toBe(0);
-  });
-
-  it("accepts an explicit remaining queue count", () => {
-    const { ctx, mocks } = buildHandlerFixture();
-    handleQueueReset({ type: "queue_reset", tabId: "default", queued: 2 }, ctx);
-    const [, updater] = mocks.updateTab.mock.calls[0];
-    const seed = { ...makeEmptyTab("default", "Tab 1"), queueCount: 7 };
-    expect(updater(seed).queueCount).toBe(2);
+    handleQueueReset(
+      { type: "queue_reset", tabId: "default", queued: 2 },
+      ctx,
+    );
+    expect(mocks.updateTab).not.toHaveBeenCalled();
   });
 });

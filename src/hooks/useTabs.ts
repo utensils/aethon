@@ -32,6 +32,8 @@ export const TAB_MIRROR_KEYS: (keyof Tab)[] = [
   "draft",
   "waiting",
   "queueCount",
+  "queuedMessages",
+  "queuedSteeringId",
   "canvas",
   "model",
   "cwd",

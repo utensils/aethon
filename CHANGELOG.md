@@ -8,6 +8,79 @@ All notable changes to Aethon. Format loosely follows
 
 ### Fixed
 
+- **Extension watcher follows cross-project worktree activation (peer-review P2).**
+  `activateWorktree` previously changed `activeId` directly when the
+  selected worktree belonged to a different project, bypassing the
+  unwatch/watch swap that `setActiveProjectById` does. The previous
+  project's `.aethon/extensions/` watcher kept firing while the new
+  project's never installed, so hot-reload silently broke until a
+  later full project switch. The swap is now mirrored in
+  `activateWorktree` whenever the active project id changes.
+- **Restored sessions preserve in-flight messages chronologically (peer-review P2).**
+  `handleSessionHistory`'s merge prepended pending local user prompts
+  ABOVE the restored transcript and dropped any in-flight assistant
+  streaming deltas entirely (the role filter only kept user messages).
+  Restored transcript now lands first, with pending local messages —
+  user prompts AND streaming assistant bubbles — appended after, so
+  ordering stays chronological and live output isn't wiped mid-stream.
+
+## [0.3.3] - 2026-05-25
+
+### Added
+
+- **Queued messages popover + steering (Claudette-style).** Messages typed
+  into the composer while the agent is busy now go to a client-held queue
+  rendered as a popover above the textarea instead of straight to pi's
+  `followUp`. Each queued row carries Edit / Steer / Delete affordances,
+  the header offers `Clear queue`, and a new `useQueuedDispatch` hook
+  drains the head on every idle transition. Cmd/Ctrl+Enter on the composer
+  still ships the current draft as a mid-turn steer.
+- **Inline extension toggle.** Each row in the sidebar's `extensions`
+  section now renders a pill-shaped toggle switch — flip an extension
+  on or off in one click without diving into the right-click menu or
+  the settings panel. The same toggle replaces the Enable/Disable text
+  button inside the settings panel's Extensions list for visual
+  consistency. Failed-to-load extensions render the switch in a muted
+  disabled state.
+- **Extension origin always visible + grouped.** The sidebar's
+  extensions list now splits into two per-origin sub-sections
+  (`project extensions`, `user extensions`) that act as visible
+  dividers; empty buckets hide. Project-scoped npm packages
+  (`@<project>/<ext>` where the scope matches the active project's
+  basename) fold INTO the project bucket, while unrelated-scope or
+  bare-name packages stay in the user bucket — so `@mold/image-
+  gallery-ui` reads as a project extension under `mold`, but
+  `@brink/current-context-widget` stays user-level. Rows are sorted
+  alphabetically within each group, and each row's hint (`project ·
+  disabled`, `user · disabled`) preserves origin even when toggled
+  off. The group title is always qualified — single-bucket states
+  still read `user extensions` rather than a bare `extensions`, so
+  scope is never ambiguous. Auto-injection skips when an extensions
+  section is declared explicitly in layout JSON, preserving the
+  override path for skills that ship custom rendering.
+
+### Changed
+
+- **`response_end` no longer preserves `waiting` for queued sends.** Pi's
+  `followUp` queue is unused on the new client-held queue path; clearing
+  `waiting` on every turn end is what lets `useQueuedDispatch` see the
+  idle moment and pop the next message.
+
+### Fixed
+
+- **Queue auto-drain reaches the bridge (peer-review P1).** The
+  optimistic `waiting=true` write inside `useQueuedDispatch` was
+  synchronously visible to `sendChat`, which treated the freshly
+  popped message as a new busy-state submit and re-queued it with a
+  new id, never invoking `send_message`. The drain now pops the head
+  only and lets `sendChat`'s normal-dispatch path flip `waiting` —
+  pop + dispatch setStates batch into one commit so there's still no
+  Send-button flash. Regression test added.
+- **Stop clears the client queue (peer-review P2).** `stopPrompt`
+  now empties the per-tab `queuedMessages` array before sending the
+  bridge `stop` command, so a user who hits the composer's
+  "Stop + clear" button actually clears the queue instead of letting
+  the next queued message drain on the following idle.
 - **Issue worktree task launches.** GitHub issue send-to-agent now targets
   the newly-created task tab explicitly when forwarding the issue prompt,
   so the first agent session starts in the fresh worktree and the sent
