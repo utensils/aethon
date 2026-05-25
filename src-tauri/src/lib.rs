@@ -376,10 +376,10 @@ fn send_message(
         "mode": mode.unwrap_or_else(|| "normal".to_string()),
         "tabId": tab_id.unwrap_or_else(|| "default".to_string()),
     });
-    if let Some(cwd) = cwd {
-        if !cwd.is_empty() {
-            payload["cwd"] = serde_json::Value::String(cwd);
-        }
+    if let Some(cwd) = cwd
+        && !cwd.is_empty()
+    {
+        payload["cwd"] = serde_json::Value::String(cwd);
     }
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;

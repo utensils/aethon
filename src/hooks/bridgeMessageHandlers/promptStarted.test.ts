@@ -11,7 +11,7 @@ describe("handlePromptStarted", () => {
     vi.useRealTimers();
   });
 
-  it("flips waiting + records turn start + sets active status", () => {
+  it("flips waiting + records turn start + sets active status, deriving queueCount from the client-held queue", () => {
     const { ctx, mocks } = buildHandlerFixture({
       state: { activeTabId: "default" },
     });
@@ -21,10 +21,46 @@ describe("handlePromptStarted", () => {
     );
     expect(ctx.turnStartedAtRef.current.has("default")).toBe(true);
     const [, updater] = mocks.updateTab.mock.calls[0];
-    const out = updater(makeEmptyTab("default", "Tab 1"));
+    // The handler ignores the bridge's stale `queued` field — the
+    // CLIENT now owns the queue, and queueCount mirrors
+    // `tab.queuedMessages.length`. A tab with two queued messages
+    // keeps that count even though the bridge reported 2 (or 0).
+    const seedTab = {
+      ...makeEmptyTab("default", "Tab 1"),
+      queuedMessages: [
+        { id: "q1", content: "later 1" },
+        { id: "q2", content: "later 2" },
+      ],
+      queueCount: 2,
+    };
+    const out = updater(seedTab);
     expect(out.waiting).toBe(true);
     expect(out.queueCount).toBe(2);
     expect(mocks.setState).toHaveBeenCalledTimes(1);
+  });
+
+  it("derives queueCount from the client queue rather than the bridge's stale value", () => {
+    // Regression: previously the handler took the bridge's
+    // `data.queued` and overwrote queueCount with it, which clobbered
+    // a freshly-popped client-side count during auto-drain. The
+    // bridge always reports 0 on the new flow because pi's followUp
+    // queue is unused.
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "default" },
+    });
+    handlePromptStarted(
+      { type: "prompt_started", tabId: "default", queued: 0 },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater({
+      ...makeEmptyTab("default", "Tab 1"),
+      // Simulates a freshly-drained tab: one item remains in the
+      // popover, count stays 1, bridge says 0 (stale) — keep 1.
+      queuedMessages: [{ id: "q1", content: "next" }],
+      queueCount: 1,
+    });
+    expect(out.queueCount).toBe(1);
   });
 
   it("promotes the oldest queued user message when a queued prompt starts", () => {
@@ -43,8 +79,11 @@ describe("handlePromptStarted", () => {
         { id: "u2", role: "user", text: "start me", delivery: "queued" },
         { id: "u3", role: "user", text: "after me", delivery: "queued" },
       ],
-      queueCount: 2,
+      queuedMessages: [{ id: "qm-after", content: "after me" }],
+      queueCount: 1,
     });
+    // queueCount derives from queuedMessages.length — the client
+    // queue has one item left, not two.
     expect(out.queueCount).toBe(1);
     expect(out.messages).toEqual([
       { id: "u1", role: "user", text: "running", delivery: "sent" },

@@ -9,15 +9,22 @@ import type { BridgeMessageHandler } from "./types";
  *  bar text only flips for the active tab. */
 export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
-  const remaining = (data.queued as number | undefined) ?? undefined;
   // Record turn start so response_end can compute duration and decide
   // whether to fire the OS completion notification.
   ctx.turnStartedAtRef.current.set(tabId, Date.now());
   ctx.updateTab(tabId, (tab) => {
+    // queueCount mirrors the CLIENT-held queue now (Claudette-style
+    // queued-messages popover). The bridge's `data.queued` field came
+    // from pi's followUp queue and is stale on the new flow — frontend
+    // never invokes send_message during a busy turn, so pi's queue
+    // stays empty and overwriting with that 0 would erase items the
+    // user just popped off the client queue. Recompute from
+    // `queuedMessages.length` instead so the badge stays in lockstep
+    // with the popover.
     const next = {
       ...tab,
       waiting: true,
-      ...(remaining !== undefined ? { queueCount: remaining } : {}),
+      queueCount: (tab.queuedMessages ?? []).length,
     };
     if (data.source !== "queue") return next;
     let promoted = false;
