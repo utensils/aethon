@@ -299,6 +299,86 @@ describe("useProjectOps session scoping", () => {
     expect(stateRef.current.activeTabId).toBe("root-tab");
   });
 
+  it("swaps the project extensions watcher when a worktree from another project is activated", () => {
+    // Regression: activateWorktree changed activeId directly when the
+    // worktree belonged to a different project than the current one,
+    // skipping the unwatch/watch swap that setActiveProjectById does.
+    // The previous project's `.aethon/extensions/` watcher kept
+    // firing while the new project's never got installed.
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorktreeId: null,
+      projects: [
+        {
+          id: "project-1",
+          label: "alpha",
+          path: "/projects/alpha",
+          lastUsed: 1,
+        },
+        {
+          id: "project-2",
+          label: "beta",
+          path: "/projects/beta",
+          lastUsed: 1,
+        },
+      ],
+      worktreesByProject: {
+        "project-2": [
+          {
+            id: "wt-beta-feature",
+            projectId: "project-2",
+            path: "/projects/beta-feature",
+            branch: "feat/x",
+            isMain: false,
+          },
+        ],
+      },
+    });
+    const stateRef = ref<Record<string, unknown>>({
+      tabs: [],
+      activeTabId: undefined,
+    });
+    const projectsRef = ref(initial);
+    const setState = vi.fn((next: unknown) => {
+      stateRef.current =
+        typeof next === "function"
+          ? (next as (s: Record<string, unknown>) => Record<string, unknown>)(
+              stateRef.current,
+            )
+          : (next as Record<string, unknown>);
+    });
+    const watchProjectForBridge = vi.fn();
+    const unwatchProjectForBridge = vi.fn();
+    const ctx: UseProjectOpsContext = {
+      setState,
+      stateRef,
+      projectsRef,
+      piDefaultModelRef: ref("gpt-5.5"),
+      gitStatusRef: ref(new Map()),
+      refreshGitStatusFor: vi.fn(() => Promise.resolve()),
+      refreshAllGitStatus: vi.fn(() => Promise.resolve()),
+      announceProjectToBridge: vi.fn(),
+      watchProjectForBridge,
+      unwatchProjectForBridge,
+      dispatchTerminalReplay: vi.fn(),
+      autoRestoreDiscoveredSessions: vi.fn(),
+      closeTabNow: vi.fn(),
+    };
+    const { result } = renderHook(() => useProjectOps(ctx));
+    projectsRef.current = initial;
+
+    act(() => {
+      result.current.activateWorktree("wt-beta-feature");
+    });
+
+    // Previous project's watcher uninstalled, new project's watcher
+    // installed in lockstep.
+    expect(unwatchProjectForBridge).toHaveBeenCalledWith("/projects/alpha");
+    expect(watchProjectForBridge).toHaveBeenCalledWith("/projects/beta");
+    expect(projectsRef.current.activeId).toBe("project-2");
+    expect(projectsRef.current.activeWorktreeId).toBe("wt-beta-feature");
+  });
+
   it("scopes discovered sessions to the active worktree cwd", () => {
     const { result } = renderProjectOps(
       makeProjectsState({

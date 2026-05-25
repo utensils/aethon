@@ -6,6 +6,24 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Extension watcher follows cross-project worktree activation (peer-review P2).**
+  `activateWorktree` previously changed `activeId` directly when the
+  selected worktree belonged to a different project, bypassing the
+  unwatch/watch swap that `setActiveProjectById` does. The previous
+  project's `.aethon/extensions/` watcher kept firing while the new
+  project's never installed, so hot-reload silently broke until a
+  later full project switch. The swap is now mirrored in
+  `activateWorktree` whenever the active project id changes.
+- **Restored sessions preserve in-flight messages chronologically (peer-review P2).**
+  `handleSessionHistory`'s merge prepended pending local user prompts
+  ABOVE the restored transcript and dropped any in-flight assistant
+  streaming deltas entirely (the role filter only kept user messages).
+  Restored transcript now lands first, with pending local messages —
+  user prompts AND streaming assistant bubbles — appended after, so
+  ordering stays chronological and live output isn't wiped mid-stream.
+
 ## [0.3.3] - 2026-05-25
 
 ### Added

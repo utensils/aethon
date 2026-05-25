@@ -22,6 +22,12 @@ function mergePendingLocalPrompts(
   restored: ChatMessage[],
   current: ChatMessage[],
 ): ChatMessage[] {
+  // Carry pending local messages — both the optimistic user prompts
+  // the user sent before the restored history arrived AND any
+  // assistant streaming deltas already in flight — across the
+  // history hydration so the transcript stays chronological and
+  // live output isn't dropped. Restored transcript first, pending
+  // local appended after.
   const restoredIds = new Set(restored.map((m) => m.id));
   const restoredUserTexts = new Set(
     restored
@@ -30,13 +36,26 @@ function mergePendingLocalPrompts(
       .filter(Boolean),
   );
   const pendingLocal = current.filter((m) => {
-    if (m.role !== "user") return false;
-    if (!m.delivery || m.delivery === "failed") return false;
     if (restoredIds.has(m.id)) return false;
-    const text = typeof m.text === "string" ? m.text.trim() : "";
-    return text.length > 0 && !restoredUserTexts.has(text);
+    if (m.role === "user") {
+      // A failed local user message is informational once history
+      // catches up — the bridge will resend or the user will retry.
+      if (!m.delivery || m.delivery === "failed") return false;
+      const text = typeof m.text === "string" ? m.text.trim() : "";
+      // If the same prompt text already appears in the restored
+      // transcript, treat the local copy as a duplicate (the bridge
+      // recorded it canonically); otherwise keep it.
+      return text.length > 0 && !restoredUserTexts.has(text);
+    }
+    // Keep system + agent messages that don't share an id with
+    // anything in the restored set — those are typically streaming
+    // assistant deltas, system notices about the in-flight turn, or
+    // tool-card payloads the bridge will resolve as the response
+    // continues. Dropping them would erase visible progress the
+    // user just watched land.
+    return true;
   });
-  return pendingLocal.length > 0 ? [...pendingLocal, ...restored] : restored;
+  return pendingLocal.length > 0 ? [...restored, ...pendingLocal] : restored;
 }
 
 export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {

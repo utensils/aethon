@@ -888,15 +888,29 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     );
     let activeProjectId = current.activeId;
     let nextCwd: string | null;
+    let nextProjectPath: string | null;
     if (worktreeId) {
       const hit = findProjectOfWorktree(worktreeId);
       if (!hit) return;
       activeProjectId = hit.project.id;
       nextCwd = hit.worktree.path;
+      nextProjectPath = hit.project.path;
     } else {
       const project = activeProject(current);
       nextCwd = project?.path ?? null;
+      nextProjectPath = project?.path ?? null;
     }
+    // Cross-project worktree activation needs to mirror
+    // setActiveProjectById's watcher swap, otherwise the previous
+    // project's `.aethon/extensions` watcher keeps firing (and the
+    // new project's stays uninstalled) until a later full project
+    // switch.
+    const previousActive = activeProject(current);
+    const crossingProjects =
+      activeProjectId !== current.activeId &&
+      previousActive !== undefined &&
+      nextProjectPath !== null &&
+      previousActive.path !== nextProjectPath;
     projectsRef.current = setActiveWorktreeState(
       { ...current, activeId: activeProjectId },
       worktreeId,
@@ -908,6 +922,10 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     );
     scheduleProjectsSave();
     announceProjectToBridge(nextTabId ?? "default", nextCwd);
+    if (crossingProjects && previousActive && nextProjectPath) {
+      unwatchProjectForBridge(previousActive.path);
+      watchProjectForBridge(nextProjectPath);
+    }
   }
 
   function tabCwdMatches(tab: Tab, path: string): boolean {
