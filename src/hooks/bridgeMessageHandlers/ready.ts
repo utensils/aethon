@@ -310,12 +310,17 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     const tabsList = (next.tabs as Tab[] | undefined) ?? [];
     const activeTab = tabsList.find((t) => t.id === activeId);
     const activeModel = activeTab?.model || fallbackModel;
+    const activeTurnBusy =
+      activeTab?.waiting === true ||
+      (activeTab?.queueCount ?? 0) > 0 ||
+      next.waiting === true ||
+      ((next.queueCount as number | undefined) ?? 0) > 0;
     next = {
       ...next,
       ...(projectRoot ? { projectRoot } : {}),
       ...(userDir ? { aethonRoot: userDir } : {}),
       model: activeModel,
-      status: "ready",
+      status: activeTurnBusy ? "thinking…" : "ready",
       connection: "connected",
       recentSessions,
       sidebar: {

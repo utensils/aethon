@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleReady } from "./ready";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
+import { makeEmptyTab } from "../../types/tab";
 
 describe("handleReady", () => {
   beforeEach(() => {
@@ -101,6 +102,34 @@ describe("handleReady", () => {
       { id: "claude", label: "Claude", active: true },
       { id: "gpt", label: "GPT", active: false },
     ]);
+  });
+
+  it("does not overwrite an active running turn with ready status", () => {
+    const { ctx, applySetState } = buildHandlerFixture();
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        models: [{ id: "claude", label: "Claude" }],
+      },
+      ctx,
+    );
+    const next = applySetState({
+      activeTabId: "tab-1",
+      waiting: true,
+      queueCount: 2,
+      tabs: [
+        {
+          ...makeEmptyTab("tab-1", "Tab 1"),
+          model: "claude",
+          waiting: true,
+          queueCount: 2,
+        },
+      ],
+      sidebar: {},
+    });
+    expect(next.status).toBe("thinking…");
+    expect(next.connection).toBe("connected");
   });
 
   it("keeps the configured default model ahead of the bridge fallback", () => {
