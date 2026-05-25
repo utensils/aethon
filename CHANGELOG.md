@@ -6,6 +6,22 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-25
+
+### Fixed — Patch release
+
+- **Release reload loop fixed.** Bridge `ready` payloads now include the
+  current project cwd, and frontend hydration only re-announces the active
+  cwd when it differs. This prevents a release-session loop where
+  `ready` handling could repeatedly reload project resources, lag the app,
+  and leave the webview blank until a manual reload.
+- **Tab restore made idempotent.** Ready hydration no longer replays
+  `tab_open` for non-default tabs that the bridge already reported, avoiding
+  duplicate session restore churn after respawns and reloads.
+- **Reload snapshots bounded.** Session UI snapshots now sanitize terminal
+  buffers on load and save, keeping only the latest bounded entries so an
+  oversized saved shell transcript cannot make release recovery sluggish.
+
 ## [0.3.1] - 2026-05-25
 
 ### Fixed — Patch release
@@ -596,7 +612,8 @@ error?: string}>`. Backwards compatible: sync callers ignore the
   "Terminal" + "xterm.js · WebGL" badge).
 - **`SPEC.md` checklist** reconciled with what's actually shipped.
 
-[Unreleased]: https://github.com/utensils/aethon/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/utensils/aethon/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/utensils/aethon/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/utensils/aethon/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/utensils/aethon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/utensils/aethon/compare/v0.1.0...v0.2.0

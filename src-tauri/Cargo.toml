@@ -1,6 +1,6 @@
 [package]
 name = "aethon"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 license = "MIT"
 description = "Pi with a face — agent-driven desktop shell with A2UI"
