@@ -61,7 +61,7 @@ export interface UseChatActions {
   clearChat: () => void;
   sendChat: (
     text: string,
-    options?: { mode?: "normal" | "steer" },
+    options?: { mode?: "normal" | "steer"; tabId?: string },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
@@ -220,7 +220,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
 
   async function sendChat(
     text: string,
-    options?: { mode?: "normal" | "steer" },
+    options?: { mode?: "normal" | "steer"; tabId?: string },
   ) {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -234,7 +234,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
       if (cmd && !cmd.passthroughToAgent) {
         const slashTabId =
-          (stateRef.current.activeTabId as string | undefined) ?? "default";
+          options?.tabId ??
+          (stateRef.current.activeTabId as string | undefined) ??
+          "default";
         const slashUserMessage = {
           id: crypto.randomUUID(),
           role: "user" as const,
@@ -242,11 +244,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         };
         appendMessage(slashUserMessage, slashTabId);
         persistLocalChatMessage(slashUserMessage, slashTabId);
-        // Clear via updateActiveTab — without this, the active tab's
-        // draft still holds the slash text and any subsequent mirror
-        // (clearChat, theme switch, …) writes it back into root.draft,
-        // making the input "stick".
-        updateActiveTab((tab) => ({ ...tab, draft: "" }));
+        // Clear the target tab's draft — without this, the draft still
+        // holds the slash text and any subsequent mirror (clearChat,
+        // theme switch, …) writes it back into root.draft, making the
+        // input "stick". `tabId` is explicit for programmatic launches
+        // that should not depend on whatever tab is active by the time
+        // this async path runs.
+        updateTab(slashTabId, (tab) => ({ ...tab, draft: "" }));
         try {
           await cmd.run(parsed.args, slashContext());
         } catch (err) {
@@ -261,8 +265,17 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
     const mode = options?.mode === "steer" ? "steer" : "normal";
     const tabId =
-      (stateRef.current.activeTabId as string | undefined) ?? "default";
-    const wasBusy = stateRef.current.waiting === true;
+      options?.tabId ??
+      (stateRef.current.activeTabId as string | undefined) ??
+      "default";
+    const activeTabId = stateRef.current.activeTabId as string | undefined;
+    const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+      (tab) => tab.id === tabId,
+    );
+    const wasBusy =
+      targetTab?.waiting === true ||
+      ((targetTab === undefined || tabId === activeTabId) &&
+        stateRef.current.waiting === true);
     const delivery: ChatMessage["delivery"] =
       mode === "steer" && wasBusy
         ? "steered"

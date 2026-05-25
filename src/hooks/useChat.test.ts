@@ -106,6 +106,40 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("can send a programmatic prompt to an explicit non-active tab", async () => {
+    const mainTab = { ...makeEmptyTab("main-tab", "Main"), projectId: "p1" };
+    const issueTab = {
+      ...makeEmptyTab("issue-tab", "Issue #86"),
+      projectId: "p1",
+      cwd: "/projects/aethon-fix-86",
+    };
+    const { ctx, stateRef } = buildContext({
+      activeTabId: "main-tab",
+      tabs: [mainTab, issueTab],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("work on issue", { tabId: "issue-tab" });
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "work on issue",
+      tabId: "issue-tab",
+      mode: "normal",
+    });
+    const tabs = stateRef.current.tabs as Tab[];
+    expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
+    expect(
+      tabs.find((t) => t.id === "issue-tab")?.messages.at(-1),
+    ).toMatchObject({
+      role: "user",
+      text: "work on issue",
+      delivery: "sent",
+    });
+    expect(tabs.find((t) => t.id === "issue-tab")?.waiting).toBe(true);
+  });
+
   it("marks normal messages as queued while the active prompt is busy", async () => {
     const { ctx, stateRef } = buildContext({ waiting: true });
     const { result } = renderHook(() => useChat(ctx));

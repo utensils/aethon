@@ -6,6 +6,14 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Issue worktree task launches.** GitHub issue send-to-agent now targets
+  the newly-created task tab explicitly when forwarding the issue prompt,
+  so the first agent session starts in the fresh worktree and the sent
+  prompt appears in that tab's transcript instead of leaking to the main
+  project context.
+
 ## [0.3.2] - 2026-05-25
 
 ### Fixed — Patch release

@@ -767,7 +767,7 @@ export default function App() {
         }
       }
       const trimmed = opts.prompt.trim();
-      if (trimmed) await sendChat(trimmed);
+      if (trimmed) await sendChat(trimmed, { tabId });
     },
     [
       activateWorktree,
