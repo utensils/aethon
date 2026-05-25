@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::{AgentProcess, AgentReloadFlag, agent_reload_in_progress, env, project_root};
+use crate::{AgentProcesses, AgentReloadFlag, agent_reload_in_progress, env, project_root};
 
 // ─────────────────────────── menu items ────────────────────────────
 
@@ -471,44 +471,47 @@ fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, app: AppHandl
         // Quiet — ask the bridge to drain & respawn. Holds the child
         // alive (`as_mut`, not `take`) so an in-flight prompt's stdin
         // pipe stays open while pi finishes the turn.
-        let state: State<'_, AgentProcess> = app.state();
-        if let Ok(mut guard) = state.0.lock()
-            && let Some(child) = guard.as_mut()
-        {
-            // Capture pid before the mutable borrow on `child.stdin`
-            // so we can log it without the borrow-checker complaining
-            // about overlapping immutable + mutable borrows of `child`.
-            let pid = child.id();
-            let write_result = match child.stdin.as_mut() {
-                Some(stdin) => {
-                    writeln!(stdin, "{{\"type\":\"reload_request\"}}").and_then(|_| stdin.flush())
+        let state: State<'_, AgentProcesses> = app.state();
+        if let Ok(mut guard) = state.children.lock() {
+            let mut kill_keys = Vec::new();
+            for (key, child) in guard.iter_mut() {
+                // Capture pid before the mutable borrow on `child.stdin`
+                // so we can log it without the borrow-checker complaining
+                // about overlapping immutable + mutable borrows of `child`.
+                let pid = child.id();
+                let write_result = match child.stdin.as_mut() {
+                    Some(stdin) => writeln!(stdin, "{{\"type\":\"reload_request\"}}")
+                        .and_then(|_| stdin.flush()),
+                    None => Err(std::io::Error::other("agent stdin closed")),
+                };
+                match write_result {
+                    Ok(()) => {
+                        tracing::info!(
+                            target: "aethon::agent_watch",
+                            key = key,
+                            "asked pid={pid} to reload after {settle}ms settle (last paths={last_paths:?})",
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "aethon::agent_watch",
+                            key = key,
+                            "reload_request write failed for pid={pid}: {err}; falling back to kill",
+                        );
+                        kill_keys.push(key.clone());
+                    }
                 }
-                None => Err(std::io::Error::other("agent stdin closed")),
-            };
-            match write_result {
-                Ok(()) => {
-                    tracing::info!(
-                        target: "aethon::agent_watch",
-                        "asked pid={pid} to reload after {settle}ms settle (last paths={last_paths:?})",
-                    );
-                }
-                Err(err) => {
-                    // Stdin is closed — child is gone or wedged. Fall
-                    // back to the legacy hard-kill so the next request
-                    // lazily respawns. Mark intentional so the stdout
-                    // reader emits agent-reloaded, not agent-crashed.
-                    tracing::warn!(
-                        target: "aethon::agent_watch",
-                        "reload_request write failed for pid={pid}: {err}; falling back to kill",
-                    );
-                    let reload_flag = agent_reload_in_progress(&app);
-                    reload_flag.store(true, std::sync::atomic::Ordering::Release);
-                    if let Some(mut dead) = guard.take() {
+            }
+            if !kill_keys.is_empty() {
+                let reload_flag = agent_reload_in_progress(&app);
+                for key in kill_keys {
+                    if let Some(mut dead) = guard.remove(&key) {
+                        reload_flag.store(true, std::sync::atomic::Ordering::Release);
                         let _ = dead.kill();
                         let _ = dead.wait();
                     }
-                    let _ = app.emit("agent-reloaded", "");
                 }
+                let _ = app.emit("agent-reloaded", "");
             }
         }
     }
@@ -800,7 +803,7 @@ fn output_tail(stdout: &[u8], stderr: &[u8]) -> String {
 pub async fn install_aethon_extension(
     spec: String,
     app: AppHandle,
-    state: State<'_, AgentProcess>,
+    state: State<'_, AgentProcesses>,
     reload_flag: State<'_, AgentReloadFlag>,
 ) -> Result<String, String> {
     let spec = validate_extension_install_spec(&spec)?;
@@ -847,10 +850,9 @@ pub async fn install_aethon_extension(
     .map_err(|e| format!("install task failed: {e}"))?;
 
     let install_output = install_result?;
-    if let Ok(mut guard) = state.0.lock()
-        && let Some(mut child) = guard.take()
+    if let Ok(mut guard) = state.children.lock()
+        && !guard.is_empty()
     {
-        let pid = child.id();
         // Mark this kill as intentional BEFORE the actual kill — the
         // stdout reader's EOF handler reads this flag to decide whether
         // to fire `agent-crashed`. Without the flag, the EOF supervisor
@@ -860,10 +862,19 @@ pub async fn install_aethon_extension(
         reload_flag
             .0
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        let _ = child.kill();
-        let _ = child.wait();
+        for (key, mut child) in guard.drain() {
+            let pid = child.id();
+            reload_flag
+                .0
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = child.kill();
+            let _ = child.wait();
+            tracing::info!(target: "aethon::ext_install", key = key, "killed pid={pid}; will respawn with {spec}");
+        }
+        if let Ok(mut routes) = state.mutation_routes.lock() {
+            routes.clear();
+        }
         let _ = app.emit("agent-reloaded", "");
-        tracing::info!(target: "aethon::ext_install", "killed pid={pid}; will respawn with {spec}");
     }
 
     Ok(if install_output.trim().is_empty() {

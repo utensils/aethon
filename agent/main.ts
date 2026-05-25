@@ -97,6 +97,9 @@ async function main(): Promise<void> {
   const releaseMode = process.env.AETHON_RELEASE_MODE === "1";
   const bootLayoutFile = process.env.AETHON_BOOT_LAYOUT_FILE;
   const layoutSlotsFile = process.env.AETHON_LAYOUT_SLOTS_FILE;
+  const workerTabId = process.env.AETHON_WORKER_TAB_ID;
+  const workerCwd = process.env.AETHON_WORKER_CWD;
+  const workerMode = typeof workerTabId === "string" && workerTabId.length > 0;
   const { warnKb, hardKb } = resolveStateLimits(
     process.env.AETHON_STATE_WARN_KB,
     process.env.AETHON_STATE_HARD_KB,
@@ -244,7 +247,7 @@ async function main(): Promise<void> {
   // restores the registries from this snapshot.
   captureProjectExtensionBaseline(state);
 
-  const activeProjectCwd = await readActiveProjectCwd(userDir);
+  const activeProjectCwd = workerCwd ?? (await readActiveProjectCwd(userDir));
   const startupCwd = resolveStartupCwd(
     activeProjectCwd,
     projectRoot,
@@ -267,41 +270,46 @@ async function main(): Promise<void> {
   // Reload so the appendSystemPromptOverride sees the populated extensions.
   await state.resourceLoader.reload();
 
-  // -- Default tab -------------------------------------------------------
-  // Resolve the active project's cwd from disk so the default tab's
-  // session resume is scoped to the right project on first paint —
-  // otherwise a `default` session from a previously-active project
-  // leaks into whatever the user opens next (sessions/default/ is
-  // shared across project buckets).
-  state.tabProjectCwds.set("default", startupCwd);
   const tabDeps = { send };
-  await ensureTab(state, tabDeps, "default");
+  if (!workerMode) {
+    // -- Default tab -------------------------------------------------------
+    // Resolve the active project's cwd from disk so the default tab's
+    // session resume is scoped to the right project on first paint —
+    // otherwise a `default` session from a previously-active project
+    // leaks into whatever the user opens next (sessions/default/ is
+    // shared across project buckets).
+    state.tabProjectCwds.set("default", startupCwd);
+    await ensureTab(state, tabDeps, "default");
 
-  // -- Discover persisted sessions for the "Recent sessions" empty-state -
-  state.discoveredTabs = await discoverPersistedTabs(state);
+    // -- Discover persisted sessions for the "Recent sessions" empty-state -
+    state.discoveredTabs = await discoverPersistedTabs(state);
 
-  scheduleStateFileWrite();
-  emitReady(state, tabDeps);
+    scheduleStateFileWrite();
+    emitReady(state, tabDeps);
 
-  // Replay the default tab's persisted pi session history so all tabs use
-  // the same session_history IPC path. Scope the read by the SAME cwd
-  // `ensureTab` resolved against — when no project is active, both fall
-  // back to the startup cwd. Passing `undefined` here would let the
-  // replay surface the latest JSONL from any cwd while `ensureTab` (which
-  // filters via `findSessionFileMatchingCwd`) created an empty session,
-  // leaving the UI showing a leaked transcript that the agent cannot
-  // continue.
-  readSessionTranscript(tabSessionDir(state, "default"), startupCwd)
-    .then((messages) => {
-      if (messages.length > 0) {
-        send({ type: "session_history", tabId: "default", messages });
-      }
-    })
-    .catch((err: unknown) => {
-      logger
-        .scope("session")
-        .warn(`default tab history replay failed: ${(err as Error).message}`);
-    });
+    // Replay the default tab's persisted pi session history so all tabs use
+    // the same session_history IPC path. Scope the read by the SAME cwd
+    // `ensureTab` resolved against — when no project is active, both fall
+    // back to the startup cwd. Passing `undefined` here would let the
+    // replay surface the latest JSONL from any cwd while `ensureTab` (which
+    // filters via `findSessionFileMatchingCwd`) created an empty session,
+    // leaving the UI showing a leaked transcript that the agent cannot
+    // continue.
+    readSessionTranscript(tabSessionDir(state, "default"), startupCwd)
+      .then((messages) => {
+        if (messages.length > 0) {
+          send({ type: "session_history", tabId: "default", messages });
+        }
+      })
+      .catch((err: unknown) => {
+        logger
+          .scope("session")
+          .warn(`default tab history replay failed: ${(err as Error).message}`);
+      });
+  } else {
+    state.tabProjectCwds.set(workerTabId, startupCwd);
+    scheduleStateFileWrite();
+  }
 
   // -- Run the dispatcher ------------------------------------------------
   const dispatcherDeps = {

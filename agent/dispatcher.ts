@@ -49,6 +49,17 @@ import {
 } from "./session-history";
 import { saveDisabledExtensionsSnapshot } from "./disabled-extensions";
 
+const WORKER_MODE =
+  typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
+  process.env.AETHON_WORKER_TAB_ID.length > 0;
+
+function emitGlobalReady(
+  state: AethonAgentState,
+  deps: { send: (obj: Record<string, unknown>) => void },
+): void {
+  if (!WORKER_MODE) emitReady(state, deps);
+}
+
 export interface DispatcherDeps {
   send: (obj: Record<string, unknown>) => void;
   scheduleStateFileWrite: () => void;
@@ -259,6 +270,7 @@ export interface InboundMessage {
   content?: string;
   mode?: "normal" | "steer";
   cwd?: string;
+  model?: string;
   name?: string;
   args?: string;
   id?: string;
@@ -435,11 +447,17 @@ export async function handleChat(
   const tabId = msg.tabId ?? "default";
   const cwdOverride =
     typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
+  let initialModel: Model<Api> | undefined;
+  if (typeof msg.model === "string" && msg.model.length > 0) {
+    const [provider, ...rest] = msg.model.split("/");
+    initialModel =
+      state.modelRegistry.find(provider, rest.join("/")) ?? undefined;
+  }
   const tab = await ensureTab(
     state,
     deps,
     tabId,
-    cwdOverride ? { cwdOverride } : {},
+    cwdOverride || initialModel ? { cwdOverride, initialModel } : {},
   );
   const wantsSteer = msg.mode === "steer";
   if (wantsSteer && tab.promptInFlight) {
@@ -590,7 +608,7 @@ export async function runDispatcher(
           break;
         case "report": {
           markFrontendReady(state);
-          emitReady(state, deps);
+          emitGlobalReady(state, deps);
           break;
         }
         case "reload_request": {
@@ -877,7 +895,7 @@ export async function runDispatcher(
           command,
           message: `Session name set: ${nextName}`,
         });
-        emitReady(state, deps);
+        emitGlobalReady(state, deps);
         return;
       }
       case "export": {
@@ -958,7 +976,7 @@ export async function runDispatcher(
       if (result.loaded > 0 || result.failed > 0 || projectChanged) {
         await state.resourceLoader.reload();
         deps.scheduleStateFileWrite();
-        emitReady(state, deps);
+        emitGlobalReady(state, deps);
       }
     }
     const restoreHistory =
@@ -1011,7 +1029,7 @@ export async function runDispatcher(
         state.currentProjectCwd = null;
         await state.resourceLoader.reload();
         deps.scheduleStateFileWrite();
-        emitReady(state, deps);
+        emitGlobalReady(state, deps);
       }
       return;
     }
@@ -1077,7 +1095,7 @@ export async function runDispatcher(
           );
       }
       deps.scheduleStateFileWrite();
-      emitReady(state, deps);
+      emitGlobalReady(state, deps);
       if (projectChanged) {
         logger
           .scope("project-switch")
@@ -1279,7 +1297,7 @@ export async function runDispatcher(
       if (idx >= 0) state.discoveredTabs[idx] = entry;
       else state.discoveredTabs.push(entry);
     }
-    emitReady(state, deps);
+    emitGlobalReady(state, deps);
   }
 
   async function handleLocalChatMessage(
