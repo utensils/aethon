@@ -167,7 +167,8 @@
           "props": {
             "area": "canvas",
             "visible": { "$ref": "/landingVisible" },
-            "landing": { "$ref": "/landing" }
+            "landing": { "$ref": "/landing" },
+            "recentSessions": { "$ref": "/recentSessions" }
           }
         },
         {

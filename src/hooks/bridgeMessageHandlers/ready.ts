@@ -214,13 +214,14 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // records for so the same session isn't listed twice (open AND
   // restorable). Format the lastModified into a "10m ago"-style label
   // for the row's right-hand meta.
-  const knownIds = ctx.knownTabIds(
+  const localKnownIds = ctx.knownTabIds();
+  const bridgeKnownIds = ctx.knownTabIds(
     (data.tabs as { id: string }[] | undefined) ?? [],
   );
   const scopedDiscTabs = ctx.scopedDiscoveredSessions(discTabs);
-  const recentSessions = ctx.recentSessionItems(scopedDiscTabs, knownIds);
+  const recentSessions = ctx.recentSessionItems(scopedDiscTabs, localKnownIds);
   if (ctx.projectsLoadedRef.current) {
-    ctx.autoRestoreDiscoveredSessions(scopedDiscTabs, knownIds);
+    ctx.autoRestoreDiscoveredSessions(scopedDiscTabs, bridgeKnownIds);
   }
   // Restore any extension-supplied layout, then replay queued patches.
   // Falls back to the boot layout when none is reported so a removed /
