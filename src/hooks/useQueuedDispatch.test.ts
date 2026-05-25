@@ -17,7 +17,7 @@ function tabWithQueue(
 }
 
 describe("useQueuedDispatch", () => {
-  it("drains the head when waiting transitions false", () => {
+  it("drains the head when waiting transitions false and hands off to sendChat", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();
 
@@ -32,9 +32,13 @@ describe("useQueuedDispatch", () => {
     const next = mutator(idleTab);
     expect(next.queuedMessages).toEqual([]);
     expect(next.queueCount).toBe(0);
-    // Optimistic waiting=true keeps the composer's Stop button asserted
-    // across the drain transition so it doesn't flash Send.
-    expect(next.waiting).toBe(true);
+    // CRITICAL: do NOT pre-flip waiting=true here — sendChat reads
+    // stateRef synchronously, and would see the tab as busy if we
+    // did, routing the popped message right back into the queue.
+    // `sendChat`'s normal-dispatch path will set waiting=true; the
+    // pop + dispatch setStates batch into one render commit, so
+    // there's no visible Send-button flash either.
+    expect(next.waiting).toBe(false);
     expect(sendChat).toHaveBeenCalledWith("go", {
       mode: "normal",
       tabId: "tab-1",

@@ -235,6 +235,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       explicitTabId ??
       (stateRef.current.activeTabId as string | undefined) ??
       "default";
+    // The composer's Stop button advertises "Stop + clear" when the
+    // queue is non-empty; clear the client-held queue here so a user
+    // who stopped because they wanted *out* of the train can't have
+    // the next queued message drain on the following idle.
+    updateTab(tabId, (tab) =>
+      tab.queuedMessages.length === 0 ? tab : withQueue(tab, []),
+    );
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({ type: "stop", tabId }),

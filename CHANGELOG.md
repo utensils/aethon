@@ -22,6 +22,29 @@ All notable changes to Aethon. Format loosely follows
   button inside the settings panel's Extensions list for visual
   consistency. Failed-to-load extensions render the switch in a muted
   disabled state.
+- **Extension origin always visible + grouped.** The sidebar's
+  extensions list now sorts entries by origin (project-scoped first,
+  then user-scoped, then npm packages), alphabetical within each
+  group. Disabled rows preserve their origin label (`project ·
+  disabled` instead of just `disabled`) so the user can tell at a
+  glance which scope an extension came from even when every row is
+  toggled off.
+
+### Fixed
+
+- **Queue auto-drain reaches the bridge (peer-review P1).** The
+  optimistic `waiting=true` write inside `useQueuedDispatch` was
+  synchronously visible to `sendChat`, which treated the freshly
+  popped message as a new busy-state submit and re-queued it with a
+  new id, never invoking `send_message`. The drain now pops the head
+  only and lets `sendChat`'s normal-dispatch path flip `waiting` —
+  pop + dispatch setStates batch into one commit so there's still no
+  Send-button flash. Regression test added.
+- **Stop clears the client queue (peer-review P2).** `stopPrompt`
+  now empties the per-tab `queuedMessages` array before sending the
+  bridge `stop` command, so a user who hits the composer's
+  "Stop + clear" button actually clears the queue instead of letting
+  the next queued message drain on the following idle.
 
 ### Changed
 

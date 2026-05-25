@@ -103,18 +103,53 @@ export function filterExtensionSummariesByProject<
   });
 }
 
-function extensionSourceLabel(source: string): string {
+/** Canonical source classes used for sidebar grouping + sorting. Maps
+ *  the bridge-side enum onto three user-visible buckets: project-scoped
+ *  (.aethon/extensions inside the active project), user-scoped (the
+ *  global ~/.aethon/extensions directory), and packaged (npm). Unknown
+ *  values fall back to "user" so legacy disabled records (persisted
+ *  before source tracking landed) still group sensibly. */
+export type ExtensionKind = "project" | "user" | "package";
+
+export function classifyExtensionSource(
+  source: string | undefined,
+): ExtensionKind {
   switch (source) {
-    case "directory":
-    case "global-directory":
-      return "user";
     case "project-directory":
       return "project";
     case "extension-package":
       return "package";
+    case "directory":
+    case "global-directory":
+      return "user";
     default:
-      return source;
+      return "user";
   }
+}
+
+function extensionSourceLabel(source: string): string {
+  return classifyExtensionSource(source);
+}
+
+/** Sort comparator for the sidebar extensions list. Project-scoped
+ *  rows float to the top (those are the ones the user just enabled
+ *  for the active project and are most likely to be acting on),
+ *  user-scoped come next, then package, with alphabetical ordering
+ *  within each group. */
+const KIND_ORDER: Record<ExtensionKind, number> = {
+  project: 0,
+  user: 1,
+  package: 2,
+};
+
+function compareSidebarItems(
+  a: { kind: ExtensionKind; label: string },
+  b: { kind: ExtensionKind; label: string },
+): number {
+  const ka = KIND_ORDER[a.kind] ?? 99;
+  const kb = KIND_ORDER[b.kind] ?? 99;
+  if (ka !== kb) return ka - kb;
+  return a.label.localeCompare(b.label);
 }
 
 function normalizeDisabledRecord(
@@ -211,7 +246,15 @@ export function buildExtensionSidebarItems(
   // restart). Show it in the disabled bucket so the user sees their
   // pending intent, with a hint that a restart is needed to fully
   // unload it.
-  return [
+  //
+  // We carry a `kind` next to each item just long enough to do the
+  // group-then-alphabetical sort, then strip it when returning the
+  // public ExtensionSidebarItem shape. Disabled records ship the
+  // source through DisabledExtensionRecord.source when it's known —
+  // we fall back to lookup-by-name against the live `loaded` list
+  // so an extension toggled off this session still reads as project /
+  // user / package instead of an unattributed "disabled".
+  const decorated: Array<ExtensionSidebarItem & { kind: ExtensionKind }> = [
     ...scopedLoaded
       .filter((e) => !CORE_EXTENSION_NAMES.has(e.name))
       .filter((e) => !disabledSet.has(e.name))
@@ -220,6 +263,7 @@ export function buildExtensionSidebarItems(
         label: e.name,
         hint: extensionSourceLabel(e.source),
         active: true,
+        kind: classifyExtensionSource(e.source),
       })),
     ...scopedFailed
       .filter((e) => !CORE_EXTENSION_NAMES.has(e.name))
@@ -229,19 +273,34 @@ export function buildExtensionSidebarItems(
         label: e.name,
         hint: `${extensionSourceLabel(e.source)} · failed`,
         active: false,
+        kind: classifyExtensionSource(e.source),
       })),
     ...scopedDisabled
       .filter((d) => !CORE_EXTENSION_NAMES.has(d.name))
       .map((d) => {
         const stillLoaded = loaded.some((e) => e.name === d.name);
+        // Prefer the source persisted with the disabled record; fall
+        // back to the live `loaded` entry for the same name so a
+        // mid-session toggle keeps its origin label, then to "user"
+        // for legacy records that pre-date source tracking.
+        const inferredSource =
+          d.source ?? loaded.find((e) => e.name === d.name)?.source;
+        const kind = classifyExtensionSource(inferredSource);
+        const origin = extensionSourceLabel(inferredSource ?? "directory");
         return {
           id: `ext-disabled:${d.name}`,
           label: d.name,
-          hint: stillLoaded ? "disabled · restart" : "disabled",
+          hint: stillLoaded
+            ? `${origin} · disabled · restart`
+            : `${origin} · disabled`,
           active: false,
+          kind,
         };
       }),
   ];
+  return decorated
+    .sort(compareSidebarItems)
+    .map(({ kind: _kind, ...item }) => item);
 }
 
 /** Built-in themes always available. CSS for these lives in src/styles/themes.css —

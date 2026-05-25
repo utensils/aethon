@@ -53,9 +53,15 @@ export function useQueuedDispatch({
       const head = queue[0];
       dispatchingRef.current.add(tab.id);
 
-      // Optimistic: pop the head AND flip waiting back to true in a
-      // single render commit so the composer button doesn't flash from
-      // Stop → Send → Stop between turns.
+      // Pop the head only. `sendChat`'s normal-dispatch path is
+      // responsible for re-flipping `waiting` to true (and the user
+      // message into history). The pop + sendChat's three setState
+      // calls batch into a single render commit, so the composer
+      // doesn't flash Send between turns despite waiting briefly
+      // reading as false in this body. Pre-flipping waiting here
+      // breaks the drain: sendChat reads stateRef synchronously,
+      // sees waiting=true, and routes the popped message right back
+      // into the queue with a new id.
       updateTab(tab.id, (t) => {
         const current = t.queuedMessages ?? [];
         if (current.length === 0) return t;
@@ -64,7 +70,6 @@ export function useQueuedDispatch({
           ...t,
           queuedMessages: next,
           queueCount: next.length,
-          waiting: true,
         };
       });
 

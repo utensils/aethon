@@ -291,6 +291,68 @@ describe("useChat setModel", () => {
     expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
   });
 
+  it("stopPrompt empties the client-held queue (regression: P2 from peer review)", async () => {
+    // The composer's "Stop + clear" button advertises queue clearing.
+    // Without this, queued messages survived the stop and drained on
+    // the next idle, executing prompts the user had just tried to
+    // cancel.
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("a");
+      await result.current.sendChat("b");
+      await result.current.sendChat("c");
+    });
+    expect(
+      (stateRef.current.tabs as Tab[])[0].queuedMessages,
+    ).toHaveLength(3);
+
+    await act(async () => {
+      await result.current.stopPrompt("tab-1");
+    });
+
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    expect(tab.queuedMessages).toEqual([]);
+    expect(tab.queueCount).toBe(0);
+    expect(invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({ type: "stop", tabId: "tab-1" }),
+    });
+  });
+
+  it("drained queued messages actually reach invoke('send_message') (regression: P1 from peer review)", async () => {
+    // Reproduces the bug Codex flagged: useQueuedDispatch previously
+    // flipped waiting=true *before* calling sendChat. Because the
+    // store mutation is synchronous, sendChat saw the tab as busy
+    // and re-queued the popped message with a fresh id, never
+    // hitting the bridge. The fix pops the head only and lets
+    // sendChat's normal path flip waiting itself.
+    const { ctx, stateRef } = buildContext({ waiting: false });
+    const { result } = renderHook(() => useChat(ctx));
+
+    // Simulate useQueuedDispatch's contract: pop head, hand off to sendChat.
+    act(() => {
+      ctx.updateTab("tab-1", (t) => ({
+        ...t,
+        queuedMessages: [],
+        queueCount: 0,
+      }));
+    });
+    await act(async () => {
+      await result.current.sendChat("drained", { mode: "normal", tabId: "tab-1" });
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "drained",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    expect(tab.queuedMessages).toEqual([]);
+    expect(tab.waiting).toBe(true);
+    expect(tab.messages.some((m) => m.text === "drained")).toBe(true);
+  });
+
   it("marks the local user message failed when send_message rejects", async () => {
     invoke.mockRejectedValueOnce(new Error("bridge closed"));
     const { ctx, stateRef } = buildContext();
