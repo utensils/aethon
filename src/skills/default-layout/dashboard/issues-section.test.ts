@@ -1,5 +1,83 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { createElement } from "react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { IssuesSection } from "./issues-section";
 import { buildIssueBranch, buildIssuePrompt } from "./issue-task";
+import type { GhIssue } from "../../../ghIssuesCache";
+
+const { getIssues, getIssueDetail, openUrl } = vi.hoisted(() => ({
+  getIssues: vi.fn(),
+  getIssueDetail: vi.fn(),
+  openUrl: vi.fn(),
+}));
+
+vi.mock("../../../ghIssuesCache", () => ({
+  getIssues: (...args: unknown[]) => getIssues(...args),
+  getIssueDetail: (...args: unknown[]) => getIssueDetail(...args),
+  refreshIssues: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: (...args: unknown[]) => openUrl(...args),
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+const issue: GhIssue = {
+  number: 85,
+  title: "Cannot rename session tab while agent is running",
+  url: "https://github.com/utensils/aethon/issues/85",
+  state: "open",
+  author: "jamesbrink",
+  updatedAt: "2026-05-25T15:00:00Z",
+  labels: [{ name: "bug", color: "d73a4a" }],
+  comments: 0,
+};
+
+function renderIssues(onEvent = vi.fn()) {
+  getIssues.mockResolvedValue([issue]);
+  getIssueDetail.mockResolvedValue({
+    ...issue,
+    body: "Rename should stay available.",
+  });
+  render(
+    createElement(IssuesSection, {
+      component: {
+        id: "issues",
+        type: "issues-section",
+        props: {
+          project: { id: "p1", label: "aethon", path: "/repo/aethon" },
+        },
+      },
+      state: {
+        activeWorktreeId: "wt-current",
+        sidebar: {
+          projects: [
+            {
+              id: "p1",
+              worktrees: [
+                { id: "wt-current", branch: "fix/current", active: true },
+                { id: "wt-other", branch: "fix/issue-85-existing" },
+              ],
+            },
+          ],
+        },
+      },
+      onEvent,
+    }),
+  );
+  return { onEvent };
+}
 
 describe("issues-section task helpers", () => {
   it("builds a descriptive issue branch and avoids loaded collisions", () => {
@@ -98,5 +176,70 @@ describe("issues-section task helpers", () => {
         author: "octo",
       }),
     ).toContain("Please work on GitHub issue #7");
+  });
+});
+
+describe("IssuesSection", () => {
+  it("sends the hover action to a fresh worktree by default", async () => {
+    const { onEvent } = renderIssues();
+
+    await screen.findByText(issue.title);
+    fireEvent.click(screen.getByRole("button", { name: /send issue #85/i }));
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p1",
+          newWorktree: true,
+          branch: expect.stringMatching(/^fix\/issue-85-/),
+          source: "github-issue",
+          issueNumber: 85,
+        }),
+        "issue-85",
+      ),
+    );
+  });
+
+  it("offers both new-worktree and current-worktree launches in the context menu", async () => {
+    renderIssues();
+
+    await screen.findByText(issue.title);
+    fireEvent.contextMenu(screen.getByText(issue.title).closest("li")!);
+
+    expect(
+      screen.getByRole("menuitem", { name: "Send to agent (new worktree)" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", {
+        name: "Send to agent (current worktree/branch)",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("sends context-menu current worktree launches to the active worktree", async () => {
+    const { onEvent } = renderIssues();
+
+    await screen.findByText(issue.title);
+    fireEvent.contextMenu(screen.getByText(issue.title).closest("li")!);
+    fireEvent.click(
+      screen.getByRole("menuitem", {
+        name: "Send to agent (current worktree/branch)",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p1",
+          newWorktree: false,
+          worktreeId: "wt-current",
+          source: "github-issue",
+          issueNumber: 85,
+        }),
+        "issue-85",
+      ),
+    );
   });
 });

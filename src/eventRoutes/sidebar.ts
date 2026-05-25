@@ -185,12 +185,10 @@ export const handleSidebarCreateWorktree: EventRouteHandler = (
   return true;
 };
 /**
- * switch-worktree: route the user to a landing page for the selected
- * worktree instead of activating it immediately. The landing presents
- * a "Start Session" CTA that fires `start-session`, which is where the
- * actual `activateWorktree` + new-tab flow happens. Pulling the landing
- * in between gives us a place to surface branch metadata (cwd, branch
- * name, GitHub status) before the user commits to a fresh session.
+ * switch-worktree: switch to the selected worktree's session scope and
+ * route the user to its landing page. The landing presents a
+ * "Start Session" CTA that fires `start-session`, which opens a fresh
+ * agent tab inside that already-selected scope.
  */
 export const handleSidebarSwitchWorktree: EventRouteHandler = (
   { eventType, data },
@@ -227,6 +225,26 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
   for (const project of sidebar.projects ?? []) {
     const worktree = project.worktrees?.find((w) => w.id === worktreeId);
     if (worktree) {
+      ctx.activateWorktree(worktreeId);
+      const tabs = Array.isArray(ctx.stateRef.current.tabs)
+        ? ctx.stateRef.current.tabs
+        : [];
+      const activeTabId = ctx.stateRef.current.activeTabId;
+      const hasVisibleSession =
+        tabs.length > 0 &&
+        (typeof activeTabId !== "string" ||
+          tabs.some((tab) => {
+            return (
+              tab &&
+              typeof tab === "object" &&
+              "id" in tab &&
+              tab.id === activeTabId
+            );
+          }));
+      if (hasVisibleSession) {
+        ctx.setState((prev) => ({ ...prev, landing: null }));
+        return true;
+      }
       ctx.setState((prev) => ({
         ...prev,
         landing: {

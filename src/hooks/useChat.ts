@@ -149,28 +149,36 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       const messages = [...tab.messages];
       if (messageId) {
         const idx = messages.findIndex((m) => m.id === messageId);
+        let nextMessage: ChatMessage;
         if (idx >= 0) {
-          messages[idx] = {
+          nextMessage = {
             ...messages[idx],
             [channel]: (messages[idx][channel] ?? "") + delta,
           };
+          messages[idx] = nextMessage;
         } else {
-          messages.push({ id: messageId, role: "agent", [channel]: delta });
+          nextMessage = { id: messageId, role: "agent", [channel]: delta };
+          messages.push(nextMessage);
         }
         activeResponseIdRef.current = messageId;
+        persistLocalChatMessage(nextMessage, id);
         return { ...tab, messages };
       }
       const activeId = activeResponseIdRef.current;
       const last = messages[messages.length - 1];
       if (activeId && last && last.id === activeId && last.role === "agent") {
-        messages[messages.length - 1] = {
+        const nextMessage = {
           ...last,
           [channel]: (last[channel] ?? "") + delta,
         };
+        messages[messages.length - 1] = nextMessage;
+        persistLocalChatMessage(nextMessage, id);
       } else {
         const newId = crypto.randomUUID();
         activeResponseIdRef.current = newId;
-        messages.push({ id: newId, role: "agent", [channel]: delta });
+        const nextMessage = { id: newId, role: "agent" as const, [channel]: delta };
+        messages.push(nextMessage);
+        persistLocalChatMessage(nextMessage, id);
       }
       return { ...tab, messages };
     });
@@ -283,10 +291,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           ? "queued"
           : "sent";
     const userMessageId = crypto.randomUUID();
-    appendMessage(
-      { id: userMessageId, role: "user", text: sendText, delivery },
-      tabId,
-    );
+    const userMessage = {
+      id: userMessageId,
+      role: "user" as const,
+      text: sendText,
+      delivery,
+    };
+    appendMessage(userMessage, tabId);
     updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
     setState((prev) =>
       prev.activeTabId === tabId
@@ -310,8 +321,18 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         /* ignore */
       }
     }
+    persistLocalChatMessage(userMessage, tabId);
+    const targetCwd =
+      typeof targetTab?.cwd === "string" && targetTab.cwd.length > 0
+        ? targetTab.cwd
+        : undefined;
     try {
-      await invoke("send_message", { message: sendText, tabId, mode });
+      await invoke("send_message", {
+        message: sendText,
+        tabId,
+        mode,
+        ...(targetCwd ? { cwd: targetCwd } : {}),
+      });
     } catch (err) {
       updateTab(tabId, (tab) => ({
         ...tab,

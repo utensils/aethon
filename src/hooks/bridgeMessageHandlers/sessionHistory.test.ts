@@ -84,4 +84,64 @@ describe("handleSessionHistory", () => {
     const out = updater(makeEmptyTab("default", "Custom label"));
     expect(out.label).toBe("Custom label");
   });
+
+  it("preserves a pending launch prompt when restored history has not recorded it yet", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [{ id: "agent-1", role: "agent", text: "Working" }],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      messages: [
+        {
+          id: "local-prompt",
+          role: "user",
+          text: "Fix issue 85",
+          delivery: "sent",
+        },
+      ],
+    });
+    expect(out.messages).toEqual([
+      expect.objectContaining({
+        id: "local-prompt",
+        role: "user",
+        text: "Fix issue 85",
+      }),
+      expect.objectContaining({ id: "agent-1", role: "agent" }),
+    ]);
+  });
+
+  it("does not duplicate a pending prompt already present in restored history", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [{ id: "restored-user", role: "user", text: "Fix issue 85" }],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      messages: [
+        {
+          id: "local-prompt",
+          role: "user",
+          text: "Fix issue 85",
+          delivery: "sent",
+        },
+      ],
+    });
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0]).toMatchObject({ id: "restored-user" });
+  });
 });

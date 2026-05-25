@@ -74,6 +74,17 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     data.currentProjectCwd.length > 0
       ? data.currentProjectCwd
       : null;
+  const priorActiveTabId =
+    (ctx.stateRef.current.activeTabId as string | undefined) ?? "default";
+  const priorActiveTab = (
+    (ctx.stateRef.current.tabs as Tab[] | undefined) ?? []
+  ).find((t) => t.id === priorActiveTabId);
+  const priorActiveTabCwd =
+    priorActiveTab?.kind !== "shell" &&
+    typeof priorActiveTab?.cwd === "string" &&
+    priorActiveTab.cwd.length > 0
+      ? priorActiveTab.cwd
+      : null;
   // Cache pi's default model so new tabs created before `ready` fires
   // (or before a session's model initialises) can inherit it immediately
   // instead of showing blank "model ▼".
@@ -454,10 +465,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // refreshed resources, so only announce when the bridge reports a
   // different cwd. Otherwise a ready -> set_project -> ready loop can
   // monopolize the release app and blank the webview.
-  const activePath = activeCwd(ctx.projectsRef.current);
+  const projectActivePath = activeCwd(ctx.projectsRef.current);
+  const activePath = ctx.projectsRef.current.activeWorktreeId
+    ? projectActivePath
+    : (priorActiveTabCwd ?? projectActivePath);
   if (activePath && currentProjectCwd !== activePath) {
-    const activeTabId =
-      (ctx.stateRef.current.activeTabId as string | undefined) ?? "default";
-    ctx.announceProjectToBridge(activeTabId, activePath);
+    ctx.announceProjectToBridge(priorActiveTabId, activePath);
   }
 };

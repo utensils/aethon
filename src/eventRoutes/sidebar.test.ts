@@ -7,6 +7,7 @@ import {
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
   handleSidebarSetProjectWorktreeBase,
+  handleSidebarSwitchWorktree,
   handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
@@ -263,6 +264,75 @@ describe("handleSidebarToggleExtension", () => {
     );
     expect(handled).toBe(false);
     expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleSidebarSwitchWorktree", () => {
+  const sidebarState = {
+    sidebar: {
+      projects: [
+        {
+          id: "proj-1",
+          label: "aethon",
+          worktrees: [
+            {
+              id: "wt-1",
+              label: "fix/issue",
+              branch: "fix/issue",
+              path: "/repo/aethon-fix-issue",
+              isMain: false,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  it("shows the landing when switching to an empty worktree scope", async () => {
+    const { ctx, applySetState } = buildRouteFixture({ state: sidebarState });
+
+    const handled = await handleSidebarSwitchWorktree(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-worktree",
+        data: { worktreeId: "wt-1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(applySetState().landing).toMatchObject({
+      kind: "worktree",
+      projectId: "proj-1",
+      worktreeId: "wt-1",
+      path: "/repo/aethon-fix-issue",
+    });
+  });
+
+  it("reveals an existing worktree session instead of covering it with landing", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: sidebarState,
+    });
+    mocks.activateWorktree.mockImplementation(() => {
+      ctx.stateRef.current = {
+        ...ctx.stateRef.current,
+        tabs: [{ id: "tab-1", kind: "agent", cwd: "/repo/aethon-fix-issue" }],
+        activeTabId: "tab-1",
+      };
+    });
+
+    const handled = await handleSidebarSwitchWorktree(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-worktree",
+        data: { worktreeId: "wt-1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(applySetState().landing).toBeNull();
   });
 });
 

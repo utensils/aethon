@@ -258,6 +258,7 @@ export interface InboundMessage {
   type: string;
   content?: string;
   mode?: "normal" | "steer";
+  cwd?: string;
   name?: string;
   args?: string;
   id?: string;
@@ -432,7 +433,14 @@ export async function handleChat(
     return;
   }
   const tabId = msg.tabId ?? "default";
-  const tab = await ensureTab(state, deps, tabId);
+  const cwdOverride =
+    typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
+  const tab = await ensureTab(
+    state,
+    deps,
+    tabId,
+    cwdOverride ? { cwdOverride } : {},
+  );
   const wantsSteer = msg.mode === "steer";
   if (wantsSteer && tab.promptInFlight) {
     state.currentAgentTabId = tabId;
@@ -1292,6 +1300,7 @@ export async function runDispatcher(
     const record = payload as Record<string, unknown>;
     const role = record.role;
     const text = record.text;
+    const thinking = record.thinking;
     if (role !== "user" && role !== "agent" && role !== "system") {
       deps.send({
         type: "notice",
@@ -1300,11 +1309,13 @@ export async function runDispatcher(
       });
       return;
     }
-    if (typeof text !== "string" || text.length === 0) {
+    const hasText = typeof text === "string" && text.length > 0;
+    const hasThinking = typeof thinking === "string" && thinking.length > 0;
+    if (!hasText && !hasThinking) {
       deps.send({
         type: "notice",
         tabId,
-        message: "local_chat_message: empty text",
+        message: "local_chat_message: empty message",
       });
       return;
     }
@@ -1320,7 +1331,8 @@ export async function runDispatcher(
             ? record.id
             : randomUUID(),
         role,
-        text,
+        ...(hasText ? { text } : {}),
+        ...(hasThinking ? { thinking } : {}),
         ...(localCwd ? { cwd: localCwd } : {}),
         ...(typeof record.createdAt === "number"
           ? { createdAt: record.createdAt }

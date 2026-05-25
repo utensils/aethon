@@ -151,6 +151,67 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("does not duplicate local prompt snapshots already present in pi history", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Please work on issue 85" }],
+        },
+      })}\n${JSON.stringify({
+        type: "message",
+        id: "pi-agent",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Working on it" }],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "local-user",
+      role: "user",
+      text: "Please work on issue 85",
+      createdAt: 1,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-user", role: "user", text: "Please work on issue 85" },
+      { id: "pi-agent", role: "agent", text: "Working on it" },
+    ]);
+  });
+
+  it("keeps the latest local assistant snapshot for stopped turns", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "agent-live",
+      role: "agent",
+      thinking: "Inspecting",
+      createdAt: 1,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "agent-live",
+      role: "agent",
+      thinking: "Inspecting\nReading files",
+      text: "Partial answer",
+      createdAt: 2,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "agent-live",
+        role: "agent",
+        thinking: "Inspecting\nReading files",
+        text: "Partial answer",
+        createdAt: 2,
+      },
+    ]);
+  });
+
   it("bounds the Aethon-local slash command overlay on append", async () => {
     const dir = await tempRoot();
     await writeFile(

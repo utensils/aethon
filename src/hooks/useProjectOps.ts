@@ -6,7 +6,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import { NO_PROJECT_KEY, projectBucketKey, type Tab } from "../types/tab";
+import { NO_PROJECT_KEY, type Tab } from "../types/tab";
 import {
   DEFAULT_WORKTREE_BASE_BRANCH,
   activeCwd,
@@ -178,12 +178,25 @@ export interface UseProjectOpsActions {
   ) => { project: Project; worktree: Worktree } | null;
 }
 
+const WORKTREE_BUCKET_SEPARATOR = "::worktree::";
+
 function normalizeSessionPath(path: string | undefined): string {
   return (path ?? "").replace(/[/\\]+$/, "");
 }
 
 export function projectIdFromBucketKey(key: string): string | null {
-  return key === NO_PROJECT_KEY ? null : key;
+  if (key === NO_PROJECT_KEY) return null;
+  return key.split(WORKTREE_BUCKET_SEPARATOR, 1)[0] || null;
+}
+
+export function projectScopeBucketKey(
+  projectId: string | null | undefined,
+  worktreeId: string | null | undefined,
+): string {
+  if (!projectId) return NO_PROJECT_KEY;
+  return worktreeId
+    ? `${projectId}${WORKTREE_BUCKET_SEPARATOR}${worktreeId}`
+    : projectId;
 }
 
 export function tabsForProjectBucket(tabs: Tab[], bucketKey: string): Tab[] {
@@ -209,6 +222,34 @@ export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
       tab.terminalBuffer.length > 0
     );
   });
+}
+
+export function worktreeIdForCwd(
+  projects: ProjectsState,
+  cwd: string | undefined,
+  projectId?: string | null,
+): string | null | undefined {
+  const target = normalizeSessionPath(cwd);
+  if (!target) return undefined;
+  const orderedProjectIds = [
+    ...(projectId ? [projectId] : []),
+    ...(projects.activeId && projects.activeId !== projectId
+      ? [projects.activeId]
+      : []),
+    ...projects.projects
+      .map((p) => p.id)
+      .filter((id) => id !== projectId && id !== projects.activeId),
+  ];
+  for (const id of orderedProjectIds) {
+    const project = projects.projects.find((p) => p.id === id);
+    if (!project) continue;
+    if (normalizeSessionPath(project.path) === target) return null;
+    const worktree = (projects.worktreesByProject[id] ?? []).find(
+      (w) => normalizeSessionPath(w.path) === target,
+    );
+    if (worktree) return worktree.isMain ? null : worktree.id;
+  }
+  return undefined;
 }
 
 /**
@@ -425,6 +466,11 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
         ...sidebar,
         projects: ps.projects.map((p) => {
           const wts = ps.worktreesByProject[p.id] ?? [];
+          const projectIsActive = p.id === ps.activeId;
+          const activeWorktreeBelongsToProject =
+            projectIsActive &&
+            !!ps.activeWorktreeId &&
+            wts.some((w) => w.id === ps.activeWorktreeId && !w.isMain);
           return {
             id: p.id,
             // Basename is what we surface; the absolute path lives
@@ -433,7 +479,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
             label: p.label,
             tooltip: p.path,
             iconUrl: p.iconUrl,
-            active: p.id === ps.activeId,
+            active: projectIsActive && !activeWorktreeBelongsToProject,
             git: gitStatusRef.current.get(p.path),
             expanded: p.uiExpanded === true,
             worktrees: wts.map((w) => ({
@@ -580,7 +626,10 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   }
 
   function openProjectByPath(path: string, label?: string): string {
-    const fromKey = projectBucketKey(projectsRef.current.activeId);
+    const fromKey = projectScopeBucketKey(
+      projectsRef.current.activeId,
+      projectsRef.current.activeWorktreeId,
+    );
     const { state: nextProjects, id } = upsertProject(
       projectsRef.current,
       path,
@@ -593,9 +642,13 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     // Switch to the project's tab bucket BEFORE notifying the bridge.
     // If this is a brand-new project, the bucket is empty and the empty
     // state composite renders until the user explicitly creates a tab.
-    const nextTabId = switchProjectBucket(fromKey, projectBucketKey(id), {
-      mirrorProjects: true,
-    });
+    const nextTabId = switchProjectBucket(
+      fromKey,
+      projectScopeBucketKey(id, null),
+      {
+        mirrorProjects: true,
+      },
+    );
     scheduleProjectsSave();
     const tabId = nextTabId ?? "default";
     announceProjectToBridge(tabId, path);
@@ -606,8 +659,8 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     const ps = projectsRef.current;
     const target = ps.projects.find((p) => p.id === id);
     if (!target) return false;
-    const fromKey = projectBucketKey(ps.activeId);
-    const toKey = projectBucketKey(id);
+    const fromKey = projectScopeBucketKey(ps.activeId, ps.activeWorktreeId);
+    const toKey = projectScopeBucketKey(id, null);
     const previousActive = activeProject(ps);
     projectsRef.current = {
       ...ps,
@@ -639,7 +692,10 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   }
 
   function clearActiveProject() {
-    const fromKey = projectBucketKey(projectsRef.current.activeId);
+    const fromKey = projectScopeBucketKey(
+      projectsRef.current.activeId,
+      projectsRef.current.activeWorktreeId,
+    );
     const previousActive = activeProject(projectsRef.current);
     projectsRef.current = {
       ...projectsRef.current,
@@ -656,9 +712,12 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   }
 
   function removeProjectById(id: string): boolean {
-    const fromKey = projectBucketKey(projectsRef.current.activeId);
+    const fromKey = projectScopeBucketKey(
+      projectsRef.current.activeId,
+      projectsRef.current.activeWorktreeId,
+    );
     const wasActive = projectsRef.current.activeId === id;
-    const removedKey = projectBucketKey(id);
+    const removedKey = projectScopeBucketKey(id, null);
     const result = removeProject(projectsRef.current, id);
     if (!result.removed) return false;
 
@@ -816,13 +875,34 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   }
 
   function activateWorktree(worktreeId: string | null): void {
-    if (projectsRef.current.activeWorktreeId === worktreeId) return;
+    const current = projectsRef.current;
+    if (current.activeWorktreeId === worktreeId) return;
+    const fromKey = projectScopeBucketKey(
+      current.activeId,
+      current.activeWorktreeId,
+    );
+    let activeProjectId = current.activeId;
+    let nextCwd: string | null;
+    if (worktreeId) {
+      const hit = findProjectOfWorktree(worktreeId);
+      if (!hit) return;
+      activeProjectId = hit.project.id;
+      nextCwd = hit.worktree.path;
+    } else {
+      const project = activeProject(current);
+      nextCwd = project?.path ?? null;
+    }
     projectsRef.current = setActiveWorktreeState(
-      projectsRef.current,
+      { ...current, activeId: activeProjectId },
       worktreeId,
     );
-    setState((prev) => ({ ...prev, ...buildProjectsMirror(prev) }));
+    const nextTabId = switchProjectBucket(
+      fromKey,
+      projectScopeBucketKey(activeProjectId, worktreeId),
+      { mirrorProjects: true },
+    );
     scheduleProjectsSave();
+    announceProjectToBridge(nextTabId ?? "default", nextCwd);
   }
 
   function resolveWorktreeBaseBranch(

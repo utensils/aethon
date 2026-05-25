@@ -67,6 +67,7 @@ export interface RestoredChatMessage {
   id: string;
   role: "user" | "agent" | "system";
   text?: string;
+  thinking?: string;
   createdAt?: number;
   cwd?: string;
 }
@@ -123,13 +124,16 @@ export async function appendLocalChatMessage(
 ): Promise<void> {
   if (!isChatRole(message.role)) return;
   const text = typeof message.text === "string" ? trimText(message.text) : "";
-  if (!text) return;
+  const thinking =
+    typeof message.thinking === "string" ? trimText(message.thinking) : "";
+  if (!text && !thinking) return;
   await mkdir(sessionDir, { recursive: true });
   const entry = {
     type: "aethon_chat",
     id: message.id || randomUUID(),
     role: message.role,
-    text,
+    ...(text ? { text } : {}),
+    ...(thinking ? { thinking } : {}),
     createdAt:
       typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
         ? message.createdAt
@@ -152,7 +156,7 @@ function parseLocalChatLines(
   expectedCwd?: string,
 ): RestoredChatMessage[] {
   const messages: RestoredChatMessage[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   const targetCwd = normalizeCwd(expectedCwd);
   for (const line of lines) {
     const trimmed = line.trim();
@@ -175,22 +179,30 @@ function parseLocalChatLines(
       continue;
     }
     const text = typeof record.text === "string" ? trimText(record.text) : "";
-    if (!text) continue;
+    const thinking =
+      typeof record.thinking === "string" ? trimText(record.thinking) : "";
+    if (!text && !thinking) continue;
     const id =
       typeof record.id === "string" && record.id.length > 0
         ? record.id
         : `aethon-local-${messages.length}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    messages.push({
+    const message = {
       id,
       role: record.role,
-      text,
+      ...(text ? { text } : {}),
+      ...(thinking ? { thinking } : {}),
       ...(typeof record.createdAt === "number"
         ? { createdAt: record.createdAt }
         : {}),
       ...(entryCwd ? { cwd: entryCwd } : {}),
-    });
+    };
+    const existingIndex = seen.get(id);
+    if (existingIndex !== undefined) {
+      messages[existingIndex] = message;
+    } else {
+      seen.set(id, messages.length);
+      messages.push(message);
+    }
   }
   return messages;
 }
@@ -220,7 +232,8 @@ async function pruneLocalChatFile(path: string): Promise<void> {
           type: "aethon_chat",
           id: m.id,
           role: m.role,
-          text: m.text,
+          ...(m.text ? { text: m.text } : {}),
+          ...(m.thinking ? { thinking: m.thinking } : {}),
           ...(typeof m.createdAt === "number" ? { createdAt: m.createdAt } : {}),
           ...(m.cwd ? { cwd: m.cwd } : {}),
         }),
@@ -278,6 +291,34 @@ export function parseSessionHistoryLines(lines: Iterable<string>): RestoredChatM
   }
 
   return messages.slice(-MAX_RESTORED_MESSAGES);
+}
+
+function comparableMessageText(message: RestoredChatMessage): string | undefined {
+  const value = message.text ?? message.thinking;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function dedupeLocalMessages(
+  piMessages: RestoredChatMessage[],
+  localMessages: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  const seenIds = new Set(piMessages.map((message) => message.id));
+  const seenContent = new Set(
+    piMessages
+      .map((message) => {
+        const text = comparableMessageText(message);
+        return text ? `${message.role}\0${text}` : undefined;
+      })
+      .filter((value): value is string => Boolean(value)),
+  );
+  return localMessages.filter((message) => {
+    if (seenIds.has(message.id)) return false;
+    const text = comparableMessageText(message);
+    if (!text) return true;
+    return !seenContent.has(`${message.role}\0${text}`);
+  });
 }
 
 async function readSessionHeaderCwd(path: string): Promise<string | undefined> {
@@ -476,5 +517,6 @@ export async function readSessionTranscript(
 
   const raw = await readFile(path, "utf8");
   const piMessages = parseSessionHistoryLines(raw.split(/\r?\n/));
-  return [...piMessages, ...localMessages].slice(-MAX_RESTORED_MESSAGES);
+  const localOnly = dedupeLocalMessages(piMessages, localMessages);
+  return [...piMessages, ...localOnly].slice(-MAX_RESTORED_MESSAGES);
 }

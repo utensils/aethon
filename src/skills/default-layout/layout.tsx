@@ -225,7 +225,11 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   };
   const projects =
     (resolveValue(state, "/sidebar/projects") as SidebarProj[] | undefined) ?? [];
-  const active = projects.find((p) => p.active === true);
+  const activeProjectId = resolveValue(state, "/activeProjectId");
+  const active =
+    (typeof activeProjectId === "string"
+      ? projects.find((p) => p.id === activeProjectId)
+      : undefined) ?? projects.find((p) => p.active === true);
   const activeWt = active?.worktrees?.find((w) => w.active === true);
   const showChip = props.showProjectChip !== false && !!active;
 

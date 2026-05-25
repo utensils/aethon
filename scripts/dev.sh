@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Aethon dev launcher — finds free ports for Vite and the debug TCP server,
 # writes them to ~/.aethon/dev-info.json so the aethon-debug skill can
-# discover the running instance, then execs `cargo tauri dev`.
+# discover the running instance, then supervises `cargo tauri dev`.
 #
 # Why this exists:
 #   - Tauri requires a fixed devUrl (Vite's `strictPort: true`) so a leaked
@@ -45,7 +45,7 @@ DEBUG_BASE="${AETHON_DEBUG_PORT_BASE:-19433}"
 SANDBOX_ROOT_DIR="${TMPDIR:-/tmp}/aethon-dev"
 
 # Parse our own flags before forwarding the rest to `cargo tauri dev`.
-# Stashed in arrays so we keep ordering for the eventual `exec`.
+# Stashed in arrays so we keep ordering for the eventual launch.
 new_session=0
 clean_action=0
 passthrough_args=()
@@ -190,16 +190,95 @@ cat >"$TMP" <<EOF
 EOF
 mv "$TMP" "$DEV_INFO"
 
-# Cleanup: always remove the discovery file; remove the --new sandbox
-# tree too. INT / TERM forwarded so a SIGINT (Ctrl+C) doesn't leave a
-# stale tree behind on the user's next launch.
+# Cleanup: always remove the discovery file; remove the --new sandbox tree too.
 cleanup() {
   rm -f "$DEV_INFO"
   if [[ -n "$sandbox_dir" && -d "$sandbox_dir" ]]; then
     rm -rf "$sandbox_dir"
   fi
 }
-trap cleanup EXIT INT TERM
+
+child_pid=""
+
+descendant_pids() {
+  local root="$1"
+  local child
+  while read -r child; do
+    [[ -n "$child" ]] || continue
+    descendant_pids "$child"
+    printf '%s\n' "$child"
+  done < <(pgrep -P "$root" 2>/dev/null || true)
+}
+
+signal_child_tree() {
+  local signal="$1"
+  [[ -n "$child_pid" ]] || return 0
+
+  # Prefer a process-group signal when the shell/OS happened to give the child
+  # its own group. This is best-effort; the parent/descendant walk below is the
+  # reliable path for non-interactive shells where background jobs inherit the
+  # wrapper's process group.
+  kill "-$signal" -- "-$child_pid" 2>/dev/null || true
+
+  # macOS fallback: walk descendants by parent PID so Ctrl+C still tears down
+  # Cargo, Tauri, Vite, and the agent sidecar when one layer swallows SIGINT.
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    kill "-$signal" "$pid" 2>/dev/null || true
+  done < <(descendant_pids "$child_pid")
+  kill "-$signal" "$child_pid" 2>/dev/null || true
+}
+
+child_is_running() {
+  [[ -n "$child_pid" ]] || return 1
+  local state
+  state="$(ps -p "$child_pid" -o stat= 2>/dev/null || true)"
+  [[ -n "$state" && "$state" != *Z* ]]
+}
+
+wait_for_child_to_stop() {
+  [[ -n "$child_pid" ]] || return 0
+  local attempts="$1"
+  local i
+  for ((i = 0; i < attempts; i++)); do
+    if ! child_is_running; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+stop_child_tree() {
+  local first_signal="$1"
+  [[ -n "$child_pid" ]] || return 0
+
+  signal_child_tree "$first_signal"
+  wait_for_child_to_stop 20 && return 0
+
+  signal_child_tree TERM
+  wait_for_child_to_stop 20 && return 0
+
+  signal_child_tree KILL
+}
+
+handle_int() {
+  trap - INT TERM
+  stop_child_tree INT
+  cleanup
+  exit 130
+}
+
+handle_term() {
+  trap - INT TERM
+  stop_child_tree TERM
+  cleanup
+  exit 143
+}
+
+trap cleanup EXIT
+trap handle_int INT
+trap handle_term TERM
 
 export VITE_PORT
 export AETHON_DEBUG_PORT="$DEBUG_PORT"
@@ -212,4 +291,14 @@ if [[ "$VITE_PORT" != "$VITE_BASE" || "$DEBUG_PORT" != "$DEBUG_BASE" ]]; then
   echo "[dev] vite=${VITE_PORT} (was ${VITE_BASE}) debug=${DEBUG_PORT} (was ${DEBUG_BASE})" >&2
 fi
 
-exec cargo tauri dev "$@"
+# Run under supervision so Ctrl+C can escalate through the child tree if one
+# layer ignores SIGINT. Keep job control off; Cargo/Vite should retain normal
+# terminal stdin behavior.
+cargo tauri dev "$@" &
+child_pid=$!
+set +e
+wait "$child_pid"
+status=$?
+set -e
+child_pid=""
+exit "$status"

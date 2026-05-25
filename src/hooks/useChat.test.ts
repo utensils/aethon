@@ -128,6 +128,7 @@ describe("useChat setModel", () => {
       message: "work on issue",
       tabId: "issue-tab",
       mode: "normal",
+      cwd: "/projects/aethon-fix-86",
     });
     const tabs = stateRef.current.tabs as Tab[];
     expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
@@ -138,6 +139,14 @@ describe("useChat setModel", () => {
       text: "work on issue",
       delivery: "sent",
     });
+    expect(ctx.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "user",
+        text: "work on issue",
+        delivery: "sent",
+      }),
+      "issue-tab",
+    );
     expect(tabs.find((t) => t.id === "issue-tab")?.waiting).toBe(true);
     expect(stateRef.current.status).toBe("ready");
   });
@@ -239,6 +248,32 @@ describe("useChat setModel", () => {
       text: "look now",
       delivery: "steered",
     });
+  });
+
+  it("persists streamed assistant snapshots for stopped-turn restore", () => {
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    act(() => {
+      result.current.appendOrAmendAgentText("Inspecting", "agent-1", "tab-1", "thinking");
+      result.current.appendOrAmendAgentText("\nDone", "agent-1", "tab-1", "text");
+    });
+
+    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
+      id: "agent-1",
+      role: "agent",
+      thinking: "Inspecting",
+      text: "\nDone",
+    });
+    expect(ctx.persistLocalChatMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: "agent-1",
+        role: "agent",
+        thinking: "Inspecting",
+        text: "\nDone",
+      }),
+      "tab-1",
+    );
   });
 
   it("optimistically mirrors the selected model into the active tab and picker", async () => {

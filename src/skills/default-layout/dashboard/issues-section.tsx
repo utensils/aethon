@@ -4,14 +4,15 @@
  * spec:
  *
  *   - left-click  → open the issue's URL in the OS browser
- *   - right-click → context menu with "Send to agent" (also
+ *   - right-click → context menu with "Send to agent (new worktree)" and
+ *                   "Send to agent (current worktree/branch)" (also
  *                   keyboard-equivalent via the dedicated send button
  *                   on the row hover state).
  *
- * The "send to agent" path fetches the full issue body and emits
+ * The "send to agent" paths fetch the full issue body and emit
  * `start-task` with a markdown-formatted prompt that includes title,
- * url, author, and body. Issue launches always ask the shared task path
- * to create a fresh worktree so each issue starts isolated.
+ * url, author, and body. The default row action asks the shared task
+ * path to create a fresh worktree so each issue starts isolated.
  *
  * Registered as the dashboard component type `issues-section` so
  * extensions can swap it with `aethon.registerComponent`. All data
@@ -91,6 +92,31 @@ function projectWorktreeBranches(
       .flatMap((w) => [w.branch, w.label])
       .filter((v): v is string => typeof v === "string" && v.length > 0),
   );
+}
+
+function currentProjectWorktreeId(
+  state: Record<string, unknown>,
+  projectId: string,
+): string | undefined {
+  const activeWorktreeId =
+    typeof state.activeWorktreeId === "string" &&
+    state.activeWorktreeId.length > 0
+      ? state.activeWorktreeId
+      : undefined;
+  const sidebar =
+    (state.sidebar as
+      | {
+          projects?: {
+            id: string;
+            worktrees?: { id?: string; active?: boolean }[];
+          }[];
+        }
+      | undefined) ?? {};
+  const project = sidebar.projects?.find((p) => p.id === projectId);
+  const worktree =
+    project?.worktrees?.find((w) => w.id && w.id === activeWorktreeId) ??
+    project?.worktrees?.find((w) => w.id && w.active === true);
+  return worktree?.id;
 }
 
 export function IssuesSection({
@@ -182,7 +208,7 @@ export function IssuesSection({
     );
   }, []);
 
-  const sendIssueToAgent = useCallback(
+  const sendIssueToNewWorktree = useCallback(
     async (issue: GhIssue) => {
       if (!project) return;
       setSending(issue.number);
@@ -204,6 +230,36 @@ export function IssuesSection({
             ),
             // Tag the payload so the route handler / tests can spot
             // an issue-originated launch.
+            source: "github-issue",
+            issueNumber: issue.number,
+            issueUrl: issue.url,
+          },
+          `issue-${issue.number}`,
+        );
+      } catch (err) {
+        console.warn("send-to-agent failed:", err);
+      } finally {
+        setSending(null);
+      }
+    },
+    [project, onEvent, state],
+  );
+
+  const sendIssueToCurrentWorktree = useCallback(
+    async (issue: GhIssue) => {
+      if (!project) return;
+      setSending(issue.number);
+      try {
+        const detail = await getIssueDetail(project.path, issue.number);
+        const prompt = buildIssuePrompt(detail);
+        const worktreeId = currentProjectWorktreeId(state, project.id);
+        onEvent(
+          "start-task",
+          {
+            projectId: project.id,
+            prompt,
+            newWorktree: false,
+            worktreeId,
             source: "github-issue",
             issueNumber: issue.number,
             issueUrl: issue.url,
@@ -333,11 +389,11 @@ export function IssuesSection({
                   type="button"
                   className="a2ui-dashboard-issue-send"
                   aria-label={`Send issue #${issue.number} to agent`}
-                  title="Send to agent"
+                  title="Send to agent in new worktree"
                   disabled={isSending}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void sendIssueToAgent(issue);
+                    void sendIssueToNewWorktree(issue);
                   }}
                 >
                   {isSending ? "…" : "→ Agent"}
@@ -373,10 +429,22 @@ export function IssuesSection({
             onClick={() => {
               const m = menu;
               setMenu(null);
-              void sendIssueToAgent(m.issue);
+              void sendIssueToNewWorktree(m.issue);
             }}
           >
-            Send to agent (current worktree)
+            Send to agent (new worktree)
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="a2ui-dashboard-issue-menu-item"
+            onClick={() => {
+              const m = menu;
+              setMenu(null);
+              void sendIssueToCurrentWorktree(m.issue);
+            }}
+          >
+            Send to agent (current worktree/branch)
           </button>
           <button
             type="button"
