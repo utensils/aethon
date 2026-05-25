@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { ContextMenu, type ContextMenuItem } from "./context-menu";
 
 afterEach(() => {
@@ -231,5 +238,125 @@ describe("ContextMenu", () => {
     );
     // Header + note render as non-buttons; only one menuitem present.
     expect(screen.getAllByRole("menuitem")).toHaveLength(1);
+  });
+
+  it("keeps focus in an inline input when parent state re-renders", async () => {
+    const buildItems = (): ContextMenuItem[] => [
+      {
+        type: "input",
+        id: "rename-session",
+        label: "Session name",
+        defaultValue: "Tab 1",
+        onSubmit: () => {},
+      },
+      { type: "separator" },
+      { id: "close-tab", label: "Close tab", onSelect: () => {} },
+    ];
+    const { rerender } = render(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={buildItems()}
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        screen.getByLabelText("Session name"),
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Session name"), {
+      target: { value: "Planning" },
+    });
+    rerender(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={buildItems()}
+        onClose={() => {}}
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
+    const input = screen.getByLabelText("Session name");
+    expect(document.activeElement).toBe(input);
+    expect(input).toHaveProperty("value", "Planning");
+  });
+
+  it("lets Enter submit inline input forms instead of activating a menu item", async () => {
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={[
+          {
+            type: "input",
+            id: "rename-session",
+            label: "Session name",
+            defaultValue: "Tab 1",
+            onSubmit,
+          },
+          { id: "close-tab", label: "Close tab", onSelect },
+        ]}
+        onClose={onClose}
+      />,
+    );
+
+    const input = screen.getByLabelText("Session name");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    fireEvent.change(input, { target: { value: "Planning" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.submit(input.closest("form")!);
+
+    expect(onSubmit).toHaveBeenCalledWith("Planning");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("clamps virtual focus when items change while the menu remains open", () => {
+    const onAlpha = vi.fn();
+    const onBeta = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={[
+          { id: "alpha", label: "Alpha", onSelect: onAlpha },
+          { id: "beta", label: "Beta", onSelect: onBeta },
+        ]}
+        onClose={onClose}
+      />,
+    );
+
+    const menu = screen.getByRole("menu");
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(menu.getAttribute("aria-activedescendant")).toMatch(/i1$/);
+
+    rerender(
+      <ContextMenu
+        open
+        x={100}
+        y={100}
+        items={[{ id: "alpha", label: "Alpha", onSelect: onAlpha }]}
+        onClose={onClose}
+      />,
+    );
+
+    expect(menu.getAttribute("aria-activedescendant")).toMatch(/i0$/);
+    fireEvent.keyDown(menu, { key: "Enter" });
+    expect(onAlpha).toHaveBeenCalledTimes(1);
+    expect(onBeta).not.toHaveBeenCalled();
   });
 });

@@ -53,6 +53,46 @@ describe("TabStrip", () => {
     });
   });
 
+  it("keeps rename input focused while active agent state re-renders", () => {
+    const onEvent = vi.fn<TabStripOnEvent>();
+    const { rerender } = render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{
+          activeTabId: "tab-1",
+          tabs: [{ id: "tab-1", label: "Tab 1", kind: "agent", waiting: true }],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByText("Tab 1").closest('[role="tab"]')!);
+    const input = screen.getByLabelText("Session name");
+    input.focus();
+    fireEvent.change(input, { target: { value: "Planning" } });
+
+    rerender(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{
+          activeTabId: "tab-1",
+          tabs: [
+            {
+              id: "tab-1",
+              label: "Tab 1",
+              kind: "agent",
+              waiting: true,
+              queueCount: 1,
+            },
+          ],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(document.activeElement).toBe(input);
+    expect(input).toHaveProperty("value", "Planning");
+  });
+
   it("does not select the tab on right-button mouse down", () => {
     const { onEvent } = renderTabStrip();
     fireEvent.mouseDown(screen.getByText("Tab 1").closest('[role="tab"]')!, {
