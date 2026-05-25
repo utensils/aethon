@@ -146,7 +146,17 @@ function relativePathFor(rootPath: string, path: string): string | null {
 }
 
 function absolutePathFor(rootPath: string, relativePath: string): string {
-  return `${rootPath.replace(/[\\/]+$/, "")}/${normalizeRelativePath(relativePath)}`;
+  const separator =
+    rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
+  const normalizedRelative = normalizeRelativePath(relativePath).replace(
+    /\//g,
+    separator,
+  );
+  return `${rootPath.replace(/[\\/]+$/, "")}${separator}${normalizedRelative}`;
+}
+
+function normalizeAbsolutePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 function parentRelativePath(relativePath: string): string {
@@ -510,6 +520,10 @@ export function FileTreePanel({
   // props pattern would force a re-render dance every time the user
   // expands a folder elsewhere.
   useEffect(() => {
+    if (gitStatusRefreshTimerRef.current) {
+      clearTimeout(gitStatusRefreshTimerRef.current);
+      gitStatusRefreshTimerRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoot(null);
     setGitStatuses(new Map());
@@ -686,9 +700,11 @@ export function FileTreePanel({
       const deleted =
         parentRel == null ? [] : (deletedChildrenByParent.get(parentRel) ?? []);
       if (deleted.length === 0) return children;
-      const existing = new Set(children.map((child) => child.entry.path));
+      const existing = new Set(
+        children.map((child) => normalizeAbsolutePath(child.entry.path)),
+      );
       const synthetic = deleted
-        .filter((entry) => !existing.has(entry.path))
+        .filter((entry) => !existing.has(normalizeAbsolutePath(entry.path)))
         .map((entry) => ({ entry, depth: node.depth + 1 }));
       return sortTreeNodes([...children, ...synthetic]);
     };

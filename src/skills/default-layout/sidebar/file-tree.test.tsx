@@ -178,6 +178,37 @@ describe("FileTreePanel", () => {
     expect(screen.getByLabelText("Deleted")).toBeTruthy();
   });
 
+  it("uses the project path separator for synthetic deleted rows", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "C:\\repo") {
+        return Promise.resolve([
+          { name: "src", path: "C:\\repo\\src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "C:\\repo\\src") {
+        return Promise.resolve([]);
+      }
+      if (cmd === "git_file_status") {
+        return Promise.resolve([{ path: "src/old.ts", status: "deleted" }]);
+      }
+      return Promise.resolve(1);
+    });
+
+    render(
+      <FileTreePanel
+        {...panelProps({
+          state: { project: { path: "C:\\repo", name: "repo" } },
+        })}
+      />,
+    );
+    await waitFor(() => screen.getByText("src"));
+    fireEvent.click(screen.getByText("src"));
+    const deleted = await waitFor(() => screen.getByText("old.ts"));
+    expect(deleted.closest("li")?.getAttribute("title")).toContain(
+      "C:\\repo\\src\\old.ts",
+    );
+  });
+
   it("renders clean Git file trees without decorations", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "fs_list_dir") {
