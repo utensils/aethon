@@ -888,6 +888,7 @@ pub fn run() {
             commands::fs::fs_open_in_file_manager,
             commands::fs::fs_open_in_default_app,
             commands::git::git_status,
+            commands::git::git_file_status,
             commands::git::git_worktrees,
             commands::git::git_worktree_add,
             commands::git::git_worktree_remove,
