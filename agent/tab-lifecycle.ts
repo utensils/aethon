@@ -385,6 +385,7 @@ export function emitReady(
     type: "ready",
     model: defaultModelKey(state),
     projectRoot: state.projectRoot,
+    currentProjectCwd: state.currentProjectCwd,
     userDir: state.userDir,
     models: state.cachedModels,
     tabs: [...state.tabs.values()].map((t) => ({

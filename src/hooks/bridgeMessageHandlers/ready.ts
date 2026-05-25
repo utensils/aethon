@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../../types/a2ui";
-import { activeProject } from "../../projects";
+import { activeCwd, activeProject } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
 import type { Tab } from "../../types/tab";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
@@ -25,7 +25,9 @@ function isWorkstationBootLayout(layout: A2UIPayload): boolean {
   const areas = state?.layout?.areas;
   return (
     Array.isArray(areas) &&
-    areas.some((row) => typeof row === "string" && row.includes("files-sidebar"))
+    areas.some(
+      (row) => typeof row === "string" && row.includes("files-sidebar"),
+    )
   );
 }
 
@@ -67,6 +69,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     typeof data.userDir === "string" && data.userDir.length > 0
       ? data.userDir
       : undefined;
+  const currentProjectCwd =
+    typeof data.currentProjectCwd === "string" &&
+    data.currentProjectCwd.length > 0
+      ? data.currentProjectCwd
+      : null;
   // Cache pi's default model so new tabs created before `ready` fires
   // (or before a session's model initialises) can inherit it immediately
   // instead of showing blank "model ▼".
@@ -398,8 +405,12 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // also restore the tab's previously-selected model so the user
   // doesn't silently send the next prompt to pi's default.
   const localTabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
+  const bridgeTabIds = new Set(
+    ((data.tabs as { id: string }[] | undefined) ?? []).map((t) => t.id),
+  );
   for (const t of localTabs) {
     if (t.id === "default") continue;
+    if (bridgeTabIds.has(t.id)) continue;
     // Pass `model` so the new bridge session boots with the same model
     // the user previously selected — no race window. Track in
     // pendingTabOpens so a fast first chat on the restored tab waits
@@ -439,13 +450,14 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // tab_open for non-default tabs, so when the active tab IS "default"
   // (common: single-tab session) nothing announces. Send an explicit
   // set_project for the active tab so the bridge swaps to the right
-  // project. The bridge short-circuits when cwd matches its
-  // currentProjectCwd so this is harmless on a fresh boot where the
-  // boot effect already announced.
-  const activeProj = activeProject(ctx.projectsRef.current);
-  if (activeProj) {
+  // project. Ready can also be emitted *because* set_project loaded or
+  // refreshed resources, so only announce when the bridge reports a
+  // different cwd. Otherwise a ready -> set_project -> ready loop can
+  // monopolize the release app and blank the webview.
+  const activePath = activeCwd(ctx.projectsRef.current);
+  if (activePath && currentProjectCwd !== activePath) {
     const activeTabId =
       (ctx.stateRef.current.activeTabId as string | undefined) ?? "default";
-    ctx.announceProjectToBridge(activeTabId, activeProj.path);
+    ctx.announceProjectToBridge(activeTabId, activePath);
   }
 };

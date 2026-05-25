@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeEmptyTab } from "../types/tab";
 import {
   loadSessionUiSnapshot,
+  parseSessionUiSnapshot,
   saveSessionUiSnapshot,
 } from "./sessionUiSnapshot";
 
@@ -179,5 +180,52 @@ describe("sessionUiSnapshot", () => {
       filesSidebarVisible: false,
       columns: "256px minmax(0,1fr) 0px",
     });
+  });
+
+  it("bounds terminal buffers in reload snapshots", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const long = "x".repeat(300 * 1024);
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      terminal: {
+        open: true,
+        buffer: Object.fromEntries(
+          Array.from({ length: 10 }, (_, i) => [`tab-${i}`, `${i}:${long}`]),
+        ),
+      },
+    });
+
+    const restored = loadSessionUiSnapshot();
+    const buffer = (restored?.terminal as { buffer?: Record<string, string> })
+      ?.buffer;
+    expect(Object.keys(buffer ?? {})).toHaveLength(8);
+    expect(buffer?.["tab-9"]).toHaveLength(256 * 1024);
+    expect(buffer?.["tab-0"]).toBeUndefined();
+  });
+
+  it("sanitizes oversized terminal buffers from older disk snapshots on load", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [tab],
+        activeTabId: "tab-a",
+        terminal: {
+          open: true,
+          buffer: { "tab-a": "y".repeat(300 * 1024) },
+        },
+        savedAt: 1,
+      }),
+    );
+
+    const buffer = (parsed?.terminal as { buffer?: Record<string, string> })
+      ?.buffer;
+    expect(buffer?.["tab-a"]).toHaveLength(256 * 1024);
   });
 });
