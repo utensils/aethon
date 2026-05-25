@@ -4,7 +4,10 @@ const port = Number(process.env.VITE_PORT ?? 1420);
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // The harness mocks one Tauri webview per test while sharing a Vite
+  // dev server. Keep tests in a spec serial so a Vite reload in one page
+  // cannot interrupt another page mid-turn.
+  fullyParallel: false,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: `http://127.0.0.1:${port}`,
