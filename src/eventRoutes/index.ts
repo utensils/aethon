@@ -96,10 +96,11 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:main-canvas", [handleChatMessages]],
     ["type:queued-messages-popover", [handleQueuedMessages]],
     ["type:empty-state", [handleEmptyState]],
-    // Worktree landing — "Start Session" + "Open in Files" CTAs reuse
-    // the sidebar's worktree routes since the destination semantics
-    // are identical.
+    // Worktree landing — session rows share dashboard restore/delete
+    // semantics; Start Session + Open in Files reuse the sidebar's
+    // worktree routes since their destinations are identical.
     ["type:worktree-landing", [
+      handleProjectsDashboard,
       handleSidebarStartSession,
       handleSidebarOpenWorktreeInFinder,
     ]],
