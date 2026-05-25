@@ -115,6 +115,7 @@ describe("useChat setModel", () => {
     };
     const { ctx, stateRef } = buildContext({
       activeTabId: "main-tab",
+      status: "ready",
       tabs: [mainTab, issueTab],
     });
     const { result } = renderHook(() => useChat(ctx));
@@ -138,6 +139,40 @@ describe("useChat setModel", () => {
       delivery: "sent",
     });
     expect(tabs.find((t) => t.id === "issue-tab")?.waiting).toBe(true);
+    expect(stateRef.current.status).toBe("ready");
+  });
+
+  it("passes explicit non-active slash commands through to the target agent", async () => {
+    const run = vi.fn();
+    const mainTab = { ...makeEmptyTab("main-tab", "Main"), projectId: "p1" };
+    const issueTab = { ...makeEmptyTab("issue-tab", "Issue"), projectId: "p1" };
+    const { ctx, stateRef } = buildContext({
+      activeTabId: "main-tab",
+      tabs: [mainTab, issueTab],
+    });
+    ctx.slashCommandsRef.current = [
+      { name: "clear", description: "Clear chat", run },
+    ];
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("/clear", { tabId: "issue-tab" });
+    });
+
+    expect(run).not.toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "/clear",
+      tabId: "issue-tab",
+      mode: "normal",
+    });
+    const tabs = stateRef.current.tabs as Tab[];
+    expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
+    expect(
+      tabs.find((t) => t.id === "issue-tab")?.messages.at(-1),
+    ).toMatchObject({
+      role: "user",
+      text: "/clear",
+    });
   });
 
   it("marks normal messages as queued while the active prompt is busy", async () => {

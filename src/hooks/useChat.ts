@@ -225,6 +225,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    const activeTabId = stateRef.current.activeTabId as string | undefined;
+    const explicitTabId = options?.tabId;
+
     // Client-side slash commands handle UI-only actions (clear, theme, etc.).
     // Unknown slash commands fall through to the agent so pi's own slash
     // command handling and any prompt-template / skill commands still reach
@@ -232,11 +235,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const parsed = parseSlashCommand(trimmed);
     if (parsed) {
       const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
-      if (cmd && !cmd.passthroughToAgent) {
-        const slashTabId =
-          options?.tabId ??
-          (stateRef.current.activeTabId as string | undefined) ??
-          "default";
+      // Client slash contexts are active-tab oriented today. If a caller
+      // explicitly targets a different tab, do not echo into that tab while
+      // mutating the active one; pass the slash through to the target agent
+      // instead. Active-tab sends keep the existing local-command behavior.
+      const canRunLocalSlash = !explicitTabId || explicitTabId === activeTabId;
+      if (cmd && !cmd.passthroughToAgent && canRunLocalSlash) {
+        const slashTabId = activeTabId ?? "default";
         const slashUserMessage = {
           id: crypto.randomUUID(),
           role: "user" as const,
@@ -244,13 +249,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         };
         appendMessage(slashUserMessage, slashTabId);
         persistLocalChatMessage(slashUserMessage, slashTabId);
-        // Clear the target tab's draft — without this, the draft still
-        // holds the slash text and any subsequent mirror (clearChat,
-        // theme switch, …) writes it back into root.draft, making the
-        // input "stick". `tabId` is explicit for programmatic launches
-        // that should not depend on whatever tab is active by the time
-        // this async path runs.
-        updateTab(slashTabId, (tab) => ({ ...tab, draft: "" }));
+        // Clear via updateActiveTab — without this, the active tab's
+        // draft still holds the slash text and any subsequent mirror
+        // (clearChat, theme switch, …) writes it back into root.draft,
+        // making the input "stick".
+        updateActiveTab((tab) => ({ ...tab, draft: "" }));
         try {
           await cmd.run(parsed.args, slashContext());
         } catch (err) {
@@ -258,17 +261,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         }
         return;
       }
-      // Unknown — fall through to send_message. Pi's own command handling on
-      // the agent side may pick it up; if not, the LLM sees the literal text.
+      // Unknown or explicitly non-active target — fall through to
+      // send_message. Pi's own command handling on the agent side may pick it
+      // up; if not, the LLM sees the literal text.
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
     const mode = options?.mode === "steer" ? "steer" : "normal";
-    const tabId =
-      options?.tabId ??
-      (stateRef.current.activeTabId as string | undefined) ??
-      "default";
-    const activeTabId = stateRef.current.activeTabId as string | undefined;
+    const tabId = explicitTabId ?? activeTabId ?? "default";
     const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
       (tab) => tab.id === tabId,
     );
@@ -288,11 +288,15 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       tabId,
     );
     updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
-    setState((prev) => ({
-      ...prev,
-      status: "thinking…",
-      connection: "connected",
-    }));
+    setState((prev) =>
+      prev.activeTabId === tabId
+        ? {
+            ...prev,
+            status: "thinking…",
+            connection: "connected",
+          }
+        : prev,
+    );
 
     // Wait for any pending tab_open on this tab to land first so the
     // bridge has the right initial model before the chat creates the
