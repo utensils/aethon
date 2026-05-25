@@ -300,7 +300,11 @@ export function Sidebar({
       kind = "project";
     } else if (sectionId === "history" && canDeleteHistoryItem(item.id)) {
       kind = "session";
-    } else if (sectionId === "extensions") {
+    } else if (
+      sectionId === "extensions" ||
+      sectionId === "extensions-user" ||
+      sectionId === "extensions-package"
+    ) {
       if (item.id.startsWith("ext:")) {
         kind = "extension-enabled";
         extensionName = item.id.slice("ext:".length);
@@ -586,15 +590,60 @@ export function Sidebar({
     ...(props.sections ?? []),
     ...(extraSections as SidebarSectionExt[]),
   ].some((section) => section.id === "extensions");
+  // Split the auto-injected extensions list into one section per
+  // origin (project / user / package). Each sub-section auto-hides
+  // when empty. Items carry `kind` from buildExtensionSidebarItems;
+  // legacy items lacking the field fall back to "user" so a stale
+  // upstream array still groups sensibly.
   const extensionSections: SidebarSectionExt[] =
     extensionItems.length > 0 && !hasExplicitExtensionSection
-      ? [
-          {
-            id: "extensions",
-            title: "extensions",
-            items: extensionItems,
-          },
-        ]
+      ? (() => {
+          const buckets: Record<
+            "project" | "user" | "package",
+            SidebarItem[]
+          > = { project: [], user: [], package: [] };
+          for (const item of extensionItems) {
+            const kind = ((item as { kind?: string }).kind ?? "user") as
+              | "project"
+              | "user"
+              | "package";
+            (buckets[kind] ?? buckets.user).push(item);
+          }
+          const sections: SidebarSectionExt[] = [];
+          if (buckets.project.length > 0) {
+            sections.push({
+              id: "extensions",
+              title: "extensions · project",
+              items: buckets.project,
+            });
+          }
+          if (buckets.user.length > 0) {
+            sections.push({
+              id: "extensions-user",
+              // When project rows exist, the user/package headers act
+              // as dividers — qualified so the user can read what
+              // each group is at a glance. When there are no project
+              // rows, the first remaining group keeps the bare
+              // "extensions" title so the sidebar reads cleanly.
+              title:
+                buckets.project.length > 0
+                  ? "extensions · user"
+                  : "extensions",
+              items: buckets.user,
+            });
+          }
+          if (buckets.package.length > 0) {
+            sections.push({
+              id: "extensions-package",
+              title:
+                buckets.project.length > 0 || buckets.user.length > 0
+                  ? "extensions · package"
+                  : "extensions",
+              items: buckets.package,
+            });
+          }
+          return sections;
+        })()
       : [];
   const allSections: SidebarSectionExt[] = [
     ...(props.sections ?? []),
@@ -668,10 +717,16 @@ export function Sidebar({
                     // Inline toggle for extension rows — quick on/off
                     // without diving into the right-click menu. The
                     // context menu stays as a secondary affordance.
-                    const extState =
-                      section.id === "extensions"
-                        ? extensionToggleState(item)
-                        : null;
+                    // Match all three auto-injected sub-sections
+                    // (project / user / package) so the toggle shows
+                    // on every extension row regardless of bucket.
+                    const isExtensionsSection =
+                      section.id === "extensions" ||
+                      section.id === "extensions-user" ||
+                      section.id === "extensions-package";
+                    const extState = isExtensionsSection
+                      ? extensionToggleState(item)
+                      : null;
                     const trailingControl = extState ? (
                       <ToggleSwitch
                         checked={extState.checked}

@@ -28,7 +28,13 @@ All notable changes to Aethon. Format loosely follows
   group. Disabled rows preserve their origin label (`project ·
   disabled` instead of just `disabled`) so the user can tell at a
   glance which scope an extension came from even when every row is
-  toggled off.
+  toggled off. The auto-injected EXTENSIONS section now splits into
+  per-origin sub-sections — each appears with a qualified title
+  (`extensions · project`, `extensions · user`,
+  `extensions · package`) acting as a visual divider, and empty
+  buckets hide. When only one bucket has entries, the title
+  collapses back to a bare `extensions` so the sidebar reads
+  cleanly in single-scope projects.
 
 ### Fixed
 

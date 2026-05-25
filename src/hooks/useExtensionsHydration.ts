@@ -47,8 +47,18 @@ export interface DisabledExtensionRecord {
   projectRoot?: string;
 }
 
+/** Canonical source classes used for sidebar grouping + sorting. Maps
+ *  the bridge-side ExtensionSource enum onto three user-visible
+ *  buckets. See `classifyExtensionSource` below for the mapping. */
+export type ExtensionKind = "project" | "user" | "package";
+
 export type ExtensionSidebarItem = SidebarItem & {
   hint?: string;
+  /** Origin bucket. Carried alongside the item so the sidebar can
+   *  split the auto-injected EXTENSIONS section into per-origin
+   *  sub-sections without re-deriving the source from the id prefix
+   *  on every render. */
+  kind?: ExtensionKind;
 };
 
 const CORE_EXTENSION_NAMES = new Set(["default-layout"]);
@@ -103,14 +113,12 @@ export function filterExtensionSummariesByProject<
   });
 }
 
-/** Canonical source classes used for sidebar grouping + sorting. Maps
- *  the bridge-side enum onto three user-visible buckets: project-scoped
- *  (.aethon/extensions inside the active project), user-scoped (the
- *  global ~/.aethon/extensions directory), and packaged (npm). Unknown
+/** Map the bridge-side `ExtensionSource` enum onto the three
+ *  user-visible buckets declared above. Project-scoped =
+ *  `.aethon/extensions` inside the active project, user-scoped = the
+ *  global `~/.aethon/extensions` directory, packaged = npm. Unknown
  *  values fall back to "user" so legacy disabled records (persisted
  *  before source tracking landed) still group sensibly. */
-export type ExtensionKind = "project" | "user" | "package";
-
 export function classifyExtensionSource(
   source: string | undefined,
 ): ExtensionKind {
@@ -298,9 +306,9 @@ export function buildExtensionSidebarItems(
         };
       }),
   ];
-  return decorated
-    .sort(compareSidebarItems)
-    .map(({ kind: _kind, ...item }) => item);
+  // Keep `kind` on the returned items so the sidebar can split into
+  // per-origin sub-sections without re-deriving the source.
+  return decorated.sort(compareSidebarItems);
 }
 
 /** Built-in themes always available. CSS for these lives in src/styles/themes.css —

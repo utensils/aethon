@@ -95,30 +95,35 @@ describe("buildExtensionSidebarItems", () => {
         label: "mold:gallery",
         hint: "project",
         active: true,
+        kind: "project",
       },
       {
         id: "ext-failed:broken-ext",
         label: "broken-ext",
         hint: "user · failed",
         active: false,
+        kind: "user",
       },
       {
         id: "ext-disabled:disabled-ext",
         label: "disabled-ext",
         hint: "user · disabled",
         active: false,
+        kind: "user",
       },
       {
         id: "ext:user-ext",
         label: "user-ext",
         hint: "user",
         active: true,
+        kind: "user",
       },
       {
         id: "ext:package-ext",
         label: "package-ext",
         hint: "package",
         active: true,
+        kind: "package",
       },
     ]);
   });
@@ -139,6 +144,7 @@ describe("buildExtensionSidebarItems", () => {
         // was a bare name.
         hint: "user · disabled · restart",
         active: false,
+        kind: "user",
       },
     ]);
   });

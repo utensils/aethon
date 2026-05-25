@@ -80,6 +80,7 @@ describe("Sidebar extension controls", () => {
               label: "mold-gallery",
               hint: "project",
               active: true,
+              kind: "project",
             },
           ],
         },
@@ -142,6 +143,7 @@ describe("Sidebar extension controls", () => {
               id: "ext:mold-gallery",
               label: "mold-gallery",
               hint: "project",
+              kind: "project",
             },
           ],
         },
@@ -151,6 +153,8 @@ describe("Sidebar extension controls", () => {
     fireEvent.click(screen.getByRole("switch"));
 
     // Toggle emits toggle-extension with the *target* disabled flag.
+    // SectionId reflects the bucket the item lands in (`extensions` for
+    // project, `extensions-user` for user, `extensions-package` for npm).
     expect(onEvent).toHaveBeenCalledWith(
       "toggle-extension",
       {
@@ -177,6 +181,7 @@ describe("Sidebar extension controls", () => {
             {
               id: "ext-disabled:silenced",
               label: "silenced",
+              kind: "user",
             },
           ],
         },
@@ -184,16 +189,73 @@ describe("Sidebar extension controls", () => {
     });
 
     fireEvent.click(screen.getByRole("switch"));
+    // User-bucket items live in the extensions-user sub-section.
     expect(onEvent).toHaveBeenCalledWith(
       "toggle-extension",
       {
-        sectionId: "extensions",
+        sectionId: "extensions-user",
         itemId: "ext-disabled:silenced",
         name: "silenced",
         disabled: false,
       },
       "ext-disabled:silenced",
     );
+  });
+
+  it("splits the auto-injected EXTENSIONS section by origin (project / user / package)", () => {
+    renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:mold:gallery",
+              label: "mold:gallery",
+              hint: "project",
+              kind: "project",
+            },
+            {
+              id: "ext:user-helper",
+              label: "user-helper",
+              hint: "user",
+              kind: "user",
+            },
+            {
+              id: "ext:@brink/widget",
+              label: "@brink/widget",
+              hint: "package",
+              kind: "package",
+            },
+          ],
+        },
+      },
+    });
+
+    // All three subgroup titles appear; the user can tell scope at a
+    // glance even without reading the per-row hints.
+    expect(screen.getByText("extensions · project")).toBeTruthy();
+    expect(screen.getByText("extensions · user")).toBeTruthy();
+    expect(screen.getByText("extensions · package")).toBeTruthy();
+  });
+
+  it("uses a bare 'extensions' title when only one origin bucket has items", () => {
+    renderSidebar({
+      state: {
+        sidebar: {
+          extensions: [
+            {
+              id: "ext:user-only",
+              label: "user-only",
+              hint: "user",
+              kind: "user",
+            },
+          ],
+        },
+      },
+    });
+
+    // No subgroup qualifier when there's nothing to disambiguate against.
+    expect(screen.getByText("extensions")).toBeTruthy();
+    expect(screen.queryByText("extensions · user")).toBeNull();
   });
 
   it("does not duplicate a layout-provided extensions section", () => {
