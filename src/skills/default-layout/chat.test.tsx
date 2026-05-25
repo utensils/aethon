@@ -2,6 +2,18 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatHistory, ChatInput, QueuedMessagesPopover, ToolCard } from "./chat";
+
+const { openUrl } = vi.hoisted(() => ({
+  openUrl: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: (...args: unknown[]) => openUrl(...args),
+}));
+
+vi.mock("../../components/HighlightedCode", () => ({
+  HighlightedCode: ({ code }: { code: string }) => code,
+}));
 import { SkillRegistry } from "../../skills/SkillRegistry";
 import { SkillRegistryProvider } from "../../skills/registry";
 
@@ -13,6 +25,7 @@ class ResizeObserverMock {
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  openUrl.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -242,5 +255,126 @@ describe("ChatInput", () => {
       messageId: "1",
       value: "again please",
     });
+  });
+
+  it("renders bare HTTP URLs as links in user, agent, and system bubbles", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "see https://example.com/user" },
+        { id: "2", role: "agent", text: "see https://example.com/agent" },
+        { id: "3", role: "system", text: "see https://example.com/system" },
+      ],
+    });
+
+    expect(
+      screen
+        .getByRole("link", { name: "https://example.com/user" })
+        .getAttribute("href"),
+    ).toBe("https://example.com/user");
+    expect(
+      screen
+        .getByRole("link", { name: "https://example.com/agent" })
+        .getAttribute("href"),
+    ).toBe("https://example.com/agent");
+    expect(
+      screen
+        .getByRole("link", { name: "https://example.com/system" })
+        .getAttribute("href"),
+    ).toBe("https://example.com/system");
+  });
+
+  it("opens bare and Markdown links through the external opener", () => {
+    renderHistory({
+      messages: [
+        {
+          id: "1",
+          role: "agent",
+          text: [
+            "Bare https://example.com/bare.",
+            "[Issue](https://github.com/utensils/aethon/issues/94)",
+          ].join(" "),
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "https://example.com/bare" }));
+    fireEvent.click(screen.getByRole("link", { name: "Issue" }));
+
+    expect(openUrl).toHaveBeenCalledWith("https://example.com/bare");
+    expect(openUrl).toHaveBeenCalledWith(
+      "https://github.com/utensils/aethon/issues/94",
+    );
+  });
+
+  it("does not linkify URLs in inline code or fenced code blocks", () => {
+    renderHistory({
+      messages: [
+        {
+          id: "1",
+          role: "agent",
+          text: [
+            "`https://example.com/code`",
+            "",
+            "```text",
+            "https://example.com/block",
+            "```",
+            "",
+            "https://example.com/plain",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]?.textContent).toBe("https://example.com/plain");
+  });
+
+  it("does not render unsupported Markdown link schemes as anchors", () => {
+    renderHistory({
+      messages: [
+        {
+          id: "1",
+          role: "agent",
+          text: [
+            "[bad](javascript:alert(1))",
+            "[mail](mailto:a@example.com)",
+            "[ok](https://example.com/ok)",
+          ].join(" "),
+        },
+      ],
+    });
+
+    expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "mail" })).toBeNull();
+    expect(screen.getByRole("link", { name: "ok" }).getAttribute("href")).toBe(
+      "https://example.com/ok",
+    );
+  });
+
+  it("linkifies text split around thinking blocks", () => {
+    renderHistory({
+      messages: [
+        {
+          id: "1",
+          role: "agent",
+          text: [
+            "before https://example.com/before",
+            "<thinking>check https://example.com/thinking</thinking>",
+            "after https://example.com/after",
+          ].join(" "),
+        },
+      ],
+    });
+
+    expect(
+      screen.getByRole("link", { name: "https://example.com/before" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "https://example.com/thinking" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "https://example.com/after" }),
+    ).toBeTruthy();
   });
 });
