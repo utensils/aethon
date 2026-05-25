@@ -61,7 +61,7 @@ export interface UseChatActions {
   clearChat: () => void;
   sendChat: (
     text: string,
-    options?: { mode?: "normal" | "steer" },
+    options?: { mode?: "normal" | "steer"; tabId?: string },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
@@ -220,10 +220,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
 
   async function sendChat(
     text: string,
-    options?: { mode?: "normal" | "steer" },
+    options?: { mode?: "normal" | "steer"; tabId?: string },
   ) {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    const activeTabId = stateRef.current.activeTabId as string | undefined;
+    const explicitTabId = options?.tabId;
 
     // Client-side slash commands handle UI-only actions (clear, theme, etc.).
     // Unknown slash commands fall through to the agent so pi's own slash
@@ -232,9 +235,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const parsed = parseSlashCommand(trimmed);
     if (parsed) {
       const cmd = slashCommandsRef.current.find((c) => c.name === parsed.name);
-      if (cmd && !cmd.passthroughToAgent) {
-        const slashTabId =
-          (stateRef.current.activeTabId as string | undefined) ?? "default";
+      // Client slash contexts are active-tab oriented today. If a caller
+      // explicitly targets a different tab, do not echo into that tab while
+      // mutating the active one; pass the slash through to the target agent
+      // instead. Active-tab sends keep the existing local-command behavior.
+      const canRunLocalSlash = !explicitTabId || explicitTabId === activeTabId;
+      if (cmd && !cmd.passthroughToAgent && canRunLocalSlash) {
+        const slashTabId = activeTabId ?? "default";
         const slashUserMessage = {
           id: crypto.randomUUID(),
           role: "user" as const,
@@ -254,15 +261,21 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         }
         return;
       }
-      // Unknown — fall through to send_message. Pi's own command handling on
-      // the agent side may pick it up; if not, the LLM sees the literal text.
+      // Unknown or explicitly non-active target — fall through to
+      // send_message. Pi's own command handling on the agent side may pick it
+      // up; if not, the LLM sees the literal text.
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
     const mode = options?.mode === "steer" ? "steer" : "normal";
-    const tabId =
-      (stateRef.current.activeTabId as string | undefined) ?? "default";
-    const wasBusy = stateRef.current.waiting === true;
+    const tabId = explicitTabId ?? activeTabId ?? "default";
+    const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+      (tab) => tab.id === tabId,
+    );
+    const wasBusy =
+      targetTab?.waiting === true ||
+      ((targetTab === undefined || tabId === activeTabId) &&
+        stateRef.current.waiting === true);
     const delivery: ChatMessage["delivery"] =
       mode === "steer" && wasBusy
         ? "steered"
@@ -275,11 +288,15 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       tabId,
     );
     updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
-    setState((prev) => ({
-      ...prev,
-      status: "thinking…",
-      connection: "connected",
-    }));
+    setState((prev) =>
+      prev.activeTabId === tabId
+        ? {
+            ...prev,
+            status: "thinking…",
+            connection: "connected",
+          }
+        : prev,
+    );
 
     // Wait for any pending tab_open on this tab to land first so the
     // bridge has the right initial model before the chat creates the
