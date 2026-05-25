@@ -30,7 +30,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -51,9 +50,9 @@ mod debug;
 const GLOBAL_AGENT_KEY: &str = "__global__";
 
 pub(crate) struct AgentProcesses {
-    pub(crate) children: Mutex<HashMap<String, Child>>,
+    pub(crate) children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
     pub(crate) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
-    intentional_exits: Arc<Mutex<HashSet<String>>>,
+    pub(crate) intentional_exits: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AgentProcesses {
@@ -69,18 +68,6 @@ impl AgentProcesses {
 struct AgentWorker {
     tab_id: String,
     cwd: Option<String>,
-}
-
-/// Shared atomic flag set by the file-watcher debounce worker just
-/// before it kills the bun child for a hot-reload. The stdout reader
-/// checks this on EOF: if true, the kill was intentional (`agent-reloaded`
-/// was already emitted) — reset and stay silent. If false, the child
-/// died unexpectedly and we emit `agent-crashed` so the frontend can
-/// surface a notice + offer auto-restart.
-pub(crate) struct AgentReloadFlag(pub(crate) Arc<AtomicBool>);
-
-pub(crate) fn agent_reload_in_progress(app: &AppHandle) -> Arc<AtomicBool> {
-    Arc::clone(&app.state::<AgentReloadFlag>().0)
 }
 
 /// Find the project root (the directory containing `agent/main.ts`). Tauri
@@ -161,7 +148,7 @@ fn find_sidecar_binary() -> Result<PathBuf, String> {
 /// background thread; each line is emitted as an `agent-response`
 /// Tauri event.
 fn ensure_agent_spawned(
-    guard: &mut HashMap<String, Child>,
+    guard: &mut HashMap<String, Arc<Mutex<Child>>>,
     key: &str,
     app: &AppHandle,
     mutation_routes: Arc<Mutex<HashMap<String, String>>>,
@@ -169,9 +156,13 @@ fn ensure_agent_spawned(
     worker: Option<AgentWorker>,
 ) -> Result<(), String> {
     // Reap a dead child if present — try_wait returns Ok(Some(_)) when exited.
-    if let Some(child) = guard.get_mut(key)
-        && let Ok(Some(status)) = child.try_wait()
-    {
+    let exited_status = guard.get(key).and_then(|child| {
+        child
+            .lock()
+            .ok()
+            .and_then(|mut child| child.try_wait().ok().flatten())
+    });
+    if let Some(status) = exited_status {
         tracing::info!(target: "aethon::agent", key = key, "previous child exited with {status:?}; respawning");
         guard.remove(key);
     }
@@ -299,7 +290,6 @@ fn ensure_agent_spawned(
 
     let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
     let app_stdout = app.clone();
-    let reload_flag_stdout = agent_reload_in_progress(app);
     let stderr_tail_for_supervisor = Arc::clone(&stderr_tail);
     let stdout_key = key.to_string();
     let stdout_tab_id = worker.as_ref().map(|w| w.tab_id.clone());
@@ -313,13 +303,11 @@ fn ensure_agent_spawned(
                 Ok(text) => {
                     // Sentinel from the bridge meaning "I'm about to
                     // exit cleanly because the watcher asked me to
-                    // reload." Set the flag BEFORE the EOF arrives so
-                    // the post-loop handler treats it as intentional,
-                    // and emit `agent-reloaded` here so the frontend
-                    // can clear waiting state and respawn lazily.
+                    // reload." Keep that decision local to this child
+                    // so concurrent worker reloads cannot consume a
+                    // shared marker out from under each other.
                     if text.contains("\"_reload_done\"") {
                         saw_reload_done = true;
-                        reload_flag_stdout.store(true, std::sync::atomic::Ordering::Release);
                         let _ = app_stdout.emit("agent-reloaded", "");
                         // Don't forward the sentinel — it's bridge↔
                         // supervisor-internal and would confuse the
@@ -339,17 +327,13 @@ fn ensure_agent_spawned(
         }
         tracing::debug!(target: "aethon::agent", key = stdout_key, "stdout reader for pid={pid} exited");
         // Stdout reader exits when the child closes stdout — i.e. the
-        // child has died. Distinguish intentional kills (hot-reload via
-        // the file watcher, which sets `agent_reload_in_progress` first)
-        // from unexpected crashes. Reset the flag for the next cycle.
+        // child has died. Distinguish intentional per-child exits from
+        // unexpected crashes.
         let intentional_exit = stdout_intentional_exits
             .lock()
             .map(|mut exits| exits.remove(&stdout_key))
             .unwrap_or(false);
-        if intentional_exit
-            || saw_reload_done
-            || reload_flag_stdout.swap(false, std::sync::atomic::Ordering::AcqRel)
-        {
+        if intentional_exit || saw_reload_done {
             // Intentional kill — `agent-reloaded` was already emitted by
             // the watcher; nothing more to do.
             return;
@@ -401,7 +385,7 @@ fn ensure_agent_spawned(
         tracing::debug!(target: "aethon::agent", key = stderr_key, "stderr reader for pid={pid} exited");
     });
 
-    guard.insert(key.to_string(), child);
+    guard.insert(key.to_string(), Arc::new(Mutex::new(child)));
     Ok(())
 }
 
@@ -429,17 +413,20 @@ fn write_agent_payload(
     payload: serde_json::Value,
     worker: Option<AgentWorker>,
 ) -> Result<(), String> {
-    let mut guard = state.children.lock().map_err(|e| e.to_string())?;
-    ensure_agent_spawned(
-        &mut guard,
-        &key,
-        app,
-        Arc::clone(&state.mutation_routes),
-        Arc::clone(&state.intentional_exits),
-        worker,
-    )?;
+    let child = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        ensure_agent_spawned(
+            &mut guard,
+            &key,
+            app,
+            Arc::clone(&state.mutation_routes),
+            Arc::clone(&state.intentional_exits),
+            worker,
+        )?;
+        guard.get(&key).cloned().ok_or("agent not running")?
+    };
 
-    let child = guard.get_mut(&key).ok_or("agent not running")?;
+    let mut child = child.lock().map_err(|e| e.to_string())?;
     let stdin = child.stdin.as_mut().ok_or("no stdin")?;
     writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
     stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
@@ -447,13 +434,17 @@ fn write_agent_payload(
 }
 
 fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> Result<(), String> {
-    let mut guard = state.children.lock().map_err(|e| e.to_string())?;
-    let Some(mut child) = guard.remove(key) else {
+    let child = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard.remove(key)
+    };
+    let Some(child) = child else {
         return Ok(());
     };
     if let Ok(mut exits) = state.intentional_exits.lock() {
         exits.insert(key.to_string());
     }
+    let mut child = child.lock().map_err(|e| e.to_string())?;
     let pid = child.id();
     tracing::info!(target: "aethon::agent", key = key, "retiring pid={pid}");
     let _ = child.kill();
@@ -538,18 +529,20 @@ fn send_message(
 }
 
 /// Hard-kill the running agent child. Called by the frontend's hang-warn
-/// notification "Force restart" button. Unlike the file-watcher kill (which
-/// sets `agent_reload_in_progress` so EOF emits `agent-reloaded`), we
-/// intentionally let the crash path fire: the existing `agent-crashed`
-/// handler in App.tsx clears waiting state and (if auto_restart_agent = true)
-/// respawns automatically.
+/// notification "Force restart" button. We intentionally let the crash path
+/// fire: the existing `agent-crashed` handler clears waiting state and (if
+/// auto_restart_agent = true) respawns automatically.
 ///
 /// This bypasses blocked stdin — even if the Node event loop is frozen by
 /// backpressured stdout writes, Rust can still kill the child OS process.
 #[tauri::command]
 fn force_restart_agent(state: State<'_, AgentProcesses>) -> Result<(), String> {
-    let mut guard = state.children.lock().map_err(|e| e.to_string())?;
-    for (key, mut child) in guard.drain() {
+    let children: Vec<_> = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard.drain().collect()
+    };
+    for (key, child) in children {
+        let mut child = child.lock().map_err(|e| e.to_string())?;
         let pid = child.id();
         tracing::warn!(target: "aethon::agent", key = key, "force_restart_agent: killing pid={pid}");
         let _ = child.kill();
@@ -564,26 +557,28 @@ fn force_restart_agent(state: State<'_, AgentProcesses>) -> Result<(), String> {
 }
 
 /// Intentional kill-and-respawn for state changes the bridge can't apply
-/// hot (currently: the user toggling an extension via the sidebar). Sets
-/// the supervisor's `agent_reload_in_progress` flag BEFORE killing so the
-/// stdout reader treats EOF as a clean reload (emits `agent-reloaded`,
-/// not `agent-crashed`). The frontend's `agent-reloaded` handler then
-/// invokes `start_agent` and the new bridge boots fresh — for the
+/// hot (currently: the user toggling an extension via the sidebar). Marks
+/// each child key as an intentional exit BEFORE killing so the stdout reader
+/// treats EOF as a clean reload, not `agent-crashed`. The frontend's
+/// `agent-reloaded` handler then invokes `start_agent` and the new bridge
+/// boots fresh — for the
 /// disable-extension case, it reads `disabled-extensions.json` and the
 /// loader honors the user's intent.
 #[tauri::command]
 fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> Result<(), String> {
-    let mut guard = state.children.lock().map_err(|e| e.to_string())?;
-    // Only set the reload flag when there's actually a child to kill —
-    // the stdout reader thread is what resets the flag on EOF, so
-    // setting it without a child to die would leave it stale and the
-    // next genuine crash would be misclassified as an intentional
-    // reload (no agent-crashed notification).
-    if !guard.is_empty() {
-        let reload_flag = agent_reload_in_progress(&app);
-        for (key, mut child) in guard.drain() {
+    let children: Vec<_> = {
+        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard.drain().collect()
+    };
+    if !children.is_empty() {
+        if let Ok(mut exits) = state.intentional_exits.lock() {
+            for (key, _) in &children {
+                exits.insert(key.clone());
+            }
+        }
+        for (key, child) in children {
+            let mut child = child.lock().map_err(|e| e.to_string())?;
             let pid = child.id();
-            reload_flag.store(true, std::sync::atomic::Ordering::Release);
             tracing::info!(target: "aethon::agent", key = key, "reload_agent: killing pid={pid}");
             let _ = child.kill();
             let _ = child.wait();
@@ -840,7 +835,6 @@ pub fn run() {
     }
     let builder = builder
         .manage(AgentProcesses::new())
-        .manage(AgentReloadFlag(Arc::new(AtomicBool::new(false))))
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
         .manage(window_state::WindowStateStore::new())

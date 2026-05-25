@@ -38,6 +38,43 @@ describe("handleNotifications", () => {
     expect(mocks.dismissNotification).toHaveBeenCalledWith("n1");
   });
 
+  it("ae-agent-crashed:restart:<tabId> reopens the tab worker", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [
+          {
+            id: "tab-worker",
+            kind: "agent",
+            cwd: "/tmp/project",
+            model: "gpt-5",
+          },
+        ],
+      },
+    });
+    const handled = await handleNotifications(
+      {
+        component: { id: "notification-stack" },
+        eventType: "action",
+        data: {
+          id: "n-worker",
+          action: "ae-agent-crashed:restart:tab-worker",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "tab_open",
+        tabId: "tab-worker",
+        cwd: "/tmp/project",
+        model: "gpt-5",
+      }),
+    });
+    expect(mocks.dismissNotification).toHaveBeenCalledWith("n-worker");
+  });
+
   it("hang-warn:stop:<tabId> stops that tab specifically", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await handleNotifications(

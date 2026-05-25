@@ -105,6 +105,19 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
   const { bootLayout } = ctx;
 
   useEffect(() => {
+    const restartAgentProcess = (tabId?: string) => {
+      if (!tabId) {
+        return invoke("start_agent");
+      }
+      const tab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+        (t) => t.id === tabId && t.kind === "agent",
+      );
+      const payload: Record<string, unknown> = { type: "tab_open", tabId };
+      if (tab?.cwd) payload.cwd = tab.cwd;
+      if (tab?.model) payload.model = tab.model;
+      return invoke("agent_command", { payload: JSON.stringify(payload) });
+    };
+
     // The boot sequence (start_agent → boot_layout → report) and the
     // `agent-response` listener live in `useBridgeMessages` — see the
     // call site near the bottom of App.tsx. The remaining listeners
@@ -261,8 +274,11 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         };
       });
       const willAutoRestart = autoRestartAgentRef.current;
+      const notificationId = crashedTabId
+        ? `ae-agent-crashed:${crashedTabId}`
+        : "ae-agent-crashed";
       pushNotification({
-        id: "ae-agent-crashed",
+        id: notificationId,
         title: "Agent process exited unexpectedly",
         message: lastLine.slice(0, 200),
         kind: "error",
@@ -273,7 +289,12 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         actions: willAutoRestart
           ? [{ label: "Dismiss", action: "ae-agent-crashed:dismiss" }]
           : [
-              { label: "Restart", action: "ae-agent-crashed:restart" },
+              {
+                label: "Restart",
+                action: crashedTabId
+                  ? `ae-agent-crashed:restart:${crashedTabId}`
+                  : "ae-agent-crashed:restart",
+              },
               { label: "Dismiss", action: "ae-agent-crashed:dismiss" },
             ],
       });
@@ -284,7 +305,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         // priming here means the system-prompt + ready handshake
         // happens up-front.
         window.setTimeout(() => {
-          invoke("start_agent").catch(() => {
+          restartAgentProcess(crashedTabId).catch(() => {
             /* respawn deferred to next user action */
           });
         }, 500);
