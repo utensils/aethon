@@ -249,6 +249,7 @@ describe("emitReady", () => {
     const f = makeFixture({ projectRoot: "/repo/aethon" });
     const rec = fakeRec("anthropic/claude-x");
     rec.id = "tab-1";
+    f.state.currentProjectCwd = "/repo/a";
     f.state.tabs.set("tab-1", rec);
     f.state.tabProjectCwds.set("tab-1", "/repo/a");
 
@@ -257,6 +258,7 @@ describe("emitReady", () => {
     expect(f.sent[0]).toMatchObject({
       type: "ready",
       projectRoot: "/repo/aethon",
+      currentProjectCwd: "/repo/a",
       tabs: [
         {
           id: "tab-1",

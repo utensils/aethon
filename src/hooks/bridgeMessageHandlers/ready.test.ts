@@ -337,6 +337,69 @@ describe("handleReady", () => {
     );
   });
 
+  it("does not re-announce the active project when ready already reports that cwd", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "default", tabs: [] },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorktreeId: null,
+      worktreesByProject: {},
+      activeHostId: null,
+      projects: [{ id: "p1", label: "p1", path: "/tmp/p1", lastUsed: 1 }],
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [],
+        currentProjectCwd: "/tmp/p1",
+      },
+      ctx,
+    );
+
+    expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
+  });
+
+  it("re-announces the active worktree cwd, not the project root", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [{ id: "tab-1" }] },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorktreeId: "wt-1",
+      activeHostId: null,
+      projects: [{ id: "p1", label: "p1", path: "/tmp/p1", lastUsed: 1 }],
+      worktreesByProject: {
+        p1: [
+          {
+            id: "wt-1",
+            projectId: "p1",
+            path: "/tmp/p1-fix",
+            branch: "fix/reload",
+            isMain: false,
+          },
+        ],
+      },
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [{ id: "tab-1", model: "claude", cwd: "/tmp/other" }],
+        currentProjectCwd: "/tmp/other",
+      },
+      ctx,
+    );
+
+    expect(mocks.announceProjectToBridge).toHaveBeenCalledWith(
+      "tab-1",
+      "/tmp/p1-fix",
+    );
+  });
+
   it("requests transcript replay for non-default open tabs after ready", () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({
@@ -377,6 +440,45 @@ describe("handleReady", () => {
         cwd: "/repo/a",
       }),
     ]);
+  });
+
+  it("does not replay tab_open for non-default tabs already present in bridge ready data", () => {
+    const harness = installTauriMocks();
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-2",
+        tabs: [
+          { id: "default", model: "claude", projectId: "p1" },
+          { id: "tab-2", model: "gpt", projectId: "p1", cwd: "/repo/a" },
+        ],
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorktreeId: null,
+      worktreesByProject: {},
+      activeHostId: null,
+      projects: [{ id: "p1", label: "A", path: "/repo/a", lastUsed: 1 }],
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        currentProjectCwd: "/repo/a",
+        tabs: [
+          { id: "default", model: "claude", cwd: "/repo/a" },
+          { id: "tab-2", model: "gpt", cwd: "/repo/a" },
+        ],
+      },
+      ctx,
+    );
+
+    const tabOpenPayloads = harness.invoke.mock.calls
+      .filter((call) => call[0] === "agent_command")
+      .map((call) => JSON.parse(call[1].payload as string))
+      .filter((payload) => payload.type === "tab_open");
+    expect(tabOpenPayloads).toEqual([]);
   });
 
   it("requests transcript replay for worktree tabs with their tab cwd", () => {

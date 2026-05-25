@@ -5,6 +5,7 @@ export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
 const KEY = "aethon:session-ui-snapshot:v1";
 const MAX_MESSAGES_PER_TAB = 200;
 const MAX_TERMINAL_BUFFER = 256 * 1024;
+const MAX_TERMINAL_BUFFER_ENTRIES = 8;
 
 export interface SessionUiSnapshot {
   activeTabId?: string;
@@ -60,7 +61,9 @@ function shouldPersistTab(tab: Tab): boolean {
   );
 }
 
-function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undefined {
+function durableLayoutSnapshot(
+  layout: unknown,
+): Record<string, unknown> | undefined {
   if (!layout || typeof layout !== "object") return undefined;
   const input = layout as Record<string, unknown>;
   const next: Record<string, unknown> = {};
@@ -90,6 +93,31 @@ function durableLayoutSnapshot(layout: unknown): Record<string, unknown> | undef
         // surfaces on first restore after upgrade.
         next.columns = `${first} minmax(0,1fr) 360px`;
       }
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function durableTerminalSnapshot(
+  terminal: unknown,
+): Record<string, unknown> | undefined {
+  if (!terminal || typeof terminal !== "object") return undefined;
+  const input = terminal as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  if (typeof input.open === "boolean") {
+    next.open = input.open;
+  }
+  const buffer = input.buffer;
+  if (buffer && typeof buffer === "object" && !Array.isArray(buffer)) {
+    const entries = Object.entries(buffer as Record<string, unknown>)
+      .filter(
+        (entry): entry is [string, string] =>
+          typeof entry[0] === "string" && typeof entry[1] === "string",
+      )
+      .slice(-MAX_TERMINAL_BUFFER_ENTRIES)
+      .map(([id, value]) => [id, value.slice(-MAX_TERMINAL_BUFFER)]);
+    if (entries.length > 0) {
+      next.buffer = Object.fromEntries(entries);
     }
   }
   return Object.keys(next).length > 0 ? next : undefined;
@@ -147,16 +175,19 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         // pointing at the same file. Validate the shape minimally —
         // `filePath` is the field EditorCanvas actually requires; the
         // rest fall back to safe defaults on the next render.
-        ...(t.kind === "editor" && t.editor && typeof t.editor.filePath === "string"
+        ...(t.kind === "editor" &&
+        t.editor &&
+        typeof t.editor.filePath === "string"
           ? {
               editor: {
                 filePath: t.editor.filePath,
                 ...(typeof t.editor.rootPath === "string" && t.editor.rootPath
                   ? { rootPath: t.editor.rootPath }
                   : {}),
-                language: typeof t.editor.language === "string"
-                  ? t.editor.language
-                  : "plaintext",
+                language:
+                  typeof t.editor.language === "string"
+                    ? t.editor.language
+                    : "plaintext",
                 isDirty: false,
                 ...(typeof t.editor.cursorLine === "number"
                   ? { cursorLine: t.editor.cursorLine }
@@ -170,7 +201,7 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
       })),
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),
-      terminal: parsed.terminal,
+      terminal: durableTerminalSnapshot(parsed.terminal),
       terminalPanel: parsed.terminalPanel,
       scrollToMatchByTab: parsed.scrollToMatchByTab,
       projectModels:
@@ -210,7 +241,7 @@ export function serializeSessionUiSnapshot(
       tabs,
       activeTabId,
       layout: durableLayoutSnapshot(state.layout),
-      terminal: state.terminal,
+      terminal: durableTerminalSnapshot(state.terminal),
       terminalPanel: state.terminalPanel,
       scrollToMatchByTab: state.scrollToMatchByTab,
       projectModels:
