@@ -85,10 +85,11 @@ describe("buildExtensionSidebarItems", () => {
       "/repo/mold",
     );
 
-    // Sorted: project → user → package, alphabetical within each
-    // bucket. Disabled rows preserve their inferred source so the
-    // user can still tell a disabled project-extension apart from a
-    // disabled user-extension.
+    // Sorted: project → user, alphabetical within each bucket.
+    // Disabled rows preserve their inferred source so the user can
+    // still tell a disabled project-extension apart from a disabled
+    // user-extension. Bare-name npm packages fall into "user"
+    // (they have no @scope to indicate project membership).
     expect(items).toEqual([
       {
         id: "ext:mold:gallery",
@@ -112,18 +113,18 @@ describe("buildExtensionSidebarItems", () => {
         kind: "user",
       },
       {
-        id: "ext:user-ext",
-        label: "user-ext",
+        id: "ext:package-ext",
+        label: "package-ext",
         hint: "user",
         active: true,
         kind: "user",
       },
       {
-        id: "ext:package-ext",
-        label: "package-ext",
-        hint: "package",
+        id: "ext:user-ext",
+        label: "user-ext",
+        hint: "user",
         active: true,
-        kind: "package",
+        kind: "user",
       },
     ]);
   });
@@ -188,12 +189,16 @@ describe("buildExtensionSidebarItems", () => {
     );
 
     // Project-directory disabled row for mold is hidden under claudette;
-    // extension-package and user-directory entries stay visible.
-    // Sorted user → package within the visible set.
-    expect(items.map((item) => item.id)).toEqual([
-      "ext-disabled:global-user-ext",
-      "ext-disabled:@mold/repo-gallery",
-    ]);
+    // extension-package and user-directory entries stay visible. With
+    // the two-bucket scheme, neither survivor matches the active
+    // project's basename, so both fall into the user bucket and sort
+    // alphabetically.
+    expect(items.map((item) => item.id).sort()).toEqual(
+      [
+        "ext-disabled:@mold/repo-gallery",
+        "ext-disabled:global-user-ext",
+      ].sort(),
+    );
   });
 
   it("shows disabled project-directory rows when their project IS active", () => {
@@ -351,20 +356,23 @@ describe("buildExtensionSidebarItems", () => {
       "/repo/mold",
       new Set(["mold"]),
     );
-    // Project first, then user, then package. Each group sorted A→Z.
+    // Project first, then user. `@mold/...` npm packages fold INTO
+    // the project bucket because their scope matches the active
+    // project's basename. `@brink/...` stays user (scope unrelated).
+    // Each group sorted A→Z.
     expect(items.map((item) => item.label)).toEqual([
+      "@mold/image-gallery-ui",
+      "@mold/project-background-ui",
       "mold:image-gallery",
       "mold:project-background",
       "@brink/current-context-widget",
-      "@mold/image-gallery-ui",
-      "@mold/project-background-ui",
     ]);
     expect(items.map((item) => item.hint)).toEqual([
       "project",
       "project",
+      "project",
+      "project",
       "user",
-      "package",
-      "package",
     ]);
   });
 
@@ -390,10 +398,13 @@ describe("buildExtensionSidebarItems", () => {
       "/repo/mold",
       new Set(["mold"]),
     );
+    // `@mold/...` folds into project (scope matches active project);
+    // `@brink/...` stays user (unrelated scope). Sort order: project
+    // bucket first, alphabetical within.
     expect(items.map((item) => ({ label: item.label, hint: item.hint }))).toEqual([
+      { label: "@mold/image-gallery-ui", hint: "project · disabled" },
       { label: "mold:image-gallery", hint: "project · disabled" },
       { label: "@brink/current-context-widget", hint: "user · disabled" },
-      { label: "@mold/image-gallery-ui", hint: "package · disabled" },
     ]);
   });
 });

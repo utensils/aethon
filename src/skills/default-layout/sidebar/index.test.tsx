@@ -59,13 +59,16 @@ describe("Sidebar extension controls", () => {
               label: "mold-gallery",
               hint: "project",
               active: true,
+              kind: "project",
             },
           ],
         },
       },
     });
 
-    expect(screen.getByText("extensions")).toBeTruthy();
+    // Qualified section title — always present even when only one
+    // bucket has rows so scope is never ambiguous.
+    expect(screen.getByText("project extensions")).toBeTruthy();
     expect(screen.getByText("mold-gallery")).toBeTruthy();
     expect(screen.getByText("project")).toBeTruthy();
   });
@@ -202,7 +205,7 @@ describe("Sidebar extension controls", () => {
     );
   });
 
-  it("splits the auto-injected EXTENSIONS section by origin (project / user / package)", () => {
+  it("splits the auto-injected EXTENSIONS section by origin (project / user)", () => {
     renderSidebar({
       state: {
         sidebar: {
@@ -222,22 +225,21 @@ describe("Sidebar extension controls", () => {
             {
               id: "ext:@brink/widget",
               label: "@brink/widget",
-              hint: "package",
-              kind: "package",
+              hint: "user",
+              kind: "user",
             },
           ],
         },
       },
     });
 
-    // All three subgroup titles appear; the user can tell scope at a
-    // glance even without reading the per-row hints.
-    expect(screen.getByText("extensions · project")).toBeTruthy();
-    expect(screen.getByText("extensions · user")).toBeTruthy();
-    expect(screen.getByText("extensions · package")).toBeTruthy();
+    // Two subgroup titles appear; the user can tell scope at a glance
+    // even without reading the per-row hints.
+    expect(screen.getByText("project extensions")).toBeTruthy();
+    expect(screen.getByText("user extensions")).toBeTruthy();
   });
 
-  it("uses a bare 'extensions' title when only one origin bucket has items", () => {
+  it("keeps the qualified group title even when only one origin bucket has items", () => {
     renderSidebar({
       state: {
         sidebar: {
@@ -253,9 +255,11 @@ describe("Sidebar extension controls", () => {
       },
     });
 
-    // No subgroup qualifier when there's nothing to disambiguate against.
-    expect(screen.getByText("extensions")).toBeTruthy();
-    expect(screen.queryByText("extensions · user")).toBeNull();
+    // Origin label stays so the user can read scope at a glance even
+    // with a single extension loaded — that's exactly when knowing
+    // whether it's a user-level or project-level addition matters.
+    expect(screen.getByText("user extensions")).toBeTruthy();
+    expect(screen.queryByText("project extensions")).toBeNull();
   });
 
   it("does not duplicate a layout-provided extensions section", () => {

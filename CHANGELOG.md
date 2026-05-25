@@ -23,18 +23,21 @@ All notable changes to Aethon. Format loosely follows
   consistency. Failed-to-load extensions render the switch in a muted
   disabled state.
 - **Extension origin always visible + grouped.** The sidebar's
-  extensions list now sorts entries by origin (project-scoped first,
-  then user-scoped, then npm packages), alphabetical within each
-  group. Disabled rows preserve their origin label (`project ·
-  disabled` instead of just `disabled`) so the user can tell at a
-  glance which scope an extension came from even when every row is
-  toggled off. The auto-injected EXTENSIONS section now splits into
-  per-origin sub-sections — each appears with a qualified title
-  (`extensions · project`, `extensions · user`,
-  `extensions · package`) acting as a visual divider, and empty
-  buckets hide. When only one bucket has entries, the title
-  collapses back to a bare `extensions` so the sidebar reads
-  cleanly in single-scope projects.
+  extensions list now splits into two per-origin sub-sections
+  (`project extensions`, `user extensions`) that act as visible
+  dividers; empty buckets hide. Project-scoped npm packages
+  (`@<project>/<ext>` where the scope matches the active project's
+  basename) fold INTO the project bucket, while unrelated-scope or
+  bare-name packages stay in the user bucket — so `@mold/image-
+  gallery-ui` reads as a project extension under `mold`, but
+  `@brink/current-context-widget` stays user-level. Rows are sorted
+  alphabetically within each group, and each row's hint (`project ·
+  disabled`, `user · disabled`) preserves origin even when toggled
+  off. The group title is always qualified — single-bucket states
+  still read `user extensions` rather than a bare `extensions`, so
+  scope is never ambiguous. Auto-injection skips when an extensions
+  section is declared explicitly in layout JSON, preserving the
+  override path for skills that ship custom rendering.
 
 ### Fixed
 

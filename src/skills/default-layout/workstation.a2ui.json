@@ -88,12 +88,6 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
-                  },
-                  {
-                    "id": "extensions",
-                    "title": "extensions",
-                    "items": { "$ref": "/sidebar/extensions" },
-                    "hideWhenEmpty": true
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }

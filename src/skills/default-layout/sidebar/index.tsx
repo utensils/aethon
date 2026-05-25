@@ -302,8 +302,7 @@ export function Sidebar({
       kind = "session";
     } else if (
       sectionId === "extensions" ||
-      sectionId === "extensions-user" ||
-      sectionId === "extensions-package"
+      sectionId === "extensions-user"
     ) {
       if (item.id.startsWith("ext:")) {
         kind = "extension-enabled";
@@ -591,55 +590,46 @@ export function Sidebar({
     ...(extraSections as SidebarSectionExt[]),
   ].some((section) => section.id === "extensions");
   // Split the auto-injected extensions list into one section per
-  // origin (project / user / package). Each sub-section auto-hides
-  // when empty. Items carry `kind` from buildExtensionSidebarItems;
-  // legacy items lacking the field fall back to "user" so a stale
-  // upstream array still groups sensibly.
+  // origin (project / user). Each sub-section auto-hides when empty.
+  // Items carry `kind` from buildExtensionSidebarItems; legacy items
+  // lacking the field fall back to "user" so a stale upstream array
+  // still groups sensibly. The classifier folds `@<project>/<ext>`
+  // npm packages into the project bucket when the scope matches the
+  // active project's basename — so `@mold/image-gallery-ui` reads as
+  // a project extension under mold, while `@brink/widget` stays user.
   const extensionSections: SidebarSectionExt[] =
     extensionItems.length > 0 && !hasExplicitExtensionSection
       ? (() => {
-          const buckets: Record<
-            "project" | "user" | "package",
-            SidebarItem[]
-          > = { project: [], user: [], package: [] };
+          const buckets: Record<"project" | "user", SidebarItem[]> = {
+            project: [],
+            user: [],
+          };
           for (const item of extensionItems) {
             const kind = ((item as { kind?: string }).kind ?? "user") as
               | "project"
-              | "user"
-              | "package";
+              | "user";
             (buckets[kind] ?? buckets.user).push(item);
           }
+          // Always show the qualified group title so the user can tell
+          // scope at a glance even when only one bucket has rows. The
+          // alternative — collapsing to a bare "extensions" — loses
+          // that information exactly when there's only one extension
+          // loaded, which is when its origin is most informative.
+          const titleFor = (kind: "project" | "user"): string =>
+            kind === "project" ? "project extensions" : "user extensions";
           const sections: SidebarSectionExt[] = [];
           if (buckets.project.length > 0) {
             sections.push({
               id: "extensions",
-              title: "extensions · project",
+              title: titleFor("project"),
               items: buckets.project,
             });
           }
           if (buckets.user.length > 0) {
             sections.push({
               id: "extensions-user",
-              // When project rows exist, the user/package headers act
-              // as dividers — qualified so the user can read what
-              // each group is at a glance. When there are no project
-              // rows, the first remaining group keeps the bare
-              // "extensions" title so the sidebar reads cleanly.
-              title:
-                buckets.project.length > 0
-                  ? "extensions · user"
-                  : "extensions",
+              title: titleFor("user"),
               items: buckets.user,
-            });
-          }
-          if (buckets.package.length > 0) {
-            sections.push({
-              id: "extensions-package",
-              title:
-                buckets.project.length > 0 || buckets.user.length > 0
-                  ? "extensions · package"
-                  : "extensions",
-              items: buckets.package,
             });
           }
           return sections;
@@ -717,13 +707,12 @@ export function Sidebar({
                     // Inline toggle for extension rows — quick on/off
                     // without diving into the right-click menu. The
                     // context menu stays as a secondary affordance.
-                    // Match all three auto-injected sub-sections
-                    // (project / user / package) so the toggle shows
-                    // on every extension row regardless of bucket.
+                    // Match both auto-injected sub-sections
+                    // (project / user) so the toggle shows on every
+                    // extension row regardless of bucket.
                     const isExtensionsSection =
                       section.id === "extensions" ||
-                      section.id === "extensions-user" ||
-                      section.id === "extensions-package";
+                      section.id === "extensions-user";
                     const extState = isExtensionsSection
                       ? extensionToggleState(item)
                       : null;
