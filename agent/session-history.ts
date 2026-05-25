@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { summarizeToolArgs, toolCardPayload } from "./tool-card";
 
 const LABEL_FILE = "label.txt";
 const LOCAL_CHAT_FILE = "aethon-chat.jsonl";
@@ -68,6 +69,7 @@ export interface RestoredChatMessage {
   role: "user" | "agent" | "system";
   text?: string;
   thinking?: string;
+  a2ui?: { components: unknown[] };
   createdAt?: number;
   cwd?: string;
 }
@@ -108,6 +110,25 @@ function textFromContent(content: unknown): string {
   return chunks.join("\n").trim();
 }
 
+function thinkingFromContent(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+
+  const chunks: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const record = part as Record<string, unknown>;
+    if (record.type === "thinking" && typeof record.thinking === "string") {
+      chunks.push(record.thinking);
+    } else if (
+      (record.type === "thinking" || record.type === "reasoning") &&
+      typeof record.text === "string"
+    ) {
+      chunks.push(record.text);
+    }
+  }
+  return chunks.join("\n").trim();
+}
+
 function trimText(text: string): string {
   return text.length > MAX_TEXT_CHARS
     ? `${text.slice(0, MAX_TEXT_CHARS - 3)}...`
@@ -118,6 +139,14 @@ function isChatRole(role: unknown): role is RestoredChatMessage["role"] {
   return role === "user" || role === "agent" || role === "system";
 }
 
+function hasA2ui(value: unknown): value is { components: unknown[] } {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    Array.isArray((value as { components?: unknown }).components)
+  );
+}
+
 export async function appendLocalChatMessage(
   sessionDir: string,
   message: RestoredChatMessage,
@@ -126,7 +155,8 @@ export async function appendLocalChatMessage(
   const text = typeof message.text === "string" ? trimText(message.text) : "";
   const thinking =
     typeof message.thinking === "string" ? trimText(message.thinking) : "";
-  if (!text && !thinking) return;
+  const a2ui = hasA2ui(message.a2ui) ? message.a2ui : undefined;
+  if (!text && !thinking && !a2ui) return;
   await mkdir(sessionDir, { recursive: true });
   const entry = {
     type: "aethon_chat",
@@ -134,6 +164,7 @@ export async function appendLocalChatMessage(
     role: message.role,
     ...(text ? { text } : {}),
     ...(thinking ? { thinking } : {}),
+    ...(a2ui ? { a2ui } : {}),
     createdAt:
       typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
         ? message.createdAt
@@ -181,7 +212,8 @@ function parseLocalChatLines(
     const text = typeof record.text === "string" ? trimText(record.text) : "";
     const thinking =
       typeof record.thinking === "string" ? trimText(record.thinking) : "";
-    if (!text && !thinking) continue;
+    const a2ui = hasA2ui(record.a2ui) ? record.a2ui : undefined;
+    if (!text && !thinking && !a2ui) continue;
     const id =
       typeof record.id === "string" && record.id.length > 0
         ? record.id
@@ -191,6 +223,7 @@ function parseLocalChatLines(
       role: record.role,
       ...(text ? { text } : {}),
       ...(thinking ? { thinking } : {}),
+      ...(a2ui ? { a2ui } : {}),
       ...(typeof record.createdAt === "number"
         ? { createdAt: record.createdAt }
         : {}),
@@ -234,6 +267,7 @@ async function pruneLocalChatFile(path: string): Promise<void> {
           role: m.role,
           ...(m.text ? { text: m.text } : {}),
           ...(m.thinking ? { thinking: m.thinking } : {}),
+          ...(m.a2ui ? { a2ui: m.a2ui } : {}),
           ...(typeof m.createdAt === "number" ? { createdAt: m.createdAt } : {}),
           ...(m.cwd ? { cwd: m.cwd } : {}),
         }),
@@ -247,9 +281,63 @@ async function pruneLocalChatFile(path: string): Promise<void> {
   }
 }
 
-export function parseSessionHistoryLines(lines: Iterable<string>): RestoredChatMessage[] {
+function parseMessageTime(record: Record<string, unknown>, msg: Record<string, unknown>): number | undefined {
+  const candidates = [msg.timestamp, record.timestamp];
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === "string") {
+      const parsed = Date.parse(candidate);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function restoredToolUiId(toolCallId: string): string {
+  const safe = toolCallId.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96);
+  return `restored-tool-${safe || "unknown"}`;
+}
+
+interface RestoredToolCall {
+  messageIndex: number;
+  uiId: string;
+  toolName: string;
+  argsSummary: string;
+  startedAt?: number;
+}
+
+function toolCardMessage(opts: {
+  uiId: string;
+  toolName: string;
+  argsSummary: string;
+  result?: unknown;
+  isError?: boolean;
+  startedAt?: number;
+  endedAt?: number;
+}): RestoredChatMessage {
+  return {
+    id: opts.uiId,
+    role: "agent",
+    a2ui: toolCardPayload({
+      id: opts.uiId,
+      toolName: opts.toolName,
+      argsSummary: opts.argsSummary,
+      ...(opts.result !== undefined ? { result: opts.result } : {}),
+      ...(opts.isError !== undefined ? { isError: opts.isError } : {}),
+      ...(opts.startedAt !== undefined ? { startedAt: opts.startedAt } : {}),
+      ...(opts.endedAt !== undefined ? { endedAt: opts.endedAt } : {}),
+    }),
+  };
+}
+
+export function parseSessionHistoryLines(
+  lines: Iterable<string>,
+): RestoredChatMessage[] {
   const messages: RestoredChatMessage[] = [];
   const seen = new Set<string>();
+  const toolCalls = new Map<string, RestoredToolCall>();
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -269,6 +357,51 @@ export function parseSessionHistoryLines(lines: Iterable<string>): RestoredChatM
     if (!message || typeof message !== "object") continue;
     const msg = message as Record<string, unknown>;
     const sourceRole = msg.role;
+    if (sourceRole === "toolResult") {
+      const toolCallId =
+        typeof msg.toolCallId === "string" && msg.toolCallId.length > 0
+          ? msg.toolCallId
+          : undefined;
+      const toolName =
+        typeof msg.toolName === "string" && msg.toolName.length > 0
+          ? msg.toolName
+          : "tool";
+      const endedAt = parseMessageTime(record, msg);
+      const result = {
+        content: msg.content,
+      };
+      const isError = msg.isError === true;
+      const cached = toolCallId ? toolCalls.get(toolCallId) : undefined;
+      if (cached) {
+        messages[cached.messageIndex] = toolCardMessage({
+          uiId: cached.uiId,
+          toolName: cached.toolName,
+          argsSummary: cached.argsSummary,
+          result,
+          isError,
+          ...(cached.startedAt !== undefined
+            ? { startedAt: cached.startedAt }
+            : {}),
+          ...(endedAt !== undefined ? { endedAt } : {}),
+        });
+        continue;
+      }
+      const uiId = restoredToolUiId(toolCallId ?? `result-${messages.length}`);
+      if (seen.has(uiId)) continue;
+      seen.add(uiId);
+      messages.push(
+        toolCardMessage({
+          uiId,
+          toolName,
+          argsSummary: "",
+          result,
+          isError,
+          ...(endedAt !== undefined ? { endedAt } : {}),
+        }),
+      );
+      continue;
+    }
+
     const role =
       sourceRole === "user"
         ? "user"
@@ -278,16 +411,60 @@ export function parseSessionHistoryLines(lines: Iterable<string>): RestoredChatM
     if (!role) continue;
 
     const text = textFromContent(msg.content);
-    if (!text) continue;
+    const thinking = role === "agent" ? thinkingFromContent(msg.content) : "";
 
     const id =
       typeof record.id === "string" && record.id.length > 0
         ? record.id
         : `restored-${messages.length}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
+    if ((text || thinking) && !seen.has(id)) {
+      seen.add(id);
+      messages.push({
+        id,
+        role,
+        ...(text ? { text: trimText(text) } : {}),
+        ...(thinking ? { thinking: trimText(thinking) } : {}),
+      });
+    }
 
-    messages.push({ id, role, text: trimText(text) });
+    if (role !== "agent" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (!part || typeof part !== "object") continue;
+      const toolCall = part as Record<string, unknown>;
+      if (toolCall.type !== "toolCall") continue;
+      const toolCallId =
+        typeof toolCall.id === "string" && toolCall.id.length > 0
+          ? toolCall.id
+          : undefined;
+      if (!toolCallId || toolCalls.has(toolCallId)) continue;
+      const toolName =
+        typeof toolCall.name === "string" && toolCall.name.length > 0
+          ? toolCall.name
+          : "tool";
+      const args =
+        "arguments" in toolCall ? toolCall.arguments : undefined;
+      const argsSummary = summarizeToolArgs(toolName, args);
+      const startedAt = parseMessageTime(record, msg);
+      const uiId = restoredToolUiId(toolCallId);
+      if (seen.has(uiId)) continue;
+      seen.add(uiId);
+      const messageIndex = messages.length;
+      messages.push(
+        toolCardMessage({
+          uiId,
+          toolName,
+          argsSummary,
+          ...(startedAt !== undefined ? { startedAt } : {}),
+        }),
+      );
+      toolCalls.set(toolCallId, {
+        messageIndex,
+        uiId,
+        toolName,
+        argsSummary,
+        ...(startedAt !== undefined ? { startedAt } : {}),
+      });
+    }
   }
 
   return messages.slice(-MAX_RESTORED_MESSAGES);
