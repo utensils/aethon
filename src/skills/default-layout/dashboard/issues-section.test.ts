@@ -105,7 +105,22 @@ describe("issues-section task helpers", () => {
       labels: [{ name: "bug", color: null }],
     });
 
-    expect(branch).toBe("fix/issue-85-cannot-rename-session-tab");
+    expect(branch).toBe("fix/issue-85-cannot-rename-session-tab-while");
+    expect(branch.length).toBeLessThanOrEqual(44);
+  });
+
+  it("keeps collision suffixes within the branch length cap", () => {
+    const base = "fix/issue-85-cannot-rename-session-tab-while";
+    const branch = buildIssueBranch(
+      {
+        number: 85,
+        title: "Cannot rename session tab while agent is running",
+        labels: [{ name: "bug", color: null }],
+      },
+      new Set([base]),
+    );
+
+    expect(branch).toBe("fix/issue-85-cannot-rename-session-tab-2");
     expect(branch.length).toBeLessThanOrEqual(44);
   });
 

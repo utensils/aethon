@@ -68,7 +68,11 @@ function compactIssueBranch(
   maxLength: number,
 ): string {
   if (branch.length <= maxLength) return branch;
-  const clipped = branch.slice(0, maxLength).replace(/-+$/g, "");
+  const rawClipped = branch.slice(0, maxLength);
+  const clipped = rawClipped.replace(/-+$/g, "");
+  if (rawClipped.length !== clipped.length || branch.charAt(maxLength) === "-") {
+    return clipped;
+  }
   const wordBoundary = clipped.lastIndexOf("-");
   if (wordBoundary > protectedLength) {
     return clipped.slice(0, wordBoundary).replace(/-+$/g, "");
