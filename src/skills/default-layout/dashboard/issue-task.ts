@@ -23,24 +23,61 @@ export function buildIssuePrompt(detail: {
   ].join("\n");
 }
 
+const MAX_ISSUE_BRANCH_LENGTH = 44;
+
 export function buildIssueBranch(
   issue: Pick<GhIssue, "number" | "title"> & Partial<Pick<GhIssue, "labels">>,
   existingBranches: ReadonlySet<string> = new Set(),
 ): string {
   const { prefix, title } = classifyIssueBranch(issue);
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48)
-    .replace(/-+$/g, "");
-  const base = `${prefix}/issue-${issue.number}${slug ? `-${slug}` : ""}`;
+  const slug = slugifyIssueTitle(title);
+  const branchPrefix = `${prefix}/issue-${issue.number}`;
+  const base = compactIssueBranch(
+    `${branchPrefix}${slug ? `-${slug}` : ""}`,
+    branchPrefix.length,
+    MAX_ISSUE_BRANCH_LENGTH,
+  );
   if (!existingBranches.has(base)) return base;
   for (let i = 2; i < 100; i += 1) {
-    const candidate = `${base}-${i}`;
+    const suffix = `-${i}`;
+    const candidate = `${compactIssueBranch(
+      base,
+      branchPrefix.length,
+      MAX_ISSUE_BRANCH_LENGTH - suffix.length,
+    )}${suffix}`;
     if (!existingBranches.has(candidate)) return candidate;
   }
-  return `${base}-${Date.now()}`;
+  const suffix = `-${Date.now()}`;
+  return `${compactIssueBranch(
+    base,
+    branchPrefix.length,
+    MAX_ISSUE_BRANCH_LENGTH - suffix.length,
+  )}${suffix}`;
+}
+
+function slugifyIssueTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function compactIssueBranch(
+  branch: string,
+  protectedLength: number,
+  maxLength: number,
+): string {
+  if (branch.length <= maxLength) return branch;
+  const rawClipped = branch.slice(0, maxLength);
+  const clipped = rawClipped.replace(/-+$/g, "");
+  if (rawClipped.length !== clipped.length || branch.charAt(maxLength) === "-") {
+    return clipped;
+  }
+  const wordBoundary = clipped.lastIndexOf("-");
+  if (wordBoundary > protectedLength) {
+    return clipped.slice(0, wordBoundary).replace(/-+$/g, "");
+  }
+  return clipped;
 }
 
 function classifyIssueBranch(

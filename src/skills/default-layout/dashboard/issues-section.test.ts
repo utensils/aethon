@@ -98,6 +98,32 @@ describe("issues-section task helpers", () => {
     ).toBe("fix/issue-123-support-origin-main-defaults-3");
   });
 
+  it("caps generated issue branch length at a sidebar-friendly size", () => {
+    const branch = buildIssueBranch({
+      number: 85,
+      title: "Cannot rename session tab while agent is running",
+      labels: [{ name: "bug", color: null }],
+    });
+
+    expect(branch).toBe("fix/issue-85-cannot-rename-session-tab-while");
+    expect(branch.length).toBeLessThanOrEqual(44);
+  });
+
+  it("keeps collision suffixes within the branch length cap", () => {
+    const base = "fix/issue-85-cannot-rename-session-tab-while";
+    const branch = buildIssueBranch(
+      {
+        number: 85,
+        title: "Cannot rename session tab while agent is running",
+        labels: [{ name: "bug", color: null }],
+      },
+      new Set([base]),
+    );
+
+    expect(branch).toBe("fix/issue-85-cannot-rename-session-tab-2");
+    expect(branch.length).toBeLessThanOrEqual(44);
+  });
+
   it("uses conventional issue titles for branch type and slug", () => {
     expect(
       buildIssueBranch({
@@ -109,7 +135,7 @@ describe("issues-section task helpers", () => {
           { name: "low-priority", color: null },
         ],
       }),
-    ).toBe("feat/issue-213-admin-add-recreate-missing-materialized-views-to");
+    ).toBe("feat/issue-213-admin-add-recreate-missing");
   });
 
   it("falls back to labels when the title has no conventional type", () => {
@@ -119,7 +145,7 @@ describe("issues-section task helpers", () => {
         title: "ACRIS deed not showing on BBL view",
         labels: [{ name: "bug", color: null }],
       }),
-    ).toBe("fix/issue-99-acris-deed-not-showing-on-bbl-view");
+    ).toBe("fix/issue-99-acris-deed-not-showing-on-bbl");
 
     expect(
       buildIssueBranch({
@@ -127,7 +153,7 @@ describe("issues-section task helpers", () => {
         title: "Add dealflow pipeline management tools",
         labels: [{ name: "enhancement", color: null }],
       }),
-    ).toBe("feat/issue-180-add-dealflow-pipeline-management-tools");
+    ).toBe("feat/issue-180-add-dealflow-pipeline");
   });
 
   it("respects non-feature conventional types and labels", () => {
