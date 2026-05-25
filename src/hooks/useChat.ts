@@ -262,8 +262,16 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const mode = options?.mode === "steer" ? "steer" : "normal";
     const tabId =
       (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const wasBusy = stateRef.current.waiting === true;
+    const delivery: ChatMessage["delivery"] =
+      mode === "steer" && wasBusy
+        ? "steered"
+        : mode === "normal" && wasBusy
+          ? "queued"
+          : "sent";
+    const userMessageId = crypto.randomUUID();
     appendMessage(
-      { id: crypto.randomUUID(), role: "user", text: sendText },
+      { id: userMessageId, role: "user", text: sendText, delivery },
       tabId,
     );
     updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
@@ -288,6 +296,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     try {
       await invoke("send_message", { message: sendText, tabId, mode });
     } catch (err) {
+      updateTab(tabId, (tab) => ({
+        ...tab,
+        messages: tab.messages.map((message) =>
+          message.id === userMessageId
+            ? { ...message, delivery: "failed" as const }
+            : message,
+        ),
+      }));
       appendMessage(
         {
           id: crypto.randomUUID(),

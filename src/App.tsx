@@ -4,7 +4,7 @@ import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
-import type { A2UIPayload } from "./types/a2ui";
+import type { A2UIPayload, ChatMessage } from "./types/a2ui";
 import { deriveTabActiveFlags, type Tab } from "./types/tab";
 import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
@@ -990,10 +990,7 @@ export default function App() {
 
   // Build the dispatch context fresh per invocation so handlers see latest
   // state (model list, skills) without re-creating the command registry.
-  function persistLocalChatMessage(
-    msg: { id: string; role: "user" | "agent" | "system"; text?: string },
-    tabId: string,
-  ) {
+  function persistLocalChatMessage(msg: ChatMessage, tabId: string) {
     if (!msg.text) return;
     invoke("agent_command", {
       payload: JSON.stringify({
@@ -1003,6 +1000,7 @@ export default function App() {
           id: msg.id,
           role: msg.role,
           text: msg.text,
+          ...(msg.delivery ? { delivery: msg.delivery } : {}),
           createdAt: Date.now(),
         },
       }),

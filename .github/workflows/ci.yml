@@ -43,6 +43,24 @@ jobs:
       - name: Vitest
         run: bunx vitest run
 
+  e2e:
+    name: e2e (playwright)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Version files are synced
+        run: bun run version:check
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Playwright
+        run: bun run test:e2e
+
   rust:
     name: rust (clippy + cargo test)
     strategy:

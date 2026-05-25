@@ -1,19 +1,36 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatInput } from "./chat";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ChatHistory, ChatInput } from "./chat";
 
-afterEach(() => cleanup());
+class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
 
-function renderInput(onEvent = vi.fn()) {
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function renderInput(
+  onEvent = vi.fn(),
+  props: Record<string, unknown> = {},
+  state: Record<string, unknown> = {},
+) {
   render(
     <ChatInput
       component={{
         id: "chat-input",
         type: "chat-input",
-        props: { value: "", placeholder: "Message" },
+        props: { value: "", placeholder: "Message", ...props },
       }}
-      state={{}}
+      state={state}
       onEvent={onEvent}
     />,
   );
@@ -21,6 +38,22 @@ function renderInput(onEvent = vi.fn()) {
     input: screen.getByPlaceholderText("Message"),
     onEvent,
   };
+}
+
+function renderHistory(state: Record<string, unknown>) {
+  const onEvent = vi.fn();
+  render(
+    <ChatHistory
+      component={{
+        id: "chat-history",
+        type: "chat-history",
+        props: { messages: { $ref: "/messages" } },
+      }}
+      state={state}
+      onEvent={onEvent}
+    />,
+  );
+  return { onEvent };
 }
 
 describe("ChatInput", () => {
@@ -67,5 +100,71 @@ describe("ChatInput", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
 
     expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
+  });
+
+  it("shows the running-turn shortcut hint only when busy", () => {
+    renderInput(vi.fn(), { disabled: { $ref: "/waiting" } }, { waiting: true });
+
+    expect(screen.getByText("Enter queues")).toBeTruthy();
+    expect(screen.getByText("Cmd/Ctrl+Enter steers")).toBeTruthy();
+
+    cleanup();
+    renderInput(vi.fn(), { disabled: { $ref: "/waiting" } }, { waiting: false });
+    expect(screen.queryByText("Enter queues")).toBeNull();
+  });
+
+  it("makes stop queue-clearing behavior visible when follow-ups are queued", () => {
+    renderInput(
+      vi.fn(),
+      { disabled: { $ref: "/waiting" }, queueCount: { $ref: "/queueCount" } },
+      { waiting: true, queueCount: 2 },
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Stop + clear" }).getAttribute("title"),
+    ).toBe("Stop the current prompt and clear 2 messages queued");
+    expect(screen.getByText("+2").getAttribute("title")).toBe(
+      "2 messages queued behind the current prompt",
+    );
+  });
+
+  it("renders queued and steered delivery badges on user messages", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "after this", delivery: "queued" },
+        { id: "2", role: "user", text: "look now", delivery: "steered" },
+      ],
+    });
+
+    expect(screen.getByText("queued")).toBeTruthy();
+    expect(screen.getByText("steered")).toBeTruthy();
+  });
+
+  it("numbers queued delivery badges when multiple follow-ups are waiting", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "running", delivery: "sent" },
+        { id: "2", role: "user", text: "first queued", delivery: "queued" },
+        { id: "3", role: "user", text: "second queued", delivery: "queued" },
+      ],
+    });
+
+    expect(screen.getByText("queued #1")).toBeTruthy();
+    expect(screen.getByText("queued #2")).toBeTruthy();
+  });
+
+  it("renders retry actions for failed user messages", () => {
+    const { onEvent } = renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "again please", delivery: "failed" },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(onEvent).toHaveBeenCalledWith("retry", {
+      messageId: "1",
+      value: "again please",
+    });
   });
 });

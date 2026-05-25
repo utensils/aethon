@@ -247,6 +247,29 @@ function roleBadge(role: string): string {
   return "SYS";
 }
 
+function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {
+  switch (delivery) {
+    case "queued":
+      return "queued";
+    case "steered":
+      return "steered";
+    case "failed":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+function queuedDeliveryLabels(messages: ChatMessage[]): Map<string, string> {
+  const queued = messages.filter(
+    (message) => message.role === "user" && message.delivery === "queued",
+  );
+  if (queued.length <= 1) return new Map();
+  return new Map(
+    queued.map((message, index) => [message.id, `queued #${index + 1}`]),
+  );
+}
+
 function ThinkingBlock({
   children,
   complete = true,
@@ -298,12 +321,16 @@ const ChatMessageRow = memo(
     tabId,
     className = "a2ui-chat-message",
     prevRole,
+    onEvent,
+    deliveryText,
   }: {
     message: ChatMessage;
     state: Record<string, unknown>;
     tabId?: string;
     className?: string;
     prevRole?: string;
+    onEvent?: BuiltinComponentProps["onEvent"];
+    deliveryText?: string;
   }) {
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -312,12 +339,41 @@ const ChatMessageRow = memo(
       : "a2ui-chat-text a2ui-markdown";
     // Suppress role label for consecutive messages from same sender
     const showRole = prevRole !== message.role;
+    const delivery =
+      message.role === "user"
+        ? (deliveryText ?? deliveryLabel(message.delivery))
+        : null;
     return (
       <div
         className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}
       >
-        {showRole && message.role !== "system" && (
-          <span className={roleClass}>{roleBadge(message.role)}</span>
+        {message.role !== "system" && (showRole || delivery) && (
+          <span className="a2ui-chat-meta">
+            {showRole && (
+              <span className={roleClass}>{roleBadge(message.role)}</span>
+            )}
+            {delivery && (
+              <span
+                className={`a2ui-chat-delivery a2ui-chat-delivery-${delivery}`}
+              >
+                {delivery}
+              </span>
+            )}
+            {delivery === "failed" && message.text && onEvent && (
+              <button
+                type="button"
+                className="a2ui-chat-retry"
+                onClick={() =>
+                  onEvent("retry", {
+                    messageId: message.id,
+                    value: message.text,
+                  })
+                }
+              >
+                Retry
+              </button>
+            )}
+          </span>
         )}
         {message.thinking && (
           <ThinkingBlock complete={Boolean(message.text)}>
@@ -340,6 +396,8 @@ const ChatMessageRow = memo(
     prev.tabId === next.tabId &&
     prev.className === next.className &&
     prev.prevRole === next.prevRole &&
+    prev.onEvent === next.onEvent &&
+    prev.deliveryText === next.deliveryText &&
     (!next.message.a2ui || prev.state === next.state),
 );
 
@@ -347,6 +405,7 @@ export function ChatHistory({
   component,
   state,
   tabId,
+  onEvent,
 }: BuiltinComponentProps) {
   const props = component.props as {
     messages: { $ref: string };
@@ -366,6 +425,7 @@ export function ChatHistory({
     () => messages.slice(Math.max(0, messages.length - visibleCount)),
     [messages, visibleCount],
   );
+  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
   const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
   const emptyHint = props.emptyHint
     ? resolveString(props.emptyHint, state)
@@ -461,6 +521,8 @@ export function ChatHistory({
               state={state}
               tabId={tabId}
               prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
+              onEvent={onEvent}
+              deliveryText={queuedLabels.get(m.id)}
             />
           ))}
         </>
@@ -478,7 +540,12 @@ export function ChatHistory({
 // feed (history) plus a live "current canvas" subtree if state.canvas is set.
 // ---------------------------------------------------------------------------
 
-export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
+export function MainCanvas({
+  component,
+  state,
+  tabId,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     slot?: string;
     messages?: { $ref: string };
@@ -505,6 +572,7 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
     () => messages.slice(Math.max(0, messages.length - visibleCount)),
     [messages, visibleCount],
   );
+  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
   const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
@@ -567,6 +635,8 @@ export function MainCanvas({ component, state, tabId }: BuiltinComponentProps) {
           tabId={tabId}
           className="a2ui-canvas-message"
           prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
+          onEvent={onEvent}
+          deliveryText={queuedLabels.get(m.id)}
         />
       ))}
       {liveSubtree && (
@@ -760,6 +830,13 @@ export function ChatInput({
   const stopTitle = props.stopTitle
     ? resolveString(props.stopTitle, state)
     : "Stop the current prompt";
+  const queuedMessageLabel = `${queueCount} message${queueCount === 1 ? "" : "s"} queued`;
+  const effectiveStopLabel =
+    queueCount > 0 && !props.stopLabel ? "Stop + clear" : stopLabel;
+  const effectiveStopTitle =
+    queueCount > 0
+      ? `Stop the current prompt and clear ${queuedMessageLabel}`
+      : stopTitle;
   const queueBadgeFormat = props.queueBadgeFormat
     ? resolveString(props.queueBadgeFormat, state)
     : "+{n}";
@@ -1166,6 +1243,12 @@ export function ChatInput({
           </div>,
           document.body,
         )}
+      {busy && (
+        <div className="a2ui-chat-input-hint">
+          <span>Enter queues</span>
+          <span>Cmd/Ctrl+Enter steers</span>
+        </div>
+      )}
       {/* Wrap the textarea and action button so Send sits INSIDE the
           textarea visually (absolute-positioned, bottom-right). Right
           padding on the textarea makes room for the button so text
@@ -1184,7 +1267,7 @@ export function ChatInput({
         {queueCount > 0 && (
           <span
             className="a2ui-chat-input-queue"
-            title={`${queueCount} message${queueCount === 1 ? "" : "s"} queued behind the current prompt`}
+            title={`${queuedMessageLabel} behind the current prompt`}
           >
             {queueBadgeFormat.replace("{n}", String(queueCount))}
           </span>
@@ -1194,8 +1277,8 @@ export function ChatInput({
             type="button"
             className="a2ui-chat-input-send a2ui-chat-input-stop"
             onClick={handleStop}
-            title={stopTitle}
-            aria-label={stopLabel}
+            title={effectiveStopTitle}
+            aria-label={effectiveStopLabel}
           >
             <svg
               className="a2ui-chat-input-send-icon"
@@ -1213,7 +1296,9 @@ export function ChatInput({
                 fill="currentColor"
               />
             </svg>
-            <span className="a2ui-chat-input-send-label">{stopLabel}</span>
+            <span className="a2ui-chat-input-send-label">
+              {effectiveStopLabel}
+            </span>
           </button>
         ) : (
           <button

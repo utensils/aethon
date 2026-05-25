@@ -11,4 +11,12 @@ describe("handleQueueReset", () => {
     const seed = { ...makeEmptyTab("default", "Tab 1"), queueCount: 7 };
     expect(updater(seed).queueCount).toBe(0);
   });
+
+  it("accepts an explicit remaining queue count", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleQueueReset({ type: "queue_reset", tabId: "default", queued: 2 }, ctx);
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const seed = { ...makeEmptyTab("default", "Tab 1"), queueCount: 7 };
+    expect(updater(seed).queueCount).toBe(2);
+  });
 });

@@ -13,11 +13,29 @@ export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   // Record turn start so response_end can compute duration and decide
   // whether to fire the OS completion notification.
   ctx.turnStartedAtRef.current.set(tabId, Date.now());
-  ctx.updateTab(tabId, (tab) => ({
-    ...tab,
-    waiting: true,
-    ...(remaining !== undefined ? { queueCount: remaining } : {}),
-  }));
+  ctx.updateTab(tabId, (tab) => {
+    const next = {
+      ...tab,
+      waiting: true,
+      ...(remaining !== undefined ? { queueCount: remaining } : {}),
+    };
+    if (data.source !== "queue") return next;
+    let promoted = false;
+    return {
+      ...next,
+      messages: next.messages.map((message) => {
+        if (
+          promoted ||
+          message.role !== "user" ||
+          message.delivery !== "queued"
+        ) {
+          return message;
+        }
+        promoted = true;
+        return { ...message, delivery: "sent" as const };
+      }),
+    };
+  });
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({ ...prev, status: "thinking…" }));
   }

@@ -118,6 +118,19 @@ describe("coerceChatMessages", () => {
     ]);
   });
 
+  it("preserves known user delivery states", () => {
+    const out = coerceChatMessages([
+      { id: "q1", role: "user", text: "after this", delivery: "queued" },
+      { id: "s1", role: "user", text: "look now", delivery: "steered" },
+      { id: "x1", role: "user", text: "nope", delivery: "bogus" },
+    ]);
+    expect(out).toEqual([
+      { id: "q1", role: "user", text: "after this", delivery: "queued" },
+      { id: "s1", role: "user", text: "look now", delivery: "steered" },
+      { id: "x1", role: "user", text: "nope" },
+    ]);
+  });
+
   it("rejects unknown roles", () => {
     expect(coerceChatMessages([{ role: "supervisor", text: "x" }])).toEqual([]);
   });

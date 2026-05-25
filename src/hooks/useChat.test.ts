@@ -87,7 +87,7 @@ function buildContext(overrides: Record<string, unknown> = {}): {
 
 describe("useChat setModel", () => {
   it("sends normal chat messages with normal mode", async () => {
-    const { ctx } = buildContext();
+    const { ctx, stateRef } = buildContext();
     const { result } = renderHook(() => useChat(ctx));
 
     await act(async () => {
@@ -99,10 +99,61 @@ describe("useChat setModel", () => {
       tabId: "tab-1",
       mode: "normal",
     });
+    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "hello",
+      delivery: "sent",
+    });
+  });
+
+  it("marks normal messages as queued while the active prompt is busy", async () => {
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("after this");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "after this",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "after this",
+      delivery: "queued",
+    });
+  });
+
+  it("marks the local user message failed when send_message rejects", async () => {
+    invoke.mockRejectedValueOnce(new Error("bridge closed"));
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("lost in transit");
+    });
+
+    const messages = (stateRef.current.tabs as Tab[])[0].messages;
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          text: "lost in transit",
+          delivery: "failed",
+        }),
+        expect.objectContaining({
+          role: "agent",
+          text: expect.stringContaining("Connection error:"),
+        }),
+      ]),
+    );
+    expect((stateRef.current.tabs as Tab[])[0].waiting).toBe(false);
   });
 
   it("sends command-enter messages with steer mode", async () => {
-    const { ctx } = buildContext();
+    const { ctx, stateRef } = buildContext({ waiting: true });
     const { result } = renderHook(() => useChat(ctx));
 
     await act(async () => {
@@ -113,6 +164,11 @@ describe("useChat setModel", () => {
       message: "look now",
       tabId: "tab-1",
       mode: "steer",
+    });
+    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "look now",
+      delivery: "steered",
     });
   });
 
