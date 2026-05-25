@@ -30,6 +30,42 @@ describe("handleTabStrip", () => {
     expect(mocks.closeTab).toHaveBeenCalledWith("tab-4");
   });
 
+  it("rename updates the label and persists it through the bridge", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "tab-4", kind: "agent", label: "Tab 1" },
+          { id: "tab-5", kind: "agent", label: "Tab 2" },
+        ],
+      },
+    });
+    const handled = await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "rename",
+        data: { tabId: "tab-4", label: "Planning" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "tab-4",
+        label: "Planning",
+      }),
+    });
+    const next = applySetState({
+      tabs: [
+        { id: "tab-4", kind: "agent", label: "Tab 1" },
+        { id: "tab-5", kind: "agent", label: "Tab 2" },
+      ],
+    });
+    expect((next.tabs as { id: string; label: string }[])[0].label).toBe(
+      "Planning",
+    );
+  });
+
   it("new spawns a fresh tab", async () => {
     const { ctx, mocks } = buildRouteFixture();
     await handleTabStrip(

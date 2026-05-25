@@ -1,5 +1,6 @@
 import type { EventRouteHandler } from "./types";
 import { restoreSessionFromSelection } from "./sessionRestore";
+import { renameSessionLabel } from "./sessionRename";
 
 /** tab-strip: select / close / new. Tab events route by component
  *  *type* — id may vary across layouts (workstation hoists the strip
@@ -12,7 +13,7 @@ export const handleTabStrip: EventRouteHandler = (
 ) => {
   if (component.type !== "tab-strip") return false;
   const sel = data as
-    | { tabId?: string; action?: string; id?: string }
+    | { tabId?: string; action?: string; id?: string; label?: string }
     | undefined;
   if (eventType === "select" && sel?.tabId) {
     ctx.setActiveTab(sel.tabId);
@@ -20,6 +21,11 @@ export const handleTabStrip: EventRouteHandler = (
   }
   if (eventType === "close" && sel?.tabId) {
     ctx.closeTab(sel.tabId);
+    return true;
+  }
+  if (eventType === "rename" && sel?.tabId) {
+    const label = typeof sel.label === "string" ? sel.label : "";
+    renameSessionLabel(ctx, sel.tabId, label);
     return true;
   }
   if (eventType === "new") {

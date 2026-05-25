@@ -14,11 +14,15 @@
  *   ("new")                 click on the "+" button
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import type { StringValue } from "../../../types/a2ui";
 import { resolveString } from "../../../utils/dataBinding";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "../../../components/primitives/context-menu";
 
 interface TabStripItem {
   id: string;
@@ -59,6 +63,37 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     return raw.filter((t) => t.kind !== "shell");
   }, [props.tabs, state]);
   const activeId = props.activeId ? resolveString(props.activeId, state) : "";
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    tab: TabStripItem;
+  } | null>(null);
+
+  const openTabMenu = (event: MouseEvent, tab: TabStripItem) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ x: event.clientX, y: event.clientY, tab });
+  };
+
+  const menuItems: ContextMenuItem[] = contextMenu
+    ? [
+        {
+          type: "input",
+          id: "rename-session",
+          label: "Session name",
+          defaultValue: contextMenu.tab.label,
+          submitLabel: "Rename",
+          onSubmit: (label) =>
+            onEvent("rename", { tabId: contextMenu.tab.id, label }),
+        },
+        { type: "separator" },
+        {
+          id: "close-tab",
+          label: "Close tab",
+          onSelect: () => onEvent("close", { tabId: contextMenu.tab.id }),
+        },
+      ]
+    : [];
 
   return (
     <div className="a2ui-tab-strip" role="tablist">
@@ -80,10 +115,12 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
               // mousedown not click so focus doesn't shift away from the
               // chat input first (avoids a stray blur that could submit
               // a draft). The select handler swaps the active tab.
+              if (e.button !== 0) return;
               if ((e.target as HTMLElement).closest(".a2ui-tab-close")) return;
               e.preventDefault();
               onEvent("select", { tabId: t.id });
             }}
+            onContextMenu={(e) => openTabMenu(e, t)}
           >
             {t.waiting ? (
               <span
@@ -127,6 +164,16 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
       >
         +
       </button>
+      <ContextMenu
+        open={!!contextMenu}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        items={menuItems}
+        onClose={() => setContextMenu(null)}
+        ariaLabel="Tab actions"
+        estimatedWidth={320}
+        estimatedHeight={176}
+      />
     </div>
   );
 }
