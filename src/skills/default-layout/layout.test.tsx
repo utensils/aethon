@@ -15,9 +15,10 @@ function renderLayout(children: A2UIComponent[]) {
         type: "layout",
         props: {
           columns: "0px minmax(0,1fr) 0px",
-          rows: "38px minmax(0,1fr) 0px auto auto",
+          rows: "38px 38px minmax(0,1fr) 0px auto auto",
           areas: [
             "sidebar header files-sidebar",
+            "sidebar tabs files-sidebar",
             "sidebar canvas files-sidebar",
             "sidebar terminal files-sidebar",
             "sidebar composer files-sidebar",

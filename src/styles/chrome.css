@@ -1340,11 +1340,6 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-width: min(46ch, calc(var(--app-viewport-width) - 32px));
 }
 
-.app-header .a2ui-tab-strip {
-  flex: 1 1 24rem;
-  max-width: min(58rem, 58vw);
-}
-
 .app-header .a2ui-dropdown {
   flex-shrink: 0;
 }

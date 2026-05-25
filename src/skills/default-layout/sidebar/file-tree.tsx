@@ -93,6 +93,36 @@ function parentDirOf(node: TreeNode): string {
   return slash >= 0 ? node.entry.path.slice(0, slash) : node.entry.path;
 }
 
+function withDepth(node: TreeNode, depth: number): TreeNode {
+  const delta = depth - node.depth;
+  if (delta === 0) return node;
+  const walk = (current: TreeNode): TreeNode => ({
+    ...current,
+    depth: current.depth + delta,
+    children: current.children?.map(walk) ?? current.children,
+  });
+  return walk(node);
+}
+
+function nodesFromEntries(
+  entries: FsEntry[],
+  depth: number,
+  previousChildren?: TreeNode[] | null,
+): TreeNode[] {
+  const previousByPath = new Map(
+    (previousChildren ?? []).map((child) => [child.entry.path, child]),
+  );
+  return entries.map((entry) => {
+    const previous = previousByPath.get(entry.path);
+    if (!previous) return { entry, depth };
+    return {
+      ...withDepth(previous, depth),
+      entry,
+      loadError: undefined,
+    };
+  });
+}
+
 /** Parse the persisted store; tolerate corruption by returning empty. */
 function parseExpandedStore(raw: string): ExpandedStore {
   if (!raw) return { byProject: {} };
@@ -364,7 +394,7 @@ export function FileTreePanel({
             kind: "dir",
           },
           depth: 0,
-          children: entries.map((e) => ({ entry: e, depth: 1 })),
+          children: nodesFromEntries(entries, 1),
         };
         setRoot(rootNode);
         // Hydrate any persisted-expanded folders so the user comes back
@@ -391,10 +421,11 @@ export function FileTreePanel({
                 if (node.entry.path === folderPath) {
                   return {
                     ...node,
-                    children: childEntries.map((e) => ({
-                      entry: e,
-                      depth: node.depth + 1,
-                    })),
+                    children: nodesFromEntries(
+                      childEntries,
+                      node.depth + 1,
+                      node.children,
+                    ),
                   };
                 }
                 if (!node.children) return node;
@@ -426,7 +457,7 @@ export function FileTreePanel({
           root: projectPathRef.current,
           path: node.entry.path,
         });
-        return entries.map((e) => ({ entry: e, depth: node.depth + 1 }));
+        return nodesFromEntries(entries, node.depth + 1, node.children);
       } catch (err) {
         node.loadError = String(err);
         return null;
@@ -553,17 +584,18 @@ export function FileTreePanel({
           if (r.entry.path === folderPath) {
             return {
               ...r,
-              children: entries.map((e) => ({ entry: e, depth: 1 })),
+              children: nodesFromEntries(entries, 1, r.children),
             };
           }
           const walk = (node: TreeNode): TreeNode => {
             if (node.entry.path === folderPath) {
               return {
                 ...node,
-                children: entries.map((e) => ({
-                  entry: e,
-                  depth: node.depth + 1,
-                })),
+                children: nodesFromEntries(
+                  entries,
+                  node.depth + 1,
+                  node.children,
+                ),
               };
             }
             if (!node.children) return node;

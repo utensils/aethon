@@ -17,6 +17,7 @@
  */
 
 import type { EventRouteContext, EventRouteEvent, EventRouteHandler } from "./types";
+import { WORKSTATION_AREAS } from "../hooks/useFocus";
 
 function asRecord(data: unknown): Record<string, unknown> {
   return data && typeof data === "object" ? (data as Record<string, unknown>) : {};
@@ -118,6 +119,7 @@ export const handleFileTree: EventRouteHandler = (
         layout: {
           ...layout,
           columns: tokens.join(" "),
+          areas: WORKSTATION_AREAS,
           lastRightWidth: `${width}px`,
         },
       };

@@ -2,6 +2,7 @@ import {
   readStateWithLocalStorageFallback,
   writeState as writePersistedState,
 } from "./persist";
+import { WORKSTATION_AREAS } from "./hooks/useFocus";
 
 export const LAYOUT_PREFS_FILE = "layout_prefs";
 
@@ -11,7 +12,6 @@ const DEFAULT_RIGHT_WIDTH = "360px";
 const DEFAULT_TERMINAL_HEIGHT = 240;
 const TERMINAL_HEIGHT_MIN = 120;
 const TERMINAL_HEIGHT_MAX = 720;
-
 export interface LayoutPrefs {
   layout?: Record<string, unknown>;
   terminalPanel?: Record<string, unknown>;
@@ -44,14 +44,6 @@ function sanitizeColumns(value: unknown): string | undefined {
     : `${tokens[0]} minmax(0,1fr)`;
 }
 
-function sanitizeAreas(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const areas = value.filter(
-    (area): area is string => typeof area === "string" && area.trim().length > 0,
-  );
-  return areas.length > 0 ? areas : undefined;
-}
-
 function clampTerminalHeight(value: unknown): number {
   return typeof value === "number" &&
     Number.isFinite(value) &&
@@ -63,7 +55,7 @@ function clampTerminalHeight(value: unknown): number {
 
 function rowsForTerminal(open: unknown, height: unknown): string {
   const track = open === true ? `${clampTerminalHeight(height)}px` : "0px";
-  return `38px minmax(0,1fr) ${track} auto auto`;
+  return `38px 38px minmax(0,1fr) ${track} auto auto`;
 }
 
 export function sanitizeLayoutPrefs(input: unknown): LayoutPrefs | null {
@@ -88,8 +80,6 @@ export function sanitizeLayoutPrefs(input: unknown): LayoutPrefs | null {
     if (isPx(layoutInput.lastRightWidth)) {
       layout.lastRightWidth = layoutInput.lastRightWidth;
     }
-    const areas = sanitizeAreas(layoutInput.areas);
-    if (areas) layout.areas = areas;
     if (Object.keys(layout).length > 0) prefs.layout = layout;
   }
 
@@ -157,6 +147,7 @@ export function mergeLayoutPrefsIntoState(
     layout: {
       ...mergedLayout,
       rows: rowsForTerminal(terminal?.open, mergedTerminalPanel.height),
+      areas: WORKSTATION_AREAS,
     },
     ...(prefs.terminalPanel ? { terminalPanel: mergedTerminalPanel } : {}),
   };
@@ -181,13 +172,7 @@ export function resetLayoutPrefsInState(
       rows: rowsForTerminal(terminal?.open, DEFAULT_TERMINAL_HEIGHT),
       lastLeftWidth: DEFAULT_LEFT_WIDTH,
       lastRightWidth: DEFAULT_RIGHT_WIDTH,
-      areas: [
-        "sidebar header files-sidebar",
-        "sidebar canvas files-sidebar",
-        "sidebar terminal files-sidebar",
-        "sidebar composer files-sidebar",
-        "status status status",
-      ],
+      areas: WORKSTATION_AREAS,
     },
     terminalPanel: terminalRest,
   };

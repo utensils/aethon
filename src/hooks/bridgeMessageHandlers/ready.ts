@@ -5,6 +5,7 @@ import { TAB_MIRROR_KEYS } from "../useTabs";
 import type { Tab } from "../../types/tab";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
 import { deletePointer } from "../../utils/jsonPointer";
+import { WORKSTATION_AREAS, workstationRows } from "../useFocus";
 import type {
   DisabledExtensionRecord,
   ExtensionFailureSummary,
@@ -16,6 +17,41 @@ import type {
   DiscoveredSession,
   ModelDescriptor,
 } from "./types";
+
+function isWorkstationBootLayout(layout: A2UIPayload): boolean {
+  const state = layout.state as
+    | { layout?: { areas?: unknown; rows?: unknown } }
+    | undefined;
+  const areas = state?.layout?.areas;
+  return (
+    Array.isArray(areas) &&
+    areas.some((row) => typeof row === "string" && row.includes("files-sidebar"))
+  );
+}
+
+function terminalHeightFromState(state: Record<string, unknown>): number {
+  const panel = state.terminalPanel as { height?: unknown } | undefined;
+  const height = panel?.height;
+  return typeof height === "number" && Number.isFinite(height) ? height : 240;
+}
+
+function normalizeWorkstationLayout(
+  state: Record<string, unknown>,
+): Record<string, unknown> {
+  const layout = (state.layout as Record<string, unknown> | undefined) ?? {};
+  const terminal = state.terminal as { open?: boolean } | undefined;
+  return {
+    ...state,
+    layout: {
+      ...layout,
+      rows: workstationRows(
+        terminal?.open === true,
+        terminalHeightFromState(state),
+      ),
+      areas: WORKSTATION_AREAS,
+    },
+  };
+}
 
 /** The biggest handler: extension hydration + session restore + model
  *  picker + tabs reconcile. Called whenever the bridge fires `ready` —
@@ -179,6 +215,8 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     Array.isArray(extLayout.components)
       ? extLayout
       : ctx.bootLayout;
+  const shouldNormalizeWorkstationLayout =
+    baseLayout === ctx.bootLayout && isWorkstationBootLayout(baseLayout);
   const patchedLayout = extPatches.reduce<A2UIPayload>(
     (acc, p) => layoutPatch(acc, p.path, p.value),
     baseLayout,
@@ -229,6 +267,14 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       next = deepMergeState(layoutDefaults, next);
     }
     next = deepMergeState(next, extState);
+    if (shouldNormalizeWorkstationLayout) {
+      // Older persisted UI snapshots and project-owned layout state had
+      // no dedicated tabs row. Because layout state uses default-merge
+      // semantics, those stale /layout/areas values otherwise win over
+      // the boot workstation payload on every bridge ready, leaving the
+      // tab-strip to auto-place at the bottom of the grid.
+      next = normalizeWorkstationLayout(next);
+    }
     // Reconcile bridge data onto local tabs without creating visible
     // records from the bridge tab list. With project buckets, bridge
     // state is global but the visible UI bucket is project-scoped; if a

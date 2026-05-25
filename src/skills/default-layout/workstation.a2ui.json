@@ -23,16 +23,6 @@
           },
           "children": [
             {
-              "id": "header-tabs",
-              "type": "tab-strip",
-              "props": {
-                "visible": { "$ref": "/hasTabs" },
-                "tabs": { "$ref": "/tabs" },
-                "activeId": { "$ref": "/activeTabId" },
-                "inHeader": true
-              }
-            },
-            {
               "id": "header-pill",
               "type": "agent-pulse",
               "props": {
@@ -56,6 +46,16 @@
               "props": {}
             }
           ]
+        },
+        {
+          "id": "header-tabs",
+          "type": "tab-strip",
+          "props": {
+            "area": "tabs",
+            "visible": { "$ref": "/hasTabs" },
+            "tabs": { "$ref": "/tabs" },
+            "activeId": { "$ref": "/activeTabId" }
+          }
         },
         {
           "id": "sidebar-area",
@@ -238,9 +238,10 @@
       "sidebarVisible": true,
       "filesSidebarVisible": true,
       "columns": "220px minmax(0,1fr) 360px",
-      "rows": "38px minmax(0,1fr) 0px auto auto",
+      "rows": "38px 38px minmax(0,1fr) 0px auto auto",
       "areas": [
         "sidebar header files-sidebar",
+        "sidebar tabs files-sidebar",
         "sidebar canvas files-sidebar",
         "sidebar terminal files-sidebar",
         "sidebar composer files-sidebar",

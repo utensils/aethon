@@ -3,6 +3,7 @@ import { extractSessionId } from "../utils/sidebarHistory";
 import type { Tab } from "../types/tab";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { renameSessionLabel } from "./sessionRename";
+import { WORKSTATION_AREAS } from "../hooks/useFocus";
 
 interface RecentSessionItem {
   id: string;
@@ -42,6 +43,7 @@ export const handleSidebarResize: EventRouteHandler = (
         layout: {
           ...layout,
           columns: tokens.join(" "),
+          areas: WORKSTATION_AREAS,
           lastLeftWidth: `${next}px`,
         },
       };
