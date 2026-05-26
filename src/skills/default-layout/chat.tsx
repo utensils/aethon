@@ -864,6 +864,9 @@ export function ChatInput({
   const queueCount = props.queueCount
     ? resolveNumber(props.queueCount, state)
     : 0;
+  const queuedMessages =
+    (state.queuedMessages as QueuedMessage[] | undefined) ?? [];
+  const canSteerQueuedMessage = queuedMessages.length > 0 || queueCount > 0;
   const sendLabel = props.sendLabel
     ? resolveString(props.sendLabel, state)
     : "Send";
@@ -1085,7 +1088,12 @@ export function ChatInput({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const submit = (mode: "normal" | "steer") => {
       const v = (e.target as HTMLTextAreaElement).value;
-      if (v.trim().length === 0) return;
+      if (v.trim().length === 0) {
+        if (mode === "steer" && canSteerQueuedMessage) {
+          onEvent("submit", { value: "", mode });
+        }
+        return;
+      }
       commitDraft(v);
       onEvent("submit", { value: v, mode });
     };
@@ -1306,7 +1314,11 @@ export function ChatInput({
       {busy && (
         <div className="a2ui-chat-input-hint">
           <span>Enter queues</span>
-          <span>Cmd/Ctrl+Enter steers</span>
+          <span>
+            {canSteerQueuedMessage
+              ? "Cmd/Ctrl+Enter steers latest queued"
+              : "Cmd/Ctrl+Enter steers"}
+          </span>
         </div>
       )}
       {/* Wrap the textarea and action button so Send sits INSIDE the

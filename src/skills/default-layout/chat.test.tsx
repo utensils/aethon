@@ -182,6 +182,37 @@ describe("ChatInput", () => {
     });
   });
 
+  it("submits empty command-enter when queued messages can be steered", () => {
+    const { input, onEvent } = renderInput(
+      vi.fn(),
+      { disabled: { $ref: "/waiting" }, queueCount: { $ref: "/queueCount" } },
+      {
+        waiting: true,
+        queueCount: 1,
+        queuedMessages: [{ id: "q1", content: "latest queued" }],
+      },
+    );
+
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+
+    expect(onEvent).toHaveBeenLastCalledWith("submit", {
+      value: "",
+      mode: "steer",
+    });
+  });
+
+  it("does not submit empty command-enter without queued messages", () => {
+    const { input, onEvent } = renderInput(
+      vi.fn(),
+      { disabled: { $ref: "/waiting" }, queueCount: { $ref: "/queueCount" } },
+      { waiting: true, queueCount: 0, queuedMessages: [] },
+    );
+
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+
+    expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
+  });
+
   it("does not submit shift-enter", () => {
     const { input, onEvent } = renderInput();
 
@@ -215,6 +246,7 @@ describe("ChatInput", () => {
     expect(screen.getByText("+2").getAttribute("title")).toBe(
       "2 messages queued behind the current prompt",
     );
+    expect(screen.getByText("Cmd/Ctrl+Enter steers latest queued")).toBeTruthy();
   });
 
   it("renders queued and steered delivery badges on user messages", () => {
