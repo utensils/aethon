@@ -56,7 +56,9 @@ export function resolveSidebarItems(
   if (!items) return [];
   if (Array.isArray(items)) return items;
   if (typeof items !== "object" || !("$ref" in items)) return [];
-  const resolved = resolvePointer(state, items.$ref);
+  const ref = (items as { $ref: unknown }).$ref;
+  if (typeof ref !== "string") return [];
+  const resolved = resolvePointer(state, ref);
   return Array.isArray(resolved) ? (resolved as SidebarItem[]) : [];
 }
 
@@ -66,7 +68,9 @@ function resolveExtraSections(
 ): SidebarSection[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
-  const resolved = resolvePointer(state, raw.$ref);
+  const ref = (raw as { $ref: unknown }).$ref;
+  if (typeof ref !== "string") return [];
+  const resolved = resolvePointer(state, ref);
   return Array.isArray(resolved) ? (resolved as SidebarSection[]) : [];
 }
 
