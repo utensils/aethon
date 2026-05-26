@@ -30,7 +30,8 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::{AgentProcesses, env, project_root};
+use crate::agent_process::{AgentProcesses, project_root};
+use crate::env;
 
 // ─────────────────────────── menu items ────────────────────────────
 
