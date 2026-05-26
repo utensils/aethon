@@ -522,7 +522,7 @@ mod tests {
         std::fs::write(
             target.path().join(".git"),
             format!(
-                "gitdir: {}/../outside\n",
+                "gitdir: {}/../../outside\n",
                 dir.path().join(".git/worktrees/orphan").display()
             ),
         )
