@@ -139,6 +139,7 @@ describe("useProjectSyncEffects", () => {
     projectsRef.current.projects = [];
     await act(async () => {
       resolveIcon("file:///repo/aethon/icon.png");
+      await Promise.resolve();
     });
 
     expect(setProjectIconUrl).not.toHaveBeenCalled();
