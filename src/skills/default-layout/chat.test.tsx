@@ -51,7 +51,7 @@ function renderInput(
     name: "test-default-layout",
     components: { "queued-messages-popover": QueuedMessagesPopover },
   });
-  render(
+  const result = render(
     <SkillRegistryProvider registry={registry}>
       <ChatInput
         component={{
@@ -67,6 +67,7 @@ function renderInput(
   return {
     input: screen.getByPlaceholderText("Message"),
     onEvent,
+    ...result,
   };
 }
 
@@ -220,6 +221,19 @@ describe("ChatInput", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
 
     expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
+  });
+
+  it("cleans up composer resize state if unmounted mid-drag", () => {
+    const { unmount } = renderInput();
+
+    fireEvent.mouseDown(screen.getByLabelText("Resize composer"), {
+      clientY: 120,
+    });
+    expect(document.body.classList.contains("ae-resizing-composer")).toBe(true);
+
+    unmount();
+
+    expect(document.body.classList.contains("ae-resizing-composer")).toBe(false);
   });
 
   it("shows the running-turn shortcut hint only when busy", () => {
