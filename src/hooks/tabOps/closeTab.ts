@@ -1,0 +1,278 @@
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { ClosedTabEntry, Tab } from "../../types/tab";
+import type { ProjectsState } from "../../projects";
+import { disposeEditorBuffer } from "../../monaco/editor-buffers";
+import { recomputeModelPicker } from "../../utils/modelPicker";
+import { CLOSED_TAB_STACK_MAX, TAB_MIRROR_KEYS } from "./constants";
+import { recentSessionItemFromClosedTab } from "./helpers";
+
+export interface CloseTabDeps {
+  setState: Dispatch<SetStateAction<Record<string, unknown>>>;
+  stateRef: MutableRefObject<Record<string, unknown>>;
+  projectsRef: MutableRefObject<ProjectsState>;
+  promptCloseShellTabConfirmation: (tabLabel: string) => Promise<boolean>;
+  shellPromptBeforeCloseRef: MutableRefObject<boolean>;
+  dispatchTerminalReplay: (buffer: string) => void;
+  closedTabsRef: MutableRefObject<ClosedTabEntry[]>;
+  /** Bucket switching — the reopen flow needs to land closed tabs back
+   *  in their original project bucket, even when the user is currently
+   *  in a different one. */
+  clearActiveProject: () => void;
+  setActiveProjectById: (id: string) => boolean;
+  /** New-tab factories — the reopen flow calls back into the per-kind
+   *  creators rather than re-implementing them here. */
+  newTab: (
+    restoreId?: string,
+    restoreLabel?: string,
+    options?: { restoredSession?: boolean; cwd?: string },
+  ) => void;
+  newShellTab: (options?: {
+    command?: string;
+    args?: string[];
+    cwd?: string;
+  }) => void;
+  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
+}
+
+export interface CloseTabActions {
+  pushClosedTab: (tab: Tab) => void;
+  reopenLastClosedTab: () => void;
+  closeTab: (tabId: string) => void;
+  closeTabNow: (tabId: string) => void;
+  closeEditorTabsForPath: (path: string, kind: string) => void;
+}
+
+/** Close + reopen family. Owns the closed-tab undo stack, the
+ *  dirty-buffer / running-shell confirm prompts, the bridge
+ *  `tab_close` / `shell_close` teardown, and the Monaco buffer
+ *  disposal for closed editor tabs.
+ *
+ *  `closeEditorTabsForPath` lives here (rather than in
+ *  `editorTab.ts`) because it routes through `closeTab` to honor the
+ *  dirty-buffer confirm prompt — a folder delete with unsaved edits
+ *  inside it can't silently destroy the in-memory buffer. */
+export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
+  const {
+    setState,
+    stateRef,
+    projectsRef,
+    promptCloseShellTabConfirmation,
+    shellPromptBeforeCloseRef,
+    dispatchTerminalReplay,
+    closedTabsRef,
+    clearActiveProject,
+    setActiveProjectById,
+    newTab,
+    newShellTab,
+    newEditorTab,
+  } = deps;
+
+  function pushClosedTab(tab: Tab): void {
+    const entry: ClosedTabEntry = {
+      id: tab.id,
+      kind: tab.kind,
+      label: tab.label,
+      projectId: tab.projectId,
+      ...(tab.kind === "shell" && tab.shell
+        ? {
+            cwd: tab.shell.cwd,
+            command: tab.shell.command,
+            args: tab.shell.args,
+          }
+        : {}),
+      ...(tab.kind === "agent" && tab.cwd ? { cwd: tab.cwd } : {}),
+      ...(tab.kind === "editor" && tab.editor
+        ? { filePath: tab.editor.filePath }
+        : {}),
+    };
+    closedTabsRef.current.push(entry);
+    if (closedTabsRef.current.length > CLOSED_TAB_STACK_MAX) {
+      closedTabsRef.current.splice(
+        0,
+        closedTabsRef.current.length - CLOSED_TAB_STACK_MAX,
+      );
+    }
+  }
+
+  /** Reopen the most-recently-closed tab. Agent tabs reopen with the
+   *  *original* tabId — that's the cue for the bridge's
+   *  SessionManager.continueRecent to pick up the persisted JSONL session
+   *  under `~/.aethon/sessions/<tabId>/`. Shell tabs spawn a fresh PTY
+   *  at the original cwd. No-op on empty stack. */
+  function reopenLastClosedTab(): void {
+    const entry = closedTabsRef.current.pop();
+    if (!entry) return;
+    // If the closed tab belongs to a different project bucket than
+    // the active one, switch to that bucket first so the new tab
+    // lands in its original project's tab list.
+    const activeId = projectsRef.current.activeId;
+    if (entry.projectId !== activeId) {
+      if (entry.projectId === null) {
+        clearActiveProject();
+      } else {
+        setActiveProjectById(entry.projectId);
+      }
+    }
+    if (entry.kind === "shell") {
+      newShellTab({
+        ...(entry.command ? { command: entry.command } : {}),
+        ...(entry.args ? { args: entry.args } : {}),
+        ...(entry.cwd ? { cwd: entry.cwd } : {}),
+      });
+    } else if (entry.kind === "editor" && entry.filePath) {
+      // Re-open the same file. EditorCanvas reads it from disk on mount;
+      // unsaved buffer state is intentionally not preserved across close.
+      newEditorTab(entry.filePath);
+    } else {
+      newTab(entry.id, entry.label, {
+        restoredSession: true,
+        ...(entry.cwd ? { cwd: entry.cwd } : {}),
+      });
+    }
+  }
+
+  /** Close a tab, prompting for confirmation when closing a running
+   *  shell tab and `[shell] prompt_before_close` is true. Editor tabs
+   *  with unsaved changes get a lightweight native confirm prompt so
+   *  Cmd+W on a dirty file can't silently throw work away. */
+  function closeTab(tabId: string): void {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const closing = tabs.find((t) => t.id === tabId);
+    if (
+      closing?.kind === "shell" &&
+      closing.shell?.shellState === "running" &&
+      shellPromptBeforeCloseRef.current
+    ) {
+      void promptCloseShellTabConfirmation(closing.label).then((allowed) => {
+        if (!allowed) return;
+        closeTabNow(tabId);
+      });
+      return;
+    }
+    if (closing?.kind === "editor" && closing.editor?.isDirty) {
+      const ok = window.confirm(
+        `"${closing.label}" has unsaved changes. Close without saving?`,
+      );
+      if (!ok) return;
+    }
+    closeTabNow(tabId);
+  }
+
+  function closeTabNow(tabId: string): void {
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    if (tabs.length === 0) return;
+    const closing = tabs.find((t) => t.id === tabId);
+    const closedKind = closing?.kind;
+    if (closing) pushClosedTab(closing);
+    let nextBuffer = "";
+    let switched = false;
+    let becameEmpty = false;
+    setState((prev) => {
+      const list = ((prev.tabs as Tab[] | undefined) ?? []).filter(
+        (t) => t.id !== tabId,
+      );
+      let activeTabId = prev.activeTabId as string | undefined;
+      if (activeTabId === tabId) {
+        activeTabId = list.length > 0 ? list[list.length - 1].id : undefined;
+        switched = true;
+      }
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs: list,
+        activeTabId,
+      };
+      if (closing) {
+        const closedSession = recentSessionItemFromClosedTab(
+          closing,
+          projectsRef.current,
+        );
+        if (closedSession) {
+          const recent =
+            (prev.recentSessions as { id: string }[] | undefined) ?? [];
+          result.recentSessions = [
+            closedSession,
+            ...recent.filter((s) => s.id !== closedSession.id),
+          ].slice(0, 16);
+        }
+      }
+      if (list.length === 0) {
+        becameEmpty = true;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = undefined;
+        }
+        result.empty = true;
+        result.hasTabs = false;
+      } else {
+        const target = list.find((t) => t.id === activeTabId)!;
+        nextBuffer = target.terminalBuffer ?? "";
+        const targetRec = target as unknown as Record<string, unknown>;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = targetRec[key as string];
+        }
+        result.sidebar = recomputeModelPicker(
+          prev.sidebar as Record<string, unknown> | undefined,
+          target.model,
+        );
+        result.empty = false;
+        result.hasTabs = true;
+      }
+      return result;
+    });
+    if (switched) dispatchTerminalReplay(nextBuffer);
+    // Tear down bridge session whether we became empty or not — both
+    // paths fire tab_close and the bridge no-ops on unknown tab ids.
+    void becameEmpty;
+    invoke("agent_command", {
+      payload: JSON.stringify({ type: "tab_close", tabId }),
+    }).catch(() => {
+      /* ignore — UI already closed */
+    });
+    // M6 P1: shell tabs own a PTY in the Rust shell registry. Close
+    // it too so the child process is reaped and the reader thread
+    // joins (no zombies on tab close).
+    if (closedKind === "shell") {
+      invoke("shell_close", { tabId }).catch(() => {
+        /* idempotent — already torn down by natural exit */
+      });
+    }
+    // Editor tabs own a Monaco model. Dispose it explicitly here so a
+    // closed tab doesn't leak — the buffer cache is intentionally
+    // long-lived across hidden project buckets (a tab the user can
+    // still come back to keeps its unsaved buffer), so we can't rely
+    // on a "tab not visible" prune.
+    if (closedKind === "editor") {
+      disposeEditorBuffer(tabId);
+    }
+  }
+
+  /** Close every editor tab whose filePath matches `path` (or is a
+   *  descendant when `kind === "dir"`). Imported by the file-tree's
+   *  delete action so a moved-to-Trash file can't be resurrected by a
+   *  later Cmd+S on the still-open buffer. Routes through `closeTab`
+   *  (not `closeTabNow`) so the dirty-buffer confirm prompt still fires
+   *  per-tab — a folder delete with unsaved edits inside it can't
+   *  silently destroy the in-memory buffer. */
+  function closeEditorTabsForPath(path: string, kind: string): void {
+    if (!path) return;
+    const prefix = `${path.replace(/\/+$/, "")}/`;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    for (const tab of tabs) {
+      if (tab.kind !== "editor" || !tab.editor) continue;
+      const current = tab.editor.filePath;
+      const match =
+        kind === "dir"
+          ? current === path || current.startsWith(prefix)
+          : current === path;
+      if (match) closeTab(tab.id);
+    }
+  }
+
+  return {
+    pushClosedTab,
+    reopenLastClosedTab,
+    closeTab,
+    closeTabNow,
+    closeEditorTabsForPath,
+  };
+}
