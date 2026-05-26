@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -13,15 +14,30 @@ export function useComposerResize(initialHeight = 70) {
   const composerResizeRef = useRef<{ startY: number; startH: number } | null>(
     null,
   );
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  const stopComposerResize = useCallback(() => {
+    dragCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => stopComposerResize, [stopComposerResize]);
 
   const startComposerResize = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
       e.preventDefault();
+      stopComposerResize();
+      const controller = new AbortController();
       composerResizeRef.current = {
         startY: e.clientY,
         startH: composerHeight,
       };
       document.body.classList.add("ae-resizing-composer");
+      dragCleanupRef.current = () => {
+        controller.abort();
+        composerResizeRef.current = null;
+        document.body.classList.remove("ae-resizing-composer");
+        dragCleanupRef.current = null;
+      };
       const onMove = (ev: MouseEvent) => {
         const ref = composerResizeRef.current;
         if (!ref) return;
@@ -32,16 +48,14 @@ export function useComposerResize(initialHeight = 70) {
         );
         setComposerHeight(next);
       };
-      const onUp = () => {
-        composerResizeRef.current = null;
-        document.body.classList.remove("ae-resizing-composer");
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("mousemove", onMove, {
+        signal: controller.signal,
+      });
+      document.addEventListener("mouseup", stopComposerResize, {
+        signal: controller.signal,
+      });
     },
-    [composerHeight],
+    [composerHeight, stopComposerResize],
   );
 
   return { composerHeight, startComposerResize };

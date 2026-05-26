@@ -130,7 +130,7 @@ export function useSlashMatching({
 
   useEffect(() => {
     if (dismissedDraft !== null && value !== dismissedDraft) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot picker re-enable when the draft changes after Escape
       setDismissedDraft(null);
     }
   }, [value, dismissedDraft]);
@@ -142,7 +142,7 @@ export function useSlashMatching({
 
   const [highlightIdx, setHighlightIdx] = useState(0);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep keyboard highlight inside the newly visible suggestion list
     setHighlightIdx(0);
   }, [slashMatch?.matches.length, slashMatch?.prefix, slashMatch?.mode]);
 

@@ -42,7 +42,12 @@ export function SlashPicker({
       return;
     }
     const update = () => {
-      const r = anchorRef.current!.getBoundingClientRect();
+      const anchor = anchorRef.current;
+      if (!anchor) {
+        setMenuAnchor(null);
+        return;
+      }
+      const r = anchor.getBoundingClientRect();
       const scale = readUiScale();
       const viewportWidth = window.innerWidth / scale;
       const viewportHeight = window.innerHeight / scale;

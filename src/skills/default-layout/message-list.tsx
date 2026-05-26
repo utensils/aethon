@@ -235,7 +235,7 @@ function useMessageWindow(messages: ChatMessage[]) {
 
   useEffect(() => {
     if (messages.length < visibleCount) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pagination when history shrinks after tab switch or clear
       setVisibleCount(INITIAL_VISIBLE_MESSAGES);
     }
   }, [messages.length, visibleCount]);
@@ -305,8 +305,14 @@ function MessageList({
     } else {
       scrollRowIntoView(idx - showFrom);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToMatch]);
+  }, [
+    containerRef,
+    messages,
+    rowClassName,
+    scrollToMatch,
+    setVisibleCount,
+    showFrom,
+  ]);
 
   return (
     <>

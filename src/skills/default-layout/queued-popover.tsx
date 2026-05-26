@@ -123,7 +123,7 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
 
   useEffect(() => {
     if (editing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resync edit textarea from authoritative queue content when editing opens
       setDraft(message.content);
       const handle = requestAnimationFrame(() => {
         const el = textareaRef.current;
