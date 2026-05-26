@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use crate::env;
 
@@ -77,7 +77,38 @@ pub(crate) fn worktree_is_dangling(dir: &std::path::Path) -> bool {
     else {
         return false;
     };
-    !std::path::Path::new(target).exists()
+    let Some(target_path) = resolve_gitdir_marker_target(&marker, target) else {
+        return false;
+    };
+    !target_path.exists()
+}
+
+fn resolve_gitdir_marker_target(marker: &Path, gitdir: &str) -> Option<PathBuf> {
+    let raw = Path::new(gitdir);
+    let path = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        marker.parent()?.join(raw)
+    };
+    normalize_path(&path)
+}
+
+fn normalize_path(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::Normal(part) => normalized.push(part),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(normalized)
 }
 
 pub(crate) fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
@@ -569,6 +600,15 @@ mod tests {
             format!("gitdir: {}\n", target.path().display()),
         )
         .expect("write .git");
+        assert!(!worktree_is_dangling(dir.path()));
+    }
+
+    #[test]
+    fn worktree_is_dangling_resolves_relative_gitdir_from_marker_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("relative-gitdir");
+        std::fs::create_dir(&target).expect("create target");
+        std::fs::write(dir.path().join(".git"), "gitdir: relative-gitdir\n").expect("write .git");
         assert!(!worktree_is_dangling(dir.path()));
     }
 

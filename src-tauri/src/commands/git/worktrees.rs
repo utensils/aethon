@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use crate::env;
 
@@ -172,6 +172,9 @@ pub async fn git_worktree_remove(
     force: bool,
 ) -> Result<(), String> {
     let dir = PathBuf::from(&project_path);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {project_path}"));
+    }
     let list = git_worktrees(project_path.clone()).await?;
     let canonical = std::fs::canonicalize(&worktree_path)
         .ok()
@@ -248,12 +251,15 @@ pub async fn git_worktree_remove_orphan(
         .and_then(|l| l.strip_prefix("gitdir:").map(str::trim))
         .ok_or_else(|| format!("not an orphan worktree: {worktree_path} has malformed .git"))?;
     // Canonicalize project so a symlinked tmpdir (macOS `/var` →
-    // `/private/var`) doesn't cause a false-negative. Git writes the
-    // physical path into `.git`, so `gitdir` is already resolved.
+    // `/private/var`) doesn't cause a false-negative. Normalize the
+    // marker target lexically before the prefix check so a crafted
+    // `.../.git/worktrees/../outside` marker cannot pass by string shape.
     let project_canon =
         std::fs::canonicalize(&project).map_err(|e| format!("resolve project path: {e}"))?;
     let expected_prefix = project_canon.join(".git").join("worktrees");
-    if !PathBuf::from(gitdir).starts_with(&expected_prefix) {
+    let gitdir_path = normalize_gitdir_path(&marker, gitdir)
+        .ok_or_else(|| format!("not an orphan worktree: {worktree_path} has invalid .git path"))?;
+    if !gitdir_path.starts_with(&expected_prefix) {
         return Err(format!(
             "not tracked by this project: {worktree_path} .git points outside {}",
             expected_prefix.display()
@@ -272,6 +278,34 @@ pub async fn git_worktree_remove_orphan(
         trash::delete(&target).map_err(|e| format!("trash {worktree_path}: {e}"))?;
     }
     Ok(())
+}
+
+fn normalize_gitdir_path(marker: &Path, gitdir: &str) -> Option<PathBuf> {
+    let raw = Path::new(gitdir);
+    let path = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        marker.parent()?.join(raw)
+    };
+    normalize_path(&path)
+}
+
+fn normalize_path(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::Normal(part) => normalized.push(part),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(normalized)
 }
 
 /// List local branches with a `current` flag for the active branch.
@@ -399,8 +433,6 @@ mod tests {
 
     #[tokio::test]
     async fn add_and_remove_worktree_round_trip() {
-        // Git's worktree code path requires `git` on PATH; this test
-        // skips silently if git can't init (CI without git installed).
         let dir = tempfile::tempdir().expect("tempdir");
         let parent = tempfile::tempdir().expect("tempdir");
         init_repo(dir.path());
@@ -423,6 +455,19 @@ mod tests {
             .expect("worktree remove");
         let after = git_worktrees(project_path).await.expect("list after");
         assert_eq!(after.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn remove_worktree_rejects_invalid_project_path() {
+        let missing = tempfile::tempdir().expect("tempdir").path().join("missing");
+        let err = git_worktree_remove(
+            missing.to_string_lossy().to_string(),
+            "/tmp/not-a-worktree".to_string(),
+            false,
+        )
+        .await
+        .expect_err("invalid project path must be rejected");
+        assert!(err.contains("not a directory"), "got: {err}");
     }
 
     #[tokio::test]
@@ -466,6 +511,28 @@ mod tests {
             !target.exists(),
             "orphan dir should be gone after remove_orphan"
         );
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_refuses_parent_dir_gitdir_escape() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        std::fs::write(
+            target.path().join(".git"),
+            format!(
+                "gitdir: {}/../outside\n",
+                dir.path().join(".git/worktrees/orphan").display()
+            ),
+        )
+        .expect("write fake .git");
+        let err =
+            git_worktree_remove_orphan(project_path, target.path().to_string_lossy().to_string())
+                .await
+                .expect_err("must reject marker escaping worktrees prefix");
+        assert!(err.contains("not tracked by this project"), "got: {err}");
+        assert!(target.path().exists());
     }
 
     #[tokio::test]

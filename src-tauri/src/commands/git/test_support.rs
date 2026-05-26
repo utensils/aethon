@@ -1,12 +1,14 @@
 #[cfg(test)]
 pub(crate) fn init_repo(path: &std::path::Path) {
-    std::process::Command::new("git")
+    let init = std::process::Command::new("git")
         .arg("-C")
         .arg(path)
         .args(["-c", "init.defaultBranch=main", "init", "-q"])
         .status()
         .expect("git init");
-    std::process::Command::new("git")
+    assert!(init.success(), "git init failed with status {init}");
+
+    let commit = std::process::Command::new("git")
         .arg("-C")
         .arg(path)
         .args([
@@ -22,4 +24,5 @@ pub(crate) fn init_repo(path: &std::path::Path) {
         ])
         .status()
         .expect("git commit");
+    assert!(commit.success(), "git commit failed with status {commit}");
 }
