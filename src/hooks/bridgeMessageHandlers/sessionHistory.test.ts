@@ -68,7 +68,9 @@ describe("handleSessionHistory", () => {
     );
     const [, updater] = mocks.updateTab.mock.calls[0];
     const out = updater(makeEmptyTab("default", "Tab 1"));
-    expect(out.label).toBe("Research this application and summarize the cha...");
+    expect(out.label).toBe(
+      "Research this application and summarize the cha...",
+    );
   });
 
   it("does not replace explicit tab labels with restored first messages", () => {
@@ -100,6 +102,7 @@ describe("handleSessionHistory", () => {
     const tab = makeEmptyTab("tab-1", "Tab 1");
     const out = updater({
       ...tab,
+      waiting: true,
       messages: [
         {
           id: "local-prompt",
@@ -144,6 +147,7 @@ describe("handleSessionHistory", () => {
     const tab = makeEmptyTab("tab-1", "Tab 1");
     const out = updater({
       ...tab,
+      waiting: true,
       messages: [
         {
           id: "local-prompt",
@@ -164,6 +168,155 @@ describe("handleSessionHistory", () => {
       "local-prompt",
       "streaming-agent",
     ]);
+    expect(out.waiting).toBe(true);
+  });
+
+  it("drops stale running tool cards when restored history has the completed tool result", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    const toolCallId =
+      "call_bBEjXjY3q5AY7nMBo0Ds8g3w|fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59";
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "restored-tool-call_bBEjXjY3q5AY7nMBo0Ds8g3w-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "restored-tool-call_bBEjXjY3q5AY7nMBo0Ds8g3w-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    description: "PR=$(gh pr view --json number -q .number)",
+                    startedAt: 1_000,
+                    endedAt: 2_000,
+                  },
+                  children: [
+                    {
+                      id: "result",
+                      type: "code",
+                      props: { content: "done" },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      waiting: true,
+      messages: [
+        {
+          id: `tool-16-${toolCallId}`,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: `tool-16-${toolCallId}`,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "PR=$(gh pr view --json number -q .number)",
+                  startedAt: 1_000,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0].id).toBe(
+      "restored-tool-call_bBEjXjY3q5AY7nMBo0Ds8g3w-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59",
+    );
+    expect(out.waiting).toBe(false);
+  });
+
+  it("drops restored duplicate assistant text and completed tool cards so reloads do not look busy", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "restored-thinking",
+            role: "agent",
+            thinking: "Monitoring requests",
+          },
+          {
+            id: "restored-tool-call_dupe",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "restored-tool-call_dupe",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    description: "gh pr view --json number",
+                    startedAt: 1_000,
+                    endedAt: 2_000,
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      waiting: true,
+      messages: [
+        {
+          id: "local-thinking",
+          role: "agent",
+          thinking: "Monitoring requests",
+        },
+        {
+          id: "tool-16-call_dupe",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-16-call_dupe",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "gh pr view --json number",
+                  startedAt: 1_000,
+                  endedAt: 2_000,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "restored-thinking",
+      "restored-tool-call_dupe",
+    ]);
+    expect(out.waiting).toBe(false);
   });
 
   it("drops failed local user messages on restore (they are informational once history arrives)", () => {

@@ -70,6 +70,34 @@ describe("sessionUiSnapshot", () => {
     expect(loadSessionUiSnapshot()?.activeTabId).toBe("tab-a");
   });
 
+  it("does not restore agent tabs as waiting after an app restart", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("tab-a", "A"),
+            waiting: true,
+            queueCount: 3,
+            queuedMessages: [{ id: "queued", content: "next" }],
+            messages: [
+              { id: "m1", role: "user", text: "fix it" },
+              { id: "m2", role: "agent", thinking: "Monitoring requests" },
+            ],
+          },
+        ],
+        activeTabId: "tab-a",
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.tabs[0]).toMatchObject({
+      id: "tab-a",
+      waiting: false,
+      queueCount: 0,
+      queuedMessages: [],
+    });
+  });
+
   it("drops shell tabs from the reload snapshot", () => {
     saveSessionUiSnapshot({
       tabs: [

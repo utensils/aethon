@@ -1,5 +1,5 @@
 import { coerceChatMessages } from "../../utils/messages";
-import type { ChatMessage } from "../../types/a2ui";
+import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import type { BridgeMessageHandler } from "./types";
 
 function firstUserMessageLabel(messages: ChatMessage[]): string | undefined {
@@ -18,10 +18,106 @@ function shouldReplaceGenericLabel(label: string): boolean {
   return /^Tab \d+$/.test(label) || /^Session [A-Za-z0-9-]+$/.test(label);
 }
 
+function toolCardComponents(message: ChatMessage): A2UIComponent[] {
+  return (message.a2ui?.components ?? []).filter(
+    (component): component is A2UIComponent =>
+      component?.type === "tool-card" && typeof component.id === "string",
+  );
+}
+
+function normalizeToolCallId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96);
+}
+
+function toolCardIdentity(component: A2UIComponent): string | undefined {
+  const id = component.id;
+  if (id.startsWith("restored-tool-")) {
+    return id.slice("restored-tool-".length);
+  }
+  const liveMatch = /^tool-\d+-(.+)$/.exec(id);
+  if (liveMatch) {
+    return normalizeToolCallId(liveMatch[1]);
+  }
+  return undefined;
+}
+
+function completedRestoredToolIdentities(restored: ChatMessage[]): Set<string> {
+  const identities = new Set<string>();
+  for (const message of restored) {
+    for (const component of toolCardComponents(message)) {
+      const identity = toolCardIdentity(component);
+      if (
+        identity &&
+        component.props?.startedAt !== undefined &&
+        component.props.endedAt !== undefined
+      ) {
+        identities.add(identity);
+      }
+    }
+  }
+  return identities;
+}
+
+function isDuplicateCompletedToolCard(
+  message: ChatMessage,
+  completedTools: ReadonlySet<string>,
+): boolean {
+  const toolCards = toolCardComponents(message);
+  if (toolCards.length === 0) return false;
+  return toolCards.every((component) => {
+    const identity = toolCardIdentity(component);
+    return Boolean(identity && completedTools.has(identity));
+  });
+}
+
+function isLivePendingMessage(message: ChatMessage): boolean {
+  if (message.role === "user") {
+    return message.delivery === "sent" || message.delivery === "steered";
+  }
+  if (message.role !== "agent") return false;
+  if (message.text || message.thinking) return true;
+  return toolCardComponents(message).some(
+    (component) =>
+      component.props?.startedAt !== undefined &&
+      component.props.endedAt === undefined,
+  );
+}
+
+function agentContentSignatures(message: ChatMessage): string[] {
+  if (message.role !== "agent" || message.a2ui) return [];
+  const signatures: string[] = [];
+  const text = message.text?.replace(/\s+/g, " ").trim();
+  if (text) signatures.push(`text:${text}`);
+  const thinking = message.thinking?.replace(/\s+/g, " ").trim();
+  if (thinking) signatures.push(`thinking:${thinking}`);
+  return signatures;
+}
+
+function restoredAgentContentSignatures(restored: ChatMessage[]): Set<string> {
+  const signatures = new Set<string>();
+  for (const message of restored) {
+    for (const signature of agentContentSignatures(message)) {
+      signatures.add(signature);
+    }
+  }
+  return signatures;
+}
+
+function isDuplicateRestoredAgentContent(
+  message: ChatMessage,
+  restoredAgentContent: ReadonlySet<string>,
+): boolean {
+  const signatures = agentContentSignatures(message);
+  return (
+    signatures.length > 0 &&
+    signatures.every((signature) => restoredAgentContent.has(signature))
+  );
+}
+
 function mergePendingLocalPrompts(
   restored: ChatMessage[],
   current: ChatMessage[],
-): ChatMessage[] {
+): { messages: ChatMessage[]; hasLivePending: boolean } {
   // Carry pending local messages — both the optimistic user prompts
   // the user sent before the restored history arrived AND any
   // assistant streaming deltas already in flight — across the
@@ -29,6 +125,8 @@ function mergePendingLocalPrompts(
   // live output isn't dropped. Restored transcript first, pending
   // local appended after.
   const restoredIds = new Set(restored.map((m) => m.id));
+  const completedTools = completedRestoredToolIdentities(restored);
+  const restoredAgentContent = restoredAgentContentSignatures(restored);
   const restoredUserTexts = new Set(
     restored
       .filter((m) => m.role === "user" && typeof m.text === "string")
@@ -37,6 +135,8 @@ function mergePendingLocalPrompts(
   );
   const pendingLocal = current.filter((m) => {
     if (restoredIds.has(m.id)) return false;
+    if (isDuplicateCompletedToolCard(m, completedTools)) return false;
+    if (isDuplicateRestoredAgentContent(m, restoredAgentContent)) return false;
     if (m.role === "user") {
       // A failed local user message is informational once history
       // catches up — the bridge will resend or the user will retry.
@@ -55,7 +155,11 @@ function mergePendingLocalPrompts(
     // user just watched land.
     return true;
   });
-  return pendingLocal.length > 0 ? [...restored, ...pendingLocal] : restored;
+  return {
+    messages:
+      pendingLocal.length > 0 ? [...restored, ...pendingLocal] : restored,
+    hasLivePending: pendingLocal.some(isLivePendingMessage),
+  };
 }
 
 export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
@@ -69,14 +173,18 @@ export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
     (session?.firstUserMessage
       ? session.firstUserMessage.replace(/\s+/g, " ").trim()
       : undefined);
-  ctx.updateTab(tabId, (tab) => ({
-    ...tab,
-    messages: mergePendingLocalPrompts(messages, tab.messages),
-    ...(label
-      ? { label }
-      : shouldReplaceGenericLabel(tab.label)
-        ? { label: firstUserMessageLabel(messages) ?? tab.label }
-        : {}),
-  }));
+  ctx.updateTab(tabId, (tab) => {
+    const merged = mergePendingLocalPrompts(messages, tab.messages);
+    return {
+      ...tab,
+      messages: merged.messages,
+      waiting: merged.hasLivePending ? tab.waiting : false,
+      ...(label
+        ? { label }
+        : shouldReplaceGenericLabel(tab.label)
+          ? { label: firstUserMessageLabel(messages) ?? tab.label }
+          : {}),
+    };
+  });
   ctx.syncRecentSessionsToState();
 };
