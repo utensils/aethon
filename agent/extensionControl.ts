@@ -1,7 +1,16 @@
 import type { AethonAgentState } from "./state";
+import type { ExtensionSource } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { saveDisabledExtensionsSnapshot } from "./disabled-extensions";
 import { notify } from "./notifications";
+
+function extensionLifecycleSource(
+  loadedSource: ExtensionSource | undefined,
+  failureSource: ExtensionSource | undefined,
+  priorSource: ExtensionSource | undefined,
+): ExtensionSource {
+  return loadedSource ?? failureSource ?? priorSource ?? "directory";
+}
 
 export async function handleSetExtensionDisabled(
   state: AethonAgentState,
@@ -30,6 +39,13 @@ export async function handleSetExtensionDisabled(
   // Snapshot the prior meta so a save failure can restore both the
   // name and any metadata we'd just dropped/added.
   const priorMeta = state.disabledExtensionMeta.get(name);
+  const loadedSource = state.loadedExtensions.get(name);
+  const failureInfo = state.loadFailures.get(name);
+  const lifecycleSource = extensionLifecycleSource(
+    loadedSource,
+    failureInfo?.source,
+    priorMeta?.source,
+  );
   if (disabled) {
     state.disabledExtensions.add(name);
     // Capture source + projectRoot from the live loader registries.
@@ -40,8 +56,6 @@ export async function handleSetExtensionDisabled(
     // from both is preserved with its previous meta (if any) — we
     // never wipe a known scope just because the user toggled while
     // a different project was active.
-    const loadedSource = state.loadedExtensions.get(name);
-    const failureInfo = state.loadFailures.get(name);
     if (loadedSource) {
       const projectRoot =
         loadedSource === "project-directory"
@@ -104,13 +118,13 @@ export async function handleSetExtensionDisabled(
   }
   // Surface the change to the frontend immediately. The loaded set
   // doesn't change until restart; the sidebar shows a `(disabled)` row
-  // by deriving from `loadedExtensions ∩ ¬disabledExtensions` plus the
-  // explicit disabled list. We re-emit the lifecycle event so the
-  // hydration handler can move the row to the right bucket.
+  // by deriving from `loadedExtensions` plus the explicit disabled list.
+  // Re-emitting the lifecycle event gives layouts and the default system
+  // message handler immediate feedback before the bridge restart.
   deps.send({
     type: "extension_lifecycle",
     name,
-    source: "directory",
+    source: lifecycleSource,
     status: disabled ? "disabled" : "enabled",
   });
   // Notify the user before signalling the bridge restart so the toast

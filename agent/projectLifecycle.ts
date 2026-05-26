@@ -10,6 +10,12 @@ import { patchLayoutTree } from "./layout-manager";
 import { logger } from "./logger";
 import { dismissNotification, notify } from "./notifications";
 
+export function projectDisplayName(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  if (!trimmed) return cwd;
+  return trimmed.split(/[\\/]+/).pop() || cwd;
+}
+
 /** Capture a baseline snapshot of every registry an extension can write
  *  into. Captured AFTER user-level + extension-package + pi-extension
  *  loaders run, BEFORE any project-directory extension runs.
@@ -241,7 +247,7 @@ export async function handleSetProject(
       .scope("project-switch")
       .info(`set_project unload took ${Date.now() - t0}ms (cwd=${cwd})`);
   }
-  const projectName = cwd.split("/").pop() || cwd;
+  const projectName = projectDisplayName(cwd);
   const loadingNoticeId = `aethon:loading-project-ext:${cwd}`;
   const loadingNoticeTimer = projectChanged
     ? setTimeout(() => {
