@@ -5,22 +5,25 @@ import { SkillRegistry } from "./skills/SkillRegistry";
 import { SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
 import type { A2UIPayload, ChatMessage } from "./types/a2ui";
-import { deriveTabActiveFlags, type Tab } from "./types/tab";
-import { dispatchEvent, type EventRouteContext } from "./eventRoutes";
+import type { Tab } from "./types/tab";
+import { dispatchEvent } from "./eventRoutes";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useHostInfo } from "./hooks/useHostInfo";
 import { useProjects } from "./hooks/useProjects";
 import { discoverIcon } from "./projectIcons";
 import { useTabNavigation } from "./hooks/useTabNavigation";
-import { TAB_MIRROR_KEYS, useTabs } from "./hooks/useTabs";
+import { useTabs } from "./hooks/useTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
 import { useBridgeMessages } from "./hooks/useBridgeMessages";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
 import { useBootConfig } from "./hooks/useBootConfig";
-import { useNotifications } from "./hooks/useNotifications";
-import { useFocus, WORKSTATION_AREAS, workstationRows } from "./hooks/useFocus";
+import {
+  useNotifications,
+  type NotificationInput,
+} from "./hooks/useNotifications";
+import { useFocus } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
@@ -28,28 +31,21 @@ import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
 import { useProjectOps, worktreeIdForCwd } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
+import {
+  buildInitialAppStore,
+  useSessionPersistence,
+} from "./hooks/useSessionPersistence";
+import { useDerivedRenderState } from "./hooks/useDerivedRenderState";
+import { useTaskLauncher } from "./hooks/useTaskLauncher";
+import { useAppEventRouteContext } from "./hooks/useAppEventRouteContext";
 import type { SlashCommandContext } from "./slashCommands";
-import { readState, writeState } from "./persist";
-import { createAppStore, useAppState } from "./state/appStore";
-import {
-  SESSION_UI_SNAPSHOT_FILE,
-  loadSessionUiSnapshot,
-  parseSessionUiSnapshot,
-  saveSessionUiSnapshot,
-  type SessionUiSnapshot,
-} from "./state/sessionUiSnapshot";
-import {
-  loadLayoutPrefsFromDisk,
-  loadLayoutPrefsSync,
-  mergeLayoutPrefsIntoState,
-  saveLayoutPrefs,
-} from "./layoutPrefs";
+import { writeState } from "./persist";
+import { useAppState } from "./state/appStore";
 import {
   activeProject,
   emptyProjectsState,
   type ProjectsState,
 } from "./projects";
-import { shouldReloadForHmrPayload } from "./utils/hmr";
 import pkg from "../package.json" with { type: "json" };
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
@@ -58,13 +54,6 @@ import logoUrl from "./assets/aethon-logo.svg?url";
 
 // The default-layout skill ships a layout — that's the boot payload.
 const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
-
-interface RecentSessionItem {
-  id: string;
-  label: string;
-  lastModified?: string;
-  cwd?: string;
-}
 
 export default function App() {
   // The registry is created once and shared across the app via context.
@@ -93,89 +82,16 @@ export default function App() {
   // canvas until the user opens a project or clicks "New Tab". A restored
   // session snapshot rehydrates whatever tabs were open last; a fresh boot
   // (or `dev --new`) lands on the dashboard with the canvas empty.
-  const initialApp = useMemo(() => {
-    const restored = loadSessionUiSnapshot();
-    const layoutPrefs = loadLayoutPrefsSync();
-    const tabs = restored?.tabs.length ? restored.tabs : [];
-    const activeTabId =
-      restored?.activeTabId && tabs.some((t) => t.id === restored.activeTabId)
-        ? restored.activeTabId
-        : (tabs[0]?.id ?? null);
-    const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
-    const restoredLayout =
-      restored?.layout && typeof restored.layout === "object"
-        ? (restored.layout as Record<string, unknown>)
-        : {};
-    const bootTerminalPanel = BOOT_LAYOUT.state?.terminalPanel;
-    const restoredTerminalPanel = restored?.terminalPanel;
-    const terminalPanel = {
-      ...(bootTerminalPanel && typeof bootTerminalPanel === "object"
-        ? bootTerminalPanel
-        : {}),
-      ...(restoredTerminalPanel && typeof restoredTerminalPanel === "object"
-        ? restoredTerminalPanel
-        : {}),
-      ...(layoutPrefs?.terminalPanel ?? {}),
-    } as Record<string, unknown>;
-    const bootLayout = BOOT_LAYOUT.state?.layout;
-    const terminalOpen =
-      (restored?.terminal as { open?: boolean } | undefined)?.open ?? false;
-    const terminalHeight =
-      typeof terminalPanel.height === "number" ? terminalPanel.height : 240;
-    // When there is no active tab, the mirror keys point at undefined so
-    // layout `$ref`s resolve cleanly without throwing. The composer +
-    // chat surfaces are hidden via `/agentTabActive` in this state.
-    const activeRecord =
-      (activeTab as unknown as Record<string, unknown> | null) ?? {};
-    const rootMirror = Object.fromEntries(
-      TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
-    );
-    return {
-      appStore: createAppStore({
-        ...(BOOT_LAYOUT.state ?? {}),
-        ...(restored?.terminal ? { terminal: restored.terminal } : {}),
-        terminalPanel,
-        ...(restored?.scrollToMatchByTab
-          ? { scrollToMatchByTab: restored.scrollToMatchByTab }
-          : {}),
-        ...(restored?.projectModels
-          ? { projectModels: restored.projectModels }
-          : {}),
+  const initialApp = useMemo(
+    () =>
+      buildInitialAppStore({
+        bootLayout: BOOT_LAYOUT,
         logoUrl,
-        // App version surfaced as a state slice so layout JSON can $ref it
-        // (e.g. sidebar's `version` prop). Single source of truth is
-        // package.json, imported directly so dev HMR sees bumps. The
-        // "v" prefix matches the human-friendly format the UI used before.
+        // App version surfaced as a state slice so layout JSON can $ref it.
         appVersion: `v${pkg.version}`,
-        tabs,
-        activeTabId,
-        // Mirror keys point at the active tab's empty view so layout bindings
-        // see well-defined values from boot.
-        ...rootMirror,
-        // Layout-agnostic UI surfaces — the palette + notification stack
-        // both render at App root so they overlay every layout. State
-        // shapes are documented on the components themselves.
-        palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
-        notifications: [],
-        // Seed /sidebar/extensions so Settings and the sidebar have a stable
-        // list shape before the bridge sends the first ready payload.
-        sidebar: {
-          ...(BOOT_LAYOUT.state?.sidebar as
-            | Record<string, unknown>
-            | undefined),
-          extensions: [],
-        },
-        layout: {
-          ...(bootLayout && typeof bootLayout === "object" ? bootLayout : {}),
-          ...restoredLayout,
-          ...(layoutPrefs?.layout ?? {}),
-          rows: workstationRows(terminalOpen, terminalHeight),
-          areas: WORKSTATION_AREAS,
-        },
       }),
-      hasSyncSessionSnapshot: Boolean(restored),
-    };
-  }, []);
+    [],
+  );
   const { appStore, hasSyncSessionSnapshot } = initialApp;
   const state = useAppState(appStore, (s) => s);
   const setState = appStore.setState;
@@ -197,6 +113,8 @@ export default function App() {
     });
   }, [appStore]);
 
+  useSessionPersistence({ appStore, hasSyncSessionSnapshot });
+
   function recordProjectModel(model: string, tabId?: string) {
     if (!model.trim()) return;
     setState((prev) => {
@@ -216,145 +134,6 @@ export default function App() {
     });
   }
 
-  const restoreSessionUiSnapshot = useCallback(
-    (snapshot: SessionUiSnapshot) => {
-      setState((prev) => {
-        const tabs = snapshot.tabs.length ? snapshot.tabs : [];
-        if (tabs.length === 0) return prev;
-        const activeTabId =
-          snapshot.activeTabId &&
-          tabs.some((t) => t.id === snapshot.activeTabId)
-            ? snapshot.activeTabId
-            : tabs[0].id;
-        const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-        const activeRecord = activeTab as unknown as Record<string, unknown>;
-        const rootMirror = Object.fromEntries(
-          TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
-        );
-        const restoredLayout =
-          snapshot.layout && typeof snapshot.layout === "object"
-            ? (snapshot.layout as Record<string, unknown>)
-            : {};
-        const currentLayout =
-          (prev.layout as Record<string, unknown> | undefined) ?? {};
-        return {
-          ...prev,
-          ...(snapshot.terminal ? { terminal: snapshot.terminal } : {}),
-          ...(snapshot.terminalPanel
-            ? { terminalPanel: snapshot.terminalPanel }
-            : {}),
-          ...(snapshot.scrollToMatchByTab
-            ? { scrollToMatchByTab: snapshot.scrollToMatchByTab }
-            : {}),
-          ...(snapshot.projectModels
-            ? { projectModels: snapshot.projectModels }
-            : {}),
-          ...(Object.keys(restoredLayout).length > 0
-            ? {
-                layout: {
-                  ...currentLayout,
-                  ...restoredLayout,
-                  areas: WORKSTATION_AREAS,
-                },
-              }
-            : {}),
-          tabs,
-          activeTabId,
-          empty: false,
-          hasTabs: true,
-          ...rootMirror,
-        };
-      });
-    },
-    [setState],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    let persistenceStarted = false;
-    let unsubscribe: (() => void) | undefined;
-    const persistNow = () => {
-      if (!persistenceStarted) return;
-      if (sessionSnapshotPersistTimerRef.current !== null) {
-        window.clearTimeout(sessionSnapshotPersistTimerRef.current);
-        sessionSnapshotPersistTimerRef.current = null;
-      }
-      saveSessionUiSnapshot(appStore.getState(), (content) => {
-        writeState(SESSION_UI_SNAPSHOT_FILE, content).catch(() => {
-          /* persist is best effort */
-        });
-      });
-      saveLayoutPrefs(appStore.getState()).catch(() => {
-        /* persist is best effort */
-      });
-    };
-    const schedulePersist = () => {
-      if (!persistenceStarted) return;
-      if (sessionSnapshotPersistTimerRef.current !== null) {
-        window.clearTimeout(sessionSnapshotPersistTimerRef.current);
-      }
-      sessionSnapshotPersistTimerRef.current = window.setTimeout(() => {
-        persistNow();
-      }, 100);
-    };
-    const startPersistence = () => {
-      persistenceStarted = true;
-      persistNow();
-      unsubscribe = appStore.subscribe(schedulePersist);
-      window.addEventListener("beforeunload", persistNow);
-    };
-    const hot = import.meta.hot;
-    let hmrReloadQueued = false;
-    const reloadOnJsUpdate = (payload: unknown) => {
-      if (hmrReloadQueued || !shouldReloadForHmrPayload(payload)) return;
-      hmrReloadQueued = true;
-      persistNow();
-      window.setTimeout(() => {
-        window.location.reload();
-      }, 0);
-    };
-    hot?.dispose(persistNow);
-    hot?.on("vite:beforeUpdate", reloadOnJsUpdate);
-    hot?.on("vite:beforeFullReload", persistNow);
-    if (hasSyncSessionSnapshot) {
-      startPersistence();
-    } else {
-      readState(SESSION_UI_SNAPSHOT_FILE)
-        .then((raw) => {
-          if (cancelled) return;
-          const snapshot = parseSessionUiSnapshot(raw);
-          if (snapshot) restoreSessionUiSnapshot(snapshot);
-          startPersistence();
-        })
-        .catch(() => {
-          if (!cancelled) startPersistence();
-        });
-    }
-    return () => {
-      persistNow();
-      cancelled = true;
-      unsubscribe?.();
-      if (sessionSnapshotPersistTimerRef.current !== null) {
-        window.clearTimeout(sessionSnapshotPersistTimerRef.current);
-        sessionSnapshotPersistTimerRef.current = null;
-      }
-      window.removeEventListener("beforeunload", persistNow);
-      hot?.off("vite:beforeUpdate", reloadOnJsUpdate);
-      hot?.off("vite:beforeFullReload", persistNow);
-    };
-  }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void loadLayoutPrefsFromDisk().then((prefs) => {
-      if (cancelled || !prefs) return;
-      setState((prev) => mergeLayoutPrefsIntoState(prev, prefs));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [setState]);
-
   // ---------------------------------------------------------------------
   // App-owned shared refs — owned here (rather than inside their primary
   // hook) so multiple hooks can read/write the same object without
@@ -373,7 +152,6 @@ export default function App() {
   const hangWarnTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
-  const sessionSnapshotPersistTimerRef = useRef<number | null>(null);
 
   // Forward handles populated below as hooks construct. Lets earlier
   // hooks (useTabs / useProjects / useZoomAndTheme / useShellConsent)
@@ -387,9 +165,7 @@ export default function App() {
     getPaths: (): string[] => [],
     onGitStatusChanged: () => {},
   });
-  const pushNotificationRef = useRef<
-    (n: Parameters<EventRouteContext["pushNotification"]>[0]) => void
-  >(() => {});
+  const pushNotificationRef = useRef<(n: NotificationInput) => void>(() => {});
   const chatActionsRef = useRef({
     appendSystem: (_text: string) => {},
   });
@@ -739,102 +515,18 @@ export default function App() {
     updateTab,
   });
 
-  // ---------------------------------------------------------------------
   // Dashboard task launch orchestrator. Shared by the per-project
-  // dashboard composer event route AND the agent-side `startTask` pi
-  // tool, so both surfaces drive the same worktree-create + new-tab +
-  // first-message chain.
-  // ---------------------------------------------------------------------
-  const startTaskInProject = useCallback(
-    async (opts: {
-      projectId: string;
-      prompt: string;
-      newWorktree?: boolean;
-      branch?: string;
-      baseBranch?: string;
-      worktreeId?: string;
-    }): Promise<void> => {
-      const project = projectsRef.current.projects.find(
-        (p) => p.id === opts.projectId,
-      );
-      if (!project) {
-        pushNotificationRef.current({
-          title: "Could not start task",
-          message: "Project no longer exists.",
-          kind: "warning",
-        });
-        return;
-      }
-      // Ensure the project we're launching into is the active one before
-      // selecting a worktree; setActiveProjectById intentionally clears the
-      // active worktree as part of switching buckets.
-      if (projectsRef.current.activeId !== opts.projectId) {
-        setActiveProjectById(opts.projectId);
-      }
-      let cwd = project.path;
-      if (opts.newWorktree) {
-        const branch = (opts.branch ?? "").trim();
-        if (!branch) {
-          pushNotificationRef.current({
-            title: "New worktree needs a branch name",
-            message: "Enter a branch name in the launcher before starting.",
-            kind: "warning",
-          });
-          return;
-        }
-        const created = await createWorktreeWithParams({
-          projectId: opts.projectId,
-          branch,
-          baseBranch: opts.baseBranch,
-        });
-        if (!created) {
-          pushNotificationRef.current({
-            title: "Worktree create failed",
-            message: `Could not create '${branch}'. See the sidebar's pending row for details.`,
-            kind: "warning",
-          });
-          return;
-        }
-        cwd = created;
-        const createdWorktree =
-          projectsRef.current.worktreesByProject[opts.projectId]?.find(
-            (w) => w.path === created,
-          );
-        if (createdWorktree) activateWorktree(createdWorktree.id);
-      } else if (opts.worktreeId) {
-        // Existing-worktree path — switch the active worktree and use
-        // its path as the new tab's cwd.
-        const list =
-          projectsRef.current.worktreesByProject[opts.projectId] ?? [];
-        const wt = list.find((w) => w.id === opts.worktreeId);
-        if (wt) {
-          cwd = wt.path;
-          activateWorktree(wt.id);
-        }
-      }
-      const tabId = crypto.randomUUID();
-      newTab(tabId, undefined, { cwd });
-      const opening = pendingTabOpens.current.get(tabId);
-      if (opening) {
-        try {
-          await opening;
-        } catch {
-          /* tab open failed; sendChat below will no-op */
-        }
-      }
-      const trimmed = opts.prompt.trim();
-      if (trimmed) await sendChat(trimmed, { tabId });
-    },
-    [
-      activateWorktree,
-      createWorktreeWithParams,
-      newTab,
-      pendingTabOpens,
-      projectsRef,
-      sendChat,
-      setActiveProjectById,
-    ],
-  );
+  // dashboard composer event route AND the agent-side `startTask` pi tool.
+  const startTaskInProject = useTaskLauncher({
+    projectsRef,
+    pushNotificationRef,
+    setActiveProjectById,
+    createWorktreeWithParams,
+    activateWorktree,
+    newTab,
+    pendingTabOpens,
+    sendChat,
+  });
 
   // ---------------------------------------------------------------------
   // Focus + chrome toggles — terminal panel, composer/terminal focus
@@ -1188,85 +880,74 @@ export default function App() {
   // precedence layers, in order: shell-consent reserved prefixes
   // (security boundary), extension event-routes (extensibility),
   // built-in route table.
-  const eventRouteCtx = useMemo<EventRouteContext>(
-    () => ({
-      setState,
-      stateRef,
-      extensionEventRoutesRef,
-      extensionEventRoutingModeRef,
-      allDiscoveredSessionsRef,
-      hasPendingShellWriteConsent,
-      resolveShellWriteConsent,
-      hasPendingShellCloseConsent,
-      resolveShellCloseConsent,
-      hasPendingSessionDeleteConsent,
-      resolveSessionDeleteConsent,
-      promptDeleteSessionConfirmation,
-      pushNotification,
-      dismissNotification,
-      sendChat,
-      stopPrompt,
-      updateActiveTab,
-      editQueuedMessage,
-      deleteQueuedMessage,
-      steerQueuedMessage,
-      clearQueuedMessages,
-      newTab,
-      newShellTab,
-      newEditorTab,
-      updateEditorMeta,
-      renameEditorTabsForPath,
-      closeEditorTabsForPath,
-      closeTab,
-      setActiveTab,
-      setActiveSubTab,
-      applyShareModeToTab,
-      closeSettings,
-      applySettingsPatch,
-      saveSettings,
-      closeSessionSearch,
-      setSearchQuery,
-      setSearchScope,
-      openSearchHit,
-      closePalette,
-      runPaletteItem,
-      toggleTerminal,
-      clearChat,
-      setModel,
-      setTheme,
-      activateLayoutById,
-      openProjectFromPicker,
-      setActiveProjectById,
-      removeProjectById,
-      setActiveHost: (id) => {
-        hostInfo.setActiveHost(id);
-        // Switching host clears the active project — projects are
-        // host-scoped (today: all local; future: filtered by hostId).
-        clearActiveProject();
-      },
-      syncRecentSessionsToState,
-      setProjectExpanded,
-      refreshProjectWorktrees,
-      activateWorktree,
-      createWorktreeForProject,
-      startTaskInProject,
-      removeWorktreeById,
-      dismissPendingWorktree,
-      retryPendingWorktree,
-      renameWorktree,
-      renameProject,
-      setProjectWorktreeBaseBranch,
-      invoke,
-      writeState,
-    }),
-    // Built once and reused across renders. Every closure inside
-    // (sendChat, newTab, …) reads live state via stateRef / setState
-    // callbacks; adding them as deps would force the memo to re-build
-    // every render — losing any consumer-side memoization keyed on its
-    // identity — without changing observed behavior.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  const eventRouteCtx = useAppEventRouteContext({
+    setState,
+    stateRef,
+    extensionEventRoutesRef,
+    extensionEventRoutingModeRef,
+    allDiscoveredSessionsRef,
+    hasPendingShellWriteConsent,
+    resolveShellWriteConsent,
+    hasPendingShellCloseConsent,
+    resolveShellCloseConsent,
+    hasPendingSessionDeleteConsent,
+    resolveSessionDeleteConsent,
+    promptDeleteSessionConfirmation,
+    pushNotification,
+    dismissNotification,
+    sendChat,
+    stopPrompt,
+    updateActiveTab,
+    editQueuedMessage,
+    deleteQueuedMessage,
+    steerQueuedMessage,
+    clearQueuedMessages,
+    newTab,
+    newShellTab,
+    newEditorTab,
+    updateEditorMeta,
+    renameEditorTabsForPath,
+    closeEditorTabsForPath,
+    closeTab,
+    setActiveTab,
+    setActiveSubTab,
+    applyShareModeToTab,
+    closeSettings,
+    applySettingsPatch,
+    saveSettings,
+    closeSessionSearch,
+    setSearchQuery,
+    setSearchScope,
+    openSearchHit,
+    closePalette,
+    runPaletteItem,
+    toggleTerminal,
+    clearChat,
+    setModel,
+    setTheme,
+    activateLayoutById,
+    openProjectFromPicker,
+    setActiveProjectById,
+    removeProjectById,
+    setActiveHost: (id) => {
+      hostInfo.setActiveHost(id);
+      clearActiveProject();
+    },
+    syncRecentSessionsToState,
+    setProjectExpanded,
+    refreshProjectWorktrees,
+    activateWorktree,
+    createWorktreeForProject,
+    startTaskInProject,
+    removeWorktreeById,
+    dismissPendingWorktree,
+    retryPendingWorktree,
+    renameWorktree,
+    renameProject,
+    setProjectWorktreeBaseBranch,
+    invoke,
+    writeState,
+  });
 
   const onEvent = useMemo(
     () =>
@@ -1279,147 +960,13 @@ export default function App() {
     [eventRouteCtx],
   );
 
-  const renderState = useMemo(() => {
-    const tabs = (state.tabs as Tab[] | undefined) ?? [];
-    const recentSessions =
-      (state.recentSessions as RecentSessionItem[] | undefined) ?? [];
-    const sidebar =
-      (state.sidebar as Record<string, unknown> | undefined) ?? {};
-    const history = buildSidebarHistory(
-      tabs,
-      state.activeTabId as string | undefined,
-      recentSessions,
-    );
-    // Derive the layout's tab-visibility gates from tabs.length so they
-    // can never drift out of sync with reality. Code paths that mutate
-    // tabs (newTab/closeTab/switchProjectBucket) still write hasTabs/empty
-    // for cleanliness, but if any of them ever forget — or set both true
-    // (the orphan-active-id case in switchProjectBucket fallthrough) —
-    // the visible UI stays consistent.
-    const hasTabs = tabs.length > 0;
-    // Derive /agentTabActive + /shellTabActive + /editorTabActive from the
-    // active tab's kind so layout `visible: { $ref: "/agentTabActive" }`
-    // bindings can never lag behind the tabs/activeTabId mutation that
-    // produced them.
-    const { agentTabActive, shellTabActive, editorTabActive } =
-      deriveTabActiveFlags(tabs, state.activeTabId as string | undefined);
-    // Worktree landing — when /landing.kind === "worktree" the
-    // landing page takes over the canvas slot. Suppress every other
-    // canvas's visibility flag so only one component draws into the
-    // canvas grid cell at a time.
-    const landing = state.landing as { kind?: string } | null | undefined;
-    const landingVisible = !!landing && landing.kind === "worktree";
-    const empty = !hasTabs && !landingVisible;
-    // Empty-state branching: when /empty is true we render either the
-    // global projects-dashboard (no project active) or the per-project
-    // dashboard (project active). Both target the canvas slot via the
-    // empty-state slotMap; only one is visible at a time.
-    const hasActiveProject =
-      typeof state.project === "object" && state.project !== null;
-    const emptyAndProject = empty && hasActiveProject;
-    const emptyAndNoProject = empty && !hasActiveProject;
-    // Per-project dashboard inputs derived from existing state. The
-    // composites also tolerate missing/empty arrays so this stays
-    // forward-compatible with extensions injecting more data.
-    const activeProjectId =
-      (state.project as { id?: string } | null | undefined)?.id ?? null;
-    const sidebarProjects =
-      ((state.sidebar as { projects?: unknown } | undefined)?.projects as
-        | { id: string; worktrees?: unknown }[]
-        | undefined) ?? [];
-    const activeProjectSidebarEntry = sidebarProjects.find(
-      (p) => p.id === activeProjectId,
-    );
-    const projectDashboardWorktrees =
-      (activeProjectSidebarEntry?.worktrees as unknown[] | undefined) ?? [];
-    const recentSessionsArr = Array.isArray(state.recentSessions)
-      ? (state.recentSessions as { cwd?: string }[])
-      : [];
-    const projectPath =
-      (state.project as { path?: string } | null | undefined)?.path ?? null;
-    const projectDashboardSessions = projectPath
-      ? recentSessionsArr.filter((s) => {
-          const sCwd = (s.cwd ?? "").replace(/[/\\]+$/, "");
-          const pCwd = projectPath.replace(/[/\\]+$/, "");
-          return sCwd === pCwd;
-        })
-      : [];
-    const projectsArr = Array.isArray(state.projects)
-      ? (state.projects as { id: string }[])
-      : [];
-    const otherProjects = activeProjectId
-      ? projectsArr.filter((p) => p.id !== activeProjectId)
-      : projectsArr;
-    const existingProjectDashboard =
-      (state.projectDashboard as { widgets?: unknown[] } | undefined) ?? {};
-    const projectDashboard = {
-      ...existingProjectDashboard,
-      otherProjects,
-      worktrees: projectDashboardWorktrees,
-      recentSessions: projectDashboardSessions,
-      widgets: existingProjectDashboard.widgets ?? [],
-    };
-    const existingProjectsDashboard =
-      (state.projectsDashboard as { extraCards?: unknown[] } | undefined) ?? {};
-    const projectsDashboard = {
-      ...existingProjectsDashboard,
-      extraCards: existingProjectsDashboard.extraCards ?? [],
-    };
-    // HOSTS sidebar section — [local, ...remotes] with the active host
-    // flagged. The local host is always the first row; discovered
-    // remotes follow in arrival order. Active flag drives the
-    // .a2ui-sidebar-item-active style + the `host` derived record below
-    // (consumed by the dashboard host-banner).
-    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
-    const sidebarHosts = hostInfo.hosts.map((h) => ({
-      id: h.id,
-      label: h.displayName || h.hostname,
-      hint: h.isLocal ? "this mac" : h.hostname,
-      tooltip: h.hostname,
-      active: h.id === activeHostId,
-    }));
-    const activeHost =
-      hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
-    return {
-      ...state,
-      hasTabs,
-      empty,
-      emptyAndProject,
-      emptyAndNoProject,
-      agentTabActive: agentTabActive && !landingVisible,
-      shellTabActive: shellTabActive && !landingVisible,
-      editorTabActive: editorTabActive && !landingVisible,
-      landingVisible,
-      sidebar: {
-        ...sidebar,
-        history,
-        hosts: sidebarHosts,
-      },
-      projectDashboard,
-      projectsDashboard,
-      hosts: hostInfo.hosts,
-      activeHostId,
-      host: activeHost,
-    };
-  }, [
-    buildSidebarHistory,
-    hostInfo.activeHostId,
-    hostInfo.hosts,
-    hostInfo.localHostId,
-    state,
-  ]);
-  const renderRecord = renderState as Record<string, unknown>;
-  const notificationsOpen =
-    ((renderRecord.notifications as unknown[] | undefined) ?? []).length > 0;
-  const paletteOpen = Boolean(
-    (renderRecord.palette as { open?: boolean } | undefined)?.open,
-  );
-  const settingsOpen = Boolean(
-    (renderRecord.settings as { open?: boolean } | undefined)?.open,
-  );
-  const searchOpen = Boolean(
-    (renderRecord.search as { open?: boolean } | undefined)?.open,
-  );
+  const {
+    renderState,
+    notificationsOpen,
+    paletteOpen,
+    settingsOpen,
+    searchOpen,
+  } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
 
   return (
     <SkillRegistryProvider registry={registry}>
