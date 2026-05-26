@@ -54,6 +54,15 @@ function useFileTreePrefs() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (prefsSaveTimerRef.current) {
+        clearTimeout(prefsSaveTimerRef.current);
+        prefsSaveTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Persist panel prefs after hydration. The save is debounced because the
   // drag handle fires height updates on every mousemove.
   useEffect(() => {

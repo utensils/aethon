@@ -28,19 +28,29 @@ function useFileTreeActions({
   refreshFolder,
 }: UseFileTreeActionsArgs) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const activeContextMenu =
+    contextMenu?.rootPath === projectPath ? contextMenu : null;
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
-  const openContextMenu = useCallback((e: MouseEvent, node: TreeNode) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Raw client coords; the ContextMenu primitive clamps + corrects
-    // for WebKit zoom-frame drift before positioning.
-    setContextMenu({ x: e.clientX, y: e.clientY, node });
-  }, []);
+  const openContextMenu = useCallback(
+    (e: MouseEvent, node: TreeNode) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Raw client coords; the ContextMenu primitive clamps + corrects
+      // for WebKit zoom-frame drift before positioning.
+      setContextMenu({
+        rootPath: projectPath,
+        x: e.clientX,
+        y: e.clientY,
+        node,
+      });
+    },
+    [projectPath],
+  );
 
   const onContextNewFile = useCallback(async () => {
-    if (!contextMenu) return;
-    const parentPath = parentDirOf(contextMenu.node);
+    if (!activeContextMenu) return;
+    const parentPath = parentDirOf(activeContextMenu.node);
     closeContextMenu();
     const name = window.prompt("New file name");
     if (!name) return;
@@ -58,11 +68,17 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Failed to create file: ${String(err)}`);
     }
-  }, [closeContextMenu, contextMenu, onEvent, projectPathRef, refreshFolder]);
+  }, [
+    activeContextMenu,
+    closeContextMenu,
+    onEvent,
+    projectPathRef,
+    refreshFolder,
+  ]);
 
   const onContextNewFolder = useCallback(async () => {
-    if (!contextMenu) return;
-    const parentPath = parentDirOf(contextMenu.node);
+    if (!activeContextMenu) return;
+    const parentPath = parentDirOf(activeContextMenu.node);
     closeContextMenu();
     const name = window.prompt("New folder name");
     if (!name) return;
@@ -76,11 +92,11 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Failed to create folder: ${String(err)}`);
     }
-  }, [closeContextMenu, contextMenu, projectPathRef, refreshFolder]);
+  }, [activeContextMenu, closeContextMenu, projectPathRef, refreshFolder]);
 
   const onContextRename = useCallback(async () => {
-    if (!contextMenu) return;
-    const node = contextMenu.node;
+    if (!activeContextMenu) return;
+    const node = activeContextMenu.node;
     closeContextMenu();
     const name = window.prompt("Rename to", node.entry.name);
     if (!name || name === node.entry.name) return;
@@ -106,11 +122,17 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Rename failed: ${String(err)}`);
     }
-  }, [closeContextMenu, contextMenu, onEvent, projectPathRef, refreshFolder]);
+  }, [
+    activeContextMenu,
+    closeContextMenu,
+    onEvent,
+    projectPathRef,
+    refreshFolder,
+  ]);
 
   const onContextDelete = useCallback(async () => {
-    if (!contextMenu) return;
-    const node = contextMenu.node;
+    if (!activeContextMenu) return;
+    const node = activeContextMenu.node;
     closeContextMenu();
     if (!window.confirm(`Move "${node.entry.name}" to the trash?`)) return;
     const dirIdx = Math.max(
@@ -132,23 +154,29 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Delete failed: ${String(err)}`);
     }
-  }, [closeContextMenu, contextMenu, onEvent, projectPathRef, refreshFolder]);
+  }, [
+    activeContextMenu,
+    closeContextMenu,
+    onEvent,
+    projectPathRef,
+    refreshFolder,
+  ]);
 
   const onContextCopyPath = useCallback(async () => {
-    if (!contextMenu) return;
-    const path = contextMenu.node.entry.path;
+    if (!activeContextMenu) return;
+    const path = activeContextMenu.node.entry.path;
     closeContextMenu();
     try {
       await navigator.clipboard.writeText(path);
     } catch {
       window.alert(path);
     }
-  }, [closeContextMenu, contextMenu]);
+  }, [activeContextMenu, closeContextMenu]);
 
   const onContextCopyRelativePath = useCallback(async () => {
-    if (!contextMenu) return;
+    if (!activeContextMenu) return;
     const root = projectPathRef.current.replace(/\/+$/, "");
-    const path = contextMenu.node.entry.path;
+    const path = activeContextMenu.node.entry.path;
     const rel = path.startsWith(root + "/")
       ? path.slice(root.length + 1)
       : path;
@@ -158,11 +186,11 @@ function useFileTreeActions({
     } catch {
       window.alert(rel);
     }
-  }, [closeContextMenu, contextMenu, projectPathRef]);
+  }, [activeContextMenu, closeContextMenu, projectPathRef]);
 
   const onContextRevealInFinder = useCallback(async () => {
-    if (!contextMenu) return;
-    const path = contextMenu.node.entry.path;
+    if (!activeContextMenu) return;
+    const path = activeContextMenu.node.entry.path;
     closeContextMenu();
     try {
       await invoke("fs_reveal_in_file_manager", {
@@ -172,11 +200,11 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Reveal failed: ${String(err)}`);
     }
-  }, [closeContextMenu, contextMenu, projectPath]);
+  }, [activeContextMenu, closeContextMenu, projectPath]);
 
   const onContextOpenWithDefault = useCallback(async () => {
-    if (!contextMenu) return;
-    const path = contextMenu.node.entry.path;
+    if (!activeContextMenu) return;
+    const path = activeContextMenu.node.entry.path;
     closeContextMenu();
     try {
       await invoke("fs_open_in_default_app", {
@@ -186,11 +214,11 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Open failed: ${String(err)}`);
     }
-  }, [closeContextMenu, contextMenu, projectPath]);
+  }, [activeContextMenu, closeContextMenu, projectPath]);
 
   const fileTreeMenuItems: ContextMenuItem[] = useMemo(
     () =>
-      contextMenu
+      activeContextMenu
         ? [
             {
               id: "new-file",
@@ -211,7 +239,7 @@ function useFileTreeActions({
             {
               id: "open-with-default",
               label: "Open with default app",
-              disabled: contextMenu.node.entry.kind !== "file",
+              disabled: activeContextMenu.node.entry.kind !== "file",
               onSelect: onContextOpenWithDefault,
             },
             { type: "separator" },
@@ -236,7 +264,7 @@ function useFileTreeActions({
           ]
         : [],
     [
-      contextMenu,
+      activeContextMenu,
       onContextCopyPath,
       onContextCopyRelativePath,
       onContextDelete,
@@ -249,7 +277,7 @@ function useFileTreeActions({
   );
 
   return {
-    contextMenu,
+    contextMenu: activeContextMenu,
     fileTreeMenuItems,
     openContextMenu,
     setContextMenu,

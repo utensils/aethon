@@ -60,6 +60,7 @@ interface ProjectShape {
 }
 
 interface ContextMenuState {
+  rootPath: string;
   x: number;
   y: number;
   node: TreeNode;

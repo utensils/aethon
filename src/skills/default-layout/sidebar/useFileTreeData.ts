@@ -62,6 +62,15 @@ function useFileTreeData({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const schedulePersist = useCallback((next: Set<string>) => {
     const projectKey = projectPathRef.current;
     if (!projectKey) return;
