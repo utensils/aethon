@@ -59,8 +59,9 @@ export function useHydrateSlashCommands(deps: SlashCommandsDeps) {
   ) {
     if (piCommands) piCommandsRef.current = piCommands;
     const builtins = buildBuiltinSlashCommands();
+    const builtinNames = new Set(builtins.map((b) => b.name));
     const dispatchedNames = list
-      .filter((c) => !new Set(builtins.map((b) => b.name)).has(c.name))
+      .filter((c) => !builtinNames.has(c.name))
       .map((c) => c.name);
     slashCommandsRef.current = buildHydratedSlashCommands(
       builtins,
