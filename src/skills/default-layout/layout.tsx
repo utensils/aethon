@@ -736,6 +736,20 @@ function GhBranchStatusBlock(props: {
       </div>
     );
   }
+  // Surface a dangling worktree before the gh-availability check —
+  // every git invocation in the dir would have failed, so this is the
+  // accurate label, not "no GitHub remote".
+  if (status?.worktreeBroken) {
+    return (
+      <div className="a2ui-worktree-landing-gh">
+        <h2>Worktree status</h2>
+        <p className="a2ui-empty-state-subtitle">
+          This worktree is no longer tracked by git. Use the delete
+          button in the sidebar to remove the leftover folder.
+        </p>
+      </div>
+    );
+  }
   // Silent fall-through when gh isn't available — don't show a noisy
   // "install gh" prompt. The landing should still feel useful without
   // the integration.

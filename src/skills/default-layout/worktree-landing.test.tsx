@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorktreeLanding } from "./layout";
 import type { A2UIComponent } from "../../types/a2ui";
+import type { GhBranchStatus } from "../../ghBranchStatusCache";
 
+const ghMock = vi.fn(() => Promise.resolve(null as GhBranchStatus | null));
 vi.mock("../../ghBranchStatusCache", () => ({
-  getGhBranchStatus: vi.fn(() => Promise.resolve(null)),
+  getGhBranchStatus: (...args: unknown[]) => ghMock(...(args as [])),
 }));
 
 afterEach(() => cleanup());
@@ -71,5 +73,75 @@ describe("WorktreeLanding sessions", () => {
       },
       "session-wt",
     );
+  });
+});
+
+describe("WorktreeLanding gh branch status", () => {
+  it("renders a broken-worktree notice when worktreeBroken is true", async () => {
+    ghMock.mockResolvedValueOnce({
+      ghAvailable: false,
+      repo: null,
+      pushed: false,
+      prs: [],
+      worktreeBroken: true,
+    });
+    render(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "aethon",
+            worktreeId: "wt-broken",
+            worktreeLabel: "fix/orphan",
+            branch: "fix/orphan",
+            path: "/repo/aethon-broken",
+          },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/no longer tracked by git/i)).toBeTruthy(),
+    );
+  });
+
+  it("does not render the gh status block when worktreeBroken is false and gh is unavailable", async () => {
+    ghMock.mockResolvedValueOnce({
+      ghAvailable: false,
+      repo: null,
+      pushed: false,
+      prs: [],
+      worktreeBroken: false,
+    });
+    render(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "aethon",
+            worktreeId: "wt-healthy",
+            worktreeLabel: "main",
+            branch: "main",
+            path: "/repo/aethon",
+          },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+    // Wait one tick so the effect runs.
+    await waitFor(() => expect(ghMock).toHaveBeenCalled());
+    expect(screen.queryByText(/no longer tracked|branch status/i)).toBeNull();
   });
 });

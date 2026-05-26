@@ -170,6 +170,41 @@ describe("migrateProjects", () => {
     });
     expect(out.worktreesByProject.a).toHaveLength(1);
   });
+
+  it("clears activeWorktreeId when it points to a worktree no longer in worktreesByProject", () => {
+    const out = migrateProjects({
+      schemaVersion: 3,
+      projects: [{ id: "a", label: "a", path: "/a", lastUsed: 1 }],
+      activeId: "a",
+      activeWorktreeId: "wt-ghost",
+      activeHostId: "local:abc",
+      worktreesByProject: {
+        a: [{ id: "wt-main", projectId: "a", path: "/a", branch: "main", isMain: true }],
+      },
+    });
+    expect(out.activeWorktreeId).toBeNull();
+    // Row stays visible so the user can see and remove it via the
+    // orphan delete flow. The dangling *active id* is the part that
+    // freezes the UI; the row itself is informational.
+    expect(out.worktreesByProject.a).toHaveLength(1);
+  });
+
+  it("keeps activeWorktreeId when it resolves to a loaded worktree", () => {
+    const out = migrateProjects({
+      schemaVersion: 3,
+      projects: [{ id: "a", label: "a", path: "/a", lastUsed: 1 }],
+      activeId: "a",
+      activeWorktreeId: "wt-2",
+      activeHostId: "local:abc",
+      worktreesByProject: {
+        a: [
+          { id: "wt-1", projectId: "a", path: "/a", branch: "main", isMain: true },
+          { id: "wt-2", projectId: "a", path: "/a-wt", branch: "feat", isMain: false },
+        ],
+      },
+    });
+    expect(out.activeWorktreeId).toBe("wt-2");
+  });
 });
 
 describe("setProjectUiExpanded", () => {

@@ -150,8 +150,19 @@ export function migrateProjects(
       );
     }
   }
-  const activeWorktreeId =
+  // Drop a dangling activeWorktreeId so a pruned-but-recorded worktree
+  // doesn't freeze the landing on next boot. Symmetric with the
+  // `activeId` check above. The row itself stays in `worktreesByProject`
+  // — `removeWorktreeById` can clean it up via the orphan path.
+  const rawActiveWorktreeId =
     typeof v2.activeWorktreeId === "string" ? v2.activeWorktreeId : null;
+  const activeWorktreeId =
+    rawActiveWorktreeId &&
+    Object.values(worktreesByProject)
+      .flat()
+      .some((w) => w.id === rawActiveWorktreeId)
+      ? rawActiveWorktreeId
+      : null;
   const v3 = parsed as PersistedV3;
   const activeHostId =
     typeof v3.activeHostId === "string" && v3.activeHostId.length > 0

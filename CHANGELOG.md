@@ -8,6 +8,20 @@ All notable changes to Aethon. Format loosely follows
 
 ### Fixed
 
+- **Dangling worktrees are recoverable from the UI.** When a git worktree
+  was pruned externally (manual `git worktree remove`, crashed `add`),
+  Aethon's projects.json kept the row but every git invocation in the
+  dir failed — the landing card mislabeled it as "No GitHub remote
+  detected" and the delete button bounced with "worktree not tracked".
+  The `gh_branch_status` IPC now carries an explicit `worktreeBroken`
+  flag (set via a hermetic `.git`-marker check before any git/gh
+  shell-out), the landing renders a "no longer tracked by git" message
+  instead, and `removeWorktreeById` falls through to a new
+  `git_worktree_remove_orphan` Rust command that validates the path
+  points into this project's `.git/worktrees/` before trashing the
+  leftover folder. `migrateProjects` also clears a dangling
+  `activeWorktreeId` at load so a freshly-restarted app doesn't land
+  on a dead worktree.
 - **Extension watcher follows cross-project worktree activation (peer-review P2).**
   `activateWorktree` previously changed `activeId` directly when the
   selected worktree belonged to a different project, bypassing the

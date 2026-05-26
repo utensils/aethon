@@ -26,6 +26,11 @@ export interface GhBranchStatus {
   repo: string | null;
   pushed: boolean;
   prs: GhPr[];
+  /** True when the worktree dir's `.git` marker points to a pruned
+   *  `.git/worktrees/<name>/` entry. Distinct from `ghAvailable=false`
+   *  (gh missing) and `repo=null` (no GitHub remote) — those are
+   *  healthy states. */
+  worktreeBroken: boolean;
 }
 
 /** How long a successful cache entry remains valid. 60s is short
