@@ -484,6 +484,80 @@ pub async fn git_worktree_remove(
     Ok(())
 }
 
+/// Remove a worktree that git no longer tracks (registry pruned, dir
+/// left behind). The strict `git_worktree_remove` refuses these paths —
+/// this is the recovery escape hatch. Verifies the target genuinely
+/// looks like an orphan of the given project before touching disk:
+/// not in `git worktree list`, `.git` marker points into
+/// `<project>/.git/worktrees/`, and the target is not the project root.
+/// Sends the directory to the OS trash (never `unlink`) and runs
+/// `git worktree prune` to clear any stale registry residue.
+#[tauri::command]
+pub async fn git_worktree_remove_orphan(
+    project_path: String,
+    worktree_path: String,
+) -> Result<(), String> {
+    let project = PathBuf::from(&project_path);
+    let target = PathBuf::from(&worktree_path);
+    if project == target {
+        return Err("cannot remove the main worktree".to_string());
+    }
+    // Refuse if git already knows about this path — caller should use
+    // `git_worktree_remove` (with `force=true` if dirty).
+    let list = git_worktrees(project_path.clone()).await?;
+    let canonical = std::fs::canonicalize(&worktree_path)
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
+    let still_tracked = list.iter().any(|w| {
+        w.path == worktree_path || canonical.as_deref().is_some_and(|c| c == w.path)
+    });
+    if still_tracked {
+        return Err("worktree is still tracked by git; use git_worktree_remove instead".to_string());
+    }
+    // Authorize the path: the `.git` marker must point into this
+    // project's `.git/worktrees/` directory. Anything else (a plain
+    // folder the user typed in by accident, an unrelated worktree
+    // from another repo) is refused.
+    let marker = target.join(".git");
+    if !marker.is_file() {
+        return Err(format!(
+            "not an orphan worktree: {worktree_path} has no .git marker file"
+        ));
+    }
+    let contents = std::fs::read_to_string(&marker)
+        .map_err(|e| format!("read .git marker: {e}"))?;
+    let gitdir = contents
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("gitdir:").map(str::trim))
+        .ok_or_else(|| format!("not an orphan worktree: {worktree_path} has malformed .git"))?;
+    // Canonicalize project so a symlinked tmpdir (macOS `/var` →
+    // `/private/var`) doesn't cause a false-negative. Git writes the
+    // physical path into `.git`, so `gitdir` is already resolved.
+    let project_canon = std::fs::canonicalize(&project)
+        .map_err(|e| format!("resolve project path: {e}"))?;
+    let expected_prefix = project_canon.join(".git").join("worktrees");
+    if !PathBuf::from(gitdir).starts_with(&expected_prefix) {
+        return Err(format!(
+            "not tracked by this project: {worktree_path} .git points outside {}",
+            expected_prefix.display()
+        ));
+    }
+    // `git worktree prune` clears any stale registry residue (the
+    // gitdir target may or may not still exist).
+    let _ = env::command("git")
+        .arg("-C")
+        .arg(&project)
+        .args(["worktree", "prune"])
+        .output();
+    // Send the dir to the OS trash. Mirrors `commands::fs::fs_delete`
+    // — never `unlink`, never permanent.
+    if target.exists() {
+        trash::delete(&target).map_err(|e| format!("trash {worktree_path}: {e}"))?;
+    }
+    Ok(())
+}
+
 /// List local branches with a `current` flag for the active branch.
 /// Used by the "create worktree from existing branch" picker.
 #[tauri::command]
@@ -547,6 +621,13 @@ pub struct GhBranchStatus {
     /// PRs whose head is the requested branch. Includes open + recently
     /// closed PRs so users see merge state when the branch is gone.
     pub prs: Vec<GhPr>,
+    /// True when the worktree directory still exists on disk but its
+    /// `.git` file points to a `.git/worktrees/<name>/` entry that's
+    /// been pruned externally. Distinct from `gh_available=false`
+    /// (gh missing) and `repo=None` (no GitHub remote) — those are
+    /// healthy states, this one means the user should clean up the
+    /// stale entry.
+    pub worktree_broken: bool,
 }
 
 #[derive(serde::Serialize, Debug, Clone)]
@@ -573,10 +654,40 @@ pub async fn gh_branch_status(
     Ok(gh_branch_status_inner(&project_path, &branch))
 }
 
+/// Detect a worktree whose on-disk `.git` file points to a pruned
+/// `.git/worktrees/<name>/` entry. Hermetic — no git process spawn,
+/// no network. Returns false for a plain (non-worktree) directory or
+/// a healthy repo.
+fn worktree_is_dangling(dir: &std::path::Path) -> bool {
+    let marker = dir.join(".git");
+    if !marker.is_file() {
+        return false;
+    }
+    let Ok(contents) = std::fs::read_to_string(&marker) else {
+        return false;
+    };
+    let Some(target) = contents
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("gitdir:").map(str::trim))
+    else {
+        return false;
+    };
+    !std::path::Path::new(target).exists()
+}
+
 fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBranchStatus {
     let mut status = GhBranchStatus::default();
     let dir = PathBuf::from(project_path);
     if !dir.is_dir() || branch.is_empty() {
+        return status;
+    }
+    // 0. Short-circuit on a dangling worktree (registry pruned, dir
+    //    still on disk). Every git invocation below would fail; we'd
+    //    end up with `gh_available=true, repo=None` and the landing
+    //    would mislabel it as "no GitHub remote".
+    if worktree_is_dangling(&dir) {
+        status.worktree_broken = true;
         return status;
     }
     // 1. gh available + authed?
@@ -1364,6 +1475,74 @@ mod tests {
         assert!(list.is_empty());
     }
 
+    #[test]
+    fn worktree_is_dangling_detects_missing_gitdir_target() {
+        // A worktree dir whose `.git` file points to a `.git/worktrees/<name>/`
+        // entry that was pruned externally — the exact shape this fix
+        // exists to recover from. The check must be hermetic (no git
+        // invocation) so it runs before `gh auth status` in the status
+        // probe.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(".git"),
+            "gitdir: /var/empty/aethon-test-no-such-worktree-dir\n",
+        )
+        .expect("write .git");
+        assert!(worktree_is_dangling(dir.path()));
+    }
+
+    #[test]
+    fn worktree_is_dangling_returns_false_for_normal_repo() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        assert!(!worktree_is_dangling(dir.path()));
+    }
+
+    #[test]
+    fn worktree_is_dangling_returns_false_for_plain_directory() {
+        // No `.git` at all — caller is asking about a plain folder, not
+        // a worktree. We don't want to mis-label it as "broken".
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(!worktree_is_dangling(dir.path()));
+    }
+
+    #[test]
+    fn worktree_is_dangling_returns_false_when_gitdir_target_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(".git"),
+            format!("gitdir: {}\n", target.path().display()),
+        )
+        .expect("write .git");
+        assert!(!worktree_is_dangling(dir.path()));
+    }
+
+    #[test]
+    fn gh_branch_status_marks_dangling_worktree() {
+        // End-to-end on the inner helper. No `gh` invocation, no
+        // network — the dangling check must short-circuit before
+        // `gh auth status`.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(".git"),
+            "gitdir: /var/empty/aethon-test-no-such-worktree-dir\n",
+        )
+        .expect("write .git");
+        let s = gh_branch_status_inner(&dir.path().to_string_lossy(), "main");
+        assert!(s.worktree_broken, "expected worktree_broken=true");
+        assert!(!s.gh_available);
+        assert!(s.repo.is_none());
+    }
+
+    #[test]
+    fn gh_branch_status_does_not_mark_healthy_repo_broken() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let s = gh_branch_status_inner(&dir.path().to_string_lossy(), "main");
+        assert!(!s.worktree_broken);
+    }
+
     #[tokio::test]
     async fn list_returns_main_worktree_for_fresh_repo() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1400,6 +1579,114 @@ mod tests {
             .expect("worktree remove");
         let after = git_worktrees(project_path).await.expect("list after");
         assert_eq!(after.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_drops_pruned_worktree() {
+        // Simulate the dangling state: a worktree was created, then
+        // its `.git/worktrees/<name>/` entry was pruned externally,
+        // but the on-disk dir survives.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = parent.path().join("orphan");
+        let target_str = target.to_string_lossy().to_string();
+        git_worktree_add(
+            project_path.clone(),
+            target_str.clone(),
+            "orphan".to_string(),
+            None,
+        )
+        .await
+        .expect("worktree add");
+        // Manually prune the registry entry. Leaves the on-disk dir
+        // intact with a now-dangling `.git` marker file.
+        std::fs::remove_dir_all(dir.path().join(".git/worktrees/orphan"))
+            .expect("remove registry entry");
+        // Sanity: strict remove must refuse.
+        let err = git_worktree_remove(project_path.clone(), target_str.clone(), false)
+            .await
+            .expect_err("strict remove must refuse a pruned worktree");
+        assert!(
+            err.contains("not tracked"),
+            "expected 'not tracked' in strict remove err, got: {err}"
+        );
+        // The orphan path cleans it up.
+        git_worktree_remove_orphan(project_path.clone(), target_str.clone())
+            .await
+            .expect("orphan remove");
+        // On-disk dir is gone (sent to trash by `trash::delete`; the
+        // assertion is that the path is no longer reachable).
+        assert!(
+            !target.exists(),
+            "orphan dir should be gone after remove_orphan"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_refuses_live_worktree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = parent.path().join("alive");
+        let target_str = target.to_string_lossy().to_string();
+        git_worktree_add(
+            project_path.clone(),
+            target_str.clone(),
+            "alive".to_string(),
+            None,
+        )
+        .await
+        .expect("worktree add");
+        let err = git_worktree_remove_orphan(project_path, target_str)
+            .await
+            .expect_err("must refuse a live worktree");
+        assert!(
+            err.contains("still tracked") || err.contains("not orphaned"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_refuses_main_worktree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let err = git_worktree_remove_orphan(project_path.clone(), project_path)
+            .await
+            .expect_err("must refuse main worktree");
+        assert!(err.contains("main") || err.contains("still tracked"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_refuses_unrelated_path() {
+        // Defense in depth: even with a dangling `.git`-marker shape,
+        // a path outside the project tree (no `gitdir:` pointing into
+        // `<project>/.git/worktrees/`) must be refused. Stops a buggy
+        // caller from trashing arbitrary directories.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let unrelated = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        std::fs::write(
+            unrelated.path().join(".git"),
+            "gitdir: /var/empty/no-such-thing\n",
+        )
+        .expect("write fake .git");
+        let err = git_worktree_remove_orphan(
+            project_path,
+            unrelated.path().to_string_lossy().to_string(),
+        )
+        .await
+        .expect_err("must refuse unrelated path");
+        assert!(
+            err.contains("not an orphan") || err.contains("not tracked by this project"),
+            "got: {err}"
+        );
+        // And the dir must still exist — we didn't touch it.
+        assert!(unrelated.path().exists());
     }
 
     #[tokio::test]

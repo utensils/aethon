@@ -892,6 +892,7 @@ pub fn run() {
             commands::git::git_worktrees,
             commands::git::git_worktree_add,
             commands::git::git_worktree_remove,
+            commands::git::git_worktree_remove_orphan,
             commands::git::git_branch_list,
             commands::git::gh_branch_status,
             commands::git::gh_repo_overview,

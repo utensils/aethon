@@ -190,6 +190,19 @@ export async function gitWorktreeRemove(args: {
   });
 }
 
+/** Recovery path for a worktree git no longer tracks. The Rust command
+ *  guards the path (must be a `.git`-marker file pointing into this
+ *  project's `.git/worktrees/`) before trashing. */
+export async function gitWorktreeRemoveOrphan(args: {
+  projectPath: string;
+  worktreePath: string;
+}): Promise<void> {
+  await invoke("git_worktree_remove_orphan", {
+    projectPath: args.projectPath,
+    worktreePath: args.worktreePath,
+  });
+}
+
 export async function gitBranchList(
   projectPath: string,
 ): Promise<GitBranchInfo[]> {

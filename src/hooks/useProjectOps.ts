@@ -28,6 +28,7 @@ import {
   gitBranchList,
   gitWorktreeAdd,
   gitWorktreeRemove,
+  gitWorktreeRemoveOrphan,
   gitWorktrees,
   newPendingWorktree,
   reconcileWorktrees,
@@ -1158,6 +1159,43 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
             projectPath: project.path,
             worktreePath: worktree.path,
             force: true,
+          });
+          closeTabsForRemovedWorktree(
+            project.id,
+            worktreeId,
+            worktree.path,
+            projectsRef.current.activeWorktreeId === worktreeId,
+          );
+          const list = removeWorktreeFromList(
+            projectsRef.current.worktreesByProject[project.id] ?? [],
+            worktreeId,
+          );
+          projectsRef.current = setProjectWorktrees(
+            projectsRef.current,
+            project.id,
+            list,
+          );
+          syncProjectsToState();
+          void persistProjects();
+          return;
+        } catch (e2) {
+          window.alert(`Failed: ${String(e2)}`);
+          return;
+        }
+      }
+      // Orphan recovery: git no longer tracks this worktree (registry
+      // pruned externally), but Aethon still has the row. Offer the
+      // user a one-click cleanup via the orphan command.
+      if (msg.includes("worktree not tracked")) {
+        const ok = window.confirm(
+          `Aethon has this worktree but git no longer tracks it. ` +
+            `Remove the leftover folder and forget the entry?`,
+        );
+        if (!ok) return;
+        try {
+          await gitWorktreeRemoveOrphan({
+            projectPath: project.path,
+            worktreePath: worktree.path,
           });
           closeTabsForRemovedWorktree(
             project.id,
