@@ -75,9 +75,18 @@ pub fn shell_open<R: Runtime>(
         })
         .map_err(|e| format!("openpty: {e}"))?;
 
-    let mut cmd = match args.command.as_deref() {
-        Some(c) if !c.is_empty() => CommandBuilder::new(c),
-        _ => default_shell_command(),
+    // Normalize `Some("") → None` once: the runtime command selection
+    // below treats an empty string as "no command" (falls back to the
+    // default shell), but earlier code derived `display_command`
+    // independently and would stamp the empty string into the slot's
+    // label — so a default-shell tab spawned with `command: ""` got a
+    // blank title. Computing `effective_command` once keeps both
+    // derivations in sync.
+    let effective_command: Option<&str> = args.command.as_deref().filter(|c| !c.is_empty());
+
+    let mut cmd = match effective_command {
+        Some(c) => CommandBuilder::new(c),
+        None => default_shell_command(),
     };
     if let Some(extra_args) = args.args {
         for a in extra_args {
@@ -143,8 +152,10 @@ pub fn shell_open<R: Runtime>(
     );
 
     let display_cwd = args.cwd.clone().unwrap_or_default();
-    let display_command = args.command.clone().unwrap_or_else(default_shell_label);
-    let slot = ShellSlot {
+    let display_command = effective_command
+        .map(str::to_string)
+        .unwrap_or_else(default_shell_label);
+    let mut slot = ShellSlot {
         writer,
         master: pair.master,
         child: child_handle,
@@ -154,12 +165,39 @@ pub fn shell_open<R: Runtime>(
         cwd: display_cwd,
         command: display_command,
     };
-    state
-        .slots
-        .lock()
-        .map_err(|e| format!("lock: {e}"))?
-        .insert(args.tab_id, slot);
-    Ok(())
+
+    // Atomic check-and-insert. The pre-flight check at the top of
+    // this function is a fast-path — it lets us fail without paying
+    // for `openpty` + spawn + reader-thread setup when the id is
+    // obviously taken. It is *not* sufficient on its own: two
+    // concurrent `shell_open` calls for the same tab_id can both
+    // pass the pre-flight before either one inserts. The decisive
+    // check is here, under the same lock that performs the insert.
+    {
+        let mut guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
+        if !guard.contains_key(&args.tab_id) {
+            guard.insert(args.tab_id.clone(), slot);
+            return Ok(());
+        }
+    }
+
+    // Lost the race against a concurrent `shell_open` for the same
+    // tab_id. Tear down what we just built so we don't leak a PTY,
+    // a detached reader thread, or a zombie child. Order mirrors
+    // `shell_close`: kill the child first so EOF unblocks the
+    // reader, then drop writer + master, then join.
+    if let Ok(mut child_guard) = slot.child.lock()
+        && let Some(mut c) = child_guard.take()
+    {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    drop(slot.writer);
+    drop(slot.master);
+    if let Some(handle) = slot.reader_thread.take() {
+        let _ = handle.join();
+    }
+    Err(format!("shell already open for tab {}", args.tab_id))
 }
 
 fn default_shell_command() -> CommandBuilder {

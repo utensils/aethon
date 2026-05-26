@@ -1,15 +1,25 @@
-//! Agent-facing share-mode + scrollback API (M6 P2).
+//! Share-mode + scrollback API (M6 P2).
 //!
-//! Three Tauri commands exposed to the frontend, which proxies bridge
-//! requests for `aethon.shells.{list,read,write}`:
+//! Two distinct surfaces share the same `ShareMode`-aware plumbing.
+//! Keeping them in one module lets `ShareState`-touching code stay
+//! colocated; the security boundary lives in *who* invokes each one:
+//!
+//! **User-gesture-driven** — invoked from the share-mode badge in
+//! the UI. Deliberately **not** reachable through the agent bridge
+//! (`aethon.shells.*` proxies only the three commands listed below):
 //!
 //! - [`shell_set_share_mode`] — updates [`ShareState`][1] atomically;
 //!   on `Private → Shareable` transitions, pins the privacy floor at
-//!   the live scrollback cursor.
-//! - [`shell_read_scrollback`] — returns recent bytes ≥ floor.
-//!   Refuses if the mode is private.
+//!   the live scrollback cursor. The agent cannot escalate its own
+//!   access because this entry point is not bridged.
+//!
+//! **Agent-facing — bridged as `aethon.shells.{list,read,write}`.**
+//! All three respect the live mode gate set by the user above:
+//!
 //! - [`shell_list_shareable`] — metadata for tabs whose mode is not
 //!   private. Hidden tabs stay invisible to the agent.
+//! - [`shell_read_scrollback`] — returns recent bytes ≥ floor.
+//!   Refuses if the mode is private.
 //! - [`shell_write`] — mode-gated agent keystroke injection. Distinct
 //!   from [`super::io::shell_input`] (the user's own ungated path).
 //!

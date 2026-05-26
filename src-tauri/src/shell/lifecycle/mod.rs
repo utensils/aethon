@@ -21,9 +21,14 @@
 //!   ungated PTY control surface).
 //! - [`reader`] — `spawn_reader_thread`, UTF-8 codepoint-safe split,
 //!   and OSC 0/1/2 title parsing.
-//! - [`sharing`] — the agent-facing `shell_set_share_mode`,
-//!   `shell_read_scrollback`, `shell_write`, `shell_list_shareable`,
-//!   plus the `ShareMode`-gated `write_keystrokes` helper.
+//! - [`sharing`] — the `ShareMode` machinery.
+//!   `shell_set_share_mode` is user-gesture-driven (the badge); it is
+//!   intentionally **not** exposed through the agent bridge so the
+//!   agent can't escalate its own access. The three agent-facing
+//!   commands `shell_list_shareable`, `shell_read_scrollback`, and
+//!   `shell_write` ride the same plumbing as
+//!   `aethon.shells.{list,read,write}`. `write_keystrokes` is the
+//!   internal `ShareMode`-gated helper used by `shell_write`.
 //!
 //! `lib.rs` continues to import `shell::{ShellRegistry, shell_open,
 //! ...}` — the glob re-export here, combined with the one in
