@@ -5,6 +5,7 @@ import {
   type ProjectBaselineSnapshot,
   type TabRecord,
 } from "./state";
+import { handleA2UIEvent } from "./a2uiEvents";
 import {
   captureProjectExtensionBaseline,
   dispatchInboundMessage,
@@ -16,6 +17,8 @@ import {
   handleStop,
   unloadProjectExtensions,
 } from "./dispatcher";
+import { handleSetExtensionDisabled } from "./extensionControl";
+import { projectDisplayName } from "./projectLifecycle";
 
 const baseOpts: AethonAgentStateOptions = {
   userDir: "/tmp/aethon-test",
@@ -188,6 +191,53 @@ describe("handleStop", () => {
     expect(f.sent.find((m) => m.type === "terminal_output")).toMatchObject({
       content: "\r\n[command cancelled]\r\n",
     });
+  });
+});
+
+describe("handleA2UIEvent", () => {
+  it("drains a pending reload after a handler-started prompt ends", async () => {
+    const f = makeFixture();
+    let resolvePrompt: (() => void) | undefined;
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      return undefined as never;
+    }) satisfies typeof process.exit);
+    const tab = fakeTabRecord({
+      session: {
+        prompt: () =>
+          new Promise<void>((resolve) => {
+            resolvePrompt = resolve;
+          }),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+    f.state.a2uiEventHandlers.push({
+      match: { componentType: "button", eventType: "click" },
+      handler: (_ev, ctx) => ctx.pi.prompt("from handler"),
+    });
+
+    await handleA2UIEvent(f.state, f.deps, fakeAethonApi(), {
+      type: "a2ui_event",
+      tabId: "tab-1",
+      event: { componentType: "button", eventType: "click" },
+    });
+
+    await vi.waitFor(() => {
+      expect(tab.promptInFlight).toBe(true);
+      expect(f.sent).toContainEqual({
+        type: "prompt_started",
+        tabId: "tab-1",
+        source: "handler",
+      });
+    });
+    f.state.reloadPending = true;
+    resolvePrompt?.();
+
+    await vi.waitFor(() => {
+      expect(tab.promptInFlight).toBe(false);
+      expect(f.sent).toContainEqual({ type: "_reload_done" });
+      expect(exit).toHaveBeenCalledWith(0);
+    });
+    exit.mockRestore();
   });
 });
 
@@ -462,6 +512,37 @@ describe("handleSetModel", () => {
       tabId: "tab-1",
       message: "set_model: provider offline",
     });
+  });
+});
+
+describe("handleSetExtensionDisabled", () => {
+  it("emits the best-known source for extension-package toggles", async () => {
+    const f = makeFixture();
+    f.state.disabledExtensions.add("pkg-ext");
+    f.state.disabledExtensionMeta.set("pkg-ext", {
+      source: "extension-package",
+    });
+
+    await handleSetExtensionDisabled(f.state, f.deps, f.deps, {
+      type: "set_extension_disabled",
+      name: "pkg-ext",
+      disabled: false,
+    });
+
+    expect(f.sent).toContainEqual({
+      type: "extension_lifecycle",
+      name: "pkg-ext",
+      source: "extension-package",
+      status: "enabled",
+    });
+  });
+});
+
+describe("projectDisplayName", () => {
+  it("handles POSIX, Windows, mixed, and trailing separators", () => {
+    expect(projectDisplayName("/Users/me/project/")).toBe("project");
+    expect(projectDisplayName("C:\\Users\\me\\project")).toBe("project");
+    expect(projectDisplayName("C:\\Users/me\\project\\")).toBe("project");
   });
 });
 

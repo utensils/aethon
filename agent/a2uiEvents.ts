@@ -1,6 +1,10 @@
 import type { AethonApi } from "./aethon-api";
 import type { AethonAgentState, PiHandlerCtx, TabRecord } from "./state";
-import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
+import {
+  maybeExitForReload,
+  type DispatcherDeps,
+  type InboundMessage,
+} from "./dispatcherTypes";
 import { setState, makeCanvasApi } from "./state-mutation";
 import { ensureTab, modelKey } from "./tab-lifecycle";
 
@@ -101,6 +105,7 @@ function buildPiHandlerCtx(
         if (state.currentAgentTabId === handlerTabId) {
           state.currentAgentTabId = undefined;
         }
+        maybeExitForReload(state, deps);
       }
     },
     notify(message: string) {
