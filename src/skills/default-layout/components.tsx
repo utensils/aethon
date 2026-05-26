@@ -10,8 +10,8 @@
  *   - `layout.tsx`           — Layout grid, AeMark monogram, scale helper,
  *                               StatusBar + EmptyState chrome
  *   - `sidebar/`             — Sidebar + searchable section + item row
- *   - `chat.tsx`             — ChatHistory, ChatInput, ToolCard, MainCanvas
- *                               (slash palette, formatToolDuration)
+ *   - `chat*.tsx`            — chat history/canvas, composer, slash picker,
+ *                               queue popover, ToolCard, formatToolDuration
  *   - `terminal.tsx`         — read-only agent-bash xterm display + theme
  *                               helpers shared with the shell composites
  *   - `shell/`               — ShellCanvas, TerminalPanel, TabStrip

@@ -17,7 +17,7 @@ import {
  * events. The unit tests for the bug-fix logic live next to the
  * controller — see stickyScrollController.test.ts.
  */
-export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) {
+export function useStickyScroll(containerRef: RefObject<HTMLElement | null>) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const controllerRef = useRef<StickyScrollController | null>(null);
   if (controllerRef.current === null) {
@@ -33,7 +33,7 @@ export function useStickyScroll(containerRef: RefObject<HTMLDivElement | null>) 
   // Reading scrollTop *after* the write is the only reliable signal.
   // (codex P2 review feedback.)
   const programmaticScrollTo = (
-    el: HTMLDivElement,
+    el: HTMLElement,
     target: number,
     ctrl: StickyScrollController,
   ) => {
