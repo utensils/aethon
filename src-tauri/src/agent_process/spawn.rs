@@ -18,7 +18,9 @@ use crate::helpers::parse_config_toml;
 use crate::{env, helpers};
 
 use super::process::AgentWorker;
-use super::readers::{StderrReaderCtx, StdoutReaderCtx, spawn_stderr_reader, spawn_stdout_reader};
+use super::readers::{
+    STDERR_TAIL_CAP, StderrReaderCtx, StdoutReaderCtx, spawn_stderr_reader, spawn_stdout_reader,
+};
 use super::sidecar::{find_sidecar_binary, project_root};
 
 /// Spawn the agent if no live child is held. Idempotent. Callers own the
@@ -64,7 +66,7 @@ pub(super) fn ensure_agent_spawned(
     tracing::info!(target: "aethon::agent", key = key, "spawned pid={pid}");
 
     let stderr_tail: Arc<Mutex<VecDeque<String>>> =
-        Arc::new(Mutex::new(VecDeque::with_capacity(32)));
+        Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_CAP)));
 
     let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
     spawn_stdout_reader(StdoutReaderCtx {
