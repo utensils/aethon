@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectsState } from "../projects";
 import { makeEmptyTab } from "../types/tab";
@@ -86,7 +86,7 @@ describe("useProjectSyncEffects", () => {
     });
   });
 
-  it("discovers missing project icons and ignores stale projects", async () => {
+  it("discovers missing project icons", async () => {
     discoverIconMock.mockResolvedValueOnce("file:///repo/aethon/icon.png");
     const projectsRef = ref(makeProjects());
     const setProjectIconUrl = vi.fn();
@@ -108,5 +108,39 @@ describe("useProjectSyncEffects", () => {
         "file:///repo/aethon/icon.png",
       );
     });
+  });
+
+  it("ignores icon results for stale projects", async () => {
+    let resolveIcon: (value: string | null) => void = () => {};
+    discoverIconMock.mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveIcon = resolve;
+        }),
+    );
+    const projectsRef = ref(makeProjects());
+    const setProjectIconUrl = vi.fn();
+
+    renderHook(() =>
+      useProjectSyncEffects({
+        state: { projects: projectsRef.current.projects },
+        stateRef: ref({}),
+        projectsRef,
+        setActiveProjectById: vi.fn(),
+        activateWorktree: vi.fn(),
+        setProjectIconUrl,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(discoverIconMock).toHaveBeenCalled();
+    });
+
+    projectsRef.current.projects = [];
+    await act(async () => {
+      resolveIcon("file:///repo/aethon/icon.png");
+    });
+
+    expect(setProjectIconUrl).not.toHaveBeenCalled();
   });
 });
