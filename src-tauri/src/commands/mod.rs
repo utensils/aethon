@@ -9,7 +9,7 @@
 //! - [`session`] — pi session search / delete / chat export.
 //! - [`extensions`] — extension menu items, native menu + tray, agent
 //!   file-watcher, npm extension installer.
-//! - [`git`] — sidebar git status + project picker.
+//! - [`git`] — local git status, worktrees, GitHub data, issues, and picker.
 //! - [`window`] — fullscreen / DevTools / updater gating.
 //!
 //! `tauri::generate_handler!` in `lib.rs` references each command via

@@ -19,7 +19,7 @@
 //!   file-watcher + npm extension installer.
 //! - [`commands::fs`] — project-scoped file-system access for the
 //!   Monaco editor + file tree.
-//! - [`commands::git`] — git status + folder picker.
+//! - [`commands::git`] — git status, worktrees, GitHub data, issues, and folder picker.
 //! - [`commands::window`] — fullscreen/devtools/updater.
 //!
 //! Helpers without a Tauri dependency live in [`helpers`]; PTY-backed
@@ -887,19 +887,19 @@ pub fn run() {
             commands::fs::fs_reveal_in_file_manager,
             commands::fs::fs_open_in_file_manager,
             commands::fs::fs_open_in_default_app,
-            commands::git::git_status,
-            commands::git::git_file_status,
-            commands::git::git_worktrees,
-            commands::git::git_worktree_add,
-            commands::git::git_worktree_remove,
-            commands::git::git_worktree_remove_orphan,
-            commands::git::git_branch_list,
-            commands::git::gh_branch_status,
-            commands::git::gh_repo_overview,
-            commands::git::gh_repo_avatar_url,
-            commands::git::gh_issue_list,
-            commands::git::gh_issue_view,
-            commands::git::pick_project_directory,
+            commands::git::status::git_status,
+            commands::git::status::git_file_status,
+            commands::git::worktrees::git_worktrees,
+            commands::git::worktrees::git_worktree_add,
+            commands::git::worktrees::git_worktree_remove,
+            commands::git::worktrees::git_worktree_remove_orphan,
+            commands::git::worktrees::git_branch_list,
+            commands::git::github::gh_branch_status,
+            commands::git::github::gh_repo_overview,
+            commands::git::github::gh_repo_avatar_url,
+            commands::git::issues::gh_issue_list,
+            commands::git::issues::gh_issue_view,
+            commands::git::picker::pick_project_directory,
             commands::host::host_info,
             commands::server::server_status,
             commands::server::server_start,
