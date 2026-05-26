@@ -92,7 +92,7 @@ export interface UseTabsActions {
   /** Toggle the active editor tab's markdown preview mode (Cmd+Shift+V). */
   toggleEditorPreview: () => void;
   /** Reconcile open editor tabs after a rename. See implementation
-   *  notes inside tabOps/closeTab.ts. */
+   *  notes inside tabOps/editorTab.ts. */
   renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
   /** Close any open editor tabs whose filePath matches `path` (or is
    *  a descendant when `kind === "dir"`). See implementation notes
