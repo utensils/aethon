@@ -362,6 +362,46 @@ describe("FileTreePanel", () => {
     ).toBeTruthy();
   });
 
+  it("closes an open context menu when the project changes", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          {
+            name: "App.tsx",
+            path: "/projects/aethon/src/App.tsx",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/other") {
+        return Promise.resolve([
+          {
+            name: "README.md",
+            path: "/projects/other/README.md",
+            kind: "file",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const { rerender } = render(<FileTreePanel {...panelProps()} />);
+    const row = await waitFor(() => screen.getByText("App.tsx"));
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: /New File…/ })).toBeTruthy();
+
+    rerender(
+      <FileTreePanel
+        {...panelProps({
+          state: { project: { path: "/projects/other", name: "other" } },
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: /New File…/ })).toBeNull();
+    });
+  });
+
   it("creates a file via the New File menu and opens it", async () => {
     invokeMock.mockResolvedValueOnce([
       { name: "src", path: "/projects/aethon/src", kind: "dir" },
