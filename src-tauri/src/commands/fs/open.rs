@@ -7,6 +7,8 @@
 
 use std::path::PathBuf;
 
+use super::security::{canonical_root, ensure_symlink_safe, validated_target};
+
 /// Reveal a path in the native file manager (Finder / Explorer / xdg).
 /// On macOS uses `open -R` so the target file is preselected inside its
 /// parent directory; on Linux falls back to `xdg-open` on the parent.
@@ -18,21 +20,14 @@ use std::path::PathBuf;
 /// existence/non-existence info to the user-visible Finder window.
 #[tauri::command]
 pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), String> {
-    let root_path = PathBuf::from(&root);
-    let req = PathBuf::from(&path);
-    let p = crate::helpers::resolve_inside_root(&root_path, &req)
-        .ok_or_else(|| format!("path outside root: {path}"))?;
-    let canon = p.canonicalize().map_err(|e| format!("canonicalize: {e}"))?;
-    let root_canon = root_path
+    let target = validated_target(&root, &path)?;
+    let root_canon = canonical_root(&root)?;
+    ensure_symlink_safe(&target, &root_canon)?;
+    // The OS launcher needs an existing path; canonicalize() fails on
+    // missing entries, so this doubles as the existence check.
+    let p = target
         .canonicalize()
-        .map_err(|e| format!("canonicalize root: {e}"))?;
-    if !canon.starts_with(&root_canon) {
-        return Err(format!("symlink escape: {path}"));
-    }
-    if !canon.exists() {
-        return Err(format!("path does not exist: {path}"));
-    }
-    let p = canon;
+        .map_err(|e| format!("canonicalize: {e}"))?;
     #[cfg(target_os = "macos")]
     {
         crate::env::command("open")
@@ -124,21 +119,12 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
 /// applications on arbitrary files.
 #[tauri::command]
 pub fn fs_open_in_default_app(root: String, path: String) -> Result<(), String> {
-    let root_path = PathBuf::from(&root);
-    let req = PathBuf::from(&path);
-    let p = crate::helpers::resolve_inside_root(&root_path, &req)
-        .ok_or_else(|| format!("path outside root: {path}"))?;
-    let canon = p.canonicalize().map_err(|e| format!("canonicalize: {e}"))?;
-    let root_canon = root_path
+    let target = validated_target(&root, &path)?;
+    let root_canon = canonical_root(&root)?;
+    ensure_symlink_safe(&target, &root_canon)?;
+    let p = target
         .canonicalize()
-        .map_err(|e| format!("canonicalize root: {e}"))?;
-    if !canon.starts_with(&root_canon) {
-        return Err(format!("symlink escape: {path}"));
-    }
-    if !canon.exists() {
-        return Err(format!("path does not exist: {path}"));
-    }
-    let p = canon;
+        .map_err(|e| format!("canonicalize: {e}"))?;
     #[cfg(target_os = "macos")]
     {
         crate::env::command("open")
