@@ -7,6 +7,7 @@ import {
 } from "./state";
 import {
   captureProjectExtensionBaseline,
+  dispatchInboundMessage,
   exportTargetForSlashCommand,
   formatContextUsageMessage,
   formatSessionStatsMessage,
@@ -65,6 +66,75 @@ function fakeTabRecord(overrides: Partial<TabRecord> = {}): TabRecord {
     ...overrides,
   };
 }
+
+function fakeAethonApi(overrides: Record<string, unknown> = {}) {
+  return {
+    registerComponent: vi.fn(),
+    setState: vi.fn(),
+    setLayout: vi.fn(),
+    patchLayout: vi.fn(),
+    registerTheme: vi.fn(),
+    shells: {},
+    ...overrides,
+  } as unknown as Parameters<typeof dispatchInboundMessage>[2];
+}
+
+const fakeExtensionApi = {} as Parameters<typeof dispatchInboundMessage>[3];
+
+describe("dispatchInboundMessage", () => {
+  it("keeps bridge API commands in the router shell", async () => {
+    const f = makeFixture();
+    const api = fakeAethonApi();
+    const payload = { type: "card" };
+
+    await dispatchInboundMessage(f.state, f.deps, api, fakeExtensionApi, {
+      type: "register_component",
+      componentType: "demo-card",
+      template: payload,
+    });
+
+    expect(api.registerComponent).toHaveBeenCalledWith("demo-card", payload);
+    expect(f.sent).toEqual([]);
+  });
+
+  it("persists frontend state patches without crossing command modules", async () => {
+    const f = makeFixture();
+
+    await dispatchInboundMessage(
+      f.state,
+      f.deps,
+      fakeAethonApi(),
+      fakeExtensionApi,
+      {
+        type: "frontend_state_patch",
+        path: "/tabs",
+        value: [{ id: "tab-1" }],
+      },
+    );
+
+    expect(f.state.frontendState.get("/tabs")).toEqual([{ id: "tab-1" }]);
+    expect(f.writes()).toBe(1);
+  });
+
+  it("contains handler failures and reports them as bridge errors", async () => {
+    const f = makeFixture();
+    const api = fakeAethonApi({
+      setLayout: () => {
+        throw new Error("layout registry offline");
+      },
+    });
+
+    await dispatchInboundMessage(f.state, f.deps, api, fakeExtensionApi, {
+      type: "set_layout",
+      payload: { components: [] },
+    });
+
+    expect(f.sent).toContainEqual({
+      type: "error",
+      message: "layout registry offline",
+    });
+  });
+});
 
 describe("handleStop", () => {
   it("aborts bash and emits a terminal tool-card update for active tools", async () => {

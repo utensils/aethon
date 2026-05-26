@@ -1,603 +1,37 @@
 /**
- * The bridge's main inbound loop. Reads JSON-lines from stdin and
- * dispatches them to:
- *   - tab-lifecycle (chat / set_model / stop / tab_open / tab_close /
- *     set_project / report)
- *   - aethon-api (register_component / set_state / set_layout / etc.)
- *   - mutation-ack (mutation_ack)
- *   - the runtime snapshot + ready (report)
- *
- * Plus the project-extension teardown/load on cwd change, the
- * `boot_layout` and `frontend_state_patch` mirror handlers, and the
- * a2ui_event handler dispatch (matched against state.a2uiEventHandlers).
+ * The bridge's main inbound loop. Reads JSON-lines from stdin and routes
+ * each message to the focused command-family handlers.
  */
 
 import { createInterface } from "node:readline";
-import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type {
-  AethonAgentState,
-  ProjectBaselineSnapshot,
-  AethonExtensionApi,
-  ExtensionFailure,
-  ExtensionFailureSource,
-  PiHandlerCtx,
-  TabRecord,
-} from "./state";
 import type { AethonApi } from "./aethon-api";
-import { logger } from "./logger";
+import type { AethonAgentState, AethonExtensionApi } from "./state";
+import { handleA2UIEvent } from "./a2uiEvents";
+import { handleChat, handleSetModel, handleStop } from "./chat";
+import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
+import { emitGlobalReady, maybeExitForReload } from "./dispatcherTypes";
+import { handleSetExtensionDisabled } from "./extensionControl";
 import { ackMutation, markFrontendReady } from "./mutation-ack";
-import { dismissNotification, notify } from "./notifications";
-import { setState, makeCanvasApi } from "./state-mutation";
+import { handleNativeSlashCommand } from "./nativeSlash";
+import { handleSetProject } from "./projectLifecycle";
 import {
-  cancelRunningToolCards,
-  emitReady,
-  ensurePickerHasModel,
-  ensureTab,
-  modelKey,
-  tabSessionDir,
-} from "./tab-lifecycle";
-import { loadProjectAethonExtensions } from "./extension-loader";
-import { patchLayoutTree } from "./layout-manager";
-import {
-  appendLocalChatMessage,
-  normalizeSessionLabel,
-  readSessionMetadata,
-  readSessionTranscript,
-  writeSessionLabel,
-} from "./session-history";
-import { saveDisabledExtensionsSnapshot } from "./disabled-extensions";
+  handleLocalChatMessage,
+  handleSetSessionLabel,
+  handleTabClose,
+  handleTabOpen,
+} from "./tabs";
 
-const WORKER_MODE =
-  typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
-  process.env.AETHON_WORKER_TAB_ID.length > 0;
-
-function emitGlobalReady(
-  state: AethonAgentState,
-  deps: { send: (obj: Record<string, unknown>) => void },
-): void {
-  if (!WORKER_MODE) emitReady(state, deps);
-}
-
-export interface DispatcherDeps {
-  send: (obj: Record<string, unknown>) => void;
-  scheduleStateFileWrite: () => void;
-  /** Persistent extension hooks shared across all loaders so the failures
-   *  registry stays in sync with the lifecycle events. */
-  loadHooks: {
-    onLoaded?: (name: string) => void;
-    onProjectLoaded?: (name: string, projectRoot: string) => void;
-    onFailure?: (
-      f: ExtensionFailure & { name: string; source: ExtensionFailureSource },
-    ) => void;
-  };
-}
-
-/** Capture a baseline snapshot of every registry an extension can write
- *  into. Captured AFTER user-level + extension-package + pi-extension
- *  loaders run, BEFORE any project-directory extension runs.
- *  `unloadProjectExtensions` restores the live registries from these
- *  snapshots, then re-emits the hydrate messages so the frontend drops
- *  the project's contributions. */
-export function captureProjectExtensionBaseline(
-  state: AethonAgentState,
-): ProjectBaselineSnapshot {
-  const snapshot: ProjectBaselineSnapshot = {
-    components: new Map(state.extensionComponents),
-    themes: new Map(state.extensionThemes),
-    slashCommands: new Map(state.extensionSlashCommands),
-    keybindings: new Map(state.extensionKeybindings),
-    menuItems: new Map(state.extensionMenuItems),
-    layouts: new Map(state.extensionLayouts),
-    eventRoutes: new Map(state.extensionEventRoutes),
-    eventRoutingMode: state.eventRoutingMode,
-    eventHandlerCount: state.a2uiEventHandlers.length,
-    handlerDedupeKeys: [...state.registeredHandlerKeys],
-    stateTree: JSON.parse(JSON.stringify(state.extensionStateTree)) as Record<
-      string,
-      unknown
-    >,
-    stateKeys: [...state.extensionStateKeys],
-    frontendModules: new Map(state.extensionFrontendModules),
-    extensionLayout:
-      state.extensionLayout === undefined
-        ? undefined
-        : JSON.parse(JSON.stringify(state.extensionLayout)),
-    pendingLayoutPatches: state.pendingLayoutPatches.map((p) => ({
-      path: p.path,
-      value: p.value,
-    })),
-  };
-  state.projectBaseline = snapshot;
-  return snapshot;
-}
-
-/** Restore every registry to the post-non-project-load baseline. Used
- *  before loading a different project's extensions so we don't leak
- *  project A's components / themes / slash commands into project B. */
-export function unloadProjectExtensions(
-  state: AethonAgentState,
-  deps: DispatcherDeps,
-): void {
-  if (!state.projectBaseline) return;
-  // Run any teardown callbacks the extension scheduled via
-  // `aethon.onUnload(fn)`. Without it those keep mutating shared state
-  // after the project boundary "unloaded" the registries.
-  if (state.projectExtensionTeardowns.length > 0) {
-    const log = logger.scope("project-switch");
-    for (const fn of state.projectExtensionTeardowns) {
-      try {
-        const result = fn();
-        if (
-          result &&
-          typeof (result as Promise<unknown>).catch === "function"
-        ) {
-          (result as Promise<unknown>).catch((err: unknown) => {
-            log.warn(`teardown async error: ${(err as Error).message}`);
-          });
-        }
-      } catch (err) {
-        log.warn(`teardown sync error: ${(err as Error).message}`);
-      }
-    }
-    state.projectExtensionTeardowns.length = 0;
-  }
-  for (const [name, source] of state.loadedExtensions) {
-    if (source === "project-directory") {
-      state.loadedExtensions.delete(name);
-      state.projectExtensionRoots.delete(name);
-    }
-  }
-  for (const [name, info] of state.loadFailures) {
-    if (info.source === "project-directory") state.loadFailures.delete(name);
-  }
-  state.loadedProjectExtensionFiles.clear();
-  state.failedProjectExtensionFiles.clear();
-
-  state.extensionComponents.clear();
-  for (const [k, v] of state.projectBaseline.components) {
-    state.extensionComponents.set(k, v);
-  }
-  state.extensionThemes.clear();
-  for (const [k, v] of state.projectBaseline.themes) {
-    state.extensionThemes.set(k, v);
-  }
-  state.extensionSlashCommands.clear();
-  for (const [k, v] of state.projectBaseline.slashCommands) {
-    state.extensionSlashCommands.set(k, v);
-  }
-  state.extensionKeybindings.clear();
-  for (const [k, v] of state.projectBaseline.keybindings) {
-    state.extensionKeybindings.set(k, v);
-  }
-  state.extensionMenuItems.clear();
-  for (const [k, v] of state.projectBaseline.menuItems) {
-    state.extensionMenuItems.set(k, v);
-  }
-  state.extensionLayouts.clear();
-  for (const [k, v] of state.projectBaseline.layouts) {
-    state.extensionLayouts.set(k, v);
-  }
-  state.extensionEventRoutes.clear();
-  for (const [k, v] of state.projectBaseline.eventRoutes) {
-    state.extensionEventRoutes.set(k, v);
-  }
-  state.a2uiEventHandlers.length = state.projectBaseline.eventHandlerCount;
-  state.registeredHandlerKeys.clear();
-  for (const k of state.projectBaseline.handlerDedupeKeys) {
-    state.registeredHandlerKeys.add(k);
-  }
-  state.eventRoutingMode = state.projectBaseline.eventRoutingMode;
-  state.extensionStateTree = JSON.parse(
-    JSON.stringify(state.projectBaseline.stateTree),
-  ) as Record<string, unknown>;
-  state.extensionStateKeys.clear();
-  for (const k of state.projectBaseline.stateKeys) {
-    state.extensionStateKeys.add(k);
-  }
-  state.extensionFrontendModules.clear();
-  for (const [k, v] of state.projectBaseline.frontendModules) {
-    state.extensionFrontendModules.set(k, v);
-  }
-  state.extensionLayout =
-    state.projectBaseline.extensionLayout === undefined
-      ? undefined
-      : JSON.parse(JSON.stringify(state.projectBaseline.extensionLayout));
-  state.pendingLayoutPatches = state.projectBaseline.pendingLayoutPatches.map(
-    (p) => ({ path: p.path, value: p.value }),
-  );
-
-  deps.send({
-    type: "extension_components",
-    components: Object.fromEntries(state.extensionComponents),
-  });
-  deps.send({
-    type: "extension_themes",
-    themes: [...state.extensionThemes.values()].map((t) => ({
-      id: t.id,
-      label: t.label,
-      vars: t.vars,
-    })),
-  });
-  deps.send({
-    type: "extension_slash_commands",
-    commands: [...state.extensionSlashCommands.values()],
-  });
-  deps.send({
-    type: "extension_keybindings",
-    bindings: [...state.extensionKeybindings.values()],
-  });
-  deps.send({
-    type: "extension_menu_items",
-    items: [...state.extensionMenuItems.values()],
-  });
-  deps.send({
-    type: "extension_layouts",
-    layouts: [...state.extensionLayouts.values()],
-  });
-  deps.send({
-    type: "extension_event_routes",
-    routes: [...state.extensionEventRoutes.values()],
-    mode: state.eventRoutingMode,
-  });
-  deps.send({
-    type: "extension_frontend_modules",
-    modules: [...state.extensionFrontendModules.values()].map((m) => ({
-      name: m.name,
-      code: m.code,
-    })),
-  });
-  // Push the restored layout to the frontend.
-  const effective = (() => {
-    if (state.extensionLayout) return state.extensionLayout;
-    if (!state.bootLayout) return null;
-    if (state.pendingLayoutPatches.length === 0) return state.bootLayout;
-    let tree = state.bootLayout;
-    for (const { path, value } of state.pendingLayoutPatches) {
-      tree = patchLayoutTree(tree, path, value);
-    }
-    return tree;
-  })();
-  if (effective) {
-    deps.send({ type: "layout_set", payload: effective });
-  }
-  deps.scheduleStateFileWrite();
-}
-
-export interface InboundMessage {
-  type: string;
-  content?: string;
-  mode?: "normal" | "steer";
-  cwd?: string;
-  model?: string;
-  name?: string;
-  args?: string;
-  id?: string;
-  tabId?: string;
-  componentType?: string;
-  template?: unknown;
-  path?: string;
-  value?: unknown;
-  payload?: unknown;
-  theme?: unknown;
-  mutationId?: string;
-  success?: boolean;
-  error?: string;
-  event?: {
-    componentId?: string;
-    componentType?: string;
-    templateRootType?: string;
-    eventType?: string;
-    data?: unknown;
-  };
-}
-
-interface NativeContextUsage {
-  tokens: number | null;
-  contextWindow: number;
-  percent: number | null;
-}
-
-interface NativeSessionStats {
-  sessionFile?: string;
-  sessionId: string;
-  userMessages: number;
-  assistantMessages: number;
-  toolCalls: number;
-  toolResults: number;
-  totalMessages: number;
-  tokens: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
-  };
-  cost: number;
-  contextUsage?: NativeContextUsage;
-}
-
-function formatInt(n: number | null | undefined): string {
-  return typeof n === "number" && Number.isFinite(n)
-    ? n.toLocaleString("en-US")
-    : "unknown";
-}
-
-function formatCost(n: number | undefined): string {
-  return typeof n === "number" && Number.isFinite(n)
-    ? `$${n.toFixed(4)}`
-    : "$0.0000";
-}
-
-export function exportTargetForSlashCommand(
-  state: AethonAgentState,
-  args: unknown,
-): { path: string; jsonl: boolean } {
-  const exportsDir = join(state.userDir, "exports");
-  const fallbackName = `session-${new Date().toISOString().replace(/[:.]/g, "-")}.html`;
-  const raw = typeof args === "string" ? args.trim() : "";
-  let fileName = raw ? basename(raw.replace(/\\/g, "/")) : fallbackName;
-  if (!fileName || fileName === "." || fileName === "..") {
-    fileName = fallbackName;
-  }
-  const ext = extname(fileName).toLowerCase();
-  const jsonl = ext === ".jsonl";
-  if (!jsonl && ext !== ".html" && ext !== ".htm") {
-    fileName = `${fileName}.html`;
-  }
-  return { path: join(exportsDir, fileName), jsonl };
-}
-
-export function formatContextUsageMessage(
-  usage: NativeContextUsage | undefined,
-  model: string | undefined,
-): string {
-  const lines = ["## Context"];
-  if (model) lines.push(`- Model: ${model}`);
-  if (!usage) {
-    lines.push("- Usage: unknown");
-    lines.push(
-      "- Note: pi reports context usage after the first assistant response for the selected model.",
-    );
-    return lines.join("\n");
-  }
-  lines.push(`- Window: ${formatInt(usage.contextWindow)} tokens`);
-  if (usage.tokens === null || usage.percent === null) {
-    lines.push("- Used: unknown");
-    lines.push(
-      "- Note: usage is unknown until an assistant response after the latest compaction.",
-    );
-    return lines.join("\n");
-  }
-  const remaining = Math.max(usage.contextWindow - usage.tokens, 0);
-  lines.push(
-    `- Used: ${formatInt(usage.tokens)} tokens (${usage.percent.toFixed(1)}%)`,
-  );
-  lines.push(`- Remaining: ${formatInt(remaining)} tokens`);
-  return lines.join("\n");
-}
-
-export function formatSessionStatsMessage(
-  stats: NativeSessionStats,
-  sessionName: string | undefined,
-): string {
-  const lines = ["## Session"];
-  if (sessionName) lines.push(`- Name: ${sessionName}`);
-  lines.push(`- File: ${stats.sessionFile ?? "In-memory"}`);
-  lines.push(`- ID: ${stats.sessionId}`);
-  lines.push("");
-  lines.push("## Messages");
-  lines.push(`- User: ${formatInt(stats.userMessages)}`);
-  lines.push(`- Assistant: ${formatInt(stats.assistantMessages)}`);
-  lines.push(`- Tool Calls: ${formatInt(stats.toolCalls)}`);
-  lines.push(`- Tool Results: ${formatInt(stats.toolResults)}`);
-  lines.push(`- Total: ${formatInt(stats.totalMessages)}`);
-  lines.push("");
-  lines.push("## Tokens");
-  lines.push(`- Input: ${formatInt(stats.tokens.input)}`);
-  lines.push(`- Output: ${formatInt(stats.tokens.output)}`);
-  if (stats.tokens.cacheRead > 0) {
-    lines.push(`- Cache Read: ${formatInt(stats.tokens.cacheRead)}`);
-  }
-  if (stats.tokens.cacheWrite > 0) {
-    lines.push(`- Cache Write: ${formatInt(stats.tokens.cacheWrite)}`);
-  }
-  lines.push(`- Total: ${formatInt(stats.tokens.total)}`);
-  lines.push("");
-  lines.push("## Cost");
-  lines.push(`- Total: ${formatCost(stats.cost)}`);
-  return lines.join("\n");
-}
-
-/** If a reload was requested AND no tab has a prompt in flight, write
- *  the `_reload_done` sentinel and exit cleanly. The Rust supervisor's
- *  stdout reader watches for the sentinel so it can flag the upcoming
- *  EOF as an intentional reload instead of a crash. */
-function maybeExitForReload(
-  state: AethonAgentState,
-  deps: DispatcherDeps,
-): void {
-  if (!state.reloadPending) return;
-  for (const tab of state.tabs.values()) {
-    if (tab.promptInFlight) return;
-  }
-  deps.send({ type: "_reload_done" });
-  // Flush stdout before exiting so the supervisor sees the sentinel
-  // before the EOF.
-  if (typeof process.stdout.write === "function") {
-    try {
-      process.stdout.write("");
-    } catch {
-      /* ignore */
-    }
-  }
-  process.exit(0);
-}
-
-export async function handleChat(
-  state: AethonAgentState,
-  deps: DispatcherDeps,
-  msg: InboundMessage,
-): Promise<void> {
-  if (!msg.content) {
-    deps.send({ type: "error", message: "chat: missing content" });
-    return;
-  }
-  const tabId = msg.tabId ?? "default";
-  const cwdOverride =
-    typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
-  let initialModel: Model<Api> | undefined;
-  if (typeof msg.model === "string" && msg.model.length > 0) {
-    const [provider, ...rest] = msg.model.split("/");
-    initialModel =
-      state.modelRegistry.find(provider, rest.join("/")) ?? undefined;
-  }
-  const tab = await ensureTab(
-    state,
-    deps,
-    tabId,
-    cwdOverride || initialModel ? { cwdOverride, initialModel } : {},
-  );
-  const wantsSteer = msg.mode === "steer";
-  if (wantsSteer && tab.promptInFlight) {
-    state.currentAgentTabId = tabId;
-    const content = msg.content;
-    state.tabContext
-      .run(tabId, () => tab.session.steer(content))
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        deps.send({ type: "error", tabId, message: `steer: ${message}` });
-      });
-    return;
-  }
-  const queued = tab.promptInFlight;
-  if (queued) {
-    tab.queuedCount += 1;
-    const content = msg.content;
-    state.tabContext
-      .run(tabId, () => tab.session.followUp(content))
-      .catch((err: unknown) => {
-        tab.queuedCount = Math.max(0, tab.queuedCount - 1);
-        const message = err instanceof Error ? err.message : String(err);
-        deps.send({
-          type: "queue_reset",
-          tabId,
-          queued: tab.queuedCount,
-        });
-        deps.send({ type: "error", tabId, message: `followUp: ${message}` });
-      });
-    deps.send({ type: "queued", tabId });
-    return;
-  }
-
-  tab.promptInFlight = true;
-  tab.agentEndFired = false;
-  state.currentAgentTabId = tabId;
-  const content = msg.content;
-  state.tabContext
-    .run(tabId, () => tab.session.prompt(content))
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({ type: "error", tabId, message: `prompt: ${message}` });
-    })
-    .finally(() => {
-      if (!tab.agentEndFired) {
-        tab.promptInFlight = false;
-        deps.send({ type: "response_end", tabId });
-      }
-      if (state.currentAgentTabId === tabId) {
-        state.currentAgentTabId = undefined;
-      }
-      maybeExitForReload(state, deps);
-    });
-}
-
-export async function handleSetModel(
-  state: AethonAgentState,
-  deps: DispatcherDeps,
-  msg: InboundMessage,
-): Promise<void> {
-  const tabId = msg.tabId ?? "default";
-  if (!msg.id) {
-    deps.send({ type: "error", tabId, message: "set_model: missing id" });
-    return;
-  }
-  const tab = await ensureTab(state, deps, tabId);
-  if (tab.promptInFlight) {
-    deps.send({
-      type: "notice",
-      tabId,
-      message: "agent busy — stop the current prompt before switching models",
-    });
-    return;
-  }
-  const [provider, ...rest] = msg.id.split("/");
-  const id = rest.join("/");
-  const next = state.modelRegistry.find(provider, id);
-  if (!next) {
-    deps.send({
-      type: "error",
-      tabId,
-      message: `set_model: unknown model ${msg.id}`,
-    });
-    return;
-  }
-  try {
-    await tab.session.setModel(next);
-    await state.resourceLoader.reload();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    deps.send({
-      type: "error",
-      tabId,
-      message: `set_model: ${message}`,
-    });
-    return;
-  }
-  deps.scheduleStateFileWrite();
-  ensurePickerHasModel(state, deps, next);
-  deps.send({ type: "model_changed", tabId, model: msg.id });
-}
-
-export function handleStop(
-  state: AethonAgentState,
-  deps: DispatcherDeps,
-  msg: InboundMessage,
-): void {
-  const tabId = msg.tabId ?? "default";
-  const tab = state.tabs.get(tabId);
-  if (!tab) return;
-  if (
-    typeof (tab.session as { clearQueue?: () => unknown }).clearQueue ===
-    "function"
-  ) {
-    try {
-      (tab.session as { clearQueue: () => unknown }).clearQueue();
-    } catch {
-      /* best effort */
-    }
-  }
-  tab.queuedCount = 0;
-  deps.send({ type: "queue_reset", tabId });
-  cancelRunningToolCards(deps, tab, tabId);
-  if (
-    typeof (tab.session as { abortBash?: () => unknown }).abortBash ===
-    "function"
-  ) {
-    try {
-      (tab.session as { abortBash: () => unknown }).abortBash();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({ type: "error", tabId, message: `abort bash: ${message}` });
-    }
-  }
-  tab.session.abort().catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    deps.send({ type: "error", tabId, message: `abort: ${message}` });
-  });
-}
+export type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
+export { handleChat, handleSetModel, handleStop } from "./chat";
+export {
+  exportTargetForSlashCommand,
+  formatContextUsageMessage,
+  formatSessionStatsMessage,
+} from "./nativeSlash";
+export {
+  captureProjectExtensionBaseline,
+  unloadProjectExtensions,
+} from "./projectLifecycle";
 
 /** Run the inbound dispatcher loop. Returns when stdin closes. */
 export async function runDispatcher(
@@ -607,8 +41,6 @@ export async function runDispatcher(
   extensionApi: AethonExtensionApi,
 ): Promise<void> {
   const rl = createInterface({ input: process.stdin });
-  const stateMutationDeps = { send: deps.send };
-  const notifDeps = { send: deps.send };
 
   for await (const line of rl) {
     const trimmed = line.trim();
@@ -622,885 +54,148 @@ export async function runDispatcher(
       continue;
     }
 
-    try {
-      switch (msg.type) {
-        case "chat":
-          await handleChat(state, deps, msg);
-          break;
-        case "set_model":
-          await handleSetModel(state, deps, msg);
-          break;
-        case "stop":
-          handleStop(state, deps, msg);
-          break;
-        case "native_slash_command":
-          await handleNativeSlashCommand(state, deps, msg);
-          break;
-        case "tab_open":
-          await handleTabOpen(state, deps, extensionApi, msg);
-          break;
-        case "set_project":
-          await handleSetProject(state, deps, extensionApi, notifDeps, msg);
-          break;
-        case "tab_close":
-          handleTabClose(state, deps, msg);
-          break;
-        case "report": {
-          markFrontendReady(state);
-          emitGlobalReady(state, deps);
-          break;
-        }
-        case "reload_request": {
-          // Rust file-watcher asked us to reload because an extension
-          // file changed. Drain in-flight prompts first, then exit so
-          // the supervisor respawns us cleanly. Killing the bridge
-          // mid-prompt would lose the user's turn — see issue #N.
-          state.reloadPending = true;
-          maybeExitForReload(state, deps);
-          break;
-        }
-        case "mutation_ack": {
-          const mid = (msg as { mutationId?: unknown }).mutationId;
-          const success = (msg as { success?: unknown }).success;
-          const errorField = (msg as { error?: unknown }).error;
-          const dataField = (msg as { data?: unknown }).data;
-          if (typeof mid !== "string") break;
-          ackMutation(
-            state,
-            mid,
-            success === undefined ? true : !!success,
-            typeof errorField === "string" ? errorField : undefined,
-            dataField,
-          );
-          break;
-        }
-        case "a2ui_event":
-          await handleA2UIEvent(state, deps, aethonApi, msg);
-          break;
-        case "register_component": {
-          if (!msg.componentType) {
-            deps.send({
-              type: "error",
-              message: "register_component: missing componentType",
-            });
-            break;
-          }
-          aethonApi.registerComponent(msg.componentType, msg.template);
-          break;
-        }
-        case "set_state": {
-          if (!msg.path) {
-            deps.send({ type: "error", message: "set_state: missing path" });
-            break;
-          }
-          aethonApi.setState(msg.path, msg.value);
-          break;
-        }
-        case "set_layout": {
-          if (!msg.payload) {
-            deps.send({
-              type: "error",
-              message: "set_layout: missing payload",
-            });
-            break;
-          }
-          aethonApi.setLayout(msg.payload);
-          break;
-        }
-        case "patch_layout": {
-          if (!msg.path) {
-            deps.send({
-              type: "error",
-              message: "patch_layout: missing path",
-            });
-            break;
-          }
-          aethonApi.patchLayout(msg.path, msg.value);
-          break;
-        }
-        case "register_theme": {
-          if (!msg.theme) {
-            deps.send({
-              type: "error",
-              message: "register_theme: missing theme",
-            });
-            break;
-          }
-          aethonApi.registerTheme(msg.theme);
-          break;
-        }
-        case "frontend_state_patch": {
-          if (!msg.path || typeof msg.path !== "string") break;
-          state.frontendState.set(msg.path, msg.value);
-          deps.scheduleStateFileWrite();
-          break;
-        }
-        case "boot_layout": {
-          if (!msg.payload || typeof msg.payload !== "object") {
-            deps.send({
-              type: "error",
-              message: "boot_layout: missing or invalid payload",
-            });
-            break;
-          }
-          state.bootLayout = msg.payload;
-          break;
-        }
-        case "set_extension_disabled": {
-          await handleSetExtensionDisabled(state, deps, notifDeps, msg);
-          break;
-        }
-        case "set_session_label": {
-          await handleSetSessionLabel(state, deps, msg);
-          break;
-        }
-        case "local_chat_message": {
-          await handleLocalChatMessage(state, deps, msg);
-          break;
-        }
-        default: {
+    await dispatchInboundMessage(state, deps, aethonApi, extensionApi, msg);
+  }
+}
+
+export async function dispatchInboundMessage(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  aethonApi: AethonApi,
+  extensionApi: AethonExtensionApi,
+  msg: InboundMessage,
+): Promise<void> {
+  const notifDeps = { send: deps.send };
+  try {
+    switch (msg.type) {
+      case "chat":
+        await handleChat(state, deps, msg);
+        break;
+      case "set_model":
+        await handleSetModel(state, deps, msg);
+        break;
+      case "stop":
+        handleStop(state, deps, msg);
+        break;
+      case "native_slash_command":
+        await handleNativeSlashCommand(state, deps, msg);
+        break;
+      case "tab_open":
+        await handleTabOpen(state, deps, extensionApi, msg);
+        break;
+      case "set_project":
+        await handleSetProject(state, deps, extensionApi, notifDeps, msg);
+        break;
+      case "tab_close":
+        handleTabClose(state, deps, msg);
+        break;
+      case "report":
+        markFrontendReady(state);
+        emitGlobalReady(state, deps);
+        break;
+      case "reload_request":
+        // Rust file-watcher asked us to reload because an extension file
+        // changed. Drain in-flight prompts before cleanly exiting.
+        state.reloadPending = true;
+        maybeExitForReload(state, deps);
+        break;
+      case "mutation_ack": {
+        const mid = (msg as { mutationId?: unknown }).mutationId;
+        const success = (msg as { success?: unknown }).success;
+        const errorField = (msg as { error?: unknown }).error;
+        const dataField = (msg as { data?: unknown }).data;
+        if (typeof mid !== "string") break;
+        ackMutation(
+          state,
+          mid,
+          success === undefined ? true : !!success,
+          typeof errorField === "string" ? errorField : undefined,
+          dataField,
+        );
+        break;
+      }
+      case "a2ui_event":
+        await handleA2UIEvent(state, deps, aethonApi, msg);
+        break;
+      case "register_component":
+        if (!msg.componentType) {
           deps.send({
             type: "error",
-            message: `unknown message type: ${msg.type}`,
+            message: "register_component: missing componentType",
           });
+          break;
         }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({ type: "error", message });
-    }
-  }
-
-  // ---- Per-message handlers -------------------------------------------
-
-  async function handleNativeSlashCommand(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): Promise<void> {
-    const name = typeof msg.name === "string" ? msg.name : "";
-    const tabId = msg.tabId ?? "default";
-    if (!name) {
-      deps.send({
-        type: "native_slash_result",
-        tabId,
-        command: "unknown",
-        kind: "error",
-        message: "Native slash command: missing name",
-      });
-      return;
-    }
-    const tab = await ensureTab(state, deps, tabId);
-    const command = name.toLowerCase();
-    switch (command) {
-      case "context": {
-        const usage = (
-          tab.session as {
-            getContextUsage?: () => NativeContextUsage | undefined;
-          }
-        ).getContextUsage?.();
-        deps.send({
-          type: "native_slash_result",
-          tabId,
-          command,
-          message: formatContextUsageMessage(
-            usage,
-            tab.session.model ? modelKey(tab.session.model) : undefined,
-          ),
-        });
-        return;
-      }
-      case "session": {
-        const stats = (
-          tab.session as { getSessionStats?: () => NativeSessionStats }
-        ).getSessionStats?.();
-        if (!stats) {
-          deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            kind: "error",
-            message: "Session statistics are unavailable.",
-          });
-          return;
+        aethonApi.registerComponent(msg.componentType, msg.template);
+        break;
+      case "set_state":
+        if (!msg.path) {
+          deps.send({ type: "error", message: "set_state: missing path" });
+          break;
         }
-        const sessionName = (
-          tab.session.sessionManager as {
-            getSessionName?: () => string | undefined;
-          }
-        ).getSessionName?.();
-        deps.send({
-          type: "native_slash_result",
-          tabId,
-          command,
-          message: formatSessionStatsMessage(stats, sessionName),
-        });
-        return;
-      }
-      case "compact": {
-        if (tab.promptInFlight) {
+        aethonApi.setState(msg.path, msg.value);
+        break;
+      case "set_layout":
+        if (!msg.payload) {
           deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            kind: "error",
-            message:
-              "Compaction rejected: stop the current prompt before compacting context.",
+            type: "error",
+            message: "set_layout: missing payload",
           });
-          return;
+          break;
         }
-        try {
-          const customInstructions =
-            typeof msg.args === "string" && msg.args.trim().length > 0
-              ? msg.args.trim()
-              : undefined;
-          const result = await tab.session.compact(customInstructions);
-          const tokensBefore =
-            typeof result?.tokensBefore === "number"
-              ? ` ${formatInt(result.tokensBefore)} tokens were summarized.`
-              : "";
+        aethonApi.setLayout(msg.payload);
+        break;
+      case "patch_layout":
+        if (!msg.path) {
           deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            message: `Context compacted.${tokensBefore}`,
+            type: "error",
+            message: "patch_layout: missing path",
           });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            kind: "error",
-            message: `Compaction failed: ${message}`,
-          });
+          break;
         }
-        return;
-      }
-      case "name": {
-        const nextName =
-          typeof msg.args === "string" ? normalizeSessionLabel(msg.args) : "";
-        if (!nextName) {
-          const current = (
-            tab.session.sessionManager as {
-              getSessionName?: () => string | undefined;
-            }
-          ).getSessionName?.();
+        aethonApi.patchLayout(msg.path, msg.value);
+        break;
+      case "register_theme":
+        if (!msg.theme) {
           deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            message: current
-              ? `Session name: ${current}`
-              : "Session name is not set. Usage: `/name <name>`",
+            type: "error",
+            message: "register_theme: missing theme",
           });
-          return;
+          break;
         }
-        tab.session.setSessionName(nextName);
-        try {
-          await writeSessionLabel(tabSessionDir(state, tabId), nextName);
-        } catch {
-          /* pi session name still succeeded; label replay is best effort */
-        }
-        deps.send({
-          type: "native_slash_result",
-          tabId,
-          command,
-          message: `Session name set: ${nextName}`,
-        });
-        emitGlobalReady(state, deps);
-        return;
-      }
-      case "export": {
-        try {
-          const target = exportTargetForSlashCommand(state, msg.args);
-          await mkdir(join(state.userDir, "exports"), { recursive: true });
-          const path = target.jsonl
-            ? tab.session.exportToJsonl(target.path)
-            : await tab.session.exportToHtml(target.path);
+        aethonApi.registerTheme(msg.theme);
+        break;
+      case "frontend_state_patch":
+        if (!msg.path || typeof msg.path !== "string") break;
+        state.frontendState.set(msg.path, msg.value);
+        deps.scheduleStateFileWrite();
+        break;
+      case "boot_layout":
+        if (!msg.payload || typeof msg.payload !== "object") {
           deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            message: `Session exported to: ${path}`,
+            type: "error",
+            message: "boot_layout: missing or invalid payload",
           });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          deps.send({
-            type: "native_slash_result",
-            tabId,
-            command,
-            kind: "error",
-            message: `Export failed: ${message}`,
-          });
+          break;
         }
-        return;
-      }
+        state.bootLayout = msg.payload;
+        break;
+      case "set_extension_disabled":
+        await handleSetExtensionDisabled(state, deps, notifDeps, msg);
+        break;
+      case "set_session_label":
+        await handleSetSessionLabel(state, deps, msg);
+        break;
+      case "local_chat_message":
+        await handleLocalChatMessage(state, deps, msg);
+        break;
       default:
         deps.send({
-          type: "native_slash_result",
-          tabId,
-          command,
-          kind: "error",
-          message: `Unknown native slash command: /${name}`,
-        });
-    }
-  }
-
-  async function handleTabOpen(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    extensionApi: AethonExtensionApi,
-    msg: InboundMessage,
-  ): Promise<void> {
-    const tabId = msg.tabId;
-    if (!tabId || typeof tabId !== "string") {
-      deps.send({ type: "error", message: "tab_open: missing tabId" });
-      return;
-    }
-    const modelId = (msg as { model?: unknown }).model;
-    let initialModel: Model<Api> | undefined;
-    if (typeof modelId === "string" && modelId.length > 0) {
-      const [provider, ...rest] = modelId.split("/");
-      initialModel =
-        state.modelRegistry.find(provider, rest.join("/")) ?? undefined;
-    }
-    const cwdField = (msg as { cwd?: unknown }).cwd;
-    const cwdOverride =
-      typeof cwdField === "string" && cwdField.length > 0
-        ? cwdField
-        : undefined;
-    if (cwdOverride) {
-      const projectChanged = cwdOverride !== state.currentProjectCwd;
-      if (projectChanged) {
-        unloadProjectExtensions(state, deps);
-      }
-      const result = await loadProjectAethonExtensions(
-        state,
-        deps,
-        cwdOverride,
-        extensionApi,
-        state.loadedExtensions,
-        state.loadedProjectExtensionFiles,
-        state.failedProjectExtensionFiles,
-        deps.loadHooks,
-      );
-      state.currentProjectCwd = cwdOverride;
-      if (result.loaded > 0 || result.failed > 0 || projectChanged) {
-        await state.resourceLoader.reload();
-        deps.scheduleStateFileWrite();
-        emitGlobalReady(state, deps);
-      }
-    }
-    const restoreHistory =
-      (msg as { restoreHistory?: unknown }).restoreHistory === true;
-    let restoredMessages: Awaited<ReturnType<typeof readSessionTranscript>> =
-      [];
-    if (restoreHistory) {
-      try {
-        const expectedCwd =
-          cwdOverride ??
-          state.tabProjectCwds.get(tabId) ??
-          (tabId === "default"
-            ? (state.currentProjectCwd ?? process.cwd())
-            : undefined);
-        restoredMessages = await readSessionTranscript(
-          tabSessionDir(state, tabId),
-          expectedCwd,
-        );
-      } catch (err) {
-        deps.send({
           type: "error",
-          tabId,
-          message: `session restore: ${(err as Error).message}`,
-        });
-      }
-    }
-    await ensureTab(state, deps, tabId, { initialModel, cwdOverride });
-    if (restoreHistory) {
-      deps.send({ type: "session_history", tabId, messages: restoredMessages });
-    }
-  }
-
-  async function handleSetProject(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    extensionApi: AethonExtensionApi,
-    notifDeps: { send: (m: Record<string, unknown>) => void },
-    msg: InboundMessage,
-  ): Promise<void> {
-    const tabId = (msg as { tabId?: unknown }).tabId;
-    const cwd = (msg as { cwd?: unknown }).cwd;
-    if (typeof tabId !== "string" || tabId.length === 0) {
-      deps.send({ type: "error", message: "set_project: missing tabId" });
-      return;
-    }
-    if (cwd === null) {
-      state.tabProjectCwds.delete(tabId);
-      if (state.currentProjectCwd !== null) {
-        unloadProjectExtensions(state, deps);
-        state.currentProjectCwd = null;
-        await state.resourceLoader.reload();
-        deps.scheduleStateFileWrite();
-        emitGlobalReady(state, deps);
-      }
-      return;
-    }
-    if (typeof cwd !== "string" || cwd.length === 0) {
-      deps.send({
-        type: "error",
-        message: "set_project: cwd must be string|null",
-      });
-      return;
-    }
-    state.tabProjectCwds.set(tabId, cwd);
-    const projectChanged = cwd !== state.currentProjectCwd;
-    const t0 = projectChanged ? Date.now() : 0;
-    if (projectChanged) {
-      unloadProjectExtensions(state, deps);
-      logger
-        .scope("project-switch")
-        .info(`set_project unload took ${Date.now() - t0}ms (cwd=${cwd})`);
-    }
-    const projectName = cwd.split("/").pop() || cwd;
-    const loadingNoticeId = `aethon:loading-project-ext:${cwd}`;
-    const loadingNoticeTimer = projectChanged
-      ? setTimeout(() => {
-          void notify(state, notifDeps, {
-            id: loadingNoticeId,
-            title: `Loading ${projectName} extensions…`,
-            kind: "info",
-            durationMs: null,
-          });
-        }, 500)
-      : null;
-    const tLoad = Date.now();
-    const result = await loadProjectAethonExtensions(
-      state,
-      deps,
-      cwd,
-      extensionApi,
-      state.loadedExtensions,
-      state.loadedProjectExtensionFiles,
-      state.failedProjectExtensionFiles,
-      deps.loadHooks,
-    );
-    if (loadingNoticeTimer !== null) {
-      clearTimeout(loadingNoticeTimer);
-      void dismissNotification(state, notifDeps, loadingNoticeId);
-    }
-    if (projectChanged) {
-      logger
-        .scope("project-switch")
-        .info(
-          `set_project load took ${Date.now() - tLoad}ms (loaded=${result.loaded} failed=${result.failed})`,
-        );
-    }
-    state.currentProjectCwd = cwd;
-    if (result.loaded > 0 || result.failed > 0 || projectChanged) {
-      const tReload = Date.now();
-      await state.resourceLoader.reload();
-      if (projectChanged) {
-        logger
-          .scope("project-switch")
-          .info(
-            `set_project resourceLoader.reload took ${Date.now() - tReload}ms`,
-          );
-      }
-      deps.scheduleStateFileWrite();
-      emitGlobalReady(state, deps);
-      if (projectChanged) {
-        logger
-          .scope("project-switch")
-          .info(`set_project total ${Date.now() - t0}ms (cwd=${cwd})`);
-      }
-    }
-  }
-
-  function handleTabClose(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): void {
-    const tabId = msg.tabId;
-    if (!tabId || typeof tabId !== "string") {
-      deps.send({ type: "error", message: "tab_close: missing tabId" });
-      return;
-    }
-    const tab = state.tabs.get(tabId);
-    if (!tab) return;
-    if (tab.promptInFlight) {
-      tab.session.abort().catch(() => {
-        /* fire-and-forget — we're tearing down anyway */
-      });
-    }
-    state.tabs.delete(tabId);
-    state.tabProjectCwds.delete(tabId);
-    if (state.currentAgentTabId === tabId) {
-      state.currentAgentTabId = undefined;
-    }
-    deps.send({ type: "tab_closed", tabId });
-  }
-
-  async function handleSetExtensionDisabled(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    notifDeps: { send: (m: Record<string, unknown>) => void },
-    msg: InboundMessage,
-  ): Promise<void> {
-    const name = (msg as { name?: unknown }).name;
-    const disabled = (msg as { disabled?: unknown }).disabled;
-    if (typeof name !== "string" || !name) {
-      deps.send({
-        type: "error",
-        message: "set_extension_disabled: name required",
-      });
-      return;
-    }
-    if (typeof disabled !== "boolean") {
-      deps.send({
-        type: "error",
-        message: "set_extension_disabled: disabled must be boolean",
-      });
-      return;
-    }
-    const wasDisabled = state.disabledExtensions.has(name);
-    if (disabled === wasDisabled) return; // no-op
-    // Snapshot the prior meta so a save failure can restore both the
-    // name and any metadata we'd just dropped/added.
-    const priorMeta = state.disabledExtensionMeta.get(name);
-    if (disabled) {
-      state.disabledExtensions.add(name);
-      // Capture source + projectRoot from the live loader registries.
-      // `loadedExtensions` covers successful loads (this run); for the
-      // common case where the user just clicked disable, the extension
-      // is currently loaded. `loadFailures` covers extensions that
-      // surfaced in the sidebar via a failed status. Anything missing
-      // from both is preserved with its previous meta (if any) — we
-      // never wipe a known scope just because the user toggled while
-      // a different project was active.
-      const loadedSource = state.loadedExtensions.get(name);
-      const failureInfo = state.loadFailures.get(name);
-      if (loadedSource) {
-        const projectRoot =
-          loadedSource === "project-directory"
-            ? state.projectExtensionRoots.get(name)
-            : undefined;
-        state.disabledExtensionMeta.set(
-          name,
-          projectRoot
-            ? { source: loadedSource, projectRoot }
-            : { source: loadedSource },
-        );
-      } else if (failureInfo) {
-        state.disabledExtensionMeta.set(
-          name,
-          failureInfo.projectRoot
-            ? {
-                source: failureInfo.source,
-                projectRoot: failureInfo.projectRoot,
-              }
-            : { source: failureInfo.source },
-        );
-      }
-      // If neither registry knows the extension, leave whatever meta
-      // we already had (could be a legacy entry with no meta).
-    } else {
-      state.disabledExtensions.delete(name);
-      state.disabledExtensionMeta.delete(name);
-    }
-    try {
-      await saveDisabledExtensionsSnapshot(state.userDir, {
-        names: state.disabledExtensions,
-        meta: state.disabledExtensionMeta,
-      });
-    } catch (err) {
-      // Persistence failed — revert the in-memory toggle so the next
-      // operation sees the on-disk truth, and surface a notice instead
-      // of a misleading success toast + bridge reload that would
-      // re-load the extension and silently lose the user's intent.
-      if (disabled) {
-        state.disabledExtensions.delete(name);
-        if (priorMeta) state.disabledExtensionMeta.set(name, priorMeta);
-        else state.disabledExtensionMeta.delete(name);
-      } else {
-        state.disabledExtensions.add(name);
-        if (priorMeta) state.disabledExtensionMeta.set(name, priorMeta);
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({
-        type: "error",
-        message: `set_extension_disabled: persist failed: ${message}`,
-      });
-      void notify(state, notifDeps, {
-        id: `aethon:extension-toggle:${name}`,
-        title: `Could not ${disabled ? "disable" : "enable"} \`${name}\``,
-        message: `Persist failed: ${message}`,
-        kind: "error",
-        durationMs: 6000,
-      });
-      return;
-    }
-    // Surface the change to the frontend immediately. The loaded set
-    // doesn't change until restart; the sidebar shows a `(disabled)` row
-    // by deriving from `loadedExtensions ∩ ¬disabledExtensions` plus the
-    // explicit disabled list. We re-emit the lifecycle event so the
-    // hydration handler can move the row to the right bucket.
-    deps.send({
-      type: "extension_lifecycle",
-      name,
-      source: "directory",
-      status: disabled ? "disabled" : "enabled",
-    });
-    // Notify the user before signalling the bridge restart so the toast
-    // is rendered before agent-reloaded clears the in-flight UI state.
-    void notify(state, notifDeps, {
-      id: `aethon:extension-toggle:${name}`,
-      title: disabled ? `Disabled \`${name}\`` : `Enabled \`${name}\``,
-      message: disabled
-        ? "Reloading bridge to fully unload…"
-        : "Reloading bridge to load…",
-      kind: "info",
-      durationMs: 4000,
-    });
-    // Ask the frontend to force-restart the bridge. We can't restart
-    // ourselves from inside the bridge (the Tauri shell owns the child
-    // and needs to flip its `agent_reload_in_progress` flag so the
-    // supervisor emits `agent-reloaded` instead of `agent-crashed`).
-    // The frontend's reload-required handler invokes `force_restart_agent`
-    // — on respawn, the new bridge reads disabled-extensions.json on boot
-    // and the loader honors it.
-    deps.send({
-      type: "reload_required",
-      reason: `extension-toggle:${name}`,
-    });
-  }
-
-  async function handleSetSessionLabel(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): Promise<void> {
-    const tabId = (msg as { tabId?: unknown }).tabId;
-    const labelField = (msg as { label?: unknown }).label;
-    if (typeof tabId !== "string" || !tabId) {
-      deps.send({
-        type: "error",
-        message: "set_session_label: tabId required",
-      });
-      return;
-    }
-    const label = typeof labelField === "string" ? labelField : "";
-    try {
-      await writeSessionLabel(tabSessionDir(state, tabId), label);
-    } catch (err) {
-      deps.send({
-        type: "error",
-        message: `set_session_label: ${(err as Error).message}`,
-      });
-      return;
-    }
-    // Refresh the discovered-tabs cache so the next emitReady (which the
-    // frontend triggers by sending `report` after this command finishes)
-    // reflects the new label. Cheap to re-read just the one entry.
-    const refreshed = await readSessionMetadata(tabSessionDir(state, tabId));
-    if (refreshed) {
-      const idx = state.discoveredTabs.findIndex((t) => t.tabId === tabId);
-      const entry = { tabId, ...refreshed };
-      if (idx >= 0) state.discoveredTabs[idx] = entry;
-      else state.discoveredTabs.push(entry);
-    }
-    emitGlobalReady(state, deps);
-  }
-
-  async function handleLocalChatMessage(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    msg: InboundMessage,
-  ): Promise<void> {
-    const tabId = msg.tabId ?? "default";
-    const payload = msg.payload;
-    if (!payload || typeof payload !== "object") {
-      deps.send({
-        type: "notice",
-        tabId,
-        message: "local_chat_message: missing payload",
-      });
-      return;
-    }
-    const record = payload as Record<string, unknown>;
-    const role = record.role;
-    const text = record.text;
-    const thinking = record.thinking;
-    if (role !== "user" && role !== "agent" && role !== "system") {
-      deps.send({
-        type: "notice",
-        tabId,
-        message: "local_chat_message: invalid role",
-      });
-      return;
-    }
-    const hasText = typeof text === "string" && text.length > 0;
-    const hasThinking = typeof thinking === "string" && thinking.length > 0;
-    if (!hasText && !hasThinking) {
-      deps.send({
-        type: "notice",
-        tabId,
-        message: "local_chat_message: empty message",
-      });
-      return;
-    }
-    try {
-      const localCwd =
-        state.tabProjectCwds.get(tabId) ??
-        (tabId === "default"
-          ? (state.currentProjectCwd ?? process.cwd())
-          : undefined);
-      await appendLocalChatMessage(tabSessionDir(state, tabId), {
-        id:
-          typeof record.id === "string" && record.id.length > 0
-            ? record.id
-            : randomUUID(),
-        role,
-        ...(hasText ? { text } : {}),
-        ...(hasThinking ? { thinking } : {}),
-        ...(localCwd ? { cwd: localCwd } : {}),
-        ...(typeof record.createdAt === "number"
-          ? { createdAt: record.createdAt }
-          : {}),
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({
-        type: "notice",
-        tabId,
-        message: `local chat persist failed: ${message}`,
-      });
-    }
-  }
-
-  async function handleA2UIEvent(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    aethonApi: AethonApi,
-    msg: InboundMessage,
-  ): Promise<void> {
-    const ev = msg.event ?? {};
-    const descendantId = ev.componentId?.includes("__tpl__")
-      ? ev.componentId.split("__tpl__").slice(1).join("__tpl__")
-      : undefined;
-    const handlerTabId = msg.tabId ?? "default";
-    const handlerTab = await ensureTab(state, deps, handlerTabId);
-    const piCtx = buildPiHandlerCtx(state, deps, handlerTab, handlerTabId);
-    const tabScopedSetState = (path: string, value: unknown) =>
-      setState(state, stateMutationDeps, path, value, handlerTabId);
-    const tabScopedCanvas = makeCanvasApi(
-      state,
-      stateMutationDeps,
-      handlerTabId,
-    );
-
-    for (const { match, handler } of state.a2uiEventHandlers) {
-      if (
-        match.templateRootType &&
-        match.templateRootType !== ev.templateRootType
-      )
-        continue;
-      if (match.componentType && match.componentType !== ev.componentType)
-        continue;
-      if (match.eventType && match.eventType !== ev.eventType) continue;
-      if (match.descendantId && match.descendantId !== descendantId) continue;
-      // Fire-and-forget the handler — don't await inside the stdin loop.
-      Promise.resolve()
-        .then(() =>
-          state.tabContext.run(handlerTabId, () =>
-            handler(ev, {
-              setState: tabScopedSetState,
-              registerComponent: aethonApi.registerComponent,
-              pi: piCtx,
-              canvas: tabScopedCanvas,
-              shells: aethonApi.shells,
-            }),
-          ),
-        )
-        .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          deps.send({
-            type: "notice",
-            tabId: handlerTabId,
-            message: `a2ui handler: ${message}`,
-          });
+          message: `unknown message type: ${msg.type}`,
         });
     }
-  }
-
-  function buildPiHandlerCtx(
-    state: AethonAgentState,
-    deps: DispatcherDeps,
-    handlerTab: TabRecord,
-    handlerTabId: string,
-  ): PiHandlerCtx {
-    return {
-      async prompt(text: string) {
-        if (!text || typeof text !== "string") return;
-        if (handlerTab.promptInFlight) {
-          deps.send({
-            type: "notice",
-            tabId: handlerTabId,
-            message: "agent busy — handler prompt rejected",
-          });
-          throw new Error("agent busy — prompt in flight");
-        }
-        handlerTab.promptInFlight = true;
-        handlerTab.agentEndFired = false;
-        state.currentAgentTabId = handlerTabId;
-        deps.send({
-          type: "prompt_started",
-          tabId: handlerTabId,
-          source: "handler",
-        });
-        try {
-          await state.tabContext.run(handlerTabId, () =>
-            handlerTab.session.prompt(text),
-          );
-        } catch (err) {
-          const m = err instanceof Error ? err.message : String(err);
-          deps.send({
-            type: "notice",
-            tabId: handlerTabId,
-            message: `handler prompt: ${m}`,
-          });
-          throw err;
-        } finally {
-          if (!handlerTab.agentEndFired) {
-            handlerTab.promptInFlight = false;
-            deps.send({ type: "response_end", tabId: handlerTabId });
-          }
-          if (state.currentAgentTabId === handlerTabId) {
-            state.currentAgentTabId = undefined;
-          }
-        }
-      },
-      notify(message: string) {
-        if (!message) return;
-        deps.send({ type: "notice", tabId: handlerTabId, message });
-      },
-      get session() {
-        const messages = handlerTab.session.messages ?? [];
-        return {
-          model: handlerTab.session.model
-            ? modelKey(handlerTab.session.model)
-            : "",
-          messages: messages.slice(-50),
-        };
-      },
-      get signal() {
-        return (
-          handlerTab.session as {
-            agent?: { signal?: AbortSignal };
-          }
-        ).agent?.signal;
-      },
-    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({ type: "error", message });
   }
 }
