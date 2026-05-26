@@ -11,14 +11,15 @@ const RETENTION_DAYS: u64 = 7;
 
 /// `~/.aethon/logs/` — same parent as state.json + projects.json so a user
 /// troubleshooting an issue finds everything in one place.
-fn log_dir() -> Option<PathBuf> {
+fn log_dir() -> Result<Option<PathBuf>, String> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let dir = helpers::aethon_dir(home)?.join("logs");
+    let Some(dir) = helpers::aethon_dir(home).map(|dir| dir.join("logs")) else {
+        return Ok(None);
+    };
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("[init_tracing] mkdir {}: {e}", dir.display());
-        return None;
+        return Err(format!("mkdir {}: {e}", dir.display()));
     }
-    Some(dir)
+    Ok(Some(dir))
 }
 
 /// Prune old `aethon.YYYY-MM-DD` files without touching bridge logs or any
@@ -67,18 +68,25 @@ pub(crate) fn init_tracing() {
 
     let stderr_layer = fmt::layer().with_target(true).with_writer(std::io::stderr);
 
-    let file_layer = log_dir().and_then(|dir| {
-        prune_old_logs(&dir);
-        let file_appender = tracing_appender::rolling::daily(&dir, "aethon");
-        let (writer, guard) = tracing_appender::non_blocking(file_appender);
-        LOG_GUARD.set(guard).ok()?;
-        Some(
-            fmt::layer()
-                .with_target(true)
-                .with_ansi(false)
-                .with_writer(writer),
-        )
-    });
+    let mut log_dir_error = None;
+    let file_layer = match log_dir() {
+        Ok(Some(dir)) => {
+            prune_old_logs(&dir);
+            let file_appender = tracing_appender::rolling::daily(&dir, "aethon");
+            let (writer, guard) = tracing_appender::non_blocking(file_appender);
+            LOG_GUARD.set(guard).ok().map(|_| {
+                fmt::layer()
+                    .with_target(true)
+                    .with_ansi(false)
+                    .with_writer(writer)
+            })
+        }
+        Ok(None) => None,
+        Err(err) => {
+            log_dir_error = Some(err);
+            None
+        }
+    };
 
     let subscriber = tracing_subscriber::registry()
         .with(filter)
@@ -88,6 +96,9 @@ pub(crate) fn init_tracing() {
     } else {
         subscriber.try_init()
     };
+    if let Some(err) = log_dir_error {
+        tracing::warn!(target: "aethon::logging", "log file setup skipped: {err}");
+    }
 }
 
 #[cfg(test)]
@@ -97,5 +108,13 @@ mod tests {
     #[test]
     fn log_retention_stays_one_week() {
         assert_eq!(RETENTION_DAYS, 7);
+    }
+
+    #[test]
+    fn logging_errors_stay_on_tracing_pipeline() {
+        let src = include_str!("logging.rs");
+
+        assert!(!src.contains(concat!("e", "println!")));
+        assert!(src.contains("log file setup skipped"));
     }
 }
