@@ -165,7 +165,10 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         ...t,
         kind: t.kind ?? "agent",
         draft: t.draft ?? "",
-        waiting: Boolean(t.waiting),
+        // Waiting is process-local state. After an app restart there is no
+        // still-attached prompt runner behind this tab, so restoring it as
+        // busy leaves the UI stuck in "thinking..." with a dead stop button.
+        waiting: false,
         // Client-held queue is intentionally NOT restored: queued
         // messages are ephemeral, and a user who closed the app while
         // queue items were pending probably abandoned them. The next
