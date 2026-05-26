@@ -85,6 +85,8 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
         flushProjectsSave();
       }
     };
+    // Flush-on-unmount is mounted once for App's lifetime; projectsRef is
+    // intentionally read at cleanup time so the latest project snapshot wins.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
