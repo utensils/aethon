@@ -23,6 +23,8 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::env;
+
 use super::detect::DevshellKind;
 
 /// Per-resolver wall-clock timeout. A cold `nix print-dev-env --json`
@@ -66,15 +68,15 @@ pub async fn resolve(root: &Path, kind: DevshellKind) -> Result<ResolvedEnv, Str
 }
 
 async fn resolve_direnv(root: &Path) -> Result<BTreeMap<String, String>, String> {
-    let mut cmd = Command::new("direnv");
+    let mut cmd = env::tokio_command("direnv");
     cmd.arg("exec")
         .arg(root)
         .arg("env")
         .arg("-0")
         .current_dir(root)
         // Inherit the host env so direnv can find its own state dir,
-        // PATH, etc. The resolver subprocess sees the same env the
-        // Aethon process did at launch.
+        // while env::tokio_command supplies Aethon's launch-safe PATH
+        // for locating direnv and any tools it shells out to.
         .env("DIRENV_LOG_FORMAT", "")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -83,7 +85,7 @@ async fn resolve_direnv(root: &Path) -> Result<BTreeMap<String, String>, String>
 }
 
 async fn resolve_flake(root: &Path) -> Result<BTreeMap<String, String>, String> {
-    let mut cmd = Command::new("nix");
+    let mut cmd = env::tokio_command("nix");
     cmd.arg("print-dev-env")
         .arg("--json")
         // The `--accept-flake-config` flag matches what users routinely
@@ -98,7 +100,7 @@ async fn resolve_flake(root: &Path) -> Result<BTreeMap<String, String>, String> 
 }
 
 async fn resolve_shell_nix(root: &Path) -> Result<BTreeMap<String, String>, String> {
-    let mut cmd = Command::new("nix-shell");
+    let mut cmd = env::tokio_command("nix-shell");
     cmd.arg("--run")
         .arg("env -0")
         .current_dir(root)

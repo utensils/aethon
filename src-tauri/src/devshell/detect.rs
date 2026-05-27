@@ -15,6 +15,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::env;
+
 /// What kind of devshell, if any, a project root has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevshellKind {
@@ -84,10 +86,10 @@ pub struct RealProbe;
 
 impl BinProbe for RealProbe {
     fn has_direnv(&self) -> bool {
-        which_on_path("direnv").is_some()
+        which_on_tool_path("direnv").is_some()
     }
     fn has_nix(&self) -> bool {
-        which_on_path("nix").is_some()
+        which_on_tool_path("nix").is_some()
     }
 }
 
@@ -151,19 +153,12 @@ fn envrc_uses_nix(envrc: &Path) -> bool {
     false
 }
 
-/// Minimal `which`. We don't need the full `which` crate's surface —
-/// just check whether PATH yields an executable file by name. Returns
-/// the resolved path so callers can pin the resolver (avoids picking
-/// up a different `nix` mid-session if PATH mutates).
-pub fn which_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(name);
-        if is_executable(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+/// Resolve a tool through Aethon's launch-safe tool lookup. Release
+/// builds are commonly launched from Finder / Dock with a skeletal
+/// PATH, so checking only `std::env::var("PATH")` misses Nix and
+/// direnv installs that are otherwise available in a login shell.
+pub fn which_on_tool_path(name: &str) -> Option<PathBuf> {
+    env::resolve_program(name).filter(|candidate| is_executable(candidate))
 }
 
 #[cfg(unix)]
@@ -405,5 +400,21 @@ mod tests {
         assert_eq!(DetectMode::from_str("nix-shell"), DetectMode::NixShell);
         assert_eq!(DetectMode::from_str("auto"), DetectMode::Auto);
         assert_eq!(DetectMode::from_str("yolo"), DetectMode::Auto);
+    }
+
+    #[test]
+    fn real_probe_uses_launch_safe_tool_lookup() {
+        assert_eq!(
+            RealProbe.has_nix(),
+            env::resolve_program("nix")
+                .as_deref()
+                .is_some_and(is_executable)
+        );
+        assert_eq!(
+            RealProbe.has_direnv(),
+            env::resolve_program("direnv")
+                .as_deref()
+                .is_some_and(is_executable)
+        );
     }
 }
