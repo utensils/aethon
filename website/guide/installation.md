@@ -63,7 +63,10 @@ dev                  # launch with hot reload
 
 Without Nix you'll need:
 
-- **Rust 1.92.0** (pinned in `rust-toolchain.toml`)
+- **Rust 1.92.0** — pinned in `flake.nix` for the Nix devshell;
+  `rust-toolchain.toml` only says `stable` for non-Nix builds, so
+  install 1.92.0 explicitly with `rustup install 1.92.0 && rustup
+  default 1.92.0` to match CI.
 - **Bun 1.x**
 - **Tauri 2** prerequisites for your OS — see the [Tauri docs][tauri-prereq].
 

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/aethon-hero-light.svg">
-    <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero-dark.svg" width="760">
+    <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero-dark.svg" width="720">
   </picture>
 </p>
 

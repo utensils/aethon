@@ -45,6 +45,16 @@ Single tests:
 - TS by name: `bunx vitest run -t "test name pattern"`
 - Rust: `cargo test --lib -p aethon -- helpers::test_name`
 
+E2E (`bun run test:e2e`, see `e2e/aethon.spec.ts` + `playwright.config.ts`):
+the harness mocks one Tauri webview per test but shares a single Vite dev
+server, so tests run **serial** — a reload in one page can interrupt another.
+Set `VITE_PORT` to follow `scripts/dev.sh`'s chosen port.
+
+Version sync: `bun run build` runs `version:check` (`scripts/sync-version.mjs`)
+to keep `package.json` / `Cargo.toml` / `tauri.conf.json` aligned. Drift fails
+the build — run `bun run version:sync` to fix. `scripts/build-updater-manifest.sh`
+generates the updater JSON consumed by `useUpdater` (see release flow).
+
 `scripts/dev.sh` flags:
 
 - `dev --new` — sandbox launch under `${TMPDIR}/aethon-dev/new-<pid>/`
@@ -60,12 +70,16 @@ stays on. The `aethon-debug` skill reads `dev-info.json` to follow the port.
 
 Three layers:
 
-1. **Tauri shell** (`src-tauri/src/`). `lib.rs` is the thin entry (agent
-   supervisor, IPC, `run()` builder). IPC commands are grouped under
-   `commands/` (`config`, `session`, `extensions`, `git`, `window`, `fs`).
-   Shell-tab PTY logic under `shell/` (`lifecycle`, `scrollback`, `sharemode`).
-   Window geometry in `window_state.rs`. Pure helpers in `helpers.rs`.
-   Debug-only TCP eval server in `debug.rs` (gated by `cfg(debug_assertions)`).
+1. **Tauri shell** (`src-tauri/src/`). `lib.rs` is the thin entry (`run()`
+   builder, plugin + managed-state registration). The agent supervisor
+   lives in `agent_process/` (`AgentProcesses` managed state, plus
+   `spawn`/`readers`/`sidecar`). IPC commands under `commands/`: `boot`,
+   `config`, `extensions/`, `fs/`, `git/`, `host`, `server`, `session`,
+   `updater`, `window`. Shell-tab PTY logic under `shell/` (`lifecycle`,
+   `scrollback`, `sharemode`). Window geometry in `window_state/`. Pure
+   helpers in `helpers/` (`paths`, `names`, `config`). Discovery/HTTP
+   server in `server/` (see below). Debug-only TCP eval server in
+   `debug.rs` (gated by `cfg(debug_assertions)`).
 
    Core agent commands: `send_message` (forwards chat to agent stdin),
    `dispatch_a2ui_event` (forwards a structured event). First call spawns
@@ -114,9 +128,10 @@ see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. Pointer helpers in
 
 **3. Two registries.**
 
-- Primitive React components (`src/components/primitives/`) are wired
-  in `src/components/builtins.tsx` into a hardcoded 19-entry
-  `PRIMITIVE_REGISTRY`. **Can't be overridden by skills.**
+- Primitive React components (`src/components/primitives/`) are
+  re-exported through `src/components/builtins.tsx` and wired into a
+  hardcoded 19-entry `PRIMITIVE_REGISTRY` in
+  `src/components/A2UIRenderer.tsx`. **Can't be overridden by skills.**
 - Everything else (chrome composites like `sidebar`, `chat-input`,
   `command-palette`, `terminal-panel`, `tab-strip`, `shell-canvas`, etc.)
   comes from `SkillRegistry`. Mount via `<RegistryComponent type="…" />`
@@ -185,8 +200,9 @@ enforces. Writes pop an Allow/Deny notification in `read-write` mode;
 
 ### Hot reload doesn't kill in-flight prompts
 
-The Rust file-watcher (`commands/extensions.rs::run_debounce_worker`)
-writes `{"type":"reload_request"}` to the child's stdin instead of
+The Rust file-watcher (`commands/extensions/reload.rs::run_debounce_worker`,
+wired from `commands/extensions/watcher.rs`) writes
+`{"type":"reload_request"}` to the child's stdin instead of
 SIGKILL. The bridge drains active `tab.promptInFlight`, emits a
 `{"type":"_reload_done"}` sentinel, and exits. The supervisor's reader
 peeks for the sentinel, emits `agent-reloaded`, and respawns on the next
@@ -195,7 +211,7 @@ fallback remains for wedged stdin.
 
 `touch agent/main.ts` is the simplest manual restart.
 
-### File-system safety (commands/fs.rs)
+### File-system safety (commands/fs/)
 
 Two layers gate every path: lexical (`helpers::resolve_inside_root`)
 catches `..` traversal without hitting disk; canonicalize-after-existing
@@ -205,7 +221,8 @@ at 10 MB. Deletes go to the OS trash via the `trash` crate — never
 
 ### Window geometry
 
-`src-tauri/src/window_state.rs` persists position/size/maximized to
+`src-tauri/src/window_state/` (`schema`, `restore`, `save`,
+`monitor_matching`, `migration`, `persistence`) persists position/size/maximized to
 `~/.aethon/window-state.json` in **logical** units (physical pixels are
 not portable across HiDPI). Restore runs in `setup()` before the window
 becomes visible (`tauri.conf.json` sets `visible: false`). Save is
@@ -220,7 +237,7 @@ Pi sessions are scoped to a cwd. `src/projects.ts` persists the project
 list at `~/.aethon/projects.json` (max 16, MRU, schemaVersion 2; v1→v2
 migrates on read). **Existing tabs keep the cwd they were created with**
 — switching the active project only affects new tabs. Worktrees attach
-via `src/worktrees.ts`, with Rust commands in `commands/git.rs`. Active
+via `src/worktrees.ts`, with Rust commands in `commands/git/`. Active
 worktree is mirrored to `/activeWorktreeId` so the file tree and new
 tabs follow the sidebar selection.
 
@@ -232,6 +249,21 @@ tabs follow the sidebar selection.
 Use `gh issue list -q length` for the open-issue count, **not**
 `open_issues_count` (that counts PRs + issues). Percent-encode branch
 names with slashes before hitting `repos/<r>/branches/{x}`.
+
+### Networked discovery (server/)
+
+`src-tauri/src/server/` is a scaffold daemon (Claudette-style) wired in
+`setup()` and torn down on exit. Two `mdns_sd::ServiceDaemon`s run side
+by side: one **advertises** `_aethon._tcp.local.` with the bound HTTP
+port in TXT, the other **browses** and emits Tauri events
+`host-discovered` / `host-removed`. An axum server binds `0.0.0.0:0`
+(OS picks the port) exposing `GET /health` + `GET /status`. **No auth,
+no TLS** — this is explicit scaffolding for an upcoming pairing PR;
+do not lean on it for trusted IPC. `commands/server.rs` exposes
+`server_start` / `server_stop`; `commands/host.rs` surfaces discovered
+peers to the frontend. Gated by `[server] enabled` in `config.toml`
+(defaults true). The browser keeps running with the advertiser off —
+discovery is read-only and useful in isolation.
 
 ### Auto-updates + boot probation
 
