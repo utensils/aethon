@@ -7,19 +7,52 @@
 #
 # Port discovery (in priority order):
 #   1. $AETHON_DEBUG_PORT — explicit override
-#   2. ~/.aethon/dev-info.json — written by scripts/dev.sh on each launch.
-#      Lets the skill find the port even when the wrapper auto-incremented
-#      because 19433 was busy.
-#   3. 19433 — built-in default (matches src-tauri's DEFAULT_DEBUG_PORT)
+#   2. ~/.aethon/dev-info.json — normal `dev` launch.
+#   3. $TMPDIR/aethon-dev/new-*/dev-info.json — `dev --new` sandbox
+#      launches. We pick the most-recently-modified one when multiple
+#      sandboxes exist.
+#   4. 19433 — built-in default (matches src-tauri's DEFAULT_DEBUG_PORT)
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_DIR="$(cd "${SKILL_DIR}/../.." && pwd)"
 HOST="127.0.0.1"
-DEV_INFO="${HOME}/.aethon/dev-info.json"
+DEV_INFO_DEFAULT="${HOME}/.aethon/dev-info.json"
+SANDBOX_GLOB="${TMPDIR:-/tmp}/aethon-dev/new-*/dev-info.json"
 EVAL_TIMEOUT=12
 START_TIMEOUT=240   # seconds to wait for app to start / compile
 DEV_LOG="${TMPDIR:-/tmp}/aethon-dev.log"
+
+# Resolve dev-info.json. Prefer the conventional location; fall back
+# to the most recent sandbox if the user is running `dev --new`. Keeps
+# the skill working across both modes without forcing every UAT call
+# to set $AETHON_DEBUG_PORT manually.
+resolve_dev_info() {
+  if [[ -f "${DEV_INFO_DEFAULT}" ]]; then
+    echo "${DEV_INFO_DEFAULT}"
+    return
+  fi
+  # shellcheck disable=SC2206
+  local matches=( ${SANDBOX_GLOB} )
+  if [[ "${#matches[@]}" -eq 0 || ! -f "${matches[0]}" ]]; then
+    return
+  fi
+  # Pick newest by mtime — important when multiple sandboxes were
+  # spawned over the course of a single session.
+  local newest=""
+  local newest_mtime=0
+  for f in "${matches[@]}"; do
+    [[ -f "$f" ]] || continue
+    local m
+    m=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
+    if (( m > newest_mtime )); then
+      newest_mtime=$m
+      newest=$f
+    fi
+  done
+  echo "${newest}"
+}
+DEV_INFO="$(resolve_dev_info)"
 
 # ---------------------------------------------------------------------------
 # Port resolution
@@ -29,7 +62,11 @@ resolve_port() {
     echo "${AETHON_DEBUG_PORT}"
     return
   fi
-  if [[ -f "${DEV_INFO}" ]]; then
+  # Re-resolve in case the sandbox was spawned after the shell
+  # was constructed (or the user `rm`d the global dev-info.json
+  # mid-session).
+  DEV_INFO="$(resolve_dev_info)"
+  if [[ -n "${DEV_INFO}" && -f "${DEV_INFO}" ]]; then
     python3 -c "
 import json, sys
 try:

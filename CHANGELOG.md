@@ -6,8 +6,67 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **First-class Nix devshell support.** Project roots containing
+  `flake.nix`, `.envrc` (with `use_flake`/`use_nix` + the `direnv`
+  binary), or `shell.nix` now have their devshell environment
+  automatically detected, resolved, cached, and applied to every
+  interactive PTY shell tab AND the agent's pi `bash` tool — without
+  the user having to manually wrap `nix develop`. Same source of
+  truth feeds both spawn paths via a single in-memory + on-disk
+  cache (`~/.aethon/devshell-cache/<short-hash>/`) keyed on
+  `flake.lock` content hash + marker-file mtimes. Cache invalidates
+  automatically when the lockfile changes; manual "Refresh now"
+  button in Settings. Detection precedence: direnv > flake > shell.nix
+  (direnv wins when `.envrc` + the `direnv` binary are present because
+  it matches the cached env users already see at the CLI). Configurable
+  via a new `[devshell]` section in `config.toml` (`enabled = auto |
+always | never`, `mode = auto | direnv | nix | nix-shell`,
+  `cache_ttl_hours`, `refresh_on_lockfile_change`) and a per-project
+  override at `<project>/.aethon/devshell.toml`. Status badge `⬡ <kind>`
+  in the status bar shows resolving/ready/failed/off state. Agent-side
+  is wired via a `customTools` `bash` entry that shadows pi's built-in
+  through pi's tool-registry later-wins-by-name rule and attaches a
+  synchronous `BashSpawnHook` that consults a process-local cache
+  (warmed via a new `devshell_query` bridge IPC; invalidated by
+  `devshell-ready`/`devshell-failed` push events forwarded from
+  the frontend). The resolver runs in a `tokio::task::spawn_blocking`
+  task with shared notify so concurrent shell opens collapse onto the
+  same in-flight `nix print-dev-env --json`. New IPC: `devshell_status`
+  (non-blocking snapshot for the badge), `devshell_env_for_path`
+  (non-blocking env lookup for the spawnHook), `devshell_refresh`
+  (invalidate + re-resolve). 49 unit tests cover detection, resolver
+  parsing, cache fingerprint, env merging, and the bridge handler;
+  live UAT confirms non-interactive `/bin/sh -c` shells pick up
+  `CARGO=/nix/store/.../cargo`, `IN_NIX_SHELL=impure`,
+  `DEVSHELL_DIR=/nix/store/...`, and the resolved 168-var PATH.
+- **`aethon-debug` skill gained user-gesture automation primitives.**
+  New scripts under `.claude/skills/aethon-debug/scripts/` —
+  `debug-invoke.sh` (generic Tauri-command runner),
+  `debug-shell-{spawn,write,read,close}.sh` (open / write to / read
+  / close a PTY tab the way a user would, bypassing share-mode for
+  read/write so private-mode policy doesn't have to be relaxed for
+  UAT), `debug-devshell.sh` (status/env/refresh against the active
+  project), `debug-agent-new-tab.sh` (create an agent tab pinned to
+  a cwd), `debug-chat-{send,wait}.sh` (drive the agent and block
+  until the response lands). Two new `cfg(debug_assertions)` Tauri
+  commands back the PTY scripts: `debug_shell_snapshot` (dump
+  cwd/command/share/scrollback regardless of share-mode) and
+  `debug_shell_write_raw` (push input regardless of share-mode).
+  Skill `SKILL.md` updated with a UI-automation-primitives section.
+
 ### Changed
 
+- **Vite dev server no longer crashes the webview's Tauri IPC on
+  `.direnv` writes.** `vite.config.ts` now excludes `.direnv/`,
+  `target/`, `src-tauri/target/`, and `node_modules/` from its file
+  watcher. Previously the Nix `flake-inputs` mirror under `.direnv/`
+  contained stray `tsconfig.json` files that Vite's tsconfig probe
+  picked up, triggering a "changed tsconfig file detected — full
+  reload" cascade that dropped the Tauri IPC custom protocol mid-call
+  ("IPC custom protocol failed, Tauri will now use the postMessage
+  interface instead"). UAT and live debugging now stay hermetic.
 - **Internal architecture docs updated.** Repository and bundled docs now
   reflect the split overlay modules (`src/hooks/uiOverlays/*`), the
   extracted system-prompt template/types (`agent/system-prompt/*`), and

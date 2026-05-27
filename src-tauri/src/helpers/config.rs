@@ -87,6 +87,31 @@ pub struct UpdatesConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct DevshellConfig {
+    /// Whether to detect + apply a Nix devshell on shell + agent
+    /// spawn. Accepted values: `"auto"` (default — detect via marker
+    /// files), `"always"` (force detection; resolver failure surfaces
+    /// loudly), `"never"` (escape hatch — disable wrapping entirely).
+    /// Unknown values fall back to `"auto"` so a typo can't silently
+    /// disable the feature.
+    pub enabled: Option<String>,
+    /// Pin a specific resolver kind. `"auto"` honours the natural
+    /// precedence (direnv > flake > shell). The named variants
+    /// `"direnv"` / `"nix"` / `"nix-shell"` force a single kind and
+    /// fall back to no-wrap if the marker or binary is missing.
+    pub mode: Option<String>,
+    /// How long a successful on-disk snapshot stays valid before the
+    /// next launch ignores it (lockfile-hash mismatches always
+    /// invalidate first; this is purely a GC ceiling). Default 720 h
+    /// (30 days). 0 disables auto-eviction.
+    pub cache_ttl_hours: Option<u32>,
+    /// Re-resolve automatically when a watched lockfile / marker file
+    /// changes mtime. Default `true`. Disable to require the user
+    /// click "Refresh now" in Settings.
+    pub refresh_on_lockfile_change: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct ExtensionsConfig {
     /// Soft warning threshold (KB) for an extension's `setState` payload.
     /// Above this, the bridge logs a WARN naming the extension and path.
@@ -115,6 +140,32 @@ pub struct AethonConfig {
     pub extensions: ExtensionsConfig,
     #[serde(default)]
     pub updates: UpdatesConfig,
+    #[serde(default)]
+    pub devshell: DevshellConfig,
+}
+
+/// Validate-and-normalize `[devshell] enabled`. Unknown values fall
+/// through to `"auto"` so a typo can't silently disable the feature.
+pub fn normalize_devshell_enabled(input: Option<&str>) -> &'static str {
+    match input {
+        Some("always") => "always",
+        Some("never") => "never",
+        // Includes Some("auto"), Some(<unknown>), and None.
+        _ => "auto",
+    }
+}
+
+/// Validate-and-normalize `[devshell] mode`. Unknown values fall back
+/// to `"auto"`. Lives next to the parser so test coverage stays with
+/// the other config helpers.
+pub fn normalize_devshell_mode(input: Option<&str>) -> &'static str {
+    match input {
+        Some("direnv") => "direnv",
+        Some("nix") => "nix",
+        Some("nix-shell") => "nix-shell",
+        // Includes Some("auto"), Some(<unknown>), and None.
+        _ => "auto",
+    }
 }
 
 /// Validate-and-normalize `[updates] channel`. Unknown strings, missing
@@ -201,6 +252,11 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         resolve_ext_state_limits(cfg.extensions.state_warn_kb, cfg.extensions.state_hard_kb);
     let update_channel = normalize_update_channel(cfg.updates.channel.as_deref());
     let disable_auto_check = cfg.updates.disable_auto_check.unwrap_or(false);
+    let devshell_enabled = normalize_devshell_enabled(cfg.devshell.enabled.as_deref());
+    let devshell_mode = normalize_devshell_mode(cfg.devshell.mode.as_deref());
+    let devshell_cache_ttl_hours = cfg.devshell.cache_ttl_hours.unwrap_or(720);
+    let devshell_refresh_on_lockfile_change =
+        cfg.devshell.refresh_on_lockfile_change.unwrap_or(true);
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
@@ -231,7 +287,37 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "channel": update_channel,
             "disableAutoCheck": disable_auto_check,
         },
+        "devshell": {
+            "enabled": devshell_enabled,
+            "mode": devshell_mode,
+            "cacheTtlHours": devshell_cache_ttl_hours,
+            "refreshOnLockfileChange": devshell_refresh_on_lockfile_change,
+        },
     })
+}
+
+/// Per-project devshell override. Loaded from
+/// `<project_root>/.aethon/devshell.toml` if present and merged over
+/// the global `[devshell]` section. Mirrors the same shape as the
+/// global config — anything omitted falls through to the global
+/// values applied by `parse_config_toml`. Per-project overrides are a
+/// thin convenience over editing the global config, but they let a
+/// user mark one repo as `enabled = "never"` while keeping devshell
+/// on globally.
+#[derive(Default, Deserialize)]
+pub struct ProjectDevshellOverride {
+    #[serde(default)]
+    pub devshell: DevshellConfig,
+}
+
+/// Parse the per-project override TOML. Falls back to a fully-empty
+/// override on parse error so a malformed `.aethon/devshell.toml`
+/// never blocks a shell from opening — we just ignore it.
+pub fn parse_project_devshell_override(input: &str) -> ProjectDevshellOverride {
+    if input.is_empty() {
+        return ProjectDevshellOverride::default();
+    }
+    toml::from_str(input).unwrap_or_default()
 }
 
 /// Clamp a configured font size to the range the CSS rule supports.
@@ -497,6 +583,101 @@ state_hard_kb = 100
         );
         assert_eq!(v["extensions"]["stateWarnKb"], 500);
         assert_eq!(v["extensions"]["stateHardKb"], 500);
+    }
+
+    // ── devshell ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_devshell_enabled_accepts_known() {
+        assert_eq!(normalize_devshell_enabled(Some("auto")), "auto");
+        assert_eq!(normalize_devshell_enabled(Some("always")), "always");
+        assert_eq!(normalize_devshell_enabled(Some("never")), "never");
+    }
+
+    #[test]
+    fn normalize_devshell_enabled_falls_back_to_auto() {
+        // A typo can't silently disable the feature — fall back to "auto".
+        assert_eq!(normalize_devshell_enabled(None), "auto");
+        assert_eq!(normalize_devshell_enabled(Some("")), "auto");
+        assert_eq!(normalize_devshell_enabled(Some("Always")), "auto");
+        assert_eq!(normalize_devshell_enabled(Some("disabled")), "auto");
+    }
+
+    #[test]
+    fn normalize_devshell_mode_accepts_known() {
+        assert_eq!(normalize_devshell_mode(Some("auto")), "auto");
+        assert_eq!(normalize_devshell_mode(Some("direnv")), "direnv");
+        assert_eq!(normalize_devshell_mode(Some("nix")), "nix");
+        assert_eq!(normalize_devshell_mode(Some("nix-shell")), "nix-shell");
+    }
+
+    #[test]
+    fn normalize_devshell_mode_falls_back_to_auto() {
+        assert_eq!(normalize_devshell_mode(None), "auto");
+        assert_eq!(normalize_devshell_mode(Some("")), "auto");
+        assert_eq!(normalize_devshell_mode(Some("NixShell")), "auto");
+    }
+
+    #[test]
+    fn parse_config_toml_devshell_defaults() {
+        let v = parse_config_toml("");
+        assert_eq!(v["devshell"]["enabled"], "auto");
+        assert_eq!(v["devshell"]["mode"], "auto");
+        assert_eq!(v["devshell"]["cacheTtlHours"], 720);
+        assert_eq!(v["devshell"]["refreshOnLockfileChange"], true);
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_devshell_section() {
+        let v = parse_config_toml(
+            r#"[devshell]
+enabled = "always"
+mode = "direnv"
+cache_ttl_hours = 24
+refresh_on_lockfile_change = false
+"#,
+        );
+        assert_eq!(v["devshell"]["enabled"], "always");
+        assert_eq!(v["devshell"]["mode"], "direnv");
+        assert_eq!(v["devshell"]["cacheTtlHours"], 24);
+        assert_eq!(v["devshell"]["refreshOnLockfileChange"], false);
+    }
+
+    #[test]
+    fn parse_config_toml_devshell_normalizes_unknown_strings() {
+        let v = parse_config_toml(
+            r#"[devshell]
+enabled = "yolo"
+mode = "magic"
+"#,
+        );
+        assert_eq!(v["devshell"]["enabled"], "auto");
+        assert_eq!(v["devshell"]["mode"], "auto");
+    }
+
+    #[test]
+    fn parse_project_devshell_override_empty_yields_default() {
+        let v = parse_project_devshell_override("");
+        assert!(v.devshell.enabled.is_none());
+        assert!(v.devshell.mode.is_none());
+    }
+
+    #[test]
+    fn parse_project_devshell_override_extracts_keys() {
+        let v = parse_project_devshell_override(
+            r#"[devshell]
+enabled = "never"
+"#,
+        );
+        assert_eq!(v.devshell.enabled.as_deref(), Some("never"));
+        assert!(v.devshell.mode.is_none());
+    }
+
+    #[test]
+    fn parse_project_devshell_override_tolerates_garbage() {
+        // Malformed TOML must never block a shell open — we just ignore it.
+        let v = parse_project_devshell_override("=== broken ===");
+        assert!(v.devshell.enabled.is_none());
     }
 
     // ── clamp_font_size ────────────────────────────────────────────────────

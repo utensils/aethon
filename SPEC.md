@@ -381,6 +381,7 @@ then sharing, then polish.
 - [x] **Extension lifecycle feedback channel.** Bridge emits `extension_lifecycle { name, source, status: "loaded"|"failed"|"skipped", error?, path }` for every load attempt from `loadAethonExtensions` and `loadAethonExtensionPackages`. Frontend dispatches a cancellable `aethon:extension-lifecycle` window CustomEvent, then (default) appends a system-notice chat bubble. Layouts and extensions can listen on the window event and call `e.preventDefault()` to substitute alternative UX (toast, sidebar pulse, status pill) — the channel is decoupled from chat-history rendering by design.
 - [x] **Extension-deletion UI cleanup.** Bridge tracks `extensionStateKeys: Set<string>` of every JSON Pointer path written via extension `setState` and reports the list in `ready`. Frontend keeps a ref of the previous ready's set; on each new ready, paths in (previous − new) are deleted from live state via `deletePointer`. So when an extension is uninstalled (file deleted), the watcher respawns the bridge → new ready has a smaller key set → leftover sidebar sections / canvas cards / state slices vanish without a page reload.
 - [x] **Test coverage + linting.** `cargo test --lib` covers `helpers::{validate_state_name, parse_config_toml, clamp_font_size}` (14 tests). `bun run test` / `bunx vitest run` covers `utils/jsonPointer`, `utils/dataBinding`, `slashCommands`, project storage, palette item selection, primitive rendering, and the slot catalogue / inspector (77 tests). `bunx eslint .` enforces 0 errors with type-aware rules + react-hooks plugin (warnings tracked: `react-hooks/set-state-in-effect`, `react-hooks/refs` in `App.tsx` / `ChatInput`). All wired into the `check` devshell command as a single CI gate.
+- [x] **Nix devshell first-class support.** Project roots containing `flake.nix`, `.envrc` (with `use_flake`/`use_nix` + `direnv` on PATH), or `shell.nix` are detected automatically and the resolved env is layered over every PTY shell tab AND the agent's pi `bash` tool. Precedence: direnv > flake > shell.nix; gated capability-aware (no `nix`/`direnv` on PATH → returns `None`, shells still spawn unwrapped). One resolver per `(root, flake.lock+marker hash)` runs in `tokio::task::spawn_blocking` via `tokio::sync::OnceCell`-style de-dup; result persisted to `~/.aethon/devshell-cache/<short-hash>/{env,meta}.json` with 30-day GC. Rust intercept lives in `src-tauri/src/shell/lifecycle/open.rs` (after `effective_command`, before `args.env` so explicit overrides still win). Agent intercept is a `customTools` entry named `bash` that overrides pi's built-in via the registry's later-wins-by-name rule, attaching a `BashSpawnHook` that consults a process-local cache (warmed via the `devshell_query` bridge IPC; invalidated by `devshell-ready`/`devshell-failed` push events). Status badge in the status bar (`⬡ <kind>`) + Settings → Nix devshell section with `enabled`, `mode`, `cache_ttl_hours`, `refresh_on_lockfile_change`, and a live "Refresh now" button. 49 Rust + TS unit tests; live UAT verified non-interactive `/bin/sh -c` shells pick up `CARGO=/nix/store/.../cargo`, `IN_NIX_SHELL=impure`, `DEVSHELL_DIR=/nix/store/...`, etc. Per-project override at `<project>/.aethon/devshell.toml`. See `src-tauri/src/devshell/` and `agent/devshell/`.
 
 ---
 
@@ -593,7 +594,15 @@ restore_tabs = false     # true auto-opens discovered per-tab sessions on launch
 [agent]
 model = "anthropic/claude-sonnet-4-6"   # seeds the picker/default display
                                         # when no per-session model is saved
+
+[devshell]
+enabled = "auto"                # "auto" | "always" | "never"
+mode = "auto"                   # "auto" | "direnv" | "nix" | "nix-shell"
+cache_ttl_hours = 720           # GC ceiling for on-disk snapshots; 0 disables
+refresh_on_lockfile_change = true
 ```
+
+Per-project override at `<project>/.aethon/devshell.toml` (same shape; merges over the global section). Used to mark one repo as `enabled = "never"` while keeping devshell on globally.
 
 Pi settings (`~/.pi/agent/settings.json`) drive provider/auth, model
 discovery, and `enabledModels` filtering for the picker. Aethon's

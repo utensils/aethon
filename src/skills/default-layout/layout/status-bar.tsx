@@ -1,15 +1,16 @@
 /**
  * `StatusBar` — three-region status footer (left/center/right) with an
  * optional project/worktree/branch chip wedged between `left` and
- * `center`. The chip reads from `/sidebar/projects` + `/activeProjectId`
- * so the sidebar is the single source of truth — the bar doesn't fetch
- * git state itself.
+ * `center`, plus a devshell chip after it. Both chips read from
+ * central state, never from a local fetch — the sidebar feeds the
+ * project chip and the `useDevshell` hook feeds the devshell chip.
  */
 
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { resolveString } from "../../../utils/dataBinding";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { StringValue } from "../../../types/a2ui";
+import type { DevshellEntry } from "../../../hooks/useDevshell";
 
 export function StatusBar({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
@@ -54,6 +55,23 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const activeWt = active?.worktrees?.find((w) => w.active === true);
   const showChip = props.showProjectChip !== false && !!active;
 
+  // Devshell chip data — read from `/devshell/{activeRoot, entries}`
+  // populated by the useDevshell hook. Same single-source-of-truth
+  // discipline as the project chip above.
+  const devshellSlice = resolveValue(state, "/devshell") as
+    | { activeRoot?: string | null; entries?: Record<string, DevshellEntry> }
+    | undefined;
+  const devshellRoot = devshellSlice?.activeRoot ?? null;
+  const devshellEntry: DevshellEntry | undefined =
+    devshellRoot && devshellSlice?.entries
+      ? devshellSlice.entries[devshellRoot]
+      : undefined;
+  const devshellLabel = devshellEntry ? devshellChipLabel(devshellEntry) : null;
+  const devshellTooltip = devshellEntry ? devshellChipTooltip(devshellEntry) : null;
+  const devshellClass = devshellEntry
+    ? `a2ui-status-devshell-chip is-${devshellEntry.state}`
+    : "a2ui-status-devshell-chip";
+
   return (
     <footer className="a2ui-status-bar">
       <span className="a2ui-status-left">{left}</span>
@@ -86,6 +104,14 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
           ) : null}
         </span>
       ) : null}
+      {devshellLabel ? (
+        <span className={devshellClass} title={devshellTooltip ?? undefined}>
+          <span className="a2ui-status-devshell-icon" aria-hidden="true">
+            ⬡
+          </span>
+          <span className="a2ui-status-devshell-label">{devshellLabel}</span>
+        </span>
+      ) : null}
       <span className="a2ui-status-center">{center}</span>
       <span className="a2ui-status-right">{right}</span>
     </footer>
@@ -99,4 +125,57 @@ function resolveValue(state: unknown, ptr: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+function devshellChipLabel(entry: DevshellEntry): string | null {
+  switch (entry.state) {
+    case "resolving":
+      return `${entry.kind ?? "devshell"} · resolving…`;
+    case "ready":
+      return entry.kind ?? "devshell";
+    case "failed":
+      return `${entry.kind ?? "devshell"} · failed`;
+    case "idle":
+      // Detected but not yet resolved — show the kind so the user
+      // sees we noticed the flake.
+      if (entry.enabled === "never") return `${entry.kind ?? "devshell"} · off`;
+      return entry.kind ?? "devshell";
+    case "none":
+      if (entry.enabled === "never" && entry.detectedKind) {
+        return `${entry.detectedKind} · off`;
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+function devshellChipTooltip(entry: DevshellEntry): string | null {
+  const lines: string[] = [];
+  if (entry.detectedKind) {
+    lines.push(`Devshell kind: ${entry.detectedKind}`);
+  }
+  lines.push(`Config: enabled=${entry.enabled}, mode=${entry.mode}`);
+  switch (entry.state) {
+    case "ready":
+      if (entry.varCount !== undefined) {
+        lines.push(`${entry.varCount} environment variables applied`);
+      }
+      if (entry.durationMs !== undefined) {
+        lines.push(`Resolved in ${entry.durationMs} ms`);
+      }
+      break;
+    case "resolving":
+      lines.push("Resolver running — first shell may use host env");
+      break;
+    case "failed":
+      if (entry.reason) lines.push(`Error: ${entry.reason}`);
+      break;
+    case "none":
+      if (entry.enabled === "never") {
+        lines.push("Devshell disabled in config — set [devshell] enabled = \"auto\" to re-enable");
+      }
+      break;
+  }
+  return lines.join("\n");
 }

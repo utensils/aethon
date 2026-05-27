@@ -89,18 +89,18 @@ new warnings as acceptable without addressing or justifying them.
    `server/` (`http.rs`, `mdns.rs` — see "Networked discovery" below);
    debug-only TCP eval server in `debug.rs` gated by
    `#[cfg(debug_assertions)]`)
-     — owns the OS boundary. Core agent commands: `send_message`
-     (forwards a chat string to the agent's stdin) and
-     `dispatch_a2ui_event` (forwards a structured event). On the first
-     `send_message` it spawns `bun run agent/main.ts` and starts a reader
-     thread that emits each stdout line as a Tauri `agent-response`
-     event. Shell-tab commands (`shell_open`, `shell_input`,
-     `shell_resize`, `shell_close`) sit behind a `ShellRegistry` (per-tab
-     `portable-pty` PTY + reader thread; emits `shell-output` /
-     `shell-exit` events). UTF-8 chunk boundaries are preserved across
-     reader-thread reads via a carry buffer + `Utf8Error::error_len()`
-     truncation/invalid split — don't replace this with per-chunk
-     `from_utf8_lossy`, multi-byte sequences will corrupt.
+   — owns the OS boundary. Core agent commands: `send_message`
+   (forwards a chat string to the agent's stdin) and
+   `dispatch_a2ui_event` (forwards a structured event). On the first
+   `send_message` it spawns `bun run agent/main.ts` and starts a reader
+   thread that emits each stdout line as a Tauri `agent-response`
+   event. Shell-tab commands (`shell_open`, `shell_input`,
+   `shell_resize`, `shell_close`) sit behind a `ShellRegistry` (per-tab
+   `portable-pty` PTY + reader thread; emits `shell-output` /
+   `shell-exit` events). UTF-8 chunk boundaries are preserved across
+   reader-thread reads via a carry buffer + `Utf8Error::error_len()`
+   truncation/invalid split — don't replace this with per-chunk
+   `from_utf8_lossy`, multi-byte sequences will corrupt.
 2. **Agent bridge** (`agent/main.ts` is a thin entry-point — env wiring
    - boot order; the readline loop and 14-case dispatcher live in
      `agent/dispatcher.ts`) — JSON-lines over stdio. Reads
@@ -671,15 +671,15 @@ in-app updater.
 
 ## Test coverage + linting
 
-| Tool                         | Scope                                                     | Devshell command |
-| ---------------------------- | --------------------------------------------------------- | ---------------- |
-| `cargo clippy -D warnings`   | Rust shell + helpers                                      | `check`          |
-| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers/`            | `test`           |
-| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                       | `check`          |
-| `bunx eslint .`              | TS + React lint, type-aware via tsconfig                  | `lint`           |
-| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`) | `test`           |
-| `bunx vitest run --coverage` | TS coverage report (v8)                                   | `coverage`       |
-| `bun run test:e2e`           | Playwright E2E (`e2e/aethon.spec.ts`); webview is mocked, tests run serial against a shared Vite dev server | —                |
+| Tool                         | Scope                                                                                                                               | Devshell command |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `cargo clippy -D warnings`   | Rust shell + helpers                                                                                                                | `check`          |
+| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers/`                                                                                      | `test`           |
+| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                                                                                                 | `check`          |
+| `bunx eslint .`              | TS + React lint, type-aware via tsconfig                                                                                            | `lint`           |
+| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`)                                                                           | `test`           |
+| `bunx vitest run --coverage` | TS coverage report (v8)                                                                                                             | `coverage`       |
+| `bun run test:e2e`           | Playwright E2E (`e2e/aethon.spec.ts`); webview is mocked, tests run serial against a shared Vite dev server                         | —                |
 | `bun run version:check`      | Fail if `package.json` / `Cargo.toml` / `tauri.conf.json` drift (auto-runs before `bun run build`); fix with `bun run version:sync` | —                |
 
 The `check` devshell command runs all of the above as a single CI gate.

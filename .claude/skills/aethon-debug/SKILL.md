@@ -238,6 +238,66 @@ JS
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'window.aethon.resetLayout(); return "reset"'
 ```
 
+## UI-automation primitives
+
+These scripts wrap real user gestures (open a shell tab, send keystrokes, query the devshell cache, …) so a human OR an automated UAT agent can drive Aethon without hand-coding `__TAURI_INTERNALS__.invoke(...)` plumbing each time. They prefer dedicated `cfg(debug_assertions)` Tauri commands over production paths whose share-mode/consent gates would skew the test, so what you observe matches what a user would observe.
+
+### `debug-invoke.sh <command> [<args-json>]` — generic Tauri-command runner
+
+The lowest-level building block. Calls any registered Tauri command and prints the JSON result (or `ERROR: ...`).
+
+```bash
+${CLAUDE_SKILL_DIR}/scripts/debug-invoke.sh shell_list_shareable
+${CLAUDE_SKILL_DIR}/scripts/debug-invoke.sh devshell_status '{"args":{"root":"'"$(pwd)"'"}}'
+${CLAUDE_SKILL_DIR}/scripts/debug-invoke.sh debug_shell_snapshot '{"tabId":"uat-1","tailBytes":4096}'
+```
+
+### Shell-tab driving (PTY user-equivalent)
+
+```bash
+TAB=$(${CLAUDE_SKILL_DIR}/scripts/debug-shell-spawn.sh)              # open in active project
+TAB=$(${CLAUDE_SKILL_DIR}/scripts/debug-shell-spawn.sh /path/repo)   # explicit cwd
+${CLAUDE_SKILL_DIR}/scripts/debug-shell-write.sh "$TAB" 'env | sort | head'
+${CLAUDE_SKILL_DIR}/scripts/debug-shell-read.sh   "$TAB"             # JSON snapshot (cwd, command, share, tail)
+${CLAUDE_SKILL_DIR}/scripts/debug-shell-read.sh   "$TAB" 8192 raw    # just the tail bytes
+${CLAUDE_SKILL_DIR}/scripts/debug-shell-close.sh  "$TAB"
+```
+
+`debug-shell-write` + `debug-shell-read` ride dev-only Tauri commands (`debug_shell_write_raw`, `debug_shell_snapshot`) that bypass the share-mode gating. The PTY itself still spawns through the real `shell_open` path — including the Nix devshell env intercept — so this is a faithful UAT, not a Rust-only shortcut.
+
+### Devshell cache
+
+```bash
+${CLAUDE_SKILL_DIR}/scripts/debug-devshell.sh status   # active project's cache state
+${CLAUDE_SKILL_DIR}/scripts/debug-devshell.sh env      # resolved env map
+${CLAUDE_SKILL_DIR}/scripts/debug-devshell.sh refresh  # invalidate + re-resolve
+${CLAUDE_SKILL_DIR}/scripts/debug-devshell.sh status /Users/.../some-project   # explicit root
+```
+
+When no root is passed, the script reads the active project from `window.__AETHON_STATE__()` so it Just Works after a project switch.
+
+### Agent chat (drive the agent like a user typing)
+
+```bash
+TAB=$(${CLAUDE_SKILL_DIR}/scripts/debug-agent-new-tab.sh /path/to/project)
+${CLAUDE_SKILL_DIR}/scripts/debug-chat-send.sh "$TAB" 'run env | grep PATH via your bash tool'
+${CLAUDE_SKILL_DIR}/scripts/debug-chat-wait.sh "$TAB" 90    # block until the response lands
+```
+
+`debug-agent-new-tab.sh` pushes a tab record into central state AND sends `tab_open` to the agent, which spawns a per-tab pi session bound to the cwd you passed. From there `debug-chat-send.sh` rides the same `send_message` IPC the composer uses, and `debug-chat-wait.sh` polls until `waiting` flips false and a new message lands. The agent's bash tool runs through the customTools-shadowed `BashSpawnHook`, so anything it executes inherits the project's Nix devshell env exactly as a real user would see — this is how to confirm end-to-end devshell wrapping when "ask the agent to verify" is the right shape of test.
+
+Caveats: live agent confirmation needs a valid API key for the active model (`~/.pi/agent/auth.json`). If the turn errors immediately with a 0.3s duration in the logs, that's an auth problem, not a feature problem.
+
+## When the skill needs more — extend it
+
+If a UAT step needs data or a gesture the existing scripts can't surface:
+
+1. Add a `cfg(debug_assertions)` Tauri command to `src-tauri/src/debug.rs` (mirror an existing production command but skip the gate that's blocking the test).
+2. Register it in `lib.rs` under the existing `#[cfg(debug_assertions)]` block.
+3. Add a thin wrapper script in `.claude/skills/aethon-debug/scripts/` and document it in the table above.
+
+This is the documented expectation — see the user-feedback memory `feedback_aethon_maintain_debug_skill.md`. Don't work around a gap; close it.
+
 ## Architecture
 
 ```

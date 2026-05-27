@@ -61,6 +61,20 @@ export interface AethonConfig {
      *  for Updates" menu item still works. */
     disableAutoCheck: boolean;
   };
+  devshell: {
+    /** Whether to detect and apply Nix devshell env on shell + agent
+     *  spawn. `"auto"` (default) detects via marker files; `"always"`
+     *  forces detection and errors loudly on resolver failure;
+     *  `"never"` disables the feature entirely. */
+    enabled: "auto" | "always" | "never";
+    /** Pin a specific resolver kind, or `"auto"` for natural
+     *  precedence (direnv > flake > shell). */
+    mode: "auto" | "direnv" | "nix" | "nix-shell";
+    /** GC ceiling for on-disk env snapshots. Default 720 h (30 days). */
+    cacheTtlHours: number;
+    /** Re-resolve when watched lockfile / marker file mtime changes. */
+    refreshOnLockfileChange: boolean;
+  };
 }
 
 const DEFAULTS: AethonConfig = {
@@ -82,6 +96,12 @@ const DEFAULTS: AethonConfig = {
   },
   shortcuts: { newTabKind: "agent" },
   updates: { channel: "stable", disableAutoCheck: false },
+  devshell: {
+    enabled: "auto",
+    mode: "auto",
+    cacheTtlHours: 720,
+    refreshOnLockfileChange: true,
+  },
 };
 
 function hasTauri(): boolean {
@@ -164,6 +184,19 @@ export function getConfig(): Promise<AethonConfig> {
             obj?.updates?.channel === "nightly" ? "nightly" : "stable",
           disableAutoCheck: obj?.updates?.disableAutoCheck === true,
         },
+        devshell: {
+          enabled: normalizeDevshellEnabled(obj?.devshell?.enabled),
+          mode: normalizeDevshellMode(obj?.devshell?.mode),
+          cacheTtlHours:
+            typeof obj?.devshell?.cacheTtlHours === "number" &&
+            obj.devshell.cacheTtlHours >= 0
+              ? obj.devshell.cacheTtlHours
+              : 720,
+          refreshOnLockfileChange:
+            typeof obj?.devshell?.refreshOnLockfileChange === "boolean"
+              ? obj.devshell.refreshOnLockfileChange
+              : true,
+        },
       };
     } catch (err) {
       console.warn("read_config failed:", err);
@@ -186,4 +219,20 @@ function normalizeShareMode(value: unknown): ShareMode {
   return SHARE_MODES.includes(value as ShareMode)
     ? (value as ShareMode)
     : "private";
+}
+
+function normalizeDevshellEnabled(
+  value: unknown,
+): "auto" | "always" | "never" {
+  if (value === "always" || value === "never") return value;
+  return "auto";
+}
+
+function normalizeDevshellMode(
+  value: unknown,
+): "auto" | "direnv" | "nix" | "nix-shell" {
+  if (value === "direnv" || value === "nix" || value === "nix-shell") {
+    return value;
+  }
+  return "auto";
 }

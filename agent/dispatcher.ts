@@ -12,6 +12,7 @@ import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { emitGlobalReady, maybeExitForReload } from "./dispatcherTypes";
 import { handleSetExtensionDisabled } from "./extensionControl";
 import { ackMutation, markFrontendReady } from "./mutation-ack";
+import { onDevshellEvent } from "./devshell";
 import { handleNativeSlashCommand } from "./nativeSlash";
 import { handleSetProject } from "./projectLifecycle";
 import {
@@ -188,6 +189,19 @@ export async function dispatchInboundMessage(
       case "local_chat_message":
         await handleLocalChatMessage(state, deps, msg);
         break;
+      case "devshell_event": {
+        const status = msg.devshellStatus;
+        const root = msg.devshellRoot;
+        const kind = msg.devshellKind ?? "auto";
+        if (
+          typeof root === "string" &&
+          root.length > 0 &&
+          (status === "ready" || status === "failed" || status === "resolving")
+        ) {
+          onDevshellEvent(state, deps, { kind, root, status });
+        }
+        break;
+      }
       default:
         deps.send({
           type: "error",

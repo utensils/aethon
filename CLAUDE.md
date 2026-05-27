@@ -27,16 +27,16 @@ subprocess. Business logic belongs in the agent, not the shell.
 Run inside `nix develop` (direnv auto-activates via `.envrc`). Devshell
 helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                                |
-| ----------- | --------------------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment               |
-| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)   |
-| `build-app` | `cargo tauri build` — release bundle                                        |
-| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest                        |
-| `lint`      | ESLint (no auto-fix)                                                        |
-| `test`      | `cargo test --lib` + `bunx vitest run`                                      |
-| `coverage`  | TS coverage report (vitest v8) → `coverage/`                                |
-| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                               |
+| Command     | What it does                                                              |
+| ----------- | ------------------------------------------------------------------------- |
+| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment             |
+| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173) |
+| `build-app` | `cargo tauri build` — release bundle                                      |
+| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest                      |
+| `lint`      | ESLint (no auto-fix)                                                      |
+| `test`      | `cargo test --lib` + `bunx vitest run`                                    |
+| `coverage`  | TS coverage report (vitest v8) → `coverage/`                              |
+| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                             |
 
 ESLint is configured for **0 errors and 0 warnings**.
 
@@ -294,6 +294,52 @@ Channel is persisted at `[updates] channel = "stable"|"nightly"` in
 `~/.aethon/config.toml`; Settings → Updater toggles it. Override the
 probation window with `AETHON_BOOT_PROBATION_SECS` (clamped [1, 120]).
 
+### Nix devshell wrap (shells + agent bash)
+
+Project roots with `flake.nix`, `.envrc` (`use_flake`/`use_nix` + the
+`direnv` binary), or `shell.nix` get their devshell env auto-applied
+to **both** interactive PTY shell tabs and the agent's pi `bash` tool.
+One source of truth feeds both:
+
+- `src-tauri/src/devshell/{detect,resolve,cache}.rs` — capability-aware
+  detection (direnv > flake > shell.nix, refuses to claim a kind we
+  can't resolve), `nix print-dev-env --json` / `direnv exec env -0`
+  / `nix-shell --run` resolvers, SHA1 fingerprint over `flake.lock`
+  bytes + marker-file (size, mtime). In-memory state machine
+  (`Idle | Resolving | Ready | Failed` with 30 s failed-backoff),
+  on-disk snapshots at `~/.aethon/devshell-cache/<short-hash>/`.
+  Concurrent shell opens collapse onto a single in-flight resolver
+  via a per-slot `tokio::sync::Notify`.
+- `src-tauri/src/commands/devshell.rs` — `devshell_status` (badge),
+  `devshell_env_for_path` (spawnHook), `devshell_refresh`
+  (Settings + future file-watcher). Honours `[devshell] enabled =
+"never"` as an unconditional short-circuit. Per-project override
+  at `<project>/.aethon/devshell.toml` merges over the global section.
+- PTY intercept in `shell/lifecycle/open.rs` — applies the resolved
+  env **after** `TERM`/`COLORTERM`/`AETHON` and **before** `args.env`
+  so explicit per-tab env keeps winning. Lookup is non-blocking; a
+  cold cache returns empty and the shell spawns unwrapped while the
+  background resolver runs (next open in the same tab gets wrapped).
+- Agent intercept is a `customTools` entry with `name === "bash"` —
+  pi-coding-agent's tool registry uses later-wins-by-name in
+  `_refreshToolRegistry`, so passing a `bash`-named `ToolDefinition`
+  via `customTools` shadows the built-in (no fork of pi needed). The
+  shadow gets pi's exposed `BashSpawnHook` attached, which reads a
+  process-local cache in `agent/devshell/client.ts` warmed via the
+  `devshell_query` bridge IPC and invalidated when the frontend
+  forwards `devshell-ready` / `devshell-failed` push events as
+  `devshell_event` messages.
+- Frontend chrome: status-bar `⬡ <kind>` chip reads from
+  `/devshell/{activeRoot, entries[]}`, populated by
+  `src/hooks/useDevshell.ts` (Tauri-event listener + agent forwarder).
+  Settings → Nix devshell section exposes `enabled`, `mode`,
+  `cache_ttl_hours`, `refresh_on_lockfile_change`, and a live
+  "Refresh now" button.
+
+Override per project with `[devshell] enabled = "never"` in
+`<root>/.aethon/devshell.toml`. Use `AETHON_LOG=aethon::devshell=debug`
+to see resolver timing.
+
 ## Agent runtime env
 
 Tauri sets these when spawning `agent/main.ts`:
@@ -373,7 +419,7 @@ changing the toolchain or build inputs.
 - Linux needs `webkit2gtk_4_1` + GTK closure on `PKG_CONFIG_PATH` (set
   manually because numtide/devshell skips pkg-config setup hooks).
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` dodges a Mesa/Wayland crash.
-- macOS pins both `CC=/usr/bin/cc` *and*
+- macOS pins both `CC=/usr/bin/cc` _and_
   `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc`. The first
   steers `cc-rs` build scripts to Apple's toolchain; the second
   overrides what rustc invokes at the link step. Without the linker

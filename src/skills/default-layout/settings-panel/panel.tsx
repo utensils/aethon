@@ -24,6 +24,8 @@ import {
 } from "./hooks";
 import { ModelPicker } from "./model-picker";
 import { readSettingsState } from "./state";
+import { resolvePointer } from "../../../utils/jsonPointer";
+import { refreshDevshell, type DevshellEntry } from "../../../hooks/useDevshell";
 
 export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   const settings = readSettingsState(state);
@@ -341,6 +343,105 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </p>
             </Section>
 
+            <Section id="devshell" title="Nix devshell">
+              <Field label="Detection">
+                <select
+                  className="ae-settings-input"
+                  value={eff.devshell.enabled}
+                  onChange={(e) =>
+                    update({
+                      devshell: {
+                        ...eff.devshell,
+                        enabled:
+                          e.target.value === "always"
+                            ? "always"
+                            : e.target.value === "never"
+                              ? "never"
+                              : "auto",
+                      },
+                    })
+                  }
+                >
+                  <option value="auto">
+                    Auto (detect flake / direnv / shell.nix)
+                  </option>
+                  <option value="always">
+                    Always (require resolver to succeed)
+                  </option>
+                  <option value="never">Never (disable wrapping)</option>
+                </select>
+              </Field>
+              <Field label="Resolver mode">
+                <select
+                  className="ae-settings-input"
+                  value={eff.devshell.mode}
+                  onChange={(e) =>
+                    update({
+                      devshell: {
+                        ...eff.devshell,
+                        mode:
+                          e.target.value === "direnv" ||
+                          e.target.value === "nix" ||
+                          e.target.value === "nix-shell"
+                            ? e.target.value
+                            : "auto",
+                      },
+                    })
+                  }
+                >
+                  <option value="auto">
+                    Auto (direnv when present, else flake, else shell.nix)
+                  </option>
+                  <option value="direnv">Force direnv exec</option>
+                  <option value="nix">Force nix print-dev-env (flake)</option>
+                  <option value="nix-shell">Force nix-shell (legacy)</option>
+                </select>
+              </Field>
+              <Field label="Cache TTL (hours)">
+                <input
+                  type="number"
+                  className="ae-settings-input"
+                  min={0}
+                  max={4320}
+                  value={eff.devshell.cacheTtlHours}
+                  onChange={(e) =>
+                    update({
+                      devshell: {
+                        ...eff.devshell,
+                        cacheTtlHours: Math.max(0, parseInt(e.target.value, 10) || 0),
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Re-resolve on lockfile change">
+                <input
+                  type="checkbox"
+                  checked={eff.devshell.refreshOnLockfileChange}
+                  onChange={(e) =>
+                    update({
+                      devshell: {
+                        ...eff.devshell,
+                        refreshOnLockfileChange: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Active project">
+                <DevshellRefreshControl state={state} />
+              </Field>
+              <p className="ae-settings-note">
+                When a project's root contains a <code>flake.nix</code>,{" "}
+                <code>shell.nix</code>, or <code>.envrc</code> wiring{" "}
+                <code>use_flake</code> / <code>use_nix</code>, Aethon resolves
+                the devshell env once per <code>flake.lock</code> hash and
+                applies it to every shell tab and the agent's bash tool.
+                Override per project with{" "}
+                <code>&lt;project&gt;/.aethon/devshell.toml</code>.
+              </p>
+            </Section>
+
             <Section id="extensions" title="Extensions">
               <ExtensionsList state={state} onEvent={onEvent} />
             </Section>
@@ -407,4 +508,60 @@ function Field(props: { label: string; children: React.ReactNode }) {
       <span className="ae-settings-field-control">{props.children}</span>
     </label>
   );
+}
+
+/** Reads the current devshell badge state out of the central store and
+ *  renders a "Refresh now" button + status string. The button calls
+ *  `devshell_refresh`; status updates flow back through the Tauri
+ *  events and the `useDevshell` hook. */
+function DevshellRefreshControl({ state }: { state: unknown }) {
+  const devshell = resolveDevshellSlice(state);
+  const root = devshell?.activeRoot ?? null;
+  const entry: DevshellEntry | undefined =
+    root && devshell?.entries ? devshell.entries[root] : undefined;
+  const status = entry
+    ? entry.state === "ready"
+      ? `Ready (${entry.kind ?? "auto"}, ${entry.varCount ?? 0} vars)`
+      : entry.state === "resolving"
+        ? "Resolving…"
+        : entry.state === "failed"
+          ? `Failed: ${entry.reason ?? "unknown"}`
+          : entry.state === "idle"
+            ? "Detected (not yet resolved)"
+            : entry.enabled === "never"
+              ? "Disabled by config"
+              : "—"
+    : "—";
+  return (
+    <div className="ae-devshell-refresh">
+      <span className="ae-devshell-status">{status}</span>
+      <button
+        type="button"
+        className="ae-settings-secondary"
+        disabled={!root}
+        onClick={() => {
+          if (root) {
+            refreshDevshell(root).catch((err) => {
+              console.warn("devshell refresh failed:", err);
+            });
+          }
+        }}
+      >
+        Refresh now
+      </button>
+    </div>
+  );
+}
+
+function resolveDevshellSlice(
+  state: unknown,
+): { activeRoot?: string | null; entries?: Record<string, DevshellEntry> } | undefined {
+  try {
+    return resolvePointer(state as Record<string, unknown>, "/devshell") as {
+      activeRoot?: string | null;
+      entries?: Record<string, DevshellEntry>;
+    };
+  } catch {
+    return undefined;
+  }
 }

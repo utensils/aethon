@@ -28,7 +28,14 @@ pub(super) type ChildHandle = Arc<Mutex<Option<Box<dyn Child + Send + Sync>>>>;
 pub(super) type ScrollbackHandle = Arc<Mutex<Scrollback>>;
 pub(super) type ShareHandle = Arc<Mutex<ShareState>>;
 
-pub(super) struct ShellSlot {
+// Visibility is `cfg`-gated. The dev-only inspector commands in
+// `crate::debug` need `pub(crate)` access; the production code
+// surface should keep the tighter `pub(super)` so non-`lifecycle::*`
+// callers can't bypass share-mode / API guards. Release builds
+// retain the strict encapsulation; dev builds open it just enough
+// for the aethon-debug skill.
+#[cfg(debug_assertions)]
+pub(crate) struct ShellSlot {
     pub(super) writer: Box<dyn Write + Send>,
     pub(super) master: Box<dyn MasterPty + Send>,
     pub(super) child: ChildHandle,
@@ -41,8 +48,49 @@ pub(super) struct ShellSlot {
     pub(super) command: String,
 }
 
+#[cfg(not(debug_assertions))]
+pub(super) struct ShellSlot {
+    pub(super) writer: Box<dyn Write + Send>,
+    pub(super) master: Box<dyn MasterPty + Send>,
+    pub(super) child: ChildHandle,
+    pub(super) reader_thread: Option<JoinHandle<()>>,
+    pub(super) scrollback: ScrollbackHandle,
+    pub(super) share: ShareHandle,
+    pub(super) cwd: String,
+    pub(super) command: String,
+}
+
+// Dev-only read accessors for the aethon-debug inspector commands.
+// Production code paths inside `lifecycle::*` keep using the
+// `pub(super)` fields directly. Compiled out of release builds.
+#[cfg(debug_assertions)]
+impl ShellSlot {
+    pub(crate) fn cwd(&self) -> &str {
+        &self.cwd
+    }
+    pub(crate) fn command(&self) -> &str {
+        &self.command
+    }
+    pub(crate) fn share_handle(&self) -> &super::registry::ShareHandle {
+        &self.share
+    }
+    pub(crate) fn scrollback_handle(&self) -> &super::registry::ScrollbackHandle {
+        &self.scrollback
+    }
+    pub(crate) fn writer_mut(&mut self) -> &mut (dyn std::io::Write + Send) {
+        &mut *self.writer
+    }
+}
+
 #[derive(Default)]
 pub struct ShellRegistry {
+    // Visibility is `cfg`-gated so release builds retain the
+    // `pub(super)` encapsulation while debug builds open the field
+    // to `crate::debug`'s inspector commands. See `ShellSlot` for
+    // the same pattern + rationale.
+    #[cfg(debug_assertions)]
+    pub(crate) slots: Mutex<HashMap<String, ShellSlot>>,
+    #[cfg(not(debug_assertions))]
     pub(super) slots: Mutex<HashMap<String, ShellSlot>>,
 }
 

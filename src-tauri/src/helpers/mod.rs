@@ -23,7 +23,8 @@ pub mod paths;
 // them.
 pub use config::{
     FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size, normalize_default_share_mode,
-    normalize_new_tab_kind, normalize_update_channel, parse_config_toml,
+    normalize_devshell_enabled, normalize_devshell_mode, normalize_new_tab_kind,
+    normalize_update_channel, parse_config_toml,
 };
 pub use names::{sanitize_filename_segment, validate_state_name};
 pub use paths::{aethon_dir, resolve_inside_root};
