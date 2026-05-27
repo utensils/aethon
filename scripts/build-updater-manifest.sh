@@ -21,7 +21,8 @@ set -euo pipefail
 #        `https://github.com/utensils/aethon/releases/download/v0.4.0`)
 #
 # Recognized .sig filename pattern → manifest key:
-#   Aethon_*_aarch64.app.tar.gz.sig  -> darwin-aarch64
+#   Aethon_aarch64.app.tar.gz.sig     -> darwin-aarch64
+#   Aethon_*_aarch64.app.tar.gz.sig   -> darwin-aarch64 (with embedded version)
 #
 # The Tauri 2.x updater client looks up `darwin-aarch64`. Both keys
 # point at the same signed `.app.tar.gz` so older 1.x clients (which
@@ -48,7 +49,7 @@ shopt -s nullglob
 for sig in "$SIG_DIR"/*.sig; do
   asset="$(basename "$sig" .sig)"
   case "$asset" in
-    Aethon_*_aarch64.app.tar.gz)
+    Aethon_aarch64.app.tar.gz | Aethon_*_aarch64.app.tar.gz)
       PLATFORMS[darwin-aarch64]="$asset"
       PLATFORMS[darwin-aarch64-app]="$asset"
       ;;
