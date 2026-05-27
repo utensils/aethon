@@ -1,0 +1,346 @@
+name: Nightly Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/release-please.yml"
+      - ".github/workflows/copilot-review.yml"
+      - ".release-please-manifest.json"
+      - "CHANGELOG.md"
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compute-version:
+    name: Compute Version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      short_sha: ${{ steps.v.outputs.short_sha }}
+      last_tag: ${{ steps.v.outputs.last_tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: v
+        run: |
+          set -euo pipefail
+          CURRENT=$(jq -r '.version' package.json)
+          IFS='.' read -r MAJ MIN _ <<< "$CURRENT"
+          NEXT_MINOR="${MAJ}.$((MIN + 1)).0"
+
+          LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git rev-list --count "${LAST_TAG}..HEAD")
+          else
+            COMMITS=$(git rev-list --count HEAD)
+          fi
+
+          SHORT=$(git rev-parse --short=7 HEAD)
+          VERSION="${NEXT_MINOR}-dev.${COMMITS}.g${SHORT}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT}" >> "$GITHUB_OUTPUT"
+          echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Computed nightly version: ${VERSION}"
+
+  prepare-release:
+    name: Prepare Release
+    needs: compute-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Build into a separate `nightly-staging` release so the live
+      # `nightly` release (with the previous build's assets) stays
+      # accessible to the in-app updater for the entire duration of
+      # the build. The `publish` job atomically promotes staging →
+      # nightly once the build succeeds, shrinking the unavailability
+      # window from "the entire build" to a couple of seconds.
+      - name: Reset staging release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.compute-version.outputs.version }}
+          LAST_TAG: ${{ needs.compute-version.outputs.last_tag }}
+        run: |
+          gh release delete nightly-staging --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+
+          NOTES="Automated nightly build of \`${GITHUB_SHA}\`.
+
+          **Version:** \`${VERSION}\`
+          **Built:** $(date -u +%FT%TZ)"
+
+          if [ -n "$LAST_TAG" ]; then
+            DIFF_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...${GITHUB_SHA}"
+            NOTES="${NOTES}
+          [Changes since ${LAST_TAG}](${DIFF_URL})"
+          fi
+
+          NOTES="${NOTES}
+
+          > **These builds are unstable pre-releases.**"
+
+          gh release create nightly-staging \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Nightly ${VERSION}" \
+            --notes "$NOTES" \
+            --prerelease \
+            --draft
+
+  build:
+    name: Build (macos-aarch64)
+    needs: [compute-version, prepare-release]
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Stamp the nightly version into package.json, then let the
+      # project's existing sync-version script propagate it to
+      # tauri.conf.json / src-tauri/Cargo.toml / src-tauri/Cargo.lock.
+      # This is identical to the dev-time `bun run version:sync`
+      # path, so version:check will pass during the bundled build.
+      - name: Stamp nightly version
+        env:
+          NIGHTLY_VERSION: ${{ needs.compute-version.outputs.version }}
+        run: |
+          perl -i -pe 's/("version"\s*:\s*)"[^"]+"/$1"$ENV{NIGHTLY_VERSION}"/' package.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: nightly-macos-aarch64
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Sync stamped version across all files
+        run: bun run version:sync
+
+      # macOS bundles get up to 3 attempts to absorb transient
+      # Apple-notarization flakes. See release-please.yml for the
+      # full rationale.
+      - name: Build and upload (attempt 1)
+        id: bundle1
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: nightly-staging
+          releaseName: "Nightly ${{ needs.compute-version.outputs.version }}"
+          releaseDraft: true
+          prerelease: true
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: --verbose --target aarch64-apple-darwin --bundles app,dmg,updater
+
+      - name: Build and upload (attempt 2 — retry)
+        id: bundle2
+        if: steps.bundle1.outcome == 'failure'
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: nightly-staging
+          releaseName: "Nightly ${{ needs.compute-version.outputs.version }}"
+          releaseDraft: true
+          prerelease: true
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: --verbose --target aarch64-apple-darwin --bundles app,dmg,updater
+
+      - name: Build and upload (attempt 3 — final)
+        if: steps.bundle1.outcome == 'failure' && steps.bundle2.outcome == 'failure'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: nightly-staging
+          releaseName: "Nightly ${{ needs.compute-version.outputs.version }}"
+          releaseDraft: true
+          prerelease: true
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: --verbose --target aarch64-apple-darwin --bundles app,dmg,updater
+
+  publish:
+    name: Publish Nightly
+    needs: [compute-version, build]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Atomic-ish promote: verify staging is intact, build the
+      # final latest.json against the future `nightly` URL,
+      # upload it to staging (assets follow the release through
+      # the retag), then retag staging → nightly and un-draft.
+      # The blackout window between the delete and the retag is
+      # ~1-2s vs the "entire build" window we'd get if we built
+      # straight into `nightly`.
+      - name: Promote staging to nightly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.compute-version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view nightly-staging --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::nightly-staging release is not reachable; aborting promotion"
+            exit 1
+          fi
+
+          mkdir -p staging-sigs
+          for attempt in 1 2 3; do
+            rm -f staging-sigs/*.sig
+            if gh release download nightly-staging \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "*.sig" \
+              --dir staging-sigs \
+              --clobber; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Failed to fetch nightly-staging .sig files after 3 attempts"
+              exit 1
+            fi
+            backoff=$((attempt * 5))
+            echo ".sig fetch attempt $attempt failed; retrying in ${backoff}s"
+            sleep "$backoff"
+          done
+
+          scripts/build-updater-manifest.sh \
+            staging-sigs \
+            "$VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly" \
+            > latest.json
+
+          # Belt-and-braces: guard against the manifest accidentally
+          # advertising staging URLs (which would 404 after retag).
+          if grep -q 'releases/download/nightly-staging/' latest.json; then
+            echo "::error::latest.json contains nightly-staging URLs; aborting"
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            if gh release upload nightly-staging latest.json --clobber --repo "$GITHUB_REPOSITORY"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Failed to upload latest.json after 3 attempts"
+              exit 1
+            fi
+            backoff=$((attempt * 5))
+            echo "latest.json upload attempt $attempt failed; retrying in ${backoff}s"
+            sleep "$backoff"
+          done
+
+          gh release delete nightly --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+
+          # Retag stage: `gh release edit --tag` has been observed to
+          # land the rename server-side while leaving draft=true.
+          # Verify the post-state via `gh api` rather than trusting
+          # the CLI exit code.
+          for attempt in 1 2 3; do
+            if gh release edit nightly-staging \
+              --repo "$GITHUB_REPOSITORY" \
+              --tag nightly \
+              --prerelease; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Failed to retag nightly-staging→nightly after 3 attempts"
+              exit 1
+            fi
+            echo "Retag attempt $attempt failed; retrying in 5s"
+            sleep 5
+          done
+
+          for attempt in 1 2 3; do
+            gh release edit nightly --repo "$GITHUB_REPOSITORY" --draft=false || true
+            draft_state=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/nightly" \
+              --jq '.draft' 2>/dev/null || echo "unknown")
+            if [ "$draft_state" = "false" ]; then
+              echo "nightly release is now draft=false"
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::nightly release is still not draft=false after 3 attempts (state: $draft_state — \"unknown\" means the gh api query failed)"
+              exit 1
+            fi
+            echo "Un-draft attempt $attempt left draft=$draft_state; retrying in 5s"
+            sleep 5
+          done
+
+          # Anonymous-fetch smoke test — this is the actual contract
+          # the in-app updater relies on.
+          MANIFEST_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly/latest.json"
+          for attempt in 1 2 3 4 5; do
+            http=$(curl -sIL -o /dev/null -w "%{http_code}" "$MANIFEST_URL" || echo "000")
+            if [ "$http" = "200" ]; then
+              echo "latest.json reachable at $MANIFEST_URL (HTTP 200)"
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::latest.json at $MANIFEST_URL returned HTTP $http after promotion"
+              exit 1
+            fi
+            echo "latest.json HTTP $http (attempt $attempt); retrying in 10s"
+            sleep 10
+          done
+
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly-staging" 2>/dev/null || true

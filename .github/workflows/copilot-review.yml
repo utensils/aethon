@@ -1,0 +1,62 @@
+name: Request Copilot Review
+
+# Request a Copilot review on every PR that's ready for review.
+# Belt-and-braces: assign the Copilot reviewer via the REST API AND
+# post `@copilot review` as a PR comment, because the REST assignment
+# alone has not reliably kicked Copilot into action.
+#
+# Subsequent commits to an already-assigned PR are re-reviewed by
+# Copilot automatically (its review-on-new-push behavior is a repo
+# setting), so this workflow only needs to fire on the initial
+# request — not on every `synchronize`.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  request-review:
+    name: Request Copilot review
+    # Skip drafts — Copilot won't review them anyway, and the comment
+    # would just be visual noise.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request Copilot as reviewer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # The reviewer slug GitHub uses for the Copilot reviewer
+          # GitHub App. The API treats this string as a `reviewers`
+          # entry (not `team_reviewers`), and a 422 here usually
+          # means the app isn't installed on the repo — surface that
+          # without failing the job, so PR open isn't blocked.
+          set +e
+          response=$(gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/requested_reviewers" \
+            -f 'reviewers[]=copilot-pull-request-reviewer' \
+            2>&1)
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Failed to request Copilot reviewer via REST (likely not installed on repo). Proceeding to comment-based trigger."
+            echo "$response"
+          fi
+
+      - name: Post @copilot review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # The reviewer-request REST call alone does not reliably
+          # kick off a Copilot review; posting the comment is the
+          # documented "wake up Copilot" trigger and is the one
+          # path that has worked consistently for Claudette.
+          gh pr comment "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "@copilot review"

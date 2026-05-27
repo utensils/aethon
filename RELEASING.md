@@ -1,12 +1,62 @@
 # Releasing Aethon
 
-This document covers the release workflow and the one-time setup for signed
-releases that the in-app updater can install.
+Aethon ships two channels:
 
-## 1. Generate a signing keypair (one-time)
+- **Stable** — semver tags (`v0.4.0`, `v0.4.1`, …) cut by
+  [release-please](https://github.com/googleapis/release-please) from
+  Conventional Commits on `main`. The bot opens a release PR; merging
+  it tags + builds + publishes the GitHub Release.
+- **Nightly** — rebuilt on every push to `main`. Always at the
+  `nightly` tag; previous nightly assets remain reachable for the
+  in-app updater until the new build promotes atomically.
 
-The updater verifies bundle signatures with a minisign-style keypair. Generate
-yours and store it offline:
+Both build on **macOS Apple Silicon only** today (the only platform
+we ship). The signed `.app.tar.gz` updater bundle is what
+`tauri-plugin-updater` consumes; the `.dmg` is for manual installs.
+
+## How a release happens
+
+### Stable
+
+1. Commit to `main` with [Conventional Commits](https://www.conventionalcommits.org/)
+   (`feat: …`, `fix: …`, `feat!: …` for breaking).
+2. `release-please` opens (or rebases) a release PR titled `chore(main):
+   release X.Y.Z`. It bumps `package.json`, `package-lock.json`, and
+   `CHANGELOG.md`.
+3. A follow-up job in the same workflow runs `bun run version:sync`
+   on the PR branch and force-pushes the synced `tauri.conf.json` +
+   `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock` to that branch, so
+   `bun run version:check` passes on the PR's CI.
+4. Merge the release PR. release-please creates the `vX.Y.Z` tag +
+   GitHub Release (immediately marked draft).
+5. The build matrix builds + notarizes + signs the macOS bundle and
+   uploads to the draft release. The publish job synthesizes
+   `latest.json` and un-drafts.
+
+To build/publish an existing tag manually, use **Actions → Release
+Please → Run workflow** with the tag input.
+
+### Nightly
+
+Push to `main` → the `Nightly Build` workflow:
+
+1. Computes a `dev`-suffixed version like `0.4.0-dev.46.g9153d99`
+   (next minor + commit-count + short SHA).
+2. Creates a fresh `nightly-staging` release.
+3. Builds + notarizes + signs the macOS bundle into staging.
+4. Synthesizes `latest.json` using the future `nightly/` asset URLs.
+5. Atomically retags `nightly-staging` → `nightly` and un-drafts.
+
+The previous nightly's `latest.json` stays live for the ~entire build
+duration; the actual swap window is ~1–2 s. The updater treats
+"manifest not found" as "no update," which covers that window.
+
+## One-time setup
+
+### Tauri signing key (already done on this repo)
+
+The updater verifies bundle signatures with a minisign-style keypair.
+Generate yours once and store the private key offline:
 
 ```sh
 bun tauri signer generate -w ~/.tauri/aethon.key
@@ -14,98 +64,215 @@ bun tauri signer generate -w ~/.tauri/aethon.key
 # → ~/.tauri/aethon.key.pub  (public, base64)
 ```
 
-**Lose the private key and you can no longer ship updates to existing installs.**
-Back the `.key` file up somewhere durable (e.g. a password manager, encrypted
+**Lose the private key and you can no longer ship updates to existing
+installs.** Back it up somewhere durable (password manager, encrypted
 USB).
 
-## 2. Wire the public key into the app
+Paste the contents of `aethon.key.pub` into `src-tauri/tauri.conf.json`
+under `plugins.updater.pubkey`. Add the GitHub Actions secrets:
 
-Paste the contents of `aethon.key.pub` into `src-tauri/tauri.conf.json` under
-`plugins.updater.pubkey`. Commit the change. Builds without a configured
-pubkey will boot, but `check()` will refuse to validate downloads.
-
-## 3. Provide signing secrets to CI
-
-Add two repository secrets in GitHub (Settings → Secrets and variables →
-Actions):
-
-| Name                                 | Value                                        |
+| Secret                               | Value                                        |
 | ------------------------------------ | -------------------------------------------- |
 | `TAURI_SIGNING_PRIVATE_KEY`          | full contents of `aethon.key` (private file) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the passphrase you chose at generate time    |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | passphrase chosen at generate time           |
 
-`cargo tauri build` reads these env vars and emits `*.sig` files alongside
-each platform bundle. Without them present, no signatures get generated and
-the updater rejects the download.
+### Apple Developer ID + notarization (one-time)
 
-## 4. Cut a release
+CI needs six secrets for macOS code signing + notarization. All six
+must be present or the bundle ships unsigned (and Gatekeeper will
+quarantine it).
 
-The `Release` GitHub Actions workflow runs on `v*.*.*` tags and can also be
-started manually from the Actions UI. It builds macOS Apple Silicon, macOS
-Intel, and Linux x86_64 artifacts with `tauri-apps/tauri-action@v0`, then
-publishes them to the matching GitHub release.
+| Secret                       | What it is                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `APPLE_CERTIFICATE`          | Base64-encoded `.p12` of your **Developer ID Application** cert + private key               |
+| `APPLE_CERTIFICATE_PASSWORD` | Password you set when exporting the `.p12`                                                  |
+| `APPLE_SIGNING_IDENTITY`     | Full identity string, e.g. `Developer ID Application: James Brink (ABC1234XYZ)`             |
+| `APPLE_ID`                   | Your Apple Developer account email                                                          |
+| `APPLE_PASSWORD`             | An **app-specific password** for notarization (not your Apple ID password)                  |
+| `APPLE_TEAM_ID`              | 10-character Team ID from developer.apple.com → Membership                                  |
+
+**Walk-through:**
+
+1. **Generate / fetch the Developer ID Application certificate.**
+
+   On the macOS machine you'll use to bootstrap:
+
+   ```sh
+   open "https://developer.apple.com/account/resources/certificates/list"
+   ```
+
+   - Click **+** → **Developer ID Application** → Continue.
+   - Open **Keychain Access** → **Certificate Assistant** → **Request
+     a Certificate From a Certificate Authority…**
+     - Email: your Apple ID
+     - Common Name: `Aethon Developer ID` (or anything)
+     - Saved to disk → save the `.certSigningRequest`.
+   - Upload that CSR in the browser → download the resulting `.cer`.
+   - Double-click the `.cer` to import it into Keychain Access.
+
+2. **Export the certificate + private key as a `.p12`.**
+
+   In Keychain Access, find the cert (under **My Certificates** in
+   the login keychain). It should have a disclosure arrow showing
+   the associated private key — if not, the CSR step didn't run on
+   this Mac and you'll need to re-do step 1 here.
+
+   - Right-click the cert → **Export…** → Format: **Personal Information
+     Exchange (.p12)**.
+   - Save as `aethon-developer-id.p12`. Set a strong password — that's
+     `APPLE_CERTIFICATE_PASSWORD`.
+
+3. **Base64-encode the `.p12`.**
+
+   ```sh
+   base64 -i aethon-developer-id.p12 -o aethon-developer-id.p12.b64
+   pbcopy < aethon-developer-id.p12.b64    # copies to clipboard
+   ```
+
+   That string is `APPLE_CERTIFICATE`.
+
+4. **Find your signing identity + team ID.**
+
+   ```sh
+   security find-identity -v -p codesigning
+   # 1) ABCDEF…   "Developer ID Application: James Brink (ABC1234XYZ)"
+   ```
+
+   The quoted string is `APPLE_SIGNING_IDENTITY`. The `(ABC1234XYZ)`
+   part is your `APPLE_TEAM_ID` (also visible at
+   developer.apple.com → Membership).
+
+5. **Generate an app-specific password for notarization.**
+
+   Notarization (Apple's notary service) accepts your Apple ID **only**
+   with an app-specific password, never your real password.
+
+   - Visit https://appleid.apple.com → **Sign In and Security** →
+     **App-Specific Passwords** → **Generate password**.
+   - Label: `Aethon CI Notarization` (or anything).
+   - Copy the password. That's `APPLE_PASSWORD`.
+   - `APPLE_ID` is the Apple ID email you signed in with.
+
+6. **Push all six to the repo as Actions secrets.**
+
+   ```sh
+   gh secret set APPLE_CERTIFICATE < aethon-developer-id.p12.b64
+   gh secret set APPLE_CERTIFICATE_PASSWORD       # paste the .p12 password
+   gh secret set APPLE_SIGNING_IDENTITY           # paste the "Developer ID Application: …" string
+   gh secret set APPLE_ID                         # your Apple ID email
+   gh secret set APPLE_PASSWORD                   # the app-specific password
+   gh secret set APPLE_TEAM_ID                    # 10-char team ID
+   ```
+
+   Or via **GitHub → Settings → Secrets and variables → Actions → New
+   repository secret** for each.
+
+7. **Clean up local files** — the `.p12` + base64 file should not
+   stay on disk:
+
+   ```sh
+   rm aethon-developer-id.p12 aethon-developer-id.p12.b64
+   ```
+
+   Keep the `.cer` in Keychain Access on at least one Mac (and back
+   it up via Keychain export to encrypted storage) — that's your
+   only copy.
+
+### Other secrets
+
+| Secret                   | Used by                       | Required?                        |
+| ------------------------ | ----------------------------- | -------------------------------- |
+| `CARGO_REGISTRY_TOKEN`   | `publish-crate` (release-please) | Optional — crate publish skips if absent |
+
+Add via `gh secret set CARGO_REGISTRY_TOKEN`.
+
+## Building signed locally
+
+For testing the full signing + notarization pipeline before pushing
+secrets to CI (or for ad-hoc local releases), the devshell helper
+`build-app` auto-sources `.secrets/signing.env` when that file exists.
+
+Create `.secrets/signing.env` (the directory is gitignored):
 
 ```sh
-bun run version:sync
-bun run version:check
-git tag v0.3.0
-git push origin v0.3.0
+export TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/aethon.key"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="<passphrase>"
+export APPLE_SIGNING_IDENTITY="Developer ID Application: James Brink (28X9H69QGE)"
+export APPLE_ID="brink.james@gmail.com"
+export APPLE_PASSWORD="<app-specific-password>"
+export APPLE_TEAM_ID="28X9H69QGE"
 ```
 
-If `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are
-configured, the workflow keeps `bundle.createUpdaterArtifacts = true`, signs
-the updater bundles, and uploads `latest.json`. If the secrets are absent, it
-still publishes installable app bundles but disables updater artifacts for
-that run so the public release can proceed without invalid signatures. In the
-unsigned Linux path, CI publishes `.deb` and `.rpm` packages and skips AppImage
-packaging; AppImage is reserved for signed updater builds.
+Tighten permissions: `chmod 600 .secrets/signing.env`.
 
-Manual fallback (single-platform):
+Local builds skip `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD`
+because the Developer ID cert is already in your login keychain;
+`codesign` finds it by the identity string. CI needs the base64'd
+`.p12` instead because the runner has no preexisting keychain.
+
+Run:
 
 ```sh
-bun tauri build
-# Bundles + signatures land in src-tauri/target/release/bundle/.
-# Upload them to a GitHub release named after the version (e.g. v0.3.0)
-# along with a hand-written latest.json that points at them.
+build-app
+# ==> sourcing .secrets/signing.env (signed + notarized build)
+# … cargo tauri build …
+# Code signing: identity=Developer ID Application: James Brink (28X9H69QGE)
+# Notarizing bundle…
+# Notarization status: Accepted
+# Stapling notarization ticket
+# Bundles at src-tauri/target/release/bundle/
 ```
 
-`latest.json` shape:
+Verify on a clean install:
 
-```json
-{
-  "version": "0.3.0",
-  "notes": "Release notes here.",
-  "pub_date": "2026-04-26T12:00:00Z",
-  "platforms": {
-    "darwin-aarch64": {
-      "signature": "<paste contents of Aethon_0.3.0_aarch64.app.tar.gz.sig here>",
-      "url": "https://github.com/utensils/aethon/releases/download/v0.3.0/Aethon_0.3.0_aarch64.app.tar.gz"
-    }
-  }
-}
+```sh
+spctl --assess --type execute -v src-tauri/target/release/bundle/macos/Aethon.app
+# source=Notarized Developer ID
 ```
 
-The updater endpoint in `tauri.conf.json` is set to
-`https://github.com/utensils/aethon/releases/latest/download/latest.json`,
-which means uploading `latest.json` as a release asset is enough — GitHub
-serves `latest/download/<asset>` automatically.
+If `.secrets/signing.env` is absent, `build-app` produces an unsigned
+bundle (`source=No Matching Rule`) — useful for fast iteration when you
+don't need a Gatekeeper-clean artifact.
 
-## 5. Verify
+## Verifying signing in CI
 
-After publishing, run a previous build of Aethon and pick **Aethon → Check
-for Updates…** The app should detect the new version, download it, and
-relaunch.
+After secrets are set, kick a stable release (or merge a release-please
+PR). In the build job's log, you should see:
+
+```
+Code signing: identity=Developer ID Application: …
+Notarizing bundle…
+Notarization status: Accepted
+Stapling notarization ticket to …
+```
+
+A signed + notarized `.app` opens on a clean macOS install without
+the "unidentified developer" warning. Download the release `.dmg`,
+mount it, and run:
+
+```sh
+spctl --assess --type execute -v /Volumes/Aethon/Aethon.app
+# Aethon.app: accepted
+# source=Notarized Developer ID
+```
+
+If you see `source=No Matching Rule` or `unsigned`, the secrets are
+either missing or wrong — check the build log for `Code signing
+identity=` lines.
 
 ## Notes
 
-- `package.json` is the app-version source of truth. Bump it when cutting a
-  release, then run `bun run version:sync` so `tauri.conf.json`,
-  `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `package-lock.json`
-  match. CI and release builds run `bun run version:check`.
-- Updates are append-only by design; you can't roll back via the updater. To
-  push a fix, ship a new release with a higher version that re-applies the
-  fix.
-- The `createUpdaterArtifacts` flag in `bundle` triggers Tauri to emit the
-  update-friendly `.app.tar.gz` / `.AppImage.tar.gz` bundles required by the
-  updater. Without it, only the user-installable `.dmg` / `.AppImage` get
-  built and the updater has nothing to point at.
+- **`package.json` is the version source of truth.** `bun run
+  version:sync` propagates the version to `tauri.conf.json`,
+  `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`. CI fails if any
+  drift.
+- Updates are append-only by design; you can't roll back via the
+  updater. Ship a fix as a higher-version release.
+- The `bundle.createUpdaterArtifacts` flag in `tauri.conf.json` is
+  what makes Tauri emit the `.app.tar.gz` bundle the updater needs.
+  Don't disable it.
+- Nightly users currently auto-update only against stable releases
+  (the updater endpoint in `tauri.conf.json` points at
+  `releases/latest/download/latest.json`, which excludes prereleases).
+  If you want nightlies to track nightlies, build with a `--config`
+  override that swaps the endpoint to `releases/download/nightly/latest.json`.
