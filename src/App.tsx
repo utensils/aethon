@@ -10,6 +10,8 @@ import type { Tab } from "./types/tab";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useHostInfo } from "./hooks/useHostInfo";
+import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
+import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs } from "./hooks/useTabs";
@@ -178,6 +180,31 @@ export default function App() {
   // section and the dashboard host banner. Stays passive: hosts come
   // from Tauri events; the active host is a user-driven selection.
   const hostInfo = useHostInfo();
+
+  // Devshell badge wiring. Track the current project root; the hook
+  // hydrates the chip from the Rust cache on switch and stays in
+  // sync via the Tauri `devshell-*` events. Events are also
+  // forwarded into the agent so the bash-tool spawnHook's cache
+  // stays warm without polling.
+  const projectsSlice = state.projects as ProjectsState | undefined;
+  const devshellActiveRoot = projectsSlice ? projectsActiveCwd(projectsSlice) : null;
+  useDevshell({
+    activeRoot: devshellActiveRoot,
+    setDevshellEntry: (root, entry) => {
+      setState((s) => {
+        const prev = (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
+        const entries = { ...(prev.entries ?? {}) };
+        entries[root] = entry;
+        return { ...s, devshell: { ...prev, entries } };
+      });
+    },
+    setDevshellActive: (root) => {
+      setState((s) => {
+        const prev = (s.devshell as { activeRoot?: string | null }) ?? {};
+        return { ...s, devshell: { ...prev, activeRoot: root } };
+      });
+    },
+  });
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the

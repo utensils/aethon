@@ -14,10 +14,12 @@ import { mkdirSync } from "node:fs";
 import {
   SessionManager,
   createAgentSession,
+  createBashToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "../shell-tools";
 import { buildDashboardTools } from "../dashboard-tools";
+import { buildDevshellSpawnHook, ensureFetched as ensureDevshellFetched } from "../devshell";
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
 import { findSessionFileMatchingCwd } from "../session-history";
@@ -84,13 +86,35 @@ export async function ensureTab(
     sessionManager = SessionManager.inMemory();
   }
 
+  // Warm the devshell cache for this tab's cwd in the background.
+  // The fetch races with the first bash tool call; if the resolver
+  // hasn't completed in time, the spawnHook emits a one-shot
+  // advisory warning and the command runs against the host env.
+  // Subsequent commands pick up the devshell env automatically.
+  void ensureDevshellFetched(state, deps, resolvedCwd);
+
+  // Shadow pi's built-in `bash` tool with our own that mounts the
+  // devshell spawnHook. The customTools registry merges later-wins
+  // by name (see pi-coding-agent agent-session.js:1834), so a
+  // `customTools` entry with `name === "bash"` overrides the
+  // baseline built-in. The hook receives pi's BashSpawnContext and
+  // mutates `env` to layer the project's Nix devshell over the host
+  // env — same source of truth as the Rust PTY intercept.
+  const devshellBashTool = createBashToolDefinition(resolvedCwd, {
+    spawnHook: buildDevshellSpawnHook(state, deps),
+  });
+
   const { session } = await createAgentSession({
     authStorage: state.authStorage,
     modelRegistry: state.modelRegistry,
     settingsManager: state.settingsManager,
     sessionManager,
     resourceLoader: state.resourceLoader,
-    customTools: [...buildShellTools(), ...buildDashboardTools()],
+    customTools: [
+      devshellBashTool,
+      ...buildShellTools(),
+      ...buildDashboardTools(),
+    ],
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });
   wrapWithSourceGuard(session.agent, state.projectRoot);

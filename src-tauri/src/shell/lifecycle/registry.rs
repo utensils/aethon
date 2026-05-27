@@ -28,7 +28,7 @@ pub(super) type ChildHandle = Arc<Mutex<Option<Box<dyn Child + Send + Sync>>>>;
 pub(super) type ScrollbackHandle = Arc<Mutex<Scrollback>>;
 pub(super) type ShareHandle = Arc<Mutex<ShareState>>;
 
-pub(super) struct ShellSlot {
+pub(crate) struct ShellSlot {
     pub(super) writer: Box<dyn Write + Send>,
     pub(super) master: Box<dyn MasterPty + Send>,
     pub(super) child: ChildHandle,
@@ -41,9 +41,37 @@ pub(super) struct ShellSlot {
     pub(super) command: String,
 }
 
+// Dev-only read accessors for the aethon-debug inspector commands.
+// Production code paths inside `lifecycle::*` keep using the
+// `pub(super)` fields directly. Compiled out of release builds.
+#[cfg(debug_assertions)]
+impl ShellSlot {
+    pub(crate) fn cwd(&self) -> &str {
+        &self.cwd
+    }
+    pub(crate) fn command(&self) -> &str {
+        &self.command
+    }
+    pub(crate) fn share_handle(&self) -> &super::registry::ShareHandle {
+        &self.share
+    }
+    pub(crate) fn scrollback_handle(&self) -> &super::registry::ScrollbackHandle {
+        &self.scrollback
+    }
+    pub(crate) fn writer_mut(&mut self) -> &mut (dyn std::io::Write + Send) {
+        &mut *self.writer
+    }
+}
+
 #[derive(Default)]
 pub struct ShellRegistry {
-    pub(super) slots: Mutex<HashMap<String, ShellSlot>>,
+    // pub(crate) so the debug-only inspector commands in
+    // `crate::debug` can read scrollback + push raw input regardless
+    // of share-mode (production code paths still use the
+    // `pub(super)`-shaped accessors inside this module). The debug
+    // surface is gated on `cfg(debug_assertions)`, so this widening
+    // doesn't leak into release builds.
+    pub(crate) slots: Mutex<HashMap<String, ShellSlot>>,
 }
 
 impl ShellRegistry {

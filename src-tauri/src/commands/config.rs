@@ -148,6 +148,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let shell = config.get("shell").and_then(|v| v.as_object());
     let shortcuts = config.get("shortcuts").and_then(|v| v.as_object());
     let updates = config.get("updates").and_then(|v| v.as_object());
+    let devshell = config.get("devshell").and_then(|v| v.as_object());
 
     let theme = ui
         .and_then(|m| m.get("theme"))
@@ -209,6 +210,21 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .map(|s| helpers::normalize_update_channel(Some(s)));
     let disable_auto_check = updates
         .and_then(|m| m.get("disableAutoCheck"))
+        .and_then(|v| v.as_bool());
+    let devshell_enabled = devshell
+        .and_then(|m| m.get("enabled"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_devshell_enabled(Some(s)));
+    let devshell_mode = devshell
+        .and_then(|m| m.get("mode"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_devshell_mode(Some(s)));
+    let devshell_cache_ttl_hours = devshell
+        .and_then(|m| m.get("cacheTtlHours"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n.min(u32::MAX as u64));
+    let devshell_refresh_on_lockfile = devshell
+        .and_then(|m| m.get("refreshOnLockfileChange"))
         .and_then(|v| v.as_bool());
 
     // Load the existing file (or seed a fresh document with our header
@@ -308,6 +324,40 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             }
         }
         set_or_clear_bool(updates_table, "disable_auto_check", disable_auto_check);
+    }
+
+    // ── [devshell] ──
+    {
+        let devshell_table = ensure_table(&mut doc, "devshell");
+        match devshell_enabled {
+            Some(v) => {
+                devshell_table.insert("enabled", toml_edit::value(v));
+            }
+            None => {
+                devshell_table.remove("enabled");
+            }
+        }
+        match devshell_mode {
+            Some(v) => {
+                devshell_table.insert("mode", toml_edit::value(v));
+            }
+            None => {
+                devshell_table.remove("mode");
+            }
+        }
+        match devshell_cache_ttl_hours {
+            Some(n) => {
+                devshell_table.insert("cache_ttl_hours", toml_edit::value(n as i64));
+            }
+            None => {
+                devshell_table.remove("cache_ttl_hours");
+            }
+        }
+        set_or_clear_bool(
+            devshell_table,
+            "refresh_on_lockfile_change",
+            devshell_refresh_on_lockfile,
+        );
     }
 
     // Atomic-write: write to <path>.tmp, then rename. fs::rename is

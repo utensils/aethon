@@ -43,6 +43,7 @@ export function useEffectiveConfig(
       shell: { ...snapshot.shell, ...(p.shell ?? {}) },
       shortcuts: { ...snapshot.shortcuts, ...(p.shortcuts ?? {}) },
       updates: { ...snapshot.updates, ...(p.updates ?? {}) },
+      devshell: { ...snapshot.devshell, ...(p.devshell ?? {}) },
     };
   }, [snapshot, pending]);
 }

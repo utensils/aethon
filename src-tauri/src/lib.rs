@@ -33,6 +33,7 @@ mod agent_commands;
 pub(crate) mod agent_process;
 mod boot_probation;
 mod commands;
+mod devshell;
 mod env;
 mod helpers;
 mod logging;
@@ -126,6 +127,7 @@ pub fn run() {
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
         .manage(Arc::new(server::ServerState::new()))
+        .manage(devshell::DevshellCache::shared())
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
                 window_state::schedule_save(
@@ -198,6 +200,9 @@ pub fn run() {
             commands::updater::install_pending_update,
             commands::boot::boot_stage,
             commands::boot::boot_ok,
+            commands::devshell::devshell_status,
+            commands::devshell::devshell_env_for_path,
+            commands::devshell::devshell_refresh,
             shell::shell_open,
             shell::shell_input,
             shell::shell_resize,
@@ -210,6 +215,10 @@ pub fn run() {
             debug::debug_eval_js,
             #[cfg(debug_assertions)]
             debug::debug_eval_result,
+            #[cfg(debug_assertions)]
+            debug::debug_shell_snapshot,
+            #[cfg(debug_assertions)]
+            debug::debug_shell_write_raw,
         ]);
 
     builder
@@ -279,6 +288,16 @@ pub fn run() {
             // never blocks the UI.
             let server_state = app.state::<Arc<server::ServerState>>().inner().clone();
             server::boot(app.handle().clone(), server_state);
+
+            // Devshell cache: point at `~/.aethon/devshell-cache/` and
+            // GC anything older than 30 days. The cache is otherwise
+            // entirely lazy — no resolves happen until a shell open
+            // or agent spawnHook call hits the IPC commands.
+            let app_handle = app.handle().clone();
+            let cache = app.state::<Arc<devshell::DevshellCache>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                commands::devshell::boot_init_cache(&app_handle, &cache).await;
+            });
             Ok(())
         })
         .run(tauri::generate_context!())

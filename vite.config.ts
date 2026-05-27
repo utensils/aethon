@@ -17,6 +17,23 @@ export default defineConfig({
   server: {
     port,
     strictPort: true,
+    watch: {
+      // Nix's `.direnv` directory contains thousands of read-only
+      // store-path mirrors of flake inputs — including stray
+      // `tsconfig.json` / `index.html` files that aren't part of our
+      // source tree. When Vite's tsconfig probe walks into one of
+      // them it triggers a "changed tsconfig file detected — full
+      // reload" cascade that nukes the webview's Tauri IPC mid-call
+      // ("IPC custom protocol failed, Tauri will now use the
+      // postMessage interface instead"). Excluding the whole
+      // `.direnv` tree keeps the dev loop hermetic.
+      ignored: [
+        "**/.direnv/**",
+        "**/target/**",
+        "**/src-tauri/target/**",
+        "**/node_modules/**",
+      ],
+    },
   },
   build: {
     target: "es2022",

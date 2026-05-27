@@ -49,6 +49,13 @@ export interface InboundMessage {
     eventType?: string;
     data?: unknown;
   };
+  /** Devshell push event forwarded from the frontend's Tauri event
+   *  listener. Sent on `devshell-ready` / `devshell-failed` /
+   *  `devshell-resolving` so the agent's local cache stays in sync
+   *  without requiring the spawnHook to poll. */
+  devshellStatus?: "ready" | "failed" | "resolving";
+  devshellRoot?: string;
+  devshellKind?: string;
 }
 
 export function emitGlobalReady(
