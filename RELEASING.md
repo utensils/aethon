@@ -21,7 +21,7 @@ we ship). The signed `.app.tar.gz` updater bundle is what
 1. Commit to `main` with [Conventional Commits](https://www.conventionalcommits.org/)
    (`feat: …`, `fix: …`, `feat!: …` for breaking).
 2. `release-please` opens (or rebases) a release PR titled `chore(main):
-   release X.Y.Z`. It bumps `package.json`, `package-lock.json`, and
+release X.Y.Z`. It bumps `package.json`, `package-lock.json`, and
    `CHANGELOG.md`.
 3. A follow-up job in the same workflow runs `bun run version:sync`
    on the PR branch and force-pushes the synced `tauri.conf.json` +
@@ -82,14 +82,14 @@ CI needs six secrets for macOS code signing + notarization. All six
 must be present or the bundle ships unsigned (and Gatekeeper will
 quarantine it).
 
-| Secret                       | What it is                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `APPLE_CERTIFICATE`          | Base64-encoded `.p12` of your **Developer ID Application** cert + private key               |
-| `APPLE_CERTIFICATE_PASSWORD` | Password you set when exporting the `.p12`                                                  |
-| `APPLE_SIGNING_IDENTITY`     | Full identity string, e.g. `Developer ID Application: James Brink (ABC1234XYZ)`             |
-| `APPLE_ID`                   | Your Apple Developer account email                                                          |
-| `APPLE_PASSWORD`             | An **app-specific password** for notarization (not your Apple ID password)                  |
-| `APPLE_TEAM_ID`              | 10-character Team ID from developer.apple.com → Membership                                  |
+| Secret                       | What it is                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| `APPLE_CERTIFICATE`          | Base64-encoded `.p12` of your **Developer ID Application** cert + private key   |
+| `APPLE_CERTIFICATE_PASSWORD` | Password you set when exporting the `.p12`                                      |
+| `APPLE_SIGNING_IDENTITY`     | Full identity string, e.g. `Developer ID Application: James Brink (ABC1234XYZ)` |
+| `APPLE_ID`                   | Your Apple Developer account email                                              |
+| `APPLE_PASSWORD`             | An **app-specific password** for notarization (not your Apple ID password)      |
+| `APPLE_TEAM_ID`              | 10-character Team ID from developer.apple.com → Membership                      |
 
 **Walk-through:**
 
@@ -116,7 +116,6 @@ quarantine it).
    the login keychain). It should have a disclosure arrow showing
    the associated private key — if not, the CSR step didn't run on
    this Mac and you'll need to re-do step 1 here.
-
    - Right-click the cert → **Export…** → Format: **Personal Information
      Exchange (.p12)**.
    - Save as `aethon-developer-id.p12`. Set a strong password — that's
@@ -146,7 +145,6 @@ quarantine it).
 
    Notarization (Apple's notary service) accepts your Apple ID **only**
    with an app-specific password, never your real password.
-
    - Visit https://appleid.apple.com → **Sign In and Security** →
      **App-Specific Passwords** → **Generate password**.
    - Label: `Aethon CI Notarization` (or anything).
@@ -180,9 +178,9 @@ quarantine it).
 
 ### Other secrets
 
-| Secret                   | Used by                       | Required?                        |
-| ------------------------ | ----------------------------- | -------------------------------- |
-| `CARGO_REGISTRY_TOKEN`   | `publish-crate` (release-please) | Optional — crate publish skips if absent |
+| Secret                 | Used by                          | Required?                                |
+| ---------------------- | -------------------------------- | ---------------------------------------- |
+| `CARGO_REGISTRY_TOKEN` | `publish-crate` (release-please) | Optional — crate publish skips if absent |
 
 Add via `gh secret set CARGO_REGISTRY_TOKEN`.
 
@@ -263,7 +261,7 @@ identity=` lines.
 ## Notes
 
 - **`package.json` is the version source of truth.** `bun run
-  version:sync` propagates the version to `tauri.conf.json`,
+version:sync` propagates the version to `tauri.conf.json`,
   `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`. CI fails if any
   drift.
 - The `bundle.createUpdaterArtifacts` flag in `tauri.conf.json` is
@@ -282,7 +280,7 @@ identity=` lines.
   next launch's webview doesn't ack a healthy boot via `boot_ok`
   within ~20s (override with `AETHON_BOOT_PROBATION_SECS`), the
   shell spawns a helper sub-invocation (`--boot-rollback-helper
-  <sentinel> <pid>`), waits for the parent to exit, restores the
+<sentinel> <pid>`), waits for the parent to exit, restores the
   backup, and relaunches. The next boot shows a dialog summarising
   what rolled back. See `src-tauri/src/boot_probation.rs` for the
   full state machine and the `MAX_PROBATION_ATTEMPTS` heuristic

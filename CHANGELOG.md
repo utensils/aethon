@@ -73,10 +73,10 @@ All notable changes to Aethon. Format loosely follows
   (`@<project>/<ext>` where the scope matches the active project's
   basename) fold INTO the project bucket, while unrelated-scope or
   bare-name packages stay in the user bucket — so `@mold/image-
-  gallery-ui` reads as a project extension under `mold`, but
+gallery-ui` reads as a project extension under `mold`, but
   `@brink/current-context-widget` stays user-level. Rows are sorted
   alphabetically within each group, and each row's hint (`project ·
-  disabled`, `user · disabled`) preserves origin even when toggled
+disabled`, `user · disabled`) preserves origin even when toggled
   off. The group title is always qualified — single-bucket states
   still read `user extensions` rather than a bare `extensions`, so
   scope is never ambiguous. Auto-injection skips when an extensions

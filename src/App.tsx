@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { defaultLayoutSkill } from "./skills/default-layout";
@@ -125,7 +125,6 @@ export default function App() {
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
     shortcutsNewTabKindRef,
-    updateChannelRef,
     reapplyConfig,
   } = useBootConfig({ setState, piDefaultModelRef });
 
@@ -457,28 +456,31 @@ export default function App() {
   });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
-  // Boot config seeds `updateChannelRef` asynchronously; the channel
-  // sync effect below mirrors it into the hook once mounted so the
-  // first background poll hits the right endpoint. The wrapper a few
-  // lines down forwards channel changes from Settings save into the
-  // hook so a follow-up poll uses the new channel.
+  // The hook reads the persisted channel + auto-check toggle from
+  // `config.toml` during its own boot lifecycle, so we don't have to
+  // race the boot-config ref read here. Settings save still routes
+  // through `reapplyConfigWithUpdater` below so a runtime change
+  // updates the hook immediately instead of waiting for the next
+  // poll to pick up the new file.
   const {
     state: updaterState,
-    actions: { checkForUpdates, installNow, dismiss, retryInstall, setChannel: setUpdateChannel },
-  } = useUpdater({ appendSystem, channel: "stable" });
-  useEffect(() => {
-    setUpdateChannel(updateChannelRef.current);
-    // Run once after mount — boot config races our first paint but
-    // settles within a single tick, so a one-shot mirror is enough.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    actions: {
+      checkForUpdates,
+      installNow,
+      dismiss,
+      retryInstall,
+      setChannel: setUpdateChannel,
+      setDisableAutoCheck: setUpdateDisableAutoCheck,
+    },
+  } = useUpdater({ appendSystem });
   const reapplyConfigWithUpdater = useMemo(
     () =>
       (fresh: AethonConfig) => {
         reapplyConfig(fresh);
         setUpdateChannel(fresh.updates.channel);
+        setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
       },
-    [reapplyConfig, setUpdateChannel],
+    [reapplyConfig, setUpdateChannel, setUpdateDisableAutoCheck],
   );
 
   // ---------------------------------------------------------------------

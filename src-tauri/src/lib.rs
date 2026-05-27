@@ -231,9 +231,8 @@ pub fn run() {
                 && let Some(data_dir) = helpers::aethon_dir(Some(home))
             {
                 boot_probation::show_pending_report(app.handle(), &data_dir);
-                let boot_state = Arc::clone(
-                    &app.state::<updater_state::UpdaterState>().boot_probation,
-                );
+                let boot_state =
+                    Arc::clone(&app.state::<updater_state::UpdaterState>().boot_probation);
                 boot_probation::start_monitor(app.handle().clone(), boot_state, data_dir);
             }
 

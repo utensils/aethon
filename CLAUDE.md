@@ -238,11 +238,11 @@ names with slashes before hitting `repos/<r>/branches/{x}`.
 Auto-update lives in three files:
 
 - `src-tauri/src/commands/updater.rs` — `check_for_updates_with_channel`
-  + `install_pending_update`. Channel-aware (stable / nightly) with
-  GitHub-API discovery that prefers the freshest nightly and falls back
-  through the previous two tags. The downloaded `Update` is stashed in
-  `UpdaterState::pending_update` until install fires (it isn't
-  `Serialize` so it can't cross IPC).
+  - `install_pending_update`. Channel-aware (stable / nightly) with
+    GitHub-API discovery that prefers the freshest nightly and falls back
+    through the previous two tags. The downloaded `Update` is stashed in
+    `UpdaterState::pending_update` until install fires (it isn't
+    `Serialize` so it can't cross IPC).
 - `src-tauri/src/boot_probation.rs` — pre-install backup + post-launch
   rollback timer. `install_pending_update` calls `prepare_for_update`
   inside `spawn_blocking` to copy the current `.app` to

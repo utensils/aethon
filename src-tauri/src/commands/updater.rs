@@ -18,9 +18,9 @@ use url::Url;
 use crate::boot_probation;
 use crate::updater_state::UpdaterState;
 
-const STABLE_URL: &str =
-    "https://github.com/utensils/aethon/releases/latest/download/latest.json";
-const NIGHTLY_URL: &str = "https://github.com/utensils/aethon/releases/download/nightly/latest.json";
+const STABLE_URL: &str = "https://github.com/utensils/aethon/releases/latest/download/latest.json";
+const NIGHTLY_URL: &str =
+    "https://github.com/utensils/aethon/releases/download/nightly/latest.json";
 
 const GITHUB_RELEASES_API: &str =
     "https://api.github.com/repos/utensils/aethon/releases?per_page=10";
@@ -305,6 +305,17 @@ pub async fn install_pending_update(
                     total = c;
                 }
                 downloaded += chunk_len as u64;
+                // Hold back the emit until we know the payload size.
+                // tauri-plugin-updater's callback signature allows
+                // `content_len = None` on the first chunk, and a
+                // divide-by-zero against `total = 0` would keep
+                // emitting `0%` for every subsequent chunk until the
+                // size finally arrives. Letting the frontend stay on
+                // its prior "Preparing…" state is a better UX than a
+                // bar pinned at 0%.
+                if total == 0 {
+                    return;
+                }
                 let pct = downloaded
                     .checked_mul(100)
                     .and_then(|v| v.checked_div(total))
@@ -330,8 +341,7 @@ fn aethon_data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    crate::helpers::aethon_dir(Some(home))
-        .ok_or_else(|| "aethon dir unresolved".to_string())
+    crate::helpers::aethon_dir(Some(home)).ok_or_else(|| "aethon dir unresolved".to_string())
 }
 
 #[cfg(test)]
