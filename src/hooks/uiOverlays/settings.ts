@@ -48,6 +48,9 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       agent: unknown;
       shell: unknown;
       shortcuts: unknown;
+      voice: unknown;
+      updates: unknown;
+      devshell: unknown;
     }>,
   ) {
     setState((prev) => {
@@ -102,11 +105,19 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
         ...(live?.shortcuts ?? {}),
         ...((pending as { shortcuts?: object }).shortcuts ?? {}),
       },
+      voice: {
+        ...(live?.voice ?? {}),
+        ...((pending as { voice?: object }).voice ?? {}),
+      },
       // Likewise for `[updates]` — preserve channel + auto-check settings
       // across saves of unrelated sections.
       updates: {
         ...(live?.updates ?? {}),
         ...((pending as { updates?: object }).updates ?? {}),
+      },
+      devshell: {
+        ...(live?.devshell ?? {}),
+        ...((pending as { devshell?: object }).devshell ?? {}),
       },
     };
     try {

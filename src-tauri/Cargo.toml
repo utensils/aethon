@@ -29,6 +29,8 @@ tokio = { version = "1.52.1", features = [
   "io-util",
   "time",
   "sync",
+  "fs",
+  "rt",
   "process",
   "macros",
 ] }
@@ -57,10 +59,48 @@ url = "2"
 reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls",
   "json",
+  "stream",
 ] }
+async-trait = "0.1"
+futures-util = "0.3"
+parking_lot = "0.12"
+cpal = { version = "0.17", optional = true }
+candle-core = { version = "=0.9.2", optional = true }
+candle-nn = { version = "=0.9.2", optional = true }
+candle-transformers = { version = "=0.9.2", optional = true }
+tokenizers = { version = "0.22", default-features = false, features = ["onig"], optional = true }
+rubato = { version = "2", default-features = false, optional = true }
+hound = { version = "3", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { version = "=0.9.2", features = ["metal"], optional = true }
+candle-nn = { version = "=0.9.2", features = ["metal"], optional = true }
+candle-transformers = { version = "=0.9.2", features = ["metal"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Threading",
+  "Win32_System_Variant",
+  "Win32_Media_Audio",
+  "Win32_Media_Speech",
+] }
+
+[features]
+default = ["voice"]
+voice = [
+  "dep:cpal",
+  "dep:candle-core",
+  "dep:candle-nn",
+  "dep:candle-transformers",
+  "dep:tokenizers",
+  "dep:rubato",
+  "dep:hound",
+]
 
 [dev-dependencies]
 tempfile = "3"

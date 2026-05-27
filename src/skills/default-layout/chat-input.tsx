@@ -1,6 +1,9 @@
 import {
   createElement,
+  useCallback,
+  useEffect,
   useRef,
+  useState,
   type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
@@ -21,6 +24,13 @@ import type { QueuedMessage } from "../../types/tab";
 import { SlashPicker } from "./slash-picker";
 import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
+import { useVoiceHotkey } from "../../hooks/useVoiceHotkey";
+import { useVoiceInput } from "../../hooks/useVoiceInput";
+import {
+  insertTranscriptAtSelection,
+  shouldOpenVoiceSettingsForError,
+} from "../../utils/voice";
+import { VoiceMeter } from "./voice-meter";
 import {
   type ArgMatch,
   type CommandMatch,
@@ -98,7 +108,81 @@ export function ChatInput({
     state,
   });
   const inputContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { composerHeight, startComposerResize } = useComposerResize();
+  const insertTranscript = useCallback(
+    (transcript: string) => {
+      const textarea = textareaRef.current;
+      const start = textarea?.selectionStart ?? value.length;
+      const end = textarea?.selectionEnd ?? value.length;
+      const next = insertTranscriptAtSelection(
+        textarea?.value ?? value,
+        transcript,
+        start,
+        end,
+      );
+      setValue(next.text);
+      commitDraft(next.text);
+      requestAnimationFrame(() => {
+        const current = textareaRef.current;
+        if (!current) return;
+        current.focus();
+        current.selectionStart = current.selectionEnd = next.cursor;
+      });
+    },
+    [commitDraft, setValue, value],
+  );
+  const voice = useVoiceInput(insertTranscript, (providerId) => {
+    onEvent("voice:setup", { providerId });
+  });
+  const voiceState = voice.state;
+  const cancelVoice = voice.cancel;
+  const voiceConfig = (state.voice as
+    | { toggleHotkey?: string | null; holdHotkey?: string | null }
+    | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
+  const isVoiceInputBlocked = useCallback(
+    () => {
+      const settings = state.settings as { open?: boolean } | undefined;
+      const palette = state.commandPalette as { open?: boolean } | undefined;
+      const search = state.search as { open?: boolean } | undefined;
+      return !!settings?.open || !!palette?.open || !!search?.open;
+    },
+    [state],
+  );
+  useVoiceHotkey(
+    voice,
+    voiceConfig.toggleHotkey ?? "mod+shift+m",
+    voiceConfig.holdHotkey ?? null,
+    isVoiceInputBlocked,
+  );
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (event: MediaQueryListEvent) =>
+      setReducedMotion(event.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+  useEffect(() => {
+    if (voiceState !== "recording") return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelVoice();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [voiceState, cancelVoice]);
+  const useDynamicMeter =
+    !reducedMotion && voice.activeProvider?.recordingMode === "native";
+  const voiceErrorOpensSettings = shouldOpenVoiceSettingsForError(
+    voice.activeProvider,
+  );
 
   const insertMatch = (m: PickerMatch) => {
     const text =
@@ -124,6 +208,9 @@ export function ChatInput({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const submit = (mode: "normal" | "steer") => {
+      if (voice.state === "recording" || voice.state === "starting") {
+        voice.cancel();
+      }
       const v = (e.target as HTMLTextAreaElement).value;
       if (v.trim().length === 0) {
         if (mode === "steer" && canSteerQueuedMessage) {
@@ -192,6 +279,9 @@ export function ChatInput({
 
   const handleClick = () => {
     if (value.trim().length > 0) {
+      if (voice.state === "recording" || voice.state === "starting") {
+        voice.cancel();
+      }
       commitDraft(value);
       onEvent("submit", { value, mode: "normal" });
     }
@@ -245,6 +335,7 @@ export function ChatInput({
       )}
       <div className="a2ui-chat-input-field-wrap">
         <textarea
+          ref={textareaRef}
           className="a2ui-chat-input-field"
           placeholder={placeholder}
           value={value}
@@ -259,6 +350,41 @@ export function ChatInput({
             {queueBadgeFormat.replace("{n}", String(queueCount))}
           </span>
         )}
+        <VoiceStatus
+          voice={voice}
+          useDynamicMeter={useDynamicMeter}
+          errorOpensSettings={voiceErrorOpensSettings}
+          onOpenSettings={() =>
+            onEvent("voice:setup", { providerId: voice.activeProvider?.id })
+          }
+        />
+        <button
+          type="button"
+          className={`a2ui-chat-input-voice ${voice.state === "recording" ? "a2ui-chat-input-voice-recording" : ""} ${
+            voice.state === "starting" || voice.state === "transcribing"
+              ? "a2ui-chat-input-voice-busy"
+              : ""
+          }`}
+          onClick={() => {
+            if (voice.state === "recording") voice.stop();
+            else if (voice.state === "starting" || voice.state === "transcribing") {
+              voice.cancel();
+            } else {
+              void voice.start();
+            }
+          }}
+          disabled={busy}
+          aria-label={voiceButtonLabel(voice.state)}
+          title={voiceButtonLabel(voice.state)}
+        >
+          {voice.state === "starting" || voice.state === "transcribing" ? (
+            <SpinnerIcon />
+          ) : voice.state === "recording" ? (
+            <StopVoiceIcon />
+          ) : (
+            <MicIcon />
+          )}
+        </button>
         {busy ? (
           <button
             type="button"
@@ -315,5 +441,126 @@ export function ChatInput({
         )}
       </div>
     </div>
+  );
+}
+
+type VoiceView = ReturnType<typeof useVoiceInput>;
+
+function VoiceStatus({
+  voice,
+  useDynamicMeter,
+  errorOpensSettings,
+  onOpenSettings,
+}: {
+  voice: VoiceView;
+  useDynamicMeter: boolean;
+  errorOpensSettings: boolean;
+  onOpenSettings: () => void;
+}) {
+  if (voice.state === "recording") {
+    return (
+      <div className="a2ui-chat-input-voice-status">
+        <VoiceMeter
+          elapsedSeconds={voice.elapsedSeconds}
+          useDynamicMeter={useDynamicMeter}
+        />
+      </div>
+    );
+  }
+  if (voice.state === "starting" || voice.state === "transcribing") {
+    return (
+      <div className="a2ui-chat-input-voice-status" aria-live="polite">
+        <SpinnerIcon />
+        <span>
+          {voice.state === "starting"
+            ? "Starting..."
+            : voice.activeProvider?.name
+              ? `Transcribing with ${voice.activeProvider.name}`
+              : "Transcribing..."}
+        </span>
+      </div>
+    );
+  }
+  if (voice.state === "error" && voice.error) {
+    return (
+      <button
+        type="button"
+        className="a2ui-chat-input-voice-error"
+        onClick={errorOpensSettings ? onOpenSettings : voice.cancel}
+        title={voice.error}
+      >
+        <span aria-hidden="true">!</span>
+        <span>{voice.error}</span>
+      </button>
+    );
+  }
+  if (voice.state === "setup-required" && voice.error) {
+    return (
+      <button
+        type="button"
+        className="a2ui-chat-input-voice-error"
+        onClick={onOpenSettings}
+        title={voice.error}
+      >
+        <span aria-hidden="true">!</span>
+        <span>{voice.error}</span>
+      </button>
+    );
+  }
+  return null;
+}
+
+function voiceButtonLabel(state: VoiceView["state"]): string {
+  if (state === "recording") return "Stop voice input";
+  if (state === "starting") return "Cancel voice input";
+  if (state === "transcribing") return "Cancel transcription";
+  return "Voice input";
+}
+
+function MicIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M8 2.25a2.25 2.25 0 0 0-2.25 2.25V8a2.25 2.25 0 0 0 4.5 0V4.5A2.25 2.25 0 0 0 8 2.25Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.45"
+      />
+      <path
+        d="M3.75 7.25V8a4.25 4.25 0 0 0 8.5 0v-.75M8 12.25v1.5M5.75 13.75h4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.45"
+      />
+    </svg>
+  );
+}
+
+function StopVoiceIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg
+      className="a2ui-chat-input-voice-spinner"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        d="M8 2.25a5.75 5.75 0 1 1-5.16 3.22"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.7"
+      />
+    </svg>
   );
 }

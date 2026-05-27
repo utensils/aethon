@@ -29,4 +29,5 @@ pub mod host;
 pub mod server;
 pub mod session;
 pub mod updater;
+pub mod voice;
 pub mod window;

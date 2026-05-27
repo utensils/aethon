@@ -74,6 +74,12 @@ pub struct ShortcutsConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct VoiceConfig {
+    pub toggle_hotkey: Option<String>,
+    pub hold_hotkey: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct UpdatesConfig {
     /// Which release channel the auto-updater checks. Allowed values:
     /// `"stable"` (default) tracks `releases/latest`; `"nightly"`
@@ -136,6 +142,8 @@ pub struct AethonConfig {
     pub shell: ShellConfig,
     #[serde(default)]
     pub shortcuts: ShortcutsConfig,
+    #[serde(default)]
+    pub voice: VoiceConfig,
     #[serde(default)]
     pub extensions: ExtensionsConfig,
     #[serde(default)]
@@ -200,6 +208,17 @@ pub fn normalize_new_tab_kind(input: Option<&str>) -> &'static str {
         Some("shell") => "shell",
         // Includes Some("agent"), Some(<unknown>), and None.
         _ => "agent",
+    }
+}
+
+pub fn default_voice_hold_hotkey() -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        Some("AltRight")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
     }
 }
 
@@ -278,6 +297,10 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "shortcuts": {
             "newTabKind": new_tab_kind,
+        },
+        "voice": {
+            "toggleHotkey": cfg.voice.toggle_hotkey.unwrap_or_else(|| "mod+shift+m".to_string()),
+            "holdHotkey": cfg.voice.hold_hotkey.or_else(|| default_voice_hold_hotkey().map(str::to_string)),
         },
         "extensions": {
             "stateWarnKb": state_warn_kb,
@@ -444,6 +467,28 @@ mod tests {
         assert_eq!(v["shortcuts"]["newTabKind"], "shell");
         let v = parse_config_toml("[shortcuts]\nnew_tab_kind = \"yolo\"\n");
         assert_eq!(v["shortcuts"]["newTabKind"], "agent");
+    }
+
+    #[test]
+    fn parse_config_toml_voice_defaults_are_stable() {
+        let v = parse_config_toml("");
+        assert_eq!(v["voice"]["toggleHotkey"], "mod+shift+m");
+        #[cfg(target_os = "macos")]
+        assert_eq!(v["voice"]["holdHotkey"], "AltRight");
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(v["voice"]["holdHotkey"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_voice_hotkeys() {
+        let v = parse_config_toml(
+            r#"[voice]
+toggle_hotkey = "mod+alt+v"
+hold_hotkey = "AltRight"
+"#,
+        );
+        assert_eq!(v["voice"]["toggleHotkey"], "mod+alt+v");
+        assert_eq!(v["voice"]["holdHotkey"], "AltRight");
     }
 
     #[test]
