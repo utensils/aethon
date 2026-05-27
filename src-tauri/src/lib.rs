@@ -31,6 +31,7 @@ use tauri::{Emitter, Manager};
 
 mod agent_commands;
 pub(crate) mod agent_process;
+mod boot_probation;
 mod commands;
 mod env;
 mod helpers;
@@ -38,6 +39,7 @@ mod logging;
 mod paste;
 mod server;
 mod shell;
+mod updater_state;
 mod window_state;
 
 #[cfg(debug_assertions)]
@@ -45,9 +47,55 @@ mod debug;
 
 // ─────────────────────────── run ────────────────────────────
 
+/// Pre-Tauri home-dir lookup used by the pre-builder `ProcessStarted` boot
+/// stage record. Tauri's `path().home_dir()` needs an `AppHandle` we don't
+/// have yet at the very top of `run()`. We fall back to the same env vars
+/// Tauri eventually resolves so the recorded path matches.
+fn home_dir_for_logging() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        return std::env::var_os("USERPROFILE").map(std::path::PathBuf::from);
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Boot-rollback helper sub-invocation: when the post-update
+    // probation timer fires, the parent spawns this same binary with
+    // `--boot-rollback-helper <sentinel-path> <parent-pid>`. The
+    // helper waits for the parent to exit, restores the previous
+    // .app bundle from the backup recorded by `prepare_for_update`,
+    // writes a rollback report, and relaunches. We short-circuit
+    // BEFORE Tauri builder construction so we don't initialise the
+    // webview or tracing in helper mode.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(result) = boot_probation::run_helper_from_args(&args) {
+        if let Err(e) = result {
+            eprintln!("boot rollback helper failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     logging::init_tracing();
+
+    // Record the earliest boot stage on the sentinel (if present). If
+    // we crash before the webview ever mounts, the eventual rollback
+    // report can still pinpoint how far this launch got. Failure to
+    // record is non-fatal — the sentinel either doesn't exist (normal
+    // launch) or `start_monitor` will surface the issue.
+    if let Some(dir) = helpers::aethon_dir(home_dir_for_logging()) {
+        let _ = boot_probation::record_boot_stage(
+            &dir,
+            boot_probation::BootStage::ProcessStarted,
+            None,
+        );
+    }
+
     let mut builder = tauri::Builder::default();
     builder = builder.plugin(tauri_plugin_process::init());
     builder = builder.plugin(tauri_plugin_opener::init());
@@ -76,6 +124,7 @@ pub fn run() {
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
         .manage(window_state::WindowStateStore::new())
+        .manage(updater_state::UpdaterState::new())
         .manage(Arc::new(server::ServerState::new()))
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
@@ -145,6 +194,10 @@ pub fn run() {
             commands::window::updater_available,
             commands::window::toggle_fullscreen,
             commands::window::toggle_devtools,
+            commands::updater::check_for_updates_with_channel,
+            commands::updater::install_pending_update,
+            commands::boot::boot_stage,
+            commands::boot::boot_ok,
             shell::shell_open,
             shell::shell_input,
             shell::shell_resize,
@@ -166,6 +219,23 @@ pub fn run() {
             }
             #[cfg(debug_assertions)]
             debug::start_debug_server(app.handle().clone());
+
+            // Boot-probation wiring. If the last launch was a post-update
+            // boot that timed out and rolled back, this surfaces a one-shot
+            // dialog explaining what happened. If a probation sentinel
+            // exists from a just-installed update, this arms the timeout
+            // that the frontend cancels via `boot_ok` once it reaches a
+            // healthy render. Both calls are no-ops when there's no
+            // sentinel/report on disk — they don't slow normal launches.
+            if let Ok(home) = app.path().home_dir()
+                && let Some(data_dir) = helpers::aethon_dir(Some(home))
+            {
+                boot_probation::show_pending_report(app.handle(), &data_dir);
+                let boot_state = Arc::clone(
+                    &app.state::<updater_state::UpdaterState>().boot_probation,
+                );
+                boot_probation::start_monitor(app.handle().clone(), boot_state, data_dir);
+            }
 
             // Native menu — replaces Tauri's auto-generated default. Each
             // app-specific item emits a `menu` Tauri event whose payload

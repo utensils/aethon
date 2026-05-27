@@ -11,11 +11,15 @@
 //!   file-watcher, npm extension installer.
 //! - [`git`] — local git status, worktrees, GitHub data, issues, and picker.
 //! - [`window`] — fullscreen / DevTools / updater gating.
+//! - [`updater`] — channel-aware update check + install + boot probation
+//!   prepare.
+//! - [`boot`] — `boot_stage` / `boot_ok` IPC for post-update rollback ack.
 //!
 //! `tauri::generate_handler!` in `lib.rs` references each command via
 //! its full module path so the macro-generated `__cmd__*` siblings
 //! resolve correctly.
 
+pub mod boot;
 pub mod config;
 pub mod extensions;
 pub mod fs;
@@ -23,4 +27,5 @@ pub mod git;
 pub mod host;
 pub mod server;
 pub mod session;
+pub mod updater;
 pub mod window;

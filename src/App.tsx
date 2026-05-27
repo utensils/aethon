@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SkillRegistry } from "./skills/SkillRegistry";
 import { defaultLayoutSkill } from "./skills/default-layout";
@@ -24,6 +24,8 @@ import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
+import { UpdateBanner } from "./components/UpdateBanner";
+import type { AethonConfig } from "./config";
 import { useProjectOps } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import {
@@ -123,6 +125,7 @@ export default function App() {
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
     shortcutsNewTabKindRef,
+    updateChannelRef,
     reapplyConfig,
   } = useBootConfig({ setState, piDefaultModelRef });
 
@@ -454,7 +457,29 @@ export default function App() {
   });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
-  const { checkForUpdates } = useUpdater({ appendSystem });
+  // Boot config seeds `updateChannelRef` asynchronously; the channel
+  // sync effect below mirrors it into the hook once mounted so the
+  // first background poll hits the right endpoint. The wrapper a few
+  // lines down forwards channel changes from Settings save into the
+  // hook so a follow-up poll uses the new channel.
+  const {
+    state: updaterState,
+    actions: { checkForUpdates, installNow, dismiss, retryInstall, setChannel: setUpdateChannel },
+  } = useUpdater({ appendSystem, channel: "stable" });
+  useEffect(() => {
+    setUpdateChannel(updateChannelRef.current);
+    // Run once after mount — boot config races our first paint but
+    // settles within a single tick, so a one-shot mirror is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const reapplyConfigWithUpdater = useMemo(
+    () =>
+      (fresh: AethonConfig) => {
+        reapplyConfig(fresh);
+        setUpdateChannel(fresh.updates.channel);
+      },
+    [reapplyConfig, setUpdateChannel],
+  );
 
   // ---------------------------------------------------------------------
   // Settings panel + session search + command palette. Three modal
@@ -479,7 +504,7 @@ export default function App() {
   } = useUiOverlays({
     setState,
     stateRef,
-    reapplyConfig,
+    reapplyConfig: reapplyConfigWithUpdater,
     pushNotification,
     setActiveTab,
     newTab,
@@ -738,17 +763,25 @@ export default function App() {
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
 
   return (
-    <AppRoot
-      registry={registry}
-      layout={layout}
-      renderState={renderState}
-      setState={setState}
-      onEvent={onEvent}
-      activeTabId={state.activeTabId as string | undefined}
-      notificationsOpen={notificationsOpen}
-      paletteOpen={paletteOpen}
-      settingsOpen={settingsOpen}
-      searchOpen={searchOpen}
-    />
+    <>
+      <UpdateBanner
+        state={updaterState}
+        onInstallNow={installNow}
+        onDismiss={dismiss}
+        onRetry={retryInstall}
+      />
+      <AppRoot
+        registry={registry}
+        layout={layout}
+        renderState={renderState}
+        setState={setState}
+        onEvent={onEvent}
+        activeTabId={state.activeTabId as string | undefined}
+        notificationsOpen={notificationsOpen}
+        paletteOpen={paletteOpen}
+        settingsOpen={settingsOpen}
+        searchOpen={searchOpen}
+      />
+    </>
   );
 }

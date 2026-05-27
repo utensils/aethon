@@ -266,13 +266,24 @@ identity=` lines.
   version:sync` propagates the version to `tauri.conf.json`,
   `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`. CI fails if any
   drift.
-- Updates are append-only by design; you can't roll back via the
-  updater. Ship a fix as a higher-version release.
 - The `bundle.createUpdaterArtifacts` flag in `tauri.conf.json` is
   what makes Tauri emit the `.app.tar.gz` bundle the updater needs.
   Don't disable it.
-- Nightly users currently auto-update only against stable releases
-  (the updater endpoint in `tauri.conf.json` points at
-  `releases/latest/download/latest.json`, which excludes prereleases).
-  If you want nightlies to track nightlies, build with a `--config`
-  override that swaps the endpoint to `releases/download/nightly/latest.json`.
+- **In-app channel switching.** Settings → Updater toggles between
+  `stable` (signed releases) and `nightly` (the `nightly` GitHub tag).
+  The channel is persisted in `~/.aethon/config.toml` under
+  `[updates] channel = "..."`; the `commands::updater` module
+  resolves endpoints per channel at runtime, so the bundled
+  `tauri.conf.json` endpoint only sets the default for the very
+  first launch.
+- **Boot-probation rollback.** Each in-app update first copies the
+  installed `.app` bundle to `~/.aethon/updates/previous/<version>/`
+  and writes a sentinel to `~/.aethon/boot-probation.json`. If the
+  next launch's webview doesn't ack a healthy boot via `boot_ok`
+  within ~20s (override with `AETHON_BOOT_PROBATION_SECS`), the
+  shell spawns a helper sub-invocation (`--boot-rollback-helper
+  <sentinel> <pid>`), waits for the parent to exit, restores the
+  backup, and relaunches. The next boot shows a dialog summarising
+  what rolled back. See `src-tauri/src/boot_probation.rs` for the
+  full state machine and the `MAX_PROBATION_ATTEMPTS` heuristic
+  that prevents force-quit-during-probation loops.

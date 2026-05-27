@@ -304,18 +304,40 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               <Field label="Release channel">
                 <select
                   className="ae-settings-input"
-                  value="stable"
-                  disabled
-                  title="Multi-channel releases land in M7"
+                  value={eff.updates.channel}
+                  onChange={(e) =>
+                    update({
+                      updates: {
+                        ...eff.updates,
+                        channel:
+                          e.target.value === "nightly" ? "nightly" : "stable",
+                      },
+                    })
+                  }
                 >
-                  <option value="stable">stable</option>
-                  <option value="beta">beta (M7)</option>
-                  <option value="nightly">nightly (M7)</option>
+                  <option value="stable">Stable</option>
+                  <option value="nightly">Nightly (latest from main)</option>
                 </select>
               </Field>
+              <Field label="Background update check">
+                <input
+                  type="checkbox"
+                  checked={!eff.updates.disableAutoCheck}
+                  onChange={(e) =>
+                    update({
+                      updates: {
+                        ...eff.updates,
+                        disableAutoCheck: !e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
               <p className="ae-settings-note">
-                Channel selection ships with M7's release pipeline. Until
-                then, update via the system menu's Check for Updates.
+                Stable tracks signed releases. Nightly follows the{" "}
+                <code>nightly</code> tag — newer features, fewer guarantees.
+                Each install backs up the previous build; a hang within
+                ~20s of launch automatically rolls back.
               </p>
             </Section>
 
