@@ -89,6 +89,23 @@ pub(super) fn ensure_agent_spawned(
         stderr_tail,
     });
 
+    // Bridge processes start with `frontendReady = false` and only
+    // flip it when the dispatcher receives `{"type":"report"}`. The
+    // React tree sends one such message on mount, but `route_payload_key`
+    // pins it to `__global__` — workers would otherwise stay un-ready
+    // forever and `sendQuery` (e.g. devshell `env_for_path`) would race
+    // against a 5s timeout. Synthesise the handshake here so every
+    // bridge — global and per-tab — comes up ready.
+    if let Some(stdin) = child.stdin.as_mut()
+        && let Err(e) = inject_initial_handshake(stdin)
+    {
+        tracing::warn!(
+            target: "aethon::agent",
+            key = key,
+            "failed to inject initial handshake: {e}"
+        );
+    }
+
     guard.insert(key.to_string(), Arc::new(Mutex::new(child)));
     Ok(())
 }
@@ -175,5 +192,49 @@ fn apply_worker_env(command: &mut Command, worker: Option<&AgentWorker>) {
         && !cwd.is_empty()
     {
         command.env("AETHON_WORKER_CWD", cwd);
+    }
+}
+
+/// Synthesise the `{"type":"report"}` handshake that the React tree
+/// would otherwise send on mount. Worker bridges are spawned in
+/// response to a frontend action (e.g. `agent_command` for a tab), so
+/// the webview is provably up by the time we get here — but the
+/// frontend's `useBridgeMessages` boot effect routes that message to
+/// the `__global__` agent only (see `process::route_payload_key`).
+/// Without this injection a worker's `state.frontendReady` stays
+/// `false`, `sendQuery` in `agent/devshell/client.ts` races against
+/// its 5s timeout and resolves to `frontend_not_ready`, and pi's bash
+/// tool inherits the host env instead of the project's Nix devshell.
+///
+/// Sending it for the global agent too is harmless: the React tree
+/// will send its own `report` shortly after mount, and
+/// `markFrontendReady` is idempotent.
+pub(super) fn inject_initial_handshake<W: std::io::Write>(stdin: &mut W) -> std::io::Result<()> {
+    stdin.write_all(b"{\"type\":\"report\"}\n")?;
+    stdin.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inject_initial_handshake;
+
+    #[test]
+    fn handshake_is_a_single_newline_terminated_report_line() {
+        let mut buf = Vec::<u8>::new();
+        inject_initial_handshake(&mut buf).unwrap();
+        let s = String::from_utf8(buf).expect("ascii");
+        assert_eq!(s, "{\"type\":\"report\"}\n");
+        // Dispatcher reads line-by-line; exactly one newline keeps us
+        // off the "two messages on one line" footgun.
+        assert_eq!(s.matches('\n').count(), 1);
+    }
+
+    #[test]
+    fn handshake_parses_to_the_report_message_shape() {
+        let mut buf = Vec::<u8>::new();
+        inject_initial_handshake(&mut buf).unwrap();
+        let line = std::str::from_utf8(&buf).unwrap().trim_end();
+        let v: serde_json::Value = serde_json::from_str(line).expect("valid json");
+        assert_eq!(v.get("type").and_then(|t| t.as_str()), Some("report"));
     }
 }
