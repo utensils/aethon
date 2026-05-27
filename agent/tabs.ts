@@ -12,6 +12,7 @@ import {
 } from "./session-history";
 import { ensureTab, tabSessionDir } from "./tab-lifecycle";
 import { unloadProjectExtensions } from "./projectLifecycle";
+import { modelRegistryForModelId } from "./auth-profiles";
 
 export async function handleTabOpen(
   state: AethonAgentState,
@@ -24,12 +25,19 @@ export async function handleTabOpen(
     deps.send({ type: "error", message: "tab_open: missing tabId" });
     return;
   }
+  const authProfileId = (msg as { authProfileId?: unknown }).authProfileId;
+  if (typeof authProfileId === "string" && authProfileId.length > 0) {
+    state.tabAuthProfileIds.set(tabId, authProfileId);
+  }
   const modelId = (msg as { model?: unknown }).model;
   let initialModel: Model<Api> | undefined;
   if (typeof modelId === "string" && modelId.length > 0) {
     const [provider, ...rest] = modelId.split("/");
     initialModel =
-      state.modelRegistry.find(provider, rest.join("/")) ?? undefined;
+      modelRegistryForModelId(state, tabId, modelId).find(
+        provider,
+        rest.join("/"),
+      ) ?? undefined;
   }
   const cwdField = (msg as { cwd?: unknown }).cwd;
   const cwdOverride =
@@ -104,6 +112,7 @@ export function handleTabClose(
   }
   state.tabs.delete(tabId);
   state.tabProjectCwds.delete(tabId);
+  state.tabAuthProfileIds.delete(tabId);
   if (state.currentAgentTabId === tabId) {
     state.currentAgentTabId = undefined;
   }

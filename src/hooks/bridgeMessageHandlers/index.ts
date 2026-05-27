@@ -9,6 +9,11 @@
  *  The hook (useBridgeMessages) does the lookup; an unknown type is a
  *  silent no-op (matches the previous switch-statement fall-through). */
 import type { BridgeMessageHandler } from "./types";
+import {
+  handleAuthProfileChanged,
+  handleAuthProfileLoginEvent,
+  handleAuthProfiles,
+} from "./authProfiles";
 import { handleA2ui } from "./a2ui";
 import { handleError } from "./error";
 import { handleExtensionComponents } from "./extensionComponents";
@@ -50,6 +55,9 @@ export const bridgeMessageHandlers: Readonly<
   Record<string, BridgeMessageHandler>
 > = Object.freeze({
   a2ui: handleA2ui,
+  auth_profile_changed: handleAuthProfileChanged,
+  auth_profile_login_event: handleAuthProfileLoginEvent,
+  auth_profiles: handleAuthProfiles,
   error: handleError,
   extension_components: handleExtensionComponents,
   extension_event_routes: handleExtensionEventRoutes,

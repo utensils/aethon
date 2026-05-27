@@ -7,6 +7,7 @@ import {
   ensurePickerHasModel,
   ensureTab,
 } from "./tab-lifecycle";
+import { modelRegistryForModelId } from "./auth-profiles";
 
 export async function handleChat(
   state: AethonAgentState,
@@ -24,7 +25,10 @@ export async function handleChat(
   if (typeof msg.model === "string" && msg.model.length > 0) {
     const [provider, ...rest] = msg.model.split("/");
     initialModel =
-      state.modelRegistry.find(provider, rest.join("/")) ?? undefined;
+      modelRegistryForModelId(state, tabId, msg.model).find(
+        provider,
+        rest.join("/"),
+      ) ?? undefined;
   }
   const tab = await ensureTab(
     state,
@@ -107,7 +111,10 @@ export async function handleSetModel(
   }
   const [provider, ...rest] = msg.id.split("/");
   const id = rest.join("/");
-  const next = state.modelRegistry.find(provider, id);
+  const next = modelRegistryForModelId(state, tabId, msg.id).find(
+    provider,
+    id,
+  );
   if (!next) {
     deps.send({
       type: "error",

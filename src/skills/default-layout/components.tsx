@@ -47,3 +47,4 @@ export {
 } from "./terminal";
 export { ShellCanvas, TabStrip, TerminalPanel } from "./shell";
 export { EditorCanvas, ImageViewer, MarkdownPreview } from "./editor";
+export { AuthProfilePanel } from "./auth-profile-panel";

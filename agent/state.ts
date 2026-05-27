@@ -20,6 +20,10 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { BashTerminalStreamState } from "./terminal-stream";
+import type {
+  AuthProfileServices,
+  AuthProfilesState,
+} from "./auth-profiles";
 
 // ---------------------------------------------------------------------------
 // Shared types — extracted from the original main.ts
@@ -327,6 +331,12 @@ export class AethonAgentState {
   modelRegistry!: ModelRegistry;
   settingsManager!: SettingsManager;
   resourceLoader!: DefaultResourceLoader;
+  authProfiles: AuthProfilesState = {
+    version: 1,
+    profiles: [],
+    defaultByProvider: {},
+  };
+  readonly authProfileServices = new Map<string, AuthProfileServices>();
 
   // -- Layout (loaded synchronously at boot from $AETHON_BOOT_LAYOUT_FILE) -
   bootLayout: unknown = undefined;
@@ -335,6 +345,7 @@ export class AethonAgentState {
   // -- Tabs / sessions -----------------------------------------------------
   readonly tabs = new Map<string, TabRecord>();
   readonly tabProjectCwds = new Map<string, string>();
+  readonly tabAuthProfileIds = new Map<string, string>();
   /** Tab whose pi turn is currently running. Set when a chat / handler
    *  prompt is dispatched; cleared on agent_end. Used by setState so
    *  direct globalThis.aethon.setState calls from the agent or extensions

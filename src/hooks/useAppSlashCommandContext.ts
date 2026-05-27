@@ -12,6 +12,7 @@ import type { SlashCommandContext } from "../slashCommands";
 import type { SkillRegistry } from "../skills/SkillRegistry";
 import type { LayoutCatalogueEntry } from "../skills/default-layout";
 import type { NotificationInput } from "./useNotifications";
+import type { AuthProfilesUiState } from "../auth-profiles";
 
 export interface UseAppSlashCommandContextOptions {
   bootLayout: A2UIPayload;
@@ -121,6 +122,71 @@ export function useAppSlashCommandContext({
             active?: boolean;
           }[]) ?? []
         );
+      },
+      openLogin: () => {
+        setState((prev) => ({
+          ...prev,
+          authProfiles: {
+            profiles: [],
+            defaultByProvider: {},
+            providers: [],
+            activeByTab: {},
+            ...(prev.authProfiles ?? {}),
+            modal: { open: true },
+          },
+        }));
+        void invoke("agent_command", {
+          payload: JSON.stringify({ type: "auth_profiles_list" }),
+        });
+      },
+      listAuthProfiles: () => {
+        const auth =
+          (stateRef.current.authProfiles as AuthProfilesUiState | undefined) ??
+          undefined;
+        const activeId = stateRef.current.activeTabId as string | undefined;
+        return (auth?.profiles ?? []).map((p) => ({
+          id: p.id,
+          label: p.label,
+          providerId: p.providerId,
+          kind: p.kind,
+          active: !!activeId && auth?.activeByTab?.[activeId] === p.id,
+          default: auth?.defaultByProvider?.[p.providerId] === p.id,
+        }));
+      },
+      useAuthProfile: async (idOrLabel: string) => {
+        const auth =
+          (stateRef.current.authProfiles as AuthProfilesUiState | undefined) ??
+          undefined;
+        const profile = (auth?.profiles ?? []).find(
+          (p) => p.id === idOrLabel || p.label === idOrLabel,
+        );
+        if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
+        const activeId = stateRef.current.activeTabId;
+        await invoke("agent_command", {
+          payload: JSON.stringify({
+            type: "auth_profile_use_for_tab",
+            tabId:
+              typeof activeId === "string" && activeId.length > 0
+                ? activeId
+                : "default",
+            profileId: profile.id,
+          }),
+        });
+      },
+      setDefaultAuthProfile: async (idOrLabel: string) => {
+        const auth =
+          (stateRef.current.authProfiles as AuthProfilesUiState | undefined) ??
+          undefined;
+        const profile = (auth?.profiles ?? []).find(
+          (p) => p.id === idOrLabel || p.label === idOrLabel,
+        );
+        if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
+        await invoke("agent_command", {
+          payload: JSON.stringify({
+            type: "auth_profile_set_default",
+            profileId: profile.id,
+          }),
+        });
       },
       toggleTerminal,
       toggleSidebar,

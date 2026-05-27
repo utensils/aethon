@@ -3,6 +3,10 @@ import type { A2UIPayload } from "../../types/a2ui";
 import { activeCwd, activeProject } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
 import type { Tab } from "../../types/tab";
+import {
+  EMPTY_AUTH_PROFILES,
+  type AuthProfilesSnapshot,
+} from "../../auth-profiles";
 import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
 import { deletePointer } from "../../utils/jsonPointer";
 import { WORKSTATION_AREAS, workstationRows } from "../useFocus";
@@ -164,6 +168,9 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   const extStateKeys = (data.extensionStateKeys as string[] | undefined) ?? [];
   const discTabs =
     (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
+  const authProfiles =
+    (data.authProfiles as AuthProfilesSnapshot | undefined) ??
+    EMPTY_AUTH_PROFILES;
   ctx.allDiscoveredSessionsRef.current = discTabs;
   // Hydrate extension themes BEFORE the layout state merge below so
   // /sidebar/themes carries the full list (built-ins + extension) when
@@ -311,7 +318,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
       const bridgeTabs =
         (data.tabs as
-          | { id: string; model: string; cwd?: string }[]
+          | { id: string; model: string; cwd?: string; authProfileId?: string }[]
           | undefined) ?? [];
       const tabReplay =
         (data.extensionTabState as
@@ -337,6 +344,9 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
         }
         if (bt?.cwd && !localTabs[i].cwd) {
           localTabs[i] = { ...localTabs[i], cwd: bt.cwd };
+        }
+        if (bt?.authProfileId) {
+          localTabs[i] = { ...localTabs[i], authProfileId: bt.authProfileId };
         }
       }
       // Apply the bridge's per-tab replay over each tab record. prev
@@ -388,6 +398,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       status: activeTurnBusy ? "thinking…" : "ready",
       connection: "connected",
       recentSessions,
+      authProfiles,
       sidebar: {
         ...(next.sidebar ?? {}),
         models: models.map((m) => ({
@@ -442,6 +453,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
         tabId: t.id,
         ...(t.model ? { model: t.model } : {}),
         ...(restoredCwd ? { cwd: restoredCwd } : {}),
+        ...(t.authProfileId ? { authProfileId: t.authProfileId } : {}),
         restoreHistory: true,
       }),
     });
