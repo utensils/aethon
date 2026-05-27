@@ -338,6 +338,26 @@ changing the toolchain or build inputs.
 - Linux needs `webkit2gtk_4_1` + GTK closure on `PKG_CONFIG_PATH` (set
   manually because numtide/devshell skips pkg-config setup hooks).
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` dodges a Mesa/Wayland crash.
-- macOS uses Apple's `/usr/bin/cc` (Nix CC wrapper has SDK mismatches
-  against current nixpkgs unstable), and pulls libiconv via
-  `LIBRARY_PATH` + `NIX_LDFLAGS`.
+- macOS pins both `CC=/usr/bin/cc` *and*
+  `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc`. The first
+  steers `cc-rs` build scripts to Apple's toolchain; the second
+  overrides what rustc invokes at the link step. Without the linker
+  pin, rustc resolves bare `cc` through PATH and lands on
+  `/run/current-system/sw/bin/cc` — nix-darwin's wrapped GCC pointing
+  at Nix's bundled `apple-sdk-14.4`. That SDK's `libSystem.tbd` is
+  missing dozens of POSIX symbols (`_write`, `_waitpid`,
+  `__NSGetEnviron`, …) and ld errors out with "Undefined symbols for
+  architecture arm64". Pinning to `/usr/bin/cc` keeps the link against
+  the active Xcode SDK and produces a binary whose load commands
+  reference `/usr/lib/libiconv.2.dylib` (and the other canonical
+  Apple paths) — installable on any Mac. **Do not** re-add
+  `pkgs.libiconv` to `darwinBuildInputs` or point `LIBRARY_PATH` /
+  `NIX_LDFLAGS` at it; that bakes a `/nix/store` install_name into
+  the bundle, and dyld rejects it on any non-builder Mac for a Team
+  ID mismatch with our notarized signature.
+- `build-app` runs `scripts/verify-bundle.sh` after `cargo tauri build`
+  as a fail-loud safety net: it greps `otool -L` on the bundled binary
+  for `/nix/store` and aborts before the bundle can ship. The wrapper
+  also tolerates Tauri's tail-end non-zero exit when
+  `TAURI_SIGNING_PRIVATE_KEY` is unset (the .app has already been
+  written by then) so unsigned local builds still get verified.

@@ -126,9 +126,13 @@
             pkgs.gsettings-desktop-schemas
           ];
 
-          darwinBuildInputs = lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.libiconv
-          ];
+          # macOS gets libiconv from the SDK at link time (libiconv.2.tbd
+          # under $SDKROOT/usr/lib), which produces a binary that loads
+          # /usr/lib/libiconv.2.dylib at runtime — the path every notarized
+          # Mac app uses. Pulling in pkgs.libiconv used to bake a
+          # /nix/store/... install_name into the bundle, which then failed
+          # dyld's Team ID check on any non-builder Mac.
+          darwinBuildInputs = [ ];
         in
         {
           _module.args.pkgs = pkgs;
@@ -246,7 +250,8 @@
             ++ lib.optionals pkgs.stdenv.isDarwin [
               {
                 # Use Apple's clang — Nix's CC wrapper has SDK version
-                # mismatches with current nixpkgs unstable.
+                # mismatches with current nixpkgs unstable. cc-rs (in
+                # crates with build.rs C code) honors CC directly.
                 name = "CC";
                 value = "/usr/bin/cc";
               }
@@ -255,17 +260,25 @@
                 value = "/usr/bin/c++";
               }
               {
-                # Apple's linker won't find Nix-provided libiconv without an
-                # explicit lib path. clang honors LIBRARY_PATH like GCC does.
-                name = "LIBRARY_PATH";
-                value = "${pkgs.libiconv}/lib";
+                # rustc's link step invokes plain `cc` via PATH, which
+                # inside nix-darwin resolves to /run/current-system/sw/bin/cc
+                # — a wrapped GCC pointing at Nix's bundled apple-sdk-14.4.
+                # That SDK ships a libSystem.tbd missing dozens of POSIX
+                # symbols (_write, _waitpid, __NSGetEnviron, …), and ld
+                # errors with "Undefined symbols for architecture arm64".
+                # Pinning the cargo linker to /usr/bin/cc forces Apple's
+                # toolchain, which finds the active Xcode SDK (currently
+                # MacOSX26.5.sdk) and links cleanly against it.
+                # Also forces a sane install_name for system libs:
+                # /usr/lib/libiconv.2.dylib instead of a /nix/store path.
+                name = "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER";
+                value = "/usr/bin/cc";
               }
               {
-                # Belt-and-braces: rustc passes NIX_LDFLAGS through to the
-                # linker on macOS; this guarantees the -L is on the link line
-                # for any crate that bypasses LIBRARY_PATH.
-                name = "NIX_LDFLAGS";
-                value = "-L${pkgs.libiconv}/lib";
+                # Belt-and-braces: some build scripts spawn cc directly
+                # via $RUSTC_LINKER. Same reason as above.
+                name = "RUSTC_LINKER";
+                value = "/usr/bin/cc";
               }
             ];
 
@@ -287,7 +300,7 @@
                 name = "build-app";
                 help = "Build release app bundle. Auto-sources .secrets/signing.env for signed+notarized build if present.";
                 command = ''
-                  set -euo pipefail
+                  set -uo pipefail
                   if [ -f .secrets/signing.env ]; then
                     echo "==> sourcing .secrets/signing.env (signed + notarized build)"
                     # shellcheck disable=SC1091
@@ -297,7 +310,24 @@
                   else
                     echo "==> .secrets/signing.env not present; building unsigned"
                   fi
-                  exec cargo tauri build "$@"
+                  # Tauri's bundler exits non-zero on a missing
+                  # TAURI_SIGNING_PRIVATE_KEY even though the .app has
+                  # already been written. For local unsigned builds we
+                  # treat that specific tail-end failure as a warning
+                  # so the verify step still runs against the bundle.
+                  cargo tauri build "$@"
+                  status=$?
+                  bundle=src-tauri/target/release/bundle/macos/Aethon.app
+                  if [ $status -ne 0 ] && [ ! -d "$bundle" ]; then
+                    exit $status
+                  fi
+                  # Belt-and-braces: scan the bundle's load commands for any
+                  # /nix/store path. dyld rejects those on non-builder Macs
+                  # (Team ID mismatch with our notarized binary), so a leak
+                  # here means a freshly-built .app would crash at launch.
+                  if [ "$(uname -s)" = "Darwin" ]; then
+                    ./scripts/verify-bundle.sh
+                  fi
                 '';
               }
               {
