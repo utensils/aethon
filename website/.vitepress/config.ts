@@ -28,7 +28,7 @@ export default defineConfig({
       },
     ],
     ["meta", { property: "og:url", content: SITE_URL }],
-    ["meta", { property: "og:image", content: `${SITE_URL}aethon-hero-light.svg` }],
+    ["meta", { property: "og:image", content: `${SITE_URL}aethon-hero.svg` }],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
   themeConfig: {

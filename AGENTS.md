@@ -31,6 +31,7 @@ devshell exposes these helpers (defined in `flake.nix`):
 | Command     | What it does                                                                  |
 | ----------- | ----------------------------------------------------------------------------- |
 | `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                 |
+| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)     |
 | `build-app` | `cargo tauri build` — release bundle                                          |
 | `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                     |
 | `lint`      | ESLint frontend + agent (no auto-fix)                                         |
@@ -74,14 +75,20 @@ new warnings as acceptable without addressing or justifying them.
 
 ### Layer responsibilities
 
-1. **Tauri shell** (`src-tauri/src/lib.rs` is now a thin entry — agent
-   supervisor + child IPC + `run()` builder; concern-grouped IPC commands
-   live under `src-tauri/src/commands/` (`config.rs`, `session.rs`,
-   `extensions.rs`, `git.rs`, `window.rs`, `fs.rs`); shell-tab PTY logic
-   lives under `src-tauri/src/shell/` (`lifecycle.rs`, `scrollback.rs`,
-   `sharemode.rs`); native window geometry persistence in
-   `window_state.rs`; pure helpers in `helpers.rs`; debug-only commands
-   - TCP eval server in `debug.rs` gated by `#[cfg(debug_assertions)]`)
+1. **Tauri shell** (`src-tauri/src/lib.rs` is a thin entry — `run()`
+   builder + plugin/state registration; the agent supervisor lives in
+   `src-tauri/src/agent_process/` (`AgentProcesses` managed state, plus
+   `spawn`/`readers`/`sidecar`); concern-grouped IPC commands live under
+   `src-tauri/src/commands/`: `boot.rs`, `config.rs`, `extensions/`,
+   `fs/`, `git/`, `host.rs`, `server.rs`, `session.rs`, `updater.rs`,
+   `window.rs`; shell-tab PTY logic under `src-tauri/src/shell/`
+   (`lifecycle.rs`, `scrollback.rs`, `sharemode.rs`); native window
+   geometry persistence in `window_state/` (`schema`, `restore`, `save`,
+   `monitor_matching`, `migration`, `persistence`); pure helpers in
+   `helpers/` (`paths`, `names`, `config`); HTTP + mDNS discovery in
+   `server/` (`http.rs`, `mdns.rs` — see "Networked discovery" below);
+   debug-only TCP eval server in `debug.rs` gated by
+   `#[cfg(debug_assertions)]`)
      — owns the OS boundary. Core agent commands: `send_message`
      (forwards a chat string to the agent's stdin) and
      `dispatch_a2ui_event` (forwards a structured event). On the first
@@ -374,7 +381,8 @@ viewers) is implemented as a default-layout sub-skill under
 `src/skills/default-layout/editor/`. Monaco glue lives in `src/monaco/`
 (`editor-buffers.ts` manages models per file, `setup.ts` configures
 workers + languages, `theme.ts` syncs to the active Aethon theme).
-File-system operations go through `src-tauri/src/commands/fs.rs` — a
+File-system operations go through `src-tauri/src/commands/fs/`
+(`io`, `listing`, `open`, `security`, `trash`, `watch`) — a
 thin set of read/write/list/move/delete commands scoped to the active
 project's `cwd`. Two security layers gate every path: a lexical check
 (`helpers::resolve_inside_root`) catches `..` traversal without
@@ -385,7 +393,7 @@ to the OS trash via the `trash` crate, never `unlink`.
 
 ### Window state persistence
 
-`src-tauri/src/window_state.rs` saves window position, size, and
+`src-tauri/src/window_state/` saves window position, size, and
 `maximized` flag to `~/.aethon/window-state.json` (keyed by window
 label). Everything is stored in **logical** units — physical pixels
 aren't portable across monitors with different scale factors, so a
@@ -403,6 +411,23 @@ reachable. Fullscreen state is treated as transient and skipped on
 save. v0 (physical-unit) state files are migrated to v1 on first
 load. Spaces / virtual desktops aren't tracked — Tauri 2 doesn't
 expose a stable identifier.
+
+### Networked discovery (server/)
+
+`src-tauri/src/server/` is a Claudette-style scaffold daemon wired in
+`setup()` and torn down on exit. Two `mdns_sd::ServiceDaemon`s run side
+by side: one **advertises** `_aethon._tcp.local.` with the bound HTTP
+port in TXT, the other **browses** and emits Tauri events
+`host-discovered` / `host-removed`. An axum server binds `0.0.0.0:0`
+(OS picks the port) and exposes `GET /health` + `GET /status`. **No
+auth, no TLS** — this is explicit scaffolding for an upcoming pairing
+PR; do not lean on it for trusted IPC. `commands/server.rs` exposes
+`server_start` / `server_stop`; `commands/host.rs` surfaces discovered
+peers to the frontend. **No config gate today** — `boot()` spawns both
+HTTP and mDNS unconditionally during Tauri `setup()`; a `[server]
+enabled` toml flag is planned alongside the pairing PR but not wired
+yet. The browser keeps running with the advertiser off — discovery is
+read-only and useful in isolation.
 
 ### Agent runtime contract
 
@@ -463,8 +488,9 @@ share-mode-badge, shell-canvas) all dispatch by type as of #N.
 
 ### Hot-reload doesn't kill in-flight prompts
 
-The Rust file-watcher (`commands/extensions.rs::run_debounce_worker`)
-no longer SIGKILLs the bun child when an extension file changes.
+The Rust file-watcher (`commands/extensions/reload.rs::run_debounce_worker`,
+wired from `commands/extensions/watcher.rs`) no longer SIGKILLs the bun
+child when an extension file changes.
 Instead it writes `{"type":"reload_request"}` to the child's stdin.
 The bridge sets `state.reloadPending`, drains active
 `tab.promptInFlight`, writes a `{"type":"_reload_done"}` sentinel to
@@ -609,8 +635,8 @@ user confirmation, pi-tool registration of
 Settings UI overlay, fullscreen, search overlay, drag-and-drop into
 composer, bridge crash recovery, OS notifications. Post-M6: Monaco
 editor + file tree + media viewers (`src/skills/default-layout/editor/`,
-`src/monaco/`, `src-tauri/src/commands/fs.rs`), native window geometry
-persistence with multi-monitor restore (`src-tauri/src/window_state.rs`),
+`src/monaco/`, `src-tauri/src/commands/fs/`), native window geometry
+persistence with multi-monitor restore (`src-tauri/src/window_state/`),
 pi native slash commands plumbed through to the composer autocomplete,
 left-edge sidebar resize, Brink theme palette.
 Tool execution surfaces as A2UI cards, multi-tab persistent
@@ -648,11 +674,13 @@ in-app updater.
 | Tool                         | Scope                                                     | Devshell command |
 | ---------------------------- | --------------------------------------------------------- | ---------------- |
 | `cargo clippy -D warnings`   | Rust shell + helpers                                      | `check`          |
-| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers.rs`          | `test`           |
+| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers/`            | `test`           |
 | `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                       | `check`          |
 | `bunx eslint .`              | TS + React lint, type-aware via tsconfig                  | `lint`           |
 | `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`) | `test`           |
 | `bunx vitest run --coverage` | TS coverage report (v8)                                   | `coverage`       |
+| `bun run test:e2e`           | Playwright E2E (`e2e/aethon.spec.ts`); webview is mocked, tests run serial against a shared Vite dev server | —                |
+| `bun run version:check`      | Fail if `package.json` / `Cargo.toml` / `tauri.conf.json` drift (auto-runs before `bun run build`); fix with `bun run version:sync` | —                |
 
 The `check` devshell command runs all of the above as a single CI gate.
 ESLint is configured for **0 errors and 0 warnings**. A handful of `react-hooks`

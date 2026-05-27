@@ -63,7 +63,14 @@ dev                  # launch with hot reload
 
 Without Nix you'll need:
 
-- **Rust 1.92.0** (pinned in `rust-toolchain.toml`)
+- **Rust 1.92.0** — pinned in `flake.nix` for the Nix devshell;
+  `rust-toolchain.toml` only says `stable` for non-Nix builds, so
+  install 1.92.0 and apply it as a **per-repo override** to match CI
+  without disturbing the rest of your machine:
+  ```bash
+  rustup install 1.92.0
+  rustup override set 1.92.0   # run inside the aethon checkout
+  ```
 - **Bun 1.x**
 - **Tauri 2** prerequisites for your OS — see the [Tauri docs][tauri-prereq].
 

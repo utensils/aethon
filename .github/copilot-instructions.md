@@ -24,7 +24,8 @@ even if the change otherwise looks correct.
    via `$ref` JSON Pointers; the renderer applies optimistic writes back
    to those paths. Do not split state across multiple stores or hooks.
 4. **Two registries, one rule.** The 19 primitives in
-   `PRIMITIVE_REGISTRY` (`src/components/builtins.tsx`) **cannot be
+   `PRIMITIVE_REGISTRY` (`src/components/A2UIRenderer.tsx`; primitive
+   components live under `src/components/primitives/`) **cannot be
    overridden** — everything else comes from `SkillRegistry`. New
    component types go on a skill, never into the primitive table.
 5. **Per-tab `cwd` is immutable.** Tabs keep the working directory they
@@ -34,7 +35,7 @@ even if the change otherwise looks correct.
    path that flips a shell tab's share mode. Adding an agent-callable
    setter defeats the opt-in security boundary.
 7. **Path-traversal guard on every filesystem command.** Any new command
-   in `src-tauri/src/commands/fs.rs` (or anywhere accepting a path) must
+   in `src-tauri/src/commands/fs/` (or anywhere accepting a path) must
    route through `helpers::resolve_inside_root` **and** canonicalize-then-
    recheck for symlinks. Skipping either layer is a security review block.
 8. **No `--no-verify`, `--no-gpg-sign`, or other hook-bypass flags** in
@@ -59,7 +60,7 @@ Spend review effort on, in order:
    instead of SIGKILL.
 4. **Test coverage on touch** — every module under `agent/` has a
    colocated `*.test.ts`; routes under `src/eventRoutes/` need a
-   happy-path test; new Rust helpers belong under `helpers.rs` with a
+   happy-path test; new Rust helpers belong under `helpers/` with a
    `#[cfg(test)] mod tests`.
 5. **Style / conventions** — Conventional Commits, two-space Nix indent,
    `import type { ... }` for type-only TS imports, no emojis in code or
@@ -85,7 +86,7 @@ Skip review comments on:
 A PR that adds or changes a keyboard shortcut **must** update all three:
 
 1. The webview handler in `src/hooks/useKeyboardShortcuts.ts`
-2. The native menu accelerator in `src-tauri/src/commands/extensions.rs`
+2. The native menu accelerator in `src-tauri/src/commands/extensions/app_menu.rs`
 3. The palette listing in `src/skills/default-layout/palette-items.ts`
    (`BUILTIN_KEYBINDINGS`)
 

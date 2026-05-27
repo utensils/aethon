@@ -27,7 +27,7 @@ or agent logic — that work goes in TypeScript.
 
 ## Path safety
 
-Every command in `src-tauri/src/commands/fs.rs` (and any new path-taking
+Every command in `src-tauri/src/commands/fs/` (and any new path-taking
 command anywhere) **must** go through both gates:
 
 1. `helpers::resolve_inside_root` — lexical `..`-traversal check that
@@ -70,7 +70,8 @@ honours `EnvFilter` syntax (e.g. `aethon::agent_watch=debug`).
 
 ## Tests
 
-`cargo test --lib` runs unit tests under `helpers.rs` (`#[cfg(test)] mod tests`).
+`cargo test --lib` runs unit tests under `helpers/` (`#[cfg(test)] mod tests`
+in each submodule — `paths.rs`, `names.rs`, `config.rs`).
 Pure helper functions belong there. Tauri-command-shaped functions
 that orchestrate state need integration coverage via the JS-side
 debug skill, not Rust unit tests.

@@ -331,6 +331,22 @@
                 '';
               }
               {
+                category = "docs";
+                name = "docs";
+                # Bound to 0.0.0.0 on purpose so the dev site is reachable
+                # from another host on the LAN (phone, second machine, the
+                # cmux-browser surface running elsewhere). VitePress's
+                # default localhost-only binding makes that impossible
+                # without an extra flag every invocation.
+                help = "Start the VitePress docs site on 0.0.0.0 with hot-reload (default http://localhost:5173)";
+                command = ''
+                  set -euo pipefail
+                  cd website
+                  [ -d node_modules ] || bun install --frozen-lockfile
+                  exec bun run dev --host 0.0.0.0 "$@"
+                '';
+              }
+              {
                 category = "check";
                 name = "check";
                 help = "Full CI gate: clippy + tsc + ESLint + cargo test + vitest";

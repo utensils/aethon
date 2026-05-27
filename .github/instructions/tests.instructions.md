@@ -9,7 +9,7 @@ applyTo: "**/*.test.ts,**/*.test.tsx,**/tests.rs"
 - TS / TSX tests live colocated with the module under test
   (`agent/foo.ts` ↔ `agent/foo.test.ts`).
 - Rust tests live in `#[cfg(test)] mod tests` blocks inside the
-  module they cover (mostly `src-tauri/src/helpers.rs`).
+  module they cover (mostly `src-tauri/src/helpers/*.rs`).
 - New code that touches an existing module should add cases to the
   existing test file rather than creating a parallel `foo.spec.ts`
   alongside `foo.test.ts`.
@@ -57,7 +57,8 @@ Tests must not depend on:
 
 ## Rust tests
 
-- Pure helpers go under `helpers.rs` with their own `#[cfg(test)] mod tests`.
+- Pure helpers go under `helpers/` with their own `#[cfg(test)] mod tests`
+  inside each submodule (`paths.rs`, `names.rs`, `config.rs`).
 - Tauri-command-shaped functions that orchestrate state need
   integration coverage via the JS-side `aethon-debug` skill, not
   Rust unit tests — flag PRs that mock half the Tauri runtime to

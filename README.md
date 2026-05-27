@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/aethon-hero-light.svg">
-    <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero-dark.svg" width="760">
-  </picture>
+  <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero.svg" width="720">
 </p>
 
 <p align="center">
@@ -79,6 +76,7 @@ input for Nix builds.
 | Command     | What it does                                                                                |
 | ----------- | ------------------------------------------------------------------------------------------- |
 | `dev`       | Launch the app with hot reload (auto-increments Vite + debug ports if 1420/19433 are busy)  |
+| `docs`      | Run the VitePress docs site on `0.0.0.0:5173` with hot reload                               |
 | `build-app` | Release bundle (`.app` / `.dmg` on macOS, `.deb` / `.rpm` on Linux, NSIS `.exe` on Windows) |
 | `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                                   |
 | `lint`      | ESLint frontend + agent (no auto-fix)                                                       |
@@ -129,7 +127,7 @@ The default layout _is_ a skill (`src/skills/default-layout/`). Replacing it req
 
 ## Project layout
 
-```
+```text
 aethon/
 ├── src/                 # React frontend (entry: src/main.tsx)
 ├── src-tauri/           # Rust Tauri shell (lib + helpers + watcher)
