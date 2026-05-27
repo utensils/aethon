@@ -1,4 +1,4 @@
-import systemPromptSource from "../agent/system-prompt.ts?raw";
+import systemPromptSource from "../agent/system-prompt/prompt-template.ts?raw";
 
 function extractDefaultPrompt(source: string): string {
   const marker = "export const DEFAULT_AETHON_PROMPT = `";
