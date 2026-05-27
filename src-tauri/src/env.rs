@@ -110,6 +110,10 @@ pub(crate) fn resolved_tool_path() -> String {
         .clone()
 }
 
+pub(crate) fn warm_resolved_tool_path() {
+    let _ = resolved_tool_path();
+}
+
 pub(crate) fn resolved_login_path() -> Option<String> {
     let path = resolved_tool_path();
     if path.is_empty() { None } else { Some(path) }

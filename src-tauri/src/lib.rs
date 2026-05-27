@@ -289,6 +289,12 @@ pub fn run() {
             let server_state = app.state::<Arc<server::ServerState>>().inner().clone();
             server::boot(app.handle().clone(), server_state);
 
+            // Release app launches can start with a skeletal PATH. Warm
+            // the launch-safe tool path off the setup thread so the
+            // first devshell status/probe IPC does not pay for the
+            // login-shell PATH lookup.
+            tauri::async_runtime::spawn_blocking(env::warm_resolved_tool_path);
+
             // Devshell cache: point at `~/.aethon/devshell-cache/` and
             // GC anything older than 30 days. The cache is otherwise
             // entirely lazy — no resolves happen until a shell open
