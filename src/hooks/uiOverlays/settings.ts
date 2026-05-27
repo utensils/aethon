@@ -53,12 +53,21 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
     setState((prev) => {
       const cur =
         (prev.settings as
-          | { open?: boolean; pending?: Record<string, unknown> | null }
+          | {
+              open?: boolean;
+              pending?: Record<string, unknown> | null;
+              focusSection?: string | null;
+            }
           | undefined) ?? {};
       const merged = { ...(cur.pending ?? {}), ...patch };
       return {
         ...prev,
-        settings: { open: !!cur.open, pending: merged },
+        settings: {
+          open: !!cur.open,
+          pending: merged,
+          focusSection:
+            typeof cur.focusSection === "string" ? cur.focusSection : null,
+        },
       };
     });
   }
