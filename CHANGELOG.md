@@ -6,6 +6,13 @@ All notable changes to Aethon. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal architecture docs updated.** Repository and bundled docs now
+  reflect the split overlay modules (`src/hooks/uiOverlays/*`), the
+  extracted system-prompt template/types (`agent/system-prompt/*`), and
+  the current extension-package naming for `~/.aethon/skills/node_modules/`.
+
 ### Fixed
 
 - **Dangling worktrees are recoverable from the UI.** When a git worktree
@@ -313,7 +320,7 @@ succeeded | failed` UI + cancel / retry / dismiss inline actions.
 - **Extension lifecycle feedback.** Bridge now emits a generic
   `extension_lifecycle` event for every extension load (`{name, source,
 status: "loaded"|"failed"|"skipped", error?, path}`) from
-  `loadAethonExtensions` and `loadAethonSkillManifests`. The frontend
+  `loadAethonExtensions` and `loadAethonExtensionPackages`. The frontend
   dispatches a cancellable `aethon:extension-lifecycle` CustomEvent on
   `window`, then (if not preventDefault'd) appends a system-notice chat
   bubble — so the user gets confirmation even when the agent's chat

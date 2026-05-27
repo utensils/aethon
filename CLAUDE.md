@@ -90,8 +90,10 @@ resize/close`) sit behind a `ShellRegistry` (per-tab `portable-pty` +
 
 3. **React frontend** (`src/`). `App.tsx` is a thin shell composed of
    `useX()` hooks (`src/hooks/`). Event routing lives in `src/eventRoutes/`
-   (one file per prefix family). The `window.aethon` runtime API is
-   built in `src/runtime/windowApi.ts`.
+   (one file per prefix family, with sidebar subroutes under
+   `src/eventRoutes/sidebar/`). Root overlays are composed by
+   `useUiOverlays` from `src/hooks/uiOverlays/{settings,search,palette}`.
+   The `window.aethon` runtime API is built in `src/runtime/windowApi.ts`.
 
 ### Frontend model — three things to know
 
@@ -244,11 +246,14 @@ Tauri sets these when spawning `agent/main.ts`:
 | `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release. |
 | `AETHON_PROJECT_ROOT` | Source tree path in dev only.                                                             |
 
-`agent/system-prompt.ts` composes DEFAULT → optional `~/.aethon/system-prompt.md`
-override → optional `~/.aethon/system-prompt-append.md` → runtime snapshot
-from `getRuntimeSnapshot()`. Snapshot rebuilds on every
-`resourceLoader.reload()`; extensions load **before** the default tab so
-its session prompt sees them.
+`agent/system-prompt.ts` composes the static template from
+`agent/system-prompt/prompt-template.ts` → optional
+`~/.aethon/system-prompt.md` override → optional
+`~/.aethon/system-prompt-append.md` → runtime snapshot from
+`getRuntimeSnapshot()` using the contract in
+`agent/system-prompt/types.ts`. Snapshot rebuilds on every
+`resourceLoader.reload()`; extensions load **before** the default tab so its
+session prompt sees them.
 
 ## Logging
 

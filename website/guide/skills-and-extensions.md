@@ -47,7 +47,7 @@ extension re-runs without a relaunch. The chat shows an
 `extension_lifecycle` event for every load / fail / reload so you get
 visible feedback.
 
-### 2 — npm-distributed skills
+### 2 — npm-distributed extension packages
 
 Some extensions ship as npm packages with an `aethon` field in their
 `package.json` manifest:
@@ -83,7 +83,10 @@ npm install --prefix ~/.aethon/skills @my-org/aethon-team-skills
 ```
 
 Aethon discovers everything under `~/.aethon/skills/node_modules/` whose
-`package.json` has the `aethon` field, and loads its declared entry.
+`package.json` has the `aethon` field, and loads its declared entry. The
+on-disk `skills/` directory name is retained for back-compat; the in-app
+surface, slash command, and runtime snapshot all call these extension
+packages.
 
 ### 3 — Project-local extensions
 
