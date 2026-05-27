@@ -262,9 +262,11 @@ port in TXT, the other **browses** and emits Tauri events
 no TLS** — this is explicit scaffolding for an upcoming pairing PR;
 do not lean on it for trusted IPC. `commands/server.rs` exposes
 `server_start` / `server_stop`; `commands/host.rs` surfaces discovered
-peers to the frontend. Gated by `[server] enabled` in `config.toml`
-(defaults true). The browser keeps running with the advertiser off —
-discovery is read-only and useful in isolation.
+peers to the frontend. **No config gate today** — `boot()` spawns both
+HTTP and mDNS unconditionally during Tauri `setup()`; a `[server]
+enabled` toml flag is planned alongside the pairing PR but not wired
+yet. The browser keeps running with the advertiser off — discovery is
+read-only and useful in isolation.
 
 ### Auto-updates + boot probation
 

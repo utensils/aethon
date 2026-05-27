@@ -7,11 +7,12 @@
 //! `GET /health` + `GET /status`. No auth, no TLS — explicitly scaffold
 //! until the pairing PR replaces fingerprint + adds tokens.
 //!
-//! Lifecycle: `boot(app)` reads `[server] enabled` from config (defaults
-//! true), binds HTTP, registers mDNS advertise, starts the browser.
-//! Browser runs even when advertiser is off — discovery is read-only and
-//! useful in isolation. `shutdown(state)` aborts the join handles and
-//! drops both `ServiceDaemon`s.
+//! Lifecycle: `boot(app)` unconditionally binds HTTP, registers mDNS
+//! advertise, and starts the browser (a `[server] enabled` config gate
+//! is planned alongside the pairing PR but not wired yet). Browser runs
+//! even when advertiser is off — discovery is read-only and useful in
+//! isolation. `shutdown(state)` aborts the join handles and drops both
+//! `ServiceDaemon`s.
 
 use std::sync::Arc;
 use tauri::AppHandle;
