@@ -1,6 +1,10 @@
 # Project-internal
 .aethon/
 
+# Local-only signing/notarization secrets sourced by `build-app`.
+# Never commit. See RELEASING.md for what's expected to be in here.
+.secrets/
+
 # Claude Code session state
 .claude/worktrees/
 .claude/scheduled_tasks.lock

@@ -1,0 +1,316 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to build and publish (e.g. v0.4.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-please:
+    name: Release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      pr: ${{ steps.release.outputs.pr }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+
+      # Immediately mark the release as draft so it's not visible until
+      # all build artifacts have been uploaded successfully.
+      - name: Mark release as draft
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ steps.release.outputs.tag_name }}" --draft --repo "${{ github.repository }}"
+
+  # When release-please opens or updates a PR, it bumps package.json /
+  # package-lock.json / CHANGELOG.md. The remaining version files
+  # (tauri.conf.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock) are
+  # synced by `bun run version:sync`, which uses package.json as the
+  # source of truth. We re-run that on the PR branch and push the result
+  # back so the PR's `bun run version:check` (run by ci.yml) passes and
+  # the PR is mergeable. release-please tracks only the three files it
+  # owns, so this push doesn't collide with anything it will rewrite on
+  # the next run.
+  sync-version-files:
+    name: Sync version files
+    needs: release-please
+    if: |
+      github.event_name == 'push' &&
+      needs.release-please.outputs.prs_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR head branch
+        id: pr
+        env:
+          PR_JSON: ${{ needs.release-please.outputs.pr }}
+        run: |
+          BRANCH=$(echo "$PR_JSON" | jq -r '.headBranchName // empty')
+          if [ -z "$BRANCH" ]; then
+            echo "::error::could not resolve release-please PR head branch from outputs"
+            echo "$PR_JSON" >&2
+            exit 1
+          fi
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          # release-please-action runs as github-actions[bot]; we push
+          # back to the PR branch as the same identity so the commit
+          # shows up as a sibling of release-please's own commits.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Sync version files
+        run: bun run version:sync
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet; then
+            echo "Nothing to sync — Cargo.toml/Cargo.lock/tauri.conf.json already match package.json."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: sync version files"
+          git push origin "HEAD:${{ steps.pr.outputs.branch }}"
+
+  # Resolve the tag into a single output that downstream jobs can reference.
+  # Uses `always()` so it runs even when release-please is skipped (dispatch).
+  resolve-tag:
+    name: Resolve Tag
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: >-
+      always() && (
+        (github.event_name == 'push' && needs.release-please.outputs.releases_created == 'true') ||
+        github.event_name == 'workflow_dispatch'
+      )
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ needs.release-please.outputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build (macos-aarch64)
+    needs: resolve-tag
+    if: always() && needs.resolve-tag.result == 'success'
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: release-macos-aarch64
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Version files are synced
+        run: bun run version:check
+
+      # macOS bundles get up to 3 attempts to absorb transient
+      # Apple-notarization flakes (NSURLErrorDomain -1009 polling
+      # appstoreconnect.apple.com — same failure mode Claudette
+      # documented after run #25608625502). tauri-action is a JS
+      # action and can't be wrapped by nick-fields/retry; the
+      # duplicated-step + continue-on-error + outcome check pattern
+      # is the native workaround.
+      - name: Build and upload (attempt 1)
+        id: bundle1
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ needs.resolve-tag.outputs.tag }}
+          releaseName: "Aethon ${{ needs.resolve-tag.outputs.tag }}"
+          releaseDraft: true
+          prerelease: ${{ contains(needs.resolve-tag.outputs.tag, '-') }}
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: --verbose --target aarch64-apple-darwin --bundles app,dmg,updater
+
+      - name: Build and upload (attempt 2 — retry)
+        id: bundle2
+        if: steps.bundle1.outcome == 'failure'
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ needs.resolve-tag.outputs.tag }}
+          releaseName: "Aethon ${{ needs.resolve-tag.outputs.tag }}"
+          releaseDraft: true
+          prerelease: ${{ contains(needs.resolve-tag.outputs.tag, '-') }}
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: --verbose --target aarch64-apple-darwin --bundles app,dmg,updater
+
+      - name: Build and upload (attempt 3 — final)
+        if: steps.bundle1.outcome == 'failure' && steps.bundle2.outcome == 'failure'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ needs.resolve-tag.outputs.tag }}
+          releaseName: "Aethon ${{ needs.resolve-tag.outputs.tag }}"
+          releaseDraft: true
+          prerelease: ${{ contains(needs.resolve-tag.outputs.tag, '-') }}
+          includeUpdaterJson: false
+          tauriScript: bun tauri
+          args: --verbose --target aarch64-apple-darwin --bundles app,dmg,updater
+
+  publish:
+    name: Publish Release
+    needs: [resolve-tag, build]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Build updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-sigs
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.sig" \
+            --dir release-sigs \
+            --clobber
+
+          VERSION="${TAG#v}"
+          scripts/build-updater-manifest.sh \
+            release-sigs \
+            "$VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" \
+            > latest.json
+
+          gh release upload "$TAG" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Un-draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ needs.resolve-tag.outputs.tag }}" --draft=false --repo "${{ github.repository }}"
+
+  # Preserved from the previous release.yml — publishes the `aethon`
+  # crate to crates.io on every stable release tag. Gated on the
+  # release actually being published (build + publish succeeded) so
+  # we don't push a crate version that has no matching artifact.
+  publish-crate:
+    name: Publish crate
+    needs: [resolve-tag, publish]
+    if: always() && needs.publish.result == 'success' && startsWith(needs.resolve-tag.outputs.tag, 'v')
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+
+      - name: Install Linux crate verification deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            pkg-config
+
+      - name: Setup Bun (build.rs needs `bun build --compile`)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Install JS deps
+        run: bun install --frozen-lockfile
+
+      - name: Publish crate
+        run: cargo publish --manifest-path src-tauri/Cargo.toml --locked

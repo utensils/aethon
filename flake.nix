@@ -285,8 +285,20 @@
               {
                 category = "build";
                 name = "build-app";
-                help = "Build release app bundle (.app / .deb / .msi); src-tauri/build.rs compiles the agent sidecar automatically";
-                command = "cargo tauri build \"$@\"";
+                help = "Build release app bundle. Auto-sources .secrets/signing.env for signed+notarized build if present.";
+                command = ''
+                  set -euo pipefail
+                  if [ -f .secrets/signing.env ]; then
+                    echo "==> sourcing .secrets/signing.env (signed + notarized build)"
+                    # shellcheck disable=SC1091
+                    set -a
+                    . .secrets/signing.env
+                    set +a
+                  else
+                    echo "==> .secrets/signing.env not present; building unsigned"
+                  fi
+                  exec cargo tauri build "$@"
+                '';
               }
               {
                 category = "check";
