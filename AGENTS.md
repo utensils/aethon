@@ -105,13 +105,18 @@ new warnings as acceptable without addressing or justifying them.
      pending mutations, layout, themes).
    * `aethon-api.ts` — `buildAethonApi` factory exposed on `globalThis`.
    * `dispatcher.ts` — readline loop + per-message-type dispatch.
-   * `tab-lifecycle.ts` — `ensureTab` + the pi session subscriber +
-     `emitReady`.
-   * `extension-loader.ts` — discovers + loads extensions from four
-     sources + theme directories.
+   * `tab-lifecycle/` — `ensureTab`, pi session subscribers, ready
+     handshakes, tab-scoped event emitters, terminal streams, and
+     extension slash-command discovery (`index.ts` is the public barrel).
+   * `extension-loader/` — discovers + loads loose user extensions,
+     project-local extensions, npm-distributed extension packages, pi
+     extension metadata, persisted tabs, and theme directories
+     (`index.ts` is the public barrel).
    * `project-extensions.ts` — walks up from the active cwd looking
      for `.aethon/extensions/`.
-   * `system-prompt.ts` — composes the layered system prompt.
+   * `system-prompt.ts` — composes the layered system prompt from
+     `system-prompt/prompt-template.ts`, `system-prompt/types.ts`, user
+     overrides, and the runtime snapshot.
    * `runtime-snapshot.ts` — `getRuntimeSnapshot` + `$AETHON_STATE_FILE`
      persistence.
    * `layout-manager.ts` — `setLayout` / `patchLayout` /
@@ -122,9 +127,10 @@ new warnings as acceptable without addressing or justifying them.
    * `event-routes.ts` — extension `onEvent` route table.
    * `keybindings.ts` — extension keybinding registration.
    * `notifications.ts` — agent-pushed toasts.
-   * `session-history.ts` — reads pi session transcripts under
-     `$AETHON_SESSIONS_DIR/<tabId>/` so the frontend can rehydrate
-     visible history on restart.
+   * `session-history/` — reads local chat JSONL and pi transcripts under
+     `$AETHON_SESSIONS_DIR/<tabId>/`, parses/restores messages and tool
+     cards, dedupes local pending content, and exposes metadata helpers
+     (`index.ts` is the public barrel).
    * `terminal-stream.ts` — buffers `bash`-tool output as an A2UI
      terminal stream (the `BashTerminalStreamState` snapshot type).
    * `canvas.ts` — helpers for building and patching A2UI canvas
@@ -136,9 +142,12 @@ new warnings as acceptable without addressing or justifying them.
      the Rust `shell_query` Tauri command).
 3. **React frontend** (`src/`) — `App.tsx` is a thin shell of `useX()`
    hooks (`src/hooks/`); event-routing logic lives in `src/eventRoutes/`
-   (one file per prefix family); `src/runtime/windowApi.ts` builds the
-   `window.aethon` runtime API. Listens for `agent-response` events,
-   parses each line, and routes it into the chat history or canvas.
+   (one file per prefix family, with sidebar subroutes under
+   `src/eventRoutes/sidebar/`); root overlay orchestration lives behind
+   `useUiOverlays` with per-surface modules in `src/hooks/uiOverlays/`;
+   `src/runtime/windowApi.ts` builds the `window.aethon` runtime API.
+   Listens for `agent-response` events, parses each line, and routes it
+   into the chat history or canvas.
 
 ### Frontend model — three things to know
 
@@ -408,15 +417,17 @@ The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 | `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
 | `AETHON_PROJECT_ROOT` | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
 
-The bridge's `agent/system-prompt.ts` composes a layered prompt:
-DEFAULT (static API + primitives reference, mentioning the docs/state-file
-paths) → optional user override at `~/.aethon/system-prompt.md` →
-optional user append at `~/.aethon/system-prompt-append.md` → **runtime
-snapshot** built from `getRuntimeSnapshot()` (extensions, themes,
-components, layout summary, tabs). The snapshot is rebuilt every time
+The bridge's `agent/system-prompt.ts` composes a layered prompt using the
+static template in `agent/system-prompt/prompt-template.ts` and the
+`RuntimeSnapshot` contract in `agent/system-prompt/types.ts`: DEFAULT
+(static API + primitives reference, mentioning the docs/state-file paths)
+→ optional user override at `~/.aethon/system-prompt.md` → optional user
+append at `~/.aethon/system-prompt-append.md` → **runtime snapshot** built
+from `getRuntimeSnapshot()` (extensions, themes, components, layout
+summary, tabs). The snapshot is rebuilt every time
 `resourceLoader.reload()` runs, so the bootstrap order is important —
-extensions load **before** the default tab is created so its session
-prompt sees them.
+extensions load **before** the default tab is created so its session prompt
+sees them.
 
 ### globalThis.aethon (bridge side, in agent/main.ts)
 

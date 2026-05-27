@@ -12,9 +12,9 @@ Aethon supports three distribution channels for user-shipped UI code:
    with existing installs) — for extensions with dependencies, multi-file
    source, or for sharing via npm.
 
-Both channels call the same `register(api)` entry point with the same
-API surface. Extension code runs in the **bridge process** (Bun), not
-the webview, so it has Node.js / Bun APIs but not DOM APIs.
+All bridge-side channels call the same `register(api)` entry point with
+the same API surface. Extension code runs in the **bridge process** (Bun),
+not the webview, so it has Node.js / Bun APIs but not DOM APIs.
 
 ## Loose Extension
 
