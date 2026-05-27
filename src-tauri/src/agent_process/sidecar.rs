@@ -12,6 +12,13 @@ use std::path::{Path, PathBuf};
 /// Walk up from cwd until we find the marker; fall back to cwd if nothing
 /// matches.
 pub(crate) fn project_root() -> PathBuf {
+    if let Some(path) = std::env::var_os("AETHON_PROJECT_ROOT") {
+        let path = PathBuf::from(path);
+        if path.join("agent").join("main.ts").exists() {
+            return path;
+        }
+    }
+
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut dir: &Path = &cwd;
     for _ in 0..6 {
@@ -61,4 +68,34 @@ pub(super) fn find_sidecar_binary() -> Result<PathBuf, String> {
             .collect::<Vec<_>>()
             .join(", "),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn project_root_honors_valid_env_override() {
+        let dir = tempdir().expect("tempdir");
+        let agent_dir = dir.path().join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(agent_dir.join("main.ts"), "").expect("main marker");
+
+        unsafe { std::env::set_var("AETHON_PROJECT_ROOT", dir.path()) };
+        let got = project_root();
+        unsafe { std::env::remove_var("AETHON_PROJECT_ROOT") };
+
+        assert_eq!(got, dir.path());
+    }
+
+    #[test]
+    fn project_root_ignores_invalid_env_override() {
+        let dir = tempdir().expect("tempdir");
+        unsafe { std::env::set_var("AETHON_PROJECT_ROOT", dir.path()) };
+        let got = project_root();
+        unsafe { std::env::remove_var("AETHON_PROJECT_ROOT") };
+
+        assert_ne!(got, dir.path());
+    }
 }

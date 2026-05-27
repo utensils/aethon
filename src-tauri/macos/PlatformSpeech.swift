@@ -126,7 +126,7 @@ private func platformSpeechStatus(prepare: Bool) -> AethonPlatformSpeechStatus {
 private func tccPreflightFailureMessage() -> String? {
     let bundle = Bundle.main
     if bundle.bundleURL.pathExtension.lowercased() != "app" {
-        return "Apple Speech permissions require Aethon to run from a macOS .app bundle. Start Aethon with the dev helper (scripts/dev.sh) or a packaged build."
+        return "Apple Speech permissions require Aethon to run from a macOS .app bundle. Start Aethon with the Nix dev helper (`dev`), scripts/dev.sh, or a packaged build."
     }
 
     let infoDictionary = bundle.infoDictionary ?? [:]

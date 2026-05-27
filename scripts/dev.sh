@@ -10,6 +10,10 @@
 #     port shifting in lockstep so multiple dev instances don't collide.
 #   - The skill needs to know the actual debug port without the user
 #     typing it. dev-info.json gives it a single discovery file.
+#   - On macOS, Apple Speech and microphone permissions require a real
+#     responsible .app process. This script passes a custom Tauri runner
+#     that wraps the debug binary in a signed "Aethon Dev.app" and launches
+#     it through Launch Services, matching Claudette's TCC-safe dev path.
 #
 # Flags:
 #   --new       Spin up a fresh user — points AETHON_USER_DIR at a
@@ -36,6 +40,7 @@
 #   VITE_PORT                  the chosen Vite port (vite.config.ts honors this)
 #   AETHON_DEBUG_PORT          the chosen debug port (src-tauri/src/debug.rs honors this)
 #   AETHON_USER_DIR            (--new only) per-PID tmp ~/.aethon override
+#   AETHON_PROJECT_ROOT        repo root forwarded through the macOS .app runner
 #   TAURI_CONFIG               JSON patch overriding devUrl so Tauri loads the right port
 
 set -euo pipefail
@@ -203,6 +208,7 @@ trap cleanup EXIT
 
 export VITE_PORT
 export AETHON_DEBUG_PORT="$DEBUG_PORT"
+export AETHON_PROJECT_ROOT="$(pwd)"
 # Tauri reads TAURI_CONFIG as a JSON patch merged over tauri.conf.json,
 # so we override devUrl to point at the actually-bound Vite port. Stays
 # in sync with --port semantics from older Tauri without the dependency.
@@ -276,7 +282,12 @@ sandbox_dir_path="$sandbox_dir"
 ) &
 disown
 
+runner_args=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  runner_args=(--runner "$(pwd)/scripts/macos-dev-app-runner.sh")
+fi
+
 # Hand the terminal to cargo. After exec, this script's PID *is* cargo —
 # the watchdog watches that PID, and Ctrl+C goes straight to cargo with
 # zero bash signal-routing in the middle.
-exec cargo tauri dev "$@"
+exec cargo tauri dev "${runner_args[@]}" "$@"
