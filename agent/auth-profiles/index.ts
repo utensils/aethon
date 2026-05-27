@@ -16,6 +16,7 @@ export type { AuthProfileProvider, AuthProfilesSnapshot } from "./manager";
 export {
   authProfileServicesForTab,
   authProfilesSnapshot,
+  defaultProfileIdForTab,
   emitAuthProfiles,
   handleAuthProfileMessage,
   loadAuthProfiles,

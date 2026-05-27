@@ -73,9 +73,7 @@ export function authProfileServicesForTab(
 ): AuthProfileServices {
   const profileId =
     state.tabAuthProfileIds.get(tabId) ??
-    (initialModel
-      ? state.authProfiles.defaultByProvider[initialModel.provider]
-      : undefined);
+    defaultProfileIdForTab(state, initialModel);
   if (!profileId) {
     return {
       authStorage: state.authStorage,
@@ -92,6 +90,31 @@ export function authProfileServicesForTab(
   }
   state.tabAuthProfileIds.set(tabId, profile.id);
   return servicesForProfile(state, profile.id);
+}
+
+export function defaultProfileIdForTab(
+  state: AethonAgentState,
+  initialModel?: Model<Api>,
+): string | undefined {
+  const candidates = [
+    initialModel?.provider,
+    state.settingsManager?.getDefaultProvider(),
+    providerFromModelId(state.settingsManager?.getDefaultModel()),
+  ];
+  for (const providerId of candidates) {
+    if (!providerId) continue;
+    const profileId = state.authProfiles.defaultByProvider[providerId];
+    if (profileId) return profileId;
+  }
+  const defaults = Object.values(state.authProfiles.defaultByProvider);
+  return defaults.length === 1 ? defaults[0] : undefined;
+}
+
+function providerFromModelId(modelId: string | undefined): string | undefined {
+  if (!modelId) return undefined;
+  const slash = modelId.indexOf("/");
+  if (slash <= 0) return undefined;
+  return modelId.slice(0, slash);
 }
 
 export function modelRegistryForModelId(
@@ -315,6 +338,7 @@ function handleOAuthStart(
     .catch((err: unknown) => {
       pendingOAuth.delete(challengeId);
       removeProfile(state, meta.id);
+      saveAuthProfiles(state);
       const message = err instanceof Error ? err.message : String(err);
       deps.send({
         type: "auth_profile_login_event",
@@ -344,6 +368,7 @@ function handleOAuthCancel(
   pending.controller.abort();
   pendingOAuth.delete(challengeId);
   removeProfile(state, pending.profileId);
+  saveAuthProfiles(state);
   emitAuthProfiles(state, deps);
 }
 

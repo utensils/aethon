@@ -70,6 +70,90 @@ describe("sessionUiSnapshot", () => {
     expect(loadSessionUiSnapshot()?.activeTabId).toBe("tab-a");
   });
 
+  it("does not restore persistent localStorage snapshots synchronously", () => {
+    const localStorage =
+      window.localStorage ??
+      (() => {
+        const values = new Map<string, string>();
+        return {
+          get length() {
+            return values.size;
+          },
+          clear: () => values.clear(),
+          getItem: (key: string) => values.get(key) ?? null,
+          key: (index: number) => [...values.keys()][index] ?? null,
+          removeItem: (key: string) => {
+            values.delete(key);
+          },
+          setItem: (key: string, value: string) => {
+            values.set(key, value);
+          },
+        } as Storage;
+      })();
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    localStorage.setItem(
+      "aethon:session-ui-snapshot:v1",
+      JSON.stringify({
+        tabs: [tab],
+        activeTabId: "tab-a",
+        savedAt: 1,
+      }),
+    );
+
+    expect(loadSessionUiSnapshot()).toBeNull();
+  });
+
+  it("dedupes plain-text copies of rendered tool output on restore", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("tab-a", "A"),
+            messages: [
+              {
+                id: "tool-card",
+                role: "agent",
+                a2ui: {
+                  components: [
+                    {
+                      id: "restored-tool-call_1",
+                      type: "tool-card",
+                      props: { title: "bash", toolName: "bash" },
+                      children: [
+                        {
+                          id: "result",
+                          type: "code",
+                          props: {
+                            content:
+                              "IN_NIX_SHELL=impure DEVSHELL_DIR=/nix/store/example",
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+              {
+                id: "plain-copy",
+                role: "agent",
+                text: "IN_NIX_SHELL=impure DEVSHELL_DIR=/nix/store/example",
+              },
+            ],
+          },
+        ],
+        activeTabId: "tab-a",
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.tabs[0].messages.map((message) => message.id)).toEqual([
+      "tool-card",
+    ]);
+  });
+
   it("does not restore agent tabs as waiting after an app restart", () => {
     const parsed = parseSessionUiSnapshot(
       JSON.stringify({
