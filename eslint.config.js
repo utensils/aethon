@@ -39,8 +39,16 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["agent/*.ts", "eslint.config.js", "*.{js,mjs,cjs}"],
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 64,
+          allowDefaultProject: [
+            "agent/*.ts",
+            // Submodule directories under agent/ (e.g. tab-lifecycle/*).
+            // tseslint disallows `**` here; one level of nesting matches
+            // the bridge's actual layout (no deeper subtrees).
+            "agent/*/*.ts",
+            "eslint.config.js",
+            "*.{js,mjs,cjs}",
+          ],
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 128,
         },
         tsconfigRootDir: import.meta.dirname,
       },
