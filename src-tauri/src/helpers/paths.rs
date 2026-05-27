@@ -39,11 +39,15 @@ pub fn aethon_dir(home: Option<PathBuf>) -> Option<PathBuf> {
 ///   happens once per command, after this check passes, on whichever
 ///   parent component already exists. That second pass catches symlink
 ///   escapes that lexical resolution can't see.
-/// - Strips `RootDir`/`Prefix` components on Windows so the comparison is
-///   structural; the inputs are still required to be absolute.
-/// - Both arguments must be normalized to the same prefix style by the
-///   caller (the commands convert `tilde` and relative segments before
-///   calling).
+/// - Components are walked verbatim: `ParentDir` pops the last `Normal`
+///   segment (or refuses if there isn't one), `CurDir` is dropped,
+///   everything else (including `RootDir` / `Prefix` on Windows) is
+///   pushed onto the resolved path. Both `root` and `path` must already
+///   be in the same prefix style — callers convert `~` and relative
+///   segments before calling.
+/// - The descendant check is a `PathBuf::starts_with` against `root`,
+///   which compares component-by-component (so `/a/bc` does not start
+///   with `/a/b`).
 pub fn resolve_inside_root(
     root: &std::path::Path,
     path: &std::path::Path,

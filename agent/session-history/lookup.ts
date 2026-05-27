@@ -8,22 +8,45 @@
  * efficiency hook we rely on.
  */
 
-import { readdir, readFile, stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { LOCAL_CHAT_FILE, type LatestSessionLog } from "./shared";
 
+/** Bytes to read from the head of each session file when we only need
+ *  the first line. Session headers are tiny JSON objects (`type`,
+ *  `cwd`, occasionally one or two more fields); 8 KB leaves room for
+ *  Linux's 4 KB PATH_MAX plus any future header fields. */
+const HEADER_PREFIX_BYTES = 8 * 1024;
+
 async function readSessionHeaderCwd(path: string): Promise<string | undefined> {
   // The session header (`{type:"session", cwd: "..."}`) is always the
-  // first line of the .jsonl. Read just enough to parse it — full-file
+  // first line of the .jsonl. Read a small prefix only — full-file
   // reads add up when this is called for every file in a session dir.
   let raw: string;
   try {
-    raw = await readFile(path, "utf8");
+    const handle = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(HEADER_PREFIX_BYTES);
+      const { bytesRead } = await handle.read(
+        buf,
+        0,
+        HEADER_PREFIX_BYTES,
+        0,
+      );
+      raw = buf.subarray(0, bytesRead).toString("utf8");
+    } finally {
+      await handle.close();
+    }
   } catch {
     return undefined;
   }
   const newline = raw.indexOf("\n");
-  const firstLine = (newline === -1 ? raw : raw.slice(0, newline)).trim();
+  // If the first line is longer than `HEADER_PREFIX_BYTES` (vanishingly
+  // unlikely for a real session header), treat the file as malformed and
+  // skip it — a false negative here means the caller falls back to
+  // mtime-ordered selection, which is the safe outcome.
+  if (newline === -1) return undefined;
+  const firstLine = raw.slice(0, newline).trim();
   if (!firstLine) return undefined;
   let entry: unknown;
   try {

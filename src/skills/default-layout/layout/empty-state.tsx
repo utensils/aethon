@@ -140,26 +140,38 @@ export function EmptyState({
           <div className="a2ui-empty-state-recent">
             <h2>Recent projects</h2>
             <ul>
-              {recentProjects.map((p) => (
-                <li
-                  key={p.id}
-                  className={
-                    p.active ? "a2ui-empty-state-recent-active" : undefined
-                  }
-                  onClick={() =>
-                    onEvent(
-                      "select-project",
-                      { projectId: p.id, label: p.label, path: p.path },
-                      p.id,
-                    )
-                  }
-                >
-                  <span className="a2ui-empty-state-recent-label">
-                    {p.label}
-                  </span>
-                  <span className="a2ui-empty-state-recent-meta">{p.path}</span>
-                </li>
-              ))}
+              {recentProjects.map((p) => {
+                const fire = () =>
+                  onEvent(
+                    "select-project",
+                    { projectId: p.id, label: p.label, path: p.path },
+                    p.id,
+                  );
+                return (
+                  <li
+                    key={p.id}
+                    className={
+                      p.active ? "a2ui-empty-state-recent-active" : undefined
+                    }
+                    role="button"
+                    tabIndex={0}
+                    onClick={fire}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        fire();
+                      }
+                    }}
+                  >
+                    <span className="a2ui-empty-state-recent-label">
+                      {p.label}
+                    </span>
+                    <span className="a2ui-empty-state-recent-meta">
+                      {p.path}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -167,30 +179,40 @@ export function EmptyState({
           <div className="a2ui-empty-state-recent">
             <h2>Recent sessions</h2>
             <ul>
-              {recentSessions.map((s) => (
-                <li
-                  key={s.id}
-                  onClick={() =>
-                    // descendantId carries the session id so an extension's
-                    // onEvent({componentType:"empty-state", descendantId:"…"})
-                    // matcher can target a specific session row.
-                    onEvent(
-                      "restore-session",
-                      { sessionId: s.id, label: s.label, cwd: s.cwd },
-                      s.id,
-                    )
-                  }
-                >
-                  <span className="a2ui-empty-state-recent-label">
-                    {s.label}
-                  </span>
-                  {s.lastModified && (
-                    <span className="a2ui-empty-state-recent-meta">
-                      {s.lastModified}
+              {recentSessions.map((s) => {
+                // descendantId carries the session id so an extension's
+                // onEvent({componentType:"empty-state", descendantId:"…"})
+                // matcher can target a specific session row.
+                const fire = () =>
+                  onEvent(
+                    "restore-session",
+                    { sessionId: s.id, label: s.label, cwd: s.cwd },
+                    s.id,
+                  );
+                return (
+                  <li
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={fire}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        fire();
+                      }
+                    }}
+                  >
+                    <span className="a2ui-empty-state-recent-label">
+                      {s.label}
                     </span>
-                  )}
-                </li>
-              ))}
+                    {s.lastModified && (
+                      <span className="a2ui-empty-state-recent-meta">
+                        {s.lastModified}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
