@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" role="img"
+     aria-label="Aethon — pi with a face">
+  <title>Aethon — pi with a face</title>
+  <desc>Universal hero: deep-orange serif wordmark "Aethon" with an orange π
+        badge over the upper serif of the Æ ligature. Reads on both light and
+        dark page backgrounds — used on the README where the OS color-scheme
+        signal can't be trusted to match the rendered page theme.</desc>
+
+  <!-- Wordmark — Æthon in Bodoni, deep brand orange so the type holds its
+       legibility on both light (≈4.6:1 on #ffffff) and dark
+       (≈3.9:1 on #0d1117) backgrounds. AA-Large passes on both. -->
+  <g transform="translate(360, 138)" text-anchor="middle">
+    <text font-family="'Bodoni 72', Didot, 'Playfair Display', Georgia, 'Times New Roman', serif"
+          font-weight="700" font-size="144" fill="#c84d0d"
+          letter-spacing="0.012em">Æthon</text>
+  </g>
+
+  <!-- π badge — bright brand orange disc with cream italic π. The disc itself
+       is the brand-pop element; cream-on-orange (~2.7:1) is decorative-only
+       at this size, but it reads on any page background because the orange
+       disc carries the contrast. -->
+  <g transform="translate(236, 52)">
+    <circle r="22" fill="#ff6a18"/>
+    <text y="10" text-anchor="middle"
+          font-family="'Bodoni 72', Didot, 'Playfair Display', Georgia, 'Times New Roman', serif"
+          font-style="italic" font-weight="700" font-size="29" fill="#fef3e2">π</text>
+  </g>
+
+  <!-- Hairline — deep brand orange to match the wordmark, sits quietly under
+       the type without competing for attention. -->
+  <line x1="298" y1="162" x2="422" y2="162" stroke="#c84d0d" stroke-width="1" opacity="0.55"/>
+
+  <!-- Tagline — small caps, generous tracking, same deep orange as the
+       wordmark so the type system feels coherent across both modes. -->
+  <text x="360" y="184" text-anchor="middle"
+        font-family="-apple-system, 'Segoe UI', system-ui, sans-serif"
+        font-size="12" font-weight="600" fill="#c84d0d" opacity="0.95"
+        letter-spacing="0.42em">PI WITH A FACE</text>
+</svg>

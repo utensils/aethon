@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/aethon-hero-light.svg">
-    <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero-dark.svg" width="720">
-  </picture>
+  <img alt="Aethon — pi with a face" src="assets/brand/aethon-hero.svg" width="720">
 </p>
 
 <p align="center">
@@ -130,7 +127,7 @@ The default layout _is_ a skill (`src/skills/default-layout/`). Replacing it req
 
 ## Project layout
 
-```
+```text
 aethon/
 ├── src/                 # React frontend (entry: src/main.tsx)
 ├── src-tauri/           # Rust Tauri shell (lib + helpers + watcher)
