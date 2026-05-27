@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import A2UIRenderer, { RegistryComponent } from "./components/A2UIRenderer";
 import { SkillRegistry } from "./skills/SkillRegistry";
-import { SkillRegistryProvider } from "./skills/registry";
 import { defaultLayoutSkill } from "./skills/default-layout";
+import { AppRoot } from "./app/AppRoot";
+import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
+import { useAppForwardRefs } from "./app/useAppForwardRefs";
 import type { A2UIPayload } from "./types/a2ui";
 import type { Tab } from "./types/tab";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
@@ -44,9 +45,6 @@ import pkg from "../package.json" with { type: "json" };
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
 import logoUrl from "./assets/aethon-logo.svg?url";
-
-// The default-layout skill ships a layout — that's the boot payload.
-const BOOT_LAYOUT: A2UIPayload = defaultLayoutSkill.layout!;
 
 export default function App() {
   // The registry is created once and shared across the app via context.
@@ -109,8 +107,6 @@ export default function App() {
   useSessionPersistence({ appStore, hasSyncSessionSnapshot });
 
   const recordProjectModel = useProjectModelRecorder(setState);
-
-  const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
 
   // ---------------------------------------------------------------------
   // Boot config: read ~/.aethon/config.toml + persisted theme/zoom/sidebar
@@ -314,19 +310,6 @@ export default function App() {
     autoRestoreDiscoveredSessions,
     closeTabNow,
   });
-  // Wire forward handles now that the live functions exist. Ref writes
-  // happen in commit phase (useEffect) — React disallows ref mutation
-  // during render. Earlier hooks call through these stubs in their own
-  // handlers/effects, which always run after commit, so the wiring is
-  // ready by the time anything dereferences these.
-  useEffect(() => {
-    projectOpsHandleRef.current = { clearActiveProject, setActiveProjectById };
-    projectsHandleRef.current = {
-      getPaths: () => projectsRef.current.projects.map((p) => p.path),
-      onGitStatusChanged: () => syncProjectsToState(),
-    };
-  });
-
   useProjectSyncEffects({
     state,
     stateRef,
@@ -352,13 +335,6 @@ export default function App() {
     notifyMinDurationMsRef,
     resolveShellWriteConsent,
     resolveShellCloseConsent,
-  });
-  // Thread the live pushNotification into the deferred ref so
-  // useZoomAndTheme + useShellConsent + useTabs stop using the no-op
-  // stub. Wired in commit phase — earlier hooks only dereference inside
-  // their own handlers, which run after the first commit.
-  useEffect(() => {
-    pushNotificationRef.current = pushNotification;
   });
 
   // ---------------------------------------------------------------------
@@ -433,16 +409,25 @@ export default function App() {
     persistLocalChatMessage,
     recordProjectModel,
   });
-  // Wire the chat-actions handle in commit phase so useTabs /
-  // useExtensionsHydration's appendSystem-via-stub becomes the live one
-  // before any of their handlers fire.
-  useEffect(() => {
-    chatActionsRef.current = {
-      appendMessage,
-      appendSystem,
-      clearChat,
-      setModel,
-    };
+
+  // All forward-ref slots — used by earlier hooks to call through to
+  // functions that aren't defined until after them — are mirrored here
+  // in a single commit-phase pass. See `useAppForwardRefs` for the
+  // pattern + why no deps array.
+  useAppForwardRefs({
+    projectOpsHandleRef,
+    projectsHandleRef,
+    projectsRef,
+    pushNotificationRef,
+    chatActionsRef,
+    clearActiveProject,
+    setActiveProjectById,
+    syncProjectsToState,
+    pushNotification,
+    appendMessage,
+    appendSystem,
+    clearChat,
+    setModel,
   });
 
   // Drain the per-tab client-side message queues. The hook subscribes to
@@ -753,54 +738,17 @@ export default function App() {
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
 
   return (
-    <SkillRegistryProvider registry={registry}>
-      <div className="app">
-        <A2UIRenderer
-          payload={layout}
-          state={renderState}
-          onStateChange={setState}
-          onEvent={onEvent}
-          tabId={state.activeTabId as string | undefined}
-        />
-        {/* App-root overlays — registry-resolved so a skill can replace any
-            of them via aethon.registerComponent("<type>", custom). Each
-            overlay gates its own visibility on state (e.g. /commandPalette
-            /open), so the renderers stay mounted but render null when
-            closed. tabId is forwarded so extension override templates
-            route their bridge events against the active pi session. */}
-        {notificationsOpen && (
-          <RegistryComponent
-            type="notification-stack"
-            state={renderState}
-            onEvent={onEvent}
-            tabId={state.activeTabId as string | undefined}
-          />
-        )}
-        {paletteOpen && (
-          <RegistryComponent
-            type="command-palette"
-            state={renderState}
-            onEvent={onEvent}
-            tabId={state.activeTabId as string | undefined}
-          />
-        )}
-        {settingsOpen && (
-          <RegistryComponent
-            type="settings-panel"
-            state={renderState}
-            onEvent={onEvent}
-            tabId={state.activeTabId as string | undefined}
-          />
-        )}
-        {searchOpen && (
-          <RegistryComponent
-            type="search-panel"
-            state={renderState}
-            onEvent={onEvent}
-            tabId={state.activeTabId as string | undefined}
-          />
-        )}
-      </div>
-    </SkillRegistryProvider>
+    <AppRoot
+      registry={registry}
+      layout={layout}
+      renderState={renderState}
+      setState={setState}
+      onEvent={onEvent}
+      activeTabId={state.activeTabId as string | undefined}
+      notificationsOpen={notificationsOpen}
+      paletteOpen={paletteOpen}
+      settingsOpen={settingsOpen}
+      searchOpen={searchOpen}
+    />
   );
 }
