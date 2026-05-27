@@ -102,6 +102,12 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
         ...(live?.shortcuts ?? {}),
         ...((pending as { shortcuts?: object }).shortcuts ?? {}),
       },
+      // Likewise for `[updates]` — preserve channel + auto-check settings
+      // across saves of unrelated sections.
+      updates: {
+        ...(live?.updates ?? {}),
+        ...((pending as { updates?: object }).updates ?? {}),
+      },
     };
     try {
       await invoke("write_config", { config: merged });

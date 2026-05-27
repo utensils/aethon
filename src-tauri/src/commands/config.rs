@@ -147,6 +147,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let agent = config.get("agent").and_then(|v| v.as_object());
     let shell = config.get("shell").and_then(|v| v.as_object());
     let shortcuts = config.get("shortcuts").and_then(|v| v.as_object());
+    let updates = config.get("updates").and_then(|v| v.as_object());
 
     let theme = ui
         .and_then(|m| m.get("theme"))
@@ -202,6 +203,13 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("newTabKind"))
         .and_then(|v| v.as_str())
         .map(|s| helpers::normalize_new_tab_kind(Some(s)));
+    let update_channel = updates
+        .and_then(|m| m.get("channel"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_update_channel(Some(s)));
+    let disable_auto_check = updates
+        .and_then(|m| m.get("disableAutoCheck"))
+        .and_then(|v| v.as_bool());
 
     // Load the existing file (or seed a fresh document with our header
     // banner) and edit the known keys. toml_edit preserves comments,
@@ -286,6 +294,20 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
                 shortcuts_table.remove("new_tab_kind");
             }
         }
+    }
+
+    // ── [updates] ──
+    {
+        let updates_table = ensure_table(&mut doc, "updates");
+        match update_channel {
+            Some(channel) => {
+                updates_table.insert("channel", toml_edit::value(channel));
+            }
+            None => {
+                updates_table.remove("channel");
+            }
+        }
+        set_or_clear_bool(updates_table, "disable_auto_check", disable_auto_check);
     }
 
     // Atomic-write: write to <path>.tmp, then rename. fs::rename is

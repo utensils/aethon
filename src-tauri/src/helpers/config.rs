@@ -74,6 +74,19 @@ pub struct ShortcutsConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct UpdatesConfig {
+    /// Which release channel the auto-updater checks. Allowed values:
+    /// `"stable"` (default) tracks `releases/latest`; `"nightly"`
+    /// follows the `nightly` tag for in-development builds. Anything
+    /// else falls back to `"stable"`. Mirrored on the frontend so
+    /// users get the same channel after a restart.
+    pub channel: Option<String>,
+    /// Disable the automatic background update check entirely. The
+    /// "Check for Updates" menu item still works. Default `false`.
+    pub disable_auto_check: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct ExtensionsConfig {
     /// Soft warning threshold (KB) for an extension's `setState` payload.
     /// Above this, the bridge logs a WARN naming the extension and path.
@@ -100,6 +113,19 @@ pub struct AethonConfig {
     pub shortcuts: ShortcutsConfig,
     #[serde(default)]
     pub extensions: ExtensionsConfig,
+    #[serde(default)]
+    pub updates: UpdatesConfig,
+}
+
+/// Validate-and-normalize `[updates] channel`. Unknown strings, missing
+/// values, and parse failures all fall through to `"stable"`. Lives next
+/// to the parser so test coverage sits with the other config helpers.
+pub fn normalize_update_channel(input: Option<&str>) -> &'static str {
+    match input {
+        Some("nightly") => "nightly",
+        // Includes Some("stable"), Some(<unknown>), and None.
+        _ => "stable",
+    }
 }
 
 /// Validate-and-normalize the configured default share mode. Unknown
@@ -173,6 +199,8 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     let default_args: Vec<String> = cfg.shell.default_args.unwrap_or_default();
     let (state_warn_kb, state_hard_kb) =
         resolve_ext_state_limits(cfg.extensions.state_warn_kb, cfg.extensions.state_hard_kb);
+    let update_channel = normalize_update_channel(cfg.updates.channel.as_deref());
+    let disable_auto_check = cfg.updates.disable_auto_check.unwrap_or(false);
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
@@ -198,6 +226,10 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         "extensions": {
             "stateWarnKb": state_warn_kb,
             "stateHardKb": state_hard_kb,
+        },
+        "updates": {
+            "channel": update_channel,
+            "disableAutoCheck": disable_auto_check,
         },
     })
 }

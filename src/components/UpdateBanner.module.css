@@ -1,0 +1,99 @@
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem;
+  background: var(
+    --update-banner-bg,
+    var(--surface-2, color-mix(in srgb, var(--accent) 12%, transparent))
+  );
+  color: var(--update-banner-fg, var(--text, currentColor));
+  border-bottom: 1px solid
+    var(
+      --update-banner-border,
+      color-mix(in srgb, var(--accent) 25%, transparent)
+    );
+  font-size: 0.85rem;
+  line-height: 1.3;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  -webkit-app-region: no-drag;
+}
+
+.message {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.errorMessage {
+  color: var(--danger, #ff7676);
+}
+
+.version {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.btn,
+.btnPrimary {
+  background: transparent;
+  border: 1px solid
+    var(--border, color-mix(in srgb, currentColor 30%, transparent));
+  color: inherit;
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  background: var(--accent, #6189ff);
+  border-color: var(--accent, #6189ff);
+  color: var(--accent-fg, #fff);
+}
+
+.btn:hover,
+.btnPrimary:hover {
+  filter: brightness(1.08);
+}
+
+.progressWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 220px;
+}
+
+.progressTrack {
+  flex: 1 1 auto;
+  height: 6px;
+  background: var(--surface-3, rgba(255, 255, 255, 0.08));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  background: var(--accent, #6189ff);
+  transition: width 120ms ease;
+}
+
+.progressLabel {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  opacity: 0.8;
+  min-width: 3.5rem;
+  text-align: right;
+}

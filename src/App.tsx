@@ -24,6 +24,8 @@ import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
+import { UpdateBanner } from "./components/UpdateBanner";
+import type { AethonConfig } from "./config";
 import { useProjectOps } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import {
@@ -454,7 +456,32 @@ export default function App() {
   });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
-  const { checkForUpdates } = useUpdater({ appendSystem });
+  // The hook reads the persisted channel + auto-check toggle from
+  // `config.toml` during its own boot lifecycle, so we don't have to
+  // race the boot-config ref read here. Settings save still routes
+  // through `reapplyConfigWithUpdater` below so a runtime change
+  // updates the hook immediately instead of waiting for the next
+  // poll to pick up the new file.
+  const {
+    state: updaterState,
+    actions: {
+      checkForUpdates,
+      installNow,
+      dismiss,
+      retryInstall,
+      setChannel: setUpdateChannel,
+      setDisableAutoCheck: setUpdateDisableAutoCheck,
+    },
+  } = useUpdater({ appendSystem });
+  const reapplyConfigWithUpdater = useMemo(
+    () =>
+      (fresh: AethonConfig) => {
+        reapplyConfig(fresh);
+        setUpdateChannel(fresh.updates.channel);
+        setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
+      },
+    [reapplyConfig, setUpdateChannel, setUpdateDisableAutoCheck],
+  );
 
   // ---------------------------------------------------------------------
   // Settings panel + session search + command palette. Three modal
@@ -479,7 +506,7 @@ export default function App() {
   } = useUiOverlays({
     setState,
     stateRef,
-    reapplyConfig,
+    reapplyConfig: reapplyConfigWithUpdater,
     pushNotification,
     setActiveTab,
     newTab,
@@ -738,17 +765,25 @@ export default function App() {
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
 
   return (
-    <AppRoot
-      registry={registry}
-      layout={layout}
-      renderState={renderState}
-      setState={setState}
-      onEvent={onEvent}
-      activeTabId={state.activeTabId as string | undefined}
-      notificationsOpen={notificationsOpen}
-      paletteOpen={paletteOpen}
-      settingsOpen={settingsOpen}
-      searchOpen={searchOpen}
-    />
+    <>
+      <UpdateBanner
+        state={updaterState}
+        onInstallNow={installNow}
+        onDismiss={dismiss}
+        onRetry={retryInstall}
+      />
+      <AppRoot
+        registry={registry}
+        layout={layout}
+        renderState={renderState}
+        setState={setState}
+        onEvent={onEvent}
+        activeTabId={state.activeTabId as string | undefined}
+        notificationsOpen={notificationsOpen}
+        paletteOpen={paletteOpen}
+        settingsOpen={settingsOpen}
+        searchOpen={searchOpen}
+      />
+    </>
   );
 }

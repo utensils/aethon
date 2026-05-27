@@ -40,6 +40,16 @@ export interface UseBootConfigActions {
   /** [shortcuts] new_tab_kind — controls Cmd+T routing when focus is
    *  outside the bottom terminal panel. */
   shortcutsNewTabKindRef: MutableRefObject<"agent" | "shell">;
+  /** [updates] channel — initial value passed to `useUpdater` so the
+   *  first background poll hits the right endpoint without a wasted
+   *  round-trip against the default ("stable"). Settings save calls
+   *  `setUpdateChannel` to mutate the live hook state. */
+  updateChannelRef: MutableRefObject<"stable" | "nightly">;
+  /** [updates] disable_auto_check — Settings panel reads this so the
+   *  switch reflects the live state; the hook itself doesn't gate
+   *  background polling on it yet (this lands with the auto-check
+   *  toggle in the Settings UI). */
+  disableAutoCheckRef: MutableRefObject<boolean>;
   /** Apply a freshly-read AethonConfig into the live refs + theme/font
    *  CSS. The settings save path calls this after `clearConfigCache()`
    *  + `getConfig()` so the running app picks up the new values without
@@ -72,6 +82,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
   const shellInheritEnvRef = useRef<boolean>(true);
   const shellPromptBeforeCloseRef = useRef<boolean>(true);
   const shortcutsNewTabKindRef = useRef<"agent" | "shell">("agent");
+  const updateChannelRef = useRef<"stable" | "nightly">("stable");
+  const disableAutoCheckRef = useRef<boolean>(false);
 
   function reapplyConfig(fresh: AethonConfig) {
     if (fresh.ui.theme) {
@@ -95,6 +107,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
     shellInheritEnvRef.current = fresh.shell.inheritEnv;
     shellPromptBeforeCloseRef.current = fresh.shell.promptBeforeClose;
     shortcutsNewTabKindRef.current = fresh.shortcuts.newTabKind;
+    updateChannelRef.current = fresh.updates.channel;
+    disableAutoCheckRef.current = fresh.updates.disableAutoCheck;
     if (fresh.agent.model) {
       piDefaultModelRef.current = fresh.agent.model;
       setState((prev) => ({
@@ -169,6 +183,10 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
       shellPromptBeforeCloseRef.current = config.shell.promptBeforeClose;
       // [shortcuts] new_tab_kind.
       shortcutsNewTabKindRef.current = config.shortcuts.newTabKind;
+      // [updates] — seed the hook ref so the first poll fires against
+      // the configured channel.
+      updateChannelRef.current = config.updates.channel;
+      disableAutoCheckRef.current = config.updates.disableAutoCheck;
 
       // [agent] model: when set, seed the picker default for this
       // session. Only applied if no per-session model has been saved
@@ -213,6 +231,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
     shortcutsNewTabKindRef,
+    updateChannelRef,
+    disableAutoCheckRef,
     reapplyConfig,
   };
 }

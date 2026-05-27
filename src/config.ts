@@ -52,6 +52,15 @@ export interface AethonConfig {
      *  through to `"agent"`. */
     newTabKind: "agent" | "shell";
   };
+  updates: {
+    /** Release channel the auto-updater follows. `"stable"` (default)
+     *  tracks `releases/latest`; `"nightly"` follows the `nightly`
+     *  tag. Mirrored on the Rust side by `commands::updater`. */
+    channel: "stable" | "nightly";
+    /** When true, the 30-min background poll never runs. The "Check
+     *  for Updates" menu item still works. */
+    disableAutoCheck: boolean;
+  };
 }
 
 const DEFAULTS: AethonConfig = {
@@ -72,6 +81,7 @@ const DEFAULTS: AethonConfig = {
     promptBeforeClose: true,
   },
   shortcuts: { newTabKind: "agent" },
+  updates: { channel: "stable", disableAutoCheck: false },
 };
 
 function hasTauri(): boolean {
@@ -148,6 +158,11 @@ export function getConfig(): Promise<AethonConfig> {
         shortcuts: {
           newTabKind:
             obj?.shortcuts?.newTabKind === "shell" ? "shell" : "agent",
+        },
+        updates: {
+          channel:
+            obj?.updates?.channel === "nightly" ? "nightly" : "stable",
+          disableAutoCheck: obj?.updates?.disableAutoCheck === true,
         },
       };
     } catch (err) {
