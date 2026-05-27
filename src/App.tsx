@@ -765,25 +765,25 @@ export default function App() {
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
 
   return (
-    <>
-      <UpdateBanner
-        state={updaterState}
-        onInstallNow={installNow}
-        onDismiss={dismiss}
-        onRetry={retryInstall}
-      />
-      <AppRoot
-        registry={registry}
-        layout={layout}
-        renderState={renderState}
-        setState={setState}
-        onEvent={onEvent}
-        activeTabId={state.activeTabId as string | undefined}
-        notificationsOpen={notificationsOpen}
-        paletteOpen={paletteOpen}
-        settingsOpen={settingsOpen}
-        searchOpen={searchOpen}
-      />
-    </>
+    <AppRoot
+      registry={registry}
+      layout={layout}
+      renderState={renderState}
+      setState={setState}
+      onEvent={onEvent}
+      activeTabId={state.activeTabId as string | undefined}
+      notificationsOpen={notificationsOpen}
+      paletteOpen={paletteOpen}
+      settingsOpen={settingsOpen}
+      searchOpen={searchOpen}
+      topBanner={
+        <UpdateBanner
+          state={updaterState}
+          onInstallNow={installNow}
+          onDismiss={dismiss}
+          onRetry={retryInstall}
+        />
+      }
+    />
   );
 }

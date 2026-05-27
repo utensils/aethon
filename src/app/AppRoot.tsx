@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import A2UIRenderer, {
   RegistryComponent,
   type A2UIEventHandler,
@@ -18,6 +18,10 @@ export interface AppRootProps {
   paletteOpen: boolean;
   settingsOpen: boolean;
   searchOpen: boolean;
+  /** Optional banner row rendered above the layout. Sits in flow as the
+   *  first flex child of `.app` so it pushes the rest of the chrome
+   *  down instead of floating over it. */
+  topBanner?: ReactNode;
 }
 
 /** App-root render. The four overlays mount through `RegistryComponent`
@@ -38,10 +42,12 @@ export function AppRoot({
   paletteOpen,
   settingsOpen,
   searchOpen,
+  topBanner,
 }: AppRootProps) {
   return (
     <SkillRegistryProvider registry={registry}>
       <div className="app">
+        {topBanner}
         <A2UIRenderer
           payload={layout}
           state={renderState}
