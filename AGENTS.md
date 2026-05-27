@@ -31,6 +31,7 @@ devshell exposes these helpers (defined in `flake.nix`):
 | Command     | What it does                                                                  |
 | ----------- | ----------------------------------------------------------------------------- |
 | `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                 |
+| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)     |
 | `build-app` | `cargo tauri build` — release bundle                                          |
 | `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                     |
 | `lint`      | ESLint frontend + agent (no auto-fix)                                         |

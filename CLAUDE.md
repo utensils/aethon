@@ -27,15 +27,16 @@ subprocess. Business logic belongs in the agent, not the shell.
 Run inside `nix develop` (direnv auto-activates via `.envrc`). Devshell
 helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                  |
-| ----------- | ------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment |
-| `build-app` | `cargo tauri build` — release bundle                          |
-| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest          |
-| `lint`      | ESLint (no auto-fix)                                          |
-| `test`      | `cargo test --lib` + `bunx vitest run`                        |
-| `coverage`  | TS coverage report (vitest v8) → `coverage/`                  |
-| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                 |
+| Command     | What it does                                                                |
+| ----------- | --------------------------------------------------------------------------- |
+| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment               |
+| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)   |
+| `build-app` | `cargo tauri build` — release bundle                                        |
+| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest                        |
+| `lint`      | ESLint (no auto-fix)                                                        |
+| `test`      | `cargo test --lib` + `bunx vitest run`                                      |
+| `coverage`  | TS coverage report (vitest v8) → `coverage/`                                |
+| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                               |
 
 ESLint is configured for **0 errors and 0 warnings**.
 

@@ -79,6 +79,7 @@ input for Nix builds.
 | Command     | What it does                                                                                |
 | ----------- | ------------------------------------------------------------------------------------------- |
 | `dev`       | Launch the app with hot reload (auto-increments Vite + debug ports if 1420/19433 are busy)  |
+| `docs`      | Run the VitePress docs site on `0.0.0.0:5173` with hot reload                               |
 | `build-app` | Release bundle (`.app` / `.dmg` on macOS, `.deb` / `.rpm` on Linux, NSIS `.exe` on Windows) |
 | `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                                   |
 | `lint`      | ESLint frontend + agent (no auto-fix)                                                       |
