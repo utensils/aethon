@@ -28,6 +28,13 @@ pub(super) type ChildHandle = Arc<Mutex<Option<Box<dyn Child + Send + Sync>>>>;
 pub(super) type ScrollbackHandle = Arc<Mutex<Scrollback>>;
 pub(super) type ShareHandle = Arc<Mutex<ShareState>>;
 
+// Visibility is `cfg`-gated. The dev-only inspector commands in
+// `crate::debug` need `pub(crate)` access; the production code
+// surface should keep the tighter `pub(super)` so non-`lifecycle::*`
+// callers can't bypass share-mode / API guards. Release builds
+// retain the strict encapsulation; dev builds open it just enough
+// for the aethon-debug skill.
+#[cfg(debug_assertions)]
 pub(crate) struct ShellSlot {
     pub(super) writer: Box<dyn Write + Send>,
     pub(super) master: Box<dyn MasterPty + Send>,
@@ -37,6 +44,18 @@ pub(crate) struct ShellSlot {
     pub(super) share: ShareHandle,
     /// Cosmetic. Carried for the status-line badge + `list_shareable`.
     /// Not authoritative — the agent always re-asks Rust for live state.
+    pub(super) cwd: String,
+    pub(super) command: String,
+}
+
+#[cfg(not(debug_assertions))]
+pub(super) struct ShellSlot {
+    pub(super) writer: Box<dyn Write + Send>,
+    pub(super) master: Box<dyn MasterPty + Send>,
+    pub(super) child: ChildHandle,
+    pub(super) reader_thread: Option<JoinHandle<()>>,
+    pub(super) scrollback: ScrollbackHandle,
+    pub(super) share: ShareHandle,
     pub(super) cwd: String,
     pub(super) command: String,
 }
@@ -65,13 +84,14 @@ impl ShellSlot {
 
 #[derive(Default)]
 pub struct ShellRegistry {
-    // pub(crate) so the debug-only inspector commands in
-    // `crate::debug` can read scrollback + push raw input regardless
-    // of share-mode (production code paths still use the
-    // `pub(super)`-shaped accessors inside this module). The debug
-    // surface is gated on `cfg(debug_assertions)`, so this widening
-    // doesn't leak into release builds.
+    // Visibility is `cfg`-gated so release builds retain the
+    // `pub(super)` encapsulation while debug builds open the field
+    // to `crate::debug`'s inspector commands. See `ShellSlot` for
+    // the same pattern + rationale.
+    #[cfg(debug_assertions)]
     pub(crate) slots: Mutex<HashMap<String, ShellSlot>>,
+    #[cfg(not(debug_assertions))]
+    pub(super) slots: Mutex<HashMap<String, ShellSlot>>,
 }
 
 impl ShellRegistry {

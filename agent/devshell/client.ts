@@ -145,13 +145,20 @@ export async function refresh(
   root: string,
 ): Promise<void> {
   // Clear all cache entries whose cwd lies under root — a worktree
-  // shares the root flake but lives in a different cwd.
+  // shares the root flake but lives in a different cwd. Mirror the
+  // same loop into `warned` so a subpath cwd that previously emitted
+  // a cold-run warning will warn again after the refresh (otherwise
+  // the user gets a silent first command on stale env).
   for (const key of [...cache.keys()]) {
-    if (key === root || key.startsWith(root.endsWith("/") ? root : `${root}/`)) {
+    if (isUnderRoot(key, root)) {
       cache.delete(key);
     }
   }
-  warned.delete(root);
+  for (const key of [...warned]) {
+    if (isUnderRoot(key, root)) {
+      warned.delete(key);
+    }
+  }
   await sendQuery(state, deps, "refresh", { root }, FETCH_TIMEOUT_MS);
 }
 
@@ -167,20 +174,36 @@ export function onDevshellEvent(
   if (event.status === "ready") {
     // Just invalidate; the next spawnHook call will re-fetch under
     // its own cwd (which may be a worktree subpath of `root`).
+    // Mirror the loop into `warned` so a subpath cwd that previously
+    // emitted a cold-run warning will warn again after the resolver
+    // completes a fresh resolve (otherwise the user gets a silent
+    // first command on stale env).
     for (const key of [...cache.keys()]) {
-      if (key === event.root || key.startsWith(event.root.endsWith("/") ? event.root : `${event.root}/`)) {
+      if (isUnderRoot(key, event.root)) {
         cache.delete(key);
       }
     }
-    warned.delete(event.root);
+    for (const key of [...warned]) {
+      if (isUnderRoot(key, event.root)) {
+        warned.delete(key);
+      }
+    }
   } else if (event.status === "failed") {
     // Mark stale so the next call shows the warning again.
     for (const [key, entry] of cache.entries()) {
-      if (key === event.root || key.startsWith(event.root.endsWith("/") ? event.root : `${event.root}/`)) {
+      if (isUnderRoot(key, event.root)) {
         cache.set(key, { ...entry, stale: true });
       }
     }
   }
+}
+
+/** True when `cwd` is `root` or a descendant. Handles trailing
+ *  slashes by normalising on the fly. */
+function isUnderRoot(cwd: string, root: string): boolean {
+  if (cwd === root) return true;
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return cwd.startsWith(prefix);
 }
 
 /** Emit a one-shot warning to the agent-bash stream when a tool call

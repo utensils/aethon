@@ -39,8 +39,12 @@ export interface UseDevshellOptions {
    *  status whenever this changes so the badge updates on project
    *  switch. */
   activeRoot: string | null;
-  /** Patch into `/devshell` slice of central state. */
-  setDevshellEntry: (root: string, entry: DevshellEntry) => void;
+  /** Patch into `/devshell` slice of central state. The hook passes
+   *  *partial* updates here (Tauri push events don't carry enabled /
+   *  mode); the callback should merge over the existing entry so
+   *  config-derived fields like `enabled` / `mode` aren't clobbered
+   *  with stale defaults on every resolver event. */
+  setDevshellEntry: (root: string, patch: Partial<DevshellEntry>) => void;
   setDevshellActive: (root: string | null) => void;
 }
 
@@ -129,6 +133,13 @@ export function useDevshell(opts: UseDevshellOptions): void {
     let cancelled = false;
     void (async () => {
       try {
+        // Push events carry only what the resolver knows (kind +
+        // state + timings/reason). We deliberately do NOT set
+        // `enabled` / `mode` here — those come from the user's
+        // config and are populated by the initial `devshell_status`
+        // hydration call above. The setter merges patches over the
+        // existing entry so config-derived fields survive every
+        // resolver event.
         const offResolving = await listen<ResolvingPayload>(
           "devshell-resolving",
           (event) => {
@@ -136,8 +147,6 @@ export function useDevshell(opts: UseDevshellOptions): void {
             optsRef.current.setDevshellEntry(root, {
               kind,
               detectedKind: kind,
-              enabled: "auto",
-              mode: "auto",
               state: "resolving",
             });
             forwardToAgent(root, kind, "resolving");
@@ -148,8 +157,6 @@ export function useDevshell(opts: UseDevshellOptions): void {
           optsRef.current.setDevshellEntry(root, {
             kind,
             detectedKind: kind,
-            enabled: "auto",
-            mode: "auto",
             state: "ready",
             resolvedAtMs,
             durationMs,
@@ -162,8 +169,6 @@ export function useDevshell(opts: UseDevshellOptions): void {
           optsRef.current.setDevshellEntry(root, {
             kind,
             detectedKind: kind,
-            enabled: "auto",
-            mode: "auto",
             state: "failed",
             reason,
           });

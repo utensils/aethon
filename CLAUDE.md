@@ -313,7 +313,7 @@ One source of truth feeds both:
 - `src-tauri/src/commands/devshell.rs` — `devshell_status` (badge),
   `devshell_env_for_path` (spawnHook), `devshell_refresh`
   (Settings + future file-watcher). Honours `[devshell] enabled =
-  "never"` as an unconditional short-circuit. Per-project override
+"never"` as an unconditional short-circuit. Per-project override
   at `<project>/.aethon/devshell.toml` merges over the global section.
 - PTY intercept in `shell/lifecycle/open.rs` — applies the resolved
   env **after** `TERM`/`COLORTERM`/`AETHON` and **before** `args.env`

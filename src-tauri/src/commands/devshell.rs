@@ -133,6 +133,14 @@ pub struct StatusResponse {
 
 /// Non-blocking status read. Never spawns a resolver — the badge
 /// would otherwise warm the cache on every render.
+///
+/// `enabled = "always"` semantics: any project that *can't* surface
+/// a devshell becomes a hard error (returned via `StatusSnapshot::
+/// Failed`), so the user sees a loud signal on the badge instead of
+/// the silent no-op the original `"auto"` policy would produce. The
+/// caller (PTY intercept, agent spawnHook) still falls through to
+/// the host env so shells continue to work — `"always"` only changes
+/// what the UI shows, not whether the shell opens.
 #[tauri::command]
 pub async fn devshell_status<R: Runtime>(
     app: AppHandle<R>,
@@ -141,27 +149,38 @@ pub async fn devshell_status<R: Runtime>(
 ) -> Result<StatusResponse, String> {
     let root = PathBuf::from(&args.root);
     let (enabled, mode) = effective_config(&app, &root);
-    let snapshot = if enabled == "never" {
-        StatusSnapshot::None
-    } else {
-        cache.status(&root).await
-    };
     let detected_kind = if enabled == "never" {
         None
     } else {
         crate::devshell::detect_mode(&root, mode).map(|k| k.as_str().to_string())
     };
+    let snapshot = match enabled.as_str() {
+        "never" => StatusSnapshot::None,
+        "always" if detected_kind.is_none() => StatusSnapshot::Failed {
+            kind: mode_str(mode).to_string(),
+            reason: format!(
+                "no devshell detected at {} and [devshell] enabled = \"always\"",
+                root.display()
+            ),
+            failed_at_ms: 0,
+        },
+        _ => cache.status(&root).await,
+    };
     Ok(StatusResponse {
         enabled,
-        mode: match mode {
-            DetectMode::Auto => "auto".into(),
-            DetectMode::Direnv => "direnv".into(),
-            DetectMode::Nix => "nix".into(),
-            DetectMode::NixShell => "nix-shell".into(),
-        },
+        mode: mode_str(mode).to_string(),
         snapshot,
         detected_kind,
     })
+}
+
+fn mode_str(mode: DetectMode) -> &'static str {
+    match mode {
+        DetectMode::Auto => "auto",
+        DetectMode::Direnv => "direnv",
+        DetectMode::Nix => "nix",
+        DetectMode::NixShell => "nix-shell",
+    }
 }
 
 #[derive(Deserialize)]
@@ -220,6 +239,10 @@ pub struct RefreshArgs {
 /// Invalidate the cache for `root` and kick off a fresh resolve.
 /// Honours `enabled = "never"` by no-op'ing — Settings can still call
 /// this safely even when the feature is off.
+///
+/// Under `enabled = "always"`, a missing devshell is escalated to a
+/// hard error so the user sees a loud failure instead of a silent
+/// "nothing to refresh" no-op.
 #[tauri::command]
 pub async fn devshell_refresh<R: Runtime>(
     app: AppHandle<R>,
@@ -232,7 +255,15 @@ pub async fn devshell_refresh<R: Runtime>(
         return Ok(());
     }
     let emitter = emitter_for(&app);
-    cache.refresh(Some(&emitter), &root, mode).await
+    match cache.refresh(Some(&emitter), &root, mode).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // "auto" silently no-ops when there's no devshell to
+            // refresh (a project without a flake is fine to refresh);
+            // "always" treats the same condition as a hard error.
+            if enabled == "always" { Err(e) } else { Ok(()) }
+        }
+    }
 }
 
 /// Boot-time helper: configure the cache's on-disk root and GC stale

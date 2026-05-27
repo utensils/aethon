@@ -115,11 +115,26 @@ struct Slot {
 /// spawned resolver task can write back to the same map the calling
 /// thread reads from, without unsafe and without forcing every
 /// caller to plumb an Arc through.
+///
+/// Cache keys are always canonicalized at the boundary
+/// ([`canonicalize_key`]) so symlinked / `..`-laden / casing-variant
+/// paths to the same project map to one slot instead of duplicating
+/// resolves.
 pub struct DevshellCache {
     slots: Arc<RwLock<BTreeMap<PathBuf, Slot>>>,
     /// `~/.aethon/devshell-cache/` (set once at boot). None in unit
     /// tests so the resolver doesn't try to touch the real home dir.
     disk_root: Arc<RwLock<Option<PathBuf>>>,
+}
+
+/// Canonicalize a project root path so callers using different but
+/// equivalent paths (symlinks, trailing `/`, `..`, case-variant on
+/// case-insensitive FS) all hit the same cache slot. Falls back to
+/// the original path when canonicalization fails (caller may have
+/// passed a path that doesn't yet exist — fingerprinting will still
+/// produce a stable key based on whatever marker files do exist).
+fn canonicalize_key(p: &Path) -> PathBuf {
+    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 impl DevshellCache {
@@ -143,8 +158,9 @@ impl DevshellCache {
     /// `devshell_status` IPC. Never spawns a resolver — the badge
     /// would otherwise warm the cache implicitly on every render.
     pub async fn status(&self, root: &Path) -> StatusSnapshot {
+        let root = canonicalize_key(root);
         let guard = self.slots.read().await;
-        match guard.get(root).map(|s| &s.state) {
+        match guard.get(&root).map(|s| &s.state) {
             None => StatusSnapshot::None,
             Some(ResolverState::Idle) => StatusSnapshot::Idle {
                 kind: "auto".into(),
@@ -190,19 +206,47 @@ impl DevshellCache {
         root: &Path,
         mode: DetectMode,
     ) -> EnvForPath {
-        let Some(kind) = detect_with(root, mode, &RealProbe) else {
+        let root = canonicalize_key(root);
+        let Some(kind) = detect_with(&root, mode, &RealProbe) else {
             return EnvForPath {
                 kind: None,
                 stale: false,
                 env: BTreeMap::new(),
             };
         };
-        let fingerprint = fingerprint_inputs(root);
+        let fingerprint = fingerprint_inputs(&root);
+
+        // Cold-start disk pre-warm: no in-memory slot for this root
+        // AND a snapshot on disk matches the current fingerprint?
+        // Hydrate the slot before deciding whether to spawn a
+        // resolver. Saves a full `nix print-dev-env` re-eval on app
+        // boot when nothing has changed since the previous session.
+        {
+            let already_warm = self.slots.read().await.contains_key(&root);
+            if !already_warm {
+                let disk_root = self.disk_root.read().await.clone();
+                if let Some(disk) = disk_root
+                    && let Some(snap) = load_disk_snapshot(&disk, &fingerprint)
+                {
+                    let mut guard = self.slots.write().await;
+                    guard.entry(root.clone()).or_insert_with(|| Slot {
+                        state: ResolverState::Ready {
+                            kind,
+                            env: snap.env,
+                            resolved_at: SystemTime::now(),
+                            duration_ms: snap.duration_ms,
+                            fingerprint: fingerprint.clone(),
+                        },
+                        notify: Arc::new(Notify::new()),
+                    });
+                }
+            }
+        }
 
         // Fast path: already Ready with matching fingerprint.
         {
             let guard = self.slots.read().await;
-            if let Some(slot) = guard.get(root)
+            if let Some(slot) = guard.get(&root)
                 && let ResolverState::Ready {
                     env,
                     fingerprint: fp,
@@ -219,14 +263,14 @@ impl DevshellCache {
         }
 
         // Slow path: ensure a resolver task exists.
-        self.kick_resolve(emitter, root.to_path_buf(), kind, fingerprint, false)
+        self.kick_resolve(emitter, root.clone(), kind, fingerprint, false)
             .await;
         // Return what we have right now — even if Ready with a stale
         // fingerprint, hand back the previous env flagged stale, so
         // the shell has *something* to run with while the new resolve
         // is in flight.
         let guard = self.slots.read().await;
-        match guard.get(root).map(|s| &s.state) {
+        match guard.get(&root).map(|s| &s.state) {
             Some(ResolverState::Ready { env, .. }) => EnvForPath {
                 kind: Some(kind.as_str().into()),
                 stale: true,
@@ -248,11 +292,12 @@ impl DevshellCache {
         root: &Path,
         mode: DetectMode,
     ) -> Result<(), String> {
-        let Some(kind) = detect_with(root, mode, &RealProbe) else {
+        let root = canonicalize_key(root);
+        let Some(kind) = detect_with(&root, mode, &RealProbe) else {
             return Err(format!("no devshell detected at {}", root.display()));
         };
-        let fingerprint = fingerprint_inputs(root);
-        self.kick_resolve(emitter, root.to_path_buf(), kind, fingerprint, true)
+        let fingerprint = fingerprint_inputs(&root);
+        self.kick_resolve(emitter, root, kind, fingerprint, true)
             .await;
         Ok(())
     }
@@ -507,13 +552,12 @@ fn write_disk_snapshot(
 }
 
 /// Load any previously-written disk snapshot whose fingerprint matches
-/// the current marker files. Lets a cold launch skip the evaluator
-/// when nothing has changed since the previous session. Currently
-/// invoked only from tests; production reads go through the in-memory
-/// resolver because we never want a cold-launch shell to wait on disk
-/// I/O before the first prompt paints. Reserved for a future
-/// "pre-warm cache from disk at boot" pass.
-#[cfg(test)]
+/// the current marker files. Used as a cold-start pre-warm: the first
+/// `env_for` call for a project after app boot pulls the previous
+/// session's resolver output from disk (if its fingerprint still
+/// matches the current `flake.lock` + marker mtimes), skipping the
+/// full `nix print-dev-env` re-eval. Fingerprint mismatch falls
+/// through to a fresh resolve.
 pub fn load_disk_snapshot(disk_root: &Path, fingerprint: &str) -> Option<ResolvedEnv> {
     let dir = disk_root.join(&fingerprint[..fingerprint.len().min(16)]);
     let env_path = dir.join("env.json");

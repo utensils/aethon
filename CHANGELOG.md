@@ -22,7 +22,7 @@ All notable changes to Aethon. Format loosely follows
   (direnv wins when `.envrc` + the `direnv` binary are present because
   it matches the cached env users already see at the CLI). Configurable
   via a new `[devshell]` section in `config.toml` (`enabled = auto |
-  always | never`, `mode = auto | direnv | nix | nix-shell`,
+always | never`, `mode = auto | direnv | nix | nix-shell`,
   `cache_ttl_hours`, `refresh_on_lockfile_change`) and a per-project
   override at `<project>/.aethon/devshell.toml`. Status badge `⬡ <kind>`
   in the status bar shows resolving/ready/failed/off state. Agent-side

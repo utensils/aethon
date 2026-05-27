@@ -190,11 +190,22 @@ export default function App() {
   const devshellActiveRoot = projectsSlice ? projectsActiveCwd(projectsSlice) : null;
   useDevshell({
     activeRoot: devshellActiveRoot,
-    setDevshellEntry: (root, entry) => {
+    setDevshellEntry: (root, patch) => {
       setState((s) => {
         const prev = (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
         const entries = { ...(prev.entries ?? {}) };
-        entries[root] = entry;
+        // Merge the patch over the previous entry so resolver-event
+        // updates (which only carry kind/state/timings) don't clobber
+        // config-derived fields like `enabled` / `mode` populated by
+        // the initial `devshell_status` hydration.
+        const existing: DevshellEntry = entries[root] ?? {
+          kind: null,
+          detectedKind: null,
+          enabled: "auto",
+          mode: "auto",
+          state: "none",
+        };
+        entries[root] = { ...existing, ...patch };
         return { ...s, devshell: { ...prev, entries } };
       });
     },
