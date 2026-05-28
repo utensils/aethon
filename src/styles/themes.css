@@ -143,7 +143,8 @@
   --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Ember. */
   --syntax-text: #e7e1d2;
-  --syntax-comment: #6f6a5d;
+  /* Lifted from #6f6a5d (2.83:1) to clear 3:1 AA-large on bg-input. */
+  --syntax-comment: #7c7669;
   --syntax-punctuation: #b8b1a1;
   --syntax-keyword: #ff6a18;
   --syntax-string: #c8d96a;
@@ -184,19 +185,23 @@
   --bg-input: #f5e8d0;
   --bg-hover: #f9eed8;
   --bg-active: #f3e6cc;
-  --bg-selected: rgba(212, 83, 12, 0.12);
+  --bg-selected: rgba(185, 64, 0, 0.14);
   --border: #e3d8be;
   --border-hover: #d4c8ac;
   --border-strong: #bbac8b;
   --text: #1f1f23;
   --text-secondary: #4a4338;
   --text-dim: #6a6356;
-  --accent: #d4530c;
-  --accent-soft: rgba(212, 83, 12, 0.16);
-  --accent-hover-tint: rgba(212, 83, 12, 0.06);
-  --accent-active-tint: rgba(212, 83, 12, 0.12);
-  --text-on-accent: #fef3e2;
-  --btn-text: #fef3e2;
+  /* Deepened from #d4530c to clear AA on white CTA text (was 4.16:1).
+     Darker terracotta also reads with more authority on the cream
+     bg (now 5.53:1). */
+  --accent: #b94000;
+  --accent-soft: rgba(185, 64, 0, 0.16);
+  --accent-hover-tint: rgba(185, 64, 0, 0.06);
+  --accent-active-tint: rgba(185, 64, 0, 0.12);
+  /* Pure white to clear AA on the terracotta CTA (was #fef3e2 → 3.79:1). */
+  --text-on-accent: #ffffff;
+  --btn-text: #ffffff;
   /* Sage secondary accent breaks the brass monotony — paired with the
      warm orange primary, it gives buttons + chips visible hierarchy
      without leaving the print-paper identity. */
@@ -204,7 +209,8 @@
   --accent-2-soft: rgba(79, 125, 82, 0.16);
   --accent-2-hover-tint: rgba(79, 125, 82, 0.06);
   --accent-2-active-tint: rgba(79, 125, 82, 0.12);
-  --text-on-accent-2: #fef3e2;
+  /* Pure white to clear AA on sage secondary (was #fef3e2 → 4.36:1). */
+  --text-on-accent-2: #ffffff;
   --accent-3: #b5765e;
   --accent-3-soft: rgba(181, 118, 94, 0.16);
   --user-bubble: #fbe5c4;
@@ -298,8 +304,8 @@
   /* xterm theme + ANSI palette — Paper. */
   --terminal-bg: #fffaee;
   --terminal-fg: #1f1f23;
-  --terminal-cursor: #d4530c;
-  --terminal-selection: rgba(212, 83, 12, 0.24);
+  --terminal-cursor: #b94000;
+  --terminal-selection: rgba(185, 64, 0, 0.24);
   --ansi-black: #1f1f23;
   --ansi-red: #c4322a;
   --ansi-green: #2f6b1f;
@@ -423,7 +429,8 @@
   --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Æther. */
   --syntax-text: #d8dde9;
-  --syntax-comment: #5b6275;
+  /* Lifted from #5b6275 (2.66:1) to clear 3:1 AA-large on bg-input. */
+  --syntax-comment: #71788c;
   --syntax-punctuation: #97a0b4;
   --syntax-keyword: #ff8a3d;
   --syntax-string: #7ad6a3;
@@ -528,27 +535,37 @@
   --surface-3: #46393a;
   --surface-4: #504646;
   --inner-highlight: inset 0 1px 0 rgba(255, 240, 230, 0.06);
+  /* Brink-specific: cool slate-blue (#2d2f44, Tokyo-Night family)
+     bleeds into the top of every elevated surface — header and
+     sidebars catch this wash, producing the "blues mixed into the
+     warm chrome" character of Claudette's brink palette. */
   --gradient-surface: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--surface-2) 92%, white 8%),
-    var(--surface-2)
+    #2d2f44,
+    color-mix(in oklab, #2d2f44 35%, var(--surface-2)) 18%,
+    var(--surface-2) 70%
   );
   --gradient-accent: linear-gradient(
     135deg,
     var(--accent),
     color-mix(in oklab, var(--accent) 55%, var(--accent-2))
   );
+  /* Backdrop radial centres a deeper slate over the canvas so the
+     header reads as a continuation of a cool sky over warm ground. */
   --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 86%, var(--accent) 14%),
+    120% 80% at 50% -8%,
+    color-mix(in oklab, var(--surface-1) 70%, #2d2f44 30%),
     var(--surface-1) 60%
   );
   --card-bg: var(--surface-3);
   --card-border: var(--border);
   --card-shadow: var(--shadow-2);
-  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent) 12%);
-  --pill-border: var(--border-hover);
-  --pill-text: var(--text-secondary);
+  /* Pills in the header inherit the slate-blue wash so the model
+     picker / theme picker / host pill all read as one cool family
+     sitting on top of the warm chrome. */
+  --pill-bg: color-mix(in oklab, #2d2f44 60%, var(--surface-2));
+  --pill-border: color-mix(in oklab, var(--accent-2) 45%, var(--border-hover));
+  --pill-text: color-mix(in oklab, var(--accent-2) 30%, var(--text));
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
   --composer-shadow: var(--shadow-2);
@@ -603,19 +620,22 @@
   --bg-input: #f4dfb6;
   --bg-hover: #f6e4be;
   --bg-active: #efdab2;
-  --bg-selected: rgba(197, 85, 44, 0.14);
+  --bg-selected: rgba(181, 74, 31, 0.14);
   --border: #d9c19a;
   --border-hover: #c4ad84;
   --border-strong: #a8916b;
   --text: #2a2218;
   --text-secondary: #5a4d36;
-  --text-dim: #7a6c52;
-  --accent: #c5552c;
-  --accent-soft: rgba(197, 85, 44, 0.18);
-  --accent-hover-tint: rgba(197, 85, 44, 0.07);
-  --accent-active-tint: rgba(197, 85, 44, 0.14);
-  --text-on-accent: #fff8e8;
-  --btn-text: #fff8e8;
+  /* Darkened from #7a6c52 (4.28:1 failed AA) to clear 4.97:1. */
+  --text-dim: #6e6045;
+  /* Deepened from #c5552c to clear AA on white CTA text (was 4.46:1). */
+  --accent: #b54a1f;
+  --accent-soft: rgba(181, 74, 31, 0.18);
+  --accent-hover-tint: rgba(181, 74, 31, 0.07);
+  --accent-active-tint: rgba(181, 74, 31, 0.14);
+  /* Pure white to clear AA (4.21:1 failed against the terracotta CTA). */
+  --text-on-accent: #ffffff;
+  --btn-text: #ffffff;
   --accent-2: #557349;
   --accent-2-soft: rgba(85, 115, 73, 0.18);
   --accent-2-hover-tint: rgba(85, 115, 73, 0.06);
@@ -707,8 +727,8 @@
   /* xterm theme + ANSI palette — Daylight. */
   --terminal-bg: #fff8e8;
   --terminal-fg: #2a2218;
-  --terminal-cursor: #c5552c;
-  --terminal-selection: rgba(197, 85, 44, 0.22);
+  --terminal-cursor: #b54a1f;
+  --terminal-selection: rgba(181, 74, 31, 0.22);
   --ansi-black: #2a2218;
   --ansi-red: #b53023;
   --ansi-green: #2f6b1f;
@@ -737,26 +757,31 @@
   --bg-input: #e3e9f0;
   --bg-hover: #e8eef4;
   --bg-active: #dde4ed;
-  --bg-selected: rgba(45, 161, 126, 0.14);
+  --bg-selected: rgba(31, 125, 94, 0.16);
   --border: #d0d8e2;
   --border-hover: #b8c2d0;
   --border-strong: #9aa4b8;
   --text: #1c2530;
   --text-secondary: #475266;
-  --text-dim: #6a7388;
-  --accent: #2da17e;
-  --accent-soft: rgba(45, 161, 126, 0.16);
-  --accent-hover-tint: rgba(45, 161, 126, 0.07);
-  --accent-active-tint: rgba(45, 161, 126, 0.14);
-  --text-on-accent: #fbfcfe;
-  --btn-text: #fbfcfe;
-  --accent-2: #3c6cb6;
-  --accent-2-soft: rgba(60, 108, 182, 0.16);
-  --accent-2-hover-tint: rgba(60, 108, 182, 0.06);
-  --accent-2-active-tint: rgba(60, 108, 182, 0.14);
-  --text-on-accent-2: #fbfcfe;
-  --accent-3: #7a6ec0;
-  --accent-3-soft: rgba(122, 110, 192, 0.16);
+  /* Darkened from #6a7388 (4.22:1 failed AA) to clear 4.97:1 on bg. */
+  --text-dim: #5a637a;
+  /* Darkened from #2da17e to clear WCAG AA: original mint failed both
+     accent-on-bg (2.87:1 needed 3.0) and text-on-accent (3.14:1
+     needed 4.5). #1f7d5e is the same hue, deep enough that white text
+     hits 4.86:1 and accent-on-bg hits 4.29:1. */
+  --accent: #1f7d5e;
+  --accent-soft: rgba(31, 125, 94, 0.18);
+  --accent-hover-tint: rgba(31, 125, 94, 0.07);
+  --accent-active-tint: rgba(31, 125, 94, 0.14);
+  --text-on-accent: #ffffff;
+  --btn-text: #ffffff;
+  --accent-2: #2c5694;
+  --accent-2-soft: rgba(44, 86, 148, 0.18);
+  --accent-2-hover-tint: rgba(44, 86, 148, 0.07);
+  --accent-2-active-tint: rgba(44, 86, 148, 0.14);
+  --text-on-accent-2: #ffffff;
+  --accent-3: #6c5ca8;
+  --accent-3-soft: rgba(108, 92, 168, 0.18);
   --user-bubble: #e3e9f0;
   --agent-bubble: #fbfcfe;
   --scrollbar-thumb: #c5cedb;
@@ -841,8 +866,8 @@
   /* xterm theme + ANSI palette — Mist. */
   --terminal-bg: #fbfcfe;
   --terminal-fg: #1c2530;
-  --terminal-cursor: #2da17e;
-  --terminal-selection: rgba(45, 161, 126, 0.22);
+  --terminal-cursor: #1f7d5e;
+  --terminal-selection: rgba(31, 125, 94, 0.22);
   --ansi-black: #1c2530;
   --ansi-red: #b53023;
   --ansi-green: #2a8a5a;
@@ -963,7 +988,8 @@
   --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Nocturne. */
   --syntax-text: #eaeefa;
-  --syntax-comment: #5c6178;
+  /* Lifted from #5c6178 (2.87:1) to clear 3:1 AA-large on bg-input. */
+  --syntax-comment: #727890;
   --syntax-punctuation: #95a0bd;
   --syntax-keyword: #28e0e0;
   --syntax-string: #c8ff5a;
