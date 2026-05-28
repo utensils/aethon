@@ -86,7 +86,7 @@ export function monacoThemeFor(themeId: string | undefined | null): string {
 
 /** Register (or replace) a Monaco theme keyed under `aethon-<id>`.
  *  Surface for `aethon.registerMonacoTheme(id, data)` so extensions
- *  + extensions can supply their own Monaco palette in one call. The new
+ *  can supply their own Monaco palette in one call. The new
  *  data takes effect immediately if `id` is the active theme. */
 export function registerMonacoTheme(
   id: string,
