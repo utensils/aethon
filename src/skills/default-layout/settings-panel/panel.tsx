@@ -24,6 +24,7 @@ import {
   setVoiceProviderEnabled,
 } from "../../../services/voice";
 import type { VoiceDownloadProgress, VoiceProviderInfo } from "../../../types/voice";
+import { formatVoiceDownloadProgress } from "../../../utils/voice";
 import { SHARE_MODES, type ShareMode } from "../../../utils/shareMode";
 import { ANSI_PREVIEW_KEYS, BUILTIN_THEMES } from "./constants";
 import { ExtensionsList } from "./extensions-list";
@@ -613,6 +614,7 @@ function VoiceProviders() {
   }, []);
 
   const run = async (providerId: string, task: () => Promise<unknown>) => {
+    if (busyProvider === providerId) return;
     setBusyProvider(providerId);
     setError(null);
     try {
@@ -620,6 +622,7 @@ function VoiceProviders() {
       await refresh();
     } catch (err) {
       setError(String(err));
+      await refresh();
     } finally {
       setBusyProvider(null);
       setProgress(null);
@@ -635,6 +638,8 @@ function VoiceProviders() {
         const isBusy = busyProvider === provider.id;
         const providerProgress =
           progress?.providerId === provider.id ? progress : null;
+        const isDownloading =
+          provider.status === "downloading" || providerProgress !== null;
         return (
           <div key={provider.id} className="ae-voice-provider-card">
             <div className="ae-voice-provider-head">
@@ -668,16 +673,14 @@ function VoiceProviders() {
             {providerProgress ? (
               <p className="ae-settings-note">
                 Downloading {providerProgress.filename}:{" "}
-                {providerProgress.percent !== null
-                  ? `${Math.round(providerProgress.percent)}%`
-                  : `${providerProgress.overallDownloadedBytes} bytes`}
+                {formatVoiceDownloadProgress(providerProgress)}
               </p>
             ) : null}
             <div className="ae-voice-provider-actions">
               <button
                 type="button"
                 className="ae-settings-secondary"
-                disabled={isBusy}
+                disabled={isBusy || isDownloading}
                 onClick={() =>
                   run(provider.id, () =>
                     setVoiceProviderEnabled(provider.id, !provider.enabled),
@@ -690,10 +693,14 @@ function VoiceProviders() {
                 <button
                   type="button"
                   className="ae-settings-secondary"
-                  disabled={isBusy}
+                  disabled={isBusy || isDownloading}
                   onClick={() => run(provider.id, () => prepareVoiceProvider(provider.id))}
                 >
-                  {provider.downloadRequired ? "Download model" : "Set up permissions"}
+                  {isDownloading
+                    ? "Downloading..."
+                    : provider.downloadRequired
+                      ? "Download model"
+                      : "Set up permissions"}
                 </button>
               ) : null}
               {provider.canRemoveModel ? (

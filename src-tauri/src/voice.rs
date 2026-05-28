@@ -357,6 +357,7 @@ pub struct VoiceProviderRegistry {
     backend_checker: Arc<dyn CandleBackendChecker>,
     transcription_timeout: Duration,
     active_distil_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    active_downloads: Mutex<std::collections::HashSet<String>>,
 }
 
 fn compute_rms(samples: &[f32]) -> f32 {
@@ -491,6 +492,7 @@ impl VoiceProviderRegistry {
             backend_checker,
             transcription_timeout,
             active_distil_cancel: Mutex::new(None),
+            active_downloads: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -1073,6 +1075,7 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             .get_app_setting(&model_status_key(self.id()))
             .ok()
             .flatten();
+        let downloading = registry.active_downloads.lock().contains(self.id());
         let installed = distil_model_ready(&cache_path);
         let backend_status = registry.ensure_candle_backend_ready();
 
@@ -1082,47 +1085,46 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             Err(err) => format!("Unavailable: {err}"),
         });
 
-        let (status, status_label, setup_required, error) =
-            if model_status.as_deref() == Some("downloading") {
-                (
-                    VoiceProviderStatus::Downloading,
-                    "Downloading model".to_string(),
-                    true,
-                    None,
-                )
-            } else if let Err(err) = &backend_status {
-                (
-                    VoiceProviderStatus::EngineUnavailable,
-                    "Voice engine unavailable".to_string(),
-                    false,
-                    Some(err.clone()),
-                )
-            } else if installed {
-                let backend = backend_status.expect("backend availability checked");
-                (
-                    VoiceProviderStatus::Ready,
-                    format!("{DISTIL_READY_MESSAGE} ({})", backend.label()),
-                    false,
-                    None,
-                )
-            } else if model_status
-                .as_deref()
-                .is_some_and(|status| status.starts_with("error:"))
-            {
-                (
-                    VoiceProviderStatus::Error,
-                    "Download failed".to_string(),
-                    true,
-                    model_status.map(|s| s.trim_start_matches("error:").to_string()),
-                )
-            } else {
-                (
-                    VoiceProviderStatus::NeedsSetup,
-                    "Download required".to_string(),
-                    true,
-                    None,
-                )
-            };
+        let (status, status_label, setup_required, error) = if downloading {
+            (
+                VoiceProviderStatus::Downloading,
+                "Downloading model".to_string(),
+                true,
+                None,
+            )
+        } else if let Err(err) = &backend_status {
+            (
+                VoiceProviderStatus::EngineUnavailable,
+                "Voice engine unavailable".to_string(),
+                false,
+                Some(err.clone()),
+            )
+        } else if installed {
+            let backend = backend_status.expect("backend availability checked");
+            (
+                VoiceProviderStatus::Ready,
+                format!("{DISTIL_READY_MESSAGE} ({})", backend.label()),
+                false,
+                None,
+            )
+        } else if model_status
+            .as_deref()
+            .is_some_and(|status| status.starts_with("error:"))
+        {
+            (
+                VoiceProviderStatus::Error,
+                "Download failed".to_string(),
+                true,
+                model_status.map(|s| s.trim_start_matches("error:").to_string()),
+            )
+        } else {
+            (
+                VoiceProviderStatus::NeedsSetup,
+                "Download required".to_string(),
+                true,
+                None,
+            )
+        };
 
         VoiceProviderInfo {
             metadata,
@@ -1147,12 +1149,24 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             .await
             .map_err(|e| format!("Failed to create model cache: {e}"))?;
         {
+            let mut active_downloads = registry.active_downloads.lock();
+            if !active_downloads.insert(self.id().to_string()) {
+                let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+                return Ok(self.status(registry, &db));
+            }
+        }
+        let active_download = ActiveDownloadGuard {
+            registry,
+            provider_id: self.id(),
+        };
+        {
             let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
-            db.set_app_setting(&model_status_key(self.id()), "downloading")
-                .map_err(|e| e.to_string())?;
+            let info = self.status(registry, &db);
+            let _ = app.emit("voice-provider-status", &info);
         }
 
         let result = download_distil_model(app, self.id(), &cache_path).await;
+        drop(active_download);
         match result {
             Ok(()) => {
                 let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
@@ -1175,6 +1189,20 @@ impl VoiceProvider for DistilWhisperCandleProvider {
                 Err(err)
             }
         }
+    }
+}
+
+struct ActiveDownloadGuard<'a> {
+    registry: &'a VoiceProviderRegistry,
+    provider_id: &'static str,
+}
+
+impl Drop for ActiveDownloadGuard<'_> {
+    fn drop(&mut self) {
+        self.registry
+            .active_downloads
+            .lock()
+            .remove(self.provider_id);
     }
 }
 
@@ -3203,5 +3231,47 @@ mod tests {
                 .expect("get model status"),
             Some("not-installed".to_string())
         );
+    }
+
+    #[test]
+    fn stale_downloading_state_does_not_hide_download_action_after_restart() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let db = open_test_db(&db_path);
+        db.set_app_setting(&model_status_key(DISTIL_ID), "downloading")
+            .expect("set stale downloading");
+
+        let registry = VoiceProviderRegistry::new(model_dir.path().to_path_buf());
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == DISTIL_ID)
+            .expect("distil provider");
+
+        assert_eq!(provider.status, VoiceProviderStatus::NeedsSetup);
+        assert_eq!(provider.status_label, "Download required");
+        assert!(provider.setup_required);
+    }
+
+    #[test]
+    fn active_download_state_is_runtime_only() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(model_dir.path().to_path_buf());
+        registry
+            .active_downloads
+            .lock()
+            .insert(DISTIL_ID.to_string());
+
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == DISTIL_ID)
+            .expect("distil provider");
+
+        assert_eq!(provider.status, VoiceProviderStatus::Downloading);
+        assert_eq!(provider.status_label, "Downloading model");
+        assert!(provider.setup_required);
     }
 }

@@ -1,4 +1,4 @@
-import type { VoiceProviderInfo } from "../types/voice";
+import type { VoiceDownloadProgress, VoiceProviderInfo } from "../types/voice";
 
 export const PLATFORM_VOICE_PROVIDER_ID = "voice-platform-system";
 
@@ -67,6 +67,15 @@ export function insertTranscriptAtSelection(
     text: nextText,
     cursor: before.length + insertion.length,
   };
+}
+
+export function formatVoiceDownloadProgress(
+  progress: VoiceDownloadProgress,
+): string {
+  if (progress.percent !== null) {
+    return `${Math.round(progress.percent * 100)}%`;
+  }
+  return `${progress.overallDownloadedBytes} bytes`;
 }
 
 export function describeSpeechRecognitionError(

@@ -4,6 +4,7 @@ import {
   PLATFORM_VOICE_PROVIDER_ID,
   chooseVoiceProvider,
   describeSpeechRecognitionError,
+  formatVoiceDownloadProgress,
   insertTranscriptAtSelection,
   shouldOpenVoiceSettingsForError,
 } from "./voice";
@@ -82,6 +83,31 @@ describe("voice helpers", () => {
       text: "tests now",
       cursor: 5,
     });
+  });
+
+  it("formats backend download fractions as user-facing percentages", () => {
+    expect(
+      formatVoiceDownloadProgress({
+        providerId: "voice-distil-whisper",
+        filename: "model.safetensors",
+        downloadedBytes: 250,
+        totalBytes: 1000,
+        overallDownloadedBytes: 250,
+        overallTotalBytes: 1000,
+        percent: 0.25,
+      }),
+    ).toBe("25%");
+    expect(
+      formatVoiceDownloadProgress({
+        providerId: "voice-distil-whisper",
+        filename: "model.safetensors",
+        downloadedBytes: 250,
+        totalBytes: null,
+        overallDownloadedBytes: 250,
+        overallTotalBytes: null,
+        percent: null,
+      }),
+    ).toBe("250 bytes");
   });
 
   it("opens settings for setup and engine errors", () => {
