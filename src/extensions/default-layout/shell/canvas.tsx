@@ -29,6 +29,7 @@ import type {
 import {
   observeTerminalTheme,
   readTerminalTheme,
+  terminalFitDelay,
 } from "../terminal";
 
 export interface ShellDims {
@@ -81,6 +82,8 @@ export function decideShellResize(
   }
   return current;
 }
+
+const TERMINAL_PTY_RESIZE_SETTLE_MS = 120;
 
 export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
@@ -171,6 +174,41 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // guards that keep panel-toggle from raising spurious SIGWINCHes.
     const lastSentDimsRef = { current: null as ShellDims | null };
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingPtyResize: ShellDims | null = null;
+    const sendPtyResize = (dims: ShellDims) => {
+      const decision = decideShellResize(dims, lastSentDimsRef.current);
+      if (!decision) return;
+      lastSentDimsRef.current = decision;
+      void invoke("shell_resize", {
+        tabId: tabIdRef.current,
+        cols: decision.cols,
+        rows: decision.rows,
+      }).catch(() => {
+        /* PTY closed — drop */
+      });
+    };
+    const flushPtyResize = () => {
+      ptyResizeTimer = null;
+      const dims = pendingPtyResize;
+      pendingPtyResize = null;
+      if (dims) sendPtyResize(dims);
+    };
+    const schedulePtyResize = (dims: ShellDims, isUserResizing: boolean) => {
+      if (!isUserResizing) {
+        if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
+        ptyResizeTimer = null;
+        pendingPtyResize = null;
+        sendPtyResize(dims);
+        return;
+      }
+      pendingPtyResize = dims;
+      if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
+      ptyResizeTimer = setTimeout(
+        flushPtyResize,
+        TERMINAL_PTY_RESIZE_SETTLE_MS,
+      );
+    };
     const resizeToContainer = () => {
       resizeTimer = null;
       try {
@@ -187,27 +225,23 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
             ? prev
             : decision,
         );
-        lastSentDimsRef.current = decision;
-        void invoke("shell_resize", {
-          tabId: tabIdRef.current,
-          cols: decision.cols,
-          rows: decision.rows,
-        }).catch(() => {
-          /* PTY closed — drop */
-        });
+        schedulePtyResize(
+          decision,
+          document.body.classList.contains("ae-resizing-terminal"),
+        );
       } catch {
         /* fit transient errors during teardown */
       }
     };
     const ro = new ResizeObserver((entries) => {
       if (shouldSkipResize(entries[0], containerRef.current)) return;
-      if (document.body.classList.contains("ae-resizing-terminal")) {
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeToContainer();
-        return;
-      }
       if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(resizeToContainer, 80);
+      resizeTimer = setTimeout(
+        resizeToContainer,
+        terminalFitDelay(
+          document.body.classList.contains("ae-resizing-terminal"),
+        ),
+      );
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
@@ -234,6 +268,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
       window.removeEventListener(eventName, onShellOutput);
       ro.disconnect();
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
       stopThemeObserver();
       onDataDisposable.dispose();
       term.dispose();

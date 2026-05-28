@@ -15,6 +15,7 @@ import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs } from "./hooks/useTabs";
+import { useRestoreShellTabs } from "./hooks/useRestoreShellTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
@@ -262,6 +263,13 @@ export default function App() {
       const v = await invoke("shell_is_busy", { tabId });
       return v === true;
     },
+  });
+
+  useRestoreShellTabs({
+    tabs: (state.tabs as Tab[] | undefined) ?? [],
+    updateTab,
+    appendSystem: (text) => chatActionsRef.current.appendSystem(text),
+    shellInheritEnvRef,
   });
 
   // Tab/sub-tab navigation (next/jump/move for both agent tabs and

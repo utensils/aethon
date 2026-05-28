@@ -76,6 +76,15 @@ const ANSI_FALLBACK: XTermThemeShape = {
   brightWhite: "#fef3e2",
 };
 
+export const TERMINAL_FIT_DEBOUNCE_MS = 80;
+export const TERMINAL_FIT_DRAG_THROTTLE_MS = 48;
+
+export function terminalFitDelay(isUserResizing: boolean): number {
+  return isUserResizing
+    ? TERMINAL_FIT_DRAG_THROTTLE_MS
+    : TERMINAL_FIT_DEBOUNCE_MS;
+}
+
 // eslint-disable-next-line react-refresh/only-export-components -- shared helper for the shell composites; doesn't affect HMR semantics
 export function readTerminalTheme(): XTermThemeShape {
   if (typeof window === "undefined") return ANSI_FALLBACK;
@@ -302,13 +311,13 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       }
     };
     const ro = new ResizeObserver(() => {
-      if (document.body.classList.contains("ae-resizing-terminal")) {
-        if (resizeTimer) clearTimeout(resizeTimer);
-        fitToContainer();
-        return;
-      }
       if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(fitToContainer, 80);
+      resizeTimer = setTimeout(
+        fitToContainer,
+        terminalFitDelay(
+          document.body.classList.contains("ae-resizing-terminal"),
+        ),
+      );
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);

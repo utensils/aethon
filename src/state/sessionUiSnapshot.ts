@@ -39,7 +39,7 @@ function trimTab(tab: Tab): Tab {
 }
 
 function shouldPersistTab(tab: Tab): boolean {
-  if (tab.kind === "shell") return false;
+  if (tab.kind === "shell") return tab.shell != null;
   // Editor tabs persist so the user reopens to the same files. The
   // on-disk content is the source of truth on restore — dirty buffers
   // are intentionally not serialised (saving arbitrary in-memory edits
@@ -53,6 +53,24 @@ function shouldPersistTab(tab: Tab): boolean {
     tab.canvas !== null ||
     tab.terminalBuffer.length > 0
   );
+}
+
+function restoreShellTab(tab: Tab): Tab {
+  if (tab.shell?.shellState === "exited") return tab;
+  return {
+    ...tab,
+    shell: tab.shell
+      ? {
+          ...tab.shell,
+          shellState: "starting",
+          restartOnMount: true,
+        }
+      : tab.shell,
+  };
+}
+
+function tabCanOwnMainSurface(tab: Tab | undefined): boolean {
+  return !!tab && tab.kind !== "shell";
 }
 
 function durableLayoutSnapshot(
@@ -143,18 +161,20 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
     // OVERVIEW_TAB_ID is a valid persisted value (the user closed the
     // app while the overview pseudo-tab owned the canvas with sessions
     // open) — keep it as-is. Other ids must still match a real tab.
+    const parsedActiveTab = tabs.find((t) => t.id === parsed.activeTabId);
     const activeTabId =
       typeof parsed.activeTabId === "string" &&
       (parsed.activeTabId === OVERVIEW_TAB_ID ||
-        tabs.some((t) => t.id === parsed.activeTabId))
+        tabCanOwnMainSurface(parsedActiveTab))
         ? parsed.activeTabId
-        : tabs[0].id;
+        : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
     return {
-      tabs: tabs.map((t) => ({
-        ...t,
-        kind: t.kind ?? "agent",
-        messages: dedupeToolResultTextMessages(t.messages),
-        draft: t.draft ?? "",
+      tabs: tabs.map((t) => {
+        const base = {
+          ...t,
+          kind: t.kind ?? "agent",
+          messages: dedupeToolResultTextMessages(t.messages),
+          draft: t.draft ?? "",
         // Waiting is process-local state. After an app restart there is no
         // still-attached prompt runner behind this tab, so restoring it as
         // busy leaves the UI stuck in "thinking..." with a dead stop button.
@@ -171,7 +191,7 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         canvas: t.canvas ?? null,
         model: t.model ?? "",
         terminalBuffer: t.terminalBuffer ?? "",
-        projectId: t.projectId ?? null,
+          projectId: t.projectId ?? null,
         // Preserve editor metadata so a persisted editor tab reopens
         // pointing at the same file. Validate the shape minimally —
         // `filePath` is the field EditorCanvas actually requires; the
@@ -196,10 +216,12 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
                 ...(typeof t.editor.cursorColumn === "number"
                   ? { cursorColumn: t.editor.cursorColumn }
                   : {}),
-              },
-            }
-          : {}),
-      })),
+                },
+              }
+            : {}),
+        };
+        return base.kind === "shell" ? restoreShellTab(base) : base;
+      }),
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),
       terminal: durableTerminalSnapshot(parsed.terminal),
@@ -233,12 +255,13 @@ export function serializeSessionUiSnapshot(
     if (tabs.length === 0) {
       return null;
     }
+    const activeTab = tabs.find((t) => t.id === state.activeTabId);
     const activeTabId =
       typeof state.activeTabId === "string" &&
       (state.activeTabId === OVERVIEW_TAB_ID ||
-        tabs.some((t) => t.id === state.activeTabId))
+        tabCanOwnMainSurface(activeTab))
         ? state.activeTabId
-        : tabs[0]?.id;
+        : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
     const snapshot: SessionUiSnapshot = {
       tabs,
       activeTabId,

@@ -11,6 +11,11 @@ export interface ShellMeta {
   shareMode: ShareMode;
   shellState: "starting" | "running" | "exited";
   exitCode?: number;
+  /** Frontend-only marker used after a webview hot reload. The shell
+   *  registry lives in Rust and survives the JS reload less reliably
+   *  than React state, so restored shell tabs reopen their PTY once
+   *  after mount and then clear this flag. */
+  restartOnMount?: boolean;
 }
 
 /**

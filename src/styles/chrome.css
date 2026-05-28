@@ -3693,6 +3693,7 @@ body.ae-resizing-composer * {
   min-height: 0;
   padding: 6px;
   width: 100%;
+  overflow: hidden;
 }
 
 .ae-terminal-panel .a2ui-terminal {
@@ -4975,11 +4976,17 @@ body.ae-resizing-terminal * {
   height: 100%;
   background: var(--terminal-bg, #0e0e10);
   min-height: 0;
+  overflow: hidden;
 }
 .ae-shell-canvas-term {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
+  overflow: hidden;
+}
+.ae-terminal-panel .xterm,
+.ae-terminal-panel .xterm-screen {
+  overflow: hidden;
 }
 
 /* =============================================================================

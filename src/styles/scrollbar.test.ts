@@ -38,3 +38,20 @@ describe("scrollbar sizing CSS", () => {
     );
   });
 });
+
+describe("terminal overflow containment CSS", () => {
+  it("clips xterm internals so reload-restored terminals cannot leak below the panel", () => {
+    const agentMount = cssRuleBody(chromeCss, ".a2ui-terminal-mount");
+    expect(agentMount).toMatch(/overflow:\s*hidden;/);
+
+    const shellWrap = cssRuleBody(chromeCss, ".ae-shell-canvas-wrap");
+    expect(shellWrap).toMatch(/overflow:\s*hidden;/);
+
+    const shellTerm = cssRuleBody(chromeCss, ".ae-shell-canvas-term");
+    expect(shellTerm).toMatch(/overflow:\s*hidden;/);
+
+    expect(chromeCss).toMatch(
+      /\.ae-terminal-panel\s+\.xterm,\s*\.ae-terminal-panel\s+\.xterm-screen\s*\{[\s\S]*?overflow:\s*hidden;/,
+    );
+  });
+});
