@@ -14,6 +14,7 @@ import {
   authProfileServicesForTab,
   defaultProfileIdForTab,
   handleAuthProfileMessage,
+  modelRegistryForModelId,
 } from "./manager";
 import {
   createProfileMeta,
@@ -123,5 +124,29 @@ describe("auth profile manager", () => {
           (message as { event?: { ok?: boolean } }).event?.ok === false,
       ),
     ).toBe(true);
+  });
+
+  it("falls back to the global model registry for stale or unsafe profile ids", () => {
+    const state = makeState();
+    state.tabAuthProfileIds.set("tab-1", "../escape");
+    state.authProfiles.defaultByProvider.anthropic = "../escape";
+
+    expect(modelRegistryForModelId(state, "tab-1", "anthropic/claude")).toBe(
+      state.modelRegistry,
+    );
+  });
+
+  it("rejects deleting unknown or unsafe profile ids before removing files", async () => {
+    const state = makeState();
+    const deps = {
+      send: vi.fn(),
+    } as unknown as DispatcherDeps;
+
+    await expect(
+      handleAuthProfileMessage(state, deps, {
+        type: "auth_profile_delete",
+        profileId: "../escape",
+      }),
+    ).rejects.toThrow(/unknown profileId/);
   });
 });

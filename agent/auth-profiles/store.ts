@@ -34,6 +34,7 @@ export function authProfilesStatePath(userDir: string): string {
 }
 
 export function authProfileAuthPath(userDir: string, profileId: string): string {
+  assertSafeProfileId(profileId);
   return join(authProfilesDir(userDir), "profiles", profileId, "auth.json");
 }
 
@@ -47,17 +48,38 @@ export function sanitizeProfileId(input: string): string {
   return slug || "account";
 }
 
+export function isSafeProfileId(input: string): boolean {
+  return /^[a-z0-9_-]{1,80}$/.test(input);
+}
+
+function assertSafeProfileId(profileId: string): void {
+  if (!isSafeProfileId(profileId)) {
+    throw new Error(`Invalid auth profile id: ${profileId}`);
+  }
+}
+
 export function loadAuthProfilesState(userDir: string): AuthProfilesState {
   const path = authProfilesStatePath(userDir);
   if (!existsSync(path)) return { ...EMPTY_STATE, defaultByProvider: {} };
-  const raw = readFileSync(path, "utf8");
-  const parsed = JSON.parse(raw) as Partial<AuthProfilesState>;
+  let parsed: Partial<AuthProfilesState>;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<AuthProfilesState>;
+  } catch {
+    return { ...EMPTY_STATE, defaultByProvider: {} };
+  }
   const profiles = Array.isArray(parsed.profiles)
     ? parsed.profiles.filter(isProfileMeta)
     : [];
   const ids = new Set(profiles.map((p) => p.id));
   const defaultByProvider: Record<string, string> = {};
-  for (const [provider, profileId] of Object.entries(parsed.defaultByProvider ?? {})) {
+  const defaults =
+    parsed.defaultByProvider &&
+    typeof parsed.defaultByProvider === "object" &&
+    !Array.isArray(parsed.defaultByProvider)
+      ? parsed.defaultByProvider
+      : {};
+  for (const [provider, profileId] of Object.entries(defaults)) {
+    if (typeof profileId !== "string") continue;
     if (ids.has(profileId)) defaultByProvider[provider] = profileId;
   }
   return { version: 1, profiles, defaultByProvider };
@@ -104,6 +126,7 @@ export function upsertProfileMeta(
 }
 
 export function deleteProfileFiles(userDir: string, profileId: string): void {
+  assertSafeProfileId(profileId);
   rmSync(join(authProfilesDir(userDir), "profiles", profileId), {
     recursive: true,
     force: true,
@@ -115,6 +138,7 @@ function isProfileMeta(value: unknown): value is AuthProfileMeta {
   const rec = value as Record<string, unknown>;
   return (
     typeof rec.id === "string" &&
+    isSafeProfileId(rec.id) &&
     typeof rec.providerId === "string" &&
     typeof rec.label === "string" &&
     (rec.kind === "oauth" || rec.kind === "api_key") &&

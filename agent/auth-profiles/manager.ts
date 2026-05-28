@@ -14,6 +14,7 @@ import {
   authProfileAuthPath,
   createProfileMeta,
   deleteProfileFiles,
+  isSafeProfileId,
   loadAuthProfilesState,
   saveAuthProfilesState,
   type AuthProfileMeta,
@@ -126,7 +127,7 @@ export function modelRegistryForModelId(
   const profileId =
     state.tabAuthProfileIds.get(tabId) ??
     state.authProfiles.defaultByProvider[provider];
-  return profileId
+  return profileId && findProfile(state, profileId)
     ? servicesForProfile(state, profileId).modelRegistry
     : state.modelRegistry;
 }
@@ -180,6 +181,9 @@ function servicesForProfile(
   state: AethonAgentState,
   profileId: string,
 ): AuthProfileServices {
+  if (!isSafeProfileId(profileId)) {
+    throw new Error(`Invalid auth profile id: ${profileId}`);
+  }
   const cached = state.authProfileServices.get(profileId);
   if (cached) return cached;
   const authPath = authProfileAuthPath(state.userDir, profileId);
@@ -454,7 +458,8 @@ function handleDelete(
   msg: InboundMessage,
 ): void {
   const profileId = stringField(msg.profileId);
-  if (!profileId) throw new Error("auth_profile_delete: profileId required");
+  const profile = findProfile(state, profileId);
+  if (!profile) throw new Error("auth_profile_delete: unknown profileId");
   for (const [tabId, activeProfileId] of state.tabAuthProfileIds) {
     if (activeProfileId !== profileId) continue;
     const tab = state.tabs.get(tabId);
@@ -468,6 +473,8 @@ function handleDelete(
 }
 
 function removeProfile(state: AethonAgentState, profileId: string): void {
+  const profile = findProfile(state, profileId);
+  if (!profile) return;
   state.authProfiles = {
     ...state.authProfiles,
     profiles: state.authProfiles.profiles.filter((p) => p.id !== profileId),
@@ -482,6 +489,14 @@ function removeProfile(state: AethonAgentState, profileId: string): void {
   }
   state.authProfileServices.delete(profileId);
   deleteProfileFiles(state.userDir, profileId);
+}
+
+function findProfile(
+  state: AethonAgentState,
+  profileId: string,
+): AuthProfileMeta | undefined {
+  if (!profileId || !isSafeProfileId(profileId)) return undefined;
+  return state.authProfiles.profiles.find((p) => p.id === profileId);
 }
 
 function markProfileUsed(state: AethonAgentState, profileId: string): void {

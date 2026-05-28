@@ -1,10 +1,13 @@
-import { mkdtempSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
   authProfileAuthPath,
+  authProfilesStatePath,
   createProfileMeta,
+  deleteProfileFiles,
+  isSafeProfileId,
   loadAuthProfilesState,
   saveAuthProfilesState,
   upsertProfileMeta,
@@ -52,5 +55,74 @@ describe("auth profile store", () => {
       authProfileAuthPath(userDir, second.id),
     );
     expect(authProfileAuthPath(userDir, first.id)).toMatch(/auth\.json$/);
+  });
+
+  it("falls back to an empty state when profiles.json is corrupt", () => {
+    const userDir = mkdtempSync(join(tmpdir(), "aethon-auth-"));
+    mkdirSync(dirname(authProfilesStatePath(userDir)), { recursive: true });
+    writeFileSync(authProfilesStatePath(userDir), "{not json");
+
+    expect(loadAuthProfilesState(userDir)).toEqual({
+      version: 1,
+      profiles: [],
+      defaultByProvider: {},
+    });
+  });
+
+  it("ignores unsafe profile ids when loading metadata", () => {
+    const userDir = mkdtempSync(join(tmpdir(), "aethon-auth-"));
+    mkdirSync(dirname(authProfilesStatePath(userDir)), { recursive: true });
+    writeFileSync(
+      authProfilesStatePath(userDir),
+      JSON.stringify({
+        version: 1,
+        profiles: [
+          {
+            id: "../escape",
+            providerId: "anthropic",
+            label: "bad",
+            kind: "oauth",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          {
+            id: "anthropic-safe",
+            providerId: "anthropic",
+            label: "safe",
+            kind: "oauth",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        defaultByProvider: {
+          anthropic: "../escape",
+          openai: 123,
+        },
+      }),
+    );
+
+    expect(loadAuthProfilesState(userDir)).toEqual({
+      version: 1,
+      profiles: [
+        expect.objectContaining({
+          id: "anthropic-safe",
+          providerId: "anthropic",
+        }),
+      ],
+      defaultByProvider: {},
+    });
+  });
+
+  it("rejects unsafe profile ids before filesystem operations", () => {
+    const userDir = mkdtempSync(join(tmpdir(), "aethon-auth-"));
+
+    expect(isSafeProfileId("anthropic-claude-pro_2")).toBe(true);
+    expect(isSafeProfileId("../escape")).toBe(false);
+    expect(() => authProfileAuthPath(userDir, "../escape")).toThrow(
+      /Invalid auth profile id/,
+    );
+    expect(() => deleteProfileFiles(userDir, "../escape")).toThrow(
+      /Invalid auth profile id/,
+    );
   });
 });

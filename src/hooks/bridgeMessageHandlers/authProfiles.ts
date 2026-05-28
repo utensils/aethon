@@ -1,6 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   AuthProfileLoginEvent,
+  AuthProfileMeta,
+  AuthProfileProvider,
   AuthProfilesSnapshot,
 } from "../../auth-profiles";
 import type { Tab } from "../../types/tab";
@@ -13,19 +15,52 @@ type AuthProfilesState = AuthProfilesSnapshot & {
 
 function snapshotFrom(value: unknown): AuthProfilesSnapshot | null {
   if (!value || typeof value !== "object") return null;
-  const rec = value as Partial<AuthProfilesSnapshot>;
+  const rec = value as Record<string, unknown>;
   return {
-    profiles: Array.isArray(rec.profiles) ? rec.profiles : [],
-    defaultByProvider:
-      rec.defaultByProvider && typeof rec.defaultByProvider === "object"
-        ? rec.defaultByProvider
-        : {},
-    providers: Array.isArray(rec.providers) ? rec.providers : [],
-    activeByTab:
-      rec.activeByTab && typeof rec.activeByTab === "object"
-        ? rec.activeByTab
-        : {},
+    profiles: Array.isArray(rec.profiles)
+      ? rec.profiles.filter(isProfileMeta)
+      : [],
+    defaultByProvider: stringRecord(rec.defaultByProvider),
+    providers: Array.isArray(rec.providers)
+      ? rec.providers.filter(isProfileProvider)
+      : [],
+    activeByTab: stringRecord(rec.activeByTab),
   };
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string",
+    ),
+  );
+}
+
+function isProfileMeta(value: unknown): value is AuthProfileMeta {
+  if (!value || typeof value !== "object") return false;
+  const rec = value as Partial<AuthProfileMeta>;
+  return (
+    typeof rec.id === "string" &&
+    typeof rec.providerId === "string" &&
+    typeof rec.label === "string" &&
+    (rec.kind === "oauth" || rec.kind === "api_key") &&
+    typeof rec.createdAt === "number" &&
+    typeof rec.updatedAt === "number"
+  );
+}
+
+function isProfileProvider(value: unknown): value is AuthProfileProvider {
+  if (!value || typeof value !== "object") return false;
+  const rec = value as Partial<AuthProfileProvider>;
+  return (
+    typeof rec.id === "string" &&
+    typeof rec.label === "string" &&
+    (rec.kind === "oauth" || rec.kind === "api_key") &&
+    typeof rec.configured === "boolean" &&
+    typeof rec.modelCount === "number"
+  );
 }
 
 export const handleAuthProfiles: BridgeMessageHandler = (message, ctx) => {

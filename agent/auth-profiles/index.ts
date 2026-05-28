@@ -10,6 +10,7 @@ export {
   createProfileMeta,
   loadAuthProfilesState,
   saveAuthProfilesState,
+  isSafeProfileId,
   sanitizeProfileId,
 } from "./store";
 export type { AuthProfileProvider, AuthProfilesSnapshot } from "./manager";
