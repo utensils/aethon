@@ -42,9 +42,9 @@ describe("handleReady", () => {
             source: "prompt",
           },
           {
-            name: "extension:claudex",
+            name: "skill:claudex",
             description: "Query sessions",
-            source: "extension",
+            source: "skill",
           },
         ],
         extensionKeybindings: [],
@@ -80,9 +80,9 @@ describe("handleReady", () => {
           source: "prompt",
         },
         {
-          name: "extension:claudex",
+          name: "skill:claudex",
           description: "Query sessions",
-          source: "extension",
+          source: "skill",
         },
       ],
     );

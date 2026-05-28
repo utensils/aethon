@@ -77,7 +77,7 @@ A layout registered this way:
 - Survives across reloads (the registration is part of the runtime state
   that gets re-emitted on restart).
 
-To **also activate** the layout when the extension loads, return it from a
+To **also activate** the layout when the extension loads, return it from an
 extension setup function — see [Extensions](/guide/extensions).
 
 ## Resetting

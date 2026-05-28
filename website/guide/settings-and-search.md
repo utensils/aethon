@@ -1,6 +1,6 @@
 # Settings & search
 
-Two overlay surfaces ship as built-ins — both registered components, so a
+Two overlay surfaces ship as built-ins — both registered components, so an
 extension can replace either without forking the chrome.
 
 ## Settings panel — `Cmd+,`

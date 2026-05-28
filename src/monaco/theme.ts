@@ -14,7 +14,7 @@
  * saved. The palette here is the same one in `src/styles/themes.css` for
  * each `:root[data-theme="…"]` block — both should move together.
  *
- * Overrides: extensions/extensions can replace any registered theme via
+ * Overrides: extensions can replace any registered theme via
  * `aethon.registerMonacoTheme(id, data)` (mounted on `window.aethon`
  * by `useWindowApi`). The runtime registry is consulted first on
  * every `applyMonacoTheme(id)` call so a registration takes effect
