@@ -69,12 +69,12 @@ pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<()
     Ok(())
 }
 
-fn show_main_window(app: &AppHandle, window: &tauri::WebviewWindow, activate: bool) {
+fn show_main_window(_app: &AppHandle, window: &tauri::WebviewWindow, activate: bool) {
     if activate {
         // Cmd+H on macOS hides the app at the application level;
         // showing/focusing the webview alone does not unhide it.
         #[cfg(target_os = "macos")]
-        let _ = app.show();
+        let _ = _app.show();
         let _ = window.unminimize();
     }
     if let Err(e) = window.show() {
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn update_launch_activation_shows_unminimizes_and_focuses() {
         let src = include_str!("restore.rs");
-        let app_show_pos = src.find("let _ = app.show()").unwrap();
+        let app_show_pos = src.find("let _ = _app.show()").unwrap();
         let unminimize_pos = src.find("window.unminimize()").unwrap();
         let show_pos = src.find("window.show()").unwrap();
         let focus_pos = src.find("window.set_focus()").unwrap();
