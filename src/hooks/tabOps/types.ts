@@ -50,6 +50,13 @@ export interface UseTabsContext {
   shellDefaultArgsRef: MutableRefObject<string[]>;
   shellInheritEnvRef: MutableRefObject<boolean>;
   shellPromptBeforeCloseRef: MutableRefObject<boolean>;
+  /** Optional probe: resolves true when the shell at `tabId` has a
+   *  foreground job other than the shell itself. closeTab uses this to
+   *  skip the running-shell confirmation for an idle prompt (e.g. a
+   *  bash sitting on a `nix develop` / `direnv` env with no active
+   *  command) — only real in-flight work should pop the modal. Reject
+   *  is treated as busy. */
+  isShellBusy?: (tabId: string) => Promise<boolean>;
 }
 
 export interface UseTabsActions {

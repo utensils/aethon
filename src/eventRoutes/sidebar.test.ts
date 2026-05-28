@@ -11,6 +11,7 @@ import {
   handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
+import { OVERVIEW_TAB_ID } from "../types/tab";
 import { buildRouteFixture } from "./testFixtures";
 
 describe("handleSidebarResize", () => {
@@ -334,6 +335,43 @@ describe("handleSidebarSwitchWorktree", () => {
     expect(handled).toBe(true);
     expect(applySetState().landing).toBeNull();
   });
+
+  it("re-clicking the already-active worktree returns to the landing overview", async () => {
+    // Starting state: worktree wt-1 is active with an agent session on
+    // top. Clicking wt-1 again is the user's "back to the worktree
+    // landing" gesture — rebuild the landing AND deselect the session
+    // tab via the overview sentinel so the landing actually renders.
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        ...sidebarState,
+        activeWorktreeId: "wt-1",
+        tabs: [{ id: "tab-1", kind: "agent", cwd: "/repo/aethon-fix-issue" }],
+        activeTabId: "tab-1",
+      },
+    });
+
+    const handled = await handleSidebarSwitchWorktree(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-worktree",
+        data: { worktreeId: "wt-1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorktree).toHaveBeenCalledWith("wt-1");
+    const next = applySetState({
+      activeWorktreeId: "wt-1",
+      tabs: [{ id: "tab-1", kind: "agent", cwd: "/repo/aethon-fix-issue" }],
+      activeTabId: "tab-1",
+    });
+    expect(next.landing).toMatchObject({
+      kind: "worktree",
+      worktreeId: "wt-1",
+    });
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+  });
 });
 
 describe("handleSectionedSelect", () => {
@@ -445,5 +483,93 @@ describe("handleSectionedSelect", () => {
       ctx,
     );
     expect(handled).toBe(false);
+  });
+
+  it("re-clicking the active project returns to overview", async () => {
+    // First click on a project already-active is the user's "back to
+    // project overview" gesture. The session tab stays in /tabs; only
+    // the activeTabId moves to the overview sentinel so the dashboard
+    // takes the canvas.
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        project: { id: "proj-1", path: "/repo/app" },
+        activeTabId: "tab-7",
+      },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "projects", itemId: "proj-1" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      project: { id: "proj-1", path: "/repo/app" },
+      activeTabId: "tab-7",
+    });
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+  });
+
+  it("clicking a different project does NOT force the overview sentinel", async () => {
+    // Project switching has bucket logic in setActiveProjectById; the
+    // re-click gesture must not stomp on a target-bucket activeTabId.
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        project: { id: "proj-1" },
+        activeTabId: "tab-7",
+      },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "projects", itemId: "proj-2" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      project: { id: "proj-1" },
+      activeTabId: "tab-7",
+    });
+    expect(next.activeTabId).toBe("tab-7");
+  });
+
+  it("re-clicking the active host returns to overview", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { activeHostId: "remote:bender", activeTabId: "tab-7" },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "hosts", itemId: "remote:bender" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      activeHostId: "remote:bender",
+      activeTabId: "tab-7",
+    });
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+  });
+
+  it("clicking a different host does NOT force the overview sentinel", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { activeHostId: "local:one", activeTabId: "tab-7" },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "hosts", itemId: "remote:bender" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      activeHostId: "local:one",
+      activeTabId: "tab-7",
+    });
+    expect(next.activeTabId).toBe("tab-7");
   });
 });

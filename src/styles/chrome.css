@@ -3624,6 +3624,33 @@ body.ae-resizing-composer * {
   border-color: var(--border);
 }
 
+/* Overview pseudo-tab — always-visible escape hatch back to the host /
+   project / worktree dashboard. Narrower than a real tab so it reads as
+   navigation, not a session, and carries the Æ brand glyph instead of a
+   close button (it can't be closed). */
+.a2ui-tab-overview {
+  min-inline-size: 6.5rem;
+  max-inline-size: 8rem;
+  flex: 0 0 7rem;
+  padding-left: 10px;
+  gap: 6px;
+}
+
+.a2ui-tab-overview-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 /* ---- Terminal ----------------------------------------------------------- */
 
 /* The terminal cell is auto-rowed in the grid, so it sizes to its content.
@@ -4146,6 +4173,32 @@ body.ae-resizing-terminal * {
 .ae-terminal-panel-body > * {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* Empty placeholder when the panel is open on the overview but no shell
+   sessions exist yet — the body needs *some* content so the panel still
+   renders its frame. */
+.ae-terminal-panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text);
+  text-align: center;
+  gap: 6px;
+}
+.ae-terminal-panel-empty kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--text);
 }
 
 /* =============================================================================

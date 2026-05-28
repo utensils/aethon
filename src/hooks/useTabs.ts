@@ -106,6 +106,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     projectsRef: ctx.projectsRef,
     promptCloseShellTabConfirmation: ctx.promptCloseShellTabConfirmation,
     shellPromptBeforeCloseRef: ctx.shellPromptBeforeCloseRef,
+    isShellBusy: ctx.isShellBusy,
     dispatchTerminalReplay,
     closedTabsRef,
     clearActiveProject: ctx.clearActiveProject,

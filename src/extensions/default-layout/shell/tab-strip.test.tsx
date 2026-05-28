@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { TabStrip } from "./tab-strip";
 import type { A2UIComponent } from "../../../types/a2ui";
+import { OVERVIEW_TAB_ID } from "../../../types/tab";
 
 afterEach(() => cleanup());
 
@@ -119,8 +120,62 @@ describe("TabStrip", () => {
       />,
     );
 
-    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    // The overview pill is the only entry in the strip when there are
+    // no real tabs — every other role="tab" should be a session pill.
+    const tabRoles = screen.queryAllByRole("tab");
+    expect(tabRoles).toHaveLength(1);
+    expect(tabRoles[0].textContent).toContain("overview");
     fireEvent.click(screen.getByRole("button", { name: "New Tab" }));
     expect(onEvent).toHaveBeenCalledWith("new");
+  });
+
+  it("renders the overview pill as the leftmost, non-closable tab", () => {
+    renderTabStrip();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0].textContent).toContain("overview");
+    // No close button on the overview pill.
+    expect(
+      tabs[0].querySelector(".a2ui-tab-close"),
+    ).toBeNull();
+    // Real tabs do have one.
+    expect(
+      screen
+        .getByText("Tab 1")
+        .closest('[role="tab"]')!
+        .querySelector(".a2ui-tab-close"),
+    ).not.toBeNull();
+  });
+
+  it("emits select with the overview sentinel when the pill is clicked", () => {
+    const { onEvent } = renderTabStrip();
+    const overviewPill = screen
+      .getAllByRole("tab")
+      .find((el) => el.textContent?.includes("overview"))!;
+    fireEvent.mouseDown(overviewPill, { button: 0 });
+    expect(onEvent).toHaveBeenCalledWith("select", { tabId: OVERVIEW_TAB_ID });
+  });
+
+  it("marks the overview pill active when no tab id is set", () => {
+    render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{ activeTabId: OVERVIEW_TAB_ID, tabs: [] }}
+        onEvent={vi.fn<TabStripOnEvent>()}
+      />,
+    );
+    const overviewPill = screen
+      .getAllByRole("tab")
+      .find((el) => el.textContent?.includes("overview"))!;
+    expect(overviewPill.getAttribute("aria-selected")).toBe("true");
+    expect(overviewPill.className).toContain("a2ui-tab-active");
+  });
+
+  it("marks the overview pill inactive when a real tab is selected", () => {
+    renderTabStrip();
+    const overviewPill = screen
+      .getAllByRole("tab")
+      .find((el) => el.textContent?.includes("overview"))!;
+    expect(overviewPill.getAttribute("aria-selected")).toBe("false");
+    expect(overviewPill.className).not.toContain("a2ui-tab-active");
   });
 });

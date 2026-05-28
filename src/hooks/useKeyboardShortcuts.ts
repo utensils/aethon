@@ -245,8 +245,30 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         ctx.reopenLastClosedTab();
         return;
       }
-      // Cmd+W: close active tab.
+      // Cmd+W: close active tab. Focus-aware — when keyboard focus is
+      // inside the bottom terminal panel, close the active shell
+      // sub-tab instead so users don't have to switch focus back up
+      // just to dismiss a shell. The always-present agent-bash sub-tab
+      // is read-only and has no /tabs entry; if it's the active sub
+      // we no-op rather than falling through and accidentally closing
+      // the agent tab above.
       if (e.key.toLowerCase() === "w" && mod && !e.shiftKey && !e.altKey) {
+        if (isFocusInTerminalPanel()) {
+          const panel =
+            (ctx.stateRef.current.terminalPanel as
+              | { activeSubId?: string }
+              | undefined) ?? {};
+          const subId = panel.activeSubId;
+          if (!subId || subId === "agent-bash") {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.closeTab(subId);
+          return;
+        }
         const activeId = ctx.stateRef.current.activeTabId as string | undefined;
         if (!activeId) return;
         e.preventDefault();

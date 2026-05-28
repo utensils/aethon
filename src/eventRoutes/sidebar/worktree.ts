@@ -1,4 +1,5 @@
 import type { EventRouteHandler } from "../types";
+import { activateOverview } from "../tabStrip";
 
 /** Worktree event family — all routed through useProjectOps actions. */
 export const handleSidebarCreateWorktree: EventRouteHandler = (
@@ -52,6 +53,8 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
   for (const project of sidebar.projects ?? []) {
     const worktree = project.worktrees?.find((w) => w.id === worktreeId);
     if (worktree) {
+      const wasAlreadyActiveWorktree =
+        ctx.stateRef.current.activeWorktreeId === worktreeId;
       ctx.activateWorktree(worktreeId);
       const tabs = Array.isArray(ctx.stateRef.current.tabs)
         ? ctx.stateRef.current.tabs
@@ -59,16 +62,20 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
       const activeTabId = ctx.stateRef.current.activeTabId;
       const hasVisibleSession =
         tabs.length > 0 &&
-        (typeof activeTabId !== "string" ||
-          tabs.some((tab) => {
-            return (
-              tab &&
-              typeof tab === "object" &&
-              "id" in tab &&
-              tab.id === activeTabId
-            );
-          }));
-      if (hasVisibleSession) {
+        typeof activeTabId === "string" &&
+        tabs.some((tab) => {
+          return (
+            tab &&
+            typeof tab === "object" &&
+            "id" in tab &&
+            tab.id === activeTabId
+          );
+        });
+      // Re-clicking the active worktree while a session owns the canvas
+      // is the user's "back to the worktree landing" gesture. Fall
+      // through to the landing-rebuild path and also deselect the
+      // session tab so the landing actually renders.
+      if (hasVisibleSession && !wasAlreadyActiveWorktree) {
         ctx.setState((prev) => ({ ...prev, landing: null }));
         return true;
       }
@@ -85,6 +92,9 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
           isMain: worktree.isMain === true,
         },
       }));
+      if (wasAlreadyActiveWorktree && hasVisibleSession) {
+        activateOverview(ctx);
+      }
       return true;
     }
   }

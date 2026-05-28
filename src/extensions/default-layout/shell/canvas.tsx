@@ -31,6 +31,42 @@ import {
   readTerminalTheme,
 } from "../terminal";
 
+export interface ShellDims {
+  cols: number;
+  rows: number;
+}
+
+/** True when the ResizeObserver entry reports a zero-sized container —
+ *  the bottom terminal panel collapsing via Cmd+`. Skipping fit + the
+ *  ensuing shell_resize prevents SIGWINCH spam that makes prompts like
+ *  starship redraw and stack a fresh prompt line per toggle cycle. */
+export function shouldSkipResize(
+  entry: ResizeObserverEntry | undefined,
+): boolean {
+  if (!entry) return false;
+  const { width, height } = entry.contentRect;
+  return width === 0 || height === 0;
+}
+
+/** Returns the dims to send via `shell_resize`, or `null` when the
+ *  current dims match what we sent last time (no PTY change → no
+ *  SIGWINCH). A zero `cols` or `rows` also bails — xterm reports 0 if
+ *  the container collapsed between the ResizeObserver fire and `fit()`. */
+export function decideShellResize(
+  current: ShellDims,
+  lastSent: ShellDims | null,
+): ShellDims | null {
+  if (!current.cols || !current.rows) return null;
+  if (
+    lastSent &&
+    lastSent.cols === current.cols &&
+    lastSent.rows === current.rows
+  ) {
+    return null;
+  }
+  return current;
+}
+
 export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
     /** Shell tab id this canvas is bound to. Resolved via $ref so the
@@ -116,26 +152,33 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // Resize: FitAddon recomputes cols/rows on layout changes; tell the
     // PTY too so child processes (vim, less, …) reflow correctly. Mirror
     // the same dims into local state so the status line displays them
-    // without a separate poll loop.
-    const ro = new ResizeObserver(() => {
+    // without a separate poll loop. See `decideShellResize` for the two
+    // guards that keep panel-toggle from raising spurious SIGWINCHes.
+    const lastSentDimsRef = { current: null as ShellDims | null };
+    const ro = new ResizeObserver((entries) => {
+      if (shouldSkipResize(entries[0])) return;
       try {
         fit.fit();
         const cols = term.cols;
         const rows = term.rows;
-        if (cols && rows) {
-          setDims((prev) =>
-            prev && prev.cols === cols && prev.rows === rows
-              ? prev
-              : { cols, rows },
-          );
-          void invoke("shell_resize", {
-            tabId: tabIdRef.current,
-            cols,
-            rows,
-          }).catch(() => {
-            /* PTY closed — drop */
-          });
-        }
+        const decision = decideShellResize(
+          { cols, rows },
+          lastSentDimsRef.current,
+        );
+        if (!decision) return;
+        setDims((prev) =>
+          prev && prev.cols === decision.cols && prev.rows === decision.rows
+            ? prev
+            : decision,
+        );
+        lastSentDimsRef.current = decision;
+        void invoke("shell_resize", {
+          tabId: tabIdRef.current,
+          cols: decision.cols,
+          rows: decision.rows,
+        }).catch(() => {
+          /* PTY closed — drop */
+        });
       } catch {
         /* fit transient errors during teardown */
       }

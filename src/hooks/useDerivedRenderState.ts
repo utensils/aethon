@@ -1,5 +1,10 @@
 import { useMemo } from "react";
-import { deriveTabActiveFlags, type Tab } from "../types/tab";
+import {
+  deriveTabActiveFlags,
+  isOverviewActive,
+  OVERVIEW_TAB_ID,
+  type Tab,
+} from "../types/tab";
 import type { UseHostInfo } from "./useHostInfo";
 
 interface RecentSessionItem {
@@ -52,12 +57,24 @@ export function useDerivedRenderState({
       state.activeTabId as string | undefined,
       recentSessions,
     );
+    const activeTabId = state.activeTabId as string | undefined;
     const hasTabs = tabs.length > 0;
+    // Shell tabs live in /tabs but render only in the bottom terminal
+    // panel — they must not suppress the overview. Only agent + editor
+    // tabs count as "sessions" that occupy the canvas.
+    const hasSessionTabs = tabs.some(
+      (t) => t.kind === "agent" || t.kind === "editor",
+    );
+    const overviewActive = isOverviewActive(activeTabId);
     const { agentTabActive, shellTabActive, editorTabActive } =
-      deriveTabActiveFlags(tabs, state.activeTabId as string | undefined);
+      deriveTabActiveFlags(tabs, activeTabId);
     const landing = state.landing as { kind?: string } | null | undefined;
     const landingVisible = !!landing && landing.kind === "worktree";
-    const empty = !hasTabs && !landingVisible;
+    // The overview owns the canvas when there are no session tabs *or*
+    // when the user has explicitly selected the overview pseudo-tab.
+    // Either case keeps the host / project dashboards visible while
+    // shell tabs and idle agent sessions can still exist in /tabs.
+    const empty = (!hasSessionTabs || overviewActive) && !landingVisible;
     const hasActiveProject =
       typeof state.project === "object" && state.project !== null;
     const emptyAndProject = empty && hasActiveProject;
@@ -120,6 +137,9 @@ export function useDerivedRenderState({
     return {
       ...state,
       hasTabs,
+      hasSessionTabs,
+      overviewActive,
+      overviewTabId: OVERVIEW_TAB_ID,
       empty,
       emptyAndProject,
       emptyAndNoProject,

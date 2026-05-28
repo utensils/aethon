@@ -136,8 +136,23 @@ export interface ClosedTabEntry {
 // literal can't collide.
 export const NO_PROJECT_KEY = "__no_project__";
 
+/**
+ * Sentinel id for the permanent "overview" pseudo-tab pinned to the left
+ * of the tab strip. It is *not* stored in `/tabs` — setting `activeTabId`
+ * to this value (or any value that doesn't match a real tab) means
+ * "no active session; show the host / project / worktree overview." Tab
+ * ids elsewhere are UUIDs, so a literal can't collide.
+ */
+export const OVERVIEW_TAB_ID = "__overview__";
+
 export function projectBucketKey(id: string | null | undefined): string {
   return id ?? NO_PROJECT_KEY;
+}
+
+/** True when `activeTabId` is unset / the overview sentinel — i.e. no
+ *  real tab is selected and the overview should own the canvas. */
+export function isOverviewActive(activeTabId: string | undefined): boolean {
+  return !activeTabId || activeTabId === OVERVIEW_TAB_ID;
 }
 
 export function makeEmptyTab(
@@ -184,20 +199,25 @@ export function deriveTabActiveFlags(
   shellTabActive: boolean;
   editorTabActive: boolean;
 } {
-  if (tabs.length === 0) {
+  // Overview sentinel, unset id, or an id that no longer matches any tab
+  // all collapse to the same "no active session" state — the overview
+  // owns the canvas, not a phantom agent canvas. (Pre-sentinel code path
+  // defaulted a missing tab to `agent`, which masked a stale persisted id
+  // as a live session.)
+  const activeTab =
+    activeTabId && activeTabId !== OVERVIEW_TAB_ID
+      ? tabs.find((t) => t.id === activeTabId)
+      : undefined;
+  if (!activeTab) {
     return {
       agentTabActive: false,
       shellTabActive: false,
       editorTabActive: false,
     };
   }
-  const activeTab = activeTabId
-    ? tabs.find((t) => t.id === activeTabId)
-    : undefined;
-  const kind = activeTab?.kind ?? "agent";
   return {
-    agentTabActive: kind === "agent",
-    shellTabActive: kind === "shell",
-    editorTabActive: kind === "editor",
+    agentTabActive: activeTab.kind === "agent",
+    shellTabActive: activeTab.kind === "shell",
+    editorTabActive: activeTab.kind === "editor",
   };
 }

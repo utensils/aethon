@@ -1,4 +1,4 @@
-import type { Tab } from "../types/tab";
+import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 import { dedupeToolResultTextMessages } from "../utils/messages";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
@@ -140,9 +140,13 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         })
       : [];
     if (tabs.length === 0) return null;
+    // OVERVIEW_TAB_ID is a valid persisted value (the user closed the
+    // app while the overview pseudo-tab owned the canvas with sessions
+    // open) — keep it as-is. Other ids must still match a real tab.
     const activeTabId =
       typeof parsed.activeTabId === "string" &&
-      tabs.some((t) => t.id === parsed.activeTabId)
+      (parsed.activeTabId === OVERVIEW_TAB_ID ||
+        tabs.some((t) => t.id === parsed.activeTabId))
         ? parsed.activeTabId
         : tabs[0].id;
     return {
@@ -231,7 +235,8 @@ export function serializeSessionUiSnapshot(
     }
     const activeTabId =
       typeof state.activeTabId === "string" &&
-      tabs.some((t) => t.id === state.activeTabId)
+      (state.activeTabId === OVERVIEW_TAB_ID ||
+        tabs.some((t) => t.id === state.activeTabId))
         ? state.activeTabId
         : tabs[0]?.id;
     const snapshot: SessionUiSnapshot = {

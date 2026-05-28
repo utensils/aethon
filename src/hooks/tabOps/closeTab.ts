@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ClosedTabEntry, Tab } from "../../types/tab";
+import { OVERVIEW_TAB_ID, type ClosedTabEntry, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { disposeEditorBuffer } from "../../monaco/editor-buffers";
 import { recomputeModelPicker } from "../../utils/modelPicker";
@@ -13,6 +13,13 @@ export interface CloseTabDeps {
   projectsRef: MutableRefObject<ProjectsState>;
   promptCloseShellTabConfirmation: (tabLabel: string) => Promise<boolean>;
   shellPromptBeforeCloseRef: MutableRefObject<boolean>;
+  /** True iff the shell currently has a foreground job other than the
+   *  shell itself — i.e. the user fired off a command and hasn't been
+   *  returned to a prompt. Used to skip the close-confirmation for idle
+   *  shells where the only thing that gets killed is the bash/zsh
+   *  sitting on a direnv/nix-shell env. Optional: when omitted, the
+   *  close path assumes busy (current behaviour). Reject = assume busy. */
+  isShellBusy?: (tabId: string) => Promise<boolean>;
   dispatchTerminalReplay: (buffer: string) => void;
   closedTabsRef: MutableRefObject<ClosedTabEntry[]>;
   /** Bucket switching — the reopen flow needs to land closed tabs back
@@ -59,6 +66,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     projectsRef,
     promptCloseShellTabConfirmation,
     shellPromptBeforeCloseRef,
+    isShellBusy,
     dispatchTerminalReplay,
     closedTabsRef,
     clearActiveProject,
@@ -135,7 +143,14 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
   /** Close a tab, prompting for confirmation when closing a running
    *  shell tab and `[shell] prompt_before_close` is true. Editor tabs
    *  with unsaved changes get a lightweight native confirm prompt so
-   *  Cmd+W on a dirty file can't silently throw work away. */
+   *  Cmd+W on a dirty file can't silently throw work away.
+   *
+   *  Shell guard refinement: a bash/zsh sitting at a prompt with just
+   *  direnv or `nix develop` loaded is "running" from the kernel's view
+   *  (the shell process is alive) but the only thing that would die on
+   *  close is the prompt itself — no foreground job, no user task lost.
+   *  When `isShellBusy` is wired in, idle shells skip the confirmation;
+   *  anything with a real foreground process group still triggers it. */
   function closeTab(tabId: string): void {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     const closing = tabs.find((t) => t.id === tabId);
@@ -144,9 +159,18 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
       closing.shell?.shellState === "running" &&
       shellPromptBeforeCloseRef.current
     ) {
-      void promptCloseShellTabConfirmation(closing.label).then((allowed) => {
-        if (!allowed) return;
-        closeTabNow(tabId);
+      const busyCheck: Promise<boolean> = isShellBusy
+        ? isShellBusy(tabId).catch(() => true)
+        : Promise.resolve(true);
+      void busyCheck.then((busy) => {
+        if (!busy) {
+          closeTabNow(tabId);
+          return;
+        }
+        void promptCloseShellTabConfirmation(closing.label).then((allowed) => {
+          if (!allowed) return;
+          closeTabNow(tabId);
+        });
       });
       return;
     }
@@ -174,7 +198,14 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
       );
       let activeTabId = prev.activeTabId as string | undefined;
       if (activeTabId === tabId) {
-        activeTabId = list.length > 0 ? list[list.length - 1].id : undefined;
+        // Prefer the most-recent agent/editor session; if only shells
+        // remain (or nothing remains), fall back to the overview
+        // pseudo-tab so the canvas returns to the dashboard rather than
+        // landing on a shell tab that has no canvas of its own.
+        const lastSession = [...list]
+          .reverse()
+          .find((t) => t.kind === "agent" || t.kind === "editor");
+        activeTabId = lastSession ? lastSession.id : OVERVIEW_TAB_ID;
         switched = true;
       }
       const result: Record<string, unknown> = {
@@ -196,15 +227,20 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
           ].slice(0, 16);
         }
       }
-      if (list.length === 0) {
-        becameEmpty = true;
+      const target =
+        activeTabId !== OVERVIEW_TAB_ID
+          ? list.find((t) => t.id === activeTabId)
+          : undefined;
+      if (!target) {
+        // No session-tab to mirror — clear the per-tab keys so a stale
+        // /messages or /draft can't leak into the overview view.
+        becameEmpty = list.length === 0;
         for (const key of TAB_MIRROR_KEYS) {
           result[key as string] = undefined;
         }
         result.empty = true;
-        result.hasTabs = false;
+        result.hasTabs = list.length > 0;
       } else {
-        const target = list.find((t) => t.id === activeTabId)!;
         nextBuffer = target.terminalBuffer ?? "";
         const targetRec = target as unknown as Record<string, unknown>;
         for (const key of TAB_MIRROR_KEYS) {

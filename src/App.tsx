@@ -258,6 +258,10 @@ export default function App() {
     shellDefaultArgsRef,
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
+    isShellBusy: async (tabId: string) => {
+      const v = await invoke("shell_is_busy", { tabId });
+      return v === true;
+    },
   });
 
   // Tab/sub-tab navigation (next/jump/move for both agent tabs and
@@ -388,7 +392,11 @@ export default function App() {
     focusActiveContextInput,
     toggleSidebar,
     toggleFilesSidebar,
-  } = useFocus({ setState, stateRef });
+  } = useFocus({
+    setState,
+    stateRef,
+    newShellTabOnOverviewOpen: () => newShellTab(),
+  });
 
   const { slashContext, persistLocalChatMessage } = useAppSlashCommandContext({
     bootLayout: BOOT_LAYOUT,

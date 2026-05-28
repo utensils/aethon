@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { workstationLayout, workstationRows } from "./useFocus";
+import { describe, expect, it, vi } from "vitest";
+import type { MutableRefObject } from "react";
+import { OVERVIEW_TAB_ID, makeEmptyTab } from "../types/tab";
+import { useFocus, workstationLayout, workstationRows } from "./useFocus";
 
 describe("workstationLayout", () => {
   it("returns canonical 3-column shape with both sidebars visible", () => {
@@ -145,5 +147,69 @@ describe("workstationRows", () => {
     expect(workstationRows(true, 900)).toBe(
       "38px 38px minmax(0,1fr) 720px auto auto",
     );
+  });
+});
+
+describe("toggleTerminal auto-spawn", () => {
+  function useFocusHarness(initial: Record<string, unknown>) {
+    let current = initial;
+    const ref = <T,>(v: T): MutableRefObject<T> => ({ current: v });
+    const stateRef = ref<Record<string, unknown>>(initial);
+    const setState = vi.fn((updater: unknown) => {
+      if (typeof updater !== "function") return;
+      const fn = updater as (
+        prev: Record<string, unknown>,
+      ) => Record<string, unknown>;
+      current = fn(current);
+      stateRef.current = current;
+    });
+    const newShellTabOnOverviewOpen = vi.fn();
+    const actions = useFocus({ setState, stateRef, newShellTabOnOverviewOpen });
+    return { actions, setState, newShellTabOnOverviewOpen, get: () => current };
+  }
+
+  it("auto-spawns a shell when opening the terminal on overview with no shells", () => {
+    const { actions, newShellTabOnOverviewOpen, get } = useFocusHarness({
+      activeTabId: OVERVIEW_TAB_ID,
+      tabs: [],
+      terminal: { open: false },
+      layout: {},
+    });
+    actions.toggleTerminal();
+    expect(newShellTabOnOverviewOpen).toHaveBeenCalledTimes(1);
+    expect((get().terminal as { open: boolean }).open).toBe(true);
+  });
+
+  it("does NOT auto-spawn when the terminal is closing", () => {
+    const { actions, newShellTabOnOverviewOpen } = useFocusHarness({
+      activeTabId: OVERVIEW_TAB_ID,
+      tabs: [],
+      terminal: { open: true },
+      layout: {},
+    });
+    actions.toggleTerminal();
+    expect(newShellTabOnOverviewOpen).not.toHaveBeenCalled();
+  });
+
+  it("does NOT auto-spawn when a shell already exists", () => {
+    const { actions, newShellTabOnOverviewOpen } = useFocusHarness({
+      activeTabId: OVERVIEW_TAB_ID,
+      tabs: [makeEmptyTab("sh-1", "Shell 1", null, "shell")],
+      terminal: { open: false },
+      layout: {},
+    });
+    actions.toggleTerminal();
+    expect(newShellTabOnOverviewOpen).not.toHaveBeenCalled();
+  });
+
+  it("does NOT auto-spawn when an agent session owns the canvas", () => {
+    const { actions, newShellTabOnOverviewOpen } = useFocusHarness({
+      activeTabId: "agent-1",
+      tabs: [makeEmptyTab("agent-1", "Tab 1")],
+      terminal: { open: false },
+      layout: {},
+    });
+    actions.toggleTerminal();
+    expect(newShellTabOnOverviewOpen).not.toHaveBeenCalled();
   });
 });
