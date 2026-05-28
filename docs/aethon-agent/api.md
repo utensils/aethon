@@ -60,8 +60,9 @@ streaming.
 
 ### `setLayout(payload)`
 
-Replace the entire layout. `payload` is the same shape as
-`src/skills/default-layout/layout.a2ui.json` — `{ components, state? }`.
+Replace the entire layout. `payload` is the same shape as the bundled
+workstation payload at `src/skills/default-layout/workstation.a2ui.json`
+— `{ components, state? }`.
 
 ```ts
 globalThis.aethon.setLayout({
@@ -193,7 +194,9 @@ Wire clicks via `onEvent` (see below).
 
 Add a slash command to the chat-input picker. `name` must match
 `/^[A-Za-z][\w-]*$/` and may not collide with built-ins (`clear`, `help`,
-`theme`, `model`, `reset`, `terminal`, `extensions`).
+`theme`, `model`, `login`, `reset`, `reload`, `rename`, `context`,
+`session`, `compact`, `name`, `export`, `terminal`, `extensions`,
+`sidebar`, `files`, `layout`, `project`).
 
 ```ts
 globalThis.aethon.registerSlashCommand({
@@ -434,17 +437,22 @@ built-in behavior. Built-ins without an override are:
 
 | Combo                       | Built-in action                      |
 | --------------------------- | ------------------------------------ |
-| `Cmd+P`                     | Open command palette (switcher mode) |
+| `Cmd+P`                     | Quick-open file (fuzzy search)       |
 | `Cmd+Shift+P`               | Open command palette (commands mode) |
-| `Cmd+T`                     | New tab                              |
+| `Cmd+T`                     | New tab (focus-aware)                |
+| `Cmd+Shift+T`               | New shell sub-tab                    |
 | `Cmd+W`                     | Close active tab                     |
 | `Cmd+Shift+]`               | Next tab                             |
 | `Cmd+Shift+[`               | Previous tab                         |
 | `Cmd+Opt+]` / `Cmd+Opt+[`   | Move active tab right / left         |
 | `Cmd+\``                    | Toggle terminal                      |
+| `Cmd+B` / `Cmd+D` / `Cmd+J` | Toggle sidebars / file tree          |
 | `Cmd+K`                     | Clear chat                           |
 | `Cmd+.`                     | Stop current prompt                  |
-| `Cmd+=` / `Cmd+-` / `Cmd+0` | UI zoom controls                     |
+| `Cmd+Shift+M`               | Toggle voice input                   |
+| `Cmd+=` / `Cmd+-`           | UI zoom controls                     |
+| `Cmd+0`                     | Toggle composer / terminal focus     |
+| `Cmd+Shift+0`               | Reset zoom                           |
 
 ```ts
 globalThis.aethon.registerKeybinding({

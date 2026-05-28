@@ -21,7 +21,7 @@ Pi (the embedded coding agent) is `cwd`-aware. Project context shapes:
 Three ways to register a new project:
 
 1. **Sidebar** → **Projects** section → **Add project…** → pick a directory.
-2. **Command palette** (`Cmd+P`) → search "project" → **Add project…**
+2. **Command palette** (`Cmd+Shift+P`) → search "project" → **Add project…**
 3. **Slash command** → `/project /absolute/path/to/repo` — adds and activates.
 
 The project list is persisted at `~/.aethon/projects.json`. Maximum
@@ -105,8 +105,8 @@ Tabs share a project but **not** a pi session — every tab gets its own
 transcript so you can run parallel conversations against the same repo.
 
 When a tab is closed, its session directory remains; reopening (via
-`Cmd+Opt+T` for the most-recent close) restores the conversation. To
-permanently discard a session, run `/reset` in the tab.
+`Cmd+Opt+T` for the most-recent close) restores the conversation. Use
+the session search/delete UI to permanently remove a saved transcript.
 
 ## Where to next
 

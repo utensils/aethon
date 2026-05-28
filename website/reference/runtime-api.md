@@ -62,8 +62,18 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 | Call | Purpose |
 |---|---|
 | `aethon.shells.list()` | Enumerate shells the user has explicitly shared (anything not `private`). |
-| `aethon.shells.read(id, { cursor? })` | Forward-paging read of scrollback bytes. The first call (cursor omitted) returns the latest `max_bytes`. |
-| `aethon.shells.write(id, bytes)` | Inject keystrokes. In `read-write` mode this pops an Allow/Deny prompt; in `read-write-trusted` it proceeds without one. |
+| `aethon.shells.read({ tabId, sinceTotal?, maxBytes? })` | Forward-paging read of scrollback bytes. The first call (`sinceTotal` omitted) returns the latest bytes. |
+| `aethon.shells.write({ tabId, text })` | Inject keystrokes. In `read-write` mode this pops an Allow/Deny prompt; in `read-write-trusted` it proceeds without one. |
+
+### Project tasks and dashboard data
+
+| Call | Purpose |
+|---|---|
+| `aethon.tasks.start({ projectPath, prompt, newWorktree?, branch?, baseBranch? })` | Start a dashboard task: optionally create a worktree, open an agent tab at the target cwd, and send the first prompt. |
+| `aethon.dashboard.getRepoOverview({ projectPath })` | Read the cached GitHub/repo overview used by the project dashboard. |
+| `aethon.dashboard.refresh({ projectPath? })` | Refresh dashboard data. |
+| `aethon.dashboard.listIssues({ projectPath, limit? })` | Return cached open issues for a project. |
+| `aethon.dashboard.getIssue({ projectPath, number })` | Return the full issue title, URL, body, and author. |
 
 ::: tip
 There is intentionally **no `setShareMode` on the agent surface**. Mode

@@ -968,7 +968,7 @@ automatically. Mode prefixes inside the palette: `>` forces commands,
 ## Layout Payload Shape
 
 The whole UI is one tree. The default layout (boot payload) lives at
-`src/skills/default-layout/layout.a2ui.json`. Its top-level grid uses
+`src/skills/default-layout/workstation.a2ui.json`. Its top-level grid uses
 the canonical slot names defined in `slots.json`:
 
 ```

@@ -30,21 +30,30 @@ the same combos under `Ctrl` (`Cmd+T` ≡ `Ctrl+T`).
 | `Enter` | Send message. |
 | `Shift+Enter` | Insert newline in composer. |
 | `Cmd+L` | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs). |
-| `Cmd+K` | Clear visible chat history (pi session preserved unless you also `/reset`). |
+| `Cmd+K` | Clear visible chat history. The underlying pi session is preserved. |
 | `Cmd+.` | Stop the current prompt. |
+| `Cmd+Shift+M` | Toggle voice input. |
 | `Cmd+Shift+S` | Export active chat as Markdown to `~/Downloads/` (agent tabs only). |
 
 ## Overlays and surfaces
 
 | Combo | Action |
 |---|---|
-| `Cmd+P` | **Command palette** — switcher mode (tabs, sessions, projects, layouts, themes first). |
+| `Cmd+P` | Quick-open file fuzzy search for the active project. `>` and `?` still pivot to commands and keybindings. |
 | `Cmd+Shift+P` | **Command palette** — commands mode (slash commands, keybindings first). |
 | `Cmd+\`` | Toggle bottom terminal panel (Agent bash + each shell as a sub-tab). |
 | `Cmd+B` | Toggle sidebar. |
+| `Cmd+D` | Toggle the right-hand files sidebar. |
+| `Cmd+J` | Toggle the sidebar's file-tree panel. |
 | `Cmd+,` | Open Settings panel. |
 | `Cmd+Shift+F` | Cross-session search overlay. |
 | `Esc` | Close palette / settings / search overlay (when open). |
+
+## Editor
+
+| Combo | Action |
+|---|---|
+| `Cmd+Shift+V` | Toggle Markdown preview for the active editor tab. No-op outside Markdown editor tabs. |
 
 ## View
 

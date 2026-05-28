@@ -48,9 +48,9 @@ export function register(api: AethonApi) {
 }
 ```
 
-Drop the file in `~/.aethon/extensions/` and reload (`/reset` in chat,
+Drop the file in `~/.aethon/extensions/` and reload (`/reload` in chat,
 or just send a new message — the bridge picks up changes via the
-filesystem watcher).
+filesystem watcher after active prompts drain).
 
 ## Project-Local Extension
 

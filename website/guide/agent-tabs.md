@@ -25,7 +25,7 @@ focused session.
 | Action | Shortcut | Notes |
 |---|---|---|
 | New agent tab | `Cmd+T` | Focus-aware: opens **shell** if focus is in the bottom panel. |
-| New agent tab (always) | `Cmd+Shift+T` | Force the *opposite* of `new_tab_kind`. |
+| New shell sub-tab | `Cmd+Shift+T` | Always opens a shell and opens the bottom panel. |
 | Close tab | `Cmd+W` | Shell tabs prompt before killing a running job. |
 | Reopen most-recently closed | `Cmd+Opt+T` | Restores chat + cwd + draft. |
 | Next / previous | `Cmd+Shift+]` / `Cmd+Shift+[` | Cycles agent tabs. Matches the iTerm / Terminal.app convention. |
@@ -64,10 +64,15 @@ The composer lives at the bottom of the canvas:
 | `Cmd+K` | Clear visible chat history (pi session preserved). |
 | `Cmd+Shift+S` | Export the chat as Markdown to `~/Downloads/` (agent tabs only). |
 
-Slash commands like `/clear`, `/help`, `/theme`, `/model`, `/reset`,
-`/terminal`, `/extensions`, `/sidebar`, `/layout`, `/project` are recognised
-when typed at the start of the composer. Unknown `/<word>` falls
-through to the model — useful when an extension registers its own.
+If you press Enter while a turn is already running, Aethon queues the
+message as a follow-up. `Cmd+Enter` / `Ctrl+Enter` steers the active
+turn instead.
+
+Slash commands like `/clear`, `/help`, `/theme`, `/model`, `/login`,
+`/reset`, `/reload`, `/terminal`, `/extensions`, `/sidebar`, `/files`,
+`/layout`, and `/project` are recognised when typed at the start of the
+composer. Unknown `/<word>` falls through to the model — useful when pi
+or an extension owns the command.
 
 See the full [slash command reference](/reference/slash-commands).
 
@@ -103,5 +108,5 @@ you scroll.
 ## Where to next
 
 - [Shells & share modes](/guide/shells-and-share-modes) — bottom-panel PTY tabs.
-- [Command palette](/guide/command-palette) — every tab action is reachable from `Cmd+P`.
+- [Command palette](/guide/command-palette) — files on `Cmd+P`, commands on `Cmd+Shift+P`.
 - [Settings & search](/guide/settings-and-search) — cross-session search.
