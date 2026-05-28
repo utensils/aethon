@@ -1,13 +1,44 @@
 /* Aethon theme palettes — color + state tokens per theme.
  *
- * Four ship-ready themes: `ember` (default), `paper`, `aether`/`signature`,
- * `brink`. Each block sets the color tokens consumed by chrome.css. The
- * App sets `data-theme="<id>"` on <html>; extensions can register new
- * palettes via `aethon.registerTheme`.
+ * Seven ship-ready themes: `ember` (default), `paper`, `aether`/`signature`,
+ * `brink`, `daylight`, `mist`, `nocturne`. Each block sets the color
+ * tokens consumed by chrome.css. The App sets `data-theme="<id>"` on
+ * <html>; extensions can register new palettes via `aethon.registerTheme`.
  *
- * Each theme also defines interaction-color tokens (--bg-hover, --bg-active,
- * --bg-selected, --border-hover, --border-strong) and shadow tokens
- * (--shadow-1..3, --shadow-overlay) sized for the palette's mood. */
+ * Per-theme token categories:
+ *   1. Base surfaces       --bg, --bg-elev, --bg-input, --bg-hover,
+ *                          --bg-active, --bg-selected
+ *   2. Borders             --border, --border-hover, --border-strong
+ *   3. Text                --text, --text-secondary, --text-dim
+ *   4. Primary accent      --accent, --accent-soft, --accent-hover-tint,
+ *                          --accent-active-tint, --text-on-accent,
+ *                          --btn-text
+ *   5. Secondary + tert.   --accent-2(*4), --text-on-accent-2,
+ *      accents             --accent-3, --accent-3-soft
+ *   6. Bubbles / scroll    --user-bubble, --agent-bubble,
+ *                          --scrollbar-thumb, --scrollbar-thumb-hover
+ *   7. Status (legacy)     --success, --warn, --error
+ *   8. State quads         --state-{success,warning,error,info}-{bg,fg,
+ *                          border,strong}
+ *   9. Elevation tints     --elev-1-color..--elev-5-color (paired with
+ *                          --elev-*-shape from tokens.css)
+ *  10. Shadows             --shadow-1..5, --shadow-overlay
+ *  11. Surface tiers       --surface-0..--surface-4
+ *  12. Inner highlight     --inner-highlight (panel top-edge sheen)
+ *  13. Gradients           --gradient-surface, --gradient-accent,
+ *                          --gradient-app-backdrop
+ *  14. Chrome composites   --card-*, --pill-*, --composer-*, --popover-*,
+ *                          --modal-*
+ *  15. Syntax              --syntax-text..--syntax-variable
+ *  16. Terminal + ANSI     --terminal-*, --ansi-* (16 colours)
+ *
+ * Extensions only need to override the tokens they care about — unset
+ * tokens inherit from :root (which boots in ember). New token categories
+ * (surface tiers, secondary accents, state quads, inner highlight,
+ * gradients, chrome composites) intentionally have no fallback so an
+ * old extension theme that doesn't set them renders with the browser's
+ * default for that property (or `unset`); extensions that want polished
+ * surfaces opt in explicitly. */
 
 /* Ember — warm near-black, cream Bodoni text, brass orange accent.
    `:root` aliases ember so the app boots in ember even before
@@ -33,6 +64,13 @@
   --accent-active-tint: rgba(255, 106, 24, 0.16);
   --text-on-accent: #1f1f23;
   --btn-text: #1f1f23;
+  --accent-2: #4dc6c0;
+  --accent-2-soft: rgba(77, 198, 192, 0.18);
+  --accent-2-hover-tint: rgba(77, 198, 192, 0.08);
+  --accent-2-active-tint: rgba(77, 198, 192, 0.16);
+  --text-on-accent-2: #0e0e10;
+  --accent-3: #f5b945;
+  --accent-3-soft: rgba(245, 185, 69, 0.18);
   --user-bubble: #2a2620;
   --agent-bubble: #1f1f23;
   --scrollbar-thumb: #2e2e34;
@@ -40,10 +78,69 @@
   --success: #19c332;
   --warn: #febc2e;
   --error: #ff5d5d;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
-  --shadow-overlay: 0 20px 56px rgba(0, 0, 0, 0.7);
+  --state-success-bg: rgba(25, 195, 50, 0.14);
+  --state-success-fg: #5be072;
+  --state-success-border: rgba(25, 195, 50, 0.32);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(254, 188, 46, 0.14);
+  --state-warning-fg: #ffc857;
+  --state-warning-border: rgba(254, 188, 46, 0.32);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(255, 93, 93, 0.14);
+  --state-error-fg: #ff8a8a;
+  --state-error-border: rgba(255, 93, 93, 0.32);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(110, 167, 255, 0.14);
+  --state-info-fg: #9ab8ff;
+  --state-info-border: rgba(110, 167, 255, 0.32);
+  --state-info-strong: #6ea7ff;
+  --elev-1-color: rgba(0, 0, 0, 0.4);
+  --elev-2-color: rgba(0, 0, 0, 0.5);
+  --elev-3-color: rgba(0, 0, 0, 0.6);
+  --elev-4-color: rgba(0, 0, 0, 0.7);
+  --elev-5-color: rgba(0, 0, 0, 0.78);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
+  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  --surface-0: #0e0e10;
+  --surface-1: #161618;
+  --surface-2: #1f1f23;
+  --surface-3: #25252a;
+  --surface-4: #2c2c30;
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 94%, white 6%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 60%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 88%, var(--accent) 12%),
+    var(--surface-1) 60%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 90%, var(--accent) 10%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Ember. */
   --syntax-text: #e7e1d2;
   --syntax-comment: #6f6a5d;
@@ -100,6 +197,16 @@
   --accent-active-tint: rgba(212, 83, 12, 0.12);
   --text-on-accent: #fef3e2;
   --btn-text: #fef3e2;
+  /* Sage secondary accent breaks the brass monotony — paired with the
+     warm orange primary, it gives buttons + chips visible hierarchy
+     without leaving the print-paper identity. */
+  --accent-2: #4f7d52;
+  --accent-2-soft: rgba(79, 125, 82, 0.16);
+  --accent-2-hover-tint: rgba(79, 125, 82, 0.06);
+  --accent-2-active-tint: rgba(79, 125, 82, 0.12);
+  --text-on-accent-2: #fef3e2;
+  --accent-3: #b5765e;
+  --accent-3-soft: rgba(181, 118, 94, 0.16);
   --user-bubble: #fbe5c4;
   --agent-bubble: #fffaee;
   --scrollbar-thumb: #d8cdb3;
@@ -107,10 +214,76 @@
   --success: #1a8a2a;
   --warn: #c98a00;
   --error: #c4322a;
-  --shadow-1: 0 1px 2px rgba(80, 60, 30, 0.08);
-  --shadow-2: 0 4px 12px rgba(80, 60, 30, 0.12);
-  --shadow-3: 0 12px 32px rgba(80, 60, 30, 0.18);
-  --shadow-overlay: 0 20px 56px rgba(80, 60, 30, 0.24);
+  --state-success-bg: rgba(26, 138, 42, 0.10);
+  --state-success-fg: #1a5f25;
+  --state-success-border: rgba(26, 138, 42, 0.30);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(201, 138, 0, 0.10);
+  --state-warning-fg: #7a5500;
+  --state-warning-border: rgba(201, 138, 0, 0.30);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(196, 50, 42, 0.10);
+  --state-error-fg: #9c2820;
+  --state-error-border: rgba(196, 50, 42, 0.30);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(26, 85, 168, 0.10);
+  --state-info-fg: #143d80;
+  --state-info-border: rgba(26, 85, 168, 0.30);
+  --state-info-strong: #1a55a8;
+  /* Lifted alphas from the original 0.08/0.12/0.18/0.24 — cards
+     register as elevated against the cream backdrop without losing
+     the print-paper softness. */
+  --elev-1-color: rgba(80, 60, 30, 0.10);
+  --elev-2-color: rgba(80, 60, 30, 0.16);
+  --elev-3-color: rgba(80, 60, 30, 0.22);
+  --elev-4-color: rgba(80, 60, 30, 0.30);
+  --elev-5-color: rgba(80, 60, 30, 0.38);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
+  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  /* Surface tiers — sidebars/header (surface-2) sit BRIGHTER than the
+     canvas (surface-1) so they look lit by ambient room light, paired
+     with --inner-highlight to give a top-edge sheen. This is the move
+     that lifts Paper from flat to elevated. */
+  --surface-0: #f0e2c5;
+  --surface-1: #fef3e2;
+  --surface-2: #fff7e6;
+  --surface-3: #fffaee;
+  --surface-4: #ffffff;
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 90%, white 10%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 55%, var(--accent-3))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 88%, var(--accent) 8%),
+    var(--surface-1) 65%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent) 12%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Paper. */
   --syntax-text: #2b261f;
   --syntax-comment: #8a8170;
@@ -169,6 +342,15 @@
   --accent-active-tint: rgba(255, 138, 61, 0.16);
   --text-on-accent: #0e1118;
   --btn-text: #0e1118;
+  /* Steel-blue secondary balances the warm brass with a cool tone
+     that mirrors the deep ink-blue base. */
+  --accent-2: #6aa9ff;
+  --accent-2-soft: rgba(106, 169, 255, 0.18);
+  --accent-2-hover-tint: rgba(106, 169, 255, 0.08);
+  --accent-2-active-tint: rgba(106, 169, 255, 0.16);
+  --text-on-accent-2: #0e1118;
+  --accent-3: #76d6e0;
+  --accent-3-soft: rgba(118, 214, 224, 0.16);
   --user-bubble: #1f2436;
   --agent-bubble: #161a24;
   --scrollbar-thumb: #262b3a;
@@ -176,10 +358,69 @@
   --success: #3ad36f;
   --warn: #ffc94e;
   --error: #ff7777;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.55);
-  --shadow-3: 0 12px 36px rgba(0, 0, 0, 0.65);
-  --shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.75);
+  --state-success-bg: rgba(58, 211, 111, 0.14);
+  --state-success-fg: #7adf95;
+  --state-success-border: rgba(58, 211, 111, 0.32);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(255, 201, 78, 0.14);
+  --state-warning-fg: #ffd478;
+  --state-warning-border: rgba(255, 201, 78, 0.32);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(255, 119, 119, 0.14);
+  --state-error-fg: #ff9595;
+  --state-error-border: rgba(255, 119, 119, 0.32);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(130, 168, 255, 0.14);
+  --state-info-fg: #a8c4ff;
+  --state-info-border: rgba(130, 168, 255, 0.32);
+  --state-info-strong: #82a8ff;
+  --elev-1-color: rgba(0, 0, 0, 0.45);
+  --elev-2-color: rgba(0, 0, 0, 0.55);
+  --elev-3-color: rgba(0, 0, 0, 0.65);
+  --elev-4-color: rgba(0, 0, 0, 0.75);
+  --elev-5-color: rgba(0, 0, 0, 0.82);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: 0 4px 14px var(--elev-2-color);
+  --shadow-3: 0 12px 36px var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: 0 24px 64px var(--elev-4-color);
+  --surface-0: #080b12;
+  --surface-1: #0e1118;
+  --surface-2: #161a24;
+  --surface-3: #1c2030;
+  --surface-4: #222637;
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 92%, white 8%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 86%, var(--accent-2) 14%),
+    var(--surface-1) 60%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent-2) 12%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Æther. */
   --syntax-text: #d8dde9;
   --syntax-comment: #5b6275;
@@ -238,6 +479,15 @@
   --accent-active-tint: rgba(249, 204, 108, 0.16);
   --text-on-accent: #2c2525;
   --btn-text: #2c2525;
+  /* Lavender secondary mirrors the syntax `symbol` colour, keeping the
+     Tokyo-Night cohort cohesive across UI chrome and code. */
+  --accent-2: #a8a9eb;
+  --accent-2-soft: rgba(168, 169, 235, 0.2);
+  --accent-2-hover-tint: rgba(168, 169, 235, 0.1);
+  --accent-2-active-tint: rgba(168, 169, 235, 0.16);
+  --text-on-accent-2: #2c2525;
+  --accent-3: #85dacc;
+  --accent-3-soft: rgba(133, 218, 204, 0.2);
   --user-bubble: #3a302f;
   --agent-bubble: #3f3434;
   --scrollbar-thumb: #6e6464;
@@ -245,10 +495,69 @@
   --success: #adda78;
   --warn: #f9cc6c;
   --error: #fd6883;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.55);
-  --shadow-3: 0 12px 36px rgba(0, 0, 0, 0.6);
-  --shadow-overlay: 0 20px 56px rgba(0, 0, 0, 0.7);
+  --state-success-bg: rgba(173, 218, 120, 0.14);
+  --state-success-fg: #c2e893;
+  --state-success-border: rgba(173, 218, 120, 0.32);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(243, 141, 112, 0.14);
+  --state-warning-fg: #ffb09a;
+  --state-warning-border: rgba(243, 141, 112, 0.32);
+  --state-warning-strong: #f38d70;
+  --state-error-bg: rgba(253, 104, 131, 0.14);
+  --state-error-fg: #ff8fa3;
+  --state-error-border: rgba(253, 104, 131, 0.32);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(133, 218, 204, 0.14);
+  --state-info-fg: #a8e8de;
+  --state-info-border: rgba(133, 218, 204, 0.32);
+  --state-info-strong: #85dacc;
+  --elev-1-color: rgba(0, 0, 0, 0.5);
+  --elev-2-color: rgba(0, 0, 0, 0.55);
+  --elev-3-color: rgba(0, 0, 0, 0.6);
+  --elev-4-color: rgba(0, 0, 0, 0.7);
+  --elev-5-color: rgba(0, 0, 0, 0.78);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: 0 4px 14px var(--elev-2-color);
+  --shadow-3: 0 12px 36px var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  --surface-0: #1e1818;
+  --surface-1: #2c2525;
+  --surface-2: #3a3030;
+  --surface-3: #46393a;
+  --surface-4: #504646;
+  --inner-highlight: inset 0 1px 0 rgba(255, 240, 230, 0.06);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 92%, white 8%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 86%, var(--accent) 14%),
+    var(--surface-1) 60%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent) 12%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Brink. */
   --syntax-text: #f1e5e7;
   --syntax-comment: #907e80;
@@ -283,9 +592,416 @@
   --ansi-bright-white: #f1e5e7;
 }
 
-/* Focus ring depends on per-theme --accent-soft, so it lives here. */
+/* Daylight — rich warm light, parchment cream with a deeper amber base
+   than Paper, terracotta + sage dual-accent, soft elevated cards.
+   For users who want Paper's warmth but with more depth and a richer
+   palette. */
+:root[data-theme="daylight"] {
+  color-scheme: light;
+  --bg: #f9e9c8;
+  --bg-elev: #fff8e8;
+  --bg-input: #f4dfb6;
+  --bg-hover: #f6e4be;
+  --bg-active: #efdab2;
+  --bg-selected: rgba(197, 85, 44, 0.14);
+  --border: #d9c19a;
+  --border-hover: #c4ad84;
+  --border-strong: #a8916b;
+  --text: #2a2218;
+  --text-secondary: #5a4d36;
+  --text-dim: #7a6c52;
+  --accent: #c5552c;
+  --accent-soft: rgba(197, 85, 44, 0.18);
+  --accent-hover-tint: rgba(197, 85, 44, 0.07);
+  --accent-active-tint: rgba(197, 85, 44, 0.14);
+  --text-on-accent: #fff8e8;
+  --btn-text: #fff8e8;
+  --accent-2: #557349;
+  --accent-2-soft: rgba(85, 115, 73, 0.18);
+  --accent-2-hover-tint: rgba(85, 115, 73, 0.06);
+  --accent-2-active-tint: rgba(85, 115, 73, 0.14);
+  --text-on-accent-2: #fff8e8;
+  --accent-3: #aa7e3f;
+  --accent-3-soft: rgba(170, 126, 63, 0.18);
+  --user-bubble: #f4dfb6;
+  --agent-bubble: #fff8e8;
+  --scrollbar-thumb: #d1bb8f;
+  --scrollbar-thumb-hover: #b09971;
+  --success: #2a7c33;
+  --warn: #b8770a;
+  --error: #b53023;
+  --state-success-bg: rgba(42, 124, 51, 0.12);
+  --state-success-fg: #1f5827;
+  --state-success-border: rgba(42, 124, 51, 0.30);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(184, 119, 10, 0.12);
+  --state-warning-fg: #73490b;
+  --state-warning-border: rgba(184, 119, 10, 0.30);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(181, 48, 35, 0.12);
+  --state-error-fg: #7d211a;
+  --state-error-border: rgba(181, 48, 35, 0.30);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(60, 108, 182, 0.10);
+  --state-info-fg: #23457a;
+  --state-info-border: rgba(60, 108, 182, 0.30);
+  --state-info-strong: #3c6cb6;
+  --elev-1-color: rgba(95, 67, 28, 0.12);
+  --elev-2-color: rgba(95, 67, 28, 0.18);
+  --elev-3-color: rgba(95, 67, 28, 0.24);
+  --elev-4-color: rgba(95, 67, 28, 0.32);
+  --elev-5-color: rgba(95, 67, 28, 0.40);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
+  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  --surface-0: #ead2a8;
+  --surface-1: #f9e9c8;
+  --surface-2: #fdf2da;
+  --surface-3: #fff8e8;
+  --surface-4: #fffcf2;
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 88%, white 12%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 55%, var(--accent-3))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 88%, var(--accent) 10%),
+    var(--surface-1) 60%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 85%, var(--accent) 15%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
+  /* Syntax-highlighting palette — Daylight. */
+  --syntax-text: #2a2218;
+  --syntax-comment: #8a7d62;
+  --syntax-punctuation: #5b5040;
+  --syntax-keyword: #a83c0a;
+  --syntax-string: #2f6b1f;
+  --syntax-number: #875000;
+  --syntax-symbol: #5a3b00;
+  --syntax-operator: #6c5e48;
+  --syntax-function: #7c4a00;
+  --syntax-variable: #9a3b1f;
+  /* xterm theme + ANSI palette — Daylight. */
+  --terminal-bg: #fff8e8;
+  --terminal-fg: #2a2218;
+  --terminal-cursor: #c5552c;
+  --terminal-selection: rgba(197, 85, 44, 0.22);
+  --ansi-black: #2a2218;
+  --ansi-red: #b53023;
+  --ansi-green: #2f6b1f;
+  --ansi-yellow: #875000;
+  --ansi-blue: #1a5288;
+  --ansi-magenta: #8b3a96;
+  --ansi-cyan: #1a7080;
+  --ansi-white: #6a5d44;
+  --ansi-bright-black: #4a4232;
+  --ansi-bright-red: #c4382b;
+  --ansi-bright-green: #3d8429;
+  --ansi-bright-yellow: #a76800;
+  --ansi-bright-blue: #2c66b8;
+  --ansi-bright-magenta: #a04ba8;
+  --ansi-bright-cyan: #2c8da0;
+  --ansi-bright-white: #2a2218;
+}
+
+/* Mist — cool light, pale blue-gray base, mint-green primary accent,
+   slate-blue secondary. Clean professional alternative to the warm
+   light themes. */
+:root[data-theme="mist"] {
+  color-scheme: light;
+  --bg: #eef2f6;
+  --bg-elev: #fbfcfe;
+  --bg-input: #e3e9f0;
+  --bg-hover: #e8eef4;
+  --bg-active: #dde4ed;
+  --bg-selected: rgba(45, 161, 126, 0.14);
+  --border: #d0d8e2;
+  --border-hover: #b8c2d0;
+  --border-strong: #9aa4b8;
+  --text: #1c2530;
+  --text-secondary: #475266;
+  --text-dim: #6a7388;
+  --accent: #2da17e;
+  --accent-soft: rgba(45, 161, 126, 0.16);
+  --accent-hover-tint: rgba(45, 161, 126, 0.07);
+  --accent-active-tint: rgba(45, 161, 126, 0.14);
+  --text-on-accent: #fbfcfe;
+  --btn-text: #fbfcfe;
+  --accent-2: #3c6cb6;
+  --accent-2-soft: rgba(60, 108, 182, 0.16);
+  --accent-2-hover-tint: rgba(60, 108, 182, 0.06);
+  --accent-2-active-tint: rgba(60, 108, 182, 0.14);
+  --text-on-accent-2: #fbfcfe;
+  --accent-3: #7a6ec0;
+  --accent-3-soft: rgba(122, 110, 192, 0.16);
+  --user-bubble: #e3e9f0;
+  --agent-bubble: #fbfcfe;
+  --scrollbar-thumb: #c5cedb;
+  --scrollbar-thumb-hover: #9aa4b8;
+  --success: #2a8a5a;
+  --warn: #b8770a;
+  --error: #b53023;
+  --state-success-bg: rgba(42, 138, 90, 0.10);
+  --state-success-fg: #1a5e3c;
+  --state-success-border: rgba(42, 138, 90, 0.30);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(184, 119, 10, 0.10);
+  --state-warning-fg: #73490b;
+  --state-warning-border: rgba(184, 119, 10, 0.30);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(181, 48, 35, 0.10);
+  --state-error-fg: #7d211a;
+  --state-error-border: rgba(181, 48, 35, 0.30);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(60, 108, 182, 0.10);
+  --state-info-fg: #264880;
+  --state-info-border: rgba(60, 108, 182, 0.30);
+  --state-info-strong: var(--accent-2);
+  --elev-1-color: rgba(35, 55, 90, 0.10);
+  --elev-2-color: rgba(35, 55, 90, 0.14);
+  --elev-3-color: rgba(35, 55, 90, 0.20);
+  --elev-4-color: rgba(35, 55, 90, 0.28);
+  --elev-5-color: rgba(35, 55, 90, 0.34);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
+  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  --surface-0: #d9e0e8;
+  --surface-1: #eef2f6;
+  --surface-2: #f4f7fa;
+  --surface-3: #fbfcfe;
+  --surface-4: #ffffff;
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 88%, white 12%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 86%, var(--accent-2) 10%),
+    var(--surface-1) 60%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent) 12%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
+  /* Syntax-highlighting palette — Mist. */
+  --syntax-text: #1c2530;
+  --syntax-comment: #7a8294;
+  --syntax-punctuation: #4b5366;
+  --syntax-keyword: #1a6488;
+  --syntax-string: #2a7c5a;
+  --syntax-number: #8c5810;
+  --syntax-symbol: #6646a8;
+  --syntax-operator: #4c5a6e;
+  --syntax-function: #1f5a8e;
+  --syntax-variable: #a8423e;
+  /* xterm theme + ANSI palette — Mist. */
+  --terminal-bg: #fbfcfe;
+  --terminal-fg: #1c2530;
+  --terminal-cursor: #2da17e;
+  --terminal-selection: rgba(45, 161, 126, 0.22);
+  --ansi-black: #1c2530;
+  --ansi-red: #b53023;
+  --ansi-green: #2a8a5a;
+  --ansi-yellow: #b8770a;
+  --ansi-blue: #1a5288;
+  --ansi-magenta: #7a3a96;
+  --ansi-cyan: #1a7080;
+  --ansi-white: #6a7388;
+  --ansi-bright-black: #4b5366;
+  --ansi-bright-red: #c43830;
+  --ansi-bright-green: #3d9a6a;
+  --ansi-bright-yellow: #c98800;
+  --ansi-bright-blue: #2c66b8;
+  --ansi-bright-magenta: #9a4ab0;
+  --ansi-bright-cyan: #2a8da0;
+  --ansi-bright-white: #1c2530;
+}
+
+/* Nocturne — high-contrast dark, deep navy base, electric cyan primary
+   accent, vivid magenta secondary. Higher contrast than Æther for users
+   who want punch (e.g. demos, screen-sharing, projector use). */
+:root[data-theme="nocturne"] {
+  color-scheme: dark;
+  --bg: #0a0d14;
+  --bg-elev: #181c28;
+  --bg-input: #14182b;
+  --bg-hover: #161a26;
+  --bg-active: #1c2235;
+  --bg-selected: rgba(40, 224, 224, 0.14);
+  --border: #232a3c;
+  --border-hover: #313952;
+  --border-strong: #4a5475;
+  --text: #eaeefa;
+  --text-secondary: #b0b8d0;
+  --text-dim: #7e87a0;
+  --accent: #28e0e0;
+  --accent-soft: rgba(40, 224, 224, 0.18);
+  --accent-hover-tint: rgba(40, 224, 224, 0.08);
+  --accent-active-tint: rgba(40, 224, 224, 0.16);
+  --text-on-accent: #050810;
+  --btn-text: #050810;
+  --accent-2: #ff5cb6;
+  --accent-2-soft: rgba(255, 92, 182, 0.18);
+  --accent-2-hover-tint: rgba(255, 92, 182, 0.08);
+  --accent-2-active-tint: rgba(255, 92, 182, 0.16);
+  --text-on-accent-2: #050810;
+  --accent-3: #c8ff5a;
+  --accent-3-soft: rgba(200, 255, 90, 0.18);
+  --user-bubble: #131628;
+  --agent-bubble: #181c28;
+  --scrollbar-thumb: #232a3c;
+  --scrollbar-thumb-hover: #313952;
+  --success: #4be673;
+  --warn: #ffce4e;
+  --error: #ff5577;
+  --state-success-bg: rgba(75, 230, 115, 0.14);
+  --state-success-fg: #7af094;
+  --state-success-border: rgba(75, 230, 115, 0.32);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(255, 206, 78, 0.14);
+  --state-warning-fg: #ffdc7e;
+  --state-warning-border: rgba(255, 206, 78, 0.32);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(255, 85, 119, 0.14);
+  --state-error-fg: #ff8497;
+  --state-error-border: rgba(255, 85, 119, 0.32);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(40, 224, 224, 0.14);
+  --state-info-fg: #5ee8e8;
+  --state-info-border: rgba(40, 224, 224, 0.32);
+  --state-info-strong: var(--accent);
+  --elev-1-color: rgba(0, 0, 0, 0.5);
+  --elev-2-color: rgba(0, 0, 0, 0.6);
+  --elev-3-color: rgba(0, 0, 0, 0.7);
+  --elev-4-color: rgba(0, 0, 0, 0.8);
+  --elev-5-color: rgba(0, 0, 0, 0.85);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
+  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  --surface-0: #050810;
+  --surface-1: #0a0d14;
+  --surface-2: #11151f;
+  --surface-3: #181c28;
+  --surface-4: #1f2435;
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 92%, var(--accent) 8%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 80% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 82%, var(--accent) 18%),
+    var(--surface-1) 60%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 86%, var(--accent) 14%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: var(--shadow-2);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
+  /* Syntax-highlighting palette — Nocturne. */
+  --syntax-text: #eaeefa;
+  --syntax-comment: #5c6178;
+  --syntax-punctuation: #95a0bd;
+  --syntax-keyword: #28e0e0;
+  --syntax-string: #c8ff5a;
+  --syntax-number: #ffce4e;
+  --syntax-symbol: #ff5cb6;
+  --syntax-operator: #b0b8d0;
+  --syntax-function: #7afff0;
+  --syntax-variable: #ff8acf;
+  /* xterm theme + ANSI palette — Nocturne. */
+  --terminal-bg: #0a0d14;
+  --terminal-fg: #eaeefa;
+  --terminal-cursor: #28e0e0;
+  --terminal-selection: rgba(40, 224, 224, 0.32);
+  --ansi-black: #11151f;
+  --ansi-red: #ff5577;
+  --ansi-green: #4be673;
+  --ansi-yellow: #ffce4e;
+  --ansi-blue: #5aa8ff;
+  --ansi-magenta: #ff5cb6;
+  --ansi-cyan: #28e0e0;
+  --ansi-white: #b0b8d0;
+  --ansi-bright-black: #4a5475;
+  --ansi-bright-red: #ff7593;
+  --ansi-bright-green: #6cf08e;
+  --ansi-bright-yellow: #ffdc7e;
+  --ansi-bright-blue: #82bdff;
+  --ansi-bright-magenta: #ff86c8;
+  --ansi-bright-cyan: #5eecec;
+  --ansi-bright-white: #eaeefa;
+}
+
+/* Focus ring depends on per-theme --accent-soft, so it lives here.
+   The composite reads --focus-ring-width / offset / style from
+   tokens.css so themes can tune ring thickness without redefining
+   the shorthand. */
 :root {
-  --focus-ring: 0 0 0 3px var(--accent-soft);
+  --focus-ring-color: var(--accent-soft);
+  --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
 
 @media (prefers-reduced-motion: reduce) {

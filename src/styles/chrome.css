@@ -76,7 +76,12 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  /* App backdrop is a subtle radial centred above the canvas — gives
+     the otherwise flat --bg a tiny warm core under the header. Themes
+     can disable the gradient by aliasing --gradient-app-backdrop to
+     `var(--bg)`. */
+  background: var(--gradient-app-backdrop, var(--bg));
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-ui);
   /* `~/.aethon/config.toml` `[ui] font_size` writes to --app-font-size
@@ -195,7 +200,10 @@ body.ae-resizing-composer .a2ui-layout {
   width: 100%;
   min-width: 0;
   min-height: 0;
-  background: var(--bg-elev);
+  /* Vertical wash gives the sidebar a top-edge sheen so it reads as a
+     lit surface against the canvas. Falls back cleanly when the theme
+     doesn't set --gradient-surface. */
+  background: var(--gradient-surface, var(--bg-elev));
   border-right: 1px solid var(--border);
 }
 .ae-sidebar-area > .a2ui-sidebar {
@@ -215,7 +223,9 @@ body.ae-resizing-composer .a2ui-layout {
 .a2ui-sidebar {
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  /* Transparent so the sidebar inherits .ae-sidebar-area's gradient
+     wash; falls back to --bg if nested outside the wrapper. */
+  background: transparent;
   border-right: 1px solid var(--border);
   height: 100%;
   width: 100%;
@@ -1234,7 +1244,11 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .app-header {
   border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
+  /* Vertical gradient gives the header a subtle top-edge sheen so it
+     reads as a lit surface against the canvas. --gradient-surface
+     falls back to --bg-elev when a theme leaves it unset. */
+  background: var(--gradient-surface, var(--bg-elev));
+  box-shadow: var(--inner-highlight, none);
   padding: 0 14px !important;
   height: 38px;
   min-width: 0;
@@ -1329,15 +1343,17 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: var(--chrome-text-compact);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.02em;
-  color: var(--text);
-  background: var(--bg-elev, rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  color: var(--pill-text, var(--text));
+  /* Pill background tinted by the theme's accent so the model/theme
+     pickers and host pill in the header read as one family of chips. */
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  border: 1px solid var(--pill-border, var(--border, rgba(255, 255, 255, 0.08)));
   border-radius: 6px;
   cursor: pointer;
   transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    color 120ms ease;
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
   width: max-content;
   max-width: min(34ch, calc(var(--app-viewport-width) - 32px));
   min-width: 0;
@@ -1397,10 +1413,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px;
-  background: var(--bg-elev, #1f1f23);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--popover-bg, var(--bg-elev, #1f1f23));
+  border: 1px solid var(--popover-border, var(--border, rgba(255, 255, 255, 0.08)));
   border-radius: 8px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--popover-shadow, 0 14px 40px rgba(0, 0, 0, 0.4)),
+    var(--inner-highlight, none);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--chrome-text-compact);
 }
@@ -2572,10 +2589,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   gap: 0;
   padding: 0 14px 12px;
   border-top: none;
+  /* Composer floats above the canvas with a top hairline border and
+     soft upward shadow. --composer-shadow lets light themes lighten
+     the alpha so the shadow stays subtle on cream backgrounds. */
   box-shadow:
-    0 -1px 0 var(--border),
-    0 -4px 12px rgba(0, 0, 0, 0.12);
-  background: var(--bg-elev);
+    0 -1px 0 var(--composer-border, var(--border)),
+    0 -4px 12px var(--elev-2-color, rgba(0, 0, 0, 0.12)),
+    var(--inner-highlight, none);
+  background: var(--composer-bg, var(--bg-elev));
   width: 100%;
   align-items: stretch;
   position: relative;
@@ -2739,7 +2760,7 @@ body.ae-resizing-composer * {
 
 .a2ui-chat-input-field:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--focus-ring);
 }
 
 .a2ui-chat-input-send {
@@ -2748,7 +2769,7 @@ body.ae-resizing-composer * {
   bottom: 8px;
   width: 30px;
   height: 30px;
-  background: var(--accent);
+  background: var(--gradient-accent, var(--accent));
   color: var(--text-on-accent, var(--btn-text));
   border: none;
   border-radius: var(--radius-sm);
