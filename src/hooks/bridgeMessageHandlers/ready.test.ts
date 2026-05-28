@@ -578,6 +578,61 @@ describe("handleReady", () => {
     expect(tabOpenPayloads).toEqual([]);
   });
 
+  it("does not replay shell tabs as bridge agent sessions after frontend reload", () => {
+    const harness = installTauriMocks();
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "__overview__",
+        tabs: [
+          {
+            id: "shell-1",
+            kind: "shell",
+            label: "Shell",
+            messages: [],
+            draft: "",
+            waiting: false,
+            queueCount: 0,
+            queuedMessages: [],
+            canvas: null,
+            model: "",
+            terminalBuffer: "",
+            projectId: "p1",
+            shell: {
+              cwd: "/repo/a",
+              command: "",
+              args: [],
+              shareMode: "private",
+              shellState: "starting",
+              restartOnMount: true,
+            },
+          },
+        ],
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorktreeId: null,
+      worktreesByProject: {},
+      activeHostId: null,
+      projects: [{ id: "p1", label: "A", path: "/repo/a", lastUsed: 1 }],
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [{ id: "default", model: "claude" }],
+      },
+      ctx,
+    );
+
+    const tabOpenPayloads = harness.invoke.mock.calls
+      .filter((call) => call[0] === "agent_command")
+      .map((call) => JSON.parse(call[1].payload as string))
+      .filter((payload) => payload.type === "tab_open");
+    expect(tabOpenPayloads).toEqual([]);
+  });
+
   it("requests transcript replay for worktree tabs with their tab cwd", () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({

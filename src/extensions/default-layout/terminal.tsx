@@ -21,117 +21,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
-
-// ---------------------------------------------------------------------------
-// Theme-aware xterm palette. Reads `--terminal-{bg,fg,cursor,selection}` and
-// the 16 `--ansi-*` custom properties off `:root` so xterm picks up the
-// active Aethon theme instead of a hardcoded dark palette. Falls back to a
-// sensible dark default for any var that isn't defined (e.g. when an
-// extension theme didn't ship the ANSI block).
-// ---------------------------------------------------------------------------
-
-interface XTermThemeShape {
-  background: string;
-  foreground: string;
-  cursor: string;
-  selectionBackground: string;
-  black: string;
-  red: string;
-  green: string;
-  yellow: string;
-  blue: string;
-  magenta: string;
-  cyan: string;
-  white: string;
-  brightBlack: string;
-  brightRed: string;
-  brightGreen: string;
-  brightYellow: string;
-  brightBlue: string;
-  brightMagenta: string;
-  brightCyan: string;
-  brightWhite: string;
-}
-
-const ANSI_FALLBACK: XTermThemeShape = {
-  background: "#0e0e10",
-  foreground: "#e8e8ec",
-  cursor: "#7c8cff",
-  selectionBackground: "rgba(124, 140, 255, 0.32)",
-  black: "#1a1a1c",
-  red: "#ff5c4d",
-  green: "#6ec85c",
-  yellow: "#ffb845",
-  blue: "#6ea7ff",
-  magenta: "#d97afa",
-  cyan: "#5fd5e0",
-  white: "#d6cfc1",
-  brightBlack: "#4a4a4f",
-  brightRed: "#ff7a6f",
-  brightGreen: "#88dd75",
-  brightYellow: "#ffc870",
-  brightBlue: "#8fbeff",
-  brightMagenta: "#e69dff",
-  brightCyan: "#82e1ea",
-  brightWhite: "#fef3e2",
-};
-
-// eslint-disable-next-line react-refresh/only-export-components -- shared helper for the shell composites; doesn't affect HMR semantics
-export function readTerminalTheme(): XTermThemeShape {
-  if (typeof window === "undefined") return ANSI_FALLBACK;
-  const cs = getComputedStyle(document.documentElement);
-  const v = (name: string, fallback: string) => {
-    const raw = cs.getPropertyValue(name).trim();
-    return raw.length > 0 ? raw : fallback;
-  };
-  return {
-    background: v("--terminal-bg", ANSI_FALLBACK.background),
-    foreground: v("--terminal-fg", ANSI_FALLBACK.foreground),
-    cursor: v("--terminal-cursor", ANSI_FALLBACK.cursor),
-    selectionBackground: v(
-      "--terminal-selection",
-      ANSI_FALLBACK.selectionBackground,
-    ),
-    black: v("--ansi-black", ANSI_FALLBACK.black),
-    red: v("--ansi-red", ANSI_FALLBACK.red),
-    green: v("--ansi-green", ANSI_FALLBACK.green),
-    yellow: v("--ansi-yellow", ANSI_FALLBACK.yellow),
-    blue: v("--ansi-blue", ANSI_FALLBACK.blue),
-    magenta: v("--ansi-magenta", ANSI_FALLBACK.magenta),
-    cyan: v("--ansi-cyan", ANSI_FALLBACK.cyan),
-    white: v("--ansi-white", ANSI_FALLBACK.white),
-    brightBlack: v("--ansi-bright-black", ANSI_FALLBACK.brightBlack),
-    brightRed: v("--ansi-bright-red", ANSI_FALLBACK.brightRed),
-    brightGreen: v("--ansi-bright-green", ANSI_FALLBACK.brightGreen),
-    brightYellow: v("--ansi-bright-yellow", ANSI_FALLBACK.brightYellow),
-    brightBlue: v("--ansi-bright-blue", ANSI_FALLBACK.brightBlue),
-    brightMagenta: v("--ansi-bright-magenta", ANSI_FALLBACK.brightMagenta),
-    brightCyan: v("--ansi-bright-cyan", ANSI_FALLBACK.brightCyan),
-    brightWhite: v("--ansi-bright-white", ANSI_FALLBACK.brightWhite),
-  };
-}
-
-/** Watch `:root[data-theme]` for changes and re-skin a live xterm instance.
- *  Call from the xterm useEffect; returns a cleanup that disconnects the
- *  observer. The xterm `theme` setter triggers an immediate re-render so
- *  switching themes mid-session updates running shells. */
-// eslint-disable-next-line react-refresh/only-export-components -- shared helper for the shell composites; doesn't affect HMR semantics
-export function observeTerminalTheme(term: XTerm): () => void {
-  if (typeof window === "undefined") return () => {};
-  const apply = () => {
-    try {
-      term.options.theme = readTerminalTheme();
-    } catch {
-      /* term disposed mid-update — drop */
-    }
-  };
-  const obs = new MutationObserver(apply);
-  obs.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["data-theme"],
-  });
-  return () => obs.disconnect();
-}
+import { observeTerminalTheme, readTerminalTheme, terminalFitDelay } from "./terminal-helpers";
 
 // ---------------------------------------------------------------------------
 // Terminal — xterm.js with WebGL renderer. Falls back to canvas if WebGL
@@ -292,18 +182,30 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       window.addEventListener("aethon:terminal-replay", onReplayEvent);
     }
 
-    const ro = new ResizeObserver(() => {
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const fitToContainer = () => {
+      resizeTimer = null;
       try {
         fit.fit();
       } catch {
         /* noop */
       }
+    };
+    const ro = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(
+        fitToContainer,
+        terminalFitDelay(
+          document.body.classList.contains("ae-resizing-terminal"),
+        ),
+      );
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
 
     return () => {
       ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
       stopThemeObserver();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);

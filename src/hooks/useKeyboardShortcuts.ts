@@ -1,7 +1,11 @@
 import { useEffect, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { canonicalCombo } from "../utils/keybindings";
-import { isFocusInTerminalPanel } from "../utils/focus";
+import { focusTerminalPanelSoon, isFocusInTerminalPanel } from "../utils/focus";
+import {
+  AGENT_BASH_SUB_ID,
+  resolveActiveSubIdFromState,
+} from "../extensions/default-layout/shell/panel-helpers";
 import type { Tab } from "../types/tab";
 
 interface NotificationInput {
@@ -151,6 +155,7 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         e.preventDefault();
         e.stopPropagation();
         ctx.newShellTab();
+        focusTerminalPanelSoon();
         return;
       }
       // Cmd+T: focus-aware new tab (shell when focus is in panel, else
@@ -163,6 +168,7 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           ctx.shortcutsNewTabKindRef.current === "shell"
         ) {
           ctx.newShellTab();
+          focusTerminalPanelSoon();
         } else {
           ctx.newTab();
         }
@@ -245,8 +251,31 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         ctx.reopenLastClosedTab();
         return;
       }
-      // Cmd+W: close active tab.
+      // Cmd+W: close active tab. Focus-aware — when keyboard focus is
+      // inside the bottom terminal panel, close the active shell
+      // sub-tab instead so users don't have to switch focus back up
+      // just to dismiss a shell. The always-present agent-bash sub-tab
+      // is read-only and has no /tabs entry; if it's the active sub
+      // we no-op rather than falling through and accidentally closing
+      // the agent tab above.
       if (e.key.toLowerCase() === "w" && mod && !e.shiftKey && !e.altKey) {
+        if (isFocusInTerminalPanel()) {
+          // Resolve the *displayed* sub-tab — not the raw state — so
+          // Cmd+W matches what the user sees. The panel clamps a stale
+          // "agent-bash" requestedActiveId to the first shell when the
+          // overview owns the canvas; reading raw state here would miss
+          // that and silently no-op.
+          const subId = resolveActiveSubIdFromState(ctx.stateRef.current);
+          if (!subId || subId === AGENT_BASH_SUB_ID) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.closeTab(subId);
+          return;
+        }
         const activeId = ctx.stateRef.current.activeTabId as string | undefined;
         if (!activeId) return;
         e.preventDefault();

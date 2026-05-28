@@ -92,6 +92,8 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
   --radius-circle: 50%;
+  --scrollbar-size: 4px;
+  --scrollbar-edge-inset: 8px;
 
   /* Z-index scale. Higher = on top. Used by overlays and popovers. */
   --z-base: 0;

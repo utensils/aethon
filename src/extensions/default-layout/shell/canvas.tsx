@@ -29,7 +29,15 @@ import type {
 import {
   observeTerminalTheme,
   readTerminalTheme,
-} from "../terminal";
+  terminalFitDelay,
+} from "../terminal-helpers";
+import {
+  decideShellResize,
+  shouldSkipResize,
+  type ShellDims,
+} from "./resize";
+
+const TERMINAL_PTY_RESIZE_SETTLE_MS = 120;
 
 export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
@@ -116,29 +124,78 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // Resize: FitAddon recomputes cols/rows on layout changes; tell the
     // PTY too so child processes (vim, less, …) reflow correctly. Mirror
     // the same dims into local state so the status line displays them
-    // without a separate poll loop.
-    const ro = new ResizeObserver(() => {
+    // without a separate poll loop. See `decideShellResize` for the two
+    // guards that keep panel-toggle from raising spurious SIGWINCHes.
+    const lastSentDimsRef = { current: null as ShellDims | null };
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingPtyResize: ShellDims | null = null;
+    const sendPtyResize = (dims: ShellDims) => {
+      const decision = decideShellResize(dims, lastSentDimsRef.current);
+      if (!decision) return;
+      lastSentDimsRef.current = decision;
+      void invoke("shell_resize", {
+        tabId: tabIdRef.current,
+        cols: decision.cols,
+        rows: decision.rows,
+      }).catch(() => {
+        /* PTY closed — drop */
+      });
+    };
+    const flushPtyResize = () => {
+      ptyResizeTimer = null;
+      const dims = pendingPtyResize;
+      pendingPtyResize = null;
+      if (dims) sendPtyResize(dims);
+    };
+    const schedulePtyResize = (dims: ShellDims, isUserResizing: boolean) => {
+      if (!isUserResizing) {
+        if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
+        ptyResizeTimer = null;
+        pendingPtyResize = null;
+        sendPtyResize(dims);
+        return;
+      }
+      pendingPtyResize = dims;
+      if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
+      ptyResizeTimer = setTimeout(
+        flushPtyResize,
+        TERMINAL_PTY_RESIZE_SETTLE_MS,
+      );
+    };
+    const resizeToContainer = () => {
+      resizeTimer = null;
       try {
         fit.fit();
         const cols = term.cols;
         const rows = term.rows;
-        if (cols && rows) {
-          setDims((prev) =>
-            prev && prev.cols === cols && prev.rows === rows
-              ? prev
-              : { cols, rows },
-          );
-          void invoke("shell_resize", {
-            tabId: tabIdRef.current,
-            cols,
-            rows,
-          }).catch(() => {
-            /* PTY closed — drop */
-          });
-        }
+        const decision = decideShellResize(
+          { cols, rows },
+          lastSentDimsRef.current,
+        );
+        if (!decision) return;
+        setDims((prev) =>
+          prev && prev.cols === decision.cols && prev.rows === decision.rows
+            ? prev
+            : decision,
+        );
+        schedulePtyResize(
+          decision,
+          document.body.classList.contains("ae-resizing-terminal"),
+        );
       } catch {
         /* fit transient errors during teardown */
       }
+    };
+    const ro = new ResizeObserver((entries) => {
+      if (shouldSkipResize(entries[0], containerRef.current)) return;
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(
+        resizeToContainer,
+        terminalFitDelay(
+          document.body.classList.contains("ae-resizing-terminal"),
+        ),
+      );
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
@@ -164,6 +221,8 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     return () => {
       window.removeEventListener(eventName, onShellOutput);
       ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
+      if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
       stopThemeObserver();
       onDataDisposable.dispose();
       term.dispose();

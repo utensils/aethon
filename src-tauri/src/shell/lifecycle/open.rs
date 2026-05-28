@@ -193,6 +193,12 @@ pub async fn shell_open<R: Runtime>(
     let display_command = effective_command
         .map(str::to_string)
         .unwrap_or_else(default_shell_label);
+    // No `effective_command` means we used the system shell — that child
+    // *is* an interactive shell and manages a foreground process group.
+    // A configured command means the child is the foreground job itself
+    // (vim / sleep / npm run dev), so `shell_is_busy` must report busy
+    // unconditionally rather than inspecting an empty child list.
+    let is_interactive_shell = effective_command.is_none_or(is_known_interactive_shell);
     let mut slot = ShellSlot {
         writer,
         master: pair.master,
@@ -202,6 +208,7 @@ pub async fn shell_open<R: Runtime>(
         share: share_handle,
         cwd: display_cwd,
         command: display_command,
+        is_interactive_shell,
     };
 
     // Atomic check-and-insert. The pre-flight check at the top of
@@ -292,6 +299,30 @@ fn devshell_effective_config<R: Runtime>(
     (enabled, DetectMode::from_str(&mode_str))
 }
 
+/// True when `command` names an interactive shell binary whose child
+/// PID will manage its own foreground jobs. Used by shell_open to flag
+/// the slot so shell_is_busy knows to walk children vs. report busy.
+/// Accepts absolute paths (`/bin/zsh`, `/usr/local/bin/fish`) and bare
+/// names (`bash`, `zsh -l`). Anything not in the allow-list is treated
+/// as a direct command and gets the conservative answer.
+pub(super) fn is_known_interactive_shell(command: &str) -> bool {
+    const SHELLS: &[&str] = &[
+        "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh",
+        "nu", "xonsh", "elvish", "pwsh", "powershell",
+    ];
+    let basename = command
+        .split(['/', '\\'])
+        .next_back()
+        .unwrap_or(command);
+    // Strip any trailing args ("zsh -il") + extension (".exe").
+    let basename = basename
+        .split_whitespace()
+        .next()
+        .unwrap_or(basename)
+        .trim_end_matches(".exe");
+    SHELLS.iter().any(|s| s.eq_ignore_ascii_case(basename))
+}
+
 fn default_shell_command() -> CommandBuilder {
     #[cfg(unix)]
     {
@@ -315,5 +346,42 @@ fn default_shell_label() -> String {
     #[cfg(windows)]
     {
         "powershell.exe".to_string()
+    }
+}
+
+#[cfg(test)]
+mod shell_classification_tests {
+    use super::is_known_interactive_shell;
+
+    #[test]
+    fn classifies_common_unix_shells() {
+        for cmd in ["bash", "/bin/bash", "/usr/bin/zsh", "fish", "dash", "/bin/sh"] {
+            assert!(
+                is_known_interactive_shell(cmd),
+                "expected {cmd} to be classified as an interactive shell",
+            );
+        }
+    }
+
+    #[test]
+    fn classifies_powershell_with_extension() {
+        assert!(is_known_interactive_shell("pwsh.exe"));
+        assert!(is_known_interactive_shell("PowerShell.exe"));
+    }
+
+    #[test]
+    fn ignores_trailing_args_in_the_command_string() {
+        assert!(is_known_interactive_shell("zsh -il"));
+        assert!(is_known_interactive_shell("/bin/bash --login"));
+    }
+
+    #[test]
+    fn rejects_direct_commands() {
+        for cmd in ["vim", "/usr/bin/vim", "npm", "sleep 30", "node", "python3"] {
+            assert!(
+                !is_known_interactive_shell(cmd),
+                "expected {cmd} to NOT be classified as an interactive shell",
+            );
+        }
     }
 }

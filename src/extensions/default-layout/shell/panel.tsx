@@ -3,14 +3,18 @@
  *
  * Replaces the standalone Terminal composite in the workstation layout's
  * `terminal` cell. The panel hosts:
- *   - One always-present "Agent bash" sub-tab (read-only sink for the
- *     agent's bash-tool output — same content the old solo Terminal showed).
+ *   - One "Agent bash" sub-tab (read-only sink for the agent's bash-tool
+ *     output). Hidden when the overview pseudo-tab owns the canvas — the
+ *     agent isn't running so the read-only stream has nothing to show
+ *     and would just clutter the strip. Returns when the user activates
+ *     a real agent session.
  *   - Zero or more user shell sub-tabs (interactive PTYs spawned via
  *     `Cmd+T` while focus is in the panel, or `Cmd+Shift+T` regardless).
  *
  * Active sub-tab is tracked at `/terminalPanel/activeSubId`, defaulting to
- * "agent-bash". Switching sub-tabs unmounts/remounts the inner xterm so
- * per-sub-tab scrollback isolation is automatic.
+ * "agent-bash" when an agent session is live, otherwise the first shell.
+ * Switching sub-tabs unmounts/remounts the inner xterm so per-sub-tab
+ * scrollback isolation is automatic.
  */
 
 import { useMemo, useRef } from "react";
@@ -19,11 +23,12 @@ import type {
   NumberValue,
 } from "../../../types/a2ui";
 import { resolveBoolean } from "../../../utils/dataBinding";
+import { activeTabKind, type Tab } from "../../../types/tab";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { Terminal } from "../terminal";
 import { ShellCanvas } from "./canvas";
+import { AGENT_BASH_SUB_ID, resolveActiveSubId } from "./panel-helpers";
 
-const AGENT_BASH_SUB_ID = "agent-bash";
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
 
@@ -47,36 +52,42 @@ export function TerminalPanel({
   // Pull shell sub-tabs out of the unified /tabs list. Shells live in
   // /tabs (same as agent tabs) but render in this panel rather than the
   // top tab strip — the TabStrip composite filters them out.
-  const tabsRef = state["tabs"];
-  const shellTabs: ShellSubTabItem[] = useMemo(() => {
-    const tabs = (tabsRef as
-      | Array<{ id: string; kind?: string; label: string; shell?: { shellState?: string } }>
-      | undefined) ?? [];
-    return tabs
-      .filter((t) => t.kind === "shell")
-      .map((t) => ({
-        id: t.id,
-        label: t.label,
-        shellState: t.shell?.shellState,
-      }));
-  }, [tabsRef]);
+  const rawTabs = state["tabs"] as Tab[] | undefined;
+  const tabs = useMemo(() => rawTabs ?? [], [rawTabs]);
+  const shellTabs: ShellSubTabItem[] = useMemo(
+    () =>
+      tabs
+        .filter((t) => t.kind === "shell")
+        .map((t) => ({
+          id: t.id,
+          label: t.label,
+          shellState: t.shell?.shellState,
+        })),
+    [tabs],
+  );
 
   // Active sub-tab id. Held under /terminalPanel/activeSubId so it
-  // persists across renders and can be addressed via $ref. Defaults to
-  // "agent-bash" — the read-only view is always present.
+  // persists across renders and can be addressed via $ref. The overview
+  // pseudo-tab hides the agent-bash sub-tab (no agent session is
+  // running) — fall through to the first interactive shell instead.
   const panelState =
     (state["terminalPanel"] as { activeSubId?: string; height?: number } | undefined) ?? {};
+  const showAgentBash =
+    activeTabKind(tabs, state["activeTabId"] as string | undefined) ===
+    "agent";
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const panelRef = useRef<HTMLDivElement>(null);
-  // Clamp to a valid sub-tab id. If the requested id no longer exists
-  // (e.g. user closed a shell that was active), fall back to agent-bash
-  // so we always render something.
-  const activeSubId = useMemo(() => {
-    if (requestedActiveId === AGENT_BASH_SUB_ID) return AGENT_BASH_SUB_ID;
-    if (shellTabs.some((s) => s.id === requestedActiveId))
-      return requestedActiveId;
-    return AGENT_BASH_SUB_ID;
-  }, [requestedActiveId, shellTabs]);
+  // Resolve via the shared helper so the focus-aware Cmd+W path in
+  // useKeyboardShortcuts sees the same active sub-tab the user does.
+  const activeSubId = useMemo<string | null>(
+    () =>
+      resolveActiveSubId({
+        requestedActiveId,
+        shellTabIds: shellTabs.map((s) => s.id),
+        showAgentBash,
+      }),
+    [requestedActiveId, shellTabs, showAgentBash],
+  );
 
   const onResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -120,15 +131,17 @@ export function TerminalPanel({
         onMouseDown={onResizeStart}
       />
       <div className="ae-terminal-panel-tabs" role="tablist">
-        <SubTabPill
-          id={AGENT_BASH_SUB_ID}
-          label="Agent bash"
-          hint="read-only"
-          active={activeSubId === AGENT_BASH_SUB_ID}
-          onSelect={() =>
-            onEvent("select-sub-tab", { subTabId: AGENT_BASH_SUB_ID })
-          }
-        />
+        {showAgentBash && (
+          <SubTabPill
+            id={AGENT_BASH_SUB_ID}
+            label="Agent bash"
+            hint="read-only"
+            active={activeSubId === AGENT_BASH_SUB_ID}
+            onSelect={() =>
+              onEvent("select-sub-tab", { subTabId: AGENT_BASH_SUB_ID })
+            }
+          />
+        )}
         {shellTabs.map((s, i) => (
           <SubTabPill
             key={s.id}
@@ -166,7 +179,7 @@ export function TerminalPanel({
             state={state}
             onEvent={onEvent}
           />
-        ) : (
+        ) : activeSubId ? (
           <ShellCanvas
             component={{
               id: `${component.id}-shell-${activeSubId}`,
@@ -179,6 +192,10 @@ export function TerminalPanel({
             state={state}
             onEvent={onEvent}
           />
+        ) : (
+          <div className="ae-terminal-panel-empty" role="status">
+            No shell open. Press <kbd>⌘⇧T</kbd> or <kbd>+</kbd> to start one.
+          </div>
         )}
       </div>
     </div>

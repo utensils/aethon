@@ -1,21 +1,26 @@
 /**
  * TabStrip — horizontal row of tab pills + a "+" button to create new ones.
  * Each tab shows its label; the active one is highlighted; non-default tabs
- * have a small "×" close button. All interactions go through onEvent so
- * App.tsx can route them to its tab helpers (newTab / closeTab / switch).
+ * have a small "×" close button. A permanent, non-closable "Æ overview"
+ * pill is pinned to the left of the strip — selecting it deselects any
+ * active session tab so the host / project / worktree overview owns the
+ * canvas, without closing the open sessions. All interactions go through
+ * onEvent so App.tsx can route them to its tab helpers
+ * (newTab / closeTab / switch).
  *
  * Props:
  *   tabs:        $ref to /tabs (array of { id, label }) — items to render
  *   activeId:    $ref to /activeTabId — which tab is highlighted
  *
  * Events:
- *   ("select",  { tabId })  click on a tab pill
+ *   ("select",  { tabId })  click on a tab pill (overview emits its sentinel id)
  *   ("close",   { tabId })  click on a tab's close button
  *   ("new")                 click on the "+" button
  */
 
 import { useMemo, useState, type MouseEvent } from "react";
 import type { StringValue } from "../../../types/a2ui";
+import { OVERVIEW_TAB_ID } from "../../../types/tab";
 import { resolveString } from "../../../utils/dataBinding";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
@@ -39,7 +44,7 @@ interface TabStripItem {
    *  terminal panel as sub-tabs alongside the read-only agent-bash
    *  view. The TabStrip composite filters them out so any layout that
    *  binds `/tabs` to TabStrip drops shells automatically. */
-  kind?: "agent" | "shell";
+  kind?: "agent" | "shell" | "editor";
 }
 
 export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
@@ -95,8 +100,34 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
       ]
     : [];
 
+  const overviewActive =
+    !activeId ||
+    activeId === OVERVIEW_TAB_ID ||
+    !tabs.some((t) => t.id === activeId);
   return (
     <div className="a2ui-tab-strip" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={overviewActive}
+        className={
+          overviewActive
+            ? "a2ui-tab a2ui-tab-overview a2ui-tab-active"
+            : "a2ui-tab a2ui-tab-overview"
+        }
+        title="Back to overview"
+        aria-label="Back to overview"
+        onMouseDown={(e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          onEvent("select", { tabId: OVERVIEW_TAB_ID });
+        }}
+      >
+        <span className="a2ui-tab-overview-glyph" aria-hidden="true">
+          Æ
+        </span>
+        <span className="a2ui-tab-label">overview</span>
+      </button>
       {tabs.map((t) => {
         const isActive = t.id === activeId;
         // Every tab is closable now — when the list reaches zero the

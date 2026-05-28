@@ -1,6 +1,17 @@
-import type { EventRouteHandler } from "./types";
+import type { EventRouteHandler, EventRouteContext } from "./types";
+import { OVERVIEW_TAB_ID } from "../types/tab";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { renameSessionLabel } from "./sessionRename";
+
+/** Switch the active tab to the overview sentinel. Used both by the
+ *  permanent overview pill in the tab strip and by the sidebar
+ *  re-click gestures in `sidebar/chrome.ts` + `sidebar/worktree.ts`. */
+export function activateOverview(ctx: EventRouteContext): void {
+  ctx.setState((prev) => {
+    if (prev.activeTabId === OVERVIEW_TAB_ID) return prev;
+    return { ...prev, activeTabId: OVERVIEW_TAB_ID };
+  });
+}
 
 /** tab-strip: select / close / new. Tab events route by component
  *  *type* — id may vary across layouts (workstation hoists the strip
@@ -16,6 +27,10 @@ export const handleTabStrip: EventRouteHandler = (
     | { tabId?: string; action?: string; id?: string; label?: string }
     | undefined;
   if (eventType === "select" && sel?.tabId) {
+    if (sel.tabId === OVERVIEW_TAB_ID) {
+      activateOverview(ctx);
+      return true;
+    }
     ctx.setActiveTab(sel.tabId);
     return true;
   }

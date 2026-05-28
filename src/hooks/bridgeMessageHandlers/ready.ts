@@ -432,6 +432,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     ((data.tabs as { id: string }[] | undefined) ?? []).map((t) => t.id),
   );
   for (const t of localTabs) {
+    if ((t.kind ?? "agent") !== "agent") continue;
     if (t.id === "default") continue;
     if (bridgeTabIds.has(t.id)) continue;
     // Pass `model` so the new bridge session boots with the same model

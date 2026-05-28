@@ -2,7 +2,7 @@
 
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { makeEmptyTab } from "../types/tab";
+import { OVERVIEW_TAB_ID, makeEmptyTab } from "../types/tab";
 import { useDerivedRenderState } from "./useDerivedRenderState";
 import type { UseHostInfo } from "./useHostInfo";
 
@@ -60,6 +60,123 @@ describe("useDerivedRenderState", () => {
       "tab-1",
       [],
     );
+  });
+
+  it("keeps the overview visible when only shell tabs exist", () => {
+    // The shell tab lives in /tabs (for terminal-panel routing) but
+    // must not own the canvas — the host / project dashboard should
+    // still show. Regression for the "opening console wipes overview"
+    // bug.
+    const shell = makeEmptyTab("sh-1", "Shell 1", null, "shell");
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [shell],
+          activeTabId: OVERVIEW_TAB_ID,
+          sidebar: {},
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.hasTabs).toBe(true);
+    expect(result.current.renderState.hasSessionTabs).toBe(false);
+    expect(result.current.renderState.overviewActive).toBe(true);
+    expect(result.current.renderState.empty).toBe(true);
+    expect(result.current.renderState.agentTabActive).toBe(false);
+    expect(result.current.renderState.shellTabActive).toBe(false);
+    expect(result.current.renderState.emptyAndNoProject).toBe(true);
+  });
+
+  it("keeps overview visible when activeTabId points at a shell tab", () => {
+    const shell = makeEmptyTab("sh-1", "Shell 1", null, "shell");
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [shell],
+          activeTabId: "sh-1",
+          project: { id: "p1", path: "/repo/app" },
+          sidebar: {},
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.hasTabs).toBe(true);
+    expect(result.current.renderState.hasSessionTabs).toBe(false);
+    expect(result.current.renderState.overviewActive).toBe(true);
+    expect(result.current.renderState.empty).toBe(true);
+    expect(result.current.renderState.emptyAndProject).toBe(true);
+    expect(result.current.renderState.agentTabActive).toBe(false);
+    expect(result.current.renderState.shellTabActive).toBe(false);
+    expect(result.current.renderState.editorTabActive).toBe(false);
+  });
+
+  it("keeps the overview visible when an agent tab exists but the overview pill is active", () => {
+    // User has a session in /tabs but clicked the overview pill to
+    // return to the project dashboard without closing the tab.
+    const agent = makeEmptyTab("agent-1", "Tab 1");
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [agent],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: { id: "p1", path: "/repo/app" },
+          sidebar: {},
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.hasSessionTabs).toBe(true);
+    expect(result.current.renderState.overviewActive).toBe(true);
+    expect(result.current.renderState.empty).toBe(true);
+    expect(result.current.renderState.emptyAndProject).toBe(true);
+    expect(result.current.renderState.agentTabActive).toBe(false);
+  });
+
+  it("treats undefined activeTabId as overview-active", () => {
+    // Boot / persistence-miss case: state arrives with no activeTabId.
+    // The overview should own the canvas rather than rendering a
+    // phantom session view.
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: undefined,
+          sidebar: {},
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.overviewActive).toBe(true);
+    expect(result.current.renderState.empty).toBe(true);
+    expect(result.current.renderState.emptyAndNoProject).toBe(true);
+    expect(result.current.renderState.overviewTabId).toBe(OVERVIEW_TAB_ID);
+  });
+
+  it("flags overviewActive false while a real agent tab is selected", () => {
+    const agent = makeEmptyTab("agent-1", "Tab 1");
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [agent],
+          activeTabId: "agent-1",
+          sidebar: {},
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.overviewActive).toBe(false);
+    expect(result.current.renderState.empty).toBe(false);
+    expect(result.current.renderState.agentTabActive).toBe(true);
   });
 
   it("builds the active project dashboard from matching sessions and worktrees", () => {

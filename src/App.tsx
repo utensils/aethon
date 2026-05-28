@@ -15,6 +15,7 @@ import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs } from "./hooks/useTabs";
+import { useRestoreShellTabs } from "./hooks/useRestoreShellTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
@@ -258,6 +259,17 @@ export default function App() {
     shellDefaultArgsRef,
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
+    isShellBusy: async (tabId: string) => {
+      const v = await invoke("shell_is_busy", { tabId });
+      return v === true;
+    },
+  });
+
+  useRestoreShellTabs({
+    tabs: (state.tabs as Tab[] | undefined) ?? [],
+    updateTab,
+    appendSystem: (text) => chatActionsRef.current.appendSystem(text),
+    shellInheritEnvRef,
   });
 
   // Tab/sub-tab navigation (next/jump/move for both agent tabs and
@@ -349,6 +361,7 @@ export default function App() {
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     closeTabNow,
+    newShellTab,
   });
   useProjectSyncEffects({
     state,
@@ -388,7 +401,11 @@ export default function App() {
     focusActiveContextInput,
     toggleSidebar,
     toggleFilesSidebar,
-  } = useFocus({ setState, stateRef });
+  } = useFocus({
+    setState,
+    stateRef,
+    newShellTabOnOverviewOpen: () => newShellTab(),
+  });
 
   const { slashContext, persistLocalChatMessage } = useAppSlashCommandContext({
     bootLayout: BOOT_LAYOUT,

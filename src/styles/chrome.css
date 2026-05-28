@@ -99,22 +99,18 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  border-radius: var(--radius-sm);
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
-  background-clip: padding-box;
-  border: 2px solid transparent;
 }
 
 .app {
@@ -3624,6 +3620,33 @@ body.ae-resizing-composer * {
   border-color: var(--border);
 }
 
+/* Overview pseudo-tab — always-visible escape hatch back to the host /
+   project / worktree dashboard. Narrower than a real tab so it reads as
+   navigation, not a session, and carries the Æ brand glyph instead of a
+   close button (it can't be closed). */
+.a2ui-tab-overview {
+  min-inline-size: 6.5rem;
+  max-inline-size: 8rem;
+  flex: 0 0 7rem;
+  padding-left: 10px;
+  gap: 6px;
+}
+
+.a2ui-tab-overview-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 /* ---- Terminal ----------------------------------------------------------- */
 
 /* The terminal cell is auto-rowed in the grid, so it sizes to its content.
@@ -3670,6 +3693,86 @@ body.ae-resizing-composer * {
   min-height: 0;
   padding: 6px;
   width: 100%;
+  overflow: hidden;
+}
+
+.ae-terminal-panel .a2ui-terminal {
+  height: 100%;
+  min-height: 0;
+  border-top: 0;
+  animation: none;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport {
+  background-color: var(--terminal-bg, var(--bg)) !important;
+  scrollbar-color: var(--scrollbar-thumb) transparent !important;
+  scrollbar-width: thin !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
+  width: var(--scrollbar-size) !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  left: auto !important;
+  right: 0 !important;
+  width: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar.horizontal {
+  bottom: 0 !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  left: 0 !important;
+  right: 0 !important;
+  width: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.horizontal
+  > .slider {
+  bottom: 0 !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar
+  > .slider:hover,
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar
+  > .slider.active {
+  background: var(--scrollbar-thumb-hover) !important;
 }
 
 .ae-agent-pill {
@@ -4146,6 +4249,32 @@ body.ae-resizing-terminal * {
 .ae-terminal-panel-body > * {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* Empty placeholder when the panel is open on the overview but no shell
+   sessions exist yet — the body needs *some* content so the panel still
+   renders its frame. */
+.ae-terminal-panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text);
+  text-align: center;
+  gap: 6px;
+}
+.ae-terminal-panel-empty kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--text);
 }
 
 /* =============================================================================
@@ -4847,11 +4976,17 @@ body.ae-resizing-terminal * {
   height: 100%;
   background: var(--terminal-bg, #0e0e10);
   min-height: 0;
+  overflow: hidden;
 }
 .ae-shell-canvas-term {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
+  overflow: hidden;
+}
+.ae-terminal-panel .xterm,
+.ae-terminal-panel .xterm-screen {
+  overflow: hidden;
 }
 
 /* =============================================================================

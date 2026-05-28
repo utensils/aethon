@@ -182,21 +182,97 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
-  it("drops shell tabs from the reload snapshot", () => {
+  it("persists shell tabs for frontend reload and restores their PTY on mount", () => {
     saveSessionUiSnapshot({
       tabs: [
         {
           ...makeEmptyTab("agent", "Agent"),
           messages: [{ id: "m1", role: "user", text: "hi" }],
         },
-        makeEmptyTab("shell", "Shell", null, "shell"),
+        {
+          ...makeEmptyTab("shell", "Shell", null, "shell"),
+          shell: {
+            cwd: "/repo/app",
+            command: "zsh",
+            args: ["-l"],
+            shareMode: "read",
+            shellState: "running",
+          },
+        },
       ],
       activeTabId: "shell",
     });
 
     const restored = loadSessionUiSnapshot();
-    expect(restored?.tabs.map((t) => t.id)).toEqual(["agent"]);
+    expect(restored?.tabs.map((t) => t.id)).toEqual(["agent", "shell"]);
     expect(restored?.activeTabId).toBe("agent");
+    expect(restored?.tabs.find((t) => t.id === "shell")?.shell).toMatchObject({
+      cwd: "/repo/app",
+      command: "zsh",
+      args: ["-l"],
+      shareMode: "read",
+      shellState: "starting",
+      restartOnMount: true,
+    });
+  });
+
+  it("does not mark exited shell tabs for PTY restore", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("shell", "Shell", null, "shell"),
+            shell: {
+              cwd: "/repo/app",
+              command: "",
+              args: [],
+              shareMode: "private",
+              shellState: "exited",
+              exitCode: 0,
+            },
+          },
+        ],
+        activeTabId: "shell",
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.activeTabId).toBe("__overview__");
+    expect(parsed?.tabs[0].shell).toMatchObject({
+      shellState: "exited",
+      exitCode: 0,
+    });
+    expect(parsed?.tabs[0].shell?.restartOnMount).toBeUndefined();
+  });
+
+  it("does not auto-restart shell commands from durable disk snapshots", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("shell", "npm dev", null, "shell"),
+            shell: {
+              cwd: "/repo/app",
+              command: "npm",
+              args: ["run", "dev"],
+              shareMode: "private",
+              shellState: "running",
+            },
+          },
+        ],
+        activeTabId: "shell",
+        savedAt: 1,
+      }),
+      { restartShellTabs: false },
+    );
+
+    expect(parsed?.tabs[0].shell).toMatchObject({
+      command: "npm",
+      args: ["run", "dev"],
+      shellState: "exited",
+      exitCode: -1,
+    });
+    expect(parsed?.tabs[0].shell?.restartOnMount).toBeUndefined();
   });
 
   it("preserves editor rootPath for files outside the active project", () => {

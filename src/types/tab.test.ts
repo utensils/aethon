@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   NO_PROJECT_KEY,
+  OVERVIEW_TAB_ID,
   deriveTabActiveFlags,
+  isOverviewActive,
   makeEmptyTab,
   projectBucketKey,
 } from "./tab";
@@ -100,13 +102,31 @@ describe("deriveTabActiveFlags", () => {
     });
   });
 
-  it("falls through to agent when activeTabId points at a missing tab", () => {
-    // Orphan-active-id case: tabs exist but the active id doesn't match
-    // any of them. Defaulting to agent matches the existing behaviour
-    // before this helper was introduced (kind ?? "agent" fallback).
+  it("returns all-false when activeTabId points at a missing tab", () => {
+    // Stale-persisted-id case: tabs exist but the active id doesn't
+    // match any of them. Returning all-false surfaces the overview
+    // instead of a phantom session view that has no real backing tab.
     const a = makeEmptyTab("a", "A");
     expect(deriveTabActiveFlags([a], "missing")).toEqual({
-      agentTabActive: true,
+      agentTabActive: false,
+      shellTabActive: false,
+      editorTabActive: false,
+    });
+  });
+
+  it("returns all-false for the overview sentinel", () => {
+    const a = makeEmptyTab("a", "A");
+    expect(deriveTabActiveFlags([a], OVERVIEW_TAB_ID)).toEqual({
+      agentTabActive: false,
+      shellTabActive: false,
+      editorTabActive: false,
+    });
+  });
+
+  it("returns all-false when activeTabId is undefined even with tabs present", () => {
+    const a = makeEmptyTab("a", "A");
+    expect(deriveTabActiveFlags([a], undefined)).toEqual({
+      agentTabActive: false,
       shellTabActive: false,
       editorTabActive: false,
     });
@@ -123,5 +143,20 @@ describe("deriveTabActiveFlags", () => {
     const a = makeEmptyTab("a", "A");
     const after = deriveTabActiveFlags([a], "a");
     expect(after.agentTabActive).toBe(true);
+  });
+});
+
+describe("isOverviewActive", () => {
+  it("treats undefined as overview-active", () => {
+    expect(isOverviewActive(undefined)).toBe(true);
+  });
+  it("treats empty string as overview-active", () => {
+    expect(isOverviewActive("")).toBe(true);
+  });
+  it("treats the sentinel as overview-active", () => {
+    expect(isOverviewActive(OVERVIEW_TAB_ID)).toBe(true);
+  });
+  it("treats a real tab id as not overview-active", () => {
+    expect(isOverviewActive("real-tab-id")).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleTabStrip, handleEmptyState } from "./tabStrip";
+import { OVERVIEW_TAB_ID } from "../types/tab";
 import { buildRouteFixture } from "./testFixtures";
 
 describe("handleTabStrip", () => {
@@ -15,6 +16,46 @@ describe("handleTabStrip", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.setActiveTab).toHaveBeenCalledWith("tab-3");
+  });
+
+  it("select on the overview sentinel routes to activateOverview, not setActiveTab", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: { activeTabId: "tab-7" },
+    });
+    const handled = await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "select",
+        data: { tabId: OVERVIEW_TAB_ID },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.setActiveTab).not.toHaveBeenCalled();
+    const next = applySetState({ activeTabId: "tab-7" });
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+  });
+
+  it("selecting overview while already on overview is a no-op write", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: { activeTabId: OVERVIEW_TAB_ID },
+    });
+    await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "select",
+        data: { tabId: OVERVIEW_TAB_ID },
+      },
+      ctx,
+    );
+    expect(mocks.setActiveTab).not.toHaveBeenCalled();
+    // The reducer short-circuits, so unrelated state survives the
+    // pass-through and activeTabId is unchanged.
+    const next = applySetState({
+      activeTabId: OVERVIEW_TAB_ID,
+      foo: "bar",
+    });
+    expect(next).toEqual({ activeTabId: OVERVIEW_TAB_ID, foo: "bar" });
   });
 
   it("close removes the chosen tab", async () => {

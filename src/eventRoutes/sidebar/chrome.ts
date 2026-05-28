@@ -1,4 +1,5 @@
 import type { EventRouteHandler } from "../types";
+import { activateOverview } from "../tabStrip";
 import { restoreSessionFromSelection } from "../sessionRestore";
 
 interface RecentSessionItem {
@@ -61,13 +62,31 @@ export const handleSectionedSelect: EventRouteHandler = async (
       ctx.openProjectFromPicker();
       return true;
     }
+    const project = ctx.stateRef.current.project as
+      | { id?: string }
+      | null
+      | undefined;
+    const wasAlreadyActiveProject = project?.id === selected.itemId;
     ctx.activateWorktree(null);
     ctx.setActiveProjectById(selected.itemId);
     ctx.setState((prev) => ({ ...prev, landing: null }));
+    // Re-clicking the active project while a session tab owns the canvas
+    // is the user's "take me back to the project overview" gesture.
+    // The first click on a project also lands on overview because the
+    // project bucket is loaded fresh — but if it carried an active tab
+    // from a previous visit, only the re-click should deselect it.
+    if (wasAlreadyActiveProject) {
+      activateOverview(ctx);
+    }
     return true;
   }
   if (selected?.sectionId === "hosts" && selected.itemId) {
+    const wasAlreadyActiveHost =
+      ctx.stateRef.current.activeHostId === selected.itemId;
     ctx.setActiveHost(selected.itemId);
+    if (wasAlreadyActiveHost) {
+      activateOverview(ctx);
+    }
     return true;
   }
   if (selected?.sectionId === "history" && selected.itemId) {
