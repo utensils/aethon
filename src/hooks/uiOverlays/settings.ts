@@ -14,6 +14,9 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
   const { setState, stateRef, reapplyConfig, pushNotification } = ctx;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveGenerationRef = useRef(0);
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const saveQueuedRef = useRef(false);
+  const reopenOnFailureRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -62,7 +65,9 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
             saveStatus?: string;
           }
         | undefined) ?? {};
-    if (cur.pending && cur.saveStatus !== "saved") void saveSettings();
+    if (cur.pending && cur.saveStatus !== "saved") {
+      void saveSettings({ reopenOnFailure: true });
+    }
     setState((prev) => {
       const settings = isPlainObject(prev.settings) ? prev.settings : {};
       return {
@@ -116,11 +121,33 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
 
   /** Save pending settings, then re-prime the cached config so runtime
    *  theme/font/defaults update without a page reload. */
-  async function saveSettings() {
+  async function saveSettings(options?: { reopenOnFailure?: boolean }) {
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
+    if (options?.reopenOnFailure) reopenOnFailureRef.current = true;
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      return saveInFlightRef.current;
+    }
+    const run = drainSettingsSaves();
+    saveInFlightRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (saveInFlightRef.current === run) saveInFlightRef.current = null;
+    }
+  }
+
+  async function drainSettingsSaves() {
+    do {
+      saveQueuedRef.current = false;
+      await saveSettingsSnapshot();
+    } while (saveQueuedRef.current);
+  }
+
+  async function saveSettingsSnapshot() {
     const cur =
       (stateRef.current.settings as
         | {
@@ -131,6 +158,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
         | undefined) ?? {};
     const pending = cur.pending ?? {};
     if (Object.keys(pending).length === 0) return;
+    const pendingSnapshot = cloneConfigPatch(pending);
     const saveGeneration = ++saveGenerationRef.current;
     let live: AethonConfig | null = null;
     try {
@@ -139,34 +167,37 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       console.warn("settings save: getConfig failed:", err);
     }
     const merged = {
-      ui: { ...(live?.ui ?? {}), ...((pending as { ui?: object }).ui ?? {}) },
+      ui: {
+        ...(live?.ui ?? {}),
+        ...((pendingSnapshot as { ui?: object }).ui ?? {}),
+      },
       agent: {
         ...(live?.agent ?? {}),
-        ...((pending as { agent?: object }).agent ?? {}),
+        ...((pendingSnapshot as { agent?: object }).agent ?? {}),
       },
       shell: {
         ...(live?.shell ?? {}),
-        ...((pending as { shell?: object }).shell ?? {}),
+        ...((pendingSnapshot as { shell?: object }).shell ?? {}),
       },
       // Always include `shortcuts` so `[shortcuts] new_tab_kind` survives
       // any other Settings save. write_config drops sections it doesn't see.
       shortcuts: {
         ...(live?.shortcuts ?? {}),
-        ...((pending as { shortcuts?: object }).shortcuts ?? {}),
+        ...((pendingSnapshot as { shortcuts?: object }).shortcuts ?? {}),
       },
       voice: {
         ...(live?.voice ?? {}),
-        ...((pending as { voice?: object }).voice ?? {}),
+        ...((pendingSnapshot as { voice?: object }).voice ?? {}),
       },
       // Likewise for `[updates]` — preserve channel + auto-check settings
       // across saves of unrelated sections.
       updates: {
         ...(live?.updates ?? {}),
-        ...((pending as { updates?: object }).updates ?? {}),
+        ...((pendingSnapshot as { updates?: object }).updates ?? {}),
       },
       devshell: {
         ...(live?.devshell ?? {}),
-        ...((pending as { devshell?: object }).devshell ?? {}),
+        ...((pendingSnapshot as { devshell?: object }).devshell ?? {}),
       },
     };
     try {
@@ -178,7 +209,14 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       } catch (err) {
         console.warn("settings save: re-read failed:", err);
       }
-      if (saveGeneration === saveGenerationRef.current) {
+      const latestPending = readCurrentPending(stateRef.current);
+      if (!sameConfigPatch(latestPending, pendingSnapshot)) {
+        saveQueuedRef.current = true;
+      }
+      if (
+        saveGeneration === saveGenerationRef.current &&
+        !saveQueuedRef.current
+      ) {
         setState((prev) => {
           const latest =
             (prev.settings as
@@ -188,7 +226,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
                   focusSection?: string | null;
                 }
               | undefined) ?? {};
-          const visiblePending = latest.pending ?? pending;
+          const visiblePending = latest.pending ?? pendingSnapshot;
           return {
             ...prev,
             settings: {
@@ -221,15 +259,19 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
                 focusSection?: string | null;
               }
             | undefined) ?? {};
+        const shouldReopen = reopenOnFailureRef.current;
+        reopenOnFailureRef.current = false;
         return {
           ...prev,
           settings: {
-            open: !!latest.open,
-            pending: latest.pending ?? pending,
+            open: shouldReopen ? true : !!latest.open,
+            pending: latest.pending ?? pendingSnapshot,
             focusSection:
               typeof latest.focusSection === "string"
                 ? latest.focusSection
-                : null,
+                : typeof cur.focusSection === "string"
+                  ? cur.focusSection
+                  : null,
             saveStatus: "error",
             saveError: err instanceof Error ? String(err) : String(err),
           },
@@ -237,6 +279,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       });
       return;
     }
+    if (!saveQueuedRef.current) reopenOnFailureRef.current = false;
   }
 
   function scheduleSettingsSave() {
@@ -273,4 +316,24 @@ function mergeConfigPatch(
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readCurrentPending(
+  state: Record<string, unknown>,
+): Record<string, unknown> {
+  const settings = isPlainObject(state.settings) ? state.settings : {};
+  return isPlainObject(settings.pending) ? settings.pending : {};
+}
+
+function sameConfigPatch(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function cloneConfigPatch(
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(patch)) as Record<string, unknown>;
 }

@@ -193,4 +193,95 @@ describe("useSettingsOverlay", () => {
       saveError: "Error: disk full",
     });
   });
+
+  it("reopens settings with current edits when a close-triggered flush fails", async () => {
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("permission denied"));
+    const { ctx, stateRef } = buildContext({
+      settings: {
+        open: true,
+        pending: { ui: { theme: "aether" } },
+        focusSection: "appearance",
+        saveStatus: "saving",
+        saveError: null,
+      },
+    });
+    const { result } = renderHook(() => useSettingsOverlay(ctx));
+
+    await act(async () => {
+      result.current.closeSettings();
+      await Promise.resolve();
+    });
+
+    expect(ctx.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "ae-settings-save-failed",
+        title: "Failed to save settings",
+        kind: "error",
+      }),
+    );
+    expect(stateRef.current.settings).toEqual({
+      open: true,
+      pending: { ui: { theme: "aether" } },
+      focusSection: "appearance",
+      saveStatus: "error",
+      saveError: "Error: permission denied",
+    });
+  });
+
+  it("serializes overlapping autosaves so older writes cannot overwrite newer edits", async () => {
+    let resolveFirst: (() => void) | undefined;
+    let resolveSecond: (() => void) | undefined;
+    vi.mocked(invoke)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = () => resolve(undefined);
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = () => resolve(undefined);
+          }),
+      );
+    const { ctx } = buildContext({
+      settings: { open: true, pending: null, focusSection: null },
+    });
+    const { result } = renderHook(() => useSettingsOverlay(ctx));
+
+    act(() => {
+      result.current.applySettingsPatch({ ui: { theme: "paper" } });
+    });
+    await vi.advanceTimersByTimeAsync(SETTINGS_AUTOSAVE_DELAY_MS);
+
+    act(() => {
+      result.current.applySettingsPatch({ ui: { theme: "brink" } });
+    });
+    await vi.advanceTimersByTimeAsync(SETTINGS_AUTOSAVE_DELAY_MS);
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenNthCalledWith(1, "write_config", {
+      config: expect.objectContaining({
+        ui: expect.objectContaining({ theme: "paper" }),
+      }),
+    });
+
+    await act(async () => {
+      resolveFirst?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenNthCalledWith(2, "write_config", {
+      config: expect.objectContaining({
+        ui: expect.objectContaining({ theme: "brink" }),
+      }),
+    });
+
+    await act(async () => {
+      resolveSecond?.();
+      await Promise.resolve();
+    });
+  });
 });
