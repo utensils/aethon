@@ -97,8 +97,8 @@ export default defineConfig({
             { text: "Layouts", link: "/guide/layouts" },
             { text: "Themes", link: "/guide/themes" },
             {
-              text: "Skills & extensions",
-              link: "/guide/skills-and-extensions",
+              text: "Extensions",
+              link: "/guide/extensions",
             },
           ],
         },

@@ -589,7 +589,7 @@ describe("unloadProjectExtensions", () => {
     f.state.extensionFrontendModules.set("base-module", {
       name: "base-module",
       entryPath: "/base/frontend.js",
-      code: "skill.registerComponent('base', () => null)",
+      code: "extension.registerComponent('base', () => null)",
     });
     f.state.eventRoutingMode = "builtin";
     captureProjectExtensionBaseline(f.state);
@@ -608,7 +608,7 @@ describe("unloadProjectExtensions", () => {
     f.state.extensionFrontendModules.set("project-module", {
       name: "project-module",
       entryPath: "/project/frontend.js",
-      code: "skill.registerComponent('project', () => null)",
+      code: "extension.registerComponent('project', () => null)",
     });
     f.state.eventRoutingMode = "extension";
     f.state.loadedExtensions.set("foo", "project-directory");

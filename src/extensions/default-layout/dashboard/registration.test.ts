@@ -1,16 +1,16 @@
 /**
  * Smoke test: every M9 dashboard composite is registered on
- * `defaultLayoutSkill` AND its `type` can be swapped by a subsequent
- * skill registration. Proves the "everything is overrideable" contract.
+ * `defaultLayoutExtension` AND its `type` can be swapped by a subsequent
+ * extension registration. Proves the "everything is overrideable" contract.
  */
 import { describe, expect, it } from "vitest";
-import { defaultLayoutSkill } from "..";
-import { SkillRegistry } from "../../SkillRegistry";
-import type { A2UISkill } from "../../types";
+import { defaultLayoutExtension } from "..";
+import { ExtensionRegistry } from "../../ExtensionRegistry";
+import type { A2UIExtension } from "../../types";
 
 describe("dashboard composite registration", () => {
   it("registers all five M9 chrome composites by stable type string", () => {
-    const types = Object.keys(defaultLayoutSkill.components ?? {});
+    const types = Object.keys(defaultLayoutExtension.components ?? {});
     for (const t of [
       "projects-dashboard",
       "project-dashboard",
@@ -22,18 +22,18 @@ describe("dashboard composite registration", () => {
     }
   });
 
-  it("an extension skill can override project-dashboard by type", () => {
-    const registry = new SkillRegistry();
-    registry.register(defaultLayoutSkill);
+  it("a later extension can override project-dashboard by type", () => {
+    const registry = new ExtensionRegistry();
+    registry.register(defaultLayoutExtension);
     const before = registry.resolve("project-dashboard");
     expect(before).toBeDefined();
 
     const fake = () => null;
-    const overrideSkill: A2UISkill = {
+    const overrideExtension: A2UIExtension = {
       name: "test-override",
       components: { "project-dashboard": fake as never },
     };
-    registry.register(overrideSkill);
+    registry.register(overrideExtension);
 
     const after = registry.resolve("project-dashboard");
     expect(after).toBe(fake);
@@ -41,8 +41,8 @@ describe("dashboard composite registration", () => {
   });
 
   it("override applies to every dashboard composite", () => {
-    const registry = new SkillRegistry();
-    registry.register(defaultLayoutSkill);
+    const registry = new ExtensionRegistry();
+    registry.register(defaultLayoutExtension);
     const fake = () => null;
     registry.register({
       name: "swap-all",
@@ -62,13 +62,13 @@ describe("dashboard composite registration", () => {
   });
 
   it("unregistering an override removes the type entirely (last-write-wins shape)", () => {
-    // SkillRegistry's `unregister` deletes the type when its current
-    // value matches the skill being removed. Documenting the actual
-    // shape here: re-register the default-layout skill (or any skill
+    // ExtensionRegistry's `unregister` deletes the type when its current
+    // value matches the extension being removed. Documenting the actual
+    // shape here: re-register the default-layout extension (or any extension
     // providing the type) to restore. This matches how the bridge
     // hot-reloads extensions on file changes.
-    const registry = new SkillRegistry();
-    registry.register(defaultLayoutSkill);
+    const registry = new ExtensionRegistry();
+    registry.register(defaultLayoutExtension);
     const original = registry.resolve("task-launcher");
     const fake = () => null;
     registry.register({
@@ -78,8 +78,8 @@ describe("dashboard composite registration", () => {
     expect(registry.resolve("task-launcher")).toBe(fake);
     registry.unregister("tmp");
     expect(registry.resolve("task-launcher")).toBeUndefined();
-    // Re-register the default-layout skill to restore the built-in.
-    registry.register(defaultLayoutSkill);
+    // Re-register the default-layout extension to restore the built-in.
+    registry.register(defaultLayoutExtension);
     expect(registry.resolve("task-launcher")).toBe(original);
   });
 });

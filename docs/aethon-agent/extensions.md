@@ -8,8 +8,7 @@ Aethon supports three distribution channels for user-shipped UI code:
    `<project>/.aethon/extensions/*.{ts,js,mjs}` — repository-scoped UI
    extensions discovered from the selected cwd up to the nearest git root.
 3. **npm-distributed extension packages** in
-   `~/.aethon/skills/node_modules/<pkg>/` (path retained for back-compat
-   with existing installs) — for extensions with dependencies, multi-file
+   `~/.aethon/extensions/node_modules/<pkg>/` — for extensions with dependencies, multi-file
    source, or for sharing via npm.
 
 All bridge-side channels call the same `register(api)` entry point with
@@ -77,16 +76,11 @@ per bridge process and appear in `listExtensions()` with source
 ## npm-Distributed Extension Package
 
 ```
-~/.aethon/skills/node_modules/@vendor/aethon-pretty-themes/
+~/.aethon/extensions/node_modules/@vendor/aethon-pretty-themes/
 ├── package.json
 ├── dist/
 │   └── index.js
 ```
-
-(The on-disk `skills/` directory name is retained for back-compat with
-existing installs; conceptually these are extension packages and the
-in-app surface, slash commands, and runtime snapshot all use
-"extension".)
 
 `package.json`:
 
@@ -103,13 +97,13 @@ Install with:
 ```bash
 /extensions install @vendor/aethon-pretty-themes
 # or, from a shell:
-npm install --prefix ~/.aethon/skills @vendor/aethon-pretty-themes
+npm install --prefix ~/.aethon/extensions @vendor/aethon-pretty-themes
 ```
 
 The in-app installer also accepts GitHub shorthands and git URLs, for
 example `/extensions install github:vendor/aethon-pretty-themes`. After
 install, the current agent sidecar is restarted so the next request
-loads the new package. The bridge walks `~/.aethon/skills/node_modules/`
+loads the new package. The bridge walks `~/.aethon/extensions/node_modules/`
 (including `@scope` namespaces), finds packages with an `aethon` field,
 imports `aethon.entry`, and calls `register(api)`.
 

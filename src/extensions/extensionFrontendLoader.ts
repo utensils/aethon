@@ -1,16 +1,16 @@
 /**
  * Extension frontend loader — evaluates `aethon.frontendEntry` JS bodies
  * shipped by extension packages and registers the React components they
- * produce in the SkillRegistry.
+ * produce in the ExtensionRegistry.
  *
  * Channel:
  *   bridge reads `<extension-package>/<frontendEntry>` and ships the file
  *   contents as a string in `extension_frontend_modules`. The frontend
- *   wraps the body with `new Function("React", "skill", code)` and
- *   runs it. The module body uses `skill.registerComponent(type, fn)`
+ *   wraps the body with `new Function("React", "extension", code)` and
+ *   runs it. The module body uses `extension.registerComponent(type, fn)`
  *   to add a React component under a custom A2UI type. That type can
  *   then appear in any A2UI payload as `{type: "<type>", props: …}`
- *   and be resolved through the SkillRegistry like a built-in.
+ *   and be resolved through the ExtensionRegistry like a built-in.
  *
  * Trust model: same as bridge-side extension code. The user installed the
  * package; they trust it. No sandbox — `new Function` is essentially
@@ -27,7 +27,7 @@
 import * as React from "react";
 import type { ComponentType } from "react";
 import type { BuiltinComponentProps } from "../components/A2UIRenderer";
-import type { SkillRegistry } from "./SkillRegistry";
+import type { ExtensionRegistry } from "./ExtensionRegistry";
 
 type ReactExports = typeof React;
 
@@ -41,7 +41,7 @@ interface FrontendModuleApi {
    * Register a React component under a custom A2UI type. Re-registering
    * the same type within one module replaces the previous binding;
    * across modules, last write wins (consistent with the existing
-   * SkillRegistry semantics).
+   * ExtensionRegistry semantics).
    */
   registerComponent(
     type: string,
@@ -66,7 +66,7 @@ export interface LoadedFrontendModule {
  */
 export function evaluateFrontendModule(
   module: ExtensionFrontendModule,
-  registry: SkillRegistry,
+  registry: ExtensionRegistry,
 ): LoadedFrontendModule {
   const componentTypes: string[] = [];
   const components: Record<string, ComponentType<BuiltinComponentProps>> = {};
@@ -91,9 +91,9 @@ export function evaluateFrontendModule(
   };
   try {
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const factory = new Function("React", "skill", module.code) as (
+    const factory = new Function("React", "extension", module.code) as (
       React: ReactExports,
-      skill: FrontendModuleApi,
+      extension: FrontendModuleApi,
     ) => void;
     factory(React, api);
   } catch (err) {
@@ -103,7 +103,7 @@ export function evaluateFrontendModule(
       error: (err as Error).message ?? String(err),
     };
   }
-  // Synthesize an A2UISkill so the registry's existing register/unregister
+  // Synthesize an A2UIExtension so the registry's existing register/unregister
   // surface handles the lifecycle. Module names are namespaced by their npm
   // package name, so collisions across modules are unlikely; an explicit
   // second registration of the same module name unregisters the prior set
@@ -134,8 +134,8 @@ function wrapExtensionComponent(
 
 /**
  * Stable registry-side key for an extension frontend module. Prefixed so it
- * can't collide with a built-in skill (e.g. `default-layout`) or a skill the
- * webview might register through `window.aethon.registerSkill`.
+ * can't collide with a built-in extension (e.g. `default-layout`) or an extension the
+ * webview might register through `window.aethon.registerExtension`.
  */
 export function frontendModuleKey(moduleName: string): string {
   return `ext:${moduleName}`;
@@ -162,7 +162,7 @@ export function frontendModuleKey(moduleName: string): string {
 export function reconcileFrontendModules(
   previous: ReadonlyMap<string, string>,
   next: ExtensionFrontendModule[],
-  registry: SkillRegistry,
+  registry: ExtensionRegistry,
 ): {
   loaded: LoadedFrontendModule[];
   unregistered: string[];

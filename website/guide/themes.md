@@ -97,7 +97,7 @@ aethon.registerTheme({
 });
 ```
 
-This re-runs whenever the extension reloads. Useful for skills that
+This re-runs whenever the extension reloads. Useful for extensions that
 ship a coordinated layout-plus-theme bundle.
 
 ## Required variables
@@ -125,6 +125,6 @@ sidebar **Themes** section enumerate every registered theme.
 
 ## Where to next
 
-- [Skills & extensions](/guide/skills-and-extensions) — the full extension surface.
+- [Extensions](/guide/extensions) — the full extension surface.
 - [Configuration](/guide/configuration) — `[ui] theme` in `config.toml`.
 - [Runtime API reference](/reference/runtime-api) — `aethon.registerTheme` signature.

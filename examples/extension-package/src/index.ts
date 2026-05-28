@@ -2,12 +2,9 @@
  * Example Aethon extension distributed as an npm package.
  *
  * Install:
- *   npm install --prefix ~/.aethon/skills /path/to/this/dir
+ *   npm install --prefix ~/.aethon/extensions /path/to/this/dir
  *
- * (The on-disk `skills/` directory name is retained for back-compat
- * with existing installs; conceptually these are extension packages.)
- *
- * Aethon walks `~/.aethon/skills/node_modules/` on startup and on every
+ * Aethon walks `~/.aethon/extensions/node_modules/` on startup and on every
  * extension hot-reload, looking for any package.json with an `aethon`
  * field. The `entry` is dynamically imported and its `register(api)`
  * export receives the same global Aethon API surface as a directory-
@@ -55,7 +52,7 @@ export function register(api: typeof globalThis.aethon): void {
         // The `pulse-card` type is registered on the frontend by this
         // extension's `aethon.frontendEntry`. Bridge-side code references
         // it like any built-in primitive; the renderer resolves it
-        // through the SkillRegistry.
+        // through the ExtensionRegistry.
         api.setState("/canvas", {
           components: [
             {

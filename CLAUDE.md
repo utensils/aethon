@@ -60,7 +60,7 @@ generates the updater JSON consumed by `useUpdater` (see release flow).
 
 - `dev --new` — sandbox launch under `${TMPDIR}/aethon-dev/new-<pid>/`
   (empty `~/.aethon`, removed on exit). Resolver is `helpers::aethon_dir`,
-  honored by config / sessions / pastes / logs / window state / extensions / skills.
+  honored by config / sessions / pastes / logs / window state / extensions.
 - `dev --clean` — wipe `${TMPDIR}/aethon-dev/` and exit.
 
 Vite defaults to port 1420 but `scripts/dev.sh` auto-increments and writes
@@ -113,10 +113,10 @@ resize/close`) sit behind a `ShellRegistry` (per-tab `portable-pty` +
 ### Frontend model — three things to know
 
 **1. Layout-as-payload.** The default UI is _not_ hardcoded React —
-it's `src/skills/default-layout/workstation.a2ui.json`, fed to the same
+it's `src/extensions/default-layout/workstation.a2ui.json`, fed to the same
 `A2UIRenderer` that handles agent output. Don't add static chrome in
-`App.tsx`; extend the layout JSON or register a skill. Layouts must
-match the slot contract in `src/skills/default-layout/slots.ts`
+`App.tsx`; extend the layout JSON or register an extension. Layouts must
+match the slot contract in `src/extensions/default-layout/slots.ts`
 (canonical slots: `header`, `sidebar`, `canvas`, `composer`, `terminal`,
 `status`); non-canonical layouts declare a `slotMap`.
 
@@ -132,12 +132,12 @@ see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. Pointer helpers in
 - Primitive React components (`src/components/primitives/`) are
   re-exported through `src/components/builtins.tsx` and wired into a
   hardcoded 19-entry `PRIMITIVE_REGISTRY` in
-  `src/components/A2UIRenderer.tsx`. **Can't be overridden by skills.**
+  `src/components/A2UIRenderer.tsx`. **Cannot be overridden by extensions.**
 - Everything else (chrome composites like `sidebar`, `chat-input`,
   `command-palette`, `terminal-panel`, `tab-strip`, `shell-canvas`, etc.)
-  comes from `SkillRegistry`. Mount via `<RegistryComponent type="…" />`
-  so a skill can swap them with `aethon.registerComponent`. New types
-  go on a skill, not in the primitives table.
+  comes from `ExtensionRegistry`. Mount via `<RegistryComponent type="…" />`
+  so an extension can swap them with `aethon.registerComponent`. New types
+  go on an extension, not in the primitives table.
 
 ### Event routing
 
@@ -160,8 +160,8 @@ register in `BUILTIN_ROUTE_TABLE`.
 
 `window.aethon` exposes: `setLayout`, `resetLayout`,
 `registerLayout({id, name, payload})` (id pattern `/^[A-Za-z][\w-]*$/`;
-`workstation` is reserved), `activateLayout`, `registerSkill`,
-`listSkills`, `openProject`. Mirrored agent-side on `globalThis.aethon`
+`workstation` is reserved), `activateLayout`, `registerExtension`,
+`listExtensions`, `openProject`. Mirrored agent-side on `globalThis.aethon`
 (see `agent/aethon-api.ts`).
 
 Per-surface subnamespaces, each backed by a `*_query` bridge message:
@@ -347,7 +347,7 @@ Tauri sets these when spawning `agent/main.ts`:
 | Env var               | Purpose                                                                                   |
 | --------------------- | ----------------------------------------------------------------------------------------- |
 | `AETHON_DOCS_DIR`     | Bundled docs (`docs/aethon-agent/`) — system prompt points the model here.                |
-| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, skills, sessions, state file.                                  |
+| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, sessions, state file.                                  |
 | `AETHON_STATE_FILE`   | `~/.aethon/state.json` snapshot, debounced 200 ms.                                        |
 | `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` — pi `SessionManager.continueRecent` per tab.               |
 | `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release. |
@@ -387,7 +387,7 @@ Dev-only webview globals:
 
 - `window.__AETHON_STATE__()`, `window.__AETHON_SET_STATE__(next)`
 - `window.__AETHON_INVOKE__` (Tauri `invoke`)
-- `window.__AETHON_REGISTRY__` (`SkillRegistry`)
+- `window.__AETHON_EXTENSION_REGISTRY__` (`ExtensionRegistry`)
 - `window.aethon` (public runtime API)
 
 The dev build must already be running — never launch a release build

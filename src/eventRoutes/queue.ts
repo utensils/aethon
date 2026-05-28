@@ -17,7 +17,7 @@ import type { EventRouteHandler } from "./types";
  * active tab, so we never need an explicit tabId in the payload). The
  * handler is registered under BOTH `type:chat-input` (where it lands
  * when the default-layout host inlines the popover) AND
- * `type:queued-messages-popover` (for skill-override mounts that
+ * `type:queued-messages-popover` (for extension-override mounts that
  * synthesize a fresh A2UI subtree via RegistryComponent).
  */
 function activeTabId(state: Record<string, unknown>): string | undefined {

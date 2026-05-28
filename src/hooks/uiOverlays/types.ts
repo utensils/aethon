@@ -6,7 +6,7 @@ import type {
 import type {
   PaletteItem,
   PaletteMode,
-} from "../../skills/default-layout/palette-items";
+} from "../../extensions/default-layout/palette-items";
 import type { AethonConfig } from "../../config";
 import type { SlashCommand } from "../../slashCommands";
 import type { NotificationInput } from "../useNotifications";

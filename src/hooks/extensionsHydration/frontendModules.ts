@@ -1,11 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { reconcileFrontendModules } from "../../skills/extensionFrontendLoader";
-import type { SkillRegistry } from "../../skills/SkillRegistry";
+import { reconcileFrontendModules } from "../../extensions/extensionFrontendLoader";
+import type { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
 
 export interface FrontendModulesDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   frontendModulesRef: MutableRefObject<Map<string, string>>;
-  registry: SkillRegistry;
+  registry: ExtensionRegistry;
   appendSystem: (text: string) => void;
 }
 
@@ -28,7 +28,7 @@ export function useHydrateFrontendModules(deps: FrontendModulesDeps) {
     }
     if (loaded.length > 0 || unregistered.length > 0) {
       // Bump a counter so any A2UIRenderer subtree using a now-changed
-      // component type re-resolves through the SkillRegistry on the
+      // component type re-resolves through the ExtensionRegistry on the
       // next render. The registry itself doesn't trigger React updates;
       // bumping a piece of state owned by App.tsx does.
       setState((prev) => ({

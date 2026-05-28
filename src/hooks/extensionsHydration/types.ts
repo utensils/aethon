@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { A2UIPayload, SidebarItem } from "../../types/a2ui";
-import type { SkillRegistry } from "../../skills/SkillRegistry";
-import type { LayoutCatalogueEntry } from "../../skills/default-layout";
+import type { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
+import type { LayoutCatalogueEntry } from "../../extensions/default-layout";
 import type { SlashCommand } from "../../slashCommands";
 
 export interface ExtensionTheme {
@@ -62,7 +62,7 @@ export interface UseExtensionsHydrationContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   setLayout: Dispatch<SetStateAction<A2UIPayload>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
-  registry: SkillRegistry;
+  registry: ExtensionRegistry;
   appendSystem: (text: string) => void;
   /** Live ref to the active layout, watched by the /sidebar/components
    *  effect that re-walks the tree on every change. */

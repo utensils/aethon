@@ -17,17 +17,17 @@ even if the change otherwise looks correct.
    not belong in the Rust shell.** Adding non-OS logic to `src-tauri/` is a
    review-blocker.
 2. **A2UI is the entire UI.** The default layout is JSON in
-   `src/skills/default-layout/workstation.a2ui.json`, fed to the same
+   `src/extensions/default-layout/workstation.a2ui.json`, fed to the same
    renderer as agent output. **Do not introduce hardcoded chrome in
-   `App.tsx`** — extend the layout JSON or register a new skill.
+   `App.tsx`** — extend the layout JSON or register a new extension.
 3. **Single state store, JSON-Pointer addressed.** Components read state
    via `$ref` JSON Pointers; the renderer applies optimistic writes back
    to those paths. Do not split state across multiple stores or hooks.
 4. **Two registries, one rule.** The 19 primitives in
    `PRIMITIVE_REGISTRY` (`src/components/A2UIRenderer.tsx`; primitive
    components live under `src/components/primitives/`) **cannot be
-   overridden** — everything else comes from `SkillRegistry`. New
-   component types go on a skill, never into the primitive table.
+   overridden** — everything else comes from `ExtensionRegistry`. New
+   component types go on an extension, never into the primitive table.
 5. **Per-tab `cwd` is immutable.** Tabs keep the working directory they
    were created with. PRs that mutate `tab.cwd` after creation are
    incorrect.
@@ -87,7 +87,7 @@ A PR that adds or changes a keyboard shortcut **must** update all three:
 
 1. The webview handler in `src/hooks/useKeyboardShortcuts.ts`
 2. The native menu accelerator in `src-tauri/src/commands/extensions/app_menu.rs`
-3. The palette listing in `src/skills/default-layout/palette-items.ts`
+3. The palette listing in `src/extensions/default-layout/palette-items.ts`
    (`BUILTIN_KEYBINDINGS`)
 
 Plus the canonical docs: `AGENTS.md`, `website/reference/keyboard-shortcuts.md`,

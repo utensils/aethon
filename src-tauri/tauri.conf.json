@@ -40,8 +40,8 @@
       "../docs/aethon-agent/api.md": "docs/aethon-agent/api.md",
       "../docs/aethon-agent/components.md": "docs/aethon-agent/components.md",
       "../docs/aethon-agent/extensions.md": "docs/aethon-agent/extensions.md",
-      "../src/skills/default-layout/workstation.a2ui.json": "skills/default-layout/workstation.a2ui.json",
-      "../src/skills/default-layout/slots.json": "skills/default-layout/slots.json"
+      "../src/extensions/default-layout/workstation.a2ui.json": "extensions/default-layout/workstation.a2ui.json",
+      "../src/extensions/default-layout/slots.json": "extensions/default-layout/slots.json"
     },
     "icon": [
       "icons/32x32.png",

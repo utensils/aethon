@@ -146,14 +146,14 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     output?: StringValue;
     onInput?: string;
     // Opt-in: when true, this instance subscribes to the agent's bash output
-    // stream (`aethon:terminal` window event). Off by default so skills can
+    // stream (`aethon:terminal` window event). Off by default so extensions can
     // mount independent terminals without receiving the agent's bash chatter.
     subscribeToBash?: BooleanValue;
     // Display-only mode: hides the cursor and ignores keystrokes entirely.
     // Aethon ships no PTY backend, so the default terminal panel is a
     // window onto the agent's bash output, not an interactive shell —
     // accepting keystrokes that lead nowhere just confuses users into
-    // thinking the panel is broken. Skills with their own input pipeline
+    // thinking the panel is broken. Extensions with their own input pipeline
     // can opt out by leaving readOnly unset.
     readOnly?: BooleanValue;
     /** Header label shown above the xterm canvas. Lifted out of inline
@@ -193,7 +193,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   useEffect(() => {
     bootGreetingRef.current = bootGreeting;
   }, [bootGreeting]);
-  // Optional prop-driven output. Skills/A2UI payloads can still bind a `$ref`
+  // Optional prop-driven output. Extensions/A2UI payloads can still bind a `$ref`
   // to drive the terminal via state — the diff effect below handles it the
   // same way it used to. The default layout no longer uses this; bash output
   // arrives via the `aethon:terminal` window event instead.
@@ -253,7 +253,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     term.write(bootGreetingRef.current);
 
     // onInput wires xterm's keystroke stream to an A2UI event so a future
-    // skill with a real PTY backend can plug in. Skip it in read-only mode
+    // extension with a real PTY backend can plug in. Skip it in read-only mode
     // to keep the terminal display-only.
     if (props.onInput && !readOnly) {
       term.onData((data) => onEvent("input", { data }));
@@ -262,7 +262,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     // App.tsx fires `aethon:terminal` for live bash output and
     // `aethon:terminal-replay` on tab switch (clear + replay the active
     // tab's buffered scrollback). Only this terminal subscribes when
-    // subscribeToBash is true so skills can mount independent terminals
+    // subscribeToBash is true so extensions can mount independent terminals
     // without picking up the agent's bash stream.
     let onTerminalEvent: ((e: Event) => void) | null = null;
     let onReplayEvent: ((e: Event) => void) | null = null;
@@ -320,7 +320,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Prop-driven write path. When a skill or A2UI payload binds the `output`
+  // Prop-driven write path. When an extension or A2UI payload binds the `output`
   // prop to a state $ref, write deltas to xterm. Append-only diff: when the
   // new value starts with the previous one, write the suffix; otherwise
   // write the full string (treats it as a reset).

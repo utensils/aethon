@@ -121,14 +121,14 @@ export interface RuntimeSnapshot {
   } | null;
   // Extension-registered layouts — the layout catalogue the agent can
   // append to via `aethon.registerLayout`. Built-in layouts shipped by
-  // the default-layout skill (workstation, editorial, command-deck,
+  // the default-layout extension (workstation, editorial, command-deck,
   // live-layout) are NOT listed here; this is the extension delta only.
   // Payloads are NOT included — they can be large; the agent calls
   // `getLayout()` after activation if it needs the structure.
   layouts: { id: string; name: string; description?: string }[];
   // Extension packages whose `aethon.frontendEntry` shipped a React
   // module to the webview (file body wrapped with `new Function("React",
-  // "skill", code)` and run on the frontend). `bytes` is the source
+  // "extension", code)` and run on the frontend). `bytes` is the source
   // size — useful for the agent to spot oversized modules; the actual
   // code body is NOT in the snapshot.
   frontendModules: { name: string; entryPath: string; bytes: number }[];

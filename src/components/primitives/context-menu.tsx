@@ -5,7 +5,7 @@
  * sidebar (project / session / extension menus), file tree (file ops),
  * and any other surface that needs a contextual menu.
  *
- * Not part of the A2UI SkillRegistry — chrome composites compose it
+ * Not part of the A2UI ExtensionRegistry — chrome composites compose it
  * directly. The shape is deliberately small (a flat items array) so
  * callers don't need a builder API.
  */

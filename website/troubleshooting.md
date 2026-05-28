@@ -40,7 +40,7 @@ If a tab _has_ run bash and the panel is still blank:
 
 - Toggle the panel (`Cmd+\``) to force a re-render.
 - Confirm the agent process is healthy — `/extensions` should list
-  at least the default-layout skill.
+  at least the default-layout extension.
 - Check stderr for bridge errors.
 
 ## A shell tab's PTY won't open
@@ -74,7 +74,7 @@ the source path and the error. Common causes:
 - **Syntax error** — TypeScript-only syntax in a `.ts` that the bridge
   can't transform. Stick to syntax bun supports out of the box.
 - **Missing import** — the bridge doesn't `npm install` for you.
-  Bring your own deps (or use `~/.aethon/skills/` and install them
+  Bring your own deps (or use `~/.aethon/extensions/` and install them
   there with npm).
 - **Permission error** — the file is readable by the user running
   Aethon? Check `ls -l`.

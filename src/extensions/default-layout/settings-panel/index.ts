@@ -1,5 +1,5 @@
 // Settings panel public surface. The only consumer is
-// `src/skills/default-layout/index.ts`, which imports `SettingsPanel`
+// `src/extensions/default-layout/index.ts`, which imports `SettingsPanel`
 // from `"./settings-panel"` — this barrel resolves that import to the
 // directory's panel implementation. Submodules under this directory
 // carry the implementation:

@@ -3,7 +3,7 @@ import { handleReady } from "./ready";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 import { makeEmptyTab } from "../../types/tab";
-import { defaultLayoutSkill } from "../../skills/default-layout";
+import { defaultLayoutExtension } from "../../extensions/default-layout";
 
 describe("handleReady", () => {
   beforeEach(() => {
@@ -42,9 +42,9 @@ describe("handleReady", () => {
             source: "prompt",
           },
           {
-            name: "skill:claudex",
+            name: "extension:claudex",
             description: "Query sessions",
-            source: "skill",
+            source: "extension",
           },
         ],
         extensionKeybindings: [],
@@ -80,9 +80,9 @@ describe("handleReady", () => {
           source: "prompt",
         },
         {
-          name: "skill:claudex",
+          name: "extension:claudex",
           description: "Query sessions",
-          source: "skill",
+          source: "extension",
         },
       ],
     );
@@ -220,7 +220,7 @@ describe("handleReady", () => {
         },
       },
     });
-    ctx.bootLayout = defaultLayoutSkill.layout!;
+    ctx.bootLayout = defaultLayoutExtension.layout!;
     ctx.lastExtensionStateKeysRef.current = new Set([
       "/layout/columns",
       "/layout/areas",
@@ -272,7 +272,7 @@ describe("handleReady", () => {
         },
       },
     });
-    ctx.bootLayout = defaultLayoutSkill.layout!;
+    ctx.bootLayout = defaultLayoutExtension.layout!;
 
     handleReady(
       {

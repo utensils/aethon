@@ -7,7 +7,7 @@ import type { Tab } from "../types/tab";
 import type {
   NotificationEntry,
   NotificationKind,
-} from "../skills/default-layout/notifications";
+} from "../extensions/default-layout/notifications";
 
 export interface NotificationInput {
   id?: string;

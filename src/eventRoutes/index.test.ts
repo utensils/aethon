@@ -129,7 +129,7 @@ describe("dispatchEvent — precedence contract", () => {
 });
 
 /** Type-keyed routing contract — closes the abstraction-integrity gap
- *  identified in the M5/M6 audit. A custom layout payload (or a skill
+ *  identified in the M5/M6 audit. A custom layout payload (or an extension
  *  override) may rename the chrome-composite instance; events should
  *  still route to the correct built-in handler because the route table
  *  keys on `type:`, not `id:`. */
@@ -139,7 +139,7 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     const item = { kind: "tab" as const, tabId: "abc", label: "tab abc" };
     const handled = await dispatchEvent(
       {
-        // A skill swapped command-palette and assigned its own id.
+        // An extension swapped command-palette and assigned its own id.
         component: { id: "primary-cmd-deck", type: "command-palette" },
         eventType: "select",
         data: { item },

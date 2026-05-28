@@ -84,14 +84,14 @@ See the full [keyboard shortcut reference](/reference/keyboard-shortcuts).
 
 Aethon currently ships one built-in layout, `workstation` — the
 chat-first IDE-density surface you're already in. Layouts are A2UI
-payloads, not React components, so skills can register their own and
+payloads, not React components, so extensions can register their own and
 the user can swap with `/layout <id>` (or `Cmd+Shift+P` → "layout"). We
 trimmed the sibling variations (`command-deck`, `editorial`,
 `live-layout`) while polish focuses on a single surface; they may
 return later, but you can already build replacements with
 `aethon.registerLayout({ id, name, payload })`.
 
-## 7 — Discover skills
+## 7 — Discover extensions
 
 `/extensions` lists every loaded extension: user-installed npm packages,
 loose user extensions, and project-local extensions. Drop a `.ts` file into
@@ -101,5 +101,5 @@ loose user extensions, and project-local extensions. Drop a `.ts` file into
 
 - [Configuration](/guide/configuration) — tune themes, default model, shell behaviour.
 - [Command palette](/guide/command-palette) — files on `Cmd+P`, commands on `Cmd+Shift+P`.
-- [Skills & extensions](/guide/skills-and-extensions) — install or write your own.
+- [Extensions](/guide/extensions) — install or write your own.
 - [Themes](/guide/themes) — the three built-in palettes and how to add a fourth.

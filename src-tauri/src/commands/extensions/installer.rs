@@ -1,5 +1,5 @@
 //! `install_aethon_extension` — shells out to `npm install --prefix
-//! ~/.aethon/skills <spec>`. Running this in the Tauri shell avoids
+//! ~/.aethon/extensions <spec>`. Running this in the Tauri shell avoids
 //! the agent sidecar being killed mid-install by the existing
 //! `node_modules` watcher; on success we still terminate the current
 //! agent children so the next request respawns with the freshly
@@ -69,10 +69,10 @@ pub async fn install_aethon_extension(
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
-    let skills_dir = crate::helpers::aethon_dir(Some(home))
+    let extensions_dir = crate::helpers::aethon_dir(Some(home))
         .ok_or_else(|| "aethon dir unresolved".to_string())?
-        .join("skills");
-    let install_dir = skills_dir.clone();
+        .join("extensions");
+    let install_dir = extensions_dir.clone();
     let install_spec = spec.clone();
     let path_override = env::resolved_login_path();
 

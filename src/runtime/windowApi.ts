@@ -6,14 +6,14 @@ import {
 } from "react";
 import type { A2UIPayload } from "../types/a2ui";
 import type { Tab } from "../types/tab";
-import type { SkillRegistry } from "../skills/SkillRegistry";
-import type { A2UISkill } from "../skills/types";
+import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
+import type { A2UIExtension } from "../extensions/types";
 import {
   layoutSlots,
   inspectLayoutSlotCoverage,
   type LayoutCatalogueEntry,
   type SlotCoverageReport,
-} from "../skills/default-layout";
+} from "../extensions/default-layout";
 import {
   activeProject,
   type ProjectsState,
@@ -23,7 +23,7 @@ import {
   registerMonacoTheme as registerMonacoThemeImpl,
   applyMonacoTheme,
 } from "../monaco/theme";
-import { registerFileViewer as registerFileViewerImpl } from "../skills/default-layout/editor";
+import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor";
 import type * as monaco from "monaco-editor";
 
 export interface UseWindowApiContext {
@@ -32,7 +32,7 @@ export interface UseWindowApiContext {
   setLayout: Dispatch<SetStateAction<A2UIPayload>>;
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
-  registry: SkillRegistry;
+  registry: ExtensionRegistry;
   layoutCatalogueRef: MutableRefObject<LayoutCatalogueEntry[]>;
   projectsRef: MutableRefObject<ProjectsState>;
   newTab: (
@@ -53,12 +53,12 @@ export interface UseWindowApiContext {
 /**
  * Mounts and maintains `window.aethon` — the runtime API surface that
  * lets agent extensions, slash commands, and the dev console swap
- * chrome at runtime (set/reset layout, register skills/layouts, list
- * tabs/skills/projects, open projects, register syntax highlighting
+ * chrome at runtime (set/reset layout, register extensions/layouts, list
+ * tabs/extensions/projects, open projects, register syntax highlighting
  * grammars).
  *
  * Also installs the dev-only `window.__AETHON_*` debug hooks used by
- * the aethon-debug skill (state snapshot, registry, setState dispatch).
+ * the aethon-debug extension (state snapshot, registry, setState dispatch).
  *
  * The api closures read live state via stateRef / setState callbacks
  * so stale references inside `api` don't produce stale data — the
@@ -90,11 +90,11 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
       setLayout,
       resetLayout: () => setLayout(bootLayout),
       getLayout: () => layout,
-      registerSkill: (skill: A2UISkill) => {
-        registry.register(skill);
-        if (skill.layout) setLayout(skill.layout);
+      registerExtension: (extension: A2UIExtension) => {
+        registry.register(extension);
+        if (extension.layout) setLayout(extension.layout);
       },
-      listSkills: () => registry.list().map((s) => s.name),
+      listExtensions: () => registry.list().map((s) => s.name),
       newTab,
       closeTab,
       switchTab: setActiveTab,
@@ -192,11 +192,11 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
     if (import.meta.env.DEV) {
       const win = window as unknown as {
         __AETHON_STATE__: () => Record<string, unknown>;
-        __AETHON_REGISTRY__: SkillRegistry;
+        __AETHON_EXTENSION_REGISTRY__: ExtensionRegistry;
         __AETHON_SET_STATE__: (next: Record<string, unknown>) => void;
       };
       win.__AETHON_STATE__ = () => stateRef.current;
-      win.__AETHON_REGISTRY__ = registry;
+      win.__AETHON_EXTENSION_REGISTRY__ = registry;
       win.__AETHON_SET_STATE__ = setState;
     }
     // The api closures intentionally read live state via stateRef /

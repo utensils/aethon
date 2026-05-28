@@ -106,7 +106,8 @@ The first time Aethon runs it creates `~/.aethon/` with:
 ├── projects.json       MRU project list (max 16)
 ├── sessions/<tabId>/   Pi session transcripts per tab
 ├── extensions/         Drop-in extensions (.ts files)
-├── skills/             npm-installed skills
+├── extensions/node_modules/
+│                       npm-installed extensions
 └── themes/             Custom theme JSON files
 ```
 

@@ -116,12 +116,12 @@ fn build_command(app: &AppHandle) -> Result<Command, String> {
         let docs_dir = root.join("docs").join("aethon-agent");
         let boot_layout_file = root
             .join("src")
-            .join("skills")
+            .join("extensions")
             .join("default-layout")
             .join("workstation.a2ui.json");
         let layout_slots_file = root
             .join("src")
-            .join("skills")
+            .join("extensions")
             .join("default-layout")
             .join("slots.json");
         let mut c = env::command("bun");
@@ -141,11 +141,11 @@ fn build_command(app: &AppHandle) -> Result<Command, String> {
         let pi_dir = resource_dir.join("pi");
         let docs_dir = resource_dir.join("docs").join("aethon-agent");
         let boot_layout_file = resource_dir
-            .join("skills")
+            .join("extensions")
             .join("default-layout")
             .join("workstation.a2ui.json");
         let layout_slots_file = resource_dir
-            .join("skills")
+            .join("extensions")
             .join("default-layout")
             .join("slots.json");
         let mut c = Command::new(&bin);

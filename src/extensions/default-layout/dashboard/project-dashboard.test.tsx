@@ -4,8 +4,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectDashboard } from "./project-dashboard";
 import type { A2UIComponent } from "../../../types/a2ui";
-import { SkillRegistry } from "../../SkillRegistry";
-import { SkillRegistryProvider } from "../../registry";
+import { ExtensionRegistry } from "../../ExtensionRegistry";
+import { ExtensionRegistryProvider } from "../../ExtensionRegistryProvider";
 
 vi.mock("../../../ghRepoOverviewCache", () => ({
   getRepoOverview: vi.fn(
@@ -27,9 +27,9 @@ function dashboard(props: Record<string, unknown>): A2UIComponent {
 }
 
 function renderDashboard(onEvent = vi.fn()) {
-  const registry = new SkillRegistry();
+  const registry = new ExtensionRegistry();
   render(
-    <SkillRegistryProvider registry={registry}>
+    <ExtensionRegistryProvider registry={registry}>
       <ProjectDashboard
         component={dashboard({
           project: { id: "p1", label: "aethon", path: "/repo" },
@@ -55,7 +55,7 @@ function renderDashboard(onEvent = vi.fn()) {
         state={{}}
         onEvent={onEvent}
       />
-    </SkillRegistryProvider>,
+    </ExtensionRegistryProvider>,
   );
   return { onEvent };
 }

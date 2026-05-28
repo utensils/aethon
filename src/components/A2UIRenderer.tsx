@@ -2,8 +2,8 @@
  * A2UI Renderer
  * Renders A2UI component trees as React components with data binding and event
  * dispatch. Built-in A2UI primitives (text, card, button, …) are hardcoded;
- * skill-registered components (sidebar, terminal, layout, …) come from the
- * SkillRegistry pulled in via context, so nested renderers see the same
+ * extension-registered components (sidebar, terminal, layout, …) come from the
+ * ExtensionRegistry pulled in via context, so nested renderers see the same
  * bindings without prop-drilling.
  */
 
@@ -11,7 +11,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, A2UIPayload } from "../types/a2ui";
 import { isDynamicRef, resolvePointer, setPointer } from "../utils/jsonPointer";
-import { useSkillRegistry } from "../skills/SkillRegistry";
+import { useExtensionRegistry } from "../extensions/ExtensionRegistry";
 import {
   Button,
   Card,
@@ -117,7 +117,7 @@ export interface BuiltinComponentProps {
   tabId?: string;
 }
 
-// A2UI primitives — always available, can't be overridden by skills.
+// A2UI primitives — always available, can't be overridden by extensions.
 // Recursively prefix every component id in an extension template subtree
 // with the host instance's id. Used when expanding a template so multiple
 // instances don't share React keys or emit ambiguous event componentIds.
@@ -173,7 +173,7 @@ const PRIMITIVE_REGISTRY: Record<
 
 // Mount a registry-resolved component as a leaf at the app root. Used for
 // overlays (command-palette, notification-stack, settings-panel,
-// search-panel, share-mode-badge) so a skill can replace them via
+// search-panel, share-mode-badge) so an extension can replace them via
 // `aethon.registerComponent("<type>", custom)` — without this helper the
 // overlays would have to be direct-imported, which bypasses the registry
 // and silently defeats the documented override path.
@@ -181,7 +181,7 @@ const PRIMITIVE_REGISTRY: Record<
 // Implementation: synthesize a one-component A2UI payload and run it
 // through the main renderer. That gets template/React/primitive lookup
 // priority right (templates from `aethon.registerComponent` win over
-// default skill components), automatically. Callers with a need to
+// default extension components), automatically. Callers with a need to
 // pass live data into the synthetic root use `componentProps` —
 // shareMode/tabId for the share badge is the canonical example.
 export function RegistryComponent({
@@ -228,7 +228,7 @@ export default function A2UIRenderer({
   tabId,
   bare = false,
 }: A2UIRendererProps) {
-  const registry = useSkillRegistry();
+  const registry = useExtensionRegistry();
   const [internalState, setInternalState] = useState<Record<string, unknown>>(
     payload.state || {},
   );
@@ -427,8 +427,8 @@ export default function A2UIRenderer({
     // Lookup priority — primitives are immutable; for everything else,
     // extension-registered templates beat the default React component
     // so `aethon.registerComponent("<type>", template)` from the bridge
-    // is a real override surface (otherwise built-in skills always win
-    // and the documented override is silently dead). Skill-registered
+    // is a real override surface (otherwise built-in extensions always win
+    // and the documented override is silently dead). Extension-registered
     // React components remain the default.
     const Primitive = PRIMITIVE_REGISTRY[component.type];
     if (!Primitive) {

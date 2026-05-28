@@ -9,8 +9,8 @@ import type { A2UIPayload, ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import { activeProject, type ProjectsState } from "../projects";
 import type { SlashCommandContext } from "../slashCommands";
-import type { SkillRegistry } from "../skills/SkillRegistry";
-import type { LayoutCatalogueEntry } from "../skills/default-layout";
+import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
+import type { LayoutCatalogueEntry } from "../extensions/default-layout";
 import type { NotificationInput } from "./useNotifications";
 import type { AuthProfilesUiState } from "../auth-profiles";
 
@@ -21,7 +21,7 @@ export interface UseAppSlashCommandContextOptions {
   stateRef: MutableRefObject<Record<string, unknown>>;
   projectsRef: MutableRefObject<ProjectsState>;
   layoutCatalogueRef: MutableRefObject<LayoutCatalogueEntry[]>;
-  registry: SkillRegistry;
+  registry: ExtensionRegistry;
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
   pushNotification: (n: NotificationInput) => string;
   clearChat: () => void;

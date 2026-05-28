@@ -140,8 +140,8 @@ export interface FormComponent extends A2UIComponent {
 }
 
 // Layout primitive — CSS Grid with template-areas. Children opt into a region
-// via their own `area` prop. Consumed by the layout skill, but available to
-// agents and skills too.
+// via their own `area` prop. Consumed by the layout extension, but available to
+// agents and extensions too.
 export interface LayoutComponent extends A2UIComponent {
   type: "layout";
   props: {
@@ -172,7 +172,7 @@ export interface SidebarItem {
   onClick?: string;
   // Optional active flag — true highlights the row.
   active?: boolean;
-  // When set, the sidebar resolves this through the SkillRegistry and
+  // When set, the sidebar resolves this through the ExtensionRegistry and
   // renders that template per item instead of the default label row.
   // Templates can $ref into /$item for per-row data
   // (icon, badge, sub-text, last-modified, …). The standard $item /

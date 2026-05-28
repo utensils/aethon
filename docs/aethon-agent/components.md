@@ -2,7 +2,7 @@
 
 The A2UI renderer accepts two kinds of component types: **primitives**
 (hardcoded in the React renderer, always available) and **composites**
-(provided by skills, overridable, currently from `default-layout`).
+(provided by extensions, overridable, currently from `default-layout`).
 
 Every component looks like:
 
@@ -419,10 +419,10 @@ Fires `change` per keystroke. When `onSubmit` is present, Enter also fires
 optimistically writes incoming `change` events back to that path before
 forwarding to the handler.
 
-## Skill-Provided Composites (`default-layout`)
+## Extension-Provided Composites (`default-layout`)
 
 These can be overridden by extensions. The current implementations live
-in `src/skills/default-layout/components.tsx` (read with `read` if you
+in `src/extensions/default-layout/components.tsx` (read with `read` if you
 need exact prop shapes; bundled docs are reference, not source).
 
 ### `layout`
@@ -449,7 +449,7 @@ treats that string as a **slot name**: by default the slot name IS the
 CSS grid area, but a layout's optional `slotMap` lets a non-canonical
 layout host the standard composites under a different area.
 
-The canonical slot catalogue ships at `skills/default-layout/slots.json`
+The canonical slot catalogue ships at `extensions/default-layout/slots.json`
 and is also surfaced by `globalThis.aethon.getLayoutSlots()` and
 `window.aethon.layoutSlots` (browser side):
 
@@ -529,7 +529,7 @@ Each item in a `sections[].items` array can opt out of the default
 {
   id: "model-row-1",
   label: "claude-sonnet-4-6",
-  componentType: "my-model-row",  // skill-registered template
+  componentType: "my-model-row",  // extension-registered template
   // any extra fields are surfaced under /$item alongside id/label
   active: true,
   badge: "fast",
@@ -537,7 +537,7 @@ Each item in a `sections[].items` array can opt out of the default
 }
 ```
 
-The sidebar resolves `componentType` through the SkillRegistry and
+The sidebar resolves `componentType` through the ExtensionRegistry and
 renders the registered template per item with `/$item` (the full item
 object), `/$index` (position), and `/$parent` (sidebar's surrounding
 state) available to nested `$ref`s — same scope keys as the `for-each`
@@ -683,7 +683,7 @@ in the workstation layout (M6 restructure).
 ```
 
 Active sub-tab is tracked at `/terminalPanel/activeSubId` (defaults to
-`"agent-bash"`). Skills can drive sub-tab selection via setState; the
+`"agent-bash"`). Extensions can drive sub-tab selection via setState; the
 default user wiring is the `Cmd+\`` toggle, the `+`button to spawn a
 new shell sub-tab, and`Cmd+1..9` to jump between sub-tabs when focus
 is in the panel.
@@ -751,7 +751,7 @@ Clicking the badge cycles to the next mode. The cycle helper lives in
 `src/utils/shareMode.ts` and is shared between the badge, the palette,
 and the settings panel.
 
-**Override surface** — the badge is a registered component so a skill
+**Override surface** — the badge is a registered component so an extension
 can replace it via `aethon.registerComponent("share-mode-badge", …)`.
 The host adapter routes events with name `cycle-share-mode` to the
 shell-canvas cycle handler; data carries `{tabId}` (auto-injected by
@@ -968,7 +968,7 @@ automatically. Mode prefixes inside the palette: `>` forces commands,
 ## Layout Payload Shape
 
 The whole UI is one tree. The default layout (boot payload) lives at
-`src/skills/default-layout/workstation.a2ui.json`. Its top-level grid uses
+`src/extensions/default-layout/workstation.a2ui.json`. Its top-level grid uses
 the canonical slot names defined in `slots.json`:
 
 ```

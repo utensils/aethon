@@ -4,8 +4,8 @@
  *  individual fields with custom mocks. */
 import { vi, type Mock } from "vitest";
 import type { MutableRefObject } from "react";
-import { defaultLayoutSkill } from "../../skills/default-layout";
-import { SkillRegistry } from "../../skills/SkillRegistry";
+import { defaultLayoutExtension } from "../../extensions/default-layout";
+import { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
 import { emptyProjectsState } from "../../projects";
 import type { BridgeMessageContext, DiscoveredSession } from "./types";
 
@@ -63,8 +63,8 @@ export function buildHandlerFixture(
 ): HandlerFixture {
   const initialState = overrides.state ?? {};
   const stateRef = ref<Record<string, unknown>>(initialState);
-  const registry = new SkillRegistry();
-  registry.register(defaultLayoutSkill);
+  const registry = new ExtensionRegistry();
+  registry.register(defaultLayoutExtension);
 
   // setState applies the reducer against stateRef so side-effects inside
   // the reducer body run the same way they would in the live React app.

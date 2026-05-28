@@ -13,7 +13,7 @@
 // palette itself never imports App's helpers — it's a pure renderer.
 //
 // Replaceability: registered as the `command-palette` builtin component
-// in defaultLayoutSkill so a skill can override it via aethon.registerComponent.
+// in defaultLayoutExtension so an extension can override it via aethon.registerComponent.
 // Pure helpers live in `./palette-items` so vitest can exercise them
 // without React.
 

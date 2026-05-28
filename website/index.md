@@ -23,7 +23,7 @@ hero:
 features:
   - icon: 🜲
     title: Agent-rendered UI
-    details: The interface is not a fixed IDE — it is a canvas the agent populates. Skills bring components, themes drive the palette, the agent emits the layout via the A2UI protocol.
+    details: The interface is not a fixed IDE — it is a canvas the agent populates. Extensions bring components, themes drive the palette, the agent emits the layout via the A2UI protocol.
     link: /guide/layouts
     linkText: How layouts work
   - icon: 🜔
@@ -37,7 +37,7 @@ features:
     link: /guide/shells-and-share-modes
     linkText: Share modes
   - icon: 🜖
-    title: Themes and skills
+    title: Themes and extensions
     details: Three palettes ship in the box — Ember, Paper, Æther. Drop a `.ts` into `~/.aethon/extensions/` to add slash commands, components, or layouts. Project-local extensions auto-discover.
     link: /guide/themes
     linkText: Customize Aethon

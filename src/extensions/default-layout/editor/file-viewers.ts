@@ -5,7 +5,7 @@
  * own via `aethon.registerFileViewer({ extensions, componentType })`
  * — when an editor tab is opened for a file matching an entry, the
  * canvas dispatches the registered component type instead of mounting
- * Monaco. The component itself is a regular skill registration via
+ * Monaco. The component itself is a regular extension registration via
  * `aethon.registerComponent`, so extensions can ship a CSV table, a
  * PDF reader, a glb/3D viewer — anything Monaco isn't the right
  * surface for.
@@ -19,7 +19,7 @@ interface FileViewerEntry {
   /** Lowercased extensions (without the leading dot) this viewer
    *  handles. e.g. ["png", "jpg", "jpeg", "gif", "webp"]. */
   extensions: string[];
-  /** Registered component type to dispatch via the SkillRegistry. The
+  /** Registered component type to dispatch via the ExtensionRegistry. The
    *  component receives `{ filePath, tabId, projectPath }` props. */
   componentType: string;
 }

@@ -1,12 +1,12 @@
 /**
- * Default-layout skill — bundles the layout components and a default A2UI
+ * Default-layout extension — bundles the layout components and a default A2UI
  * payload that arranges them. Registered eagerly at app startup so the
- * out-of-the-box workspace UI renders through the same skill plumbing
- * third-party skills will use.
+ * out-of-the-box workspace UI renders through the same extension plumbing
+ * third-party extensions will use.
  */
 
 import type { A2UIPayload } from "../../types/a2ui";
-import type { A2UISkill } from "../types";
+import type { A2UIExtension } from "../types";
 import {
   ChatHistory,
   ChatInput,
@@ -59,7 +59,7 @@ export type {
   SlotCoverageReport,
 } from "./slots";
 
-export const defaultLayoutSkill: A2UISkill = {
+export const defaultLayoutExtension: A2UIExtension = {
   name: "default-layout",
   components: {
     layout: Layout,
@@ -123,7 +123,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "auth-profile-panel": AuthProfilePanel,
     "search-panel": SearchPanel,
     // M6 P2: shell tab share-mode badge — extracted as its own
-    // registerable component so a skill can replace it (e.g. with a
+    // registerable component so an extension can replace it (e.g. with a
     // custom click-flow or icon set) without rewriting the whole shell
     // status bar.
     "share-mode-badge": ShareModeBadge,
