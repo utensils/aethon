@@ -2,6 +2,7 @@ import {
   createElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -140,14 +141,18 @@ export function ChatInput({
   const voiceConfig = (state.voice as
     | { toggleHotkey?: string | null; holdHotkey?: string | null }
     | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
+  const settings = state.settings as { open?: boolean } | undefined;
+  const palette = state.commandPalette as { open?: boolean } | undefined;
+  const search = state.search as { open?: boolean } | undefined;
+  const voiceInputBlocked =
+    !!settings?.open || !!palette?.open || !!search?.open;
+  const voiceInputBlockedRef = useRef(voiceInputBlocked);
+  useLayoutEffect(() => {
+    voiceInputBlockedRef.current = voiceInputBlocked;
+  }, [voiceInputBlocked]);
   const isVoiceInputBlocked = useCallback(
-    () => {
-      const settings = state.settings as { open?: boolean } | undefined;
-      const palette = state.commandPalette as { open?: boolean } | undefined;
-      const search = state.search as { open?: boolean } | undefined;
-      return !!settings?.open || !!palette?.open || !!search?.open;
-    },
-    [state],
+    () => voiceInputBlockedRef.current,
+    [],
   );
   useVoiceHotkey(
     voice,

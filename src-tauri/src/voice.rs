@@ -497,7 +497,10 @@ impl VoiceProviderRegistry {
     }
 
     pub fn default_model_root() -> PathBuf {
-        crate::helpers::aethon_dir(std::env::var_os("HOME").map(PathBuf::from))
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from);
+        crate::helpers::aethon_dir(home)
             .unwrap_or_else(|| PathBuf::from(".aethon"))
             .join("models")
             .join("voice")

@@ -73,28 +73,42 @@ pub(super) fn find_sidecar_binary() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn restore_project_root(previous: Option<std::ffi::OsString>) {
+        match previous {
+            Some(value) => unsafe { std::env::set_var("AETHON_PROJECT_ROOT", value) },
+            None => unsafe { std::env::remove_var("AETHON_PROJECT_ROOT") },
+        }
+    }
 
     #[test]
     fn project_root_honors_valid_env_override() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
         let dir = tempdir().expect("tempdir");
         let agent_dir = dir.path().join("agent");
         std::fs::create_dir_all(&agent_dir).expect("agent dir");
         std::fs::write(agent_dir.join("main.ts"), "").expect("main marker");
 
+        let previous = std::env::var_os("AETHON_PROJECT_ROOT");
         unsafe { std::env::set_var("AETHON_PROJECT_ROOT", dir.path()) };
         let got = project_root();
-        unsafe { std::env::remove_var("AETHON_PROJECT_ROOT") };
+        restore_project_root(previous);
 
         assert_eq!(got, dir.path());
     }
 
     #[test]
     fn project_root_ignores_invalid_env_override() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
         let dir = tempdir().expect("tempdir");
+        let previous = std::env::var_os("AETHON_PROJECT_ROOT");
         unsafe { std::env::set_var("AETHON_PROJECT_ROOT", dir.path()) };
         let got = project_root();
-        unsafe { std::env::remove_var("AETHON_PROJECT_ROOT") };
+        restore_project_root(previous);
 
         assert_ne!(got, dir.path());
     }

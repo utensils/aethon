@@ -90,10 +90,9 @@ fn compile_platform_speech_swift() {
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !swiftc_available {
-        println!(
-            "cargo:warning=swiftc not found; skipping Apple Speech Swift bridge. Full Tauri builds require Xcode."
+        panic!(
+            "swiftc not found; the default voice feature requires Xcode/Swift to build the Apple Speech bridge on macOS. Install Xcode command line tools or build with --no-default-features."
         );
-        return;
     }
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
