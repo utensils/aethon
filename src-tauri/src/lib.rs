@@ -253,9 +253,11 @@ pub fn run() {
             // that the frontend cancels via `boot_ok` once it reaches a
             // healthy render. Both calls are no-ops when there's no
             // sentinel/report on disk — they don't slow normal launches.
+            let mut activate_after_update = false;
             if let Ok(home) = app.path().home_dir()
                 && let Some(data_dir) = helpers::aethon_dir(Some(home))
             {
+                activate_after_update = boot_probation::has_pending_probation(&data_dir);
                 boot_probation::show_pending_report(app.handle(), &data_dir);
                 let boot_state =
                     Arc::clone(&app.state::<updater_state::UpdaterState>().boot_probation);
@@ -292,12 +294,20 @@ pub fn run() {
             // primary monitor", replacing the previous hardcoded
             // `maximize()` that worked around the unreliable manifest
             // `"maximized": true` on macOS.
-            if let Err(err) = window_state::restore_on_setup(app.handle()) {
+            if let Err(err) = window_state::restore_on_setup(app.handle(), activate_after_update) {
                 tracing::warn!(target: "aethon::window_state", "restore failed: {err}");
                 // Best-effort: show the window anyway so a corrupt
                 // state file can never strand the user.
                 if let Some(w) = app.get_webview_window("main") {
+                    if activate_after_update {
+                        #[cfg(target_os = "macos")]
+                        let _ = app.handle().show();
+                        let _ = w.unminimize();
+                    }
                     let _ = w.show();
+                    if activate_after_update {
+                        let _ = w.set_focus();
+                    }
                 }
             }
             // Built-in HTTP + mDNS server. Failures inside `boot` are
@@ -370,5 +380,19 @@ mod tests {
                 "{command} must stay registered in the invoke_handler list",
             );
         }
+    }
+
+    #[test]
+    fn update_probation_launch_activates_restored_window() {
+        let src = include_str!("lib.rs");
+        let sentinel_pos = src.find("has_pending_probation(&data_dir)").unwrap();
+        let restore_pos = src
+            .find("restore_on_setup(app.handle(), activate_after_update)")
+            .unwrap();
+
+        assert!(
+            sentinel_pos < restore_pos,
+            "setup must detect a post-update probation launch before restoring the main window so updater relaunches come back to the foreground",
+        );
     }
 }

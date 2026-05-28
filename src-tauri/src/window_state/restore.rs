@@ -20,8 +20,10 @@ const CLAMP_MARGIN_Y: f64 = 40.0;
 
 /// Apply persisted geometry before the window is shown. First launch
 /// falls back to maximized on the primary monitor. Always shows the
-/// window so a partial failure can't strand the user.
-pub fn restore_on_setup(app: &AppHandle) -> Result<(), String> {
+/// window so a partial failure can't strand the user. When
+/// `activate_after_show` is true, the main window is also brought to
+/// the foreground after an updater relaunch.
+pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<(), String> {
     let store = load_store(app);
     let Some(window) = app.get_webview_window(MAIN_LABEL) else {
         tracing::warn!(target: "aethon::window_state", "main window not found at setup");
@@ -63,10 +65,24 @@ pub fn restore_on_setup(app: &AppHandle) -> Result<(), String> {
         tracing::warn!(target: "aethon::window_state", "default maximize: {e}");
     }
 
+    show_main_window(app, &window, activate_after_show);
+    Ok(())
+}
+
+fn show_main_window(_app: &AppHandle, window: &tauri::WebviewWindow, activate: bool) {
+    if activate {
+        // Cmd+H on macOS hides the app at the application level;
+        // showing/focusing the webview alone does not unhide it.
+        #[cfg(target_os = "macos")]
+        let _ = _app.show();
+        let _ = window.unminimize();
+    }
     if let Err(e) = window.show() {
         tracing::warn!(target: "aethon::window_state", "show: {e}");
     }
-    Ok(())
+    if activate && let Err(e) = window.set_focus() {
+        tracing::warn!(target: "aethon::window_state", "set_focus: {e}");
+    }
 }
 
 /// Compute the bounds the window should restore to, given the saved
@@ -244,5 +260,19 @@ mod tests {
         // should translate as if `near_window` was picked — dx = 0.
         assert!(approx_eq(out.x, 100.0));
         assert!(approx_eq(out.y, 100.0));
+    }
+
+    #[test]
+    fn update_launch_activation_shows_unminimizes_and_focuses() {
+        let src = include_str!("restore.rs");
+        let app_show_pos = src.find("let _ = _app.show()").unwrap();
+        let unminimize_pos = src.find("window.unminimize()").unwrap();
+        let show_pos = src.find("window.show()").unwrap();
+        let focus_pos = src.find("window.set_focus()").unwrap();
+
+        assert!(
+            app_show_pos < unminimize_pos && unminimize_pos < show_pos && show_pos < focus_pos,
+            "post-update activation must unhide the app, unminimize/show the window, then focus it",
+        );
     }
 }
