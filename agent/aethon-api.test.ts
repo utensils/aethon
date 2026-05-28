@@ -100,9 +100,11 @@ describe("buildAethonApi", () => {
 
   it("registerSlashCommand collides with built-ins", async () => {
     const { api } = makeFixture();
-    const r = await api.registerSlashCommand({ name: "clear" });
-    expect(r.ok).toBe(false);
-    expect(r.error).toContain("collides with a built-in");
+    for (const name of ["clear", "login", "files"]) {
+      const r = await api.registerSlashCommand({ name });
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain("collides with a built-in");
+    }
   });
 
   it("registerSlashCommand stores name + description + usage", async () => {
