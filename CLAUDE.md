@@ -340,6 +340,46 @@ Override per project with `[devshell] enabled = "never"` in
 `<root>/.aethon/devshell.toml`. Use `AETHON_LOG=aethon::devshell=debug`
 to see resolver timing.
 
+### Voice-to-text input
+
+Composer dictation lives Rust-side. `src-tauri/src/voice.rs` runs a local
+Whisper model (`candle-transformers`) as one provider; `voice/audio.rs`
+is the `cpal` recorder (level-metering task + WAV capture). The other
+providers are native OS recognizers behind `platform_speech.rs`'s
+`PlatformSpeechEngine` trait — macOS `SFSpeechRecognizer`/`SpeechAnalyzer`
+(driven by a small Swift static lib compiled in `build.rs`), Windows
+SAPI 5.4 via COM (`windows` crate, no .NET/PowerShell), Linux a stub.
+All providers consume the same `CapturedAudio` PCM buffer, so `voice.rs`
+holds a `&dyn PlatformSpeechEngine` and needs no per-OS branching.
+`commands/voice.rs` exposes the IPC surface: provider
+list/select/enable, model `prepare`/`remove` (Whisper weights are
+downloaded on demand), and `start_recording` /
+`stop_and_transcribe` / `cancel_recording`.
+
+### Auth profiles (multi-account login)
+
+Per-tab login identities, so different agent tabs can authenticate as
+different accounts. State is `agent/auth-profiles/` (store + manager):
+each profile is `oauth | api_key`, scoped to a provider, with per-tab
+active-profile and per-provider default. Profile ids are sanitized
+(`isSafeProfileId` / `sanitizeProfileId`) before touching disk;
+credentials live under `authProfilesDir()` in `~/.aethon/`. The login
+flow streams an `AuthProfileLoginEvent` (`started → auth → progress →
+prompt → complete`) so the OAuth challenge surfaces in the UI. Frontend
+mirror is `src/auth-profiles/` (`types`, `commands`, `index`); the
+active profile selects which model registry a tab sees
+(`modelRegistryForModelId`).
+
+### Command PATH resolution (env.rs)
+
+Release builds launched from a desktop shell (Finder/Dock) inherit a
+minimal PATH missing Homebrew, Nix profiles, and cargo bins. `env.rs`
+centralizes lookup so every Rust IPC command (git, gh, bun, nix, …)
+resolves tools the same way, augmenting PATH with `COMMON_TOOL_DIRS`
+(`/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`,
+`/opt/homebrew/bin`, …). Resolve external binaries through this helper,
+not bare `Command::new("git")`.
+
 ## Agent runtime env
 
 Tauri sets these when spawning `agent/main.ts`:
