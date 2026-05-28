@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(target_os = "macos")]
+use std::path::PathBuf;
 use std::time::SystemTime;
 #[cfg(target_os = "macos")]
 use std::{env, process::Command};
