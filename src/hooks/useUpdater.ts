@@ -37,6 +37,8 @@ export interface UseUpdaterContext {
    *  user sees what's happening; failures bubble up to the menu handler's
    *  catch and become a system error bubble. */
   appendSystem: (text: string) => void;
+  /** Test-only escape hatch so jsdom can exercise the production poll path. */
+  __testAutoCheck?: boolean;
 }
 
 export interface UseUpdaterActions {
@@ -96,9 +98,14 @@ export function useUpdater(ctx: UseUpdaterContext): {
   actions: UseUpdaterActions;
 } {
   const { appendSystem } = ctx;
+  const appendSystemRef = useRef(appendSystem);
+  useEffect(() => {
+    appendSystemRef.current = appendSystem;
+  }, [appendSystem]);
   const [state, setState] = useState<UpdaterStateView>(() => ({
     ...INITIAL_STATE,
   }));
+  const [configReady, setConfigReady] = useState(false);
   // Mirror state into a ref so async callbacks can read the latest
   // value without going back through React's queue. The hook's setters
   // remain the only writer.
@@ -107,6 +114,9 @@ export function useUpdater(ctx: UseUpdaterContext): {
     stateRef.current = state;
   }, [state]);
   const lastDismissedVersion = useRef<string | null>(null);
+  const checkInFlightRef = useRef<
+    Promise<"available" | "up-to-date" | "error" | "disabled"> | null
+  >(null);
 
   const update = useCallback(
     (patch: Partial<UpdaterStateView>) => {
@@ -146,46 +156,60 @@ export function useUpdater(ctx: UseUpdaterContext): {
     async (
       opts: { announce?: boolean } = {},
     ): Promise<"available" | "up-to-date" | "error" | "disabled"> => {
-      const available = await invoke<boolean>("updater_available").catch(
-        () => false,
-      );
-      if (!available) {
-        if (opts.announce)
-          appendSystem(
-            "Updater isn't configured for this build. See RELEASING.md to set up signing keys.",
-          );
-        return "disabled";
+      if (checkInFlightRef.current) {
+        return checkInFlightRef.current;
       }
-      try {
-        const info = await invoke<UpdateInfo | null>(
-          "check_for_updates_with_channel",
-          { channel: stateRef.current.channel },
+      const run = (async () => {
+        const available = await invoke<boolean>("updater_available").catch(
+          () => false,
         );
-        if (info) {
-          // Only un-dismiss if this is a different version than what
-          // the user already dismissed.
-          const dismissed =
-            stateRef.current.dismissed &&
-            lastDismissedVersion.current === info.version;
-          update({
-            available: true,
-            version: info.version,
-            body: info.body,
-            error: null,
-            dismissed,
-          });
-          return "available";
+        if (!available) {
+          if (opts.announce)
+            appendSystemRef.current(
+              "Updater isn't configured for this build. See RELEASING.md to set up signing keys.",
+            );
+          return "disabled";
         }
-        update({ available: false, version: null, body: null, error: null });
-        return "up-to-date";
-      } catch (err) {
-        const message = String(err);
-        if (opts.announce) appendSystem(`Update check failed: ${message}`);
-        update({ error: message });
-        return "error";
+        try {
+          const info = await invoke<UpdateInfo | null>(
+            "check_for_updates_with_channel",
+            { channel: stateRef.current.channel },
+          );
+          if (info) {
+            // Only un-dismiss if this is a different version than what
+            // the user already dismissed.
+            const dismissed =
+              stateRef.current.dismissed &&
+              lastDismissedVersion.current === info.version;
+            update({
+              available: true,
+              version: info.version,
+              body: info.body,
+              error: null,
+              dismissed,
+            });
+            return "available";
+          }
+          update({ available: false, version: null, body: null, error: null });
+          return "up-to-date";
+        } catch (err) {
+          const message = String(err);
+          if (opts.announce)
+            appendSystemRef.current(`Update check failed: ${message}`);
+          update({ error: message });
+          return "error";
+        }
+      })();
+      checkInFlightRef.current = run;
+      try {
+        return await run;
+      } finally {
+        if (checkInFlightRef.current === run) {
+          checkInFlightRef.current = null;
+        }
       }
     },
-    [appendSystem, update],
+    [update],
   );
 
   const installNow = useCallback(async () => {
@@ -203,7 +227,7 @@ export function useUpdater(ctx: UseUpdaterContext): {
       // surface it.
     } catch (err) {
       const message = String(err);
-      appendSystem(`Update install failed: ${message}`);
+      appendSystemRef.current(`Update install failed: ${message}`);
       update({
         downloading: false,
         preparing: null,
@@ -211,7 +235,7 @@ export function useUpdater(ctx: UseUpdaterContext): {
         error: message,
       });
     }
-  }, [appendSystem, update]);
+  }, [update]);
 
   const retryInstall = useCallback(async () => {
     update({ error: null, dismissed: false });
@@ -225,16 +249,17 @@ export function useUpdater(ctx: UseUpdaterContext): {
   }, [update]);
 
   const checkForUpdates = useCallback(async () => {
-    appendSystem("Checking for updates…");
+    appendSystemRef.current("Checking for updates…");
     const result = await runCheck({ announce: true });
-    if (result === "up-to-date") appendSystem("Aethon is up to date.");
+    if (result === "up-to-date")
+      appendSystemRef.current("Aethon is up to date.");
     else if (result === "available") {
-      appendSystem(
+      appendSystemRef.current(
         `Update available: ${stateRef.current.version}. Downloading…`,
       );
       await installNow();
     }
-  }, [appendSystem, installNow, runCheck]);
+  }, [installNow, runCheck]);
 
   // Boot-probation lifecycle:
   //
@@ -281,6 +306,8 @@ export function useUpdater(ctx: UseUpdaterContext): {
           stage: "initial_data_failed",
           detail: String(err),
         }).catch(() => {});
+      } finally {
+        if (!cancelled) setConfigReady(true);
       }
       if (cancelled) return;
       // One animation frame to let the first paint actually commit.
@@ -330,14 +357,21 @@ export function useUpdater(ctx: UseUpdaterContext): {
   // `state.disableAutoCheck`; flipping it off cancels the interval
   // without affecting the manual menu trigger.
   useEffect(() => {
-    if (import.meta.env.DEV) return;
+    if (import.meta.env.DEV && !ctx.__testAutoCheck) return;
+    if (!configReady) return;
     if (state.disableAutoCheck) return;
     runCheck({ announce: false }).catch(() => {});
     const id = window.setInterval(() => {
       runCheck({ announce: false }).catch(() => {});
     }, CHECK_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [runCheck, state.channel, state.disableAutoCheck]);
+  }, [
+    configReady,
+    ctx.__testAutoCheck,
+    runCheck,
+    state.channel,
+    state.disableAutoCheck,
+  ]);
 
   return {
     state,
