@@ -102,4 +102,4 @@ loose user extensions, and project-local extensions. Drop a `.ts` file into
 - [Configuration](/guide/configuration) — tune themes, default model, shell behaviour.
 - [Command palette](/guide/command-palette) — files on `Cmd+P`, commands on `Cmd+Shift+P`.
 - [Extensions](/guide/extensions) — install or write your own.
-- [Themes](/guide/themes) — the three built-in palettes and how to add a fourth.
+- [Themes](/guide/themes) — the seven built-in palettes and how to add your own.

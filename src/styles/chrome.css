@@ -2621,11 +2621,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding: 0 14px 12px;
   border-top: none;
   /* Composer floats above the canvas with a top hairline border and
-     soft upward shadow. --composer-shadow lets light themes lighten
-     the alpha so the shadow stays subtle on cream backgrounds. */
+     a soft *upward* shadow (negative-Y). Themes set --composer-shadow
+     to control that upward layer's depth — light themes lighten the
+     alpha so the shadow stays subtle on cream backgrounds; dark
+     themes go deeper. */
   box-shadow:
     0 -1px 0 var(--composer-border, var(--border)),
-    0 -4px 12px var(--elev-2-color, rgba(0, 0, 0, 0.12)),
+    var(--composer-shadow, 0 -4px 12px rgba(0, 0, 0, 0.12)),
     var(--inner-highlight, none);
   background: var(--composer-bg, var(--bg-elev));
   width: 100%;

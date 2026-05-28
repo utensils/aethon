@@ -134,7 +134,7 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -283,7 +283,7 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -420,7 +420,7 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -568,7 +568,7 @@
   --pill-text: color-mix(in oklab, var(--accent-2) 30%, var(--text));
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -706,7 +706,7 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -845,7 +845,7 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -979,7 +979,7 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: var(--shadow-2);
+  --composer-shadow: 0 -4px 12px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -1022,9 +1022,9 @@
 }
 
 /* Focus ring depends on per-theme --accent-soft, so it lives here.
-   The composite reads --focus-ring-width / offset / style from
-   tokens.css so themes can tune ring thickness without redefining
-   the shorthand. */
+   The composite reads --focus-ring-width from tokens.css (themes
+   can tune ring thickness without redefining the shorthand) and
+   --focus-ring-color from this block (defaulting to --accent-soft). */
 :root {
   --focus-ring-color: var(--accent-soft);
   --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
