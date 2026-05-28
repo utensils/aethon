@@ -273,7 +273,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
                   ? cur.focusSection
                   : null,
             saveStatus: "error",
-            saveError: err instanceof Error ? String(err) : String(err),
+            saveError: String(err),
           },
         };
       });
