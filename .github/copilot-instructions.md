@@ -55,7 +55,7 @@ Spend review effort on, in order:
    change here must update both sides + at least one test.
 3. **Concurrency / lifetime** — Rust `Mutex`/`Arc` patterns around
    `AgentProcess` and `ShellRegistry`, reader-thread UTF-8 carry buffers
-   (in `src-tauri/src/shell/lifecycle.rs` — do **not** replace with
+   (in `src-tauri/src/shell/lifecycle/reader.rs` — do **not** replace with
    per-chunk `from_utf8_lossy`), and bun child reload via stdin sentinel
    instead of SIGKILL.
 4. **Test coverage on touch** — every module under `agent/` has a

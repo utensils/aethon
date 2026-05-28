@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-05-24 (workstation/project polish: git worktrees are first-class sidebar/project-dashboard entries, issue "Send to agent" launches fresh worktrees with metadata-aware branch names, frontend code HMR reloads the app shell after persisting state, and `package.json` is the app-version source of truth mirrored into Tauri/Cargo by `scripts/sync-version.mjs`). Previous review: 2026-04-29 (forward-looking audit pass: M1–M5 complete; **M6 — Interactive Terminals & Workspace Polish** added below to scope real PTY-backed user shell tabs, an opt-in agent-sharing model, hotkey expansion, a graphical settings panel, drag-and-drop into the composer, OS notifications, bridge crash recovery, and a handful of polish items uncovered by the audit). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, in-app `/extensions install <npm-package|git-url>` extension-package installation, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
+Last reviewed: 2026-05-28 (doc-sync pass: **M7 — Voice Input & Multi-Account Auth** added below to record shipped voice-to-text dictation, multi-account auth profiles, and the `env.rs` command-PATH resolver; README / website / `docs/aethon-agent` / CLAUDE.md / AGENTS.md brought into sync). Previous review: 2026-05-24 (workstation/project polish: git worktrees are first-class sidebar/project-dashboard entries, issue "Send to agent" launches fresh worktrees with metadata-aware branch names, frontend code HMR reloads the app shell after persisting state, and `package.json` is the app-version source of truth mirrored into Tauri/Cargo by `scripts/sync-version.mjs`). Previous review: 2026-04-29 (forward-looking audit pass: M1–M5 complete; **M6 — Interactive Terminals & Workspace Polish** added below to scope real PTY-backed user shell tabs, an opt-in agent-sharing model, hotkey expansion, a graphical settings panel, drag-and-drop into the composer, OS notifications, bridge crash recovery, and a handful of polish items uncovered by the audit). Recent additions: viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, in-app `/extensions install <npm-package|git-url>` extension-package installation, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
 
 ---
 
@@ -352,6 +352,51 @@ then sharing, then polish.
 - [x] **`SPEC.md` keyboard summary + Configuration schema updated** alongside each shipped item.
 - [x] **CLAUDE.md keyboard summary** mirrored.
 - [x] **Tests**: vitest for `formatToolDuration` + share-badge cycling integration (`src/extensions/default-layout/components.test.ts`); `src/utils/shellQuote.test.ts` for file-drop quoting; `agent/shell-tools.test.ts` for `listShells` / `readShell` / `writeShell` tool dispatch + privacy-floor refusal propagation; cargo tests for PTY spawn/resize/exit-code/cleanup, scrollback paging, share-state floor, and OSC title parsing. All wired into the `check` gate.
+
+### M7 — Voice Input & Multi-Account Auth
+
+Polish bundle layered on top of the M6 workstation: hands-free composer
+dictation and the ability to hold several provider accounts at once and
+pick which one each tab speaks as.
+
+#### Voice-to-text input
+
+- [x] **Cross-platform capture + transcription** — `src-tauri/src/voice.rs`
+  records via a `cpal` pipeline (`voice/audio.rs`, level metering + 16-bit
+  PCM WAV) and transcribes through one of several providers behind the
+  `platform_speech.rs` `PlatformSpeechEngine` trait: a bundled local Whisper
+  model (`candle-transformers`, weights downloaded on demand), macOS
+  `SFSpeechRecognizer`/`SpeechAnalyzer` (Swift static lib compiled in
+  `build.rs`), and Windows SAPI 5.4 via COM (`windows` crate; no .NET /
+  PowerShell). Linux falls back to the local-Whisper provider.
+- [x] **IPC + chrome** — `commands/voice.rs` exposes provider
+  list/select/enable, model `prepare`/`remove`, and
+  `start_recording` / `stop_and_transcribe` / `cancel_recording`. Push-to-talk
+  toggle is `Cmd+Shift+M` with an optional hold-to-record key; both
+  configurable via `[voice]` (`toggle_hotkey`, `hold_hotkey`) and surfaced in
+  Settings → Voice.
+
+#### Multi-account auth profiles
+
+- [x] **Per-tab login identities** — `agent/auth-profiles/` (store + manager)
+  persists `oauth | api_key` profiles scoped per provider, with a per-tab
+  active profile and a per-provider default. Profile ids are sanitized
+  (`isSafeProfileId` / `sanitizeProfileId`) before touching disk; credentials
+  live under `authProfilesDir()` in `~/.aethon/`. Login streams an
+  `AuthProfileLoginEvent` (`started → auth → progress → prompt → complete`).
+  Frontend mirror in `src/auth-profiles/`; the active profile selects which
+  model registry a tab sees. Driven by
+  `/login [list | use <account> | default <account>]`.
+
+#### Cross-cutting
+
+- [x] **Command PATH resolution** — `src-tauri/src/env.rs` centralizes
+  external-binary lookup (`COMMON_TOOL_DIRS`) so every Rust IPC command
+  resolves tools identically even when the `.app` is launched from Finder/Dock
+  with a minimal PATH.
+- [x] **Docs synced** — README feature list, `website/` (voice config,
+  keyboard reference, `/login`), `docs/aethon-agent/api.md`, CLAUDE.md, and
+  AGENTS.md updated alongside the shipped surface.
 
 ### Cross-cutting
 

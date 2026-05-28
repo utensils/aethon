@@ -242,6 +242,7 @@ console) can swap chrome at runtime:
 | `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                               |
 | `Cmd+K`                       | Clear chat                                                                                                                                                                                                   |
 | `Cmd+.`                       | Stop current prompt                                                                                                                                                                                          |
+| `Cmd+Shift+M`                 | Toggle voice input (push-to-talk dictation into the composer). Hold-to-record key + toggle combo configurable via `[voice]` in `config.toml`.                                                                |
 | `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                                |
 | `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                                             |
 | `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                                   |
@@ -428,6 +429,43 @@ HTTP and mDNS unconditionally during Tauri `setup()`; a `[server]
 enabled` toml flag is planned alongside the pairing PR but not wired
 yet. The browser keeps running with the advertiser off — discovery is
 read-only and useful in isolation.
+
+### Voice-to-text input
+
+Composer dictation is Rust-side. `src-tauri/src/voice.rs` runs a local
+Whisper model (`candle-transformers`) as one provider; `voice/audio.rs`
+is the `cpal` recorder (level metering + WAV capture). Other providers are
+native OS recognizers behind `platform_speech.rs`'s `PlatformSpeechEngine`
+trait — macOS `SFSpeechRecognizer`/`SpeechAnalyzer` (small Swift static lib
+built in `build.rs`), Windows SAPI 5.4 via COM (`windows` crate), Linux a
+stub. All consume the same `CapturedAudio` PCM buffer, so `voice.rs` holds a
+`&dyn PlatformSpeechEngine` with no per-OS branching. `commands/voice.rs`
+exposes the IPC: provider list/select/enable, model `prepare`/`remove`
+(Whisper weights download on demand), and `start_recording` /
+`stop_and_transcribe` / `cancel_recording`. Toggle is `Cmd+Shift+M`;
+`[voice]` config carries `toggle_hotkey` + optional `hold_hotkey`.
+
+### Auth profiles (multi-account login)
+
+Per-tab login identities so different agent tabs can authenticate as
+different accounts. State lives in `agent/auth-profiles/` (store + manager):
+each profile is `oauth | api_key`, scoped to a provider, with a per-tab
+active profile and a per-provider default. Profile ids are sanitized
+(`isSafeProfileId` / `sanitizeProfileId`) before touching disk; credentials
+sit under `authProfilesDir()` in `~/.aethon/`. Login streams an
+`AuthProfileLoginEvent` (`started → auth → progress → prompt → complete`)
+so the OAuth challenge surfaces in the UI. Frontend mirror is
+`src/auth-profiles/`; the active profile selects which model registry a tab
+sees (`modelRegistryForModelId`). Driven by `/login [list | use <account> |
+default <account>]`.
+
+### Command PATH resolution (env.rs)
+
+Release builds launched from Finder/Dock inherit a minimal PATH missing
+Homebrew, Nix profiles, and cargo bins. `env.rs` centralizes lookup so every
+Rust IPC command (git, gh, bun, nix, …) resolves tools the same way,
+augmenting PATH with `COMMON_TOOL_DIRS`. Resolve external binaries through
+this helper, not bare `Command::new("git")`.
 
 ### Agent runtime contract
 
