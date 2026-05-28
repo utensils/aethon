@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useRef } from "react";
 import { clearConfigCache, getConfig, type AethonConfig } from "../../config";
 import type { UseUiOverlaysContext } from "./types";
+
+export const SETTINGS_AUTOSAVE_DELAY_MS = 350;
 
 type SettingsOverlayContext = Pick<
   UseUiOverlaysContext,
@@ -9,10 +12,19 @@ type SettingsOverlayContext = Pick<
 
 export function useSettingsOverlay(ctx: SettingsOverlayContext) {
   const { setState, stateRef, reapplyConfig, pushNotification } = ctx;
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveGenerationRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    },
+    [],
+  );
 
   /** Toggle the Settings panel. Loads the on-disk config on open via
    *  `getConfig()`, exposes form bindings via `/settings/pending`, and
-   *  writes back via the `write_config` Tauri command on Save. */
+   *  autosaves edits through the `write_config` Tauri command. */
   function openSettings(section?: string) {
     setState((prev) => ({
       ...prev,
@@ -20,6 +32,8 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
         open: true,
         pending: null,
         focusSection: section ?? null,
+        saveStatus: "idle",
+        saveError: null,
       },
     }));
   }
@@ -29,19 +43,41 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       const cur = (prev.settings as { open?: boolean } | undefined) ?? {};
       return {
         ...prev,
-        settings: { open: !cur.open, pending: null, focusSection: null },
+        settings: {
+          open: !cur.open,
+          pending: null,
+          focusSection: null,
+          saveStatus: "idle",
+          saveError: null,
+        },
       };
     });
   }
 
   function closeSettings() {
-    setState((prev) => ({
-      ...prev,
-      settings: { open: false, pending: null, focusSection: null },
-    }));
+    const cur =
+      (stateRef.current.settings as
+        | {
+            pending?: Record<string, unknown> | null;
+            saveStatus?: string;
+          }
+        | undefined) ?? {};
+    if (cur.pending && cur.saveStatus !== "saved") void saveSettings();
+    setState((prev) => {
+      const settings = isPlainObject(prev.settings) ? prev.settings : {};
+      return {
+        ...prev,
+        settings: {
+          ...settings,
+          open: false,
+          focusSection: null,
+        },
+      };
+    });
   }
 
-  /** Apply a partial AethonConfig patch to `/settings/pending`. */
+  /** Apply a partial AethonConfig patch to `/settings/pending` and
+   *  schedule a debounced autosave. */
   function applySettingsPatch(
     patch: Partial<{
       ui: unknown;
@@ -62,7 +98,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
               focusSection?: string | null;
             }
           | undefined) ?? {};
-      const merged = { ...(cur.pending ?? {}), ...patch };
+      const merged = mergeConfigPatch(cur.pending ?? {}, patch);
       return {
         ...prev,
         settings: {
@@ -70,19 +106,32 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
           pending: merged,
           focusSection:
             typeof cur.focusSection === "string" ? cur.focusSection : null,
+          saveStatus: "saving",
+          saveError: null,
         },
       };
     });
+    scheduleSettingsSave();
   }
 
   /** Save pending settings, then re-prime the cached config so runtime
    *  theme/font/defaults update without a page reload. */
   async function saveSettings() {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     const cur =
       (stateRef.current.settings as
-        | { open?: boolean; pending?: Record<string, unknown> | null }
+        | {
+            open?: boolean;
+            pending?: Record<string, unknown> | null;
+            focusSection?: string | null;
+          }
         | undefined) ?? {};
     const pending = cur.pending ?? {};
+    if (Object.keys(pending).length === 0) return;
+    const saveGeneration = ++saveGenerationRef.current;
     let live: AethonConfig | null = null;
     try {
       live = await getConfig();
@@ -129,12 +178,32 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       } catch (err) {
         console.warn("settings save: re-read failed:", err);
       }
-      pushNotification({
-        id: "ae-settings-saved",
-        title: "Settings saved",
-        kind: "success",
-        durationMs: 2000,
-      });
+      if (saveGeneration === saveGenerationRef.current) {
+        setState((prev) => {
+          const latest =
+            (prev.settings as
+              | {
+                  open?: boolean;
+                  pending?: Record<string, unknown> | null;
+                  focusSection?: string | null;
+                }
+              | undefined) ?? {};
+          const visiblePending = latest.pending ?? pending;
+          return {
+            ...prev,
+            settings: {
+              open: !!latest.open,
+              pending: latest.open ? visiblePending : null,
+              focusSection:
+                typeof latest.focusSection === "string"
+                  ? latest.focusSection
+                  : null,
+              saveStatus: "saved",
+              saveError: null,
+            },
+          };
+        });
+      }
     } catch (err) {
       pushNotification({
         id: "ae-settings-save-failed",
@@ -143,9 +212,39 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
         kind: "error",
         durationMs: 4000,
       });
+      setState((prev) => {
+        const latest =
+          (prev.settings as
+            | {
+                open?: boolean;
+                pending?: Record<string, unknown> | null;
+                focusSection?: string | null;
+              }
+            | undefined) ?? {};
+        return {
+          ...prev,
+          settings: {
+            open: !!latest.open,
+            pending: latest.pending ?? pending,
+            focusSection:
+              typeof latest.focusSection === "string"
+                ? latest.focusSection
+                : null,
+            saveStatus: "error",
+            saveError: err instanceof Error ? String(err) : String(err),
+          },
+        };
+      });
       return;
     }
-    closeSettings();
+  }
+
+  function scheduleSettingsSave() {
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveSettings();
+    }, SETTINGS_AUTOSAVE_DELAY_MS);
   }
 
   return {
@@ -155,4 +254,23 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
     applySettingsPatch,
     saveSettings,
   };
+}
+
+function mergeConfigPatch(
+  pending: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...pending };
+  for (const [key, value] of Object.entries(patch)) {
+    const previous = merged[key];
+    merged[key] =
+      isPlainObject(previous) && isPlainObject(value)
+        ? { ...previous, ...value }
+        : value;
+  }
+  return merged;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

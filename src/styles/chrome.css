@@ -4111,7 +4111,7 @@ body.ae-resizing-terminal * {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 12px;
-  width: min(640px, 90vw);
+  width: min(860px, 94vw);
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -4128,6 +4128,15 @@ body.ae-resizing-terminal * {
   margin: 0;
   font-size: 1.05rem;
   flex: 1 1 auto;
+}
+.ae-settings-save-state {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  margin-right: var(--space-3);
+  white-space: nowrap;
+}
+.ae-settings-save-state--error {
+  color: var(--error);
 }
 .ae-settings-close {
   background: transparent;
@@ -4302,6 +4311,24 @@ body.ae-resizing-terminal * {
 }
 .ae-settings-secondary:hover {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+@media (max-width: 720px) {
+  .ae-settings-panel {
+    width: min(96vw, 860px);
+  }
+  .ae-settings-field {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ae-settings-field-control,
+  .ae-settings-input,
+  .ae-settings-model-picker,
+  .ae-settings-model-picker .ae-settings-input {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .ae-auth-panel {

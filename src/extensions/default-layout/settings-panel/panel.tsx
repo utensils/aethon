@@ -1,10 +1,11 @@
-// Settings overlay (M6 P3). Cmd+, opens. Form-based editor for the
-// most-used `~/.aethon/config.toml` keys; advanced power-user editing
-// is a click away via the "Open config.toml" button.
+// Settings overlay. Cmd+, opens. Live editor for the most-used
+// `~/.aethon/config.toml` keys; advanced power-user editing is a click
+// away via the "Open config.toml" button.
 //
 // State contract (`/settings` slice on the main state object):
 //   { open: boolean, focusSection: string | null,
-//     pending: Partial<AethonConfig> | null }
+//     pending: Partial<AethonConfig> | null,
+//     saveStatus: "idle" | "saving" | "saved" | "error" }
 //
 // The panel reads the current config state via `getConfig()` on mount
 // so the form reflects what's actually on disk, not stale in-memory
@@ -49,8 +50,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   const update = (patch: Partial<AethonConfig>) => {
     onEvent("update", { patch });
   };
-  const save = () => onEvent("save");
-  const cancel = () => onEvent("close");
+  const close = () => onEvent("close");
   // `aethon_home_dir` returns the *Aethon* dir (`~/.aethon`), not the
   // user's home — joining another `/.aethon/` produces a wrong nested
   // path that the agent never reads. Append the bare filename only.
@@ -71,7 +71,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
     <div
       className="ae-settings-overlay"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) cancel();
+        if (e.target === e.currentTarget) close();
       }}
     >
       <div
@@ -82,11 +82,12 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
       >
         <header className="ae-settings-header">
           <h2>Settings</h2>
+          <SaveState settings={settings} />
           <button
             type="button"
             className="ae-settings-close"
             aria-label="Close"
-            onClick={cancel}
+            onClick={close}
           >
             ×
           </button>
@@ -496,7 +497,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
             <Section id="advanced" title="Advanced">
               <p className="ae-settings-note">
                 For keys not surfaced here, edit{" "}
-                <code>~/.aethon/config.toml</code> directly. The Save button
+                <code>~/.aethon/config.toml</code> directly. Aethon
                 round-trips comments and unknown keys, so hand edits survive.
               </p>
               <button
@@ -516,26 +517,31 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
             </Section>
           </div>
         )}
-
-        <footer className="ae-settings-footer">
-          <button
-            type="button"
-            className="ae-settings-secondary"
-            onClick={cancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="ae-settings-primary"
-            onClick={save}
-            disabled={!eff || settings.pending === null}
-          >
-            Save
-          </button>
-        </footer>
       </div>
     </div>
+  );
+}
+
+function SaveState({
+  settings,
+}: {
+  settings: ReturnType<typeof readSettingsState>;
+}) {
+  if (settings.saveStatus === "idle") return null;
+  const label =
+    settings.saveStatus === "saving"
+      ? "Saving..."
+      : settings.saveStatus === "error"
+        ? "Save failed"
+        : "Saved";
+  return (
+    <span
+      className={`ae-settings-save-state ae-settings-save-state--${settings.saveStatus}`}
+      aria-live="polite"
+      title={settings.saveError ?? undefined}
+    >
+      {label}
+    </span>
   );
 }
 

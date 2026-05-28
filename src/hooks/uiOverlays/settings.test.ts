@@ -1,13 +1,49 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
-import { useSettingsOverlay } from "./settings";
+import { useSettingsOverlay, SETTINGS_AUTOSAVE_DELAY_MS } from "./settings";
 import type { UseUiOverlaysContext } from "./types";
+import { clearConfigCache, getConfig, type AethonConfig } from "../../config";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
+
+vi.mock("../../config", () => ({
+  clearConfigCache: vi.fn(),
+  getConfig: vi.fn(),
+}));
+
+const baseConfig: AethonConfig = {
+  ui: {
+    theme: "ember",
+    fontSize: 14,
+    restoreTabs: false,
+    notifyOnCompletion: true,
+    notifyMinDurationSeconds: 8,
+  },
+  agent: { model: "openai/gpt-5.5" },
+  shell: {
+    defaultShareMode: "private",
+    autoRestartAgent: true,
+    defaultCommand: null,
+    defaultArgs: [],
+    inheritEnv: true,
+    promptBeforeClose: true,
+  },
+  shortcuts: { newTabKind: "agent" },
+  voice: { toggleHotkey: "mod+shift+m", holdHotkey: "AltRight" },
+  updates: { channel: "nightly", disableAutoCheck: false },
+  devshell: {
+    enabled: "auto",
+    mode: "auto",
+    cacheTtlHours: 720,
+    refreshOnLockfileChange: true,
+  },
+};
 
 function buildContext(initialState: Record<string, unknown>): {
   ctx: Pick<
@@ -34,6 +70,19 @@ function buildContext(initialState: Record<string, unknown>): {
 }
 
 describe("useSettingsOverlay", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    vi.mocked(getConfig).mockReset();
+    vi.mocked(getConfig).mockResolvedValue(baseConfig);
+    vi.mocked(clearConfigCache).mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("preserves the focused settings section while applying pending patches", () => {
     const { ctx, stateRef } = buildContext({
       settings: {
@@ -43,14 +92,105 @@ describe("useSettingsOverlay", () => {
       },
     });
 
-    const settings = useSettingsOverlay(ctx);
+    const { result } = renderHook(() => useSettingsOverlay(ctx));
 
-    settings.applySettingsPatch({ ui: { theme: "aether" } });
+    act(() => {
+      result.current.applySettingsPatch({ ui: { theme: "aether" } });
+    });
 
     expect(stateRef.current.settings).toEqual({
       open: true,
       pending: { ui: { theme: "aether" } },
       focusSection: "extensions",
+      saveStatus: "saving",
+      saveError: null,
+    });
+  });
+
+  it("debounces live settings writes and persists the latest merged config", async () => {
+    const { ctx } = buildContext({
+      settings: { open: true, pending: null, focusSection: "appearance" },
+    });
+    const { result } = renderHook(() => useSettingsOverlay(ctx));
+
+    act(() => {
+      result.current.applySettingsPatch({ ui: { theme: "aether" } });
+      result.current.applySettingsPatch({
+        ui: { theme: "aether", fontSize: 18 },
+      });
+    });
+
+    await vi.advanceTimersByTimeAsync(SETTINGS_AUTOSAVE_DELAY_MS - 1);
+    expect(invoke).not.toHaveBeenCalledWith("write_config", expect.anything());
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("write_config", {
+      config: expect.objectContaining({
+        ui: expect.objectContaining({ theme: "aether", fontSize: 18 }),
+        shortcuts: baseConfig.shortcuts,
+        updates: baseConfig.updates,
+        voice: baseConfig.voice,
+        devshell: baseConfig.devshell,
+      }),
+    });
+  });
+
+  it("reapplies fresh config after autosave without closing settings", async () => {
+    const fresh = {
+      ...baseConfig,
+      ui: { ...baseConfig.ui, theme: "brink" },
+    };
+    vi.mocked(getConfig)
+      .mockResolvedValueOnce(baseConfig)
+      .mockResolvedValueOnce(fresh);
+    const { ctx, stateRef } = buildContext({
+      settings: { open: true, pending: null, focusSection: null },
+    });
+    const { result } = renderHook(() => useSettingsOverlay(ctx));
+
+    act(() => {
+      result.current.applySettingsPatch({ ui: { theme: "brink" } });
+    });
+    await vi.advanceTimersByTimeAsync(SETTINGS_AUTOSAVE_DELAY_MS);
+
+    expect(clearConfigCache).toHaveBeenCalledTimes(1);
+    expect(ctx.reapplyConfig).toHaveBeenCalledWith(fresh);
+    expect(stateRef.current.settings).toEqual({
+      open: true,
+      pending: { ui: { theme: "brink" } },
+      focusSection: null,
+      saveStatus: "saved",
+      saveError: null,
+    });
+  });
+
+  it("keeps the dialog open and the current edits visible when autosave fails", async () => {
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("disk full"));
+    const { ctx, stateRef } = buildContext({
+      settings: { open: true, pending: null, focusSection: null },
+    });
+    const { result } = renderHook(() => useSettingsOverlay(ctx));
+
+    act(() => {
+      result.current.applySettingsPatch({ ui: { theme: "paper" } });
+    });
+    await vi.advanceTimersByTimeAsync(SETTINGS_AUTOSAVE_DELAY_MS);
+
+    expect(ctx.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "ae-settings-save-failed",
+        title: "Failed to save settings",
+        kind: "error",
+      }),
+    );
+    expect(stateRef.current.settings).toEqual({
+      open: true,
+      pending: { ui: { theme: "paper" } },
+      focusSection: null,
+      saveStatus: "error",
+      saveError: "Error: disk full",
     });
   });
 });

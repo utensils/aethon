@@ -27,8 +27,8 @@ export function useConfigSnapshot(open: boolean): AethonConfig | null {
 }
 
 /**
- * Merge `pending` (unsaved edits) on top of the live snapshot. Form
- * bindings read from this; Save / cancel manipulate `pending`.
+ * Merge `pending` (live edits over the loaded config) on top of the
+ * snapshot. Form bindings read from this while autosave catches up.
  */
 export function useEffectiveConfig(
   snapshot: AethonConfig | null,
