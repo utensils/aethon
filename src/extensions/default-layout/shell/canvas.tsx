@@ -36,13 +36,28 @@ export interface ShellDims {
   rows: number;
 }
 
-/** True when the ResizeObserver entry reports a zero-sized container —
- *  the bottom terminal panel collapsing via Cmd+`. Skipping fit + the
- *  ensuing shell_resize prevents SIGWINCH spam that makes prompts like
- *  starship redraw and stack a fresh prompt line per toggle cycle. */
+/** True when the ResizeObserver fires while the terminal is not actually
+ *  visible. The bottom panel stays mounted for chrome animation, so a
+ *  Cmd+` close can still report resize events with tiny or stale non-zero
+ *  dimensions. Skipping fit + shell_resize there prevents SIGWINCH spam
+ *  that makes prompts like starship redraw and stack prompt lines. */
 export function shouldSkipResize(
   entry: ResizeObserverEntry | undefined,
+  container?: Element | null,
 ): boolean {
+  const panel = container?.closest(".ae-terminal-panel");
+  if (
+    panel?.classList.contains("is-closed") ||
+    panel?.getAttribute("aria-hidden") === "true"
+  ) {
+    return true;
+  }
+
+  const layoutCell = container?.closest<HTMLElement>(
+    '.a2ui-layout-cell[data-area="terminal"]',
+  );
+  if (layoutCell?.dataset.visible === "false") return true;
+
   if (!entry) return false;
   const { width, height } = entry.contentRect;
   return width === 0 || height === 0;
@@ -156,7 +171,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // guards that keep panel-toggle from raising spurious SIGWINCHes.
     const lastSentDimsRef = { current: null as ShellDims | null };
     const ro = new ResizeObserver((entries) => {
-      if (shouldSkipResize(entries[0])) return;
+      if (shouldSkipResize(entries[0], containerRef.current)) return;
       try {
         fit.fit();
         const cols = term.cols;

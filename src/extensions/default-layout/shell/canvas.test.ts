@@ -7,6 +7,34 @@ function entry(width: number, height: number): ResizeObserverEntry {
   } as ResizeObserverEntry;
 }
 
+function fakeContainer(args: {
+  panelClosed?: boolean;
+  panelAriaHidden?: boolean;
+  layoutVisible?: boolean;
+}): Element {
+  const panel = {
+    classList: {
+      contains: (name: string) => name === "is-closed" && !!args.panelClosed,
+    },
+    getAttribute: (name: string) =>
+      name === "aria-hidden" && args.panelAriaHidden ? "true" : null,
+  };
+  const layoutCell = {
+    dataset: {
+      visible: args.layoutVisible === false ? "false" : "true",
+    },
+  };
+  return {
+    closest: (selector: string) => {
+      if (selector === ".ae-terminal-panel") return panel;
+      if (selector === '.a2ui-layout-cell[data-area="terminal"]') {
+        return layoutCell;
+      }
+      return null;
+    },
+  } as unknown as Element;
+}
+
 describe("shouldSkipResize", () => {
   it("returns false for a healthy-size entry", () => {
     expect(shouldSkipResize(entry(800, 240))).toBe(false);
@@ -21,6 +49,33 @@ describe("shouldSkipResize", () => {
 
   it("returns true when height collapses to zero", () => {
     expect(shouldSkipResize(entry(800, 0))).toBe(true);
+  });
+
+  it("returns true while the mounted terminal panel is closed", () => {
+    expect(
+      shouldSkipResize(
+        entry(800, 240),
+        fakeContainer({ panelClosed: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns true while the terminal layout cell is hidden", () => {
+    expect(
+      shouldSkipResize(
+        entry(800, 240),
+        fakeContainer({ layoutVisible: false }),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns true while aria-hidden marks the panel closed", () => {
+    expect(
+      shouldSkipResize(
+        entry(800, 240),
+        fakeContainer({ panelAriaHidden: true }),
+      ),
+    ).toBe(true);
   });
 
   it("returns false when the entry is undefined (defensive)", () => {
