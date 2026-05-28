@@ -46,6 +46,14 @@ pub(crate) struct ShellSlot {
     /// Not authoritative — the agent always re-asks Rust for live state.
     pub(super) cwd: String,
     pub(super) command: String,
+    /// True when the slot was spawned as an interactive shell (bash /
+    /// zsh / fish / sh / system default) — i.e. the child PID is a
+    /// shell that *manages* foreground jobs. False when the user
+    /// configured a direct command (vim, npm run dev, sleep): the
+    /// child IS the foreground job, so it can have zero descendants
+    /// and still be doing real work. `shell_is_busy` uses this to
+    /// decide whether to walk children or report busy unconditionally.
+    pub(super) is_interactive_shell: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -58,6 +66,7 @@ pub(super) struct ShellSlot {
     pub(super) share: ShareHandle,
     pub(super) cwd: String,
     pub(super) command: String,
+    pub(super) is_interactive_shell: bool,
 }
 
 // Dev-only read accessors for the aethon-debug inspector commands.
@@ -147,6 +156,10 @@ pub(super) mod test_support {
             share: Arc::new(Mutex::new(ShareState::new())),
             cwd: String::new(),
             command: command.to_string(),
+            // Test slots default to false (direct command), matching how
+            // tests spawn `/bin/echo`, `/bin/sleep`, etc. — they're never
+            // interactive shells.
+            is_interactive_shell: false,
         };
         reg.slots.lock().unwrap().insert(tab_id.to_string(), slot);
         child

@@ -18,9 +18,93 @@ vi.mock("./canvas", () => ({
   }) => <div data-testid="stub-shell" data-tab-id={component.props.tabId} />,
 }));
 
-import { TerminalPanel } from "./panel";
+import {
+  TerminalPanel,
+  resolveActiveSubId,
+  resolveActiveSubIdFromState,
+} from "./panel";
 
 afterEach(() => cleanup());
+
+describe("resolveActiveSubId", () => {
+  it("returns the requested shell when it still exists", () => {
+    expect(
+      resolveActiveSubId({
+        requestedActiveId: "sh-1",
+        shellTabIds: ["sh-1", "sh-2"],
+        showAgentBash: true,
+      }),
+    ).toBe("sh-1");
+  });
+
+  it("returns agent-bash when the requested id is the agent-bash sentinel and it's allowed", () => {
+    expect(
+      resolveActiveSubId({
+        requestedActiveId: "agent-bash",
+        shellTabIds: [],
+        showAgentBash: true,
+      }),
+    ).toBe("agent-bash");
+  });
+
+  it("clamps to the first shell when agent-bash is hidden and the requested id is stale", () => {
+    // The Codex finding: overview owns the canvas, panel state still
+    // reads "agent-bash" but the panel renders a real shell instead.
+    // Both the panel and Cmd+W must agree on the resolved id.
+    expect(
+      resolveActiveSubId({
+        requestedActiveId: "agent-bash",
+        shellTabIds: ["sh-1", "sh-2"],
+        showAgentBash: false,
+      }),
+    ).toBe("sh-1");
+  });
+
+  it("returns null when nothing can be displayed", () => {
+    expect(
+      resolveActiveSubId({
+        requestedActiveId: "agent-bash",
+        shellTabIds: [],
+        showAgentBash: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("falls back to first shell when the requested id no longer maps to a tab", () => {
+    expect(
+      resolveActiveSubId({
+        requestedActiveId: "sh-zombie",
+        shellTabIds: ["sh-1"],
+        showAgentBash: false,
+      }),
+    ).toBe("sh-1");
+  });
+});
+
+describe("resolveActiveSubIdFromState", () => {
+  it("matches what the panel renders on overview", () => {
+    // Reproduces the Codex regression scenario: overview pseudo-tab
+    // active, panel state still pointing at agent-bash. Cmd+W must
+    // resolve the same shell the panel paints.
+    const state = {
+      activeTabId: "__overview__",
+      tabs: [
+        { id: "sh-1", kind: "shell", label: "Shell 1" },
+      ],
+      terminalPanel: { activeSubId: "agent-bash" },
+    } as Record<string, unknown>;
+    expect(resolveActiveSubIdFromState(state)).toBe("sh-1");
+  });
+
+  it("returns agent-bash when an agent session owns the canvas", () => {
+    const state = {
+      activeTabId: "agent-1",
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1" }],
+      terminalPanel: { activeSubId: "agent-bash" },
+    } as Record<string, unknown>;
+    expect(resolveActiveSubIdFromState(state)).toBe("agent-bash");
+  });
+});
 
 function panelComponent(): A2UIComponent {
   return {

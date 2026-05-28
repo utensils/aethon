@@ -72,7 +72,7 @@ pub fn shell_is_busy(
     state: State<'_, ShellRegistry>,
     tab_id: String,
 ) -> Result<bool, String> {
-    let pid = {
+    let (pid, is_interactive_shell) = {
         let guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
         let Some(slot) = guard.get(&tab_id) else {
             // No slot — nothing to kill, nothing to guard. Frontend
@@ -81,11 +81,21 @@ pub fn shell_is_busy(
             return Ok(false);
         };
         let child = slot.child.lock().map_err(|e| format!("lock: {e}"))?;
-        child.as_ref().and_then(|c| c.process_id())
+        (
+            child.as_ref().and_then(|c| c.process_id()),
+            slot.is_interactive_shell,
+        )
     };
     let Some(pid) = pid else {
         return Ok(false);
     };
+    // Direct-command tabs (no interactive shell wrapping the child)
+    // can't be "idle" — the child PID *is* the user's job, and it
+    // typically has no descendants. Without this branch closing a
+    // running `vim` or `npm run dev` tab would skip confirmation.
+    if !is_interactive_shell {
+        return Ok(true);
+    }
     Ok(has_foreground_job(pid as i32))
 }
 

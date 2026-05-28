@@ -130,6 +130,22 @@ describe("Cmd+W is focus-aware", () => {
     expect(ctx.closeTab).toHaveBeenCalledWith("shell-1");
   });
 
+  it("closes the *displayed* shell when state still points at agent-bash on overview", () => {
+    // Codex regression: on overview the panel clamps a stale
+    // requestedActiveId="agent-bash" to the first real shell, but the
+    // shortcut handler used to read raw state and no-op. The shared
+    // resolver should now produce the same id.
+    mountWithTerminalPanel("panel");
+    const ctx = buildContext({
+      activeTabId: "__overview__",
+      tabs: [{ id: "shell-1", kind: "shell", label: "Shell 1" }],
+      terminalPanel: { activeSubId: "agent-bash" },
+    });
+    render(<Harness ctx={ctx} />);
+    fireEvent.keyDown(document, { key: "w", metaKey: true });
+    expect(ctx.closeTab).toHaveBeenCalledWith("shell-1");
+  });
+
   it("is a no-op in the terminal panel when only the agent-bash sub-tab is active", () => {
     // agent-bash is the always-present read-only sub-tab; it isn't a
     // real /tabs entry and has nothing to close. Cmd+W must not fall

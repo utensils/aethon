@@ -28,7 +28,7 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { Terminal } from "../terminal";
 import { ShellCanvas } from "./canvas";
 
-const AGENT_BASH_SUB_ID = "agent-bash";
+export const AGENT_BASH_SUB_ID = "agent-bash";
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
 
@@ -36,6 +36,53 @@ interface ShellSubTabItem {
   id: string;
   label: string;
   shellState?: string;
+}
+
+/** Pure resolver for "which sub-tab does the bottom panel actually
+ *  render right now?" Shared between the panel composite (for paint)
+ *  and `useKeyboardShortcuts` (so Cmd+W in the panel closes the same
+ *  shell the user can see). Without a single source of truth the two
+ *  could drift: the panel would clamp `agent-bash` → first shell while
+ *  the shortcut handler still read `agent-bash` from raw state and
+ *  no-op'd.
+ *
+ *  Priority: the requested shell if it still exists → agent-bash when
+ *  the read-only stream is allowed → the first shell as a fallback →
+ *  `null` when the panel is empty. */
+export function resolveActiveSubId(args: {
+  requestedActiveId: string;
+  shellTabIds: string[];
+  showAgentBash: boolean;
+}): string | null {
+  const { requestedActiveId, shellTabIds, showAgentBash } = args;
+  if (
+    requestedActiveId !== AGENT_BASH_SUB_ID &&
+    shellTabIds.includes(requestedActiveId)
+  ) {
+    return requestedActiveId;
+  }
+  if (showAgentBash) return AGENT_BASH_SUB_ID;
+  return shellTabIds[0] ?? null;
+}
+
+/** Resolve the sub-tab id from a raw layout state snapshot. Used by
+ *  keyboard handlers that don't render the panel themselves but still
+ *  need to act on the displayed sub-tab. */
+export function resolveActiveSubIdFromState(
+  state: Record<string, unknown>,
+): string | null {
+  const panelState =
+    (state["terminalPanel"] as { activeSubId?: string } | undefined) ?? {};
+  const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
+  const tabs =
+    (state["tabs"] as Array<{ id: string; kind?: string }> | undefined) ?? [];
+  const shellTabIds = tabs
+    .filter((t) => t.kind === "shell")
+    .map((t) => t.id);
+  const showAgentBash = !isOverviewActive(
+    state["activeTabId"] as string | undefined,
+  );
+  return resolveActiveSubId({ requestedActiveId, shellTabIds, showAgentBash });
 }
 
 export function TerminalPanel({
@@ -78,20 +125,17 @@ export function TerminalPanel({
   const showAgentBash = !overviewOwnsCanvas;
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const panelRef = useRef<HTMLDivElement>(null);
-  // Clamp to a valid sub-tab id. Priority: the requested shell if it
-  // still exists → agent-bash (when allowed) → the first shell → null
-  // (panel chrome stays mounted with just the `+` button so the user can
-  // start a session).
-  const activeSubId = useMemo<string | null>(() => {
-    if (
-      requestedActiveId !== AGENT_BASH_SUB_ID &&
-      shellTabs.some((s) => s.id === requestedActiveId)
-    ) {
-      return requestedActiveId;
-    }
-    if (showAgentBash) return AGENT_BASH_SUB_ID;
-    return shellTabs[0]?.id ?? null;
-  }, [requestedActiveId, shellTabs, showAgentBash]);
+  // Resolve via the shared helper so the focus-aware Cmd+W path in
+  // useKeyboardShortcuts sees the same active sub-tab the user does.
+  const activeSubId = useMemo<string | null>(
+    () =>
+      resolveActiveSubId({
+        requestedActiveId,
+        shellTabIds: shellTabs.map((s) => s.id),
+        showAgentBash,
+      }),
+    [requestedActiveId, shellTabs, showAgentBash],
+  );
 
   const onResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
