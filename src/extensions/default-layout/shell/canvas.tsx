@@ -170,8 +170,9 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // without a separate poll loop. See `decideShellResize` for the two
     // guards that keep panel-toggle from raising spurious SIGWINCHes.
     const lastSentDimsRef = { current: null as ShellDims | null };
-    const ro = new ResizeObserver((entries) => {
-      if (shouldSkipResize(entries[0], containerRef.current)) return;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const resizeToContainer = () => {
+      resizeTimer = null;
       try {
         fit.fit();
         const cols = term.cols;
@@ -197,6 +198,16 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
       } catch {
         /* fit transient errors during teardown */
       }
+    };
+    const ro = new ResizeObserver((entries) => {
+      if (shouldSkipResize(entries[0], containerRef.current)) return;
+      if (document.body.classList.contains("ae-resizing-terminal")) {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeToContainer();
+        return;
+      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resizeToContainer, 80);
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
@@ -222,6 +233,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     return () => {
       window.removeEventListener(eventName, onShellOutput);
       ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
       stopThemeObserver();
       onDataDisposable.dispose();
       term.dispose();

@@ -99,22 +99,18 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--webkit-scrollbar-size);
+  height: var(--webkit-scrollbar-size);
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  border-radius: var(--radius-sm);
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
-  background-clip: padding-box;
-  border: 2px solid transparent;
 }
 
 .app {
@@ -3697,6 +3693,85 @@ body.ae-resizing-composer * {
   min-height: 0;
   padding: 6px;
   width: 100%;
+}
+
+.ae-terminal-panel .a2ui-terminal {
+  height: 100%;
+  min-height: 0;
+  border-top: 0;
+  animation: none;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport {
+  background-color: var(--terminal-bg, var(--bg)) !important;
+  scrollbar-color: var(--scrollbar-thumb) transparent !important;
+  scrollbar-width: thin !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
+  width: var(--scrollbar-size) !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  left: auto !important;
+  right: 0 !important;
+  width: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar.horizontal {
+  bottom: 0 !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  left: 0 !important;
+  right: 0 !important;
+  width: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.horizontal
+  > .slider {
+  bottom: 0 !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar
+  > .slider:hover,
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar
+  > .slider.active {
+  background: var(--scrollbar-thumb-hover) !important;
 }
 
 .ae-agent-pill {

@@ -292,18 +292,30 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       window.addEventListener("aethon:terminal-replay", onReplayEvent);
     }
 
-    const ro = new ResizeObserver(() => {
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const fitToContainer = () => {
+      resizeTimer = null;
       try {
         fit.fit();
       } catch {
         /* noop */
       }
+    };
+    const ro = new ResizeObserver(() => {
+      if (document.body.classList.contains("ae-resizing-terminal")) {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        fitToContainer();
+        return;
+      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(fitToContainer, 80);
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
 
     return () => {
       ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
       stopThemeObserver();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);
