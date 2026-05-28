@@ -15,6 +15,7 @@
  *  - slash-commands.ts — collectPiSlashCommands / refreshPiSlashCommands
  *  - ready-handshake.ts — emitReady (startup payload)
  *  - events.ts         — handleSessionEvent (per-turn state machine)
+ *  - retry.ts          — Aethon-specific transient provider retry classifier
  *  - lifecycle.ts      — ensureTab + EnsureTabOptions
  */
 
@@ -45,5 +46,6 @@ export {
 } from "./slash-commands";
 export { emitReady } from "./ready-handshake";
 export { handleSessionEvent } from "./events";
+export { installAethonRetryClassifier } from "./retry";
 export type { EnsureTabOptions } from "./lifecycle";
 export { ensureTab } from "./lifecycle";

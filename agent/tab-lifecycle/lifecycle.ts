@@ -26,6 +26,7 @@ import { authProfileServicesForTab } from "../auth-profiles";
 import { findSessionFileMatchingCwd } from "../session-history";
 import type { AethonAgentState, TabRecord } from "../state";
 import { handleSessionEvent } from "./events";
+import { installAethonRetryClassifier } from "./retry";
 import {
   buildPickerModels,
   ensurePickerHasModel,
@@ -123,6 +124,7 @@ export async function ensureTab(
     ],
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });
+  installAethonRetryClassifier(session);
   wrapWithSourceGuard(session.agent, state.projectRoot);
 
   const rec: TabRecord = {
