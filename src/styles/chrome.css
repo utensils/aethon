@@ -4192,14 +4192,13 @@ body.ae-resizing-terminal * {
   flex: 1 1 auto;
 }
 .ae-settings-save-state {
-  color: var(--text-secondary, var(--text-dim));
   font-size: var(--chrome-text-muted);
   margin-right: var(--space-3);
   white-space: nowrap;
   padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--state-success-bg, transparent);
-  color: var(--state-success-fg, var(--text-dim));
+  color: var(--state-success-fg, var(--text-secondary, var(--text-dim)));
 }
 .ae-settings-save-state--error {
   color: var(--state-error-fg, var(--error));
