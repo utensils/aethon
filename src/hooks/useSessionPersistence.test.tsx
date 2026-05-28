@@ -41,6 +41,10 @@ const defaultConfig: AethonConfig = {
     promptBeforeClose: true,
   },
   shortcuts: { newTabKind: "agent" },
+  voice: {
+    toggleHotkey: "mod+shift+m",
+    holdHotkey: null,
+  },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
     enabled: "auto",
