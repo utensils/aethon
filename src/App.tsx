@@ -353,6 +353,7 @@ export default function App() {
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     closeTabNow,
+    newShellTab,
   });
   useProjectSyncEffects({
     state,

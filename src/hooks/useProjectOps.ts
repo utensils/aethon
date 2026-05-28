@@ -6,7 +6,12 @@ import {
   removeProject,
   upsertProject,
 } from "../projects";
-import { NO_PROJECT_KEY, type Tab } from "../types/tab";
+import {
+  isOverviewActive,
+  NO_PROJECT_KEY,
+  OVERVIEW_TAB_ID,
+  type Tab,
+} from "../types/tab";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { useProjectStore } from "./projectOps/projectStore";
 import {
@@ -62,6 +67,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     closeTabNow,
+    newShellTab,
   } = ctx;
 
   const projectsLoadedRef = useRef(false);
@@ -92,7 +98,10 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     toKey: string,
     opts: { mirrorProjects?: boolean } = {},
   ): string | undefined {
-    return switchTabBucket(
+    const wasOverview = isOverviewActive(
+      stateRef.current.activeTabId as string | undefined,
+    );
+    const nextTabId = switchTabBucket(
       {
         setState,
         stateRef,
@@ -104,6 +113,29 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       toKey,
       opts,
     );
+    preserveOverviewIfNeeded(wasOverview);
+    maybeSpawnOverviewShell();
+    return nextTabId;
+  }
+
+  function maybeSpawnOverviewShell(): void {
+    if (!newShellTab) return;
+    const state = stateRef.current;
+    const terminal = state.terminal as { open?: boolean } | undefined;
+    if (terminal?.open !== true) return;
+    const activeTabId = state.activeTabId as string | undefined;
+    if (!isOverviewActive(activeTabId)) return;
+    const tabs = (state.tabs as Tab[] | undefined) ?? [];
+    if (tabs.some((t) => t.kind === "shell")) return;
+    newShellTab();
+  }
+
+  function preserveOverviewIfNeeded(wasOverview: boolean): void {
+    if (!wasOverview) return;
+    setState((prev) => {
+      if (prev.activeTabId === OVERVIEW_TAB_ID) return prev;
+      return { ...prev, activeTabId: OVERVIEW_TAB_ID };
+    });
   }
 
   async function openProjectFromPicker(): Promise<string | null> {

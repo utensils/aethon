@@ -65,6 +65,9 @@ export interface UseProjectOpsContext {
    *  is removed. Worktree deletion is already destructive, so there is
    *  no separate close confirmation for those session tabs. */
   closeTabNow: (tabId: string) => void;
+  /** From useTabs: create an interactive shell sub-tab when the project
+   *  overview is already showing an open terminal panel. */
+  newShellTab?: () => void;
 }
 
 export interface UseProjectOpsActions {

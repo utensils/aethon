@@ -2,7 +2,12 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { makeEmptyTab, NO_PROJECT_KEY, type Tab } from "../types/tab";
+import {
+  makeEmptyTab,
+  NO_PROJECT_KEY,
+  OVERVIEW_TAB_ID,
+  type Tab,
+} from "../types/tab";
 import type { ProjectsState } from "../projects";
 import { installTauriMocks, clearTauriMocks } from "../test/tauriMocks";
 import {
@@ -41,7 +46,21 @@ function makeProjectsState(
   };
 }
 
-function renderProjectOps(initialProjects: ProjectsState) {
+function nonEmptyAgentTab(
+  id: string,
+  label: string,
+  projectId: string | null,
+): Tab {
+  return {
+    ...makeEmptyTab(id, label, projectId),
+    messages: [{ id: `${id}-msg`, role: "user", text: label }],
+  };
+}
+
+function renderProjectOps(
+  initialProjects: ProjectsState,
+  overrides: Partial<UseProjectOpsContext> = {},
+) {
   const stateRef = ref<Record<string, unknown>>({
     tabs: [],
     activeTabId: undefined,
@@ -77,6 +96,7 @@ function renderProjectOps(initialProjects: ProjectsState) {
     dispatchTerminalReplay: vi.fn(),
     autoRestoreDiscoveredSessions: vi.fn(),
     closeTabNow,
+    ...overrides,
   };
   const rendered = renderHook(() => useProjectOps(ctx));
   projectsRef.current = initialProjects;
@@ -414,6 +434,312 @@ describe("useProjectOps session scoping", () => {
         cwd: "/projects/aethon-fix-session-restore",
       },
     ]);
+  });
+});
+
+describe("useProjectOps overview terminal project switches", () => {
+  function twoProjectState(): ProjectsState {
+    return makeProjectsState({
+      activeId: "project-1",
+      projects: [
+        {
+          id: "project-1",
+          label: "alpha",
+          path: "/projects/alpha",
+          lastUsed: 1,
+        },
+        {
+          id: "project-2",
+          label: "beta",
+          path: "/projects/beta",
+          lastUsed: 1,
+        },
+      ],
+    });
+  }
+
+  function projectWithWorktreeState(): ProjectsState {
+    return makeProjectsState({
+      activeId: "project-1",
+      projects: [
+        {
+          id: "project-1",
+          label: "alpha",
+          path: "/projects/alpha",
+          lastUsed: 1,
+        },
+      ],
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-alpha-feature",
+            projectId: "project-1",
+            path: "/projects/alpha-feature",
+            branch: "feature",
+            isMain: false,
+          },
+        ],
+      },
+    });
+  }
+
+  it("preserves overview and spawns a shell when switching projects with the terminal open", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const savedAgentTab = nonEmptyAgentTab("beta-agent", "Beta", "project-2");
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-2", null),
+      {
+        tabs: [savedAgentTab],
+        activeTabId: "beta-agent",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "beta-agent",
+    ]);
+    expect(newShellTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spawn another shell when the destination bucket already has one", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const savedShellTab = {
+      ...makeEmptyTab("beta-shell", "Shell 1", "project-2", "shell"),
+      shell: {
+        cwd: "/projects/beta",
+        command: "",
+        args: [],
+        shareMode: "private",
+        shellState: "running",
+      },
+    } as Tab;
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-2", null),
+      {
+        tabs: [savedShellTab],
+        activeTabId: undefined,
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
+  it("does not spawn an overview shell when switching from an active session", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const alphaAgent = nonEmptyAgentTab("alpha-agent", "Alpha", "project-1");
+    const betaAgent = nonEmptyAgentTab("beta-agent", "Beta", "project-2");
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-2", null),
+      {
+        tabs: [betaAgent],
+        activeTabId: "beta-agent",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: "alpha-agent",
+      terminal: { open: true },
+      tabs: [alphaAgent],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBe("beta-agent");
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
+  it("preserves overview without spawning a shell when the terminal is closed", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const betaAgent = nonEmptyAgentTab("beta-agent", "Beta", "project-2");
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-2", null),
+      {
+        tabs: [betaAgent],
+        activeTabId: "beta-agent",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: false },
+      tabs: [],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
+  it("preserves overview and spawns a shell when clearing to the host bucket", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const savedHostAgent = nonEmptyAgentTab("host-agent", "Host", null);
+    result.current.tabBucketsRef.current.set(NO_PROJECT_KEY, {
+      tabs: [savedHostAgent],
+      activeTabId: "host-agent",
+    });
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      result.current.clearActiveProject();
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "host-agent",
+    ]);
+    expect(newShellTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spawn another shell when clearing to a host bucket with a shell", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const savedHostShell = {
+      ...makeEmptyTab("host-shell", "Shell 1", null, "shell"),
+      shell: {
+        cwd: "/projects/aethon",
+        command: "",
+        args: [],
+        shareMode: "private",
+        shellState: "running",
+      },
+    } as Tab;
+    result.current.tabBucketsRef.current.set(NO_PROJECT_KEY, {
+      tabs: [savedHostShell],
+      activeTabId: undefined,
+    });
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      result.current.clearActiveProject();
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
+  it("preserves overview and spawns a shell when switching to a worktree", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(projectWithWorktreeState(), {
+      newShellTab,
+    });
+    const savedWorktreeAgent = nonEmptyAgentTab(
+      "worktree-agent",
+      "Worktree",
+      "project-1",
+    );
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-1", "wt-alpha-feature"),
+      {
+        tabs: [savedWorktreeAgent],
+        activeTabId: "worktree-agent",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      result.current.activateWorktree("wt-alpha-feature");
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "worktree-agent",
+    ]);
+    expect(newShellTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spawn another shell when switching to a worktree bucket with a shell", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(projectWithWorktreeState(), {
+      newShellTab,
+    });
+    const savedWorktreeShell = {
+      ...makeEmptyTab("worktree-shell", "Shell 1", "project-1", "shell"),
+      shell: {
+        cwd: "/projects/alpha-feature",
+        command: "",
+        args: [],
+        shareMode: "private",
+        shellState: "running",
+      },
+    } as Tab;
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-1", "wt-alpha-feature"),
+      {
+        tabs: [savedWorktreeShell],
+        activeTabId: undefined,
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      result.current.activateWorktree("wt-alpha-feature");
+    });
+
+    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(newShellTab).not.toHaveBeenCalled();
   });
 });
 
