@@ -58,7 +58,12 @@ export async function handleTabOpen(
       deps.loadHooks,
     );
     state.currentProjectCwd = cwdOverride;
-    if (result.loaded > 0 || result.failed > 0 || projectChanged) {
+    if (
+      result.loaded > 0 ||
+      result.failed > 0 ||
+      result.prunedDisabled > 0 ||
+      projectChanged
+    ) {
       await state.resourceLoader.reload();
       deps.scheduleStateFileWrite();
       emitGlobalReady(state, deps);

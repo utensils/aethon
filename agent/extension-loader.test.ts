@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,11 +14,13 @@ import {
   type AethonExtensionApi,
   type ExtensionSource,
 } from "./state";
+import { disabledExtensionsFile } from "./disabled-extensions";
 import {
   RESERVED_THEME_IDS,
   discoverPersistedTabs,
   loadAethonExtensionDirectory,
   loadAethonExtensions,
+  loadProjectAethonExtensions,
   normalizeTheme,
   projectExtensionDisplayName,
 } from "./extension-loader";
@@ -290,6 +298,140 @@ describe("loadAethonExtensions", () => {
       expect(failuresAfterSecond).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadProjectAethonExtensions", () => {
+  it("prunes disabled project-extension records whose files were removed", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "aethon-proj-"));
+    const projectRoot = join(workspace, "mold");
+    try {
+      const extDir = join(projectRoot, ".aethon", "extensions");
+      mkdirSync(join(projectRoot, ".git"), { recursive: true });
+      mkdirSync(extDir, { recursive: true });
+      writeFileSync(
+        join(extDir, "kept.mjs"),
+        `export function register() { throw new Error("should be disabled"); }`,
+      );
+      mkdirSync(join(extDir, "packaged-extension"), { recursive: true });
+      const f = makeFixture(workspace);
+      f.state.disabledExtensions.add("mold:kept");
+      f.state.disabledExtensions.add("mold:stale");
+      f.state.disabledExtensionMeta.set("mold:kept", {
+        source: "project-directory",
+        projectRoot,
+      });
+      f.state.disabledExtensionMeta.set("mold:stale", {
+        source: "project-directory",
+        projectRoot,
+      });
+
+      const result = await loadProjectAethonExtensions(
+        f.state,
+        f.deps,
+        projectRoot,
+        { registerComponent() {} } as unknown as AethonExtensionApi,
+        new Map(),
+        new Set(),
+        new Set(),
+      );
+
+      expect(result.prunedDisabled).toBe(1);
+      expect(f.state.disabledExtensions.has("mold:kept")).toBe(true);
+      expect(f.state.disabledExtensions.has("mold:stale")).toBe(false);
+      expect(f.sent).toContainEqual(
+        expect.objectContaining({
+          type: "extension_lifecycle",
+          name: "mold:kept",
+          status: "disabled",
+        }),
+      );
+      expect(
+        JSON.parse(readFileSync(disabledExtensionsFile(workspace), "utf8")),
+      ).toEqual({
+        disabled: [
+          {
+            name: "mold:kept",
+            source: "project-directory",
+            projectRoot,
+          },
+        ],
+      });
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes legacy project-looking disabled records after scanning that project", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "aethon-proj-"));
+    const projectRoot = join(workspace, "mold");
+    try {
+      const extDir = join(projectRoot, ".aethon", "extensions");
+      mkdirSync(join(projectRoot, ".git"), { recursive: true });
+      mkdirSync(extDir, { recursive: true });
+      writeFileSync(
+        join(extDir, "present.mjs"),
+        `export function register() { throw new Error("should be disabled"); }`,
+      );
+      const f = makeFixture(workspace);
+      f.state.disabledExtensions.add("mold:present");
+      f.state.disabledExtensions.add("mold:removed");
+      f.state.disabledExtensions.add("@mold/package-ui");
+      f.state.disabledExtensionMeta.set("@mold/package-ui", {
+        source: "extension-package",
+      });
+
+      const result = await loadProjectAethonExtensions(
+        f.state,
+        f.deps,
+        projectRoot,
+        { registerComponent() {} } as unknown as AethonExtensionApi,
+        new Map(),
+        new Set(),
+        new Set(),
+      );
+
+      expect(result.prunedDisabled).toBe(1);
+      expect([...f.state.disabledExtensions].sort()).toEqual([
+        "@mold/package-ui",
+        "mold:present",
+      ]);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps disabled records for project scopes that were not scanned", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "aethon-proj-"));
+    const projectRoot = join(workspace, "mold");
+    try {
+      const extDir = join(projectRoot, ".aethon", "extensions");
+      mkdirSync(join(projectRoot, ".git"), { recursive: true });
+      mkdirSync(extDir, { recursive: true });
+      const f = makeFixture(workspace);
+      f.state.disabledExtensions.add("mold/nested:nested-ext");
+      f.state.disabledExtensionMeta.set("mold/nested:nested-ext", {
+        source: "project-directory",
+        projectRoot,
+      });
+
+      const result = await loadProjectAethonExtensions(
+        f.state,
+        f.deps,
+        projectRoot,
+        { registerComponent() {} } as unknown as AethonExtensionApi,
+        new Map(),
+        new Set(),
+        new Set(),
+      );
+
+      expect(result.prunedDisabled).toBe(0);
+      expect(f.state.disabledExtensions.has("mold/nested:nested-ext")).toBe(
+        true,
+      );
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
     }
   });
 });
