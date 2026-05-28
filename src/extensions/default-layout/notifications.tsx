@@ -6,8 +6,8 @@
 // {id}) when it fires, and the App-level handler dismisses it. Click
 // the toast to dismiss; click an action button to fire the action.
 //
-// The stack is registered as `notification-stack` in defaultLayoutSkill
-// so a skill can override the visual presentation (or place it inside a
+// The stack is registered as `notification-stack` in defaultLayoutExtension
+// so an extension can override the visual presentation (or place it inside a
 // layout cell) — but App.tsx renders the registered component at root
 // by default, escaping layout grid clipping.
 

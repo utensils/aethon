@@ -8,7 +8,7 @@ import type { A2UIPayload } from "../../types/a2ui";
 import {
   builtinLayouts,
   type LayoutCatalogueEntry,
-} from "../../skills/default-layout";
+} from "../../extensions/default-layout";
 import { deepMergeState } from "../../utils/stateMutation";
 import type { SlashCommand } from "../../slashCommands";
 

@@ -1,5 +1,5 @@
 // Regression tests for the RegistryComponent helper that mounts app-root
-// overlays through SkillRegistry. The previous code direct-imported the
+// overlays through ExtensionRegistry. The previous code direct-imported the
 // overlays in App.tsx, silently bypassing `aethon.registerComponent`
 // overrides — the cases below catch that recurrence.
 //
@@ -10,8 +10,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RegistryComponent } from "./A2UIRenderer";
-import { SkillRegistry } from "../skills/SkillRegistry";
-import { SkillRegistryProvider } from "../skills/registry";
+import { ExtensionRegistry } from "../extensions/ExtensionRegistry";
+import { ExtensionRegistryProvider } from "../extensions/ExtensionRegistryProvider";
 import type { BuiltinComponentProps } from "./A2UIRenderer";
 
 const noop = () => {};
@@ -22,11 +22,11 @@ function CustomPalette({ component }: BuiltinComponentProps) {
 
 describe("RegistryComponent", () => {
   it("renders nothing when no registration exists", () => {
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     // RegistryComponent uses A2UIRenderer in `bare` mode (Fragment, no
     // wrapper div) so an unknown type contributes zero DOM. Crucial: the
@@ -35,16 +35,16 @@ describe("RegistryComponent", () => {
     expect(html).toBe("");
   });
 
-  it("resolves a registered component type via the skill registry", () => {
-    const registry = new SkillRegistry();
+  it("resolves a registered component type via the extension registry", () => {
+    const registry = new ExtensionRegistry();
     registry.register({
-      name: "test-skill",
+      name: "test-extension",
       components: { "command-palette": CustomPalette },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain('data-testid="custom-palette"');
     expect(html).toContain('data-id="command-palette"');
@@ -52,7 +52,7 @@ describe("RegistryComponent", () => {
   });
 
   it("a later registration replaces the earlier one (override surface)", () => {
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     function Base({ component }: BuiltinComponentProps) {
       return <div data-id={component.id}>BASE</div>;
     }
@@ -65,16 +65,16 @@ describe("RegistryComponent", () => {
       components: { "command-palette": CustomPalette },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain("OVERRIDE");
     expect(html).not.toContain("BASE");
   });
 
   it("forwards the parent state record verbatim", () => {
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     function Inspect({ state }: BuiltinComponentProps) {
       return <div>{Object.keys(state).join(",")}</div>;
     }
@@ -83,13 +83,13 @@ describe("RegistryComponent", () => {
       components: { "search-panel": Inspect },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent
           type="search-panel"
           state={{ a: 1, b: "x" }}
           onEvent={noop}
         />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain("a,b");
   });
@@ -98,11 +98,11 @@ describe("RegistryComponent", () => {
     // Mostly defensive — overlays don't collide with primitive names, but
     // RegistryComponent should still resolve primitives like A2UIRenderer
     // does so the helper is safe to use anywhere.
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent type="text" state={{}} onEvent={noop} />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     // The text primitive renders an empty span with no content prop, but
     // the wrapper element exists.
@@ -113,14 +113,14 @@ describe("RegistryComponent", () => {
     // Codex peer-review caught this: extensions register declarative A2UI
     // subtrees through `aethon.registerComponent(...)`, which lands in
     // `setTemplates` (NOT `register`). If templates didn't take priority
-    // over default skill components, every override-claim in SPEC.md was
+    // over default extension components, every override-claim in SPEC.md was
     // silently broken.
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     function DefaultPalette() {
       return <div data-impl="default">DEFAULT</div>;
     }
     registry.register({
-      name: "default-skill",
+      name: "default-extension",
       components: { "command-palette": DefaultPalette },
     });
     // Extension-style template override — analogous to the bridge sending
@@ -133,9 +133,9 @@ describe("RegistryComponent", () => {
       },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain("EXT-OVERRIDE");
     expect(html).not.toContain("DEFAULT");
@@ -147,7 +147,7 @@ describe("RegistryComponent", () => {
     // A2UIRenderer expands it. Used by codex-flagged path where an
     // extension overrides command-palette/settings-panel/etc. via
     // aethon.registerComponent.
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     registry.setTemplates({
       "command-palette": {
         id: "ext-root",
@@ -156,9 +156,9 @@ describe("RegistryComponent", () => {
       },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent type="command-palette" state={{}} onEvent={noop} />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain("Custom palette");
     // No outer `.a2ui-renderer` wrapper — bare mode keeps these leaf
@@ -173,7 +173,7 @@ describe("RegistryComponent", () => {
     // relies on `componentProps={{shareMode, tabId}}` to render the
     // current mode; a declarative override needs equivalent access via
     // `$ref: "/$props/<key>"`.
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     registry.setTemplates({
       "share-mode-badge": {
         id: "ext-badge",
@@ -182,14 +182,14 @@ describe("RegistryComponent", () => {
       },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent
           type="share-mode-badge"
           state={{}}
           onEvent={noop}
           componentProps={{ shareMode: "read-write", tabId: "tab-9" }}
         />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain("read-write");
   });
@@ -198,7 +198,7 @@ describe("RegistryComponent", () => {
     // The share-mode badge needs live `shareMode` + `tabId` props passed
     // into the resolved component — both for the default React badge and
     // for any extension template override. componentProps does that.
-    const registry = new SkillRegistry();
+    const registry = new ExtensionRegistry();
     function PropInspect({ component }: BuiltinComponentProps) {
       return <div>{JSON.stringify(component.props)}</div>;
     }
@@ -207,14 +207,14 @@ describe("RegistryComponent", () => {
       components: { "share-mode-badge": PropInspect },
     });
     const html = renderToStaticMarkup(
-      <SkillRegistryProvider registry={registry}>
+      <ExtensionRegistryProvider registry={registry}>
         <RegistryComponent
           type="share-mode-badge"
           state={{}}
           onEvent={noop}
           componentProps={{ shareMode: "read-write", tabId: "tab-1" }}
         />
-      </SkillRegistryProvider>,
+      </ExtensionRegistryProvider>,
     );
     expect(html).toContain("read-write");
     expect(html).toContain("tab-1");

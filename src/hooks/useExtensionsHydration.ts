@@ -3,7 +3,7 @@ import { buildBuiltinSlashCommands, type SlashCommand } from "../slashCommands";
 import {
   builtinLayouts,
   type LayoutCatalogueEntry,
-} from "../skills/default-layout";
+} from "../extensions/default-layout";
 import {
   type ExtensionTheme,
   type UseExtensionsHydrationActions,

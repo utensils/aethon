@@ -70,7 +70,7 @@ always | never`, `mode = auto | direnv | nix | nix-shell`,
 - **Internal architecture docs updated.** Repository and bundled docs now
   reflect the split overlay modules (`src/hooks/uiOverlays/*`), the
   extracted system-prompt template/types (`agent/system-prompt/*`), and
-  the current extension-package naming for `~/.aethon/skills/node_modules/`.
+  the current extension-package naming for `~/.aethon/extensions/node_modules/`.
 
 ### Fixed
 
@@ -388,7 +388,7 @@ status: "loaded"|"failed"|"skipped", error?, path}`) from
   and call `e.preventDefault()` to swap the default chat bubble for a
   toast / sidebar pulse / status pill / etc., no source patches needed.
 
-- **Layout-slot contract.** `src/skills/default-layout/slots.json` now
+- **Layout-slot contract.** `src/extensions/default-layout/slots.json` now
   declares the canonical slot catalogue any layout can adhere to:
   `header`, `sidebar`, `tabs`, `canvas` (required), `terminal`,
   `composer` (required), `status`, `empty-state`. Each entry carries a
@@ -496,7 +496,7 @@ descendantId: "<action>"})` matcher fires. Replayed on `ready`.
   updated.
 - **Compositional sidebar items.** Each `SidebarItem` can carry
   `componentType`. When set, the sidebar resolves it through the
-  SkillRegistry and renders the registered template per row with
+  ExtensionRegistry and renders the registered template per row with
   `/$item` (the full item object), `/$index` (position), and
   `/$parent` (surrounding state) available to nested `$ref`s — same
   scope keys as the `for-each` primitive. New
@@ -723,13 +723,13 @@ error?: string}>`. Backwards compatible: sync callers ignore the
   mark in full color; left-click focuses the main window (re-surfacing
   Cmd+H'd apps); menu offers Show / New Tab / Quit.
 - **Skill manifest discovery from `package.json#aethon`.** Bridge walks
-  `~/.aethon/skills/node_modules/*` (and `@scope/*`) on boot and
+  `~/.aethon/extensions/node_modules/*` (and `@scope/*`) on boot and
   loads every package whose `package.json` declares an `aethon.entry`.
-  Lets users `npm install --prefix ~/.aethon/skills <pkg>` to install
+  Lets users `npm install --prefix ~/.aethon/extensions <pkg>` to install
   third-party skills (see `examples/skill-package/`).
 - **Extension hot-reload.** Bridge file watcher runs in dev AND
   release; watches `~/.aethon/extensions/`,
-  `~/.aethon/skills/node_modules/`, `~/.pi/agent/extensions/`, and
+  `~/.aethon/extensions/node_modules/`, `~/.pi/agent/extensions/`, and
   `<project>/agent/` (dev only). Trailing-edge debounce via a single
   worker thread (mpsc channel, `recv_timeout`) collapses npm-install
   bursts into one settle-then-fire kill. `~/.aethon/extensions` is

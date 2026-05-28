@@ -84,7 +84,7 @@ Mode changes only happen when you click the badge.
 
 ## How the agent uses shells
 
-Skills and extensions reach shells via three calls:
+Extensions reach shells via three calls:
 
 ```ts
 const shells = await aethon.shells.list();
@@ -110,7 +110,7 @@ In `read-write` mode, every `aethon.shells.write` call surfaces a
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ Skill 'team-helper' wants to write to shell 1: │
+│ Extension 'team-helper' wants to write to shell 1: │
 │                                                 │
 │   ls -la                                        │
 │                                                 │
@@ -144,5 +144,5 @@ prompts before killing — disable via `[shell] prompt_before_close = false`.
 ## Where to next
 
 - [Configuration](/guide/configuration) — every `[shell]` key.
-- [Skills & extensions](/guide/skills-and-extensions) — how skills use the shells API.
+- [Extensions](/guide/extensions) — how extensions use the shells API.
 - [Keyboard shortcuts](/reference/keyboard-shortcuts) — full reference.

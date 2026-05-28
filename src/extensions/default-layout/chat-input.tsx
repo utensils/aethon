@@ -20,7 +20,7 @@ import {
   resolveNumber,
   resolveString,
 } from "../../utils/dataBinding";
-import { useSkillRegistry } from "../../skills/SkillRegistry";
+import { useExtensionRegistry } from "../ExtensionRegistry";
 import type { QueuedMessage } from "../../types/tab";
 import { SlashPicker } from "./slash-picker";
 import { useComposerResize } from "./use-composer-resize";
@@ -45,8 +45,8 @@ export function ChatInput({
   state,
   onEvent,
 }: BuiltinComponentProps) {
-  const skillRegistry = useSkillRegistry();
-  const QueuedPopover = skillRegistry.resolve("queued-messages-popover");
+  const extensionRegistry = useExtensionRegistry();
+  const QueuedPopover = extensionRegistry.resolve("queued-messages-popover");
   const props = component.props as {
     value?: StringValue;
     placeholder?: StringValue;

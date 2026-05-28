@@ -1,5 +1,5 @@
 /**
- * react-markdown adapter components for the default-layout skill.
+ * react-markdown adapter components for the default-layout extension.
  *
  * react-markdown invokes `code` for both inline AND fenced code blocks. We
  * split on whether the parent is `<pre>` (fenced) and route the fenced case

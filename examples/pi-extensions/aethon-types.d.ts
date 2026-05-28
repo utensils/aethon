@@ -136,7 +136,7 @@ declare global {
 
         /**
          * Replace the active layout payload wholesale. Same shape as
-         * src/skills/default-layout/layout.a2ui.json — A2UI tree plus
+         * src/extensions/default-layout/layout.a2ui.json — A2UI tree plus
          * initial state. The frontend rerenders entirely from this.
          */
         setLayout(payload: unknown): void;

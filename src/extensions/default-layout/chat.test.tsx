@@ -14,8 +14,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 vi.mock("../../components/HighlightedCode", () => ({
   HighlightedCode: ({ code }: { code: string }) => code,
 }));
-import { SkillRegistry } from "../../skills/SkillRegistry";
-import { SkillRegistryProvider } from "../../skills/registry";
+import { ExtensionRegistry } from "../ExtensionRegistry";
+import { ExtensionRegistryProvider } from "../ExtensionRegistryProvider";
 
 class ResizeObserverMock {
   observe = vi.fn();
@@ -40,19 +40,19 @@ function renderInput(
   state: Record<string, unknown> = {},
 ) {
   // ChatInput resolves the queued-messages popover via
-  // `useSkillRegistry().resolve(...)` and renders it with
-  // `createElement`, which means the test needs a real SkillRegistry
+  // `useExtensionRegistry().resolve(...)` and renders it with
+  // `createElement`, which means the test needs a real ExtensionRegistry
   // in context with the popover registered — otherwise the resolver
   // returns undefined and the popover stays unmounted even when the
   // test fixture seeds `state.queuedMessages`. Registering it here
   // exercises the production wiring.
-  const registry = new SkillRegistry();
+  const registry = new ExtensionRegistry();
   registry.register({
     name: "test-default-layout",
     components: { "queued-messages-popover": QueuedMessagesPopover },
   });
   const result = render(
-    <SkillRegistryProvider registry={registry}>
+    <ExtensionRegistryProvider registry={registry}>
       <ChatInput
         component={{
           id: "chat-input",
@@ -62,7 +62,7 @@ function renderInput(
         state={state}
         onEvent={onEvent}
       />
-    </SkillRegistryProvider>,
+    </ExtensionRegistryProvider>,
   );
   return {
     input: screen.getByPlaceholderText("Message"),

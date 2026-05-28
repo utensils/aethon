@@ -5,7 +5,7 @@ import type {
 } from "react";
 import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
-import type { SkillRegistry } from "../../skills/SkillRegistry";
+import type { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
 import type {
   DisabledExtensionRecord,
   ExtensionFailureSummary,
@@ -15,7 +15,7 @@ import type {
 import type {
   NotificationEntry,
   NotificationKind,
-} from "../../skills/default-layout/notifications";
+} from "../../extensions/default-layout/notifications";
 import type { ProjectsState } from "../../projects";
 
 /** A bridge-to-frontend message. The `type` discriminator routes to a
@@ -59,7 +59,7 @@ export interface BridgeMessageContext {
 
   // ─── Live refs ──────────────────────────────────────────────────────
   stateRef: MutableRefObject<Record<string, unknown>>;
-  registry: SkillRegistry;
+  registry: ExtensionRegistry;
   piDefaultModelRef: MutableRefObject<string>;
   allDiscoveredSessionsRef: MutableRefObject<DiscoveredSession[]>;
   projectsRef: MutableRefObject<ProjectsState>;

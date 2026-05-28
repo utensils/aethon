@@ -25,7 +25,7 @@ additional commands via
 | `/name [name]` | Show or set the pi session display name. |
 | `/export [path.html\|path.jsonl]` | Export the pi session as HTML, or JSONL when the path ends in `.jsonl`. |
 | `/terminal` | Toggle the bottom terminal panel. Equivalent to `Cmd+\``. |
-| `/extensions` | List every loaded extension. With `install <npm-package\|git-url>` (or `add`), runs `npm install --prefix ~/.aethon/skills` and reloads the agent so the new package is picked up. |
+| `/extensions` | List every loaded extension. With `install <npm-package\|git-url>` (or `add`), runs `npm install --prefix ~/.aethon/extensions` and reloads the agent so the new package is picked up. |
 | `/sidebar` | Toggle the sidebar. Equivalent to `Cmd+B`. |
 | `/files` | Toggle the right-hand files sidebar. |
 | `/layout <id>` | Switch layouts. The only built-in id today is `workstation`; extensions register additional ones via `aethon.registerLayout`. |
@@ -37,7 +37,7 @@ The `/extensions` output lists every loaded extension; `/help` lists every
 registered command (built-in plus extension-registered) with its
 description. Reach extension commands the same way: `/<name> [args…]`.
 
-A skill registers a command in two halves: a metadata record and a
+An extension registers a command in two halves: a metadata record and a
 paired event handler.
 
 ```ts
@@ -75,13 +75,13 @@ Built-in command names are reserved (`clear`, `help`, `theme`, `model`,
 installs new ones (`add` works as an alias). Examples:
 
 ```
-/extensions install @my-org/aethon-team-skills
-/extensions install github:my-org/aethon-skills
-/extensions install https://github.com/my-org/aethon-skills.git
+/extensions install @my-org/aethon-team-extensions
+/extensions install github:my-org/aethon-extensions
+/extensions install https://github.com/my-org/aethon-extensions.git
 ```
 
 The Tauri shell runs the equivalent of
-`npm install --prefix ~/.aethon/skills <spec>` and restarts the agent
+`npm install --prefix ~/.aethon/extensions <spec>` and restarts the agent
 sidecar so the new package is loaded on the next request. Tarballs,
 GitHub shorthands, and git URLs are accepted; shell-like option /
 whitespace input is rejected.
@@ -102,6 +102,6 @@ whitespace input is rejected.
 
 ## Where to next
 
-- [Skills & extensions](/guide/skills-and-extensions) — registering commands.
+- [Extensions](/guide/extensions) — registering commands.
 - [Command palette](/guide/command-palette) — the other path to every command.
 - [Runtime API](/reference/runtime-api) — `aethon.registerSlashCommand` signature.

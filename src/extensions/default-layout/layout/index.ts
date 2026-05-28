@@ -1,5 +1,5 @@
 /**
- * Layout primitives for the default-layout skill — the CSS-grid `Layout`
+ * Layout primitives for the default-layout extension — the CSS-grid `Layout`
  * container, the inline Æπ brand monogram, the `--app-ui-scale` reader,
  * plus the small chrome composites that share the same root semantics
  * (`StatusBar`, `EmptyState`, `WorktreeLanding`).

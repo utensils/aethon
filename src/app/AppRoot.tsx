@@ -3,12 +3,12 @@ import A2UIRenderer, {
   RegistryComponent,
   type A2UIEventHandler,
 } from "../components/A2UIRenderer";
-import { SkillRegistryProvider } from "../skills/registry";
-import type { SkillRegistry } from "../skills/SkillRegistry";
+import { ExtensionRegistryProvider } from "../extensions/ExtensionRegistryProvider";
+import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { A2UIPayload } from "../types/a2ui";
 
 export interface AppRootProps {
-  registry: SkillRegistry;
+  registry: ExtensionRegistry;
   layout: A2UIPayload;
   renderState: Record<string, unknown>;
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -26,7 +26,7 @@ export interface AppRootProps {
 }
 
 /** App-root render. The four overlays mount through `RegistryComponent`
- *  so a skill can swap each with `aethon.registerComponent("<type>",
+ *  so an extension can swap each with `aethon.registerComponent("<type>",
  *  custom)`. Each overlay still gates its own visibility on state
  *  (e.g. /commandPalette/open) — the boolean flags here just keep the
  *  closed overlay tree out of the DOM. `tabId` is forwarded so extension
@@ -47,7 +47,7 @@ export function AppRoot({
   topBanner,
 }: AppRootProps) {
   return (
-    <SkillRegistryProvider registry={registry}>
+    <ExtensionRegistryProvider registry={registry}>
       <div className="app">
         {topBanner}
         <A2UIRenderer
@@ -98,6 +98,6 @@ export function AppRoot({
           />
         )}
       </div>
-    </SkillRegistryProvider>
+    </ExtensionRegistryProvider>
   );
 }

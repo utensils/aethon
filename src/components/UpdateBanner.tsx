@@ -15,8 +15,8 @@
 //!
 //! Unstyled-by-design: pulls in a small CSS module so themes can
 //! override `--update-banner-bg` / accent vars without forking the
-//! component. Skill authors can register a `update-banner` composite
-//! to replace this entirely via [`SkillRegistry.registerComponent`].
+//! component. Extension authors can register a `update-banner` composite
+//! to replace this entirely via [`ExtensionRegistry.registerComponent`].
 
 import type { JSX } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";

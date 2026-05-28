@@ -159,17 +159,17 @@ new warnings as acceptable without addressing or justifying them.
 ### Frontend model — three things to know
 
 **1. Layout-as-payload.** The default UI is _not_ hardcoded React. It's
-`src/skills/default-layout/workstation.a2ui.json`, loaded as the boot payload
-and fed to the same `A2UIRenderer` that handles agent output. A skill is the
-extension primitive; the default-layout skill currently registers only
+`src/extensions/default-layout/workstation.a2ui.json`, loaded as the boot payload
+and fed to the same `A2UIRenderer` that handles agent output. An extension is
+the runtime contribution primitive; the default-layout extension currently registers only
 `workstation` while we focus polish on a single surface (the earlier
 `command-deck` / `editorial` / `live-layout` variations were dropped from
 the catalogue — the variation chrome components stay registered so their
 `.a2ui.json` payloads can be re-added when we want sibling layouts back).
 Switching layouts (when more exist) is a sidebar/palette click that calls
 `window.aethon.activateLayout(id)`. Don't add static chrome in `App.tsx` —
-extend the layout JSON or register a new skill. Layouts must conform to
-the slot contract in `src/skills/default-layout/slots.json` + `slots.ts`
+extend the layout JSON or register a new extension. Layouts must conform to
+the slot contract in `src/extensions/default-layout/slots.json` + `slots.ts`
 (canonical area names: `header`, `sidebar`, `canvas`, `composer`,
 `terminal`, `status`; non-canonical layouts declare a `slotMap`).
 
@@ -189,8 +189,8 @@ hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout primitives (`text`,
 `heading`, `paragraph`, `code`, `card`, `button`, `container`,
 `divider`, `image`, `icon`, `text-input`, `date-picker`, `select`,
 `checkbox`, `slider`, `form`, `form-field`, `list`, `table`) — these
-can't be overridden. Default-layout skill components are split per
-family under `src/skills/default-layout/` (`chat.tsx`, `terminal.tsx`,
+can't be overridden. Default-layout extension components are split per
+family under `src/extensions/default-layout/` (`chat.tsx`, `terminal.tsx`,
 `command-palette.tsx`, `settings-panel.tsx`, `search-panel.tsx`,
 `notifications.tsx`, `share-mode-badge.tsx`, `variation-components.tsx`,
 `markdown-adapter.tsx`, plus `shell/`, `sidebar/`, and `editor/`
@@ -199,15 +199,15 @@ aggregator only. Everything else (`layout`, `sidebar`,
 `chat-history`, `chat-input`, `status-bar`, `terminal-panel`, `main-canvas`,
 `shell-canvas`, `tool-card`, `command-palette`, `notification-stack`,
 `settings-panel`, `search-panel`, `share-mode-badge`, …) comes from the
-`SkillRegistry`, exposed via React context (`useSkillRegistry`). App-root
+`ExtensionRegistry`, exposed via React context (`useExtensionRegistry`). App-root
 overlays mount through `<RegistryComponent type="…" />` (also exported
-from `A2UIRenderer.tsx`) so a skill can swap any of them with
-`aethon.registerComponent`. To add a new component type, register it on a
-skill, not in the primitives table.
+from `A2UIRenderer.tsx`) so an extension can swap any of them with
+`aethon.registerComponent`. To add a new component type, register it on an
+extension, not in the primitives table.
 
 ### Runtime API
 
-`App.tsx` attaches a small API to `window.aethon` so skills (and the dev
+`App.tsx` attaches a small API to `window.aethon` so extensions (and the dev
 console) can swap chrome at runtime:
 
 - `window.aethon.setLayout(payload)` — replace the active layout
@@ -220,9 +220,9 @@ console) can swap chrome at runtime:
   built-in catalogue and may be reintroduced later — keep the names
   free). Id pattern: `/^[A-Za-z][\w-]*$/`.
 - `window.aethon.activateLayout(id)` — switch to a registered layout
-- `window.aethon.registerSkill(skill)` — register a skill; if it has a
+- `window.aethon.registerExtension(extension)` — register an extension; if it has a
   `layout`, also activate it
-- `window.aethon.listSkills()` — names of currently registered skills
+- `window.aethon.listExtensions()` — names of currently registered extensions
 - `window.aethon.openProject(path)` — register/activate a project
 
 ### Keyboard shortcuts (current set)
@@ -337,16 +337,16 @@ act on the command.
 Extensions can ship React components by setting `aethon.frontendEntry` in
 their `package.json` to a relative JS file path. The bridge reads that file
 and sends its contents as a string in `extension_frontend_modules` events.
-`src/skills/extensionFrontendLoader.ts` receives these events, wraps each
-body in `new Function("React", "skill", code)`, and calls the result with
+`src/extensions/extensionFrontendLoader.ts` receives these events, wraps each
+body in `new Function("React", "extension", code)`, and calls the result with
 `React` + a `{ registerComponent(type, fn) }` API object. Components
-registered this way land in the `SkillRegistry` and are resolved alongside
-built-in skill components. A delta payload replaces the full previous set —
+registered this way land in the `ExtensionRegistry` and are resolved alongside
+built-in extension components. A delta payload replaces the full previous set —
 re-evaluated modules hot-swap their components; removed modules unregister
 theirs. The trust model is identical to bridge-side extension code (user
 installed it, no sandbox).
 
-`SkillRegistry` also has a `.registerTemplate(type, payload)` path for
+`ExtensionRegistry` also has a `.registerTemplate(type, payload)` path for
 declarative A2UI subtree templates — used when an extension provides a
 component as an A2UI JSON fragment rather than a React function. The
 renderer prefers React components when both exist for the same type.
@@ -356,9 +356,9 @@ renderer prefers React components when both exist for the same type.
 `Cmd+P` opens the switcher (tabs / sessions / projects / layouts /
 themes / models first); `Cmd+Shift+P` opens it in commands mode (slash
 commands / keybindings first). The palette is a registered builtin
-component (`command-palette` type) in `defaultLayoutSkill` so a skill
+component (`command-palette` type) in `defaultLayoutExtension` so an extension
 can override it via `aethon.registerComponent`. Pure ranking + section
-selectors live in `src/skills/default-layout/palette-items.ts` so vitest
+selectors live in `src/extensions/default-layout/palette-items.ts` so vitest
 can exercise them without React. Query prefixes: `>` forces commands,
 `@` forces tabs, `?` forces keybindings. Arrow nav uses a document-level
 capture-phase keydown handler keyed off a `navRef` so focus theft and
@@ -377,8 +377,8 @@ cwd as immutable.
 ### Monaco editor + file tree
 
 The editor surface (sidebar file tree + Monaco buffers + media/text
-viewers) is implemented as a default-layout sub-skill under
-`src/skills/default-layout/editor/`. Monaco glue lives in `src/monaco/`
+viewers) is implemented as a default-layout sub-extension under
+`src/extensions/default-layout/editor/`. Monaco glue lives in `src/monaco/`
 (`editor-buffers.ts` manages models per file, `setup.ts` configures
 workers + languages, `theme.ts` syncs to the active Aethon theme).
 File-system operations go through `src-tauri/src/commands/fs/`
@@ -436,7 +436,7 @@ The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 | Env var               | Purpose                                                                                                                                                                                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `AETHON_DOCS_DIR`     | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
-| `AETHON_USER_DIR`     | `~/.aethon/` — user extensions, skills, sessions, state file.                                                                                                                                                                                                |
+| `AETHON_USER_DIR`     | `~/.aethon/` — user extensions, sessions, state file.                                                                                                                                                                                                |
 | `AETHON_STATE_FILE`   | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                                    |
 | `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts.                                                                                                                                    |
 | `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
@@ -579,7 +579,7 @@ Two file series share that directory:
 - `aethon.YYYY-MM-DD` — Rust shell (`tracing` crate), covers agent
   supervisor, file watcher, debug TCP server, Tauri commands.
 - `bridge.YYYY-MM-DD.log` — bun bridge (`agent/logger.ts`), covers
-  extension loaders, theme/skill discovery, system-prompt assembly,
+  extension loaders, theme/extension discovery, system-prompt assembly,
   per-tab session setup.
 
 Files older than 7 days are pruned at app startup; rotation is per-day.
@@ -611,9 +611,9 @@ Webview globals exposed in dev only:
 
 - `window.__AETHON_STATE__()` — snapshot of the layout state object
 - `window.__AETHON_INVOKE__` — Tauri `invoke` (used by the eval wrapper)
-- `window.__AETHON_REGISTRY__` — `SkillRegistry` instance
+- `window.__AETHON_EXTENSION_REGISTRY__` — `ExtensionRegistry` instance
 - `window.__AETHON_SET_STATE__(next)` — replace state (advanced)
-- `window.aethon` — public runtime API (`setLayout`, `registerSkill`, etc.)
+- `window.aethon` — public runtime API (`setLayout`, `registerExtension`, etc.)
 
 Use this proactively after touching any UI / agent code: connect, send a
 chat, screenshot, verify. The dev build must already be running — never
@@ -634,7 +634,7 @@ user confirmation, pi-tool registration of
 `listShells`/`readShell`/`writeShell` (in `agent/shell-tools.ts`),
 Settings UI overlay, fullscreen, search overlay, drag-and-drop into
 composer, bridge crash recovery, OS notifications. Post-M6: Monaco
-editor + file tree + media viewers (`src/skills/default-layout/editor/`,
+editor + file tree + media viewers (`src/extensions/default-layout/editor/`,
 `src/monaco/`, `src-tauri/src/commands/fs/`), native window geometry
 persistence with multi-monitor restore (`src-tauri/src/window_state/`),
 pi native slash commands plumbed through to the composer autocomplete,

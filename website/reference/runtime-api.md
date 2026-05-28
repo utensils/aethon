@@ -30,7 +30,7 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 
 | Call | Purpose |
 |---|---|
-| `aethon.registerComponent(type, template)` | Register an A2UI component template (built-in or skill-scoped). |
+| `aethon.registerComponent(type, template)` | Register an A2UI component template (built-in or extension-scoped). |
 | `aethon.registerTheme({ id, label?, vars })` | Register a CSS-variable bundle. |
 | `aethon.registerLayout({ id, name, description?, payload })` / `unregisterLayout(id)` / `listLayouts()` | Register a layout sibling to `workstation` (the only built-in id today). |
 | `aethon.registerSlashCommand({ name, description, usage? })` | Record a `/command` — pair with `onEvent({ componentType: "slash-command", descendantId: "<name>" })`. |
@@ -53,7 +53,7 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 | `aethon.listExtensions()` | Currently loaded extensions (user / project / npm). |
 | `aethon.listComponents()` | Registered components, with sources. |
 | `aethon.listThemes()` | Registered themes. |
-| `aethon.listSkills()` | Active skills. |
+| `aethon.listLayouts()` | Registered layouts. |
 | `aethon.getLayout()` | The currently active layout payload. |
 | `aethon.getRuntimeSnapshot()` | Full state snapshot — extensions, themes, components, layout, tabs. |
 
@@ -93,7 +93,7 @@ type MutationResult = {
 };
 ```
 
-Skills should `await` mutations and surface failures in chat (or
+Extensions should `await` mutations and surface failures in chat (or
 through `aethon.onEvent("extension_lifecycle", …)`). A failed mutation
 does **not** crash Aethon — the error is logged and the rest of the
 extension keeps running.

@@ -1,6 +1,6 @@
 // Shell tab share-mode badge — clickable label that cycles
 // private → read → read-write → read-write-trusted → private.
-// Registered as `share-mode-badge` on `defaultLayoutSkill` so a skill can
+// Registered as `share-mode-badge` on `defaultLayoutExtension` so an extension can
 // override it via `aethon.registerComponent("share-mode-badge", custom)`.
 //
 // Reads `shareMode` + `tabId` from props.{shareMode,tabId} (preferred when
@@ -31,7 +31,7 @@ function readBadgeProps(
     return { shareMode: props.shareMode, tabId: props.tabId };
   }
   // Fallback path — caller didn't pass a mode, so derive from the active
-  // shell tab. Lets a skill drop `<share-mode-badge>` into any layout cell
+  // shell tab. Lets an extension drop `<share-mode-badge>` into any layout cell
   // without wiring shareMode through state-binding.
   const tabs = (state.tabs as Array<{
     id: string;

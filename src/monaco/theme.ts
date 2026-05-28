@@ -14,7 +14,7 @@
  * saved. The palette here is the same one in `src/styles/themes.css` for
  * each `:root[data-theme="…"]` block — both should move together.
  *
- * Overrides: skills/extensions can replace any registered theme via
+ * Overrides: extensions can replace any registered theme via
  * `aethon.registerMonacoTheme(id, data)` (mounted on `window.aethon`
  * by `useWindowApi`). The runtime registry is consulted first on
  * every `applyMonacoTheme(id)` call so a registration takes effect
@@ -86,7 +86,7 @@ export function monacoThemeFor(themeId: string | undefined | null): string {
 
 /** Register (or replace) a Monaco theme keyed under `aethon-<id>`.
  *  Surface for `aethon.registerMonacoTheme(id, data)` so extensions
- *  + skills can supply their own Monaco palette in one call. The new
+ *  can supply their own Monaco palette in one call. The new
  *  data takes effect immediately if `id` is the active theme. */
 export function registerMonacoTheme(
   id: string,

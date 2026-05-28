@@ -61,7 +61,7 @@ streaming.
 ### `setLayout(payload)`
 
 Replace the entire layout. `payload` is the same shape as the bundled
-workstation payload at `src/skills/default-layout/workstation.a2ui.json`
+workstation payload at `src/extensions/default-layout/workstation.a2ui.json`
 — `{ components, state? }`.
 
 ```ts
@@ -325,13 +325,11 @@ the file as a string and ships it to the webview, where it's wrapped
 with:
 
 ```ts
-new Function("React", "skill", code)(React, frontendModuleApi);
+new Function("React", "extension", code)(React, frontendModuleApi);
 ```
 
-So write the body as if `React` and `skill` are in scope (the second
-parameter is named `skill` for back-compat with existing `frontendEntry`
-bodies — it's just the local handle for the API object below). `skill`
-is a tiny API:
+So write the body as if `React` and `extension` are in scope. `extension` is
+a tiny API:
 
 ```ts
 interface FrontendModuleApi {
@@ -352,7 +350,7 @@ payload by their declared `type`:
 { type: "pulse-card", props: { title: "Live", state: "ok" } }
 ```
 
-The renderer resolves the type through the SkillRegistry just like
+The renderer resolves the type through the ExtensionRegistry just like
 any built-in. `examples/extension-package/src/frontend.js` ships a
 minimal `pulse-card` demo (CSS-keyframe pulse, hooks via
 `React.useEffect`).
@@ -360,14 +358,14 @@ minimal `pulse-card` demo (CSS-keyframe pulse, hooks via
 Frontend components are treated as app chrome by default: Aethon wraps
 them in `.ae-extension-component`, so text does not accidentally select
 while users drag or click floating surfaces. If a nested path, id, or
-log line should remain copyable, spread `skill.selectableProps()` onto
+log line should remain copyable, spread `extension.selectableProps()` onto
 that exact element:
 
 ```js
-skill.registerComponent("path-chip", function PathChip({ component }) {
+extension.registerComponent("path-chip", function PathChip({ component }) {
   return React.createElement(
     "code",
-    skill.selectableProps(),
+    extension.selectableProps(),
     component.props.path,
   );
 });
@@ -383,7 +381,7 @@ function body — top-level `import` / `export` will fail.
 the full set of modules replaces the previous set. Components from a
 removed module are unregistered; components from a re-evaluated module
 replace their prior bindings (so `npm install --prefix
-~/.aethon/skills <pkg>` hot-reloads cleanly). Errors per module are
+~/.aethon/extensions <pkg>` hot-reloads cleanly). Errors per module are
 caught and surfaced as a system notice; one broken module can't kill
 the others.
 

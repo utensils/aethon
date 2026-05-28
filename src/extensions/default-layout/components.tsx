@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- barrel re-export module; HMR is driven by the sibling source files */
 
 /**
- * Default-layout skill: A2UI components — barrel re-exports.
+ * Default-layout extension: A2UI components — barrel re-exports.
  *
  * The composites live in focused sibling modules so each family can be
  * understood and edited in isolation:
@@ -17,7 +17,7 @@
  *   - `shell/`               — ShellCanvas, TerminalPanel, TabStrip
  *
  * The renderer treats these no differently from agent-emitted components —
- * the default workspace UI uses the exact same path skills will use to ship
+ * the default workspace UI uses the exact same path extensions will use to ship
  * their own components.
  */
 

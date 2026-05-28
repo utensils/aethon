@@ -428,8 +428,8 @@
               "*.tsx"
               "*.vue"
               # Hand-shaped layout payloads — element ordering is meaningful.
-              "src/skills/default-layout/*.a2ui.json"
-              "src/skills/default-layout/slots.json"
+              "src/extensions/default-layout/*.a2ui.json"
+              "src/extensions/default-layout/slots.json"
               # Generated / vendored / out-of-tree.
               "package-lock.json"
               "bun.lock"

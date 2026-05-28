@@ -31,13 +31,13 @@ applyTo: "**/*.ts,**/*.tsx"
 ## A2UI rendering rules
 
 - New UI **never** lives as hardcoded JSX in `App.tsx`. It either:
-  - extends `src/skills/default-layout/workstation.a2ui.json`, or
-  - registers a component on a `SkillRegistry` (then is referenced by
+  - extends `src/extensions/default-layout/workstation.a2ui.json`, or
+  - registers a component on an `ExtensionRegistry` (then is referenced by
     `type` from JSON).
 - Components that read state must use `$ref` JSON Pointers
   (`{"value": {"$ref": "/draft"}}`) — not direct `state.draft`.
 - The 19 primitives (`text`, `heading`, `button`, `text-input`, …) in
-  `src/components/builtins.tsx` are **not** overridable from skills.
+  `src/components/builtins.tsx` are **not** overridable from extensions.
 
 ## Event routing
 

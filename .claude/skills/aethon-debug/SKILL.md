@@ -70,9 +70,9 @@ For screenshots, use `debug-screenshot.sh` (it does not activate by app name) an
 |---|---|---|
 | `window.__AETHON_STATE__()` | `() => Record<string, unknown>` | Snapshot of the layout state object |
 | `window.__AETHON_SET_STATE__(next)` | `(state) => void` | Replace state (advanced; bypasses the agent) |
-| `window.__AETHON_REGISTRY__` | `SkillRegistry` | Skill registry — `.list()`, `.resolve(type)` |
+| `window.__AETHON_EXTENSION_REGISTRY__` | `ExtensionRegistry` | Extension registry — `.list()`, `.resolve(type)` |
 | `window.__AETHON_INVOKE__` | Tauri `invoke` | Call any Tauri command |
-| `window.aethon` | object | Public runtime API: `setLayout`, `resetLayout`, `getLayout`, `registerSkill`, `listSkills` |
+| `window.aethon` | object | Public runtime API: `setLayout`, `resetLayout`, `getLayout`, `registerExtension`, `listExtensions` |
 
 ## Tauri commands
 
@@ -224,15 +224,15 @@ JS
 
 JS must use `return` to send a value back. Async/await is supported (the wrapper evals the body inside an async IIFE).
 
-### `skills` — list registered skills
+### `extensions` — list registered extensions
 
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
-return window.aethon.listSkills();
+return window.aethon.listExtensions();
 JS
 ```
 
-### `reset-layout` — restore the default-layout skill's payload
+### `reset-layout` — restore the default-layout extension's payload
 
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'window.aethon.resetLayout(); return "reset"'

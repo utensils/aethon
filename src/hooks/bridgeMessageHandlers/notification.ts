@@ -1,4 +1,4 @@
-import type { NotificationEntry } from "../../skills/default-layout/notifications";
+import type { NotificationEntry } from "../../extensions/default-layout/notifications";
 import type { BridgeMessageHandler } from "./types";
 
 /** Agent-pushed notification. Bridge supplies a stable id (so dismiss

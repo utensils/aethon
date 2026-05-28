@@ -1,51 +1,51 @@
 /**
- * SkillRegistry — runtime registry of skills and the components they expose.
+ * ExtensionRegistry — runtime registry of extensions and the components they expose.
  *
  * Lookup is type-string → React component. The registry is shared via React
- * context (see `registry.tsx`) so nested A2UIRenderers (e.g., inside
- * ChatHistory or MainCanvas) see the same skill bindings without
+ * context (see `ExtensionRegistryProvider.tsx`) so nested A2UIRenderers
+ * (e.g., inside ChatHistory or MainCanvas) see the same extension bindings without
  * prop-drilling.
  *
  * This file holds the class + hook only — keeping React component exports
- * (`SkillRegistryProvider`) in a separate file so Vite's react-refresh
+ * (`ExtensionRegistryProvider`) in a separate file so Vite's react-refresh
  * lint rule treats this module as pure logic.
  */
 
 import { createContext, useContext } from "react";
 import type { A2UIPayload } from "../types/a2ui";
-import type { A2UIComponentImpl, A2UISkill } from "./types";
+import type { A2UIComponentImpl, A2UIExtension } from "./types";
 
-export class SkillRegistry {
-  private readonly skills = new Map<string, A2UISkill>();
+export class ExtensionRegistry {
+  private readonly extensions = new Map<string, A2UIExtension>();
   private readonly components = new Map<string, A2UIComponentImpl>();
   // Declarative A2UI subtree templates registered by extensions. Looked up
   // alongside `components` — the renderer prefers React components if both
   // are present, falling back to template expansion. Independent of the
-  // `skills` map because templates can be re-registered live without
-  // affecting any React-component skills.
+  // `extensions` map because templates can be re-registered live without
+  // affecting any React-component extensions.
   private readonly templates = new Map<string, unknown>();
   private readonly templateListeners = new Set<() => void>();
 
-  register(skill: A2UISkill): void {
-    this.skills.set(skill.name, skill);
-    if (skill.components) {
-      for (const [type, impl] of Object.entries(skill.components)) {
+  register(extension: A2UIExtension): void {
+    this.extensions.set(extension.name, extension);
+    if (extension.components) {
+      for (const [type, impl] of Object.entries(extension.components)) {
         this.components.set(type, impl);
       }
     }
   }
 
   unregister(name: string): void {
-    const skill = this.skills.get(name);
-    if (!skill) return;
-    if (skill.components) {
-      for (const type of Object.keys(skill.components)) {
-        if (this.components.get(type) === skill.components[type]) {
+    const extension = this.extensions.get(name);
+    if (!extension) return;
+    if (extension.components) {
+      for (const type of Object.keys(extension.components)) {
+        if (this.components.get(type) === extension.components[type]) {
           this.components.delete(type);
         }
       }
     }
-    this.skills.delete(name);
+    this.extensions.delete(name);
   }
 
   resolve(type: string): A2UIComponentImpl | undefined {
@@ -73,27 +73,27 @@ export class SkillRegistry {
     return () => this.templateListeners.delete(fn);
   }
 
-  list(): A2UISkill[] {
-    return [...this.skills.values()];
+  list(): A2UIExtension[] {
+    return [...this.extensions.values()];
   }
 
-  // The "primary" layout is the most recently registered skill's layout.
-  // Skills without a layout are skipped.
+  // The "primary" layout is the most recently registered extension's layout.
+  // Extensions without a layout are skipped.
   primaryLayout(): A2UIPayload | undefined {
     let last: A2UIPayload | undefined;
-    for (const skill of this.skills.values()) {
-      if (skill.layout) last = skill.layout;
+    for (const extension of this.extensions.values()) {
+      if (extension.layout) last = extension.layout;
     }
     return last;
   }
 }
 
-export const SkillRegistryContext = createContext<SkillRegistry | null>(null);
+export const ExtensionRegistryContext = createContext<ExtensionRegistry | null>(null);
 
-export function useSkillRegistry(): SkillRegistry {
-  const reg = useContext(SkillRegistryContext);
+export function useExtensionRegistry(): ExtensionRegistry {
+  const reg = useContext(ExtensionRegistryContext);
   if (!reg) {
-    throw new Error("useSkillRegistry called outside SkillRegistryProvider");
+    throw new Error("useExtensionRegistry called outside ExtensionRegistryProvider");
   }
   return reg;
 }

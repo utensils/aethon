@@ -2,7 +2,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillRegistry } from "../skills/SkillRegistry";
+import { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { ProjectsState } from "../projects";
 import { useAppSlashCommandContext } from "./useAppSlashCommandContext";
 
@@ -53,7 +53,7 @@ describe("useAppSlashCommandContext", () => {
             payload: { components: [] },
           },
         ]),
-        registry: new SkillRegistry(),
+        registry: new ExtensionRegistry(),
         appendMessage,
         pushNotification: vi.fn(() => "toast-1"),
         clearChat: vi.fn(),
@@ -103,7 +103,7 @@ describe("useAppSlashCommandContext", () => {
         stateRef: ref({}),
         projectsRef: ref(makeProjects()),
         layoutCatalogueRef: ref([]),
-        registry: new SkillRegistry(),
+        registry: new ExtensionRegistry(),
         appendMessage: vi.fn(),
         pushNotification: vi.fn(() => "toast-1"),
         clearChat: vi.fn(),

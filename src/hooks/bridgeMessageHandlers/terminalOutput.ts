@@ -71,7 +71,7 @@ export const handleTerminalOutput: BridgeMessageHandler = (data, ctx) => {
   //   1. Per-tab Tab.terminalBuffer — the React record carrying the
   //      rolling scrollback. Used by tab-switch replay.
   //   2. Layout state at /terminal/buffer/<tabId> — bound by $ref from
-  //      any A2UI component that wants the live stream (logging skills,
+  //      any A2UI component that wants the live stream (logging extensions,
   //      alternative renderers).
   //   3. window CustomEvents — `aethon:terminal` (active tab only,
   //      drives xterm) and `aethon:terminal-tap` (every chunk regardless

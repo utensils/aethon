@@ -19,7 +19,7 @@
 
 > **Early development — not ready for production use.** The API and protocol surface are still settling; expect breaking changes between commits.
 
-Aethon embeds the [pi coding agent][pi] inside a Tauri 2 desktop shell and renders its output as live, interactive UI via the [A2UI][a2ui] protocol. The interface is not a fixed IDE layout — it's a **canvas the agent populates dynamically**. Skills bring their own components, themes control the look, the agent decides the layout.
+Aethon embeds the [pi coding agent][pi] inside a Tauri 2 desktop shell and renders its output as live, interactive UI via the [A2UI][a2ui] protocol. The interface is not a fixed IDE layout — it's a **canvas the agent populates dynamically**. Extensions bring their own components, themes control the look, the agent decides the layout.
 
 The name comes from Greek mythology: _Αἴθων_, one of the horses that pulled Helios's sun chariot. The blazing one that shapes what you see.
 
@@ -40,7 +40,7 @@ The name comes from Greek mythology: _Αἴθων_, one of the horses that pulle
 - **Agent-controlled UI** — themes (`aethon.registerTheme` or `~/.aethon/themes/*.json`) drive the whole palette including terminal ANSI; any A2UI built-in (composites or app-root overlays like `command-palette`, `notification-stack`, `settings-panel`, `search-panel`) is overridable via `aethon.registerComponent`. One built-in layout (`workstation`); extensions register more via `aethon.registerLayout`.
 - **Agent ↔ shell sharing** — four-value `shareMode` (`private` / `read` / `read-write` / `read-write-trusted`) per shell, clickable badge to cycle. Bridge surface `aethon.shells.{list, read, write}` exposes scrollback (forward-only, privacy floor enforced Rust-side) and keystroke injection (Allow/Deny prompt per write unless trusted).
 - **First-class Nix devshell support** — projects with `flake.nix`, `.envrc` (`use_flake` + `direnv`), or `shell.nix` get their devshell env auto-applied to every PTY shell tab AND the agent's pi `bash` tool, no manual `nix develop` wrap needed. One in-memory + on-disk cache keyed on `flake.lock` hash feeds both spawn paths; status-bar `⬡ direnv` / `⬡ flake` badge shows current state. Configurable via `[devshell]` in `config.toml` and per-project `.aethon/devshell.toml`.
-- **Extensibility** — drop a `.ts` into `~/.aethon/extensions/` for hot-reload, or `npm install --prefix ~/.aethon/skills <pkg>` for npm-distributed extensions (manifest via `package.json#aethon`); project-local extensions discovered from cwd up to its git root. Extensions register slash commands, keybindings, menu items, event routes, layouts, A2UI components, and themes — all reported back in the runtime snapshot.
+- **Extensibility** — drop a `.ts` into `~/.aethon/extensions/` for hot-reload, or `npm install --prefix ~/.aethon/extensions <pkg>` for npm-distributed extensions (manifest via `package.json#aethon`); project-local extensions discovered from cwd up to its git root. Extensions register slash commands, keybindings, menu items, event routes, layouts, A2UI components, and themes — all reported back in the runtime snapshot.
 - **Built-in slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/login`, `/reset`, `/reload`, `/rename`, `/context`, `/session`, `/compact`, `/name`, `/export`, `/terminal`, `/extensions`, `/sidebar`, `/files`, `/layout`, `/project`. Unknown commands fall through to pi.
 
 See [`SPEC.md`](SPEC.md) for the full status checklist and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
@@ -127,7 +127,7 @@ graph TD
 | **Pi agent (Bun)**     | LLM interaction, tool execution, session management, extension loading, A2UI emission   | OS resources                                                    |
 | **React frontend**     | Rendering A2UI payloads, dispatching events, persisting local state, hosting the chrome | The chrome is data — `default-layout` is itself an A2UI payload |
 
-The default layout _is_ a skill (`src/skills/default-layout/`). Replacing it requires no React changes — just register a different layout payload via `aethon.setLayout(...)`.
+The default layout is an extension (`src/extensions/default-layout/`). Replacing it requires no React changes — just register a different layout payload via `aethon.setLayout(...)`.
 
 ---
 

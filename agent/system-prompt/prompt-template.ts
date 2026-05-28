@@ -103,7 +103,7 @@ Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
 - \`aethon.onUnload(fn)\` — teardown callback for project extension lifecycle
 - Native frontend extension components (\`aethon.frontendEntry\`) are wrapped
   as app chrome: text is non-selectable by default; use
-  \`skill.selectableProps()\` inside frontend JS only for copyable paths/output.
+  \`extension.selectableProps()\` inside frontend JS only for copyable paths/output.
 
 ## A2UI component types you can emit
 
@@ -129,7 +129,7 @@ Built-in primitives the renderer always understands:
 - \`form\` — \`{ submitLabel?, disabled?, gap?, direction? }\` + children; fires "submit" with \`{values}\`
 - \`for-each\` — \`{ items: $ref|inline, key? }\` + children template (\`/$item\`, \`/$index\`, \`/$parent\` in scope)
 
-Skill-provided composites (extension-overridable): \`layout\`, \`sidebar\`,
+Extension-provided composites (extension-overridable): \`layout\`, \`sidebar\`,
 \`tab-strip\`, \`chat-history\`, \`chat-input\`, \`status-bar\`, \`terminal\`,
 \`main-canvas\`. See \`$AETHON_DOCS_DIR/components.md\` for prop schemas.
 
@@ -166,12 +166,10 @@ Four places can register Aethon UI via \`globalThis.aethon\`:
 2. **\`<project>/.aethon/extensions/<name>.ts\`** — project-local Aethon
    extensions discovered from the selected cwd up to its nearest git root.
    Use this when the UI should travel with a repository.
-3. **\`$AETHON_USER_DIR/skills/node_modules/<pkg>/\`** — npm-distributed
+3. **\`$AETHON_USER_DIR/extensions/node_modules/<pkg>/\`** — npm-distributed
    Aethon extension packages with an \`aethon\` field in package.json.
    Install in-app with \`/extensions install <npm-package|git-url>\`, or
-   from a shell with \`npm install --prefix $AETHON_USER_DIR/skills <pkg>\`.
-   (The on-disk \`skills/\` path is retained for back-compat with existing
-   installs; conceptually these are extension packages.)
+   from a shell with \`npm install --prefix $AETHON_USER_DIR/extensions <pkg>\`.
 4. **\`~/.pi/agent/extensions/<name>.ts\`** (or \`.pi/extensions/\`) —
    pi extensions, loaded by pi itself. They get a pi \`ExtensionAPI\`
    argument but \`globalThis.aethon\` is also available, so a pi
@@ -254,7 +252,7 @@ array in JavaScript and write it into the layout tree directly.
   / \`container\` of \`text\` rows would render properly in the GUI.
 - **Don't build floating/status UI as raw selectable text** — use A2UI
   components or frontendEntry chrome, and mark only copyable leaves with
-  \`data-selectable\` / \`skill.selectableProps()\`.
+  \`data-selectable\` / \`extension.selectableProps()\`.
 - **Don't assume terminal-only conventions** (cursor codes, ANSI) —
   they only show in the terminal panel, not in chat bubbles.
 - **Don't try to edit Aethon source code** — the \`beforeToolCall\` guard

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { SkillRegistry } from "./skills/SkillRegistry";
-import { defaultLayoutSkill } from "./skills/default-layout";
+import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
+import { defaultLayoutExtension } from "./extensions/default-layout";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
 import { useAppForwardRefs } from "./app/useAppForwardRefs";
@@ -52,11 +52,11 @@ import logoUrl from "./assets/aethon-logo.svg?url";
 
 export default function App() {
   // The registry is created once and shared across the app via context.
-  // Skills register their components/layouts here; the renderer resolves
+  // Extensions register their components/layouts here; the renderer resolves
   // unknown component types through it.
-  const [registry] = useState<SkillRegistry>(() => {
-    const r = new SkillRegistry();
-    r.register(defaultLayoutSkill);
+  const [registry] = useState<ExtensionRegistry>(() => {
+    const r = new ExtensionRegistry();
+    r.register(defaultLayoutExtension);
     return r;
   });
 
@@ -91,9 +91,9 @@ export default function App() {
   const state = useAppState(appStore, (s) => s);
   const setState = appStore.setState;
 
-  // Active layout payload — replaceable. Skills can swap the chrome wholesale
-  // by calling window.aethon.setLayout(payload), or register a new skill via
-  // window.aethon.registerSkill(skill) and switch to its layout.
+  // Active layout payload — replaceable. Extensions can swap the chrome wholesale
+  // by calling window.aethon.setLayout(payload), or register a new extension via
+  // window.aethon.registerExtension(extension) and switch to its layout.
   const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
 
   const {

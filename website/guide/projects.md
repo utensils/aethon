@@ -111,5 +111,5 @@ the session search/delete UI to permanently remove a saved transcript.
 ## Where to next
 
 - [Agent tabs](/guide/agent-tabs) — per-tab models, drafts, history.
-- [Skills & extensions](/guide/skills-and-extensions) — writing extensions.
+- [Extensions](/guide/extensions) — writing extensions.
 - [Configuration](/guide/configuration) — `[agent] model` for the default model in new tabs.

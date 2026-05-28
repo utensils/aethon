@@ -9,7 +9,7 @@
       "required": false
     },
     "sidebar": {
-      "description": "Left navigation panel with skills/models/themes/history. Typically toggleable via /sidebar.",
+      "description": "Left navigation panel with extensions/models/themes/history. Typically toggleable via /sidebar.",
       "defaultComposite": "sidebar",
       "required": false
     },

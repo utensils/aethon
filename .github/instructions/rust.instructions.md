@@ -58,7 +58,7 @@ changes.
 carry the same gate — release builds must not ship an eval endpoint.
 
 Webview-side dev globals (`window.__AETHON_STATE__`,
-`__AETHON_INVOKE__`, `__AETHON_REGISTRY__`, `__AETHON_SET_STATE__`)
+`__AETHON_INVOKE__`, `__AETHON_EXTENSION_REGISTRY__`, `__AETHON_SET_STATE__`)
 are dev-only by convention. Don't reference them from production
 paths.
 

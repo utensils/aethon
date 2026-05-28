@@ -1,4 +1,4 @@
-# Skills & extensions
+# Extensions
 
 Aethon's UI, themes, slash commands, layouts, and event interceptors
 are all **registerable**. Anything you'd think of as "the chrome" can
@@ -54,7 +54,7 @@ Some extensions ship as npm packages with an `aethon` field in their
 
 ```json
 {
-  "name": "@my-org/aethon-team-skills",
+  "name": "@my-org/aethon-team-extensions",
   "aethon": {
     "entry": "dist/index.js"
   }
@@ -65,13 +65,13 @@ Install them with the in-app slash command — runs from the Tauri shell
 (not the agent sidecar, so the install can't kill itself mid-flight):
 
 ```
-/extensions install @my-org/aethon-team-skills
-/extensions install github:my-org/aethon-team-skills
-/extensions install https://github.com/my-org/aethon-team-skills.git
+/extensions install @my-org/aethon-team-extensions
+/extensions install github:my-org/aethon-team-extensions
+/extensions install https://github.com/my-org/aethon-team-extensions.git
 ```
 
 The command runs the equivalent of
-`npm install --prefix ~/.aethon/skills <spec>` and restarts the
+`npm install --prefix ~/.aethon/extensions <spec>` and restarts the
 agent sidecar so the next request loads the new package. npm specs,
 tarballs, GitHub shorthands, and git URLs are all accepted; shell-like
 option / whitespace input is rejected.
@@ -79,13 +79,12 @@ option / whitespace input is rejected.
 You can also install manually if you prefer:
 
 ```bash
-npm install --prefix ~/.aethon/skills @my-org/aethon-team-skills
+npm install --prefix ~/.aethon/extensions @my-org/aethon-team-extensions
 ```
 
-Aethon discovers everything under `~/.aethon/skills/node_modules/` whose
+Aethon discovers everything under `~/.aethon/extensions/node_modules/` whose
 `package.json` has the `aethon` field, and loads its declared entry. The
-on-disk `skills/` directory name is retained for back-compat; the in-app
-surface, slash command, and runtime snapshot all call these extension
+in-app surface, slash command, and runtime snapshot all call these extension
 packages.
 
 ### 3 — Project-local extensions

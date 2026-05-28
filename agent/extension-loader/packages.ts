@@ -1,6 +1,6 @@
 /**
  * npm-package extension loading. Walks
- * `~/.aethon/skills/node_modules/` (with one level of scoped namespace
+ * `~/.aethon/extensions/node_modules/` (with one level of scoped namespace
  * recursion for `@org/pkg` layout), reads each `package.json` for an
  * `aethon` field, and loads `aethon.entry` (with optional
  * `aethon.frontendEntry` slurped into a string for the frontend to
@@ -55,7 +55,7 @@ export async function loadAethonExtensionPackages(
   registry: Map<string, ExtensionSource>,
   options?: LoadPackagesOptions,
 ): Promise<void> {
-  const skillsRoot = join(state.userDir, "skills", "node_modules");
+  const extensionsRoot = join(state.userDir, "extensions", "node_modules");
   const candidates: PackageCandidate[] = [];
 
   async function readManifest(
@@ -74,17 +74,17 @@ export async function loadAethonExtensionPackages(
 
   let entries: string[];
   try {
-    entries = await readdir(skillsRoot);
+    entries = await readdir(extensionsRoot);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
       logger
         .scope("ext-package")
-        .warn(`readdir ${skillsRoot}: ${(err as Error).message}`);
+        .warn(`readdir ${extensionsRoot}: ${(err as Error).message}`);
     }
     return;
   }
   for (const entry of entries) {
-    const entryPath = join(skillsRoot, entry);
+    const entryPath = join(extensionsRoot, entry);
     if (entry.startsWith("@")) {
       // Scoped namespace — recurse one level.
       let scoped: string[];

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { FunctionComponent } from "react";
 import type { BuiltinComponentProps } from "../components/A2UIRenderer";
-import { SkillRegistry } from "./SkillRegistry";
+import { ExtensionRegistry } from "./ExtensionRegistry";
 import {
   evaluateFrontendModule,
   reconcileFrontendModules,
@@ -9,14 +9,14 @@ import {
 } from "./extensionFrontendLoader";
 
 describe("evaluateFrontendModule", () => {
-  let registry: SkillRegistry;
+  let registry: ExtensionRegistry;
   beforeEach(() => {
-    registry = new SkillRegistry();
+    registry = new ExtensionRegistry();
   });
 
   it("registers a component declared in the module body", () => {
     const code = `
-      skill.registerComponent("test-card", function TestCard({ component }) {
+      extension.registerComponent("test-card", function TestCard({ component }) {
         return React.createElement("div", { "data-testid": "tc" }, component.id);
       });
     `;
@@ -28,7 +28,7 @@ describe("evaluateFrontendModule", () => {
 
   it("wraps native extension components in non-selectable chrome", () => {
     const code = `
-      skill.registerComponent("chrome-card", function ChromeCard() {
+      extension.registerComponent("chrome-card", function ChromeCard() {
         return React.createElement("span", null, "chrome");
       });
     `;
@@ -56,11 +56,11 @@ describe("evaluateFrontendModule", () => {
 
   it("offers selectableProps for copyable text inside extension chrome", () => {
     const code = `
-      const props = skill.selectableProps();
+      const props = extension.selectableProps();
       if (props["data-selectable"] !== "true") {
         throw new Error("selectableProps missing");
       }
-      skill.registerComponent("copy-path", function CopyPath() {
+      extension.registerComponent("copy-path", function CopyPath() {
         return React.createElement("code", props, "/tmp/aethon");
       });
     `;
@@ -80,7 +80,7 @@ describe("evaluateFrontendModule", () => {
   });
 
   it("rejects non-string types with a helpful error", () => {
-    const code = `skill.registerComponent(42, function () {});`;
+    const code = `extension.registerComponent(42, function () {});`;
     const result = evaluateFrontendModule(
       { name: "bad-types", code },
       registry,
@@ -89,16 +89,16 @@ describe("evaluateFrontendModule", () => {
   });
 
   it("rejects non-function components with a helpful error", () => {
-    const code = `skill.registerComponent("oops", "not a function");`;
+    const code = `extension.registerComponent("oops", "not a function");`;
     const result = evaluateFrontendModule({ name: "bad-comp", code }, registry);
     expect(result.error).toContain("component must be a function");
   });
 
   it("namespaces the module in the registry under `ext:<name>`", () => {
-    const code = `skill.registerComponent("ns", function () { return null; });`;
+    const code = `extension.registerComponent("ns", function () { return null; });`;
     evaluateFrontendModule({ name: "my-ext", code }, registry);
-    const skills = registry.list().map((s) => s.name);
-    expect(skills).toContain(frontendModuleKey("my-ext"));
+    const extensions = registry.list().map((s) => s.name);
+    expect(extensions).toContain(frontendModuleKey("my-ext"));
   });
 
   it("exposes React.createElement and hooks to the module body", () => {
@@ -110,7 +110,7 @@ describe("evaluateFrontendModule", () => {
       if (typeof useEffect !== "function") {
         throw new Error("useEffect missing");
       }
-      skill.registerComponent("hooks-ok", function () {
+      extension.registerComponent("hooks-ok", function () {
         return createElement("span", null, "ok");
       });
     `;
@@ -124,9 +124,9 @@ describe("evaluateFrontendModule", () => {
 });
 
 describe("reconcileFrontendModules", () => {
-  let registry: SkillRegistry;
+  let registry: ExtensionRegistry;
   beforeEach(() => {
-    registry = new SkillRegistry();
+    registry = new ExtensionRegistry();
   });
 
   it("loads new modules and tracks their names", () => {
@@ -135,11 +135,11 @@ describe("reconcileFrontendModules", () => {
       [
         {
           name: "alpha",
-          code: `skill.registerComponent("a", function () { return null; });`,
+          code: `extension.registerComponent("a", function () { return null; });`,
         },
         {
           name: "beta",
-          code: `skill.registerComponent("b", function () { return null; });`,
+          code: `extension.registerComponent("b", function () { return null; });`,
         },
       ],
       registry,
@@ -152,7 +152,7 @@ describe("reconcileFrontendModules", () => {
   });
 
   it("unregisters modules that disappear from the next delta", () => {
-    const code = `skill.registerComponent("a", function () { return null; });`;
+    const code = `extension.registerComponent("a", function () { return null; });`;
     reconcileFrontendModules(
       new Map<string, string>(),
       [{ name: "alpha", code }],
@@ -169,7 +169,7 @@ describe("reconcileFrontendModules", () => {
   });
 
   it("re-evaluates a re-shipped module when its code changes", () => {
-    const v1Code = `skill.registerComponent("v", function V1() { return React.createElement("div", null, "v1"); });`;
+    const v1Code = `extension.registerComponent("v", function V1() { return React.createElement("div", null, "v1"); });`;
     reconcileFrontendModules(
       new Map<string, string>(),
       [{ name: "live", code: v1Code }],
@@ -177,7 +177,7 @@ describe("reconcileFrontendModules", () => {
     );
     const v1 = registry.resolve("v");
     expect(v1).toBeDefined();
-    const v2Code = `skill.registerComponent("v", function V2() { return React.createElement("div", null, "v2"); });`;
+    const v2Code = `extension.registerComponent("v", function V2() { return React.createElement("div", null, "v2"); });`;
     const { loaded, skipped } = reconcileFrontendModules(
       new Map([["live", v1Code]]),
       [{ name: "live", code: v2Code }],
@@ -195,7 +195,7 @@ describe("reconcileFrontendModules", () => {
       // Top-level side effect — simulates a module that injects a
       // <style> or arms a setInterval at load time.
       globalThis.__ext_runs = (globalThis.__ext_runs ?? 0) + 1;
-      skill.registerComponent("s", function () { return null; });
+      extension.registerComponent("s", function () { return null; });
     `;
     const g = globalThis as unknown as { __ext_runs?: number };
     g.__ext_runs = 0;

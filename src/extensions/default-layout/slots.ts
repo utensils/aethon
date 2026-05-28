@@ -5,7 +5,7 @@
  * name IS the grid area, but a layout can declare an optional `slotMap` prop
  * to remap (e.g. `{ composer: "bottom-bar" }`).
  *
- * The contract lets alternative layout skills swap the entire `<layout>`
+ * The contract lets alternative layout extensions swap the entire `<layout>`
  * tree while still hosting the standard composites: as long as the layout's
  * grid areas (or its slotMap) include the canonical slot names, the same
  * sidebar / chat-input / status-bar / etc. composites slot in unchanged.

@@ -65,7 +65,7 @@ through a focus-tracking strategy. You won't lose your place.
 ## Replacing the palette
 
 The palette is a **registered builtin** (`command-palette` component
-type). A skill can override it via:
+type). An extension can override it via:
 
 ```ts
 aethon.registerComponent("command-palette", myCustomPalette);
@@ -79,4 +79,4 @@ shell changes.
 
 - [Keyboard shortcuts](/reference/keyboard-shortcuts) — the full set.
 - [Slash commands](/reference/slash-commands) — every `/<cmd>` reference.
-- [Skills & extensions](/guide/skills-and-extensions) — registering palette items.
+- [Extensions](/guide/extensions) — registering palette items.

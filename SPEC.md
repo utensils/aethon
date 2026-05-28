@@ -12,7 +12,7 @@ Last reviewed: 2026-05-24 (workstation/project polish: git worktrees are first-c
 Aethon is a cross-platform desktop application that embeds the pi coding agent
 and renders its output as rich, interactive UI via the A2UI protocol. Instead
 of a fixed IDE layout, the interface is a canvas the agent populates
-dynamically — skills bring their own UI components, themes control the look,
+dynamically — extensions bring their own UI components, themes control the look,
 and the agent decides the layout based on what you're doing.
 
 The name comes from Greek mythology: Αἴθων, one of the horses that pulled
@@ -27,7 +27,7 @@ Helios's sun chariot. The blazing one that shapes what you see.
 | Desktop framework     | Tauri 2                                                               | Native binary, ~5MB shell, system webview                                                                                     |
 | UI protocol           | A2UI v0.9 (full spec)                                                 | Agent-generated declarative UI, framework-agnostic                                                                            |
 | LLM providers         | Multi-provider via pi-ai                                              | Anthropic, OpenAI, Google, any OpenAI-compatible endpoint. BYOK.                                                              |
-| Agent model           | Opinionated default layout + full canvas flexibility                  | Ships with a Claudette-style layout as the default, but the layout itself is A2UI — users and skills can replace or extend it |
+| Agent model           | Opinionated default layout + full canvas flexibility                  | Ships with a Claudette-style layout as the default, but the layout itself is A2UI — users and extensions can replace or extend it |
 | Packaging             | Compiled pi binary (bun build --compile) + Tauri shell in single .app | No runtime dependencies for end users                                                                                         |
 | License               | MIT                                                                   | Open source under utensils org                                                                                                |
 | Relation to Claudette | None                                                                  | Independent project, no shared code                                                                                           |
@@ -45,7 +45,7 @@ Helios's sun chariot. The blazing one that shapes what you see.
 │  │  - Window mgmt │    A2UI JSON      │           │ │
 │  │  - File access │◄──────────────────│  - pi-ai  │ │
 │  │  - System tray │                    │  - tools  │ │
-│  │  - Menus       │    Events/cmds     │  - skills │ │
+│  │  - Menus       │    Events/cmds     │  - extensions │ │
 │  │                │──────────────────►│  - exts   │ │
 │  └───────┬───────┘                    └───────────┘ │
 │          │                                           │
@@ -59,7 +59,7 @@ Helios's sun chariot. The blazing one that shapes what you see.
 │  │  │               │  │  - Boot/hydration    │ │    │
 │  │  │  Renders      │  │  - Menus/shortcuts   │ │    │
 │  │  │  agent +      │  │  - Persistence       │ │    │
-│  │  │  skill UI     │  │  - Root overlays     │ │    │
+│  │  │  extension UI     │  │  - Root overlays     │ │    │
 │  │  │               │  │                      │ │    │
 │  │  └──────────────┘  └──────────────────────┘ │    │
 │  └─────────────────────────────────────────────┘    │
@@ -88,14 +88,14 @@ frontend.
 2. **Host shell** owns bootstrapping, persistence, native menu/shortcut
    dispatch, and root overlays. The visible workspace chrome (tabs, sidebar,
    canvas, composer, terminal, status, palette, notifications) is provided by
-   the `default-layout` A2UI skill and can be replaced or extended.
+   the `default-layout` A2UI extension and can be replaced or extended.
 
-### Default Layout (lives as a skill)
+### Default Layout (lives as an extension)
 
 The default workspace is itself an A2UI payload, shipped by the
-`default-layout` skill. Loading it goes through the same renderer that
-handles agent-emitted UI, so users (and other skills) can replace, modify,
-or extend it without touching React. The skill currently ships one layout:
+`default-layout` extension. Loading it goes through the same renderer that
+handles agent-emitted UI, so users (and other extensions) can replace, modify,
+or extend it without touching React. The extension currently ships one layout:
 `workstation` (boot default). Earlier sibling variations (`live-layout`,
 `editorial`, `command-deck`) were trimmed while polish focuses on a single
 surface; extensions can introduce more via `aethon.registerLayout`.
@@ -108,7 +108,7 @@ surface; extensions can introduce more via `aethon.registerLayout`.
 │ Models   │ - chat history                     │
 │ Themes   │ - agent-emitted A2UI components    │
 │ Layouts  │ - empty state / recent sessions    │
-│ Skills   ├────────────────────────────────────┤
+│ Exts     ├────────────────────────────────────┤
 │          │ Terminal (optional)                │
 │          ├────────────────────────────────────┤
 │          │ Composer + slash picker            │
@@ -117,7 +117,7 @@ surface; extensions can introduce more via `aethon.registerLayout`.
 ```
 
 The canonical boot payload and slot catalogue are bundled from
-`src/skills/default-layout/*.a2ui.json` and `slots.json` (or release
+`src/extensions/default-layout/*.a2ui.json` and `slots.json` (or release
 resources). Users switch layouts via `/layout`, the appearance menu, or
 `window.aethon.activateLayout(id)`. Extensions can register layouts at runtime
 with `aethon.registerLayout({ id, name, payload })` or replace/patch the active
@@ -139,7 +139,7 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 - [x] Model picker (sidebar) — switch model at runtime via `session.setModel()`
 - [x] Errors from the agent surface as visible chat messages, not silent hangs
 - [x] Stop button — chat input swaps Send → Stop while `state.waiting` is true; Stop calls `session.abort()` via the bridge `stop` command. Bridge does not await `session.prompt()` so subsequent stdin messages (the stop) aren't queued behind it; verified killing in-flight bash within ~3s.
-- [x] Hot reload of the agent — Rust watches `agent/` (dev only) plus `~/.aethon/extensions/`, `~/.aethon/skills/node_modules/`, and `~/.pi/agent/extensions/` (dev AND release) and respawns the child on change. Trailing-edge debounce via a single mpsc worker thread collapses install bursts. See M3 "Extension hot-reload" for the full description.
+- [x] Hot reload of the agent — Rust watches `agent/` (dev only) plus `~/.aethon/extensions/`, `~/.aethon/extensions/node_modules/`, and `~/.pi/agent/extensions/` (dev AND release) and respawns the child on change. Trailing-edge debounce via a single mpsc worker thread collapses install bursts. See M3 "Extension hot-reload" for the full description.
 - [x] Theme system — three ship-ready palettes (`ember` warm dark default, `paper` cream light, `aether` ink-blue signature) behind `data-theme` on `<html>`, switcher in sidebar, persisted to `~/.aethon/theme` (legacy `localStorage` migrates on first read). Legacy ids map as `signature` → `aether`, `dark` → `ember`, `light` → `paper`. Boots from disk → `config.toml` `[ui] theme` → OS `prefers-color-scheme` (`paper` for light, `ember` for dark) → `ember`. Extensions and loose JSON themes register additional palettes via `aethon.registerTheme`.
 - [x] Theme registry — `aethon.registerTheme({id, label?, vars})` ships extension-supplied CSS custom-property maps; full details in M3 below. Demo at `examples/pi-extensions/aethon-theme.ts`.
 - [x] Compiled `aethon-agent` binary — `src-tauri/build.rs` invokes `bun build --compile` for the active Cargo target with mtime-gated rebuilds. Bundled via Tauri `externalBin`. Full details in M4 below.
@@ -149,7 +149,7 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 
 - [x] A2UI React renderer with built-in component set
   - Primitives: `text`, `heading`, `paragraph`, `code`, `card`, `container`, `divider`, `button`, `text-input`, `date-picker`, `select`, `checkbox`, `slider`, `table`, `list`, `image`, `icon`, `form`, `form-field`
-  - Skill components (default-layout): `layout`, `sidebar`, `chat-history`, `chat-input`, `status-bar`, `tab-strip`, `terminal`, `main-canvas`, `empty-state`, `command-palette`, `notification-stack`, plus layout-variation composites (`command-bar`, `vertical-tab-rail`, `inspector-pane`, `model-picker`, `appearance-menu`, etc.)
+  - Extension components (default-layout): `layout`, `sidebar`, `chat-history`, `chat-input`, `status-bar`, `tab-strip`, `terminal`, `main-canvas`, `empty-state`, `command-palette`, `notification-stack`, plus layout-variation composites (`command-bar`, `vertical-tab-rail`, `inspector-pane`, `model-picker`, `appearance-menu`, etc.)
 - [x] Data binding via JSON Pointer (`{"$ref": "/path"}`) — `DynamicString`/`Number`/`Boolean`
 - [x] Event dispatch (button clicks, form submissions → agent via Tauri IPC)
 - [x] Optimistic state updates for `change`/`submit` events on `$ref`-bound inputs
@@ -159,30 +159,30 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 - [x] Streaming text bubbles survive intervening tool cards — bridge stamps each text delta with a stable `messageId` (pi `AssistantMessage.timestamp`) so post-tool deltas land in the original bubble instead of a new one
 - [x] Streaming progressive component renders — text deltas amend by stable messageId, tool cards replace by stable id, and state-driven live A2UI subtrees can be seeded at `/canvas` then patched mid-turn through array-preserving JSON Pointer writes (e.g. `/canvas/components/0/props/title`) without corrupting `components` / `children` arrays.
 
-### M3 — Extension & Skill System
+### M3 — Extension System
 
-- [x] Skill registry primitive (`SkillRegistry`, exposed via React context)
-- [x] Default-layout shipped as a registered skill (eats its own dog food)
-- [x] Runtime API on `window.aethon` (frontend-only, in addition to the bridge-side `globalThis.aethon`): `setLayout`, `resetLayout`, `getLayout`, `registerSkill`, `listSkills`, `newTab`, `closeTab(tabId)`, `switchTab(tabId)`, `listTabs`. Used by the aethon-debug skill, the system menu / tray, and any in-webview script. Do not confuse with the bridge-side surface in `agent/main.ts` — that one is for extensions and adds `setState`, `patchLayout`, `registerComponent`, `registerTheme`, `onEvent`, `getRuntimeSnapshot`, etc.
+- [x] Extension registry primitive (`ExtensionRegistry`, exposed via React context)
+- [x] Default-layout shipped as a registered extension (eats its own dog food)
+- [x] Runtime API on `window.aethon` (frontend-only, in addition to the bridge-side `globalThis.aethon`): `setLayout`, `resetLayout`, `getLayout`, `registerExtension`, `listExtensions`, `newTab`, `closeTab(tabId)`, `switchTab(tabId)`, `listTabs`. Used by the aethon-debug skill, the system menu / tray, and any in-webview script. Do not confuse with the bridge-side surface in `agent/main.ts` — that one is for extensions and adds `setState`, `patchLayout`, `registerComponent`, `registerTheme`, `onEvent`, `getRuntimeSnapshot`, etc.
 - [x] Pi extensions reach the Aethon UI surface via `globalThis.aethon` (set before `createAgentSession` so pi's loader sees it). Same `registerComponent` / `setState` / `onEvent` API as Aethon-side extensions, and the global is absent outside Aethon so pi-TUI extensions stay functional. Examples + types under `examples/pi-extensions/`.
 - [x] Extension-registered components are interactive — `aethon.onEvent({templateRootType, componentType, descendantId, eventType}, handler)` runs handlers when an A2UI control inside an extension template fires an event. Handlers can call `setState` / `registerComponent` to drive UI without an LLM round-trip. Renderer threads `templateRootType` through descendant dispatches and the bridge extracts `descendantId` from the host-prefixed componentId. Demo at `examples/pi-extensions/aethon-counter.ts`.
-- [x] Aethon-side extensions via `~/.aethon/extensions/*.{ts,js}` exporting `register(api)` (same API surface as pi-side). `loadAethonExtensions` in the bridge discovers + dynamic-imports them at boot; missing dir is the no-op default. Bridge retains state as a tree and replays on `ready`; frontend hydrates templates into the SkillRegistry and the renderer expands them inline with host-prefixed ids.
+- [x] Aethon-side extensions via `~/.aethon/extensions/*.{ts,js}` exporting `register(api)` (same API surface as pi-side). `loadAethonExtensions` in the bridge discovers + dynamic-imports them at boot; missing dir is the no-op default. Bridge retains state as a tree and replays on `ready`; frontend hydrates templates into the ExtensionRegistry and the renderer expands them inline with host-prefixed ids.
 - [x] Project-local Aethon extensions via `<project>/.aethon/extensions/*.{ts,js,mjs}` — when a tab opens or the active project cwd changes, the bridge walks from that cwd up to the nearest git root, loads each existing `.aethon/extensions` directory root-first, dedupes files for the bridge process, refreshes the resource loader, and marks entries as `project-directory` in `listExtensions()` / `RuntimeSnapshot.extensions`. This mirrors pi's project-local extension ergonomics while keeping Aethon's UI API surface identical.
 - [x] Extensions can mutate the entire UI: `aethon.setLayout(payload)` replaces the active layout wholesale, `aethon.patchLayout(path, value)` JSON-Pointer patches it (array-preserving), `aethon.registerSidebarSection({id,title,items})` is a convenience wrapper that appends into the sidebar's `extraSections`. Bridge retains both the layout and pending pre-setLayout patches for ready/report replay. Frontend treats layout state as boot defaults so live runtime fields (model, status, messages, draft) survive reload. Demo at `examples/pi-extensions/aethon-sidebar-panel.ts`.
 - [x] `ctx.pi` namespace for handlers — `aethon.onEvent` handlers receive a typed pi-coding-agent surface scoped for UI work: `ctx.pi.prompt(text)` fires an LLM turn from a click (frontend flips waiting/Stop via a `prompt_started` outbound message, just like a user-typed prompt), `ctx.pi.notify(message)` pushes a non-terminal system bubble, `ctx.pi.session` exposes current model + last 50 messages read-only, `ctx.pi.signal` is pi's active turn AbortSignal so handler-side fetch/spawn cancels with Stop. The dispatch loop is fire-and-forget so handler awaits never block bridge IPC; handler errors emit as `notice` so they can't clobber waiting state for an in-flight prompt. Demo at `examples/pi-extensions/aethon-actions.ts` (Quick Actions sidebar: Summarize commits, Explain README, Show current model).
 - [x] Extensions can register color themes: `aethon.registerTheme({id, label?, vars})` ships a CSS custom-property map (`--bg`, `--text`, `--accent`, …). Bridge sanitizes the id/keys, retains the theme map, emits `extension_themes` deltas, and includes the snapshot in `ready` for reload-replay. Frontend hydrates each theme into a `<style>` tag built via CSSOM `setProperty` so malformed values can't escape the declaration; stale tags are dropped when the list shrinks. Built-in ids `ember`, `paper`, `aether`, and legacy `signature` are reserved. Themes appear in the sidebar Themes section alongside the built-in palettes and persist to `~/.aethon/theme`. Demo at `examples/pi-extensions/aethon-theme.ts` (Solarized Dark + Synthwave).
 - [x] Agent self-awareness — `agent/system-prompt.ts` composes a layered prompt from the static template in `agent/system-prompt/prompt-template.ts` and the `RuntimeSnapshot` contract in `agent/system-prompt/types.ts`: static Aethon base (API surface, A2UI primitives, anti-patterns, env-var contract) → optional `~/.aethon/system-prompt.md` override / `~/.aethon/system-prompt-append.md` append → **runtime snapshot** (loaded extensions, registered themes, custom components, layout summary, open tabs). Snapshot rebuilds every `resourceLoader.reload()`, and the bootstrap loads extensions BEFORE the default tab so the first session's prompt sees them. Bundled docs ship at `$AETHON_DOCS_DIR` (`docs/aethon-agent/{api,components,extensions}.md`) so the agent has authoritative reference material in any build. Live state mirrors to `$AETHON_STATE_FILE` (`~/.aethon/state.json`) — `cat`-able from the agent's bash tool, debounced 200 ms, regenerated on every register\* call. Introspection methods on `globalThis.aethon` (`listExtensions`, `listComponents`, `listThemes`, `getLayout`, `getRuntimeSnapshot`) cover the same surface for in-process queries. Pi extensions in `~/.pi/agent/extensions/` that touch `globalThis.aethon` are discovered (grep-based, no execution) and listed alongside Aethon-direct ones so the snapshot covers all UI-driving sources.
-- [x] Extension package manifest from `package.json#aethon` — `loadAethonExtensionPackages` in the bridge walks `~/.aethon/skills/node_modules/*` (plus `@scope/*`, path retained for back-compat), reads each package.json, and for any package with an `aethon.entry` field dynamically imports the entry and calls its `register(api)` export with the same Aethon API surface directory extensions get. Lets users `npm install --prefix ~/.aethon/skills <pkg>` to install third-party extension packages. Demo at `examples/extension-package/`.
-- [x] In-app extension install — `/extensions install <npm-package|git-url>` runs the equivalent of `npm install --prefix ~/.aethon/skills <spec>` from the Tauri shell (not the agent sidecar, so the `node_modules` watcher cannot kill the installer mid-flight). The command accepts npm package specs, tarballs, GitHub shorthands, and git URLs, rejects shell-like option/whitespace input, uses the same macOS login-shell PATH recovery as the agent, and terminates the current sidecar after success so the next request loads the new extension package.
-- [x] **React-component extensions** — `aethon.frontendEntry` in an extension package's `package.json` points at a JS file whose body uses `React` + `skill.registerComponent(type, ReactComponent)` to register real React components in the SkillRegistry. Bridge reads the file at boot, ships it to the webview as a string in `extension_frontend_modules`, frontend evaluates with `new Function("React", "skill", code)` and reconciles wholesale (re-evaluating drops/replaces components from removed/changed packages). Errors per module are caught + surfaced as a system notice. `RuntimeSnapshot.frontendModules` carries `{name, entryPath, bytes}`; code body lives on disk. Same trust model as bridge-side extension code (no sandbox; user installed the package). Demo: `examples/extension-package/src/frontend.js` ships a `pulse-card` component using `React.useEffect`. Loader covered under `src/skills/extensionFrontendLoader.ts` and `src/hooks/bridgeMessageHandlers/extensionFrontendModules.test.ts`.
-- [x] Extension hot-reload — bridge file watcher now runs in dev AND release, watches `~/.aethon/extensions/`, `~/.aethon/skills/node_modules/`, and `~/.pi/agent/extensions/` (when present), plus `<project>/agent/` in dev only. Trailing-edge debounce via a single dedicated worker thread (mpsc channel + `recv_timeout`) collapses npm-install bursts into one settle-then-fire kill. `~/.aethon/extensions` is pre-created on boot so first-install Create events fire without a manual restart.
+- [x] Extension package manifest from `package.json#aethon` — `loadAethonExtensionPackages` in the bridge walks `~/.aethon/extensions/node_modules/*` (plus `@scope/*`), reads each package.json, and for any package with an `aethon.entry` field dynamically imports the entry and calls its `register(api)` export with the same Aethon API surface directory extensions get. Lets users `npm install --prefix ~/.aethon/extensions <pkg>` to install third-party extension packages. Demo at `examples/extension-package/`.
+- [x] In-app extension install — `/extensions install <npm-package|git-url>` runs the equivalent of `npm install --prefix ~/.aethon/extensions <spec>` from the Tauri shell (not the agent sidecar, so the `node_modules` watcher cannot kill the installer mid-flight). The command accepts npm package specs, tarballs, GitHub shorthands, and git URLs, rejects shell-like option/whitespace input, uses the same macOS login-shell PATH recovery as the agent, and terminates the current sidecar after success so the next request loads the new extension package.
+- [x] **React-component extensions** — `aethon.frontendEntry` in an extension package's `package.json` points at a JS file whose body uses `React` + `extension.registerComponent(type, ReactComponent)` to register real React components in the ExtensionRegistry. Bridge reads the file at boot, ships it to the webview as a string in `extension_frontend_modules`, frontend evaluates with `new Function("React", "extension", code)` and reconciles wholesale (re-evaluating drops/replaces components from removed/changed packages). Errors per module are caught + surfaced as a system notice. `RuntimeSnapshot.frontendModules` carries `{name, entryPath, bytes}`; code body lives on disk. Same trust model as bridge-side extension code (no sandbox; user installed the package). Demo: `examples/extension-package/src/frontend.js` ships a `pulse-card` component using `React.useEffect`. Loader covered under `src/extensions/extensionFrontendLoader.ts` and `src/hooks/bridgeMessageHandlers/extensionFrontendModules.test.ts`.
+- [x] Extension hot-reload — bridge file watcher now runs in dev AND release, watches `~/.aethon/extensions/`, `~/.aethon/extensions/node_modules/`, and `~/.pi/agent/extensions/` (when present), plus `<project>/agent/` in dev only. Trailing-edge debounce via a single dedicated worker thread (mpsc channel + `recv_timeout`) collapses npm-install bursts into one settle-then-fire kill. `~/.aethon/extensions` is pre-created on boot so first-install Create events fire without a manual restart.
 
 ### M4 — Polish & Distribution
 
 - [x] Auto-updater wired via `tauri-plugin-updater` — Cargo + bun deps, capabilities, plugin registration (gated on a non-empty `plugins.updater.pubkey` in `tauri.conf.json` so unconfigured builds boot safely), `updater_available` Tauri command, and a manual "Check for Updates…" menu item (Aethon submenu on macOS, View on Linux/Windows) plus a tray entry. Reads the `latest.json` manifest from the GitHub Releases endpoint, downloads with progress as system messages, and relaunches via `tauri-plugin-process`. Release signing is activated: the updater public key is committed in `tauri.conf.json`, the private key and passphrase are stored locally under `~/.tauri/`, and the matching `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets are configured so CI can sign updater bundles automatically.
 - [x] System tray (status-bar) icon — `TrayIconBuilder` reuses the bundled brand mark in full color (template image strips the orange so it's intentionally off). Left-click focuses the main window (calls `AppHandle::show()` on macOS so Cmd+H'd apps re-surface), and a small menu offers Show Aethon / New Tab (focuses + emits the same "menu" event the app menu / `Cmd/Ctrl+T` fire) / Quit. Same code runs on Linux/Windows; menu pops on left-click on those platforms per their convention.
 - [x] Native menus — full bar built with `tauri::menu::MenuBuilder` replaces Tauri's auto-generated default. Standard NS items (Quit, Hide, Cut/Copy/Paste, Minimize, …) come from `PredefinedMenuItem` so they get free native behavior; app-specific items emit a `menu` Tauri event whose payload routes into the same React dispatcher `Cmd/Ctrl+T`, `Cmd/Ctrl+]`, `Cmd/Ctrl+[`, `Cmd/Ctrl+W`, `Cmd/Ctrl+\``, `Cmd/Ctrl+K`, and `Cmd/Ctrl+.`use, so menu and shortcuts can never drift. Layout: Aethon (macOS) / File (New Tab, Close Tab) / Edit / View (Toggle Terminal, Clear Chat, Stop Prompt, Check for Updates… on non-macOS) / Tabs / Help (Documentation, Report Issue) / Window.`Cmd+W`is reserved for`close_tab`; the predefined `close_window`is omitted so macOS doesn't route it to the wrong action. Help submenu opens external URLs via`tauri-plugin-opener`.
-- [x] Cross-platform release builds — `cargo tauri build` produces self-contained macOS DMGs/updater tarballs, Linux `.deb`/`.rpm` installers, and a Windows x64 NSIS setup executable from the GitHub release matrix. The `aethon-agent` sidecar is compiled by `src-tauri/build.rs` via `bun build --compile`, bundled via Tauri's `externalBin`, and spawned in release with `PI_PACKAGE_DIR` pointing to a shipped `pi/package.json` resource. mtime-gated so incremental builds no-op when sources haven't changed; cross-target builds honor `cargo --target` / `CARGO_BUILD_TARGET` / `TAURI_ENV_TARGET_TRIPLE` across macOS, Linux, and Windows. **macOS-specific**: the spawn path also runs `<shell> -ilc env` once on first agent launch to recover the user's login-shell PATH (Homebrew, Nix profile, `~/.npm-global/bin`, …) because launchd-spawned `.app` processes inherit a minimal PATH that breaks pi's `npm root -g` and similar package-resolver calls; result is cached for the process lifetime. Bundled resources include `pi/package.json`, `docs/aethon-agent/*.md`, and `skills/default-layout/*.a2ui.json` plus `slots.json`.
+- [x] Cross-platform release builds — `cargo tauri build` produces self-contained macOS DMGs/updater tarballs, Linux `.deb`/`.rpm` installers, and a Windows x64 NSIS setup executable from the GitHub release matrix. The `aethon-agent` sidecar is compiled by `src-tauri/build.rs` via `bun build --compile`, bundled via Tauri's `externalBin`, and spawned in release with `PI_PACKAGE_DIR` pointing to a shipped `pi/package.json` resource. mtime-gated so incremental builds no-op when sources haven't changed; cross-target builds honor `cargo --target` / `CARGO_BUILD_TARGET` / `TAURI_ENV_TARGET_TRIPLE` across macOS, Linux, and Windows. **macOS-specific**: the spawn path also runs `<shell> -ilc env` once on first agent launch to recover the user's login-shell PATH (Homebrew, Nix profile, `~/.npm-global/bin`, …) because launchd-spawned `.app` processes inherit a minimal PATH that breaks pi's `npm root -g` and similar package-resolver calls; result is cached for the process lifetime. Bundled resources include `pi/package.json`, `docs/aethon-agent/*.md`, and `extensions/default-layout/*.a2ui.json` plus `slots.json`.
 - [x] Brand mark — `assets/brand/aethon-logo.svg` (cream Bodoni Æ + orange π badge on dark tile) and `aethon-brand-marks.svg` (6-format reference sheet). Rasterized into every Tauri target via `bun tauri icon`. In-app header shows the logo alongside "Aethon" via Vite `?url` import + `$ref`-bound state.
 - [x] macOS About dialog metadata — `bundle.{publisher,homepage,copyright,category,shortDescription,longDescription}` + `bundle.macOS.minimumSystemVersion` populate `Info.plist` (`NSHumanReadableCopyright`, `LSApplicationCategoryType`, etc.). Shows the proper icon + version + "Copyright © 2026 James Brink. MIT License." attribution. Dev binary still shows the generic icon (it's a raw Mach-O without a `.app` wrapper).
 - [x] Nix flake overlay for distribution — `flake.nix` now exports `packages.aethon`, `packages.default`, and `overlays.default` (`pkgs.aethon`). The package follows nixpkgs' Tauri packaging path with `cargo-tauri.hook`, the pinned Rust 1.92 toolchain, `fetchNpmDeps` backed by `package-lock.json`, Linux WebKitGTK build inputs, and a macOS `$out/bin/aethon` wrapper around the generated `.app`. Nix builds disable updater artifact generation inside the build copy so distribution packages don't require release signing secrets.
@@ -201,7 +201,7 @@ by an extension without touching React source.
 
 #### Bridge ↔ Frontend contract gaps
 
-- [x] **`getLayout()` returns the active rendered layout** — bridge now preloads the canonical boot layout SYNCHRONOUSLY from `$AETHON_BOOT_LAYOUT_FILE` (set by the Tauri shell, pointing at `src/skills/default-layout/layout.a2ui.json` in dev or the bundled resource in release) BEFORE any extension's `register(api)` runs. `_getLayout()` returns `extensionLayout ?? (bootLayout + pendingLayoutPatches folded)`, and a `boot_layout` inbound message lets the frontend refresh the value when the active layout skill changes. Verified end-to-end: `right-sidebar-model-picker` extension's prior bailout (`if (!layout) return`) now succeeds and applies its 5 patches; layoutSummary correctly reports `sidebar=right` after register-time. Bundled boot layout added to `tauri.conf.json` `bundle.resources` so release builds get it too.
+- [x] **`getLayout()` returns the active rendered layout** — bridge now preloads the canonical boot layout SYNCHRONOUSLY from `$AETHON_BOOT_LAYOUT_FILE` (set by the Tauri shell, pointing at `src/extensions/default-layout/layout.a2ui.json` in dev or the bundled resource in release) BEFORE any extension's `register(api)` runs. `_getLayout()` returns `extensionLayout ?? (bootLayout + pendingLayoutPatches folded)`, and a `boot_layout` inbound message lets the frontend refresh the value when the active layout extension changes. Verified end-to-end: `right-sidebar-model-picker` extension's prior bailout (`if (!layout) return`) now succeeds and applies its 5 patches; layoutSummary correctly reports `sidebar=right` after register-time. Bundled boot layout added to `tauri.conf.json` `bundle.resources` so release builds get it too.
 - [x] **Bridge-readable frontend state** — frontend pushes `frontend_state_patch { path, value }` whenever an allowlisted slice changes (`/sidebar/models`, `/sidebar/themes`, `/connection`, `/status`, `/tabs`, `/draft`, `/messagesCount`). Bridge stores in `frontendState` Map; `aethon.getFrontendState(path?)` returns the live value; `getRuntimeSnapshot().uiState` includes the full mirror so the system prompt's runtime section + `~/.aethon/state.json` reflect what's actually on screen. Frame-debounced (≈16 ms) + diff-on-frontend coalesces a flurry of state changes — typing into the composer is one patch after the user pauses, not one per keystroke. Best-effort mirror, no ack.
 - [x] **Mutation feedback channel** — every mutating outbound message (`state_patch`, `layout_set`, `layout_patch`, `extension_components`, `extension_themes`) carries a `mutationId`. Frontend acks via `mutation_ack { mutationId, success, error? }`. Bridge resolves a per-mutation Promise so the API now returns `Promise<{ok: boolean, error?: string}>`. Sync use is unchanged (Promises just GC if not awaited). Pre-frontend-ready calls resolve immediately with `{ok: true}` (covered by retained-state replay). 5-second timeout guards stuck Promises. `registerTheme` validation failures emit a `notice` (not `error`) so they don't clobber waiting state, and the Promise carries the same detail.
 - [x] **Boot-layout structural snapshot in `RuntimeSnapshot`** — `RuntimeSnapshot.layoutStructure` ships `{rootId, rootType, columns?, rows?, areas?, children: [{id, type, area?}]}` extracted from the active layout (extension-set or boot+patches). Agent answers "what's in the layout?" without paying for the full `getLayout()` round-trip; the system prompt's runtime section emits a one-liner showing the root's children + areas.
@@ -214,9 +214,9 @@ by an extension without touching React source.
 #### Hardcoded chrome → registerable
 
 - [x] **Registerable keyboard shortcuts** — `aethon.registerKeybinding({combo, action?, description?})` and `aethon.unregisterKeybinding(combo)` are wired. Combos accept any human-readable form (`Cmd`/`Meta`/`Ctrl`/`Alt`/`Option`/`Shift`); bridge and frontend normalize to a canonical key for matching/unregister. Invocations dispatch through `a2ui_event` as `{componentType: "keybinding", componentId: "keybinding__tpl__<combo>", data: {action, combo}}` so a paired `aethon.onEvent` handler fires. Registered bindings run before built-ins, so extensions can intentionally override default chrome shortcuts (`Cmd/Ctrl+P`, `Cmd/Ctrl+Shift+P`, `Cmd/Ctrl+T`, `Cmd/Ctrl+W`, `Cmd/Ctrl+]`, `Cmd/Ctrl+[`, `Cmd/Ctrl+\``, `Cmd/Ctrl+K`, `Cmd/Ctrl+.`, plus UI zoom); unregistering restores the built-in behavior. Surfaced in `RuntimeSnapshot.keybindings`.
-- [x] **Registerable slash commands** — `aethon.registerSlashCommand({name, description, usage?})` records metadata; pair with `aethon.onEvent({componentType: "slash-command", descendantId: "<name>"}, handler)` to wire the action. Frontend merges with built-ins for the picker, dispatches invocations through the existing `a2ui_event` route as `{componentType: "slash-command", componentId: "slash-command__tpl__<name>", data: {args}}` so per-tab attribution + handler dedup work the same as any other event. Built-in collisions (`clear`, `help`, `theme`, `model`, `reset`, `terminal`, `sidebar`, `layout`, `skills`, `project`) are rejected with a notice. Replayed on `ready` so reload restores the picker; surfaced in `RuntimeSnapshot.slashCommands`.
+- [x] **Registerable slash commands** — `aethon.registerSlashCommand({name, description, usage?})` records metadata; pair with `aethon.onEvent({componentType: "slash-command", descendantId: "<name>"}, handler)` to wire the action. Frontend merges with built-ins for the picker, dispatches invocations through the existing `a2ui_event` route as `{componentType: "slash-command", componentId: "slash-command__tpl__<name>", data: {args}}` so per-tab attribution + handler dedup work the same as any other event. Built-in collisions (`clear`, `help`, `theme`, `model`, `reset`, `terminal`, `sidebar`, `layout`, `extensions`, `project`) are rejected with a notice. Replayed on `ready` so reload restores the picker; surfaced in `RuntimeSnapshot.slashCommands`.
 - [x] **Registerable menu items** — `aethon.registerMenuItem({label, action, location?, id?, parent?})` and `aethon.unregisterMenuItem(id)` are wired. Bridge ships `extension_menu_items` events to the frontend, which forwards to a `set_extension_menu_items` Tauri command that rebuilds both the App menu (extension entries appear under an "Extensions" submenu) and the tray menu. Click events emit `menu` events with id `ext:<action>`; the React dispatcher routes them via `a2ui_event` so a paired `aethon.onEvent({componentType: "menu-item", descendantId: "<action>"}, handler)` matcher fires. Replayed on `ready` so reload restores the menu. Surfaced in `RuntimeSnapshot.menuItems`.
-- [x] **Compositional sidebar items** — each `SidebarItem` can carry `componentType`. When set, the sidebar resolves it through the SkillRegistry and renders the registered template per item with `/$item`, `/$index`, `/$parent` scope keys (same convention as the `for-each` primitive). New `BuiltinComponentProps.renderChildWithState(child, overlay)` helper exposes the renderer's scoped expansion to composites. Click semantics unchanged (`select` event with `{sectionId, itemId}` + descendantId). Documented in bundled docs (`components.md`).
+- [x] **Compositional sidebar items** — each `SidebarItem` can carry `componentType`. When set, the sidebar resolves it through the ExtensionRegistry and renders the registered template per item with `/$item`, `/$index`, `/$parent` scope keys (same convention as the `for-each` primitive). New `BuiltinComponentProps.renderChildWithState(child, overlay)` helper exposes the renderer's scoped expansion to composites. Click semantics unchanged (`select` event with `{sectionId, itemId}` + descendantId). Documented in bundled docs (`components.md`).
 - [x] **Compositional terminal subscription** — bash output now lands in three places: (1) `Tab.terminalBuffer` per-tab record (existing; tab-switch replay), (2) `/terminal/buffer/<tabId>` state path bindable via `$ref` from any A2UI component, (3) `aethon:terminal-tap` window event with `detail = {tabId, content}` firing for every chunk regardless of active tab — multi-subscriber friendly, no monkey-patching. The original `aethon:terminal` event is preserved for the active-tab xterm pump. Documented in bundled `components.md`.
 - [x] **Pluggable `onEvent` routing — extensions can intercept or replace built-in events.** `aethon.registerEventRoute({componentId?, eventType?})` and `unregisterEventRoute(...)` intercept matching App-dispatched events so they flow through `a2ui_event` to paired `aethon.onEvent({componentType, descendantId})` handlers. Wildcards via omitted fields (componentId-only or eventType-only). `aethon.listEventRoutes()` returns the registered intercepts. `aethon.setEventRoutingMode("extension")` now switches to full replacement mode: every layout event bypasses the App built-in switch and goes to the bridge; `setEventRoutingMode("builtin")` restores default built-ins for unmatched events. Surfaced in `RuntimeSnapshot.eventRoutingMode`.
 - [x] **Built-in `button` fires `click` unconditionally** — `Button` no longer gates on `props.onClick`; the prop is gone from the schema. Disabled buttons remain inert. Pre-existing `examples/` that pass `onClick` continue to work because the renderer ignores unknown props.
@@ -234,10 +234,10 @@ by an extension without touching React source.
 
 #### Layout abstraction gaps
 
-- [x] **Default-layout slot contract** — `src/skills/default-layout/slots.json` declares the canonical slot catalogue (`header`, `sidebar`, `tabs`, `canvas`, `terminal`, `composer`, `status`, `empty-state`) with descriptions, default composite types, and a `required` flag (`canvas` + `composer` are required for a complete workspace). Composites slot via their existing `area` prop; the Layout component honors an optional `slotMap` on the root `<layout>` so a non-canonical layout can host the standard composites under different CSS area names. The current built-in layout (`workstation`) uses the canonical slot names — `chat-input` area was renamed to `composer`. (Earlier siblings `editorial` / `command-deck` / `live-layout` also conformed before being trimmed from the catalogue.) Catalogue exposed on `window.aethon.layoutSlots` (with `inspectLayoutSlotCoverage(payload?)` for tooling) and on the bridge as `globalThis.aethon.getLayoutSlots()`. Bridge loads it synchronously at boot from `$AETHON_LAYOUT_SLOTS_FILE` (set by the Tauri shell, bundled as `slots.json` in release) and surfaces it in `RuntimeSnapshot.layoutSlots` so the system prompt prints the canonical slot list. Documented in `docs/aethon-agent/components.md` "Layout-slot contract" with a `slotMap` example.
+- [x] **Default-layout slot contract** — `src/extensions/default-layout/slots.json` declares the canonical slot catalogue (`header`, `sidebar`, `tabs`, `canvas`, `terminal`, `composer`, `status`, `empty-state`) with descriptions, default composite types, and a `required` flag (`canvas` + `composer` are required for a complete workspace). Composites slot via their existing `area` prop; the Layout component honors an optional `slotMap` on the root `<layout>` so a non-canonical layout can host the standard composites under different CSS area names. The current built-in layout (`workstation`) uses the canonical slot names — `chat-input` area was renamed to `composer`. (Earlier siblings `editorial` / `command-deck` / `live-layout` also conformed before being trimmed from the catalogue.) Catalogue exposed on `window.aethon.layoutSlots` (with `inspectLayoutSlotCoverage(payload?)` for tooling) and on the bridge as `globalThis.aethon.getLayoutSlots()`. Bridge loads it synchronously at boot from `$AETHON_LAYOUT_SLOTS_FILE` (set by the Tauri shell, bundled as `slots.json` in release) and surfaces it in `RuntimeSnapshot.layoutSlots` so the system prompt prints the canonical slot list. Documented in `docs/aethon-agent/components.md` "Layout-slot contract" with a `slotMap` example.
 - [x] **Default-layout sidebar opt-in** — sidebar presence binds to `/layout/sidebarVisible`, with `/layout/columns` and `/layout/areas` also state-driven so the grid template-areas adapts on toggle. `Layout` component now resolves `areas` via `$ref` too. New `/sidebar` slash command, `Cmd/Ctrl+B`, and `toggleSidebar` slash context method flip all three keys atomically.
-- [x] **Layout-skill catalogue** — `default-layout` skill currently ships one built-in layout (`workstation`) as an `.a2ui.json` payload with chrome composites (sidebar, tab-strip, status-bar, chat-input) plus the workstation-specific `agent-pulse` / `model-picker` / `appearance-menu` chrome. (Earlier `editorial` / `command-deck` / `live-layout` siblings were trimmed in this branch to focus polish — re-add their JSON payloads + catalogue entries to bring them back; `aethon.registerLayout` is unchanged.) `window.aethon.listLayouts()`, `window.aethon.activateLayout(id)`, and `window.aethon.registerLayout({id, name, payload})` form the frontend catalogue API. **Bridge mirror**: `globalThis.aethon.registerLayout({id, name, description?, payload})`, `unregisterLayout(id)`, and `listLayouts()` ship on the agent side too — agent-side extensions and skill packages can append to the catalogue without injecting through the webview. Reserved built-in id: `workstation`. The catalogue replays on `ready` (so reload restores extension layouts) and `RuntimeSnapshot.layouts` carries id+name+description (payloads omitted to keep the snapshot small). `/layout <id>` slash command swaps via the catalogue; `/layout` lists available ids. `workstation` is the boot default.
-- [x] **Closing the last tab shows an empty-state composite from default-layout** — `closeTab` no longer guards on `tabs.length <= 1` or `tabId === "default"`; every tab is closable. When the tab list reaches zero, the layout swaps the canvas/composer/tab-strip cells (hidden via `visible: { $ref: "/hasTabs" }`) for an `empty-state` composite (`visible: { $ref: "/empty" }`) that renders a welcome card with a "New Tab" button, quick-start tips, and a recent-sessions slot. The composite is a **registered component on `default-layout` skill** (`empty-state` → `EmptyState` React component) — extensions can override it by re-registering the same type. Layout JSON owns the visibility wiring (`/empty` and `/hasTabs` boot to `false`/`true` and flip on tab transitions). Bridge `tab_close` now allows closing "default" too and gracefully handles an empty `tabs` map (clears `currentAgentTabId`; `ensureTab` lazily recreates whatever tab the next inbound message references). New-tab gestures (`Cmd/Ctrl+T`, system-tray "New Tab", menu, `empty-state:new-tab` event) all work from the empty state.
+- [x] **Layout extension catalogue** — `default-layout` extension currently ships one built-in layout (`workstation`) as an `.a2ui.json` payload with chrome composites (sidebar, tab-strip, status-bar, chat-input) plus the workstation-specific `agent-pulse` / `model-picker` / `appearance-menu` chrome. (Earlier `editorial` / `command-deck` / `live-layout` siblings were trimmed in this branch to focus polish — re-add their JSON payloads + catalogue entries to bring them back; `aethon.registerLayout` is unchanged.) `window.aethon.listLayouts()`, `window.aethon.activateLayout(id)`, and `window.aethon.registerLayout({id, name, payload})` form the frontend catalogue API. **Bridge mirror**: `globalThis.aethon.registerLayout({id, name, description?, payload})`, `unregisterLayout(id)`, and `listLayouts()` ship on the agent side too — agent-side extensions and extension packages can append to the catalogue without injecting through the webview. Reserved built-in id: `workstation`. The catalogue replays on `ready` (so reload restores extension layouts) and `RuntimeSnapshot.layouts` carries id+name+description (payloads omitted to keep the snapshot small). `/layout <id>` slash command swaps via the catalogue; `/layout` lists available ids. `workstation` is the boot default.
+- [x] **Closing the last tab shows an empty-state composite from default-layout** — `closeTab` no longer guards on `tabs.length <= 1` or `tabId === "default"`; every tab is closable. When the tab list reaches zero, the layout swaps the canvas/composer/tab-strip cells (hidden via `visible: { $ref: "/hasTabs" }`) for an `empty-state` composite (`visible: { $ref: "/empty" }`) that renders a welcome card with a "New Tab" button, quick-start tips, and a recent-sessions slot. The composite is a **registered component on `default-layout` extension** (`empty-state` → `EmptyState` React component) — extensions can override it by re-registering the same type. Layout JSON owns the visibility wiring (`/empty` and `/hasTabs` boot to `false`/`true` and flip on tab transitions). Bridge `tab_close` now allows closing "default" too and gracefully handles an empty `tabs` map (clears `currentAgentTabId`; `ensureTab` lazily recreates whatever tab the next inbound message references). New-tab gestures (`Cmd/Ctrl+T`, system-tray "New Tab", menu, `empty-state:new-tab` event) all work from the empty state.
 
 #### Documentation + agent guardrails
 
@@ -293,7 +293,7 @@ then sharing, then polish.
 
 #### Workspace polish
 
-- [x] **Settings UI** — A2UI overlay registered by the `default-layout` skill (`settings-panel` composite). Sections: Appearance, Notifications, Agent (default model + system-prompt override path), Shell (default share mode, auto-restart, default command, inherit env), Behavior (prompt-before-close, Cmd+T action, ANSI palette preview), Updater (channel placeholder for M7), Advanced (open `config.toml` directly). Writes via `write_config` Tauri command, atomic-write through tempfile + rename. `toml_edit` round-trips comments + unknown keys so hand edits survive Save. `clearConfigCache()` invalidates the in-memory `getConfig()` cache so theme / font / refs apply without reload.
+- [x] **Settings UI** — A2UI overlay registered by the `default-layout` extension (`settings-panel` composite). Sections: Appearance, Notifications, Agent (default model + system-prompt override path), Shell (default share mode, auto-restart, default command, inherit env), Behavior (prompt-before-close, Cmd+T action, ANSI palette preview), Updater (channel placeholder for M7), Advanced (open `config.toml` directly). Writes via `write_config` Tauri command, atomic-write through tempfile + rename. `toml_edit` round-trips comments + unknown keys so hand edits survive Save. `clearConfigCache()` invalidates the in-memory `getConfig()` cache so theme / font / refs apply without reload.
 - [x] **Drag-and-drop file paths into composer** — Tauri 2's `onDragDropEvent`. Drops onto the bottom panel while a shell sub-tab is active route shell-quoted paths into the PTY; drops elsewhere into an agent tab insert `@<absolute-path>` tokens. Cmd+V image paste persists the clipboard image to `~/.aethon/pastes/<uuid>.<ext>` via `save_paste_image` and inserts the resulting `@path` token so the agent's read tool can pick it up.
 - [x] **Native OS notifications** — `tauri-plugin-notification` registered. Notification fires when an agent turn ends while the window is unfocused OR the originating tab isn't active, AND turn duration ≥ `[ui] notify_min_duration_seconds` (default 8). Permission requested lazily on first fire. Settings `[ui] notify_on_completion` (default true) + `notify_min_duration_seconds` (default 8) configurable in `~/.aethon/config.toml`.
 - [x] **Bridge crash recovery** — Rust spawn-with-supervisor pattern: on bun child exit, emit `agent-crashed {exitCode, stderr}` event. Frontend clears `waiting` and `queueCount` for all tabs, appends a system notice with a Restart button (or auto-restart per `[shell] auto_restart_agent = true`, default). Per-tab `SessionManager.continueRecent` resumes context on the next message.
@@ -314,7 +314,7 @@ then sharing, then polish.
       `notification-stack`, `settings-panel`, and `search-panel` are
       mounted at App root via `<RegistryComponent type="…">`; the
       `share-mode-badge` is mounted inline inside `shell/canvas.tsx`
-      (also via `<RegistryComponent>`, so skills can still replace it
+      (also via `<RegistryComponent>`, so extensions can still replace it
       with `aethon.registerComponent("share-mode-badge", custom)`).
       Previously the App-root overlays were direct-imported in
       `App.tsx`, silently defeating the documented override path.
@@ -351,7 +351,7 @@ then sharing, then polish.
 - [x] **`docs/aethon-agent/{api,components,extensions}.md` updated** — `aethon.shells.{list,read,write}`, `ctx.shells.*`, `settings-panel` / `search-panel` / `terminal-panel` / `shell-canvas` / `tool-card` / share-mode badge composites, the new keybinding set.
 - [x] **`SPEC.md` keyboard summary + Configuration schema updated** alongside each shipped item.
 - [x] **CLAUDE.md keyboard summary** mirrored.
-- [x] **Tests**: vitest for `formatToolDuration` + share-badge cycling integration (`src/skills/default-layout/components.test.ts`); `src/utils/shellQuote.test.ts` for file-drop quoting; `agent/shell-tools.test.ts` for `listShells` / `readShell` / `writeShell` tool dispatch + privacy-floor refusal propagation; cargo tests for PTY spawn/resize/exit-code/cleanup, scrollback paging, share-state floor, and OSC title parsing. All wired into the `check` gate.
+- [x] **Tests**: vitest for `formatToolDuration` + share-badge cycling integration (`src/extensions/default-layout/components.test.ts`); `src/utils/shellQuote.test.ts` for file-drop quoting; `agent/shell-tools.test.ts` for `listShells` / `readShell` / `writeShell` tool dispatch + privacy-floor refusal propagation; cargo tests for PTY spawn/resize/exit-code/cleanup, scrollback paging, share-state floor, and OSC title parsing. All wired into the `check` gate.
 
 ### Cross-cutting
 
@@ -372,7 +372,7 @@ then sharing, then polish.
       replay on switch via `aethon:terminal-replay`.
 - [x] UI scaling — app-wide browser zoom persists to `~/.aethon/ui_zoom`, driven by `Cmd/Ctrl+=`, `Cmd/Ctrl+-`, and `Cmd/Ctrl+0`. `App.tsx` writes `--app-ui-scale`, `--app-viewport-width`, and `--app-viewport-height` so viewport-bound layouts, popovers, palette, slash picker, and terminal sizes divide by the zoom instead of expanding past the visible window. Shipped layouts/components use `minmax(0, 1fr)`, bounded overlays, truncation, and shrink constraints so zoomed UI stays inside the viewport across `ember`, `paper`, `aether`, and extension themes.
 - [x] Persistent state — legacy default-tab chat history (`~/.aethon/messages.json`, capped at 200 messages / 8KB per text field, image data URLs stripped before persist), theme (`~/.aethon/theme`), UI zoom (`~/.aethon/ui_zoom`), projects (`~/.aethon/projects.json`), per-tab pi sessions and restorable visible transcripts (`~/.aethon/sessions/<tabId>`), and runtime snapshot (`~/.aethon/state.json`) persist to disk via Tauri commands or the bridge. Cross-platform via Tauri's `home_dir()`. Legacy localStorage values migrate on first read; legacy entries are removed only after a confirmed disk write.
-- [x] Client-side slash commands (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/sidebar`, `/layout`, `/skills`, `/project`). Unknown commands fall through to the agent so pi-side handling and prompt templates aren't blocked. `//foo` escapes to send a literal `/foo`.
+- [x] Client-side slash commands (`/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/sidebar`, `/layout`, `/extensions`, `/project`). Unknown commands fall through to the agent so pi-side handling and prompt templates aren't blocked. `//foo` escapes to send a literal `/foo`.
 - [x] Slash command picker UI — autocomplete dropdown above the chat input when the draft starts with `/`. Prefix-filters; ↑/↓/Tab/Enter navigate+insert; Esc dismisses; click inserts. Portalled to `document.body` so the layout cell's `overflow:hidden` doesn't clip it. Bound via the `commands` prop on `chat-input` (inline array or `$ref`).
 - [x] Configuration file (`~/.aethon/config.toml`) — `read_config` parses TOML into `[ui]` (`theme`, `font_size`, `restore_tabs`) + `[agent]` (`model`) sections. Frontend reads it during boot to seed theme; `[ui] font_size` clamps to 10–24 px and writes the `--app-font-size` CSS custom property the body rule consumes; `[ui] restore_tabs = true` auto-restores discovered per-tab sessions on launch; `[agent] model` seeds the picker default when no per-session model is saved (bridge's session model still wins on `ready` hydration). Pi settings (`~/.pi/agent/settings.json`) still drive model picker filtering and provider/auth — the Aethon config is layered on top.
 - [x] Bridge env-var contract — Tauri shell passes `AETHON_DOCS_DIR` (bundled reference docs), `AETHON_USER_DIR` (~/.aethon/), `AETHON_STATE_FILE` (snapshot path), `AETHON_SESSIONS_DIR` (per-tab pi sessions), `AETHON_RELEASE_MODE` (1/0), and `AETHON_PROJECT_ROOT` (dev only). Bundled docs live in the binary via `tauri.conf.json` `bundle.resources` (`docs/aethon-agent/*.md` → `<resource_dir>/docs/aethon-agent/`). System prompt branches on these so release builds don't tell the agent to read source files that aren't there.
@@ -390,7 +390,7 @@ then sharing, then polish.
 ### Component registry — three tiers
 
 **Built-in (primitives)** — Hardcoded in `src/components/A2UIRenderer.tsx`'s
-`PRIMITIVE_REGISTRY`. Cannot be overridden by skills. The current shipped set
+`PRIMITIVE_REGISTRY`. Cannot be overridden by extensions. The current shipped set
 is `text`, `heading`, `paragraph`, `code`, `card`, `container`, `divider`,
 `button`, `text-input`, `date-picker`, `select`, `checkbox`, `slider`,
 `table`, `list`, `image`, `icon`, `form`, and `form-field`. `list` supports
@@ -399,12 +399,12 @@ templates expose `/$row`, `/$index`, `/$parent`, `/$column` (column metadata
 — `field`, `header`, `width`), and `/$cell` (resolved value at the column's
 `field` path on the row); `form` emits named child control values on submit.
 
-**Skill components** — Registered via `SkillRegistry.register(skill)`. A
-skill declares its custom component types in its manifest:
+**Extension components** — Registered via `ExtensionRegistry.register(extension)`. An
+extension declares its custom component types in its manifest:
 
 ```json
 {
-  "name": "git-skill",
+  "name": "git-extension",
   "a2ui": {
     "components": {
       "branch-graph": "./components/BranchGraph.tsx",
@@ -415,7 +415,7 @@ skill declares its custom component types in its manifest:
 }
 ```
 
-When the agent uses this skill and emits a `branch-graph` component, the
+When the agent uses this extension and emits a `branch-graph` component, the
 renderer resolves it through the registry.
 
 **User components** — Installed from `~/.aethon/components/` or via packages.
@@ -479,9 +479,8 @@ receive the same surface as the first arg to their `register(api)`.
 Today: bridge loads `~/.aethon/extensions/*.{ts,js,mjs}` (Aethon-direct,
 loose files), project-local `.aethon/extensions/*.{ts,js,mjs}` discovered
 from the selected cwd up to its nearest git root (root-first, loaded once
-per bridge process), `~/.aethon/skills/node_modules/*` (npm-distributed
-extension packages with an `aethon.entry` field in `package.json`, path
-retained for back-compat), and
+per bridge process), `~/.aethon/extensions/node_modules/*` (npm-distributed
+extension packages with an `aethon.entry` field in `package.json`), and
 discovers (without loading — pi does that) any
 `~/.pi/agent/extensions/*` that references `globalThis.aethon`, tagging
 them in the runtime snapshot.
@@ -516,7 +515,7 @@ names are rejected uniformly:
    file and it appears in the sidebar Themes section without restarting.
 2. **Aethon extensions** under `~/.aethon/extensions/*.{ts,js,mjs}` calling
    `globalThis.aethon.registerTheme(…)`.
-3. **npm-distributed extension packages** under `~/.aethon/skills/node_modules/<pkg>`
+3. **npm-distributed extension packages** under `~/.aethon/extensions/node_modules/<pkg>`
    (manifest `aethon.entry`) calling the same registration.
 4. **pi extensions** under `~/.pi/agent/extensions/*` that touch
    `globalThis.aethon.registerTheme(…)`.
@@ -526,16 +525,16 @@ required.
 
 ---
 
-## Skills with UI
+## Extensions with UI
 
-The key differentiator. A pi skill in Aethon can include:
+The key differentiator. An Aethon extension can include:
 
 1. **Agent tools** (standard pi) — Functions the LLM can call
 2. **A2UI components** (new) — Custom React components the agent can render
 3. **Prompt templates** (standard pi) — Pre-built prompts
-4. **Default layout** (new) — A2UI JSON describing the skill's preferred canvas layout
+4. **Default layout** (new) — A2UI JSON describing the extension's preferred canvas layout
 
-Example: A "Kubernetes" skill ships with:
+Example: A "Kubernetes" extension ships with:
 
 - Tools: `kubectl_get`, `kubectl_describe`, `kubectl_logs`
 - Components: `PodList`, `ServiceMap`, `LogViewer`
@@ -556,7 +555,7 @@ aethon/
 ├── agent/              # Pi agent entry point + Aethon extensions
 ├── components/         # Built-in A2UI component implementations
 ├── themes/             # Built-in themes
-├── skills/             # Bundled skills
+├── extensions/         # Bundled extensions
 └── package.json
 ```
 
@@ -621,8 +620,8 @@ multi-channel release pipeline.
 ## Resolved Decisions
 
 1. **A2UI layout engine** — A2UI Container components with CSS Grid/Flexbox
-   layout props. The layout skill uses these to define the default workspace.
-   Agents and skills use the same Container primitives to modify layout
+   layout props. The layout extension uses these to define the default workspace.
+   Agents and extensions use the same Container primitives to modify layout
    dynamically.
 2. **Persistent state** — Yes. Legacy frontend default-tab chat history
    (`~/.aethon/messages.json`), theme (`~/.aethon/theme`), UI zoom

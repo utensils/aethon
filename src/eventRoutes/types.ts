@@ -4,8 +4,8 @@ import type { ShareMode } from "../utils/shareMode";
 import type {
   NotificationEntry,
   NotificationKind,
-} from "../skills/default-layout/notifications";
-import type { PaletteItem } from "../skills/default-layout/palette-items";
+} from "../extensions/default-layout/notifications";
+import type { PaletteItem } from "../extensions/default-layout/palette-items";
 
 /** A renderer-side event from `<A2UIRenderer onEvent>`. The renderer
  *  calls `onEvent({id, type}, eventType, data)`; we package the trio

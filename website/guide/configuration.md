@@ -143,5 +143,5 @@ Most fields take effect on the next render. A few require restart:
 ## Where to next
 
 - [Themes](/guide/themes) — registering custom themes.
-- [Skills & extensions](/guide/skills-and-extensions) — extending Aethon.
+- [Extensions](/guide/extensions) — extending Aethon.
 - [Reference: config.toml](/reference/config-reference) — exhaustive schema.

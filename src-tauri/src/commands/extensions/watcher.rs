@@ -8,7 +8,7 @@
 //!   - `~/.pi/agent/extensions/` — pi extensions (loaded via pi's
 //!     resourceLoader on session create)
 //!   - `~/.pi/agent/skills/` — pi skills (slash commands)
-//!   - `~/.aethon/skills/node_modules/` — npm-distributed extensions
+//!   - `~/.aethon/extensions/node_modules/` — npm-distributed extensions
 //!   - `~/.aethon/themes/` — loose-file JSON themes
 //!   - `<project>/agent/` — bridge source, dev only
 
@@ -76,15 +76,14 @@ pub fn start_agent_watcher(app: AppHandle) -> Option<AgentWatcher> {
         if pi_skills.exists() {
             watch_paths.push(pi_skills);
         }
-        // ~/.aethon/skills/node_modules holds npm-distributed extension
-        // packages (manifest with `aethon` field). On-disk path is
-        // retained for back-compat with existing installs. Pre-create so
-        // a first `npm install --prefix ~/.aethon/skills <pkg>` triggers
+        // ~/.aethon/extensions/node_modules holds npm-distributed extension
+        // packages (manifest with `aethon` field). Pre-create so
+        // a first `npm install --prefix ~/.aethon/extensions <pkg>` triggers
         // a reload without needing to restart the app.
-        let skills_modules = aethon_root.join("skills").join("node_modules");
-        let _ = std::fs::create_dir_all(&skills_modules);
-        if skills_modules.exists() {
-            watch_paths.push(skills_modules);
+        let extension_modules = aethon_root.join("extensions").join("node_modules");
+        let _ = std::fs::create_dir_all(&extension_modules);
+        if extension_modules.exists() {
+            watch_paths.push(extension_modules);
         }
         // ~/.aethon/themes holds loose-file JSON themes (no extension /
         // extension packaging required). Pre-create so the first theme drop

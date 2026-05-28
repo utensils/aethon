@@ -1,5 +1,5 @@
 import type { EventRouteHandler } from "./types";
-import type { PaletteItem } from "../skills/default-layout/palette-items";
+import type { PaletteItem } from "../extensions/default-layout/palette-items";
 
 /** command-palette renders at App root and never goes through the
  *  dispatch_a2ui bridge (no agent counterpart to invoke). Events land

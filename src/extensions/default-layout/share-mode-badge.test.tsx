@@ -1,5 +1,5 @@
 // Unit tests for the share-mode badge — extracted as its own
-// registerable component so a skill can replace it without rewriting
+// registerable component so an extension can replace it without rewriting
 // the whole shell status bar.
 //
 // The vitest harness runs in node (no jsdom), so we exercise rendering

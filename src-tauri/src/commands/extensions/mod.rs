@@ -20,7 +20,7 @@
 //!    activates a project.
 //!
 //! `install_aethon_extension` shells out to `npm install --prefix
-//! ~/.aethon/skills`, then deliberately reloads the agent so the new
+//! ~/.aethon/extensions`, then deliberately reloads the agent so the new
 //! package is loaded on the next request.
 //!
 //! Submodule layout:

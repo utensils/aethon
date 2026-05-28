@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   PaletteItem,
   PaletteMode,
-} from "../../skills/default-layout/palette-items";
+} from "../../extensions/default-layout/palette-items";
 import type { UseUiOverlaysContext } from "./types";
 
 type PaletteOverlayContext = Pick<

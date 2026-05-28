@@ -11,7 +11,7 @@
  *                   (`<project>/.aethon/extensions/`) wrappers, plus
  *                   projectExtensionDisplayName
  *  - packages.ts  — loadAethonExtensionPackages (npm-style under
- *                   `~/.aethon/skills/node_modules/`)
+ *                   `~/.aethon/extensions/node_modules/`)
  *  - discovery.ts — discoverPiAethonExtensions (greps `~/.pi/agent/`)
  *                   + discoverPersistedTabs
  *

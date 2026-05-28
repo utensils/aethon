@@ -1,7 +1,7 @@
 # Settings & search
 
-Two overlay surfaces ship as built-ins — both registered components, so a
-skill can replace either without forking the chrome.
+Two overlay surfaces ship as built-ins — both registered components, so an
+extension can replace either without forking the chrome.
 
 ## Settings panel — `Cmd+,`
 
@@ -83,4 +83,4 @@ the visual layer changes.
 
 - [Keyboard shortcuts](/reference/keyboard-shortcuts) — full set.
 - [Configuration](/guide/configuration) — what every Settings key writes to.
-- [Skills & extensions](/guide/skills-and-extensions) — replacing builtins.
+- [Extensions](/guide/extensions) — replacing builtins.

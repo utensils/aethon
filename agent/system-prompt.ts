@@ -200,7 +200,7 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
   }
   if (snapshot.layoutSlots) {
     // One-liner — the full catalogue lives in the bundled
-    // skills/default-layout/slots.json (and in components.md). Here we
+    // extensions/default-layout/slots.json (and in components.md). Here we
     // just surface the slot names so the agent knows what semantic
     // areas the standard composites slot into. `area: "<name>"` on a
     // child is the contract.

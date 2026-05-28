@@ -2,7 +2,7 @@
 
 A **layout** in Aethon is not a piece of React code — it's an **A2UI
 JSON payload** that the renderer turns into the UI you see. The default
-layout is itself a skill (`src/skills/default-layout/`), and switching
+layout is itself an extension (`src/extensions/default-layout/`), and switching
 layouts is a runtime payload swap.
 
 This is the central insight: **the chrome is data**.
@@ -29,7 +29,7 @@ Canonical area names:
 | Slot | What renders there |
 | --- | --- |
 | `header` | Tab strip and window-level chrome. |
-| `sidebar` | Project list, skills, sessions, themes, layouts. |
+| `sidebar` | Project list, extensions, sessions, themes, layouts. |
 | `canvas` | The agent's main render surface (chat history). |
 | `composer` | Chat input. |
 | `terminal` | Bottom panel with Agent bash + shell sub-tabs. |
@@ -39,7 +39,7 @@ Two slots are **required**: `canvas` and `composer`. A layout that omits
 them won't be activatable.
 
 Layouts that don't use the canonical names declare a `slotMap` that
-maps their own area names back to canonical ones. This lets a skill ship
+maps their own area names back to canonical ones. This lets an extension ship
 a creative layout without having to use the same JSON keys as the
 defaults.
 
@@ -56,7 +56,7 @@ The active layout is persisted, so quitting and relaunching restores it.
 
 ## Registering custom layouts
 
-Skills can register a layout via:
+Extensions can register a layout via:
 
 ```ts
 aethon.registerLayout({
@@ -77,8 +77,8 @@ A layout registered this way:
 - Survives across reloads (the registration is part of the runtime state
   that gets re-emitted on restart).
 
-To **also activate** the layout when the skill loads, return it from a
-skill's setup function — see [Skills & extensions](/guide/skills-and-extensions).
+To **also activate** the layout when the extension loads, return it from an
+extension setup function — see [Extensions](/guide/extensions).
 
 ## Resetting
 
@@ -97,5 +97,5 @@ window.aethon.resetLayout();
 ## Where to next
 
 - [Themes](/guide/themes) — palettes that work across all layouts.
-- [Skills & extensions](/guide/skills-and-extensions) — registering layouts and components.
+- [Extensions](/guide/extensions) — registering layouts and components.
 - [Runtime API reference](/reference/runtime-api) — `aethon.registerLayout` signature.
