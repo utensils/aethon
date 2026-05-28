@@ -147,6 +147,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let agent = config.get("agent").and_then(|v| v.as_object());
     let shell = config.get("shell").and_then(|v| v.as_object());
     let shortcuts = config.get("shortcuts").and_then(|v| v.as_object());
+    let voice = config.get("voice").and_then(|v| v.as_object());
     let updates = config.get("updates").and_then(|v| v.as_object());
     let devshell = config.get("devshell").and_then(|v| v.as_object());
 
@@ -204,6 +205,14 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("newTabKind"))
         .and_then(|v| v.as_str())
         .map(|s| helpers::normalize_new_tab_kind(Some(s)));
+    let voice_toggle_hotkey = voice
+        .and_then(|m| m.get("toggleHotkey"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let voice_hold_hotkey = voice
+        .and_then(|m| m.get("holdHotkey"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
     let update_channel = updates
         .and_then(|m| m.get("channel"))
         .and_then(|v| v.as_str())
@@ -310,6 +319,13 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
                 shortcuts_table.remove("new_tab_kind");
             }
         }
+    }
+
+    // ── [voice] ──
+    {
+        let voice_table = ensure_table(&mut doc, "voice");
+        set_or_clear_str(voice_table, "toggle_hotkey", voice_toggle_hotkey);
+        set_or_clear_str(voice_table, "hold_hotkey", voice_hold_hotkey);
     }
 
     // ── [updates] ──

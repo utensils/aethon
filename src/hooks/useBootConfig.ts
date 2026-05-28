@@ -109,6 +109,14 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
     shortcutsNewTabKindRef.current = fresh.shortcuts.newTabKind;
     updateChannelRef.current = fresh.updates.channel;
     disableAutoCheckRef.current = fresh.updates.disableAutoCheck;
+    setState((prev) => ({
+      ...prev,
+      voice: {
+        ...(prev.voice as object | undefined),
+        toggleHotkey: fresh.voice.toggleHotkey,
+        holdHotkey: fresh.voice.holdHotkey,
+      },
+    }));
     if (fresh.agent.model) {
       piDefaultModelRef.current = fresh.agent.model;
       setState((prev) => ({
@@ -187,6 +195,14 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
       // the configured channel.
       updateChannelRef.current = config.updates.channel;
       disableAutoCheckRef.current = config.updates.disableAutoCheck;
+      setState((prev) => ({
+        ...prev,
+        voice: {
+          ...(prev.voice as object | undefined),
+          toggleHotkey: config.voice.toggleHotkey,
+          holdHotkey: config.voice.holdHotkey,
+        },
+      }));
 
       // [agent] model: when set, seed the picker default for this
       // session. Only applied if no per-session model has been saved

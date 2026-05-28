@@ -52,5 +52,19 @@ export const handleChatInput: EventRouteHandler = async (
     await ctx.stopPrompt();
     return true;
   }
+  if (eventType === "voice:setup") {
+    const providerId =
+      (data as { providerId?: string | null } | undefined)?.providerId ?? null;
+    ctx.setState((prev) => ({
+      ...prev,
+      settings: {
+        open: true,
+        pending: null,
+        focusSection: "voice",
+        focusProviderId: providerId,
+      },
+    }));
+    return true;
+  }
   return false;
 };

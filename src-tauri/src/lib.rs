@@ -38,9 +38,13 @@ mod env;
 mod helpers;
 mod logging;
 mod paste;
+#[cfg(feature = "voice")]
+mod platform_speech;
 mod server;
 mod shell;
 mod updater_state;
+#[cfg(feature = "voice")]
+mod voice;
 mod window_state;
 
 #[cfg(debug_assertions)]
@@ -127,7 +131,12 @@ pub fn run() {
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
         .manage(Arc::new(server::ServerState::new()))
-        .manage(devshell::DevshellCache::shared())
+        .manage(devshell::DevshellCache::shared());
+    #[cfg(feature = "voice")]
+    let builder = builder.manage(voice::VoiceProviderRegistry::new(
+        voice::VoiceProviderRegistry::default_model_root(),
+    ));
+    let builder = builder
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
                 window_state::schedule_save(
@@ -198,6 +207,14 @@ pub fn run() {
             commands::window::toggle_devtools,
             commands::updater::check_for_updates_with_channel,
             commands::updater::install_pending_update,
+            commands::voice::voice_list_providers,
+            commands::voice::voice_set_selected_provider,
+            commands::voice::voice_set_provider_enabled,
+            commands::voice::voice_prepare_provider,
+            commands::voice::voice_remove_provider_model,
+            commands::voice::voice_start_recording,
+            commands::voice::voice_stop_and_transcribe,
+            commands::voice::voice_cancel_recording,
             commands::boot::boot_stage,
             commands::boot::boot_ok,
             commands::devshell::devshell_status,

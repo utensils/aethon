@@ -52,6 +52,10 @@ export interface AethonConfig {
      *  through to `"agent"`. */
     newTabKind: "agent" | "shell";
   };
+  voice: {
+    toggleHotkey: string | null;
+    holdHotkey: string | null;
+  };
   updates: {
     /** Release channel the auto-updater follows. `"stable"` (default)
      *  tracks `releases/latest`; `"nightly"` follows the `nightly`
@@ -95,6 +99,14 @@ const DEFAULTS: AethonConfig = {
     promptBeforeClose: true,
   },
   shortcuts: { newTabKind: "agent" },
+  voice: {
+    toggleHotkey: "mod+shift+m",
+    holdHotkey:
+      typeof navigator !== "undefined" &&
+      (/Mac/.test(navigator.platform) || /Mac OS X/.test(navigator.userAgent))
+        ? "AltRight"
+        : null,
+  },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
     enabled: "auto",
@@ -178,6 +190,18 @@ export function getConfig(): Promise<AethonConfig> {
         shortcuts: {
           newTabKind:
             obj?.shortcuts?.newTabKind === "shell" ? "shell" : "agent",
+        },
+        voice: {
+          toggleHotkey:
+            typeof obj?.voice?.toggleHotkey === "string"
+              ? obj.voice.toggleHotkey
+              : DEFAULTS.voice.toggleHotkey,
+          holdHotkey:
+            typeof obj?.voice?.holdHotkey === "string"
+              ? obj.voice.holdHotkey
+              : obj?.voice?.holdHotkey === null
+                ? null
+                : DEFAULTS.voice.holdHotkey,
         },
         updates: {
           channel:

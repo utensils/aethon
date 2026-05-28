@@ -121,6 +121,7 @@
             pkgs.libsoup_3
             pkgs.glib
             pkgs.glib-networking
+            pkgs.alsa-lib
             pkgs.openssl
             pkgs.libayatana-appindicator
             pkgs.gsettings-desktop-schemas

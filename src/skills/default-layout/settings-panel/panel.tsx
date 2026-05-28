@@ -11,9 +11,20 @@
 // tab state.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useCallback, useEffect, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AethonConfig } from "../../../config";
+import {
+  listVoiceProviders,
+  prepareVoiceProvider,
+  removeVoiceProviderModel,
+  setSelectedVoiceProvider,
+  setVoiceProviderEnabled,
+} from "../../../services/voice";
+import type { VoiceDownloadProgress, VoiceProviderInfo } from "../../../types/voice";
+import { formatVoiceDownloadProgress } from "../../../utils/voice";
 import { SHARE_MODES, type ShareMode } from "../../../utils/shareMode";
 import { ANSI_PREVIEW_KEYS, BUILTIN_THEMES } from "./constants";
 import { ExtensionsList } from "./extensions-list";
@@ -302,6 +313,42 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </div>
             </Section>
 
+            <Section id="voice" title="Voice">
+              <Field label="Toggle hotkey">
+                <input
+                  type="text"
+                  className="ae-settings-input"
+                  value={eff.voice.toggleHotkey ?? ""}
+                  placeholder="mod+shift+m"
+                  onChange={(e) =>
+                    update({
+                      voice: {
+                        ...eff.voice,
+                        toggleHotkey: e.target.value || null,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Hold-to-talk key">
+                <input
+                  type="text"
+                  className="ae-settings-input"
+                  value={eff.voice.holdHotkey ?? ""}
+                  placeholder="AltRight"
+                  onChange={(e) =>
+                    update({
+                      voice: {
+                        ...eff.voice,
+                        holdHotkey: e.target.value || null,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <VoiceProviders />
+            </Section>
+
             <Section id="updater" title="Updater">
               <Field label="Release channel">
                 <select
@@ -507,6 +554,172 @@ function Field(props: { label: string; children: React.ReactNode }) {
       <span className="ae-settings-field-label">{props.label}</span>
       <span className="ae-settings-field-control">{props.children}</span>
     </label>
+  );
+}
+
+function VoiceProviders() {
+  const [providers, setProviders] = useState<VoiceProviderInfo[] | null>(null);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<VoiceDownloadProgress | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setError(null);
+      setProviders(await listVoiceProviders());
+    } catch (err) {
+      setError(String(err));
+      setProviders([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    listVoiceProviders()
+      .then((nextProviders) => {
+        if (cancelled) return;
+        setError(null);
+        setProviders(nextProviders);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(String(err));
+        setProviders([]);
+      });
+    let unlistenProgress: UnlistenFn | undefined;
+    let unlistenStatus: UnlistenFn | undefined;
+    const progressPromise = listen<VoiceDownloadProgress>(
+      "voice-download-progress",
+      (event) => setProgress(event.payload),
+    ).then((fn) => {
+      unlistenProgress = fn;
+    });
+    const statusPromise = listen<VoiceProviderInfo>(
+      "voice-provider-status",
+      (event) => {
+        setProviders((current) =>
+          (current ?? []).map((provider) =>
+            provider.id === event.payload.id ? event.payload : provider,
+          ),
+        );
+      },
+    ).then((fn) => {
+      unlistenStatus = fn;
+    });
+    return () => {
+      cancelled = true;
+      progressPromise.then(() => unlistenProgress?.());
+      statusPromise.then(() => unlistenStatus?.());
+    };
+  }, []);
+
+  const run = async (providerId: string, task: () => Promise<unknown>) => {
+    if (busyProvider === providerId) return;
+    setBusyProvider(providerId);
+    setError(null);
+    try {
+      await task();
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+      await refresh();
+    } finally {
+      setBusyProvider(null);
+      setProgress(null);
+    }
+  };
+
+  if (!providers) return <p className="ae-settings-note">Loading voice providers...</p>;
+
+  return (
+    <div className="ae-voice-provider-list">
+      {error ? <p className="ae-settings-note ae-voice-error">{error}</p> : null}
+      {providers.map((provider) => {
+        const isBusy = busyProvider === provider.id;
+        const providerProgress =
+          progress?.providerId === provider.id ? progress : null;
+        const isDownloading =
+          provider.status === "downloading" || providerProgress !== null;
+        return (
+          <div key={provider.id} className="ae-voice-provider-card">
+            <div className="ae-voice-provider-head">
+              <div>
+                <strong>{provider.name}</strong>
+                <p>{provider.description}</p>
+              </div>
+              <label>
+                <input
+                  type="radio"
+                  name="voice-provider"
+                  checked={provider.selected}
+                  disabled={!provider.enabled}
+                  onChange={() =>
+                    run(provider.id, () => setSelectedVoiceProvider(provider.id))
+                  }
+                />
+                Use
+              </label>
+            </div>
+            <div className="ae-voice-provider-meta">
+              <span>{provider.statusLabel}</span>
+              <span>{provider.privacyLabel}</span>
+              {provider.modelSizeLabel ? <span>{provider.modelSizeLabel}</span> : null}
+              {provider.acceleratorLabel ? <span>{provider.acceleratorLabel}</span> : null}
+              {provider.cachePath ? <code>{provider.cachePath}</code> : null}
+            </div>
+            {provider.error ? (
+              <p className="ae-settings-note ae-voice-error">{provider.error}</p>
+            ) : null}
+            {providerProgress ? (
+              <p className="ae-settings-note">
+                Downloading {providerProgress.filename}:{" "}
+                {formatVoiceDownloadProgress(providerProgress)}
+              </p>
+            ) : null}
+            <div className="ae-voice-provider-actions">
+              <button
+                type="button"
+                className="ae-settings-secondary"
+                disabled={isBusy || isDownloading}
+                onClick={() =>
+                  run(provider.id, () =>
+                    setVoiceProviderEnabled(provider.id, !provider.enabled),
+                  )
+                }
+              >
+                {provider.enabled ? "Disable" : "Enable"}
+              </button>
+              {provider.setupRequired ? (
+                <button
+                  type="button"
+                  className="ae-settings-secondary"
+                  disabled={isBusy || isDownloading}
+                  onClick={() => run(provider.id, () => prepareVoiceProvider(provider.id))}
+                >
+                  {isDownloading
+                    ? "Downloading..."
+                    : provider.downloadRequired
+                      ? "Download model"
+                      : "Set up permissions"}
+                </button>
+              ) : null}
+              {provider.canRemoveModel ? (
+                <button
+                  type="button"
+                  className="ae-settings-secondary"
+                  disabled={isBusy}
+                  onClick={() =>
+                    run(provider.id, () => removeVoiceProviderModel(provider.id))
+                  }
+                >
+                  Remove model
+                </button>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -42,6 +42,7 @@ export function useEffectiveConfig(
       agent: { ...snapshot.agent, ...(p.agent ?? {}) },
       shell: { ...snapshot.shell, ...(p.shell ?? {}) },
       shortcuts: { ...snapshot.shortcuts, ...(p.shortcuts ?? {}) },
+      voice: { ...snapshot.voice, ...(p.voice ?? {}) },
       updates: { ...snapshot.updates, ...(p.updates ?? {}) },
       devshell: { ...snapshot.devshell, ...(p.devshell ?? {}) },
     };

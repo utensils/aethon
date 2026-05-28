@@ -107,6 +107,27 @@ describe("handleChatInput", () => {
     expect(mocks.stopPrompt).toHaveBeenCalledTimes(1);
   });
 
+  it("voice setup opens settings focused on the voice section", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleChatInput(
+      {
+        component: { id: "chat-input" },
+        eventType: "voice:setup",
+        data: { providerId: "voice-distil-whisper" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.setState).toHaveBeenCalledTimes(1);
+    expect(ctx.stateRef.current.settings).toEqual({
+      open: true,
+      pending: null,
+      focusSection: "voice",
+      focusProviderId: "voice-distil-whisper",
+    });
+  });
+
   // Wrong-id rejection is no longer the handler's responsibility — the
   // route table dispatches by `type:chat-input`, so a non-chat-input
   // event simply never reaches this handler. See index.test.ts for the

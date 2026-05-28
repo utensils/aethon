@@ -2728,7 +2728,7 @@ body.ae-resizing-composer * {
   /* Right padding clears the absolute-positioned Send button so text
      doesn't run under it. Bottom padding clears the Send button when
      the user types multiple lines. */
-  padding: 10px 48px 10px 14px;
+  padding: 10px 86px 10px 14px;
   font: inherit;
   outline: none;
   line-height: 1.5;
@@ -2764,6 +2764,85 @@ body.ae-resizing-composer * {
     transform var(--motion-fast) var(--ease-out),
     opacity var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.a2ui-chat-input-voice {
+  position: absolute;
+  right: 44px;
+  bottom: 8px;
+  width: 30px;
+  height: 30px;
+  background: var(--bg-active);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.a2ui-chat-input-voice:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.a2ui-chat-input-voice:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+.a2ui-chat-input-voice-recording {
+  color: var(--danger, #ef4444);
+  border-color: color-mix(in srgb, currentColor 60%, transparent);
+}
+.a2ui-chat-input-voice-spinner {
+  animation: a2ui-voice-spin 0.9s linear infinite;
+}
+.a2ui-chat-input-voice-status,
+.a2ui-chat-input-voice-error {
+  position: absolute;
+  right: 82px;
+  bottom: 12px;
+  max-width: min(340px, calc(100% - 120px));
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-chat-input-voice-error {
+  border: 0;
+  background: transparent;
+  color: var(--danger, #ef4444);
+  padding: 0;
+  cursor: pointer;
+}
+.a2ui-chat-input-voice-error span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-voice-recording-status,
+.a2ui-voice-waveform {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.a2ui-voice-waveform span {
+  width: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transition: height 80ms linear;
+}
+@keyframes a2ui-voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .a2ui-chat-input-send:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 90%, white);
@@ -2810,13 +2889,58 @@ body.ae-resizing-composer * {
   background: var(--accent-soft);
 }
 
+.ae-voice-provider-list {
+  display: grid;
+  gap: 10px;
+}
+.ae-voice-provider-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--bg-elev);
+}
+.ae-voice-provider-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.ae-voice-provider-head p {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+.ae-voice-provider-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+.ae-voice-provider-meta span,
+.ae-voice-provider-meta code {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+.ae-voice-provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ae-voice-error {
+  color: var(--danger, #ef4444);
+}
+
 /* Queue badge — sits inside the wrap, to the left of the send button.
    Shows "+N" when the user has stacked messages behind an in-flight
    prompt via pi's followUp. Subdued so it informs without competing
    with the action buttons. */
 .a2ui-chat-input-queue {
   position: absolute;
-  right: 46px;
+  right: 82px;
   bottom: 12px;
   padding: 2px 8px;
   border-radius: 999px;

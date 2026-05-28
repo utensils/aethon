@@ -88,6 +88,7 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+d", description: "Toggle right sidebar (files)" },
   { combo: "meta+k", description: "Clear chat" },
   { combo: "meta+.", description: "Stop current prompt" },
+  { combo: "meta+shift+m", description: "Toggle voice input" },
   { combo: "meta+=", description: "Zoom in" },
   { combo: "meta+-", description: "Zoom out" },
   { combo: "meta+shift+0", description: "Reset zoom" },
