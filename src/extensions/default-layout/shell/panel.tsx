@@ -23,12 +23,12 @@ import type {
   NumberValue,
 } from "../../../types/a2ui";
 import { resolveBoolean } from "../../../utils/dataBinding";
-import { activeTabKind, type Tab, type TabKind } from "../../../types/tab";
+import { activeTabKind, type Tab } from "../../../types/tab";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { Terminal } from "../terminal";
 import { ShellCanvas } from "./canvas";
+import { AGENT_BASH_SUB_ID, resolveActiveSubId } from "./panel-helpers";
 
-export const AGENT_BASH_SUB_ID = "agent-bash";
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
 
@@ -36,53 +36,6 @@ interface ShellSubTabItem {
   id: string;
   label: string;
   shellState?: string;
-}
-
-/** Pure resolver for "which sub-tab does the bottom panel actually
- *  render right now?" Shared between the panel composite (for paint)
- *  and `useKeyboardShortcuts` (so Cmd+W in the panel closes the same
- *  shell the user can see). Without a single source of truth the two
- *  could drift: the panel would clamp `agent-bash` → first shell while
- *  the shortcut handler still read `agent-bash` from raw state and
- *  no-op'd.
- *
- *  Priority: the requested shell if it still exists → agent-bash when
- *  the read-only stream is allowed → the first shell as a fallback →
- *  `null` when the panel is empty. */
-export function resolveActiveSubId(args: {
-  requestedActiveId: string;
-  shellTabIds: string[];
-  showAgentBash: boolean;
-}): string | null {
-  const { requestedActiveId, shellTabIds, showAgentBash } = args;
-  if (
-    requestedActiveId !== AGENT_BASH_SUB_ID &&
-    shellTabIds.includes(requestedActiveId)
-  ) {
-    return requestedActiveId;
-  }
-  if (showAgentBash) return AGENT_BASH_SUB_ID;
-  return shellTabIds[0] ?? null;
-}
-
-/** Resolve the sub-tab id from a raw layout state snapshot. Used by
- *  keyboard handlers that don't render the panel themselves but still
- *  need to act on the displayed sub-tab. */
-export function resolveActiveSubIdFromState(
-  state: Record<string, unknown>,
-): string | null {
-  const panelState =
-    (state["terminalPanel"] as { activeSubId?: string } | undefined) ?? {};
-  const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
-  const tabs =
-    (state["tabs"] as Array<{ id: string; kind?: TabKind }> | undefined) ?? [];
-  const shellTabIds = tabs
-    .filter((t) => t.kind === "shell")
-    .map((t) => t.id);
-  const showAgentBash =
-    activeTabKind(tabs, state["activeTabId"] as string | undefined) ===
-    "agent";
-  return resolveActiveSubId({ requestedActiveId, shellTabIds, showAgentBash });
 }
 
 export function TerminalPanel({
@@ -99,7 +52,8 @@ export function TerminalPanel({
   // Pull shell sub-tabs out of the unified /tabs list. Shells live in
   // /tabs (same as agent tabs) but render in this panel rather than the
   // top tab strip — the TabStrip composite filters them out.
-  const tabs = (state["tabs"] as Tab[] | undefined) ?? [];
+  const rawTabs = state["tabs"] as Tab[] | undefined;
+  const tabs = useMemo(() => rawTabs ?? [], [rawTabs]);
   const shellTabs: ShellSubTabItem[] = useMemo(
     () =>
       tabs

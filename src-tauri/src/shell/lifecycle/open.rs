@@ -305,43 +305,6 @@ fn devshell_effective_config<R: Runtime>(
 /// Accepts absolute paths (`/bin/zsh`, `/usr/local/bin/fish`) and bare
 /// names (`bash`, `zsh -l`). Anything not in the allow-list is treated
 /// as a direct command and gets the conservative answer.
-#[cfg(test)]
-mod shell_classification_tests {
-    use super::is_known_interactive_shell;
-
-    #[test]
-    fn classifies_common_unix_shells() {
-        for cmd in ["bash", "/bin/bash", "/usr/bin/zsh", "fish", "dash", "/bin/sh"] {
-            assert!(
-                is_known_interactive_shell(cmd),
-                "expected {cmd} to be classified as an interactive shell",
-            );
-        }
-    }
-
-    #[test]
-    fn classifies_powershell_with_extension() {
-        assert!(is_known_interactive_shell("pwsh.exe"));
-        assert!(is_known_interactive_shell("PowerShell.exe"));
-    }
-
-    #[test]
-    fn ignores_trailing_args_in_the_command_string() {
-        assert!(is_known_interactive_shell("zsh -il"));
-        assert!(is_known_interactive_shell("/bin/bash --login"));
-    }
-
-    #[test]
-    fn rejects_direct_commands() {
-        for cmd in ["vim", "/usr/bin/vim", "npm", "sleep 30", "node", "python3"] {
-            assert!(
-                !is_known_interactive_shell(cmd),
-                "expected {cmd} to NOT be classified as an interactive shell",
-            );
-        }
-    }
-}
-
 pub(super) fn is_known_interactive_shell(command: &str) -> bool {
     const SHELLS: &[&str] = &[
         "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh",
@@ -383,5 +346,42 @@ fn default_shell_label() -> String {
     #[cfg(windows)]
     {
         "powershell.exe".to_string()
+    }
+}
+
+#[cfg(test)]
+mod shell_classification_tests {
+    use super::is_known_interactive_shell;
+
+    #[test]
+    fn classifies_common_unix_shells() {
+        for cmd in ["bash", "/bin/bash", "/usr/bin/zsh", "fish", "dash", "/bin/sh"] {
+            assert!(
+                is_known_interactive_shell(cmd),
+                "expected {cmd} to be classified as an interactive shell",
+            );
+        }
+    }
+
+    #[test]
+    fn classifies_powershell_with_extension() {
+        assert!(is_known_interactive_shell("pwsh.exe"));
+        assert!(is_known_interactive_shell("PowerShell.exe"));
+    }
+
+    #[test]
+    fn ignores_trailing_args_in_the_command_string() {
+        assert!(is_known_interactive_shell("zsh -il"));
+        assert!(is_known_interactive_shell("/bin/bash --login"));
+    }
+
+    #[test]
+    fn rejects_direct_commands() {
+        for cmd in ["vim", "/usr/bin/vim", "npm", "sleep 30", "node", "python3"] {
+            assert!(
+                !is_known_interactive_shell(cmd),
+                "expected {cmd} to NOT be classified as an interactive shell",
+            );
+        }
     }
 }

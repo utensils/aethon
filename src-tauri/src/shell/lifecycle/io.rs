@@ -121,15 +121,21 @@ fn has_foreground_job(pid: i32) -> bool {
     n > 0
 }
 
-/// Linux: read `/proc/<pid>/task/<pid>/children`. The file is a
-/// space-separated list of direct-child pids; empty = idle.
+/// Linux: read `/proc/<pid>/task/*/children`. Child ownership is tracked
+/// per-thread, so checking only the main task can miss a process spawned
+/// from a worker thread.
 #[cfg(target_os = "linux")]
 fn has_foreground_job(pid: i32) -> bool {
-    let path = format!("/proc/{pid}/task/{pid}/children");
-    match std::fs::read_to_string(&path) {
-        Ok(s) => s.split_whitespace().next().is_some(),
-        Err(_) => false,
-    }
+    let task_dir = format!("/proc/{pid}/task");
+    let Ok(tasks) = std::fs::read_dir(task_dir) else {
+        return false;
+    };
+    tasks.filter_map(Result::ok).any(|entry| {
+        let children_path = entry.path().join("children");
+        std::fs::read_to_string(children_path)
+            .map(|s| s.split_whitespace().next().is_some())
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]

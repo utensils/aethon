@@ -18,11 +18,8 @@ vi.mock("./canvas", () => ({
   }) => <div data-testid="stub-shell" data-tab-id={component.props.tabId} />,
 }));
 
-import {
-  TerminalPanel,
-  resolveActiveSubId,
-  resolveActiveSubIdFromState,
-} from "./panel";
+import { TerminalPanel } from "./panel";
+import { resolveActiveSubId, resolveActiveSubIdFromState } from "./panel-helpers";
 
 afterEach(() => cleanup());
 

@@ -74,7 +74,8 @@ test.beforeEach(async ({ page }) => {
 test("boots the real app shell through mocked Tauri IPC", async ({ page }) => {
   await waitForAethonReady(page);
 
-  await expect(page.locator(".a2ui-tab")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Back to overview" })).toBeVisible();
+  await expect(page.locator(".a2ui-tab:not(.a2ui-tab-overview)")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "aethon" })).toBeVisible();
   await expect(page.locator(".ae-file-tree")).toContainText("package.json");
 
@@ -115,7 +116,7 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await page.keyboard.press("Enter");
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
-  await expect(page.locator(".a2ui-tab")).toContainText("+1");
+  await expect(page.locator(".a2ui-tab-active")).toContainText("+1");
   await expect(page.locator(".a2ui-queued-popover")).toBeVisible();
   await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);
   await expect(page.locator(".a2ui-queued-content")).toHaveText("queued prompt");
@@ -200,7 +201,7 @@ test("steers Command-Enter into the running turn without queuing it", async ({
   );
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
-  await expect(page.locator(".a2ui-tab")).not.toContainText("+1");
+  await expect(page.locator(".a2ui-tab-active")).not.toContainText("+1");
   await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
   await expect
     .poll(() => getActiveTurnState(page))

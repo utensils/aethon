@@ -5,7 +5,7 @@ import { focusTerminalPanelSoon, isFocusInTerminalPanel } from "../utils/focus";
 import {
   AGENT_BASH_SUB_ID,
   resolveActiveSubIdFromState,
-} from "../extensions/default-layout/shell/panel";
+} from "../extensions/default-layout/shell/panel-helpers";
 import type { Tab } from "../types/tab";
 
 interface NotificationInput {
