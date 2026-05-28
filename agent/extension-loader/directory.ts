@@ -18,9 +18,13 @@
  */
 
 import { readdir } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findProjectExtensionDirs } from "../project-extensions";
+import {
+  findProjectExtensionDirs,
+  findProjectRoot,
+} from "../project-extensions";
+import { saveDisabledExtensionsSnapshot } from "../disabled-extensions";
 import { logger } from "../logger";
 import type {
   AethonAgentState,
@@ -56,6 +60,7 @@ interface LoadDirectoryOptions {
   failedFiles?: Set<string>;
   onLoaded?: (name: string) => void;
   onProjectLoaded?: (name: string, projectRoot: string) => void;
+  onDiscovered?: (name: string) => void;
   onFailure?: (failure: {
     name: string;
     source: Extract<ExtensionSource, "directory" | "project-directory">;
@@ -86,19 +91,21 @@ export async function loadAethonExtensionDirectory(
   // Parallelize import; keep register() sequential so registrations against
   // shared maps (handler dedupe, theme/component registries) stay
   // deterministic.
-  const allCandidates = entries
+  const filesystemCandidates = entries
     .filter((name) => /\.(ts|js|mjs)$/.test(name))
     .map((name) => ({
       name,
       file: join(options.dir, name),
       displayName:
         options.displayName?.(name) ?? name.replace(/\.(ts|js|mjs)$/, ""),
-    }))
-    .filter(
-      (c) =>
-        !options.loadedFiles?.has(c.file) &&
-        !options.failedFiles?.has(c.file),
-    );
+    }));
+  for (const c of filesystemCandidates) {
+    options.onDiscovered?.(c.displayName);
+  }
+  const allCandidates = filesystemCandidates.filter(
+    (c) =>
+      !options.loadedFiles?.has(c.file) && !options.failedFiles?.has(c.file),
+  );
 
   // Honor the user's "disabled" list: emit a `disabled` lifecycle event
   // (so the sidebar can surface the row + the failure registry knows
@@ -224,6 +231,92 @@ export async function loadAethonExtensions(
   });
 }
 
+function projectDisplayPrefix(projectRoot: string, extensionDir: string): string {
+  const scopeDir = dirname(dirname(extensionDir));
+  const rootName = basename(projectRoot) || "project";
+  const scope = relative(projectRoot, scopeDir).replace(/\\/g, "/");
+  return scope && !scope.startsWith("..")
+    ? `${rootName}/${scope}:`
+    : `${rootName}:`;
+}
+
+function matchesProjectDisplayName(
+  name: string,
+  projectRoot: string,
+  scannedPrefixes: ReadonlySet<string>,
+): boolean {
+  if ([...scannedPrefixes].some((prefix) => name.startsWith(prefix))) {
+    return true;
+  }
+  // If the whole extension directory disappeared, there are no scanned
+  // prefixes. In that case only root-level legacy display names are safe to
+  // treat as belonging to this project; nested scope names could refer to a
+  // sibling cwd that was not part of the current scan.
+  if (scannedPrefixes.size === 0) {
+    const rootName = basename(projectRoot) || "project";
+    return name.startsWith(`${rootName}:`);
+  }
+  return false;
+}
+
+async function pruneStaleDisabledProjectExtensions(
+  state: AethonAgentState,
+  projectRoot: string,
+  discoveredNames: ReadonlySet<string>,
+  scannedPrefixes: ReadonlySet<string>,
+): Promise<number> {
+  const normalizedProjectRoot = resolve(projectRoot);
+  const stale: string[] = [];
+  for (const name of state.disabledExtensions) {
+    if (discoveredNames.has(name)) continue;
+    const meta = state.disabledExtensionMeta.get(name);
+    if (meta) {
+      if (meta.source !== "project-directory") continue;
+      if (meta.projectRoot && resolve(meta.projectRoot) !== normalizedProjectRoot) {
+        continue;
+      }
+      if (matchesProjectDisplayName(name, projectRoot, scannedPrefixes)) {
+        stale.push(name);
+      }
+      continue;
+    }
+    // Legacy entries predate source/projectRoot metadata. Prune only names
+    // that match the active project's display-name prefix so package/user
+    // disabled entries are not removed just because a project scan ran.
+    if (matchesProjectDisplayName(name, projectRoot, scannedPrefixes)) {
+      stale.push(name);
+    }
+  }
+  if (stale.length === 0) return 0;
+  const priorNames = new Set(state.disabledExtensions);
+  const priorMeta = new Map(state.disabledExtensionMeta);
+  for (const name of stale) {
+    state.disabledExtensions.delete(name);
+    state.disabledExtensionMeta.delete(name);
+  }
+  try {
+    await saveDisabledExtensionsSnapshot(state.userDir, {
+      names: state.disabledExtensions,
+      meta: state.disabledExtensionMeta,
+    });
+    logger
+      .scope("disabled-ext")
+      .info(`pruned stale project disabled extensions: ${stale.join(", ")}`);
+    return stale.length;
+  } catch (err) {
+    state.disabledExtensions.clear();
+    for (const name of priorNames) state.disabledExtensions.add(name);
+    state.disabledExtensionMeta.clear();
+    for (const [name, meta] of priorMeta) {
+      state.disabledExtensionMeta.set(name, meta);
+    }
+    logger
+      .scope("disabled-ext")
+      .warn(`prune stale disabled extensions: ${(err as Error).message}`);
+    return 0;
+  }
+}
+
 export async function loadProjectAethonExtensions(
   state: AethonAgentState,
   deps: ExtensionLoaderDeps,
@@ -233,8 +326,11 @@ export async function loadProjectAethonExtensions(
   loadedFiles: Set<string>,
   failedFiles: Set<string>,
   hooks?: LoadHooks,
-): Promise<{ loaded: number; failed: number }> {
+): Promise<{ loaded: number; failed: number; prunedDisabled: number }> {
   const dirs = await findProjectExtensionDirs(cwd);
+  const projectRoot = dirs[0]?.projectRoot ?? (await findProjectRoot(cwd));
+  const discoveredNames = new Set<string>();
+  const scannedPrefixes = new Set<string>();
   const before = loadedFiles.size;
   // Count failures observed in THIS call so the caller can reload prompt
   // resources even when zero extensions loaded — without this, a project
@@ -253,7 +349,8 @@ export async function loadProjectAethonExtensions(
           failedThisCall += 1;
         },
   };
-  for (const { projectRoot, extensionDir } of dirs) {
+  for (const { projectRoot: dirProjectRoot, extensionDir } of dirs) {
+    scannedPrefixes.add(projectDisplayPrefix(dirProjectRoot, extensionDir));
     await loadAethonExtensionDirectory(state, deps, api, registry, {
       dir: extensionDir,
       source: "project-directory",
@@ -261,14 +358,27 @@ export async function loadProjectAethonExtensions(
       loadedFiles,
       failedFiles,
       displayName: (name) =>
-        projectExtensionDisplayName(projectRoot, extensionDir, name),
+        projectExtensionDisplayName(dirProjectRoot, extensionDir, name),
+      onDiscovered: (name) => {
+        discoveredNames.add(name);
+      },
       onLoaded: (name) => {
         wrappedHooks.onLoaded?.(name);
-        wrappedHooks.onProjectLoaded?.(name, projectRoot);
+        wrappedHooks.onProjectLoaded?.(name, dirProjectRoot);
       },
       onFailure: (failure) =>
-        wrappedHooks.onFailure({ ...failure, projectRoot }),
+        wrappedHooks.onFailure({ ...failure, projectRoot: dirProjectRoot }),
     });
   }
-  return { loaded: loadedFiles.size - before, failed: failedThisCall };
+  const prunedDisabled = await pruneStaleDisabledProjectExtensions(
+    state,
+    projectRoot,
+    discoveredNames,
+    scannedPrefixes,
+  );
+  return {
+    loaded: loadedFiles.size - before,
+    failed: failedThisCall,
+    prunedDisabled,
+  };
 }

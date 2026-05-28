@@ -278,11 +278,16 @@ export async function handleSetProject(
     logger
       .scope("project-switch")
       .info(
-        `set_project load took ${Date.now() - tLoad}ms (loaded=${result.loaded} failed=${result.failed})`,
+        `set_project load took ${Date.now() - tLoad}ms (loaded=${result.loaded} failed=${result.failed} prunedDisabled=${result.prunedDisabled})`,
       );
   }
   state.currentProjectCwd = cwd;
-  if (result.loaded > 0 || result.failed > 0 || projectChanged) {
+  if (
+    result.loaded > 0 ||
+    result.failed > 0 ||
+    result.prunedDisabled > 0 ||
+    projectChanged
+  ) {
     const tReload = Date.now();
     await state.resourceLoader.reload();
     if (projectChanged) {

@@ -35,6 +35,14 @@ async function nearestGitRoot(start: string): Promise<string | null> {
   }
 }
 
+/** Resolve the nearest project root for a cwd using the same rules as
+ *  project extension discovery. Falls back to the normalized starting
+ *  directory when no `.git` marker is found. */
+export async function findProjectRoot(cwd: string): Promise<string> {
+  const start = await normalizeStartDirectory(cwd);
+  return (await nearestGitRoot(start)) ?? start;
+}
+
 async function normalizeStartDirectory(cwd: string): Promise<string> {
   const start = resolve(cwd);
   try {
@@ -54,7 +62,7 @@ export async function findProjectExtensionDirs(
   cwd: string,
 ): Promise<ProjectExtensionDir[]> {
   const start = await normalizeStartDirectory(cwd);
-  const root = (await nearestGitRoot(start)) ?? start;
+  const root = await findProjectRoot(start);
   const dirs: ProjectExtensionDir[] = [];
   let dir = start;
 
