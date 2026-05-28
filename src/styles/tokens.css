@@ -92,8 +92,7 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
   --radius-circle: 50%;
-  --scrollbar-size: 8px;
-  --webkit-scrollbar-size: 10px;
+  --scrollbar-size: 4px;
   --scrollbar-edge-inset: 8px;
 
   /* Z-index scale. Higher = on top. Used by overlays and popovers. */
