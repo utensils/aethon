@@ -49,6 +49,10 @@ Aethon embeds the <a href="https://github.com/mariozechner/pi-coding-agent">pi c
 
 </div>
 
+<p style="max-width: 1180px; margin: 3rem auto 0;">
+  <img src="/aethon-app-screenshot.png" alt="Aethon workstation showing projects, the project dashboard, and file explorer" style="width: 100%; border: 1px solid var(--vp-c-divider); border-radius: 14px; box-shadow: 0 24px 80px color-mix(in srgb, var(--vp-c-black) 32%, transparent);" />
+</p>
+
 <div style="max-width: 760px; margin: 1.5rem auto 4rem; padding: 1rem 1.25rem; border-radius: 12px; background: var(--vp-c-bg-soft); color: var(--vp-c-text-2); font-size: 0.86rem; line-height: 1.55;">
 
 <strong style="color: var(--vp-c-warning-1)">Early development.</strong> Aethon is pre-1.0. The API surface and on-disk formats are still settling — pin the release you install and expect breaking changes between minor versions.

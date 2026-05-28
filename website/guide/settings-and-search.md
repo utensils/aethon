@@ -16,6 +16,10 @@ Sections:
 - **Agent** — default model.
 - **Shell** — default share mode, shell program, args, inherit env, prompt-before-close.
 - **Shortcuts** — `Cmd+T` routing.
+- **Voice** — toggle and hold-to-record hotkeys.
+- **Updater** — stable/nightly channel and background-check toggle.
+- **Nix devshell** — detection mode, cache lifetime, lockfile refresh, and manual refresh.
+- **Advanced** — extension state payload limits.
 
 Two convenience buttons live at the bottom:
 

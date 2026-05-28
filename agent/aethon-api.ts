@@ -68,6 +68,7 @@ const BUILTIN_SLASH_NAMES = new Set([
   "help",
   "theme",
   "model",
+  "login",
   "reset",
   "reload",
   "rename",
@@ -79,6 +80,7 @@ const BUILTIN_SLASH_NAMES = new Set([
   "terminal",
   "extensions",
   "sidebar",
+  "files",
   "layout",
   "project",
 ]);

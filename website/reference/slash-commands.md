@@ -1,9 +1,9 @@
 # Slash commands
 
 Slash commands are recognised when the chat composer starts with `/`.
-Aethon ships ten built-ins (`/clear`, `/help`, `/theme`, `/model`,
-`/reset`, `/terminal`, `/extensions`, `/sidebar`, `/layout`,
-`/project`); extensions register additional commands via
+Aethon ships built-ins for local UI actions, account/profile switching,
+pi-native session commands, and extension management. Extensions register
+additional commands via
 `aethon.registerSlashCommand`. Unknown `/<word>` falls through to pi
 (the model), so model-side commands like `/think harder` keep working.
 
@@ -15,10 +15,19 @@ Aethon ships ten built-ins (`/clear`, `/help`, `/theme`, `/model`,
 | `/help` | List all registered slash commands (built-in + extension) with their descriptions. |
 | `/theme [<id>]` | Open the theme picker (no argument) or activate a specific theme directly (`/theme paper`). |
 | `/model [<name>]` | Open the model picker or activate a specific model directly (`/model anthropic/claude-sonnet-4-6`). |
-| `/reset` | Hard-reset the active tab's pi session — clears history *and* discards on-disk session state. The next message starts a fresh conversation. |
+| `/login [list\|use <account>\|default <account>]` | Open provider login, list stored accounts, switch the active tab's account, or set the default account. |
+| `/reset` | Reset the active layout to the default `workstation` payload. |
+| `/reload` | Reload the agent bridge and re-discover extensions, themes, slash commands, and disabled-extension state. |
+| `/rename [new label]` | Rename the active session. Empty input restores the auto-derived label. |
+| `/context` | Run pi's native context-window usage command for the active tab. |
+| `/session` | Run pi's native session-stats command for the active tab. |
+| `/compact [instructions]` | Run pi's compaction flow for older context. |
+| `/name [name]` | Show or set the pi session display name. |
+| `/export [path.html\|path.jsonl]` | Export the pi session as HTML, or JSONL when the path ends in `.jsonl`. |
 | `/terminal` | Toggle the bottom terminal panel. Equivalent to `Cmd+\``. |
 | `/extensions` | List every loaded extension. With `install <npm-package\|git-url>` (or `add`), runs `npm install --prefix ~/.aethon/skills` and reloads the agent so the new package is picked up. |
 | `/sidebar` | Toggle the sidebar. Equivalent to `Cmd+B`. |
+| `/files` | Toggle the right-hand files sidebar. |
 | `/layout <id>` | Switch layouts. The only built-in id today is `workstation`; extensions register additional ones via `aethon.registerLayout`. |
 | `/project [id\|path]` | Open or switch the active project directory. No argument shows a folder picker; an id or path switches to that project for new tabs. |
 
@@ -55,9 +64,10 @@ it receives the event with `data.args` set to whatever followed the
 command name. Use `ctx.pi.notify` / `ctx.pi.prompt` to push messages
 or fire LLM turns.
 
-Built-in command names are reserved (`clear`, `help`, `theme`,
-`model`, `reset`, `terminal`, `sidebar`, `layout`, `extensions`,
-`project`); registering one is rejected with a notice.
+Built-in command names are reserved (`clear`, `help`, `theme`, `model`,
+`login`, `reset`, `reload`, `rename`, `context`, `session`, `compact`,
+`name`, `export`, `terminal`, `sidebar`, `files`, `layout`,
+`extensions`, `project`); registering one is rejected with a notice.
 
 ## Installing extensions
 

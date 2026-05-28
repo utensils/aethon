@@ -48,7 +48,7 @@ defaults.
 Three paths (relevant once more than one layout is registered):
 
 1. **Slash command** — `/layout <id>`.
-2. **Command palette** — `Cmd+P`, search "layout".
+2. **Command palette** — `Cmd+Shift+P`, search "layout".
 3. **Sidebar** — the **Layouts** section lists every registered layout;
    click to activate.
 
@@ -73,7 +73,7 @@ Reserved id: `workstation`. Custom ids must match `^[A-Za-z][\w-]*$`.
 A layout registered this way:
 
 - Appears in the sidebar's **Layouts** section.
-- Appears in the command palette (`Cmd+P` → search by name).
+- Appears in the command palette (`Cmd+Shift+P` → search by name).
 - Survives across reloads (the registration is part of the runtime state
   that gets re-emitted on restart).
 

@@ -44,7 +44,7 @@ export default defineConfig({
       },
       { text: "Troubleshooting", link: "/troubleshooting" },
       {
-        text: "v0.2.0",
+        text: "v0.3.3",
         items: [
           {
             text: "Releases",

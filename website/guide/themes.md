@@ -24,10 +24,10 @@ same palette.
 
 ## Switching themes
 
-Three paths:
+Four paths:
 
 1. **Slash command** — `/theme <id>`.
-2. **Command palette** — `Cmd+P`, search "theme", pick.
+2. **Command palette** — `Cmd+Shift+P`, search "theme", pick.
 3. **Settings panel** — `Cmd+,`, scroll to **Theme**, pick.
 4. **Direct edit** — `[ui] theme = "paper"` in `config.toml`.
 

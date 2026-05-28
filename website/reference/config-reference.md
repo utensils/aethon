@@ -71,6 +71,62 @@ new_tab_kind = "agent"
 |---|---|---|---|
 | `new_tab_kind` | `"agent" \| "shell"` | `"agent"` | What `Cmd+T` opens when focus is *outside* the bottom terminal panel. `"agent"` keeps the focus-aware default; `"shell"` makes `Cmd+T` always open a shell sub-tab. Anything else falls back to `"agent"`. |
 
+## `[voice]`
+
+```toml
+[voice]
+toggle_hotkey = "mod+shift+m"
+# hold_hotkey = "AltRight" # macOS default; unset elsewhere.
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `toggle_hotkey` | string | `"mod+shift+m"` | Toggle voice input. `mod` means Cmd on macOS and Ctrl elsewhere. |
+| `hold_hotkey` | string or unset | `"AltRight"` on macOS, unset elsewhere | Optional hold-to-record physical key. |
+
+## `[extensions]`
+
+```toml
+[extensions]
+state_warn_kb = 64
+state_hard_kb = 512
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `state_warn_kb` | integer | `64` | Soft warning threshold for extension `setState` payloads. Clamped to 1-8192 KB. |
+| `state_hard_kb` | integer | `512` | Hard rejection threshold for extension `setState` payloads. Clamped to 1-8192 KB and raised to at least `state_warn_kb`. |
+
+## `[updates]`
+
+```toml
+[updates]
+channel = "stable"
+disable_auto_check = false
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `channel` | `"stable" \| "nightly"` | `"stable"` | Which release channel the updater checks. Unknown values fall back to `"stable"`. |
+| `disable_auto_check` | boolean | `false` | Disable automatic background checks. Manual "Check for Updates" still works. |
+
+## `[devshell]`
+
+```toml
+[devshell]
+enabled = "auto"
+mode = "auto"
+cache_ttl_hours = 720
+refresh_on_lockfile_change = true
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `"auto" \| "always" \| "never"` | `"auto"` | Detect and apply Nix devshells automatically, force resolution, or disable wrapping. Unknown values fall back to `"auto"`. |
+| `mode` | `"auto" \| "direnv" \| "nix" \| "nix-shell"` | `"auto"` | Resolver selection. `auto` uses natural precedence: direnv, then flake, then `shell.nix`. |
+| `cache_ttl_hours` | integer | `720` | Successful on-disk snapshot lifetime. `0` disables time-based eviction; lockfile-hash mismatches still invalidate. |
+| `refresh_on_lockfile_change` | boolean | `true` | Re-resolve when watched lockfile or marker files change. |
+
 ## How Aethon reads and writes the file
 
 - **Reads** happen at app launch and again whenever the Settings panel

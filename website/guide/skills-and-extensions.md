@@ -4,8 +4,8 @@ Aethon's UI, themes, slash commands, layouts, and event interceptors
 are all **registerable**. Anything you'd think of as "the chrome" can
 be replaced or augmented by an extension. This page is the user-facing
 overview; for the full authoring guide see the bundled
-[`docs/aethon-agent/extensions.md`][ext-docs] reference (also available
-inside the running app at `Cmd+P` → "Open agent docs").
+[`docs/aethon-agent/extensions.md`][ext-docs] reference that ships inside
+the app as `$AETHON_DOCS_DIR`.
 
 [ext-docs]: https://github.com/utensils/aethon/blob/main/docs/aethon-agent/extensions.md
 
@@ -141,8 +141,7 @@ loading.
 ## Authoring an extension
 
 For a worked example, see the bundled
-[`docs/aethon-agent/extensions.md`][ext-docs] (inside the running app
-under "Reference" or in the GitHub repo).
+[`docs/aethon-agent/extensions.md`][ext-docs] reference.
 
 The minimum is:
 

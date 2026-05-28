@@ -12,7 +12,7 @@ directory by default.
 To open a different project:
 
 - **Sidebar** → click **Projects** → **Add project…** → pick a directory.
-- **Command palette** → `Cmd+P` → search the project name → press Enter.
+- **Command palette** → `Cmd+Shift+P` → search the project name → press Enter.
 - **Slash command** → type `/project /path/to/repo` in the chat composer.
 
 The project list lives at `~/.aethon/projects.json` (MRU-ordered, max 16).
@@ -29,7 +29,7 @@ Useful keys while a turn is running:
 
 - `Cmd+.` — stop the current prompt.
 - `Cmd+K` — clear the visible chat history (the underlying pi session is
-  preserved unless you also `/reset`).
+  preserved).
 
 ## 3 — Switch the model
 
@@ -68,8 +68,8 @@ for the full model.
 - Focus inside the bottom panel → opens a new **shell sub-tab**.
 - Focus elsewhere → opens a new **agent tab**.
 
-`Cmd+Shift+T` always opens the *opposite* surface (and auto-opens the
-bottom panel for shells).
+`Cmd+Shift+T` always opens a shell sub-tab and auto-opens the bottom
+panel.
 
 | Combo | Action |
 |---|---|
@@ -85,7 +85,7 @@ See the full [keyboard shortcut reference](/reference/keyboard-shortcuts).
 Aethon currently ships one built-in layout, `workstation` — the
 chat-first IDE-density surface you're already in. Layouts are A2UI
 payloads, not React components, so skills can register their own and
-the user can swap with `/layout <id>` (or `Cmd+P` → "layout"). We
+the user can swap with `/layout <id>` (or `Cmd+Shift+P` → "layout"). We
 trimmed the sibling variations (`command-deck`, `editorial`,
 `live-layout`) while polish focuses on a single surface; they may
 return later, but you can already build replacements with
@@ -93,13 +93,13 @@ return later, but you can already build replacements with
 
 ## 7 — Discover skills
 
-`/extensions` lists every loaded extension — built-in plus
-user-installed plus project-local. Drop a `.ts` file into
+`/extensions` lists every loaded extension: user-installed npm packages,
+loose user extensions, and project-local extensions. Drop a `.ts` file into
 `~/.aethon/extensions/` and Aethon hot-reloads it.
 
 ## What next?
 
 - [Configuration](/guide/configuration) — tune themes, default model, shell behaviour.
-- [Command palette](/guide/command-palette) — every action is reachable from `Cmd+P`.
+- [Command palette](/guide/command-palette) — files on `Cmd+P`, commands on `Cmd+Shift+P`.
 - [Skills & extensions](/guide/skills-and-extensions) — install or write your own.
 - [Themes](/guide/themes) — the three built-in palettes and how to add a fourth.

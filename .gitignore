@@ -53,6 +53,7 @@ test-results/
 *.png
 *.zip
 !src-tauri/icons/*.png
+!assets/brand/aethon-app-screenshot.png
 !website/public/*.png
 
 # Local working notes — not for git.

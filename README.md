@@ -23,6 +23,10 @@ Aethon embeds the [pi coding agent][pi] inside a Tauri 2 desktop shell and rende
 
 The name comes from Greek mythology: _Αἴθων_, one of the horses that pulled Helios's sun chariot. The blazing one that shapes what you see.
 
+<p align="center">
+  <img alt="Aethon workstation showing projects, the project dashboard, and file explorer" src="assets/brand/aethon-app-screenshot.png" width="920">
+</p>
+
 [pi]: https://github.com/mariozechner/pi-coding-agent
 [a2ui]: https://github.com/google/a2ui
 
@@ -37,7 +41,7 @@ The name comes from Greek mythology: _Αἴθων_, one of the horses that pulle
 - **Agent ↔ shell sharing** — four-value `shareMode` (`private` / `read` / `read-write` / `read-write-trusted`) per shell, clickable badge to cycle. Bridge surface `aethon.shells.{list, read, write}` exposes scrollback (forward-only, privacy floor enforced Rust-side) and keystroke injection (Allow/Deny prompt per write unless trusted).
 - **First-class Nix devshell support** — projects with `flake.nix`, `.envrc` (`use_flake` + `direnv`), or `shell.nix` get their devshell env auto-applied to every PTY shell tab AND the agent's pi `bash` tool, no manual `nix develop` wrap needed. One in-memory + on-disk cache keyed on `flake.lock` hash feeds both spawn paths; status-bar `⬡ direnv` / `⬡ flake` badge shows current state. Configurable via `[devshell]` in `config.toml` and per-project `.aethon/devshell.toml`.
 - **Extensibility** — drop a `.ts` into `~/.aethon/extensions/` for hot-reload, or `npm install --prefix ~/.aethon/skills <pkg>` for npm-distributed extensions (manifest via `package.json#aethon`); project-local extensions discovered from cwd up to its git root. Extensions register slash commands, keybindings, menu items, event routes, layouts, A2UI components, and themes — all reported back in the runtime snapshot.
-- **Built-in slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/reset`, `/terminal`, `/extensions`, `/sidebar`, `/layout`, `/project`. Unknown commands fall through to pi.
+- **Built-in slash commands** — `/clear`, `/help`, `/theme`, `/model`, `/login`, `/reset`, `/reload`, `/rename`, `/context`, `/session`, `/compact`, `/name`, `/export`, `/terminal`, `/extensions`, `/sidebar`, `/files`, `/layout`, `/project`. Unknown commands fall through to pi.
 
 See [`SPEC.md`](SPEC.md) for the full status checklist and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
@@ -83,7 +87,8 @@ input for Nix builds.
 | `lint`      | ESLint frontend + agent (no auto-fix)                                                       |
 | `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                                         |
 | `coverage`  | TS coverage report under `coverage/` (vitest v8)                                            |
-| `fmt`       | Format Rust + Nix with treefmt                                                              |
+| `fmt`       | Format Rust + Nix + JSON/MD/YAML/CSS + TOML with treefmt                                    |
+| `clean`     | Remove Rust build artifacts under `src-tauri/target/`                                       |
 
 ### Versioning
 

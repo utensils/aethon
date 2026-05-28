@@ -32,6 +32,24 @@ prompt_before_close = true
 
 [shortcuts]
 new_tab_kind = "agent"
+
+[voice]
+toggle_hotkey = "mod+shift+m"
+# hold_hotkey defaults to "AltRight" on macOS and unset elsewhere.
+
+[extensions]
+state_warn_kb = 64
+state_hard_kb = 512
+
+[updates]
+channel = "stable"
+disable_auto_check = false
+
+[devshell]
+enabled = "auto"
+mode = "auto"
+cache_ttl_hours = 720
+refresh_on_lockfile_change = true
 ```
 
 Every section is optional; unset values use the defaults shown above.
@@ -78,6 +96,40 @@ the full mental model.
 |---|---|---|---|
 | `new_tab_kind` | `"agent" \| "shell"` | `"agent"` | What `Cmd+T` opens when focus is *outside* the bottom panel. `"agent"` keeps the focus-aware default; `"shell"` makes `Cmd+T` always open a shell tab. |
 
+## `[voice]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `toggle_hotkey` | string | `"mod+shift+m"` | Keyboard combo for toggling voice input. `mod` means Cmd on macOS and Ctrl elsewhere. |
+| `hold_hotkey` | string or unset | `"AltRight"` on macOS, unset elsewhere | Optional hold-to-record physical key. |
+
+## `[extensions]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `state_warn_kb` | integer | `64` | Soft warning threshold for extension `setState` payloads. Clamped to 1-8192 KB. |
+| `state_hard_kb` | integer | `512` | Hard rejection threshold for extension `setState` payloads. Clamped to 1-8192 KB and never below the warning threshold. |
+
+## `[updates]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `channel` | `"stable" \| "nightly"` | `"stable"` | Which updater manifest to check. Unknown values fall back to `"stable"`. |
+| `disable_auto_check` | boolean | `false` | Disable background update checks. Manual "Check for Updates" still works. |
+
+## `[devshell]`
+
+Controls Nix devshell detection for shell tabs and the agent's pi `bash`
+tool. Per-project overrides use the same shape at
+`<project>/.aethon/devshell.toml`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `"auto" \| "always" \| "never"` | `"auto"` | Detect devshells from marker files, force resolution, or disable wrapping. |
+| `mode` | `"auto" \| "direnv" \| "nix" \| "nix-shell"` | `"auto"` | Resolver preference. `auto` uses `direnv` before flake before `shell.nix`. |
+| `cache_ttl_hours` | integer | `720` | Max age for successful on-disk snapshots. `0` disables time-based eviction. |
+| `refresh_on_lockfile_change` | boolean | `true` | Re-resolve when watched lockfile or marker mtimes change. |
+
 ## Hot-reload
 
 Most fields take effect on the next render. A few require restart:
@@ -85,7 +137,8 @@ Most fields take effect on the next render. A few require restart:
 - `font_size`, `theme` — applied immediately.
 - `default_share_mode` — applies to **new** shell tabs only.
 - `restore_tabs`, `default_command`, `default_args`, `inherit_env`,
-  `auto_restart_agent` — applied on next launch / next spawn.
+  `auto_restart_agent`, `devshell.*` — applied on next launch, next
+  spawn, or explicit devshell refresh depending on the field.
 
 ## Where to next
 

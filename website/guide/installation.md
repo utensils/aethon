@@ -120,8 +120,8 @@ Launch Aethon and:
    response from your provider.
 2. Press `Cmd+,` (`Ctrl+,` on Linux/Windows) to open the **Settings**
    panel and confirm the active model.
-3. Press `Cmd+P` to open the **Command palette** and explore the
-   built-in actions.
+3. Press `Cmd+Shift+P` to open the **Command palette** and explore the
+   built-in actions. `Cmd+P` quick-opens files in the active project.
 
 If the agent never responds, see [Troubleshooting](/troubleshooting).
 

@@ -63,8 +63,8 @@ export interface BuiltinKeybinding {
 export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+p", description: "Quick-open file (fuzzy search)" },
   { combo: "meta+shift+p", description: "Open command palette" },
-  { combo: "meta+t", description: "New shell tab" },
-  { combo: "meta+shift+t", description: "New agent tab" },
+  { combo: "meta+t", description: "New tab (focus-aware)" },
+  { combo: "meta+shift+t", description: "New shell sub-tab" },
   { combo: "meta+w", description: "Close active tab" },
   { combo: "meta+alt+t", description: "Reopen most-recently-closed tab" },
   { combo: "meta+shift+]", description: "Next tab" },
@@ -94,6 +94,7 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+shift+0", description: "Reset zoom" },
   { combo: "meta+shift+s", description: "Export chat as Markdown" },
   { combo: "meta+shift+f", description: "Search across sessions" },
+  { combo: "meta+shift+v", description: "Toggle Markdown preview" },
   { combo: "meta+,", description: "Open Settings" },
   { combo: "meta+ctrl+f", description: "Toggle fullscreen (mac)" },
   { combo: "F11", description: "Toggle fullscreen" },
