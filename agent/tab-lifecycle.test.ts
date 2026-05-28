@@ -16,6 +16,7 @@ import {
   modelDescriptor,
   modelKey,
   refreshPiSlashCommands,
+  installAethonRetryClassifier,
   summarizeToolArgs,
   tabSessionDir,
   toolCardPayload,
@@ -607,9 +608,94 @@ describe("handleSessionEvent", () => {
     expect(f.sent.find((m) => m.type === "response_end")).toBeDefined();
   });
 
+  it("agent_end during auto-retry keeps the turn in-flight and suppresses the transient error", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    rec.promptInFlight = true;
+    rec.session = {
+      ...rec.session,
+      isRetrying: true,
+    } as TabRecord["session"];
+    f.state.currentAgentTabId = "tab-1";
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "agent_end",
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "WebSocket closed 1006 Connection ended",
+        },
+      ],
+    });
+
+    expect(rec.promptInFlight).toBe(true);
+    expect(rec.agentEndFired).toBe(false);
+    expect(f.state.currentAgentTabId).toBe("tab-1");
+    expect(f.sent.some((m) => m.type === "error")).toBe(false);
+    expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
+  });
+
+  it("agent_end during auto-retry surfaces non-retryable failures and ends the turn", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    rec.promptInFlight = true;
+    rec.session = {
+      ...rec.session,
+      isRetrying: true,
+    } as TabRecord["session"];
+    f.state.currentAgentTabId = "tab-1";
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "agent_end",
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage:
+            "Authentication failed for openai-codex. Run /login openai-codex.",
+        },
+      ],
+    });
+
+    expect(f.sent[0]).toMatchObject({
+      type: "error",
+      tabId: "tab-1",
+      message: "Authentication failed for openai-codex. Run /login openai-codex.",
+    });
+    expect(f.sent[1]).toMatchObject({ type: "response_end", tabId: "tab-1" });
+    expect(rec.promptInFlight).toBe(false);
+    expect(rec.agentEndFired).toBe(true);
+    expect(f.state.currentAgentTabId).toBeUndefined();
+  });
+
+  it("auto_retry_start keeps the tab busy and tells the frontend a retry is underway", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "auto_retry_start",
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 2_000,
+      errorMessage: "WebSocket closed 1006 Connection ended",
+    });
+
+    expect(rec.promptInFlight).toBe(true);
+    expect(rec.agentEndFired).toBe(false);
+    expect(f.state.currentAgentTabId).toBe("tab-1");
+    expect(f.sent[0]).toMatchObject({
+      type: "notice",
+      tabId: "tab-1",
+      message: "Transient provider error; retrying 1/3 in 2s.",
+    });
+  });
+
   it("auto_retry_end with !success emits an error message", () => {
     const f = makeFixture();
     const rec = fakeRec();
+    rec.promptInFlight = true;
+    f.state.currentAgentTabId = "tab-1";
     handleSessionEvent(f.state, f.deps, rec, "tab-1", {
       type: "auto_retry_end",
       success: false,
@@ -619,6 +705,10 @@ describe("handleSessionEvent", () => {
       type: "error",
       message: "auto-retry exhausted: rate limit",
     });
+    expect(f.sent[1]).toMatchObject({ type: "response_end", tabId: "tab-1" });
+    expect(rec.promptInFlight).toBe(false);
+    expect(rec.agentEndFired).toBe(true);
+    expect(f.state.currentAgentTabId).toBeUndefined();
   });
 
   it("auto_retry_end with success is a no-op", () => {
@@ -629,5 +719,32 @@ describe("handleSessionEvent", () => {
       success: true,
     });
     expect(f.sent).toHaveLength(0);
+  });
+
+  it("extends pi's retry classifier for websocket 1006 transport drops", () => {
+    const session = {
+      _isRetryableError: (message: { errorMessage?: string }) =>
+        message.errorMessage === "upstream retryable",
+    };
+    installAethonRetryClassifier(session);
+
+    expect(
+      session._isRetryableError({
+        stopReason: "error",
+        errorMessage: "upstream retryable",
+      }),
+    ).toBe(true);
+    expect(
+      session._isRetryableError({
+        stopReason: "error",
+        errorMessage: "WebSocket closed 1006 Connection ended",
+      }),
+    ).toBe(true);
+    expect(
+      session._isRetryableError({
+        stopReason: "error",
+        errorMessage: "Your credit balance is too low",
+      }),
+    ).toBe(false);
   });
 });

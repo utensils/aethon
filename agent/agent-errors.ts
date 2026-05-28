@@ -31,3 +31,10 @@ export function extractAgentEndError(
   }
   return undefined;
 }
+
+const RETRYABLE_AGENT_ERROR_RE =
+  /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?ended|websocket.?closed|1006|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i;
+
+export function isRetryableAgentEndError(message: string): boolean {
+  return RETRYABLE_AGENT_ERROR_RE.test(message);
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractAgentEndError } from "./agent-errors";
+import { extractAgentEndError, isRetryableAgentEndError } from "./agent-errors";
 
 describe("extractAgentEndError", () => {
   it("returns undefined for an empty or missing list", () => {
@@ -51,5 +51,21 @@ describe("extractAgentEndError", () => {
         { role: "assistant", stopReason: "error", errorMessage: "boom" },
       ]),
     ).toBe("boom");
+  });
+});
+
+describe("isRetryableAgentEndError", () => {
+  it("classifies transient websocket closures as retryable", () => {
+    expect(
+      isRetryableAgentEndError("WebSocket closed 1006 Connection ended"),
+    ).toBe(true);
+  });
+
+  it("does not classify account/configuration errors as retryable", () => {
+    expect(
+      isRetryableAgentEndError(
+        "Your credit balance is too low to access the Anthropic API.",
+      ),
+    ).toBe(false);
   });
 });

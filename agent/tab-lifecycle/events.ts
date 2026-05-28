@@ -16,7 +16,10 @@
  *    the turn UI, even on error.
  */
 
-import { extractAgentEndError } from "../agent-errors";
+import {
+  extractAgentEndError,
+  isRetryableAgentEndError,
+} from "../agent-errors";
 import { logger } from "../logger";
 import type { AethonAgentState, TabRecord } from "../state";
 import { consumeBashTerminalSnapshot } from "../terminal-stream";
@@ -197,7 +200,12 @@ export function handleSessionEvent(
     case "agent_end": {
       const messages = (event as { messages?: unknown[] }).messages;
       const failedMessage = extractAgentEndError(messages);
-      if (failedMessage) {
+      const retrying =
+        (rec.session as { isRetrying?: boolean } | undefined)?.isRetrying === true;
+      const retryableFailure =
+        failedMessage !== undefined && isRetryableAgentEndError(failedMessage);
+      const keepTurnOpenForRetry = retrying && retryableFailure;
+      if (failedMessage && !keepTurnOpenForRetry) {
         deps.send({ type: "error", tabId, message: failedMessage });
       }
       const startMs = state.turnStartTimes.get(tabId);
@@ -221,12 +229,36 @@ export function handleSessionEvent(
       for (const [toolCallId, cached] of rec.toolArgsCache) {
         if (cached.endedAt !== undefined) rec.toolArgsCache.delete(toolCallId);
       }
-      rec.agentEndFired = true;
-      rec.promptInFlight = false;
-      if (state.currentAgentTabId === tabId) {
-        state.currentAgentTabId = undefined;
+      if (!keepTurnOpenForRetry) {
+        rec.agentEndFired = true;
+        rec.promptInFlight = false;
+        if (state.currentAgentTabId === tabId) {
+          state.currentAgentTabId = undefined;
+        }
+        deps.send({ type: "response_end", tabId });
       }
-      deps.send({ type: "response_end", tabId });
+      break;
+    }
+    case "auto_retry_start": {
+      const ev = event as {
+        attempt?: number;
+        maxAttempts?: number;
+        delayMs?: number;
+        errorMessage?: string;
+      };
+      rec.promptInFlight = true;
+      rec.agentEndFired = false;
+      state.currentAgentTabId = tabId;
+      deps.send({
+        type: "notice",
+        tabId,
+        message: `Transient provider error; retrying ${
+          ev.attempt ?? "?"
+        }/${ev.maxAttempts ?? "?"} in ${Math.max(
+          0,
+          Math.round((ev.delayMs ?? 0) / 1000),
+        )}s.`,
+      });
       break;
     }
     case "auto_retry_end": {
@@ -237,6 +269,12 @@ export function handleSessionEvent(
           tabId,
           message: `auto-retry exhausted: ${ev.finalError}`,
         });
+        rec.agentEndFired = true;
+        rec.promptInFlight = false;
+        if (state.currentAgentTabId === tabId) {
+          state.currentAgentTabId = undefined;
+        }
+        deps.send({ type: "response_end", tabId });
       }
       break;
     }
