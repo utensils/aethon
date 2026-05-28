@@ -13,6 +13,7 @@ import { useHostInfo } from "./hooks/useHostInfo";
 import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
 import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
+import { useVcsStatus } from "./hooks/useVcsStatus";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs } from "./hooks/useTabs";
 import { useRestoreShellTabs } from "./hooks/useRestoreShellTabs";
@@ -217,6 +218,27 @@ export default function App() {
       });
     },
   });
+
+  // VCS surface wiring. Polls working-tree changes + PR + CI status for the
+  // active project/worktree root into the `/vcs` slice, consumed by the
+  // header `vcs-status` cluster and the `source-control-panel` above the
+  // file tree. The root is derived the same way the file tree does:
+  // active worktree path when one is selected, else the active project's
+  // path. (devshellActiveRoot reads a different state shape and can lag.)
+  const vcsActiveRoot = (() => {
+    const wtId = (state.activeWorktreeId as string | null) ?? null;
+    if (wtId) {
+      const projs =
+        ((state.sidebar as { projects?: Array<{ worktrees?: Array<{ id: string; path?: string }> }> } | undefined)
+          ?.projects) ?? [];
+      for (const p of projs) {
+        const wt = p.worktrees?.find((w) => w.id === wtId);
+        if (wt?.path) return wt.path;
+      }
+    }
+    return ((state.project as { path?: string } | null)?.path) ?? null;
+  })();
+  useVcsStatus({ activeRoot: vcsActiveRoot, setState });
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the

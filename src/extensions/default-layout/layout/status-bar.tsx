@@ -55,6 +55,15 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const activeWt = active?.worktrees?.find((w) => w.active === true);
   const showChip = props.showProjectChip !== false && !!active;
 
+  // Working-tree change count from the /vcs slice (populated by
+  // useVcsStatus for the active project/worktree). Shown in the chip in
+  // place of the bare dirty dot so the footer carries a real signal.
+  const vcs = resolveValue(state, "/vcs") as
+    | { changes?: { total?: number } }
+    | undefined;
+  const changeCount =
+    typeof vcs?.changes?.total === "number" ? vcs.changes.total : 0;
+
   // Devshell chip data — read from `/devshell/{activeRoot, entries}`
   // populated by the useDevshell hook. Same single-source-of-truth
   // discipline as the project chip above.
@@ -95,7 +104,14 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
               <span className="a2ui-status-chip-branch">
                 {active.git.branch}
               </span>
-              {active.git.dirty ? (
+              {changeCount > 0 ? (
+                <span
+                  className="a2ui-status-chip-changes"
+                  title={`${changeCount} changed file${changeCount === 1 ? "" : "s"}`}
+                >
+                  {changeCount}±
+                </span>
+              ) : active.git.dirty ? (
                 <span className="a2ui-status-chip-dirty" title="dirty">
                   •
                 </span>

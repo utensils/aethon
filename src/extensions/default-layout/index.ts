@@ -32,7 +32,9 @@ import {
   AgentStatusPill,
   AppearanceMenu,
   ModelPicker,
+  VcsStatus,
 } from "./variation-components";
+import { SourceControlPanel } from "./sidebar/source-control-panel";
 import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
 import { SettingsPanel } from "./settings-panel";
@@ -117,6 +119,8 @@ export const defaultLayoutExtension: A2UIExtension = {
     "agent-status-pill": AgentStatusPill,
     "model-picker": ModelPicker,
     "appearance-menu": AppearanceMenu,
+    "vcs-status": VcsStatus,
+    "source-control-panel": SourceControlPanel,
     "command-palette": CommandPalette,
     "notification-stack": NotificationStack,
     "settings-panel": SettingsPanel,

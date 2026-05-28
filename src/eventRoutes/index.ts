@@ -144,6 +144,12 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:project-dashboard", [handleProjectDashboard]],
     ["type:task-launcher", [handleTaskLauncher]],
     ["type:gh-stats-strip", [handleGhStatsStrip]],
+    // VCS surface. The header cluster only opens external URLs; the
+    // source-control panel also opens changed files in an editor tab
+    // (handleFileTree claims `file-tree-open`, falling through to the
+    // opener for PR/CI `open-url`).
+    ["type:vcs-status", [handleGhStatsStrip]],
+    ["type:source-control-panel", [handleFileTree, handleGhStatsStrip]],
     ["type:project-card", [handleProjectsDashboard]],
     // Issues section emits the same `start-task` payload as the task
     // launcher (when the user picks "Send to agent" on an issue row)

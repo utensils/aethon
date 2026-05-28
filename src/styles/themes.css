@@ -5,6 +5,21 @@
  * tokens consumed by chrome.css. The App sets `data-theme="<id>"` on
  * <html>; extensions can register new palettes via `aethon.registerTheme`.
  *
+ * Design intent (2026 bold rework):
+ *   - The three light themes are now clearly distinct families:
+ *       Paper    — crisp cool neutral, low-chroma, ink type, terracotta
+ *                  accent + ink-blue secondary. Minimal shadow, pure-white
+ *                  cards. Reads like ink on bright stock.
+ *       Daylight — warm golden honey, saturated amber base, olive + gold
+ *                  accents, a golden glow backdrop. Reads "sunny".
+ *       Mist     — cool teal fog, blue-gray base, teal + slate-blue
+ *                  accents, cool foggy backdrop. Reads "overcast".
+ *   - The four dark themes are deeper + punchier with signature glows:
+ *       Ember    — near-black warm + glowing brass.
+ *       Æther    — deep cosmic ink-blue + brass/steel tension.
+ *       Brink    — Ristretto warm chrome with a slate-blue wash + gold.
+ *       Nocturne — neon navy: electric cyan / magenta / lime.
+ *
  * Per-theme token categories:
  *   1. Base surfaces       --bg, --bg-elev, --bg-input, --bg-hover,
  *                          --bg-active, --bg-selected
@@ -40,101 +55,101 @@
  * default for that property (or `unset`); extensions that want polished
  * surfaces opt in explicitly. */
 
-/* Ember — warm near-black, cream Bodoni text, brass orange accent.
+/* Ember — deep warm near-black, cream type, glowing brass orange accent.
    `:root` aliases ember so the app boots in ember even before
    data-theme is set. */
 :root,
 :root[data-theme="ember"] {
   color-scheme: dark;
-  --bg: #161618;
-  --bg-elev: #1f1f23;
-  --bg-input: #25252a;
-  --bg-hover: #26262a;
-  --bg-active: #2c2c30;
-  --bg-selected: rgba(255, 106, 24, 0.14);
-  --border: #2e2e34;
-  --border-hover: #38383e;
-  --border-strong: #4a4a50;
-  --text: #fef3e2;
-  --text-secondary: #c8c2b3;
-  --text-dim: #9c9a92;
-  --accent: #ff6a18;
-  --accent-soft: rgba(255, 106, 24, 0.18);
-  --accent-hover-tint: rgba(255, 106, 24, 0.08);
-  --accent-active-tint: rgba(255, 106, 24, 0.16);
-  --text-on-accent: #1f1f23;
-  --btn-text: #1f1f23;
-  --accent-2: #4dc6c0;
-  --accent-2-soft: rgba(77, 198, 192, 0.18);
-  --accent-2-hover-tint: rgba(77, 198, 192, 0.08);
-  --accent-2-active-tint: rgba(77, 198, 192, 0.16);
-  --text-on-accent-2: #0e0e10;
-  --accent-3: #f5b945;
-  --accent-3-soft: rgba(245, 185, 69, 0.18);
-  --user-bubble: #2a2620;
-  --agent-bubble: #1f1f23;
-  --scrollbar-thumb: #2e2e34;
-  --scrollbar-thumb-hover: #3a3a40;
-  --success: #19c332;
+  --bg: #121113;
+  --bg-elev: #1a181b;
+  --bg-input: #211e22;
+  --bg-hover: #221f24;
+  --bg-active: #2a262b;
+  --bg-selected: rgba(255, 122, 41, 0.16);
+  --border: #2c2930;
+  --border-hover: #3a363f;
+  --border-strong: #4e4954;
+  --text: #fbeede;
+  --text-secondary: #c9bfb1;
+  --text-dim: #9a9189;
+  --accent: #ff7a29;
+  --accent-soft: rgba(255, 122, 41, 0.2);
+  --accent-hover-tint: rgba(255, 122, 41, 0.09);
+  --accent-active-tint: rgba(255, 122, 41, 0.17);
+  --text-on-accent: #1a120a;
+  --btn-text: #1a120a;
+  --accent-2: #4dd6cf;
+  --accent-2-soft: rgba(77, 214, 207, 0.2);
+  --accent-2-hover-tint: rgba(77, 214, 207, 0.09);
+  --accent-2-active-tint: rgba(77, 214, 207, 0.17);
+  --text-on-accent-2: #08110f;
+  --accent-3: #ffc24d;
+  --accent-3-soft: rgba(255, 194, 77, 0.2);
+  --user-bubble: #2a241d;
+  --agent-bubble: #1a181b;
+  --scrollbar-thumb: #312d34;
+  --scrollbar-thumb-hover: #423d46;
+  --success: #2ad24a;
   --warn: #febc2e;
   --error: #ff5d5d;
-  --state-success-bg: rgba(25, 195, 50, 0.14);
+  --state-success-bg: rgba(42, 210, 74, 0.14);
   --state-success-fg: #5be072;
-  --state-success-border: rgba(25, 195, 50, 0.32);
+  --state-success-border: rgba(42, 210, 74, 0.34);
   --state-success-strong: var(--success);
   --state-warning-bg: rgba(254, 188, 46, 0.14);
   --state-warning-fg: #ffc857;
-  --state-warning-border: rgba(254, 188, 46, 0.32);
+  --state-warning-border: rgba(254, 188, 46, 0.34);
   --state-warning-strong: var(--warn);
   --state-error-bg: rgba(255, 93, 93, 0.14);
   --state-error-fg: #ff8a8a;
-  --state-error-border: rgba(255, 93, 93, 0.32);
+  --state-error-border: rgba(255, 93, 93, 0.34);
   --state-error-strong: var(--error);
-  --state-info-bg: rgba(110, 167, 255, 0.14);
-  --state-info-fg: #9ab8ff;
-  --state-info-border: rgba(110, 167, 255, 0.32);
-  --state-info-strong: #6ea7ff;
-  --elev-1-color: rgba(0, 0, 0, 0.4);
-  --elev-2-color: rgba(0, 0, 0, 0.5);
-  --elev-3-color: rgba(0, 0, 0, 0.6);
-  --elev-4-color: rgba(0, 0, 0, 0.7);
-  --elev-5-color: rgba(0, 0, 0, 0.78);
+  --state-info-bg: rgba(77, 214, 207, 0.14);
+  --state-info-fg: #7fe3dd;
+  --state-info-border: rgba(77, 214, 207, 0.34);
+  --state-info-strong: var(--accent-2);
+  --elev-1-color: rgba(0, 0, 0, 0.45);
+  --elev-2-color: rgba(0, 0, 0, 0.55);
+  --elev-3-color: rgba(0, 0, 0, 0.66);
+  --elev-4-color: rgba(0, 0, 0, 0.74);
+  --elev-5-color: rgba(0, 0, 0, 0.82);
   --shadow-1: var(--elev-1-shape) var(--elev-1-color);
   --shadow-2: var(--elev-2-shape) var(--elev-2-color);
   --shadow-3: var(--elev-3-shape) var(--elev-3-color);
   --shadow-4: var(--elev-4-shape) var(--elev-4-color);
   --shadow-5: var(--elev-5-shape) var(--elev-5-color);
   --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
-  --surface-0: #0e0e10;
-  --surface-1: #161618;
-  --surface-2: #1f1f23;
-  --surface-3: #25252a;
-  --surface-4: #2c2c30;
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --surface-0: #0b0a0c;
+  --surface-1: #121113;
+  --surface-2: #1a181b;
+  --surface-3: #221f23;
+  --surface-4: #2a262b;
+  --inner-highlight: inset 0 1px 0 rgba(255, 180, 120, 0.06);
   --gradient-surface: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--surface-2) 94%, white 6%),
+    color-mix(in oklab, var(--surface-2) 90%, var(--accent) 6%),
     var(--surface-2)
   );
   --gradient-accent: linear-gradient(
     135deg,
     var(--accent),
-    color-mix(in oklab, var(--accent) 60%, var(--accent-2))
+    color-mix(in oklab, var(--accent) 55%, var(--accent-3))
   );
   --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 88%, var(--accent) 12%),
-    var(--surface-1) 60%
+    130% 90% at 50% -15%,
+    color-mix(in oklab, var(--surface-1) 80%, var(--accent) 20%),
+    var(--surface-1) 62%
   );
   --card-bg: var(--surface-3);
   --card-border: var(--border);
   --card-shadow: var(--shadow-2);
-  --pill-bg: color-mix(in oklab, var(--surface-2) 90%, var(--accent) 10%);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 86%, var(--accent) 14%);
   --pill-border: var(--border-hover);
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
+  --composer-shadow: 0 -4px 14px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -143,10 +158,9 @@
   --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Ember. */
   --syntax-text: #e7e1d2;
-  /* Lifted from #6f6a5d (2.83:1) to clear 3:1 AA-large on bg-input. */
   --syntax-comment: #7c7669;
   --syntax-punctuation: #b8b1a1;
-  --syntax-keyword: #ff6a18;
+  --syntax-keyword: #ff7a29;
   --syntax-string: #c8d96a;
   --syntax-number: #ffb968;
   --syntax-symbol: #ffd28a;
@@ -154,10 +168,10 @@
   --syntax-function: #f5cf7d;
   --syntax-variable: #ff9b6a;
   /* xterm theme + ANSI palette — Ember. */
-  --terminal-bg: #161618;
-  --terminal-fg: #fef3e2;
-  --terminal-cursor: #ff6a18;
-  --terminal-selection: rgba(255, 106, 24, 0.32);
+  --terminal-bg: #121113;
+  --terminal-fg: #fbeede;
+  --terminal-cursor: #ff7a29;
+  --terminal-selection: rgba(255, 122, 41, 0.32);
   --ansi-black: #1a1a1c;
   --ansi-red: #ff5c4d;
   --ansi-green: #6ec85c;
@@ -173,230 +187,85 @@
   --ansi-bright-blue: #8fbeff;
   --ansi-bright-magenta: #e69dff;
   --ansi-bright-cyan: #82e1ea;
-  --ansi-bright-white: #fef3e2;
+  --ansi-bright-white: #fbeede;
 }
 
-/* Paper — cream paper, ink type, brass accent darkened from #ff6a18
-   to #d4530c so the accent passes 4.5:1 against the cream background. */
+/* Paper — crisp cool neutral. Bright near-white stock, ink type, a
+   confident terracotta primary and a deep ink-blue secondary. Low chroma,
+   crisp 1px borders, restrained shadows, pure-white cards. The opposite
+   of Daylight: where Daylight is warm + saturated, Paper is neutral +
+   crisp. Accents are deepened so white CTA text clears WCAG AA. */
 :root[data-theme="paper"] {
   color-scheme: light;
-  --bg: #fef3e2;
-  --bg-elev: #fffaee;
-  --bg-input: #f5e8d0;
-  --bg-hover: #f9eed8;
-  --bg-active: #f3e6cc;
-  --bg-selected: rgba(185, 64, 0, 0.14);
-  --border: #e3d8be;
-  --border-hover: #d4c8ac;
-  --border-strong: #bbac8b;
-  --text: #1f1f23;
-  --text-secondary: #4a4338;
-  --text-dim: #6a6356;
-  /* Deepened from #d4530c to clear AA on white CTA text (was 4.16:1).
-     Darker terracotta also reads with more authority on the cream
-     bg (now 5.53:1). */
-  --accent: #b94000;
-  --accent-soft: rgba(185, 64, 0, 0.16);
-  --accent-hover-tint: rgba(185, 64, 0, 0.06);
-  --accent-active-tint: rgba(185, 64, 0, 0.12);
-  /* Pure white to clear AA on the terracotta CTA (was #fef3e2 → 3.79:1). */
+  --bg: #f7f6f3;
+  --bg-elev: #fcfbf9;
+  --bg-input: #f0eeea;
+  --bg-hover: #f1efe9;
+  --bg-active: #eae7e0;
+  --bg-selected: rgba(184, 64, 10, 0.12);
+  --border: #ddd8ce;
+  --border-hover: #c9c3b6;
+  --border-strong: #aaa498;
+  --text: #1c1b19;
+  --text-secondary: #54514a;
+  --text-dim: #79756c;
+  /* Terracotta at 4.8:1 on the near-white bg; white CTA text clears AA. */
+  --accent: #b8400a;
+  --accent-soft: rgba(184, 64, 10, 0.13);
+  --accent-hover-tint: rgba(184, 64, 10, 0.06);
+  --accent-active-tint: rgba(184, 64, 10, 0.11);
   --text-on-accent: #ffffff;
   --btn-text: #ffffff;
-  /* Sage secondary accent breaks the brass monotony — paired with the
-     warm orange primary, it gives buttons + chips visible hierarchy
-     without leaving the print-paper identity. */
-  --accent-2: #4f7d52;
-  --accent-2-soft: rgba(79, 125, 82, 0.16);
-  --accent-2-hover-tint: rgba(79, 125, 82, 0.06);
-  --accent-2-active-tint: rgba(79, 125, 82, 0.12);
-  /* Pure white to clear AA on sage secondary (was #fef3e2 → 4.36:1). */
+  /* Deep ink-blue secondary — a cool counterweight to the warm terracotta
+     that keeps the palette neutral rather than warm. */
+  --accent-2: #2f5793;
+  --accent-2-soft: rgba(47, 87, 147, 0.13);
+  --accent-2-hover-tint: rgba(47, 87, 147, 0.06);
+  --accent-2-active-tint: rgba(47, 87, 147, 0.11);
   --text-on-accent-2: #ffffff;
-  --accent-3: #b5765e;
-  --accent-3-soft: rgba(181, 118, 94, 0.16);
-  --user-bubble: #fbe5c4;
-  --agent-bubble: #fffaee;
-  --scrollbar-thumb: #d8cdb3;
-  --scrollbar-thumb-hover: #b8ad94;
-  --success: #1a8a2a;
-  --warn: #c98a00;
-  --error: #c4322a;
-  --state-success-bg: rgba(26, 138, 42, 0.10);
-  --state-success-fg: #1a5f25;
-  --state-success-border: rgba(26, 138, 42, 0.30);
+  --accent-3: #a65f49;
+  --accent-3-soft: rgba(166, 95, 73, 0.14);
+  --user-bubble: #eef0f4;
+  --agent-bubble: #ffffff;
+  --scrollbar-thumb: #d4d0c8;
+  --scrollbar-thumb-hover: #b4afa3;
+  --success: #1a7d2a;
+  --warn: #b07400;
+  --error: #c0291f;
+  --state-success-bg: rgba(26, 125, 42, 0.1);
+  --state-success-fg: #155c22;
+  --state-success-border: rgba(26, 125, 42, 0.28);
   --state-success-strong: var(--success);
-  --state-warning-bg: rgba(201, 138, 0, 0.10);
-  --state-warning-fg: #7a5500;
-  --state-warning-border: rgba(201, 138, 0, 0.30);
+  --state-warning-bg: rgba(176, 116, 0, 0.1);
+  --state-warning-fg: #6e4900;
+  --state-warning-border: rgba(176, 116, 0, 0.28);
   --state-warning-strong: var(--warn);
-  --state-error-bg: rgba(196, 50, 42, 0.10);
-  --state-error-fg: #9c2820;
-  --state-error-border: rgba(196, 50, 42, 0.30);
+  --state-error-bg: rgba(192, 41, 31, 0.1);
+  --state-error-fg: #951f17;
+  --state-error-border: rgba(192, 41, 31, 0.28);
   --state-error-strong: var(--error);
-  --state-info-bg: rgba(26, 85, 168, 0.10);
-  --state-info-fg: #143d80;
-  --state-info-border: rgba(26, 85, 168, 0.30);
-  --state-info-strong: #1a55a8;
-  /* Lifted alphas from the original 0.08/0.12/0.18/0.24 — cards
-     register as elevated against the cream backdrop without losing
-     the print-paper softness. */
-  --elev-1-color: rgba(80, 60, 30, 0.10);
-  --elev-2-color: rgba(80, 60, 30, 0.16);
-  --elev-3-color: rgba(80, 60, 30, 0.22);
-  --elev-4-color: rgba(80, 60, 30, 0.30);
-  --elev-5-color: rgba(80, 60, 30, 0.38);
+  --state-info-bg: rgba(47, 87, 147, 0.1);
+  --state-info-fg: #284c80;
+  --state-info-border: rgba(47, 87, 147, 0.28);
+  --state-info-strong: var(--accent-2);
+  /* Restrained neutral-gray shadows — Paper is crisp, not floaty. */
+  --elev-1-color: rgba(28, 27, 25, 0.06);
+  --elev-2-color: rgba(28, 27, 25, 0.1);
+  --elev-3-color: rgba(28, 27, 25, 0.14);
+  --elev-4-color: rgba(28, 27, 25, 0.2);
+  --elev-5-color: rgba(28, 27, 25, 0.26);
   --shadow-1: var(--elev-1-shape) var(--elev-1-color);
   --shadow-2: var(--elev-2-shape) var(--elev-2-color);
   --shadow-3: var(--elev-3-shape) var(--elev-3-color);
   --shadow-4: var(--elev-4-shape) var(--elev-4-color);
   --shadow-5: var(--elev-5-shape) var(--elev-5-color);
   --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
-  /* Surface tiers — sidebars/header (surface-2) sit BRIGHTER than the
-     canvas (surface-1) so they look lit by ambient room light, paired
-     with --inner-highlight to give a top-edge sheen. This is the move
-     that lifts Paper from flat to elevated. */
-  --surface-0: #f0e2c5;
-  --surface-1: #fef3e2;
-  --surface-2: #fff7e6;
-  --surface-3: #fffaee;
+  --surface-0: #eceae5;
+  --surface-1: #f7f6f3;
+  --surface-2: #fcfbf9;
+  --surface-3: #ffffff;
   --surface-4: #ffffff;
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  --gradient-surface: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--surface-2) 90%, white 10%),
-    var(--surface-2)
-  );
-  --gradient-accent: linear-gradient(
-    135deg,
-    var(--accent),
-    color-mix(in oklab, var(--accent) 55%, var(--accent-3))
-  );
-  --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 88%, var(--accent) 8%),
-    var(--surface-1) 65%
-  );
-  --card-bg: var(--surface-3);
-  --card-border: var(--border);
-  --card-shadow: var(--shadow-2);
-  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent) 12%);
-  --pill-border: var(--border-hover);
-  --pill-text: var(--text-secondary);
-  --composer-bg: var(--surface-3);
-  --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
-  --popover-bg: var(--surface-3);
-  --popover-border: var(--border-hover);
-  --popover-shadow: var(--shadow-3);
-  --modal-bg: var(--surface-4);
-  --modal-border: var(--border-hover);
-  --modal-shadow: var(--shadow-overlay);
-  /* Syntax-highlighting palette — Paper. */
-  --syntax-text: #2b261f;
-  --syntax-comment: #8a8170;
-  --syntax-punctuation: #5b5446;
-  --syntax-keyword: #b94000;
-  --syntax-string: #2f6b1f;
-  --syntax-number: #875000;
-  --syntax-symbol: #5a3b00;
-  --syntax-operator: #6c6353;
-  --syntax-function: #7c4a00;
-  --syntax-variable: #9a3b1f;
-  /* xterm theme + ANSI palette — Paper. */
-  --terminal-bg: #fffaee;
-  --terminal-fg: #1f1f23;
-  --terminal-cursor: #b94000;
-  --terminal-selection: rgba(185, 64, 0, 0.24);
-  --ansi-black: #1f1f23;
-  --ansi-red: #c4322a;
-  --ansi-green: #2f6b1f;
-  --ansi-yellow: #875000;
-  --ansi-blue: #1a55a8;
-  --ansi-magenta: #8b3a96;
-  --ansi-cyan: #1a7080;
-  --ansi-white: #6a6356;
-  --ansi-bright-black: #4a4438;
-  --ansi-bright-red: #d63f37;
-  --ansi-bright-green: #3d8429;
-  --ansi-bright-yellow: #b06900;
-  --ansi-bright-blue: #2c6cc4;
-  --ansi-bright-magenta: #a04ba8;
-  --ansi-bright-cyan: #2c8da0;
-  --ansi-bright-white: #1f1f23;
-}
-
-/* Æther — deep ink-blue base, brighter brass accent, the signature theme.
-   `signature` is kept as a back-compat alias so persisted theme ids from
-   earlier builds still resolve. */
-:root[data-theme="aether"],
-:root[data-theme="signature"] {
-  color-scheme: dark;
-  --bg: #0e1118;
-  --bg-elev: #161a24;
-  --bg-input: #1c2030;
-  --bg-hover: #1c2030;
-  --bg-active: #222637;
-  --bg-selected: rgba(255, 138, 61, 0.14);
-  --border: #262b3a;
-  --border-hover: #323849;
-  --border-strong: #3e4558;
-  --text: #fef3e2;
-  --text-secondary: #b8bdd0;
-  --text-dim: #8b91a8;
-  --accent: #ff8a3d;
-  --accent-soft: rgba(255, 138, 61, 0.18);
-  --accent-hover-tint: rgba(255, 138, 61, 0.08);
-  --accent-active-tint: rgba(255, 138, 61, 0.16);
-  --text-on-accent: #0e1118;
-  --btn-text: #0e1118;
-  /* Steel-blue secondary balances the warm brass with a cool tone
-     that mirrors the deep ink-blue base. */
-  --accent-2: #6aa9ff;
-  --accent-2-soft: rgba(106, 169, 255, 0.18);
-  --accent-2-hover-tint: rgba(106, 169, 255, 0.08);
-  --accent-2-active-tint: rgba(106, 169, 255, 0.16);
-  --text-on-accent-2: #0e1118;
-  --accent-3: #76d6e0;
-  --accent-3-soft: rgba(118, 214, 224, 0.16);
-  --user-bubble: #1f2436;
-  --agent-bubble: #161a24;
-  --scrollbar-thumb: #262b3a;
-  --scrollbar-thumb-hover: #323849;
-  --success: #3ad36f;
-  --warn: #ffc94e;
-  --error: #ff7777;
-  --state-success-bg: rgba(58, 211, 111, 0.14);
-  --state-success-fg: #7adf95;
-  --state-success-border: rgba(58, 211, 111, 0.32);
-  --state-success-strong: var(--success);
-  --state-warning-bg: rgba(255, 201, 78, 0.14);
-  --state-warning-fg: #ffd478;
-  --state-warning-border: rgba(255, 201, 78, 0.32);
-  --state-warning-strong: var(--warn);
-  --state-error-bg: rgba(255, 119, 119, 0.14);
-  --state-error-fg: #ff9595;
-  --state-error-border: rgba(255, 119, 119, 0.32);
-  --state-error-strong: var(--error);
-  --state-info-bg: rgba(130, 168, 255, 0.14);
-  --state-info-fg: #a8c4ff;
-  --state-info-border: rgba(130, 168, 255, 0.32);
-  --state-info-strong: #82a8ff;
-  --elev-1-color: rgba(0, 0, 0, 0.45);
-  --elev-2-color: rgba(0, 0, 0, 0.55);
-  --elev-3-color: rgba(0, 0, 0, 0.65);
-  --elev-4-color: rgba(0, 0, 0, 0.75);
-  --elev-5-color: rgba(0, 0, 0, 0.82);
-  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
-  --shadow-2: 0 4px 14px var(--elev-2-color);
-  --shadow-3: 0 12px 36px var(--elev-3-color);
-  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
-  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
-  --shadow-overlay: 0 24px 64px var(--elev-4-color);
-  --surface-0: #080b12;
-  --surface-1: #0e1118;
-  --surface-2: #161a24;
-  --surface-3: #1c2030;
-  --surface-4: #222637;
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --gradient-surface: linear-gradient(
     180deg,
     color-mix(in oklab, var(--surface-2) 92%, white 8%),
@@ -405,22 +274,158 @@
   --gradient-accent: linear-gradient(
     135deg,
     var(--accent),
-    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
+    color-mix(in oklab, var(--accent) 60%, var(--accent-3))
   );
   --gradient-app-backdrop: radial-gradient(
     120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 86%, var(--accent-2) 14%),
-    var(--surface-1) 60%
+    color-mix(in oklab, var(--surface-1) 94%, var(--accent) 6%),
+    var(--surface-1) 70%
   );
   --card-bg: var(--surface-3);
   --card-border: var(--border);
-  --card-shadow: var(--shadow-2);
-  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent-2) 12%);
+  --card-shadow: var(--shadow-1);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 92%, var(--accent) 8%);
   --pill-border: var(--border-hover);
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
+  --composer-shadow: 0 -3px 10px var(--elev-2-color);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
+  /* Syntax-highlighting palette — Paper (restrained, ink-forward). */
+  --syntax-text: #1c1b19;
+  --syntax-comment: #8a877e;
+  --syntax-punctuation: #54514a;
+  --syntax-keyword: #b8400a;
+  --syntax-string: #2f7d4f;
+  --syntax-number: #8a5a00;
+  --syntax-symbol: #2f5793;
+  --syntax-operator: #6c6960;
+  --syntax-function: #6b4e8a;
+  --syntax-variable: #b0432a;
+  /* xterm theme + ANSI palette — Paper. */
+  --terminal-bg: #ffffff;
+  --terminal-fg: #1c1b19;
+  --terminal-cursor: #b8400a;
+  --terminal-selection: rgba(184, 64, 10, 0.2);
+  --ansi-black: #1c1b19;
+  --ansi-red: #c0291f;
+  --ansi-green: #2f7d4f;
+  --ansi-yellow: #8a5a00;
+  --ansi-blue: #2f5793;
+  --ansi-magenta: #7a3d8a;
+  --ansi-cyan: #1a6f7a;
+  --ansi-white: #79756c;
+  --ansi-bright-black: #54514a;
+  --ansi-bright-red: #d2342a;
+  --ansi-bright-green: #389a5e;
+  --ansi-bright-yellow: #a86e00;
+  --ansi-bright-blue: #3a6bb0;
+  --ansi-bright-magenta: #934ba2;
+  --ansi-bright-cyan: #2a8a96;
+  --ansi-bright-white: #1c1b19;
+}
+
+/* Æther — deep cosmic ink-blue base, brighter brass accent, the signature
+   theme. `signature` is kept as a back-compat alias so persisted theme ids
+   from earlier builds still resolve. Deepened base + a steel-blue glow give
+   it more depth than the previous build. */
+:root[data-theme="aether"],
+:root[data-theme="signature"] {
+  color-scheme: dark;
+  --bg: #0b0e16;
+  --bg-elev: #131825;
+  --bg-input: #181e2e;
+  --bg-hover: #181e2e;
+  --bg-active: #222a3d;
+  --bg-selected: rgba(255, 138, 61, 0.15);
+  --border: #232b3d;
+  --border-hover: #313a52;
+  --border-strong: #414d6b;
+  --text: #eef1fb;
+  --text-secondary: #b6bdd4;
+  --text-dim: #868ea8;
+  --accent: #ff8a3d;
+  --accent-soft: rgba(255, 138, 61, 0.2);
+  --accent-hover-tint: rgba(255, 138, 61, 0.09);
+  --accent-active-tint: rgba(255, 138, 61, 0.17);
+  --text-on-accent: #0b0e16;
+  --btn-text: #0b0e16;
+  --accent-2: #6fb0ff;
+  --accent-2-soft: rgba(111, 176, 255, 0.2);
+  --accent-2-hover-tint: rgba(111, 176, 255, 0.09);
+  --accent-2-active-tint: rgba(111, 176, 255, 0.17);
+  --text-on-accent-2: #0b0e16;
+  --accent-3: #76d6e0;
+  --accent-3-soft: rgba(118, 214, 224, 0.18);
+  --user-bubble: #1d2336;
+  --agent-bubble: #131825;
+  --scrollbar-thumb: #232b3d;
+  --scrollbar-thumb-hover: #313a52;
+  --success: #3ad36f;
+  --warn: #ffc94e;
+  --error: #ff7777;
+  --state-success-bg: rgba(58, 211, 111, 0.14);
+  --state-success-fg: #7adf95;
+  --state-success-border: rgba(58, 211, 111, 0.34);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(255, 201, 78, 0.14);
+  --state-warning-fg: #ffd478;
+  --state-warning-border: rgba(255, 201, 78, 0.34);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(255, 119, 119, 0.14);
+  --state-error-fg: #ff9595;
+  --state-error-border: rgba(255, 119, 119, 0.34);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(111, 176, 255, 0.16);
+  --state-info-fg: #a8c4ff;
+  --state-info-border: rgba(111, 176, 255, 0.34);
+  --state-info-strong: var(--accent-2);
+  --elev-1-color: rgba(0, 0, 0, 0.5);
+  --elev-2-color: rgba(2, 6, 18, 0.6);
+  --elev-3-color: rgba(2, 6, 18, 0.7);
+  --elev-4-color: rgba(2, 6, 18, 0.78);
+  --elev-5-color: rgba(2, 6, 18, 0.85);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: 0 4px 14px var(--elev-2-color);
+  --shadow-3: 0 12px 36px var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: 0 24px 64px var(--elev-4-color);
+  --surface-0: #06080f;
+  --surface-1: #0b0e16;
+  --surface-2: #131825;
+  --surface-3: #1a2030;
+  --surface-4: #222a3d;
+  --inner-highlight: inset 0 1px 0 rgba(150, 180, 255, 0.07);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 90%, var(--accent-2) 8%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 50%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 88% at 50% -12%,
+    color-mix(in oklab, var(--surface-1) 82%, var(--accent-2) 18%),
+    var(--surface-1) 58%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 86%, var(--accent-2) 14%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: 0 -4px 14px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -429,7 +434,6 @@
   --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Æther. */
   --syntax-text: #d8dde9;
-  /* Lifted from #5b6275 (2.66:1) to clear 3:1 AA-large on bg-input. */
   --syntax-comment: #71788c;
   --syntax-punctuation: #97a0b4;
   --syntax-keyword: #ff8a3d;
@@ -440,11 +444,11 @@
   --syntax-function: #f0c87b;
   --syntax-variable: #ff9d6a;
   /* xterm theme + ANSI palette — Æther. */
-  --terminal-bg: #0e1118;
-  --terminal-fg: #fef3e2;
+  --terminal-bg: #0b0e16;
+  --terminal-fg: #eef1fb;
   --terminal-cursor: #ff8a3d;
   --terminal-selection: rgba(255, 138, 61, 0.28);
-  --ansi-black: #181b25;
+  --ansi-black: #161b27;
   --ansi-red: #ff7a85;
   --ansi-green: #6ed59f;
   --ansi-yellow: #ffc070;
@@ -459,86 +463,80 @@
   --ansi-bright-blue: #a6c2ff;
   --ansi-bright-magenta: #dbb1ff;
   --ansi-bright-cyan: #93e0ec;
-  --ansi-bright-white: #fef3e2;
+  --ansi-bright-white: #eef1fb;
 }
 
-/* Brink — mid-tone warm chrome (Ristretto base) with gold accent. Ported
-   from Claudette's brink theme; ANSI + syntax tokens derived to keep
-   the Ristretto/Tokyo-Night cohort cohesive (gold keywords, pink errors,
-   cyan functions, lavender symbols). */
+/* Brink — mid-tone warm chrome (Ristretto base) with a slate-blue wash and
+   a bright gold accent. Deepened base for more contrast; gold + lavender
+   pushed brighter. The slate-blue (#2d2f44) still bleeds into the top of
+   every elevated surface for the "blues mixed into warm chrome" character. */
 :root[data-theme="brink"] {
   color-scheme: dark;
-  --bg: #2c2525;
-  --bg-elev: #504646;
-  --bg-input: #241e1e;
-  --bg-hover: #3a3030;
-  --bg-active: #46393a;
-  --bg-selected: rgba(249, 204, 108, 0.16);
-  --border: #6e6464;
-  --border-hover: #7a6e70;
+  --bg: #272020;
+  --bg-elev: #4b3f3f;
+  --bg-input: #1f1919;
+  --bg-hover: #332a2a;
+  --bg-active: #413535;
+  --bg-selected: rgba(255, 212, 121, 0.18);
+  --border: #645a5a;
+  --border-hover: #756769;
   --border-strong: #8b7c7e;
-  --text: #f1e5e7;
+  --text: #f4e9eb;
   --text-secondary: #e0d4d6;
-  --text-dim: #d0c4c6;
-  --accent: #f9cc6c;
-  --accent-soft: rgba(249, 204, 108, 0.2);
-  --accent-hover-tint: rgba(249, 204, 108, 0.1);
-  --accent-active-tint: rgba(249, 204, 108, 0.16);
-  --text-on-accent: #2c2525;
-  --btn-text: #2c2525;
-  /* Lavender secondary mirrors the syntax `symbol` colour, keeping the
-     Tokyo-Night cohort cohesive across UI chrome and code. */
-  --accent-2: #a8a9eb;
-  --accent-2-soft: rgba(168, 169, 235, 0.2);
-  --accent-2-hover-tint: rgba(168, 169, 235, 0.1);
-  --accent-2-active-tint: rgba(168, 169, 235, 0.16);
-  --text-on-accent-2: #2c2525;
-  --accent-3: #85dacc;
-  --accent-3-soft: rgba(133, 218, 204, 0.2);
-  --user-bubble: #3a302f;
-  --agent-bubble: #3f3434;
-  --scrollbar-thumb: #6e6464;
-  --scrollbar-thumb-hover: #7a6e70;
-  --success: #adda78;
-  --warn: #f9cc6c;
+  --text-dim: #cdbfc1;
+  --accent: #ffd479;
+  --accent-soft: rgba(255, 212, 121, 0.22);
+  --accent-hover-tint: rgba(255, 212, 121, 0.11);
+  --accent-active-tint: rgba(255, 212, 121, 0.18);
+  --text-on-accent: #272020;
+  --btn-text: #272020;
+  --accent-2: #b3b4f0;
+  --accent-2-soft: rgba(179, 180, 240, 0.22);
+  --accent-2-hover-tint: rgba(179, 180, 240, 0.11);
+  --accent-2-active-tint: rgba(179, 180, 240, 0.18);
+  --text-on-accent-2: #272020;
+  --accent-3: #8fe0d2;
+  --accent-3-soft: rgba(143, 224, 210, 0.22);
+  --user-bubble: #352b2a;
+  --agent-bubble: #3a2f2f;
+  --scrollbar-thumb: #645a5a;
+  --scrollbar-thumb-hover: #756769;
+  --success: #b3e07d;
+  --warn: #ffd479;
   --error: #fd6883;
-  --state-success-bg: rgba(173, 218, 120, 0.14);
-  --state-success-fg: #c2e893;
-  --state-success-border: rgba(173, 218, 120, 0.32);
+  --state-success-bg: rgba(179, 224, 125, 0.14);
+  --state-success-fg: #c8ec99;
+  --state-success-border: rgba(179, 224, 125, 0.34);
   --state-success-strong: var(--success);
   --state-warning-bg: rgba(243, 141, 112, 0.14);
   --state-warning-fg: #ffb09a;
-  --state-warning-border: rgba(243, 141, 112, 0.32);
+  --state-warning-border: rgba(243, 141, 112, 0.34);
   --state-warning-strong: #f38d70;
   --state-error-bg: rgba(253, 104, 131, 0.14);
   --state-error-fg: #ff8fa3;
-  --state-error-border: rgba(253, 104, 131, 0.32);
+  --state-error-border: rgba(253, 104, 131, 0.34);
   --state-error-strong: var(--error);
-  --state-info-bg: rgba(133, 218, 204, 0.14);
-  --state-info-fg: #a8e8de;
-  --state-info-border: rgba(133, 218, 204, 0.32);
-  --state-info-strong: #85dacc;
+  --state-info-bg: rgba(179, 180, 240, 0.16);
+  --state-info-fg: #c4c5f4;
+  --state-info-border: rgba(179, 180, 240, 0.34);
+  --state-info-strong: var(--accent-2);
   --elev-1-color: rgba(0, 0, 0, 0.5);
-  --elev-2-color: rgba(0, 0, 0, 0.55);
-  --elev-3-color: rgba(0, 0, 0, 0.6);
-  --elev-4-color: rgba(0, 0, 0, 0.7);
-  --elev-5-color: rgba(0, 0, 0, 0.78);
+  --elev-2-color: rgba(0, 0, 0, 0.58);
+  --elev-3-color: rgba(0, 0, 0, 0.66);
+  --elev-4-color: rgba(0, 0, 0, 0.74);
+  --elev-5-color: rgba(0, 0, 0, 0.82);
   --shadow-1: var(--elev-1-shape) var(--elev-1-color);
   --shadow-2: 0 4px 14px var(--elev-2-color);
   --shadow-3: 0 12px 36px var(--elev-3-color);
   --shadow-4: var(--elev-4-shape) var(--elev-4-color);
   --shadow-5: var(--elev-5-shape) var(--elev-5-color);
   --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
-  --surface-0: #1e1818;
-  --surface-1: #2c2525;
-  --surface-2: #3a3030;
-  --surface-3: #46393a;
-  --surface-4: #504646;
-  --inner-highlight: inset 0 1px 0 rgba(255, 240, 230, 0.06);
-  /* Brink-specific: cool slate-blue (#2d2f44, Tokyo-Night family)
-     bleeds into the top of every elevated surface — header and
-     sidebars catch this wash, producing the "blues mixed into the
-     warm chrome" character of Claudette's brink palette. */
+  --surface-0: #181313;
+  --surface-1: #272020;
+  --surface-2: #332a2a;
+  --surface-3: #3f3434;
+  --surface-4: #4b3f3f;
+  --inner-highlight: inset 0 1px 0 rgba(255, 240, 230, 0.07);
   --gradient-surface: linear-gradient(
     180deg,
     #2d2f44,
@@ -550,25 +548,20 @@
     var(--accent),
     color-mix(in oklab, var(--accent) 55%, var(--accent-2))
   );
-  /* Backdrop radial centres a deeper slate over the canvas so the
-     header reads as a continuation of a cool sky over warm ground. */
   --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -8%,
-    color-mix(in oklab, var(--surface-1) 70%, #2d2f44 30%),
+    120% 82% at 50% -8%,
+    color-mix(in oklab, var(--surface-1) 66%, #2d2f44 34%),
     var(--surface-1) 60%
   );
   --card-bg: var(--surface-3);
   --card-border: var(--border);
   --card-shadow: var(--shadow-2);
-  /* Pills in the header inherit the slate-blue wash so the model
-     picker / theme picker / host pill all read as one cool family
-     sitting on top of the warm chrome. */
-  --pill-bg: color-mix(in oklab, #2d2f44 60%, var(--surface-2));
+  --pill-bg: color-mix(in oklab, #2d2f44 58%, var(--surface-2));
   --pill-border: color-mix(in oklab, var(--accent-2) 45%, var(--border-hover));
   --pill-text: color-mix(in oklab, var(--accent-2) 30%, var(--text));
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
+  --composer-shadow: 0 -4px 14px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -579,200 +572,197 @@
   --syntax-text: #f1e5e7;
   --syntax-comment: #907e80;
   --syntax-punctuation: #b0a4a6;
-  --syntax-keyword: #f9cc6c;
-  --syntax-string: #adda78;
+  --syntax-keyword: #ffd479;
+  --syntax-string: #b3e07d;
   --syntax-number: #f38d70;
-  --syntax-symbol: #a8a9eb;
+  --syntax-symbol: #b3b4f0;
   --syntax-operator: #d0c4c6;
-  --syntax-function: #85dacc;
+  --syntax-function: #8fe0d2;
   --syntax-variable: #fd6883;
   /* xterm theme + ANSI palette — Brink. */
-  --terminal-bg: #1e1818;
-  --terminal-fg: #f1e5e7;
-  --terminal-cursor: #f9cc6c;
-  --terminal-selection: rgba(249, 204, 108, 0.28);
-  --ansi-black: #241e1e;
+  --terminal-bg: #181313;
+  --terminal-fg: #f4e9eb;
+  --terminal-cursor: #ffd479;
+  --terminal-selection: rgba(255, 212, 121, 0.28);
+  --ansi-black: #1f1919;
   --ansi-red: #fd6883;
-  --ansi-green: #adda78;
-  --ansi-yellow: #f9cc6c;
+  --ansi-green: #b3e07d;
+  --ansi-yellow: #ffd479;
   --ansi-blue: #82aaff;
-  --ansi-magenta: #a8a9eb;
-  --ansi-cyan: #85dacc;
+  --ansi-magenta: #b3b4f0;
+  --ansi-cyan: #8fe0d2;
   --ansi-white: #d0c4c6;
-  --ansi-bright-black: #504646;
+  --ansi-bright-black: #4b3f3f;
   --ansi-bright-red: #ff8294;
-  --ansi-bright-green: #c2e893;
-  --ansi-bright-yellow: #ffd98a;
+  --ansi-bright-green: #c8ec99;
+  --ansi-bright-yellow: #ffe09a;
   --ansi-bright-blue: #9bb8ff;
   --ansi-bright-magenta: #c4c5f4;
-  --ansi-bright-cyan: #a8e8de;
-  --ansi-bright-white: #f1e5e7;
+  --ansi-bright-cyan: #a8ece2;
+  --ansi-bright-white: #f4e9eb;
 }
 
-/* Daylight — rich warm light, parchment cream with a deeper amber base
-   than Paper, terracotta + sage dual-accent, soft elevated cards.
-   For users who want Paper's warmth but with more depth and a richer
-   palette. */
+/* Daylight — warm golden honey. A saturated amber-parchment base, deep
+   warm-brown ink, burnt-amber primary + deep-olive secondary + gold
+   tertiary, and a golden glow backdrop. The warm/saturated counterpart to
+   Paper's cool/crisp neutral. Accents deepened to clear AA on white CTA. */
 :root[data-theme="daylight"] {
   color-scheme: light;
-  --bg: #f9e9c8;
-  --bg-elev: #fff8e8;
-  --bg-input: #f4dfb6;
-  --bg-hover: #f6e4be;
-  --bg-active: #efdab2;
-  --bg-selected: rgba(181, 74, 31, 0.14);
-  --border: #d9c19a;
-  --border-hover: #c4ad84;
-  --border-strong: #a8916b;
-  --text: #2a2218;
-  --text-secondary: #5a4d36;
-  /* Darkened from #7a6c52 (4.28:1 failed AA) to clear 4.97:1. */
-  --text-dim: #6e6045;
-  /* Deepened from #c5552c to clear AA on white CTA text (was 4.46:1). */
-  --accent: #b54a1f;
-  --accent-soft: rgba(181, 74, 31, 0.18);
-  --accent-hover-tint: rgba(181, 74, 31, 0.07);
-  --accent-active-tint: rgba(181, 74, 31, 0.14);
-  /* Pure white to clear AA (4.21:1 failed against the terracotta CTA). */
+  --bg: #fbe6c4;
+  --bg-elev: #fdeed1;
+  --bg-input: #f6ddb4;
+  --bg-hover: #f8e2bc;
+  --bg-active: #f1d9ad;
+  --bg-selected: rgba(191, 84, 16, 0.16);
+  --border: #e6cd9e;
+  --border-hover: #d4b87f;
+  --border-strong: #b89860;
+  --text: #3a2c14;
+  --text-secondary: #6b5630;
+  --text-dim: #7a6238;
+  /* Burnt amber at 4.5:1 on the golden bg; white CTA text clears AA. */
+  --accent: #bf5410;
+  --accent-soft: rgba(191, 84, 16, 0.18);
+  --accent-hover-tint: rgba(191, 84, 16, 0.08);
+  --accent-active-tint: rgba(191, 84, 16, 0.15);
   --text-on-accent: #ffffff;
   --btn-text: #ffffff;
-  --accent-2: #557349;
-  --accent-2-soft: rgba(85, 115, 73, 0.18);
-  --accent-2-hover-tint: rgba(85, 115, 73, 0.06);
-  --accent-2-active-tint: rgba(85, 115, 73, 0.14);
-  --text-on-accent-2: #fff8e8;
-  --accent-3: #aa7e3f;
-  --accent-3-soft: rgba(170, 126, 63, 0.18);
-  --user-bubble: #f4dfb6;
-  --agent-bubble: #fff8e8;
-  --scrollbar-thumb: #d1bb8f;
-  --scrollbar-thumb-hover: #b09971;
-  --success: #2a7c33;
-  --warn: #b8770a;
+  /* Deep olive — saturated, garden-green warmth. Deepened so white text
+     clears AA (lighter sage failed against the bright honey bg). */
+  --accent-2: #50602a;
+  --accent-2-soft: rgba(80, 96, 42, 0.18);
+  --accent-2-hover-tint: rgba(80, 96, 42, 0.08);
+  --accent-2-active-tint: rgba(80, 96, 42, 0.15);
+  --text-on-accent-2: #ffffff;
+  --accent-3: #a8740e;
+  --accent-3-soft: rgba(168, 116, 14, 0.18);
+  --user-bubble: #f6ddb4;
+  --agent-bubble: #fdeed1;
+  --scrollbar-thumb: #ddc596;
+  --scrollbar-thumb-hover: #bda06a;
+  --success: #2a7c25;
+  --warn: #b06a06;
   --error: #b53023;
-  --state-success-bg: rgba(42, 124, 51, 0.12);
-  --state-success-fg: #1f5827;
-  --state-success-border: rgba(42, 124, 51, 0.30);
+  --state-success-bg: rgba(42, 124, 37, 0.12);
+  --state-success-fg: #1f5818;
+  --state-success-border: rgba(42, 124, 37, 0.3);
   --state-success-strong: var(--success);
-  --state-warning-bg: rgba(184, 119, 10, 0.12);
-  --state-warning-fg: #73490b;
-  --state-warning-border: rgba(184, 119, 10, 0.30);
+  --state-warning-bg: rgba(176, 106, 6, 0.12);
+  --state-warning-fg: #6e4304;
+  --state-warning-border: rgba(176, 106, 6, 0.3);
   --state-warning-strong: var(--warn);
   --state-error-bg: rgba(181, 48, 35, 0.12);
   --state-error-fg: #7d211a;
-  --state-error-border: rgba(181, 48, 35, 0.30);
+  --state-error-border: rgba(181, 48, 35, 0.3);
   --state-error-strong: var(--error);
-  --state-info-bg: rgba(60, 108, 182, 0.10);
-  --state-info-fg: #23457a;
-  --state-info-border: rgba(60, 108, 182, 0.30);
-  --state-info-strong: #3c6cb6;
-  --elev-1-color: rgba(95, 67, 28, 0.12);
-  --elev-2-color: rgba(95, 67, 28, 0.18);
-  --elev-3-color: rgba(95, 67, 28, 0.24);
-  --elev-4-color: rgba(95, 67, 28, 0.32);
-  --elev-5-color: rgba(95, 67, 28, 0.40);
+  --state-info-bg: rgba(80, 96, 42, 0.12);
+  --state-info-fg: #3d4a1f;
+  --state-info-border: rgba(80, 96, 42, 0.3);
+  --state-info-strong: var(--accent-2);
+  /* Warm honey-brown shadows give Daylight more depth than Paper. */
+  --elev-1-color: rgba(120, 78, 18, 0.14);
+  --elev-2-color: rgba(120, 78, 18, 0.2);
+  --elev-3-color: rgba(120, 78, 18, 0.26);
+  --elev-4-color: rgba(120, 78, 18, 0.34);
+  --elev-5-color: rgba(120, 78, 18, 0.42);
   --shadow-1: var(--elev-1-shape) var(--elev-1-color);
   --shadow-2: var(--elev-2-shape) var(--elev-2-color);
   --shadow-3: var(--elev-3-shape) var(--elev-3-color);
   --shadow-4: var(--elev-4-shape) var(--elev-4-color);
   --shadow-5: var(--elev-5-shape) var(--elev-5-color);
   --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
-  --surface-0: #ead2a8;
-  --surface-1: #f9e9c8;
-  --surface-2: #fdf2da;
-  --surface-3: #fff8e8;
-  --surface-4: #fffcf2;
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --surface-0: #efd6ac;
+  --surface-1: #fbe6c4;
+  --surface-2: #fdeed1;
+  --surface-3: #fff6e1;
+  --surface-4: #fffdf5;
+  --inner-highlight: inset 0 1px 0 rgba(255, 252, 240, 0.8);
   --gradient-surface: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--surface-2) 88%, white 12%),
+    color-mix(in oklab, var(--surface-2) 86%, var(--accent-3) 8%),
     var(--surface-2)
   );
   --gradient-accent: linear-gradient(
     135deg,
     var(--accent),
-    color-mix(in oklab, var(--accent) 55%, var(--accent-3))
+    color-mix(in oklab, var(--accent) 50%, var(--accent-3))
   );
   --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 88%, var(--accent) 10%),
-    var(--surface-1) 60%
+    125% 85% at 50% -12%,
+    color-mix(in oklab, var(--surface-1) 80%, var(--accent-3) 20%),
+    var(--surface-1) 58%
   );
   --card-bg: var(--surface-3);
   --card-border: var(--border);
   --card-shadow: var(--shadow-2);
-  --pill-bg: color-mix(in oklab, var(--surface-2) 85%, var(--accent) 15%);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 82%, var(--accent-3) 18%);
   --pill-border: var(--border-hover);
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
+  --composer-shadow: 0 -4px 14px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
   --modal-bg: var(--surface-4);
   --modal-border: var(--border-hover);
   --modal-shadow: var(--shadow-overlay);
-  /* Syntax-highlighting palette — Daylight. */
-  --syntax-text: #2a2218;
-  --syntax-comment: #8a7d62;
+  /* Syntax-highlighting palette — Daylight (warm, saturated). */
+  --syntax-text: #3a2c14;
+  --syntax-comment: #927c52;
   --syntax-punctuation: #5b5040;
-  --syntax-keyword: #a83c0a;
-  --syntax-string: #2f6b1f;
-  --syntax-number: #875000;
-  --syntax-symbol: #5a3b00;
+  --syntax-keyword: #b34a0a;
+  --syntax-string: #4e6b1f;
+  --syntax-number: #8a5800;
+  --syntax-symbol: #7a5210;
   --syntax-operator: #6c5e48;
-  --syntax-function: #7c4a00;
-  --syntax-variable: #9a3b1f;
+  --syntax-function: #9a5a00;
+  --syntax-variable: #a8431a;
   /* xterm theme + ANSI palette — Daylight. */
-  --terminal-bg: #fff8e8;
-  --terminal-fg: #2a2218;
-  --terminal-cursor: #b54a1f;
-  --terminal-selection: rgba(181, 74, 31, 0.22);
-  --ansi-black: #2a2218;
+  --terminal-bg: #fff6e1;
+  --terminal-fg: #3a2c14;
+  --terminal-cursor: #bf5410;
+  --terminal-selection: rgba(191, 84, 16, 0.22);
+  --ansi-black: #3a2c14;
   --ansi-red: #b53023;
-  --ansi-green: #2f6b1f;
-  --ansi-yellow: #875000;
-  --ansi-blue: #1a5288;
-  --ansi-magenta: #8b3a96;
-  --ansi-cyan: #1a7080;
-  --ansi-white: #6a5d44;
-  --ansi-bright-black: #4a4232;
+  --ansi-green: #4e6b1f;
+  --ansi-yellow: #8a5800;
+  --ansi-blue: #2a5a7a;
+  --ansi-magenta: #8b3a76;
+  --ansi-cyan: #1a7070;
+  --ansi-white: #6b5630;
+  --ansi-bright-black: #5b4a28;
   --ansi-bright-red: #c4382b;
-  --ansi-bright-green: #3d8429;
-  --ansi-bright-yellow: #a76800;
-  --ansi-bright-blue: #2c66b8;
-  --ansi-bright-magenta: #a04ba8;
-  --ansi-bright-cyan: #2c8da0;
-  --ansi-bright-white: #2a2218;
+  --ansi-bright-green: #5e7e29;
+  --ansi-bright-yellow: #a86c00;
+  --ansi-bright-blue: #356a8e;
+  --ansi-bright-magenta: #a04b88;
+  --ansi-bright-cyan: #2a8a8a;
+  --ansi-bright-white: #3a2c14;
 }
 
-/* Mist — cool light, pale blue-gray base, mint-green primary accent,
-   slate-blue secondary. Clean professional alternative to the warm
-   light themes. */
+/* Mist — cool teal fog. Pale blue-gray base, a teal primary, a slate-blue
+   secondary, and a cool foggy backdrop. The clean cool counterpart to the
+   warm light themes. */
 :root[data-theme="mist"] {
   color-scheme: light;
-  --bg: #eef2f6;
-  --bg-elev: #fbfcfe;
-  --bg-input: #e3e9f0;
-  --bg-hover: #e8eef4;
-  --bg-active: #dde4ed;
-  --bg-selected: rgba(31, 125, 94, 0.16);
-  --border: #d0d8e2;
-  --border-hover: #b8c2d0;
-  --border-strong: #9aa4b8;
-  --text: #1c2530;
-  --text-secondary: #475266;
-  /* Darkened from #6a7388 (4.22:1 failed AA) to clear 4.97:1 on bg. */
-  --text-dim: #5a637a;
-  /* Darkened from #2da17e to clear WCAG AA: original mint failed both
-     accent-on-bg (2.87:1 needed 3.0) and text-on-accent (3.14:1
-     needed 4.5). #1f7d5e is the same hue, deep enough that white text
-     hits 4.86:1 and accent-on-bg hits 4.29:1. */
-  --accent: #1f7d5e;
-  --accent-soft: rgba(31, 125, 94, 0.18);
-  --accent-hover-tint: rgba(31, 125, 94, 0.07);
-  --accent-active-tint: rgba(31, 125, 94, 0.14);
+  --bg: #eef2f7;
+  --bg-elev: #f7f9fc;
+  --bg-input: #e4eaf1;
+  --bg-hover: #e7edf4;
+  --bg-active: #dde5ef;
+  --bg-selected: rgba(15, 118, 110, 0.16);
+  --border: #cdd8e4;
+  --border-hover: #b0c0d1;
+  --border-strong: #8c9eb4;
+  --text: #16202b;
+  --text-secondary: #3f4d5e;
+  --text-dim: #5a6675;
+  /* Deep teal — clears AA on the pale bg and against white CTA text. */
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.18);
+  --accent-hover-tint: rgba(15, 118, 110, 0.07);
+  --accent-active-tint: rgba(15, 118, 110, 0.14);
   --text-on-accent: #ffffff;
   --btn-text: #ffffff;
   --accent-2: #2c5694;
@@ -782,46 +772,47 @@
   --text-on-accent-2: #ffffff;
   --accent-3: #6c5ca8;
   --accent-3-soft: rgba(108, 92, 168, 0.18);
-  --user-bubble: #e3e9f0;
-  --agent-bubble: #fbfcfe;
-  --scrollbar-thumb: #c5cedb;
-  --scrollbar-thumb-hover: #9aa4b8;
-  --success: #2a8a5a;
-  --warn: #b8770a;
+  --user-bubble: #dfe9f1;
+  --agent-bubble: #f1f5f9;
+  --scrollbar-thumb: #c2cedb;
+  --scrollbar-thumb-hover: #93a3b6;
+  --success: #1f8a55;
+  --warn: #b0700a;
   --error: #b53023;
-  --state-success-bg: rgba(42, 138, 90, 0.10);
-  --state-success-fg: #1a5e3c;
-  --state-success-border: rgba(42, 138, 90, 0.30);
+  --state-success-bg: rgba(31, 138, 85, 0.1);
+  --state-success-fg: #15633c;
+  --state-success-border: rgba(31, 138, 85, 0.28);
   --state-success-strong: var(--success);
-  --state-warning-bg: rgba(184, 119, 10, 0.10);
-  --state-warning-fg: #73490b;
-  --state-warning-border: rgba(184, 119, 10, 0.30);
+  --state-warning-bg: rgba(176, 112, 10, 0.1);
+  --state-warning-fg: #6e4607;
+  --state-warning-border: rgba(176, 112, 10, 0.28);
   --state-warning-strong: var(--warn);
-  --state-error-bg: rgba(181, 48, 35, 0.10);
+  --state-error-bg: rgba(181, 48, 35, 0.1);
   --state-error-fg: #7d211a;
-  --state-error-border: rgba(181, 48, 35, 0.30);
+  --state-error-border: rgba(181, 48, 35, 0.28);
   --state-error-strong: var(--error);
-  --state-info-bg: rgba(60, 108, 182, 0.10);
+  --state-info-bg: rgba(44, 86, 148, 0.1);
   --state-info-fg: #264880;
-  --state-info-border: rgba(60, 108, 182, 0.30);
+  --state-info-border: rgba(44, 86, 148, 0.28);
   --state-info-strong: var(--accent-2);
-  --elev-1-color: rgba(35, 55, 90, 0.10);
-  --elev-2-color: rgba(35, 55, 90, 0.14);
-  --elev-3-color: rgba(35, 55, 90, 0.20);
-  --elev-4-color: rgba(35, 55, 90, 0.28);
-  --elev-5-color: rgba(35, 55, 90, 0.34);
+  /* Cool blue-gray shadows for the foggy character. */
+  --elev-1-color: rgba(22, 40, 70, 0.1);
+  --elev-2-color: rgba(22, 40, 70, 0.15);
+  --elev-3-color: rgba(22, 40, 70, 0.2);
+  --elev-4-color: rgba(22, 40, 70, 0.28);
+  --elev-5-color: rgba(22, 40, 70, 0.34);
   --shadow-1: var(--elev-1-shape) var(--elev-1-color);
   --shadow-2: var(--elev-2-shape) var(--elev-2-color);
   --shadow-3: var(--elev-3-shape) var(--elev-3-color);
   --shadow-4: var(--elev-4-shape) var(--elev-4-color);
   --shadow-5: var(--elev-5-shape) var(--elev-5-color);
   --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
-  --surface-0: #d9e0e8;
-  --surface-1: #eef2f6;
-  --surface-2: #f4f7fa;
-  --surface-3: #fbfcfe;
+  --surface-0: #dde5ef;
+  --surface-1: #eef2f7;
+  --surface-2: #f7f9fc;
+  --surface-3: #ffffff;
   --surface-4: #ffffff;
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
   --gradient-surface: linear-gradient(
     180deg,
     color-mix(in oklab, var(--surface-2) 88%, white 12%),
@@ -830,146 +821,12 @@
   --gradient-accent: linear-gradient(
     135deg,
     var(--accent),
-    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
+    color-mix(in oklab, var(--accent) 50%, var(--accent-2))
   );
   --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 86%, var(--accent-2) 10%),
-    var(--surface-1) 60%
-  );
-  --card-bg: var(--surface-3);
-  --card-border: var(--border);
-  --card-shadow: var(--shadow-2);
-  --pill-bg: color-mix(in oklab, var(--surface-2) 88%, var(--accent) 12%);
-  --pill-border: var(--border-hover);
-  --pill-text: var(--text-secondary);
-  --composer-bg: var(--surface-3);
-  --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
-  --popover-bg: var(--surface-3);
-  --popover-border: var(--border-hover);
-  --popover-shadow: var(--shadow-3);
-  --modal-bg: var(--surface-4);
-  --modal-border: var(--border-hover);
-  --modal-shadow: var(--shadow-overlay);
-  /* Syntax-highlighting palette — Mist. */
-  --syntax-text: #1c2530;
-  --syntax-comment: #7a8294;
-  --syntax-punctuation: #4b5366;
-  --syntax-keyword: #1a6488;
-  --syntax-string: #2a7c5a;
-  --syntax-number: #8c5810;
-  --syntax-symbol: #6646a8;
-  --syntax-operator: #4c5a6e;
-  --syntax-function: #1f5a8e;
-  --syntax-variable: #a8423e;
-  /* xterm theme + ANSI palette — Mist. */
-  --terminal-bg: #fbfcfe;
-  --terminal-fg: #1c2530;
-  --terminal-cursor: #1f7d5e;
-  --terminal-selection: rgba(31, 125, 94, 0.22);
-  --ansi-black: #1c2530;
-  --ansi-red: #b53023;
-  --ansi-green: #2a8a5a;
-  --ansi-yellow: #b8770a;
-  --ansi-blue: #1a5288;
-  --ansi-magenta: #7a3a96;
-  --ansi-cyan: #1a7080;
-  --ansi-white: #6a7388;
-  --ansi-bright-black: #4b5366;
-  --ansi-bright-red: #c43830;
-  --ansi-bright-green: #3d9a6a;
-  --ansi-bright-yellow: #c98800;
-  --ansi-bright-blue: #2c66b8;
-  --ansi-bright-magenta: #9a4ab0;
-  --ansi-bright-cyan: #2a8da0;
-  --ansi-bright-white: #1c2530;
-}
-
-/* Nocturne — high-contrast dark, deep navy base, electric cyan primary
-   accent, vivid magenta secondary. Higher contrast than Æther for users
-   who want punch (e.g. demos, screen-sharing, projector use). */
-:root[data-theme="nocturne"] {
-  color-scheme: dark;
-  --bg: #0a0d14;
-  --bg-elev: #181c28;
-  --bg-input: #14182b;
-  --bg-hover: #161a26;
-  --bg-active: #1c2235;
-  --bg-selected: rgba(40, 224, 224, 0.14);
-  --border: #232a3c;
-  --border-hover: #313952;
-  --border-strong: #4a5475;
-  --text: #eaeefa;
-  --text-secondary: #b0b8d0;
-  --text-dim: #7e87a0;
-  --accent: #28e0e0;
-  --accent-soft: rgba(40, 224, 224, 0.18);
-  --accent-hover-tint: rgba(40, 224, 224, 0.08);
-  --accent-active-tint: rgba(40, 224, 224, 0.16);
-  --text-on-accent: #050810;
-  --btn-text: #050810;
-  --accent-2: #ff5cb6;
-  --accent-2-soft: rgba(255, 92, 182, 0.18);
-  --accent-2-hover-tint: rgba(255, 92, 182, 0.08);
-  --accent-2-active-tint: rgba(255, 92, 182, 0.16);
-  --text-on-accent-2: #050810;
-  --accent-3: #c8ff5a;
-  --accent-3-soft: rgba(200, 255, 90, 0.18);
-  --user-bubble: #131628;
-  --agent-bubble: #181c28;
-  --scrollbar-thumb: #232a3c;
-  --scrollbar-thumb-hover: #313952;
-  --success: #4be673;
-  --warn: #ffce4e;
-  --error: #ff5577;
-  --state-success-bg: rgba(75, 230, 115, 0.14);
-  --state-success-fg: #7af094;
-  --state-success-border: rgba(75, 230, 115, 0.32);
-  --state-success-strong: var(--success);
-  --state-warning-bg: rgba(255, 206, 78, 0.14);
-  --state-warning-fg: #ffdc7e;
-  --state-warning-border: rgba(255, 206, 78, 0.32);
-  --state-warning-strong: var(--warn);
-  --state-error-bg: rgba(255, 85, 119, 0.14);
-  --state-error-fg: #ff8497;
-  --state-error-border: rgba(255, 85, 119, 0.32);
-  --state-error-strong: var(--error);
-  --state-info-bg: rgba(40, 224, 224, 0.14);
-  --state-info-fg: #5ee8e8;
-  --state-info-border: rgba(40, 224, 224, 0.32);
-  --state-info-strong: var(--accent);
-  --elev-1-color: rgba(0, 0, 0, 0.5);
-  --elev-2-color: rgba(0, 0, 0, 0.6);
-  --elev-3-color: rgba(0, 0, 0, 0.7);
-  --elev-4-color: rgba(0, 0, 0, 0.8);
-  --elev-5-color: rgba(0, 0, 0, 0.85);
-  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
-  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
-  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
-  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
-  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
-  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
-  --surface-0: #050810;
-  --surface-1: #0a0d14;
-  --surface-2: #11151f;
-  --surface-3: #181c28;
-  --surface-4: #1f2435;
-  --inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --gradient-surface: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--surface-2) 92%, var(--accent) 8%),
-    var(--surface-2)
-  );
-  --gradient-accent: linear-gradient(
-    135deg,
-    var(--accent),
-    color-mix(in oklab, var(--accent) 55%, var(--accent-2))
-  );
-  --gradient-app-backdrop: radial-gradient(
-    120% 80% at 50% -10%,
-    color-mix(in oklab, var(--surface-1) 82%, var(--accent) 18%),
-    var(--surface-1) 60%
+    120% 85% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 84%, var(--accent-2) 16%),
+    var(--surface-1) 62%
   );
   --card-bg: var(--surface-3);
   --card-border: var(--border);
@@ -979,7 +836,141 @@
   --pill-text: var(--text-secondary);
   --composer-bg: var(--surface-3);
   --composer-border: var(--border-hover);
-  --composer-shadow: 0 -4px 12px var(--elev-2-color);
+  --composer-shadow: 0 -4px 14px var(--elev-2-color);
+  --popover-bg: var(--surface-3);
+  --popover-border: var(--border-hover);
+  --popover-shadow: var(--shadow-3);
+  --modal-bg: var(--surface-4);
+  --modal-border: var(--border-hover);
+  --modal-shadow: var(--shadow-overlay);
+  /* Syntax-highlighting palette — Mist (cool). */
+  --syntax-text: #16202b;
+  --syntax-comment: #7a8696;
+  --syntax-punctuation: #4b5366;
+  --syntax-keyword: #0f6d6a;
+  --syntax-string: #2a7c5a;
+  --syntax-number: #8c5810;
+  --syntax-symbol: #2c5694;
+  --syntax-operator: #4c5a6e;
+  --syntax-function: #1f6a86;
+  --syntax-variable: #a8423e;
+  /* xterm theme + ANSI palette — Mist. */
+  --terminal-bg: #fafcfe;
+  --terminal-fg: #16202b;
+  --terminal-cursor: #0f766e;
+  --terminal-selection: rgba(15, 118, 110, 0.22);
+  --ansi-black: #16202b;
+  --ansi-red: #b53023;
+  --ansi-green: #1f8a55;
+  --ansi-yellow: #b0700a;
+  --ansi-blue: #2c5694;
+  --ansi-magenta: #7a3a96;
+  --ansi-cyan: #0f766e;
+  --ansi-white: #5a6675;
+  --ansi-bright-black: #4b5366;
+  --ansi-bright-red: #c43830;
+  --ansi-bright-green: #2a9a6a;
+  --ansi-bright-yellow: #c98800;
+  --ansi-bright-blue: #356bb8;
+  --ansi-bright-magenta: #9a4ab0;
+  --ansi-bright-cyan: #1a8a82;
+  --ansi-bright-white: #16202b;
+}
+
+/* Nocturne — neon navy. Deep navy base, electric cyan primary, vivid
+   magenta secondary, lime-yellow tertiary, and a strong cyan glow backdrop.
+   The punchiest theme — built for demos, screen-sharing, and projectors. */
+:root[data-theme="nocturne"] {
+  color-scheme: dark;
+  --bg: #070a12;
+  --bg-elev: #161b2b;
+  --bg-input: #11162a;
+  --bg-hover: #131827;
+  --bg-active: #1a2138;
+  --bg-selected: rgba(46, 242, 242, 0.16);
+  --border: #202842;
+  --border-hover: #2e3858;
+  --border-strong: #45527a;
+  --text: #eef1fc;
+  --text-secondary: #b2bad4;
+  --text-dim: #808aa6;
+  --accent: #2ef2f2;
+  --accent-soft: rgba(46, 242, 242, 0.18);
+  --accent-hover-tint: rgba(46, 242, 242, 0.09);
+  --accent-active-tint: rgba(46, 242, 242, 0.17);
+  --text-on-accent: #04060d;
+  --btn-text: #04060d;
+  --accent-2: #ff5cb6;
+  --accent-2-soft: rgba(255, 92, 182, 0.18);
+  --accent-2-hover-tint: rgba(255, 92, 182, 0.09);
+  --accent-2-active-tint: rgba(255, 92, 182, 0.17);
+  --text-on-accent-2: #04060d;
+  --accent-3: #d4ff5e;
+  --accent-3-soft: rgba(212, 255, 94, 0.18);
+  --user-bubble: #121830;
+  --agent-bubble: #161b2b;
+  --scrollbar-thumb: #202842;
+  --scrollbar-thumb-hover: #2e3858;
+  --success: #4be673;
+  --warn: #ffce4e;
+  --error: #ff5577;
+  --state-success-bg: rgba(75, 230, 115, 0.14);
+  --state-success-fg: #7af094;
+  --state-success-border: rgba(75, 230, 115, 0.34);
+  --state-success-strong: var(--success);
+  --state-warning-bg: rgba(255, 206, 78, 0.14);
+  --state-warning-fg: #ffdc7e;
+  --state-warning-border: rgba(255, 206, 78, 0.34);
+  --state-warning-strong: var(--warn);
+  --state-error-bg: rgba(255, 85, 119, 0.14);
+  --state-error-fg: #ff8497;
+  --state-error-border: rgba(255, 85, 119, 0.34);
+  --state-error-strong: var(--error);
+  --state-info-bg: rgba(46, 242, 242, 0.14);
+  --state-info-fg: #6ff5f5;
+  --state-info-border: rgba(46, 242, 242, 0.34);
+  --state-info-strong: var(--accent);
+  --elev-1-color: rgba(0, 0, 0, 0.55);
+  --elev-2-color: rgba(0, 0, 0, 0.64);
+  --elev-3-color: rgba(0, 0, 0, 0.72);
+  --elev-4-color: rgba(0, 0, 0, 0.82);
+  --elev-5-color: rgba(0, 0, 0, 0.88);
+  --shadow-1: var(--elev-1-shape) var(--elev-1-color);
+  --shadow-2: var(--elev-2-shape) var(--elev-2-color);
+  --shadow-3: var(--elev-3-shape) var(--elev-3-color);
+  --shadow-4: var(--elev-4-shape) var(--elev-4-color);
+  --shadow-5: var(--elev-5-shape) var(--elev-5-color);
+  --shadow-overlay: var(--elev-4-shape) var(--elev-4-color);
+  --surface-0: #04060d;
+  --surface-1: #070a12;
+  --surface-2: #0f1320;
+  --surface-3: #161b2b;
+  --surface-4: #1e2438;
+  --inner-highlight: inset 0 1px 0 rgba(120, 240, 240, 0.08);
+  --gradient-surface: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface-2) 88%, var(--accent) 10%),
+    var(--surface-2)
+  );
+  --gradient-accent: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 50%, var(--accent-2))
+  );
+  --gradient-app-backdrop: radial-gradient(
+    120% 92% at 50% -10%,
+    color-mix(in oklab, var(--surface-1) 76%, var(--accent) 24%),
+    var(--surface-1) 56%
+  );
+  --card-bg: var(--surface-3);
+  --card-border: var(--border);
+  --card-shadow: var(--shadow-2);
+  --pill-bg: color-mix(in oklab, var(--surface-2) 84%, var(--accent) 16%);
+  --pill-border: var(--border-hover);
+  --pill-text: var(--text-secondary);
+  --composer-bg: var(--surface-3);
+  --composer-border: var(--border-hover);
+  --composer-shadow: 0 -4px 14px var(--elev-2-color);
   --popover-bg: var(--surface-3);
   --popover-border: var(--border-hover);
   --popover-shadow: var(--shadow-3);
@@ -987,38 +978,37 @@
   --modal-border: var(--border-hover);
   --modal-shadow: var(--shadow-overlay);
   /* Syntax-highlighting palette — Nocturne. */
-  --syntax-text: #eaeefa;
-  /* Lifted from #5c6178 (2.87:1) to clear 3:1 AA-large on bg-input. */
+  --syntax-text: #eef1fc;
   --syntax-comment: #727890;
   --syntax-punctuation: #95a0bd;
-  --syntax-keyword: #28e0e0;
-  --syntax-string: #c8ff5a;
+  --syntax-keyword: #2ef2f2;
+  --syntax-string: #d4ff5e;
   --syntax-number: #ffce4e;
   --syntax-symbol: #ff5cb6;
   --syntax-operator: #b0b8d0;
   --syntax-function: #7afff0;
   --syntax-variable: #ff8acf;
   /* xterm theme + ANSI palette — Nocturne. */
-  --terminal-bg: #0a0d14;
-  --terminal-fg: #eaeefa;
-  --terminal-cursor: #28e0e0;
-  --terminal-selection: rgba(40, 224, 224, 0.32);
+  --terminal-bg: #070a12;
+  --terminal-fg: #eef1fc;
+  --terminal-cursor: #2ef2f2;
+  --terminal-selection: rgba(46, 242, 242, 0.32);
   --ansi-black: #11151f;
   --ansi-red: #ff5577;
   --ansi-green: #4be673;
   --ansi-yellow: #ffce4e;
   --ansi-blue: #5aa8ff;
   --ansi-magenta: #ff5cb6;
-  --ansi-cyan: #28e0e0;
-  --ansi-white: #b0b8d0;
-  --ansi-bright-black: #4a5475;
+  --ansi-cyan: #2ef2f2;
+  --ansi-white: #b2bad4;
+  --ansi-bright-black: #45527a;
   --ansi-bright-red: #ff7593;
   --ansi-bright-green: #6cf08e;
   --ansi-bright-yellow: #ffdc7e;
   --ansi-bright-blue: #82bdff;
   --ansi-bright-magenta: #ff86c8;
-  --ansi-bright-cyan: #5eecec;
-  --ansi-bright-white: #eaeefa;
+  --ansi-bright-cyan: #6ff5f5;
+  --ansi-bright-white: #eef1fc;
 }
 
 /* Focus ring depends on per-theme --accent-soft, so it lives here.
