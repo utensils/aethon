@@ -89,6 +89,31 @@ describe("useDerivedRenderState", () => {
     expect(result.current.renderState.emptyAndNoProject).toBe(true);
   });
 
+  it("keeps overview visible when activeTabId points at a shell tab", () => {
+    const shell = makeEmptyTab("sh-1", "Shell 1", null, "shell");
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [shell],
+          activeTabId: "sh-1",
+          project: { id: "p1", path: "/repo/app" },
+          sidebar: {},
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.hasTabs).toBe(true);
+    expect(result.current.renderState.hasSessionTabs).toBe(false);
+    expect(result.current.renderState.overviewActive).toBe(true);
+    expect(result.current.renderState.empty).toBe(true);
+    expect(result.current.renderState.emptyAndProject).toBe(true);
+    expect(result.current.renderState.agentTabActive).toBe(false);
+    expect(result.current.renderState.shellTabActive).toBe(false);
+    expect(result.current.renderState.editorTabActive).toBe(false);
+  });
+
   it("keeps the overview visible when an agent tab exists but the overview pill is active", () => {
     // User has a session in /tabs but clicked the overview pill to
     // return to the project dashboard without closing the tab.

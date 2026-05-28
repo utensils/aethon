@@ -23,7 +23,7 @@ import type {
   NumberValue,
 } from "../../../types/a2ui";
 import { resolveBoolean } from "../../../utils/dataBinding";
-import { isOverviewActive } from "../../../types/tab";
+import { activeTabKind, type Tab, type TabKind } from "../../../types/tab";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { Terminal } from "../terminal";
 import { ShellCanvas } from "./canvas";
@@ -75,13 +75,13 @@ export function resolveActiveSubIdFromState(
     (state["terminalPanel"] as { activeSubId?: string } | undefined) ?? {};
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const tabs =
-    (state["tabs"] as Array<{ id: string; kind?: string }> | undefined) ?? [];
+    (state["tabs"] as Array<{ id: string; kind?: TabKind }> | undefined) ?? [];
   const shellTabIds = tabs
     .filter((t) => t.kind === "shell")
     .map((t) => t.id);
-  const showAgentBash = !isOverviewActive(
-    state["activeTabId"] as string | undefined,
-  );
+  const showAgentBash =
+    activeTabKind(tabs, state["activeTabId"] as string | undefined) ===
+    "agent";
   return resolveActiveSubId({ requestedActiveId, shellTabIds, showAgentBash });
 }
 
@@ -99,19 +99,18 @@ export function TerminalPanel({
   // Pull shell sub-tabs out of the unified /tabs list. Shells live in
   // /tabs (same as agent tabs) but render in this panel rather than the
   // top tab strip — the TabStrip composite filters them out.
-  const tabsRef = state["tabs"];
-  const shellTabs: ShellSubTabItem[] = useMemo(() => {
-    const tabs = (tabsRef as
-      | Array<{ id: string; kind?: string; label: string; shell?: { shellState?: string } }>
-      | undefined) ?? [];
-    return tabs
-      .filter((t) => t.kind === "shell")
-      .map((t) => ({
-        id: t.id,
-        label: t.label,
-        shellState: t.shell?.shellState,
-      }));
-  }, [tabsRef]);
+  const tabs = (state["tabs"] as Tab[] | undefined) ?? [];
+  const shellTabs: ShellSubTabItem[] = useMemo(
+    () =>
+      tabs
+        .filter((t) => t.kind === "shell")
+        .map((t) => ({
+          id: t.id,
+          label: t.label,
+          shellState: t.shell?.shellState,
+        })),
+    [tabs],
+  );
 
   // Active sub-tab id. Held under /terminalPanel/activeSubId so it
   // persists across renders and can be addressed via $ref. The overview
@@ -119,10 +118,9 @@ export function TerminalPanel({
   // running) — fall through to the first interactive shell instead.
   const panelState =
     (state["terminalPanel"] as { activeSubId?: string; height?: number } | undefined) ?? {};
-  const overviewOwnsCanvas = isOverviewActive(
-    state["activeTabId"] as string | undefined,
-  );
-  const showAgentBash = !overviewOwnsCanvas;
+  const showAgentBash =
+    activeTabKind(tabs, state["activeTabId"] as string | undefined) ===
+    "agent";
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const panelRef = useRef<HTMLDivElement>(null);
   // Resolve via the shared helper so the focus-aware Cmd+W path in

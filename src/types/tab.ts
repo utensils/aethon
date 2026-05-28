@@ -155,6 +155,25 @@ export function isOverviewActive(activeTabId: string | undefined): boolean {
   return !activeTabId || activeTabId === OVERVIEW_TAB_ID;
 }
 
+type TabIdentity = { id: string; kind?: TabKind };
+
+export function activeTabForId<T extends TabIdentity>(
+  tabs: readonly T[],
+  activeTabId: string | null | undefined,
+): T | undefined {
+  if (!activeTabId || activeTabId === OVERVIEW_TAB_ID) return undefined;
+  return tabs.find((t) => t.id === activeTabId);
+}
+
+export function activeTabKind(
+  tabs: readonly TabIdentity[],
+  activeTabId: string | null | undefined,
+): TabKind | null {
+  const active = activeTabForId(tabs, activeTabId);
+  if (!active) return null;
+  return active.kind ?? "agent";
+}
+
 export function makeEmptyTab(
   id: string,
   label: string,
@@ -204,11 +223,8 @@ export function deriveTabActiveFlags(
   // owns the canvas, not a phantom agent canvas. (Pre-sentinel code path
   // defaulted a missing tab to `agent`, which masked a stale persisted id
   // as a live session.)
-  const activeTab =
-    activeTabId && activeTabId !== OVERVIEW_TAB_ID
-      ? tabs.find((t) => t.id === activeTabId)
-      : undefined;
-  if (!activeTab) {
+  const kind = activeTabKind(tabs, activeTabId);
+  if (!kind) {
     return {
       agentTabActive: false,
       shellTabActive: false,
@@ -216,8 +232,8 @@ export function deriveTabActiveFlags(
     };
   }
   return {
-    agentTabActive: activeTab.kind === "agent",
-    shellTabActive: activeTab.kind === "shell",
-    editorTabActive: activeTab.kind === "editor",
+    agentTabActive: kind === "agent",
+    shellTabActive: kind === "shell",
+    editorTabActive: kind === "editor",
   };
 }

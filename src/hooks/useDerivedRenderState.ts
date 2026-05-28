@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import {
-  deriveTabActiveFlags,
-  isOverviewActive,
+  activeTabKind,
   OVERVIEW_TAB_ID,
   type Tab,
 } from "../types/tab";
@@ -65,9 +64,9 @@ export function useDerivedRenderState({
     const hasSessionTabs = tabs.some(
       (t) => t.kind === "agent" || t.kind === "editor",
     );
-    const overviewActive = isOverviewActive(activeTabId);
-    const { agentTabActive, shellTabActive, editorTabActive } =
-      deriveTabActiveFlags(tabs, activeTabId);
+    const activeKind = activeTabKind(tabs, activeTabId);
+    const overviewActive =
+      activeKind === null || activeKind === "shell";
     const landing = state.landing as { kind?: string } | null | undefined;
     const landingVisible = !!landing && landing.kind === "worktree";
     // The overview owns the canvas when there are no session tabs *or*
@@ -143,9 +142,9 @@ export function useDerivedRenderState({
       empty,
       emptyAndProject,
       emptyAndNoProject,
-      agentTabActive: agentTabActive && !landingVisible,
-      shellTabActive: shellTabActive && !landingVisible,
-      editorTabActive: editorTabActive && !landingVisible,
+      agentTabActive: activeKind === "agent" && !landingVisible,
+      shellTabActive: false,
+      editorTabActive: activeKind === "editor" && !landingVisible,
       landingVisible,
       sidebar: {
         ...sidebar,

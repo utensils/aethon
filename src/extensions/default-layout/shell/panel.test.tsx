@@ -96,6 +96,17 @@ describe("resolveActiveSubIdFromState", () => {
     expect(resolveActiveSubIdFromState(state)).toBe("sh-1");
   });
 
+  it("treats a shell active id like overview instead of showing agent-bash", () => {
+    const state = {
+      activeTabId: "sh-1",
+      tabs: [
+        { id: "sh-1", kind: "shell", label: "Shell 1" },
+      ],
+      terminalPanel: { activeSubId: "agent-bash" },
+    } as Record<string, unknown>;
+    expect(resolveActiveSubIdFromState(state)).toBe("sh-1");
+  });
+
   it("returns agent-bash when an agent session owns the canvas", () => {
     const state = {
       activeTabId: "agent-1",
@@ -146,6 +157,33 @@ describe("TerminalPanel", () => {
     );
     expect(screen.getByText("Agent bash")).toBeTruthy();
     expect(screen.getByTestId("stub-terminal")).toBeTruthy();
+  });
+
+  it("hides Agent bash when a shell tab id is active", () => {
+    render(
+      <TerminalPanel
+        component={panelComponent()}
+        state={{
+          activeTabId: "sh-1",
+          tabs: [
+            {
+              id: "sh-1",
+              kind: "shell",
+              label: "Shell 1",
+              shell: { shellState: "running" },
+            },
+          ],
+          terminalPanel: { activeSubId: "agent-bash" },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Agent bash")).toBeNull();
+    expect(screen.getByText("Shell 1")).toBeTruthy();
+    expect(screen.getByTestId("stub-shell").getAttribute("data-tab-id")).toBe(
+      "sh-1",
+    );
   });
 
   it("activates the first real shell sub-tab when on overview with shells present", () => {

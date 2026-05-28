@@ -44,7 +44,7 @@ interface TabStripItem {
    *  terminal panel as sub-tabs alongside the read-only agent-bash
    *  view. The TabStrip composite filters them out so any layout that
    *  binds `/tabs` to TabStrip drops shells automatically. */
-  kind?: "agent" | "shell";
+  kind?: "agent" | "shell" | "editor";
 }
 
 export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
@@ -100,7 +100,10 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
       ]
     : [];
 
-  const overviewActive = !activeId || activeId === OVERVIEW_TAB_ID;
+  const overviewActive =
+    !activeId ||
+    activeId === OVERVIEW_TAB_ID ||
+    !tabs.some((t) => t.id === activeId);
   return (
     <div className="a2ui-tab-strip" role="tablist">
       <button

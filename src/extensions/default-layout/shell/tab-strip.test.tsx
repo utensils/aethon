@@ -170,6 +170,29 @@ describe("TabStrip", () => {
     expect(overviewPill.className).toContain("a2ui-tab-active");
   });
 
+  it("marks overview active when activeTabId points at a filtered shell tab", () => {
+    render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{
+          activeTabId: "shell-1",
+          tabs: [
+            { id: "tab-1", label: "Tab 1", kind: "agent" },
+            { id: "shell-1", label: "Shell 1", kind: "shell" },
+          ],
+        }}
+        onEvent={vi.fn<TabStripOnEvent>()}
+      />,
+    );
+
+    const overviewPill = screen
+      .getAllByRole("tab")
+      .find((el) => el.textContent?.includes("overview"))!;
+    expect(screen.queryByText("Shell 1")).toBeNull();
+    expect(overviewPill.getAttribute("aria-selected")).toBe("true");
+    expect(overviewPill.className).toContain("a2ui-tab-active");
+  });
+
   it("marks the overview pill inactive when a real tab is selected", () => {
     renderTabStrip();
     const overviewPill = screen
