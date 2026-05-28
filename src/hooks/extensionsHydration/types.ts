@@ -56,6 +56,9 @@ export const BUILTIN_THEMES: { id: string; label: string }[] = [
   { id: "paper", label: "Paper — cream light" },
   { id: "aether", label: "Æther — signature" },
   { id: "brink", label: "Brink — Ristretto warm chrome with gold accent" },
+  { id: "daylight", label: "Daylight — rich warm light" },
+  { id: "mist", label: "Mist — cool light, mint accent" },
+  { id: "nocturne", label: "Nocturne — high-contrast navy + cyan" },
 ];
 
 export interface UseExtensionsHydrationContext {

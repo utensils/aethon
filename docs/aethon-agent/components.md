@@ -698,7 +698,8 @@ Clicking the share-mode badge cycles through the four modes (`private`
 
 The xterm theme reads from CSS custom properties — `--terminal-bg`,
 `--terminal-fg`, `--terminal-cursor`, `--terminal-selection`, plus the
-16 `--ansi-*` keys. Built-in themes (`ember`, `paper`, `aether`, `brink`) ship
+16 `--ansi-*` keys. Built-in themes (`ember`, `paper`, `aether`, `brink`,
+`daylight`, `mist`, `nocturne`) ship
 all 20; extension themes can opt in by setting them in the theme's
 `vars` block, otherwise xterm falls back to a sensible dark default.
 

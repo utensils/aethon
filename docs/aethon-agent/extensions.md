@@ -149,6 +149,34 @@ api.registerTheme({
 });
 ```
 
+#### Design token surface
+
+The four legacy tokens above are the bare minimum; the built-in
+palettes in `src/styles/themes.css` set roughly 90 tokens each so the
+chrome reads as a coordinated design system. The extra categories are
+**opt-in** — leave them unset and the browser falls back to its
+defaults (or `unset` where the chrome rule doesn't carry a fallback),
+which is rarely what a polished theme wants. The recommended baseline:
+
+| Category | Tokens | Why |
+| --- | --- | --- |
+| Surface tiers | `--surface-0` … `--surface-4` | Graduated planes for sidebars, cards, modals. Without them, every elevated panel collapses onto `--bg-elev`. |
+| Secondary + tertiary accents | `--accent-2`, `--accent-2-soft`, `--accent-2-hover-tint`, `--accent-2-active-tint`, `--text-on-accent-2`, `--accent-3`, `--accent-3-soft` | Hierarchical CTAs and informational chips so the UI doesn't read monochromatic. |
+| Semantic state quads | `--state-{success,warning,error,info}-{bg,fg,border,strong}` | Banners, toasts, status chips. `--success/--warn/--error` are kept as legacy single colours. |
+| Elevation tints | `--elev-1-color` … `--elev-5-color` | Paired with `--elev-N-shape` from `tokens.css` to compose `--shadow-1..5` and `--shadow-overlay`. Tune alpha per palette mood (dark themes carry deeper alphas; light themes stay subtle). |
+| Inner highlight | `--inner-highlight` | A 1px top-edge sheen on elevated panels. Light themes get a stronger white (≈0.6); dark themes a faint one (≈0.04–0.06). |
+| Gradient stops | `--gradient-surface`, `--gradient-accent`, `--gradient-app-backdrop` | Sidebar/header wash, primary CTA gradient, and the subtle radial behind the canvas. |
+| Chrome composites | `--card-{bg,border,shadow}`, `--pill-{bg,border,text}`, `--composer-{bg,border,shadow}`, `--popover-{bg,border,shadow}`, `--modal-{bg,border,shadow}` | Semantic aliases that chrome.css reads directly. Override one to re-skin every card / pill / popover in the app. `--composer-shadow` must be an **upward** (negative-Y) shadow — the composer sits above the canvas. |
+| Typography roles | `--type-{display,title,body,caption,code}-{size,line,weight,tracking}` | Composed in `tokens.css` from the `--text-*` scale; rarely needs per-theme override unless the palette wants a different running-text rhythm. |
+
+A minimal "polished" theme overrides at least: every surface tier, both
+accents, the four state quads, all five elevation tints, the inner
+highlight, and the gradient stops. That's ~40 declarations, but each
+makes a visible difference in cards/pills/popovers/composer.
+
+Reserved ids (cannot be reused): `ember`, `paper`, `aether`,
+`signature`, `brink`, `daylight`, `mist`, `nocturne`.
+
 ### 2. Register a sidebar section that runs a prompt
 
 ```ts

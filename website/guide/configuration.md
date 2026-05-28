@@ -60,7 +60,7 @@ falls back to defaults.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `theme` | `"ember" \| "paper" \| "aether"` (or a registered theme id) | `"ember"` | Active theme. See [Themes](/guide/themes). |
+| `theme` | `"ember" \| "paper" \| "aether" \| "brink" \| "daylight" \| "mist" \| "nocturne"` (or a registered theme id) | `"ember"` | Active theme. See [Themes](/guide/themes). |
 | `font_size` | integer (10–22) | `14` | Base UI font size in pixels. |
 | `restore_tabs` | boolean | `true` | Re-open all tabs from the previous session on launch. |
 | `notify_on_completion` | boolean | `true` | Fire a native OS notification when a turn ends and the originating tab is unfocused. |

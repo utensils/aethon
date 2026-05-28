@@ -57,7 +57,7 @@ through a focus-tracking strategy. You won't lose your place.
 | **Sessions** | Recent pi sessions across all tabs (cross-session — reaches into closed-tab transcripts). |
 | **Projects** | The MRU list from `~/.aethon/projects.json`. |
 | **Layouts** | Built-in (`workstation`) plus any extension-registered layouts. |
-| **Themes** | Built-ins (`ember`, `paper`, `aether`) plus extension-registered. |
+| **Themes** | Built-ins (`ember`, `paper`, `aether`, `brink`, `daylight`, `mist`, `nocturne`) plus extension-registered. |
 | **Models** | Whatever pi reports from the active provider. |
 | **Commands** | Every slash command (built-in + extension-registered). |
 | **Keybindings** | Every shortcut Aethon recognises. |

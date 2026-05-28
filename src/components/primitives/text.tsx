@@ -8,7 +8,12 @@ import { resolveBoolean, resolveString } from "../../utils/dataBinding";
 import { HighlightedCode } from "../HighlightedCode";
 import type { ComponentProps } from "./shared";
 
-// Text component
+// Text component — variants map to the semantic typography roles defined
+// in src/styles/tokens.css so themes can tune type personality (size,
+// line-height, weight, tracking) without re-templating every component.
+//   body  → --type-body-*
+//   small → --type-caption-*
+//   large → --type-title-*
 export function Text({ component, state }: ComponentProps) {
   const props = component.props as {
     content: StringValue;
@@ -20,10 +25,13 @@ export function Text({ component, state }: ComponentProps) {
   const variant = props.variant || "body";
   const color = props.color;
 
+  const role = variant === "small" ? "caption" : variant === "large" ? "title" : "body";
   const style: CSSProperties = {
     color: color || "inherit",
-    fontSize:
-      variant === "small" ? "0.875rem" : variant === "large" ? "1.125rem" : "1rem",
+    fontSize: `var(--type-${role}-size)`,
+    lineHeight: `var(--type-${role}-line)`,
+    fontWeight: `var(--type-${role}-weight)`,
+    letterSpacing: `var(--type-${role}-tracking)`,
   };
 
   return <span style={style}>{content}</span>;
@@ -58,6 +66,9 @@ export function Code({ component, state }: ComponentProps) {
 }
 
 // Heading primitive — wraps an h1/h2/h3 according to `level` prop.
+// h1/h2 use the display role; h3-h6 use the title role. The browser's
+// default heading sizes are overridden by the role tokens so themes
+// control the rhythm.
 export function Heading({ component, state }: ComponentProps) {
   const props = component.props as {
     content: StringValue;
@@ -66,14 +77,30 @@ export function Heading({ component, state }: ComponentProps) {
   const content = resolveString(props.content, state);
   const level = props.level && props.level >= 1 && props.level <= 6 ? props.level : 2;
   const Tag = (`h${level}` as unknown) as keyof React.JSX.IntrinsicElements;
-  return <Tag style={{ margin: 0 }}>{content}</Tag>;
+  const role = level <= 2 ? "display" : "title";
+  const style: CSSProperties = {
+    margin: 0,
+    fontSize: `var(--type-${role}-size)`,
+    lineHeight: `var(--type-${role}-line)`,
+    fontWeight: `var(--type-${role}-weight)`,
+    letterSpacing: `var(--type-${role}-tracking)`,
+  };
+  return <Tag style={style}>{content}</Tag>;
 }
 
-// Paragraph primitive — text with default block flow.
+// Paragraph primitive — text with default block flow. Reads the body
+// typography role so theme-level adjustments to running text flow here.
 export function Paragraph({ component, state }: ComponentProps) {
   const props = component.props as { content: StringValue };
   const content = resolveString(props.content, state);
-  return <p style={{ margin: "0 0 8px 0", lineHeight: 1.5 }}>{content}</p>;
+  const style: CSSProperties = {
+    margin: "0 0 8px 0",
+    fontSize: "var(--type-body-size)",
+    lineHeight: "var(--type-body-line)",
+    fontWeight: "var(--type-body-weight)",
+    letterSpacing: "var(--type-body-tracking)",
+  };
+  return <p style={style}>{content}</p>;
 }
 
 // Divider primitive — thin horizontal rule.

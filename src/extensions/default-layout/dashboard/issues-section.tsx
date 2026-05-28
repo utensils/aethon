@@ -25,6 +25,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
@@ -373,11 +374,14 @@ export function IssuesSection({
                       className="a2ui-dashboard-issue-label"
                       style={
                         l.color
-                          ? {
-                              background: `#${l.color}33`,
-                              borderColor: `#${l.color}`,
-                              color: `#${l.color}`,
-                            }
+                          ? ({
+                              // The chrome rule mixes this with the theme's
+                              // --text and --border tokens so the chip stays
+                              // readable across all themes. Setting the raw
+                              // hex as bg/fg (the old behaviour) collapsed
+                              // contrast to ~1.8:1 for pale labels.
+                              "--label-color": `#${l.color}`,
+                            } as CSSProperties)
                           : undefined
                       }
                     >

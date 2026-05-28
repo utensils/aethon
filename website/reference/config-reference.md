@@ -22,7 +22,7 @@ notify_min_duration_seconds = 8
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `theme` | string | `"ember"` | One of the registered theme ids. Built-ins: `ember`, `paper`, `aether`. `signature` is a back-compat alias for `aether`. Unknown ids fall back to `ember`. |
+| `theme` | string | `"ember"` | One of the registered theme ids. Built-ins: `ember`, `paper`, `aether`, `brink`, `daylight`, `mist`, `nocturne`. `signature` is a back-compat alias for `aether`. Unknown ids fall back to `ember`. |
 | `font_size` | integer | `14` | Clamped to a sensible range (10–22). |
 | `restore_tabs` | boolean | `true` | Re-open all tabs from the previous session on launch. |
 | `notify_on_completion` | boolean | `true` | Fire a native OS notification when a turn ends and the originating tab or window is unfocused. |

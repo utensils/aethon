@@ -19,6 +19,9 @@ export const RESERVED_THEME_IDS = new Set([
   "aether",
   "signature",
   "brink",
+  "daylight",
+  "mist",
+  "nocturne",
 ]);
 
 /** Validate theme metadata. The id is constrained to a slug so it's safe

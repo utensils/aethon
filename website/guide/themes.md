@@ -5,17 +5,21 @@ chrome colors, but also code-syntax highlighting, terminal ANSI, and
 status colors. Switching themes re-skins everything: chat, shells,
 composers, sidebars, badges, code blocks.
 
-## The three built-in themes
+## The seven built-in themes
 
 | Theme | `id` | Mood |
 |---|---|---|
-| **Ember** | `ember` | Warm dark — near-black with brass accent (`#ff6a18`). The default. |
-| **Paper** | `paper` | Cream light — Bodoni-on-paper. The brass accent is darkened to `#d4530c` for 4.5:1 contrast. |
-| **Æther** | `aether` | Deep ink-blue — the signature palette behind the four shipped layouts. |
+| **Ember** | `ember` | Warm dark — near-black with brass accent (`#ff6a18`). The default. Teal secondary accent (`#4dc6c0`) breaks the brass monotony. |
+| **Paper** | `paper` | Cream light — Bodoni-on-paper. Deep terracotta accent (`#b94000`) reads with authority on the cream bg; sage secondary (`#4f7d52`) for hierarchical CTAs. |
+| **Æther** | `aether` | Deep ink-blue — the signature palette behind the four shipped layouts. Steel-blue secondary (`#6aa9ff`). |
+| **Brink** | `brink` | Mid-tone warm chrome with gold accent (`#f9cc6c`) and lavender secondary (`#a8a9eb`). The header carries a Tokyo-Night slate (`#2d2f44`) wash — Claudette's signature "cool sky over warm ground" character. |
+| **Daylight** | `daylight` | Rich warm light — parchment cream with deeper amber base, terracotta + sage dual-accent. "Paper but with more depth." |
+| **Mist** | `mist` | Cool light — pale blue-gray base, mint primary accent (`#1f7d5e`), slate-blue secondary. Professional alternative to the warm light themes. |
+| **Nocturne** | `nocturne` | High-contrast dark — deep navy (`#0a0d14`), electric cyan primary (`#28e0e0`), vivid magenta secondary. For demos, screen-sharing, projectors. |
 
 ::: tip
-The site you're reading uses two of these themes: **Paper** in light mode,
-**Ember** in dark mode. Toggle with the moon/sun icon in the top nav.
+The site you're reading uses **Paper** in light mode and **Ember** in
+dark mode. Toggle with the moon/sun icon in the top nav.
 :::
 
 `signature` is preserved as a back-compat alias for `aether` — any
@@ -80,8 +84,8 @@ Save a theme file at `~/.aethon/themes/<id>.json`:
 ```
 
 Aethon picks it up on next launch (or when the bridge reloads). The id
-must not collide with the reserved built-ins (`ember`, `paper`, `aether`,
-`signature`).
+must not collide with the reserved built-ins: `ember`, `paper`, `aether`,
+`signature`, `brink`, `daylight`, `mist`, `nocturne`.
 
 ### Programmatic registration (extensions)
 
@@ -117,6 +121,42 @@ A custom theme **should** override at least these for a coherent look:
 | `--syntax-{keyword,string,number,comment,…}` | Code block highlighting. |
 
 Anything you don't set falls through to the **Ember** palette.
+
+### Polished-theme variables (opt-in)
+
+The built-in themes also set roughly 30 extra tokens that lift the UI
+from "flat two-plane palette" to a graduated design system. None of
+these are required, but a custom theme that omits them will render
+flat cards/pills/popovers compared to the built-ins.
+
+| Category | Tokens | Why |
+|---|---|---|
+| Surface tiers | `--surface-0` … `--surface-4` | Graduated planes — sidebars sit brighter than canvas, cards/popovers/modals each get their own layer. |
+| Secondary + tertiary accents | `--accent-2*`, `--text-on-accent-2`, `--accent-3*` | Hierarchical CTAs and informational chips so the UI doesn't read monochromatic. |
+| Semantic state quads | `--state-{success,warning,error,info}-{bg,fg,border,strong}` | Banners, toasts, status chips. Adds `info` as a new state separate from the legacy `--success/--warn/--error` single colours. |
+| Elevation tints | `--elev-1-color` … `--elev-5-color` | Paired with `--elev-N-shape` from `tokens.css` to compose `--shadow-1..5` + `--shadow-overlay`. |
+| Inner highlight | `--inner-highlight` | A 1px top-edge sheen on elevated panels. Light themes use a strong white (≈0.6); dark themes a faint one (≈0.04–0.06). |
+| Gradient stops | `--gradient-surface`, `--gradient-accent`, `--gradient-app-backdrop` | Sidebar/header wash, primary CTA gradient, soft radial behind the canvas. |
+| Chrome composites | `--card-{bg,border,shadow}`, `--pill-{bg,border,text}`, `--composer-{bg,border,shadow}`, `--popover-{bg,border,shadow}`, `--modal-{bg,border,shadow}` | Semantic aliases chrome.css reads directly — override one to re-skin every card / pill / popover / modal in the app. The composer shadow is an **upward** (negative-Y) shadow since the composer sits above the canvas. |
+
+A minimal "polished" theme overrides at least: every surface tier,
+both accents, the four state quads, all five elevation tints, the
+inner highlight, and the gradient stops. That's ~40 declarations.
+
+### WCAG-AA contrast
+
+All seven built-ins clear WCAG AA on every text/bg pair scanned by
+the audit script. When introducing a custom theme, target:
+
+- 4.5:1 for body text, secondary text, dim text, and CTA text on
+  accent backgrounds.
+- 3.0:1 for accent colours used as UI elements (button outlines,
+  borders, focus rings) and syntax-comment-like decorative tokens.
+
+If a theme picks a primary accent in the mid-luminance range, the
+foreground will likely need to be pure `#ffffff` (cream/off-white
+typically fails 4.5:1 on mid-luminance accents) — see Mist's
+`--text-on-accent: #ffffff` for an example.
 
 ## Listing registered themes
 
