@@ -245,6 +245,36 @@ describe("sessionUiSnapshot", () => {
     expect(parsed?.tabs[0].shell?.restartOnMount).toBeUndefined();
   });
 
+  it("does not auto-restart shell commands from durable disk snapshots", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("shell", "npm dev", null, "shell"),
+            shell: {
+              cwd: "/repo/app",
+              command: "npm",
+              args: ["run", "dev"],
+              shareMode: "private",
+              shellState: "running",
+            },
+          },
+        ],
+        activeTabId: "shell",
+        savedAt: 1,
+      }),
+      { restartShellTabs: false },
+    );
+
+    expect(parsed?.tabs[0].shell).toMatchObject({
+      command: "npm",
+      args: ["run", "dev"],
+      shellState: "exited",
+      exitCode: -1,
+    });
+    expect(parsed?.tabs[0].shell?.restartOnMount).toBeUndefined();
+  });
+
   it("preserves editor rootPath for files outside the active project", () => {
     const tab = {
       ...makeEmptyTab("editor", "system-prompt.md", null, "editor"),

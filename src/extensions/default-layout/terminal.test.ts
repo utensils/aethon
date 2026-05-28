@@ -3,7 +3,7 @@ import {
   TERMINAL_FIT_DEBOUNCE_MS,
   TERMINAL_FIT_DRAG_THROTTLE_MS,
   terminalFitDelay,
-} from "./terminal";
+} from "./terminal-helpers";
 
 describe("terminalFitDelay", () => {
   it("throttles fit work during terminal resize drags", () => {

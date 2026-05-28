@@ -19,6 +19,7 @@ import {
   saveLayoutPrefs,
 } from "../layoutPrefs";
 import { shouldReloadForHmrPayload } from "../utils/hmr";
+import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 
 export interface BuildInitialAppStoreOptions {
   bootLayout: A2UIPayload;
@@ -31,6 +32,17 @@ export interface InitialAppStore {
   hasSyncSessionSnapshot: boolean;
 }
 
+function restoredActiveTabId(
+  tabs: readonly Tab[],
+  activeTabId: string | undefined,
+): string | null {
+  if (activeTabId === OVERVIEW_TAB_ID) return OVERVIEW_TAB_ID;
+  if (activeTabId && tabs.some((t) => t.id === activeTabId)) {
+    return activeTabId;
+  }
+  return tabs[0]?.id ?? null;
+}
+
 export function buildInitialAppStore({
   bootLayout,
   logoUrl,
@@ -39,10 +51,7 @@ export function buildInitialAppStore({
   const restored = loadSessionUiSnapshot();
   const layoutPrefs = loadLayoutPrefsSync();
   const tabs = restored?.tabs.length ? restored.tabs : [];
-  const activeTabId =
-    restored?.activeTabId && tabs.some((t) => t.id === restored.activeTabId)
-      ? restored.activeTabId
-      : (tabs[0]?.id ?? null);
+  const activeTabId = restoredActiveTabId(tabs, restored?.activeTabId);
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
   const restoredLayout =
     restored?.layout && typeof restored.layout === "object"
@@ -123,10 +132,7 @@ export function useSessionPersistence({
         const tabs = snapshot.tabs.length ? snapshot.tabs : [];
         if (tabs.length === 0) return prev;
         const activeTabId =
-          snapshot.activeTabId &&
-          tabs.some((t) => t.id === snapshot.activeTabId)
-            ? snapshot.activeTabId
-            : tabs[0].id;
+          restoredActiveTabId(tabs, snapshot.activeTabId) ?? tabs[0].id;
         const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
         const activeRecord = activeTab as unknown as Record<string, unknown>;
         const rootMirror = Object.fromEntries(
@@ -231,7 +237,9 @@ export function useSessionPersistence({
         })
         .then((raw) => {
           if (cancelled || raw === undefined) return;
-          const snapshot = parseSessionUiSnapshot(raw);
+          const snapshot = parseSessionUiSnapshot(raw, {
+            restartShellTabs: false,
+          });
           if (snapshot) restoreSessionUiSnapshot(snapshot);
           startPersistence();
         })

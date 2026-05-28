@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideShellResize, shouldSkipResize } from "./canvas";
+import { decideShellResize, shouldSkipResize } from "./resize";
 
 function entry(width: number, height: number): ResizeObserverEntry {
   return {

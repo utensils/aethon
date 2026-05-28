@@ -19,6 +19,12 @@ export interface SessionUiSnapshot {
   savedAt: number;
 }
 
+export interface ParseSessionUiSnapshotOptions {
+  /** Hot webview reloads can reattach/reopen PTYs. Durable disk restore
+   *  after an app restart must not silently run saved shell commands. */
+  restartShellTabs?: boolean;
+}
+
 function canUseSessionStorage(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -55,8 +61,22 @@ function shouldPersistTab(tab: Tab): boolean {
   );
 }
 
-function restoreShellTab(tab: Tab): Tab {
+function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
   if (tab.shell?.shellState === "exited") return tab;
+  if (!restartShellTabs) {
+    const shell = tab.shell ? { ...tab.shell } : undefined;
+    if (shell) delete shell.restartOnMount;
+    return {
+      ...tab,
+      shell: shell
+        ? {
+            ...shell,
+            shellState: "exited",
+            exitCode: shell.exitCode ?? -1,
+          }
+        : shell,
+    };
+  }
   return {
     ...tab,
     shell: tab.shell
@@ -138,12 +158,15 @@ function durableTerminalSnapshot(
 export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
   if (canUseSessionStorage()) {
     const raw = window.sessionStorage.getItem(KEY);
-    if (raw) return parseSessionUiSnapshot(raw);
+    if (raw) return parseSessionUiSnapshot(raw, { restartShellTabs: true });
   }
   return null;
 }
 
-export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
+export function parseSessionUiSnapshot(
+  raw: string,
+  options: ParseSessionUiSnapshotOptions = {},
+): SessionUiSnapshot | null {
   try {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SessionUiSnapshot>;
@@ -168,6 +191,7 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
         tabCanOwnMainSurface(parsedActiveTab))
         ? parsed.activeTabId
         : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
+    const restartShellTabs = options.restartShellTabs === true;
     return {
       tabs: tabs.map((t) => {
         const base = {
@@ -220,7 +244,9 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
               }
             : {}),
         };
-        return base.kind === "shell" ? restoreShellTab(base) : base;
+        return base.kind === "shell"
+          ? restoreShellTab(base, restartShellTabs)
+          : base;
       }),
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),

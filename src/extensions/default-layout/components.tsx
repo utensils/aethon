@@ -40,11 +40,8 @@ export {
   ToolCard,
   formatToolDuration,
 } from "./chat";
-export {
-  Terminal,
-  observeTerminalTheme,
-  readTerminalTheme,
-} from "./terminal";
+export { Terminal } from "./terminal";
+export { observeTerminalTheme, readTerminalTheme } from "./terminal-helpers";
 export { ShellCanvas, TabStrip, TerminalPanel } from "./shell";
 export { EditorCanvas, ImageViewer, MarkdownPreview } from "./editor";
 export { AuthProfilePanel } from "./auth-profile-panel";
