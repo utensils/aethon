@@ -286,6 +286,19 @@ pub fn acknowledge_boot(data_dir: &Path, state: &Arc<BootProbationState>) -> Res
     }
 }
 
+/// True when the current launch is part of the post-update probation
+/// window. Setup uses this to restore Aethon to the foreground after
+/// the updater relaunches the newly-installed app.
+pub fn has_pending_probation(data_dir: &Path) -> bool {
+    let path = sentinel_path(data_dir);
+    let _guard = PROBATION_FILE_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    read_probation_path(&path)
+        .map(|probation| matches!(probation.status, ProbationStatus::Pending))
+        .unwrap_or(false)
+}
+
 pub fn start_monitor(app: AppHandle, state: Arc<BootProbationState>, data_dir: PathBuf) {
     let path = sentinel_path(&data_dir);
     let _guard = PROBATION_FILE_LOCK
@@ -1031,6 +1044,20 @@ mod tests {
 
         assert!(state.is_acknowledged());
         assert!(!sentinel_path(tmp.path()).exists());
+    }
+
+    #[test]
+    fn pending_probation_marks_post_update_launch() {
+        let tmp = tempdir().unwrap();
+        assert!(!has_pending_probation(tmp.path()));
+
+        let mut probation = sample_probation(tmp.path(), None);
+        write_probation(tmp.path(), &probation).unwrap();
+        assert!(has_pending_probation(tmp.path()));
+
+        probation.status = ProbationStatus::RollbackInProgress;
+        write_probation(tmp.path(), &probation).unwrap();
+        assert!(!has_pending_probation(tmp.path()));
     }
 
     #[test]
