@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { dispatchEvent } from "./index";
 import { buildRouteFixture } from "./testFixtures";
+import { makeEmptyTab } from "../types/tab";
 
 describe("dispatchEvent — precedence contract", () => {
   it("Layer 1 wins over Layer 2: shell-write-allow runs even when an extension matches notification-stack", async () => {
@@ -313,5 +314,28 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.sendChat).toHaveBeenCalledWith("hello", { mode: "normal" });
+  });
+
+  it("inlined queued popover events still route through the chat-input host", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      queuedMessages: [{ id: "q1", content: "follow up" }],
+      queueCount: 1,
+    };
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    const handled = await dispatchEvent(
+      {
+        component: { id: "chat-input", type: "chat-input" },
+        eventType: "queue:steer",
+        data: { messageId: "q1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.steerQueuedMessage).toHaveBeenCalledWith("tab-1", "q1");
+    expect(mocks.sendChat).not.toHaveBeenCalled();
   });
 });

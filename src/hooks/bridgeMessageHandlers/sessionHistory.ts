@@ -2,6 +2,7 @@ import {
   coerceChatMessages,
   dedupeToolResultTextMessages,
 } from "../../utils/messages";
+import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import type { BridgeMessageHandler } from "./types";
 
@@ -28,20 +29,8 @@ function toolCardComponents(message: ChatMessage): A2UIComponent[] {
   );
 }
 
-function normalizeToolCallId(value: string): string {
-  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96);
-}
-
 function toolCardIdentity(component: A2UIComponent): string | undefined {
-  const id = component.id;
-  if (id.startsWith("restored-tool-")) {
-    return id.slice("restored-tool-".length);
-  }
-  const liveMatch = /^tool-\d+-(.+)$/.exec(id);
-  if (liveMatch) {
-    return normalizeToolCallId(liveMatch[1]);
-  }
-  return undefined;
+  return toolCardIdentityFromId(component.id);
 }
 
 function completedRestoredToolIdentities(restored: ChatMessage[]): Set<string> {
