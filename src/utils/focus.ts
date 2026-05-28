@@ -10,3 +10,29 @@ export function isFocusInTerminalPanel(): boolean {
   const panel = document.querySelector(".ae-terminal-panel");
   return !!panel?.contains(focused);
 }
+
+export function focusTerminalPanel(): void {
+  if (typeof document === "undefined") return;
+  const panel = document.querySelector(".ae-terminal-panel");
+  const helperTa = panel?.querySelector<HTMLTextAreaElement>(
+    ".xterm-helper-textarea",
+  );
+  if (helperTa) {
+    helperTa.focus();
+    return;
+  }
+  const focusable = panel?.querySelector<HTMLElement>(
+    'button, [tabindex]:not([tabindex="-1"])',
+  );
+  focusable?.focus();
+}
+
+export function focusTerminalPanelSoon(): void {
+  if (typeof requestAnimationFrame !== "function") {
+    focusTerminalPanel();
+    return;
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => focusTerminalPanel());
+  });
+}

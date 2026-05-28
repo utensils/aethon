@@ -4,7 +4,7 @@ import type {
   SetStateAction,
 } from "react";
 import { isOverviewActive, type Tab } from "../types/tab";
-import { isFocusInTerminalPanel } from "../utils/focus";
+import { focusTerminalPanel, isFocusInTerminalPanel } from "../utils/focus";
 
 export interface UseFocusContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -208,27 +208,6 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
       ".a2ui-chat-input textarea, .a2ui-chat-input input",
     );
     ta?.focus();
-  }
-
-  function focusTerminalPanel() {
-    if (typeof document === "undefined") return;
-    // xterm renders an inner textarea (`.xterm-helper-textarea`) that
-    // it forwards keystrokes to. Focusing it routes typing into the
-    // active sub-tab's PTY (or the read-only agent-bash xterm where
-    // it's a no-op input but the cursor still indicates focus).
-    const panel = document.querySelector(".ae-terminal-panel");
-    const helperTa = panel?.querySelector<HTMLTextAreaElement>(
-      ".xterm-helper-textarea",
-    );
-    if (helperTa) {
-      helperTa.focus();
-      return;
-    }
-    // Fallback: focus the panel's first focusable element.
-    const focusable = panel?.querySelector<HTMLElement>(
-      'button, [tabindex]:not([tabindex="-1"])',
-    );
-    focusable?.focus();
   }
 
   /** Toggle the terminal panel AND move focus to/from it.

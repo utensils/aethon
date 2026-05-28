@@ -9,6 +9,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 const ref = <T,>(value: T): MutableRefObject<T> => ({ current: value });
@@ -159,5 +160,71 @@ describe("Cmd+W is focus-aware", () => {
     render(<Harness ctx={ctx} />);
     fireEvent.keyDown(document, { key: "w", metaKey: true });
     expect(ctx.closeTab).not.toHaveBeenCalled();
+  });
+});
+
+describe("Cmd+T terminal focus retention", () => {
+  function mountTerminalFocusDom() {
+    document.body.innerHTML = `
+      <div class="ae-elsewhere"><textarea data-testid="elsewhere"></textarea></div>
+      <div class="ae-terminal-panel"><textarea data-testid="panel-input" class="xterm-helper-textarea"></textarea></div>
+    `;
+    const panelInput = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="panel-input"]',
+    );
+    const elsewhere = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="elsewhere"]',
+    );
+    return { panelInput, elsewhere };
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("returns focus to the terminal after Cmd+T creates a shell sub-tab", () => {
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const { panelInput, elsewhere } = mountTerminalFocusDom();
+    panelInput?.focus();
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      tabs: [
+        { id: "agent-1", kind: "agent", label: "Tab 1" },
+        { id: "shell-1", kind: "shell", label: "Shell 1" },
+      ],
+      terminalPanel: { activeSubId: "shell-1" },
+    });
+    ctx.newShellTab = vi.fn(() => elsewhere?.focus());
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "t", metaKey: true });
+
+    expect(ctx.newShellTab).toHaveBeenCalledTimes(1);
+    expect(ctx.newTab).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(panelInput);
+  });
+
+  it("returns focus to the terminal after Cmd+Shift+T creates a shell sub-tab", () => {
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const { panelInput, elsewhere } = mountTerminalFocusDom();
+    elsewhere?.focus();
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1" }],
+      terminalPanel: { activeSubId: "agent-bash" },
+    });
+    ctx.newShellTab = vi.fn(() => elsewhere?.focus());
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "t", metaKey: true, shiftKey: true });
+
+    expect(ctx.newShellTab).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(panelInput);
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { canonicalCombo } from "../utils/keybindings";
-import { isFocusInTerminalPanel } from "../utils/focus";
+import { focusTerminalPanelSoon, isFocusInTerminalPanel } from "../utils/focus";
 import {
   AGENT_BASH_SUB_ID,
   resolveActiveSubIdFromState,
@@ -155,6 +155,7 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         e.preventDefault();
         e.stopPropagation();
         ctx.newShellTab();
+        focusTerminalPanelSoon();
         return;
       }
       // Cmd+T: focus-aware new tab (shell when focus is in panel, else
@@ -167,6 +168,7 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           ctx.shortcutsNewTabKindRef.current === "shell"
         ) {
           ctx.newShellTab();
+          focusTerminalPanelSoon();
         } else {
           ctx.newTab();
         }

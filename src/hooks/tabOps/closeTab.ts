@@ -4,6 +4,7 @@ import { OVERVIEW_TAB_ID, type ClosedTabEntry, type Tab } from "../../types/tab"
 import type { ProjectsState } from "../../projects";
 import { disposeEditorBuffer } from "../../monaco/editor-buffers";
 import { recomputeModelPicker } from "../../utils/modelPicker";
+import { focusTerminalPanelSoon } from "../../utils/focus";
 import { CLOSED_TAB_STACK_MAX, TAB_MIRROR_KEYS } from "./constants";
 import { recentSessionItemFromClosedTab } from "./helpers";
 
@@ -192,10 +193,26 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     let nextBuffer = "";
     let switched = false;
     let becameEmpty = false;
+    let shouldRefocusTerminal = false;
     setState((prev) => {
+      const prevTabs = (prev.tabs as Tab[] | undefined) ?? [];
+      const panel =
+        (prev.terminalPanel as { activeSubId?: string } | undefined) ?? {};
       const list = ((prev.tabs as Tab[] | undefined) ?? []).filter(
         (t) => t.id !== tabId,
       );
+      const closingShellIndex = prevTabs
+        .filter((t) => t.kind === "shell")
+        .findIndex((t) => t.id === tabId);
+      let nextActiveSubId = panel.activeSubId;
+      if (closedKind === "shell" && panel.activeSubId === tabId) {
+        const remainingShells = list.filter((t) => t.kind === "shell");
+        const nextShell =
+          remainingShells[Math.max(0, closingShellIndex - 1)] ??
+          remainingShells[0];
+        nextActiveSubId = nextShell?.id ?? "agent-bash";
+        shouldRefocusTerminal = true;
+      }
       let activeTabId = prev.activeTabId as string | undefined;
       if (activeTabId === tabId) {
         // Prefer the most-recent agent/editor session; if only shells
@@ -212,6 +229,14 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
         ...prev,
         tabs: list,
         activeTabId,
+        ...(nextActiveSubId !== panel.activeSubId
+          ? {
+              terminalPanel: {
+                ...panel,
+                activeSubId: nextActiveSubId,
+              },
+            }
+          : {}),
       };
       if (closing) {
         const closedSession = recentSessionItemFromClosedTab(
@@ -256,6 +281,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
       return result;
     });
     if (switched) dispatchTerminalReplay(nextBuffer);
+    if (shouldRefocusTerminal) focusTerminalPanelSoon();
     // Tear down bridge session whether we became empty or not — both
     // paths fire tab_close and the bridge no-ops on unknown tab ids.
     void becameEmpty;

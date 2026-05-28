@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MutableRefObject } from "react";
 import { useCloseTabActions, type CloseTabDeps } from "./closeTab";
 import { OVERVIEW_TAB_ID, makeEmptyTab, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
+import { focusTerminalPanelSoon } from "../../utils/focus";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(() => Promise.resolve(null)),
@@ -12,6 +13,14 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("../../monaco/editor-buffers", () => ({
   disposeEditorBuffer: vi.fn(),
 }));
+
+vi.mock("../../utils/focus", () => ({
+  focusTerminalPanelSoon: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const ref = <T,>(value: T): MutableRefObject<T> => ({ current: value });
 
@@ -147,6 +156,69 @@ describe("closeTabNow → overview fallback", () => {
     closeTabNow("agent-1");
     const next = apply();
     expect(next.activeTabId).toBe("editor-1");
+  });
+
+  it("selects the previous shell sub-tab when closing the active shell", () => {
+    const agent = makeTab("agent-1", "agent");
+    const sh1 = makeTab("sh-1", "shell");
+    const sh2 = makeTab("sh-2", "shell");
+    const sh3 = makeTab("sh-3", "shell");
+    const { deps, apply } = buildDeps({
+      tabs: [agent, sh1, sh2, sh3],
+      activeTabId: "agent-1",
+      terminal: { open: true },
+      terminalPanel: { activeSubId: "sh-3" },
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("sh-3");
+
+    const next = apply();
+    expect((next.terminalPanel as { activeSubId?: string }).activeSubId).toBe(
+      "sh-2",
+    );
+    expect(focusTerminalPanelSoon).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects the next shell when closing the leftmost shell sub-tab", () => {
+    const agent = makeTab("agent-1", "agent");
+    const sh1 = makeTab("sh-1", "shell");
+    const sh2 = makeTab("sh-2", "shell");
+    const { deps, apply } = buildDeps({
+      tabs: [agent, sh1, sh2],
+      activeTabId: "agent-1",
+      terminal: { open: true },
+      terminalPanel: { activeSubId: "sh-1" },
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("sh-1");
+
+    const next = apply();
+    expect((next.terminalPanel as { activeSubId?: string }).activeSubId).toBe(
+      "sh-2",
+    );
+    expect(focusTerminalPanelSoon).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to agent bash only after the last shell sub-tab closes", () => {
+    const agent = makeTab("agent-1", "agent");
+    const sh1 = makeTab("sh-1", "shell");
+    const { deps, apply } = buildDeps({
+      tabs: [agent, sh1],
+      activeTabId: "agent-1",
+      terminal: { open: true },
+      terminalPanel: { activeSubId: "sh-1" },
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("sh-1");
+
+    const next = apply();
+    expect((next.terminalPanel as { activeSubId?: string }).activeSubId).toBe(
+      "agent-bash",
+    );
+    expect(focusTerminalPanelSoon).toHaveBeenCalledTimes(1);
   });
 });
 
