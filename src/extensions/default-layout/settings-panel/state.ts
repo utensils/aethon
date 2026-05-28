@@ -4,22 +4,26 @@
 //
 // Contract:
 //   { open: boolean, focusSection: string | null,
-//     pending: Partial<AethonConfig> | null }
+//     pending: Partial<AethonConfig> | null,
+//     saveStatus: "idle" | "saving" | "saved" | "error",
+//     saveError: string | null }
 //
-// `pending` mirrors the user's unsaved edits — the form binds form
-// controls to it via $ref-style optimistic writes, so the user sees
-// changes apply live. Save serialises `pending` and invokes the Tauri
-// `write_config` command; Cancel discards `pending`.
+// `pending` mirrors live edits over the config snapshot so controls
+// never snap back while the panel stays open. The overlay hook
+// debounces writes through the same config round-trip path used by
+// legacy Save events and tracks write state separately in `saveStatus`.
 
 import type { AethonConfig } from "../../../config";
 
 export interface SettingsState {
   open: boolean;
   focusSection: string | null;
-  /** User's unsaved edits. Null when the panel hasn't loaded the
-   *  config yet OR the user hasn't touched anything. The form reads
-   *  from `pending` first, falling back to the config snapshot. */
+  /** User's live edits over the loaded config snapshot. Null when the
+   *  panel hasn't loaded the config yet OR the user hasn't touched
+   *  anything this open session. */
   pending: Partial<AethonConfig> | null;
+  saveStatus: "idle" | "saving" | "saved" | "error";
+  saveError: string | null;
 }
 
 export function readSettingsState(state: Record<string, unknown>): SettingsState {
@@ -29,5 +33,12 @@ export function readSettingsState(state: Record<string, unknown>): SettingsState
     focusSection:
       typeof s.focusSection === "string" ? s.focusSection : null,
     pending: (s.pending as Partial<AethonConfig> | null) ?? null,
+    saveStatus:
+      s.saveStatus === "saving" ||
+      s.saveStatus === "saved" ||
+      s.saveStatus === "error"
+        ? s.saveStatus
+        : "idle",
+    saveError: typeof s.saveError === "string" ? s.saveError : null,
   };
 }

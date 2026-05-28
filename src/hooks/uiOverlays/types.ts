@@ -67,6 +67,9 @@ export interface UseUiOverlaysActions {
       agent: unknown;
       shell: unknown;
       shortcuts: unknown;
+      voice: unknown;
+      updates: unknown;
+      devshell: unknown;
     }>,
   ) => void;
   saveSettings: () => Promise<void>;

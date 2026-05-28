@@ -28,7 +28,7 @@ describe("handleSettings", () => {
     expect(mocks.applySettingsPatch).toHaveBeenCalledWith({ theme: "dark" });
   });
 
-  it("save commits via saveSettings", async () => {
+  it("save flushes any pending autosave for legacy settings components", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await handleSettings(
       { component: { id: "settings-panel" }, eventType: "save" },
