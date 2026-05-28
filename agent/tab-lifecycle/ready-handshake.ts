@@ -11,6 +11,7 @@
  */
 
 import type { AethonAgentState } from "../state";
+import { authProfilesSnapshot } from "../auth-profiles";
 import { defaultModelKey } from "./models";
 import { refreshPiSlashCommands } from "./slash-commands";
 import type { TabLifecycleDeps } from "./utils";
@@ -32,10 +33,12 @@ export function emitReady(
     currentProjectCwd: state.currentProjectCwd,
     userDir: state.userDir,
     models: state.cachedModels,
+    authProfiles: authProfilesSnapshot(state),
     tabs: [...state.tabs.values()].map((t) => ({
       id: t.id,
       model: t.session.model ? modelKey(t.session.model) : "",
       cwd: state.tabProjectCwds.get(t.id),
+      authProfileId: state.tabAuthProfileIds.get(t.id),
     })),
     extensionComponents: Object.fromEntries(state.extensionComponents),
     extensionState: state.extensionStateTree,

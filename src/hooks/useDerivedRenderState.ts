@@ -33,6 +33,7 @@ export interface DerivedRenderStateResult {
   paletteOpen: boolean;
   settingsOpen: boolean;
   searchOpen: boolean;
+  authProfilesOpen: boolean;
 }
 
 export function useDerivedRenderState({
@@ -157,6 +158,10 @@ export function useDerivedRenderState({
   const searchOpen = Boolean(
     (renderRecord.search as { open?: boolean } | undefined)?.open,
   );
+  const authProfilesOpen = Boolean(
+    (renderRecord.authProfiles as { modal?: { open?: boolean } } | undefined)
+      ?.modal?.open,
+  );
 
   return {
     renderState,
@@ -164,5 +169,6 @@ export function useDerivedRenderState({
     paletteOpen,
     settingsOpen,
     searchOpen,
+    authProfilesOpen,
   };
 }

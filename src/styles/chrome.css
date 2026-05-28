@@ -4180,6 +4180,72 @@ body.ae-resizing-terminal * {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
 }
 
+.ae-auth-panel {
+  width: min(760px, 92vw);
+}
+.ae-auth-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.ae-auth-add .ae-settings-input {
+  min-width: min(220px, 100%);
+}
+.ae-auth-login {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+.ae-auth-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ae-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+}
+.ae-auth-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ae-auth-row-main strong,
+.ae-auth-row-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-auth-row-main span {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-auth-row-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+@media (max-width: 640px) {
+  .ae-auth-row {
+    grid-template-columns: 1fr;
+  }
+  .ae-auth-row-actions {
+    flex-wrap: wrap;
+  }
+}
+
 /* =============================================================================
    Cross-session search overlay (Cmd+Shift+F). Modeled after the
    command palette but with a results pane sized for snippets.

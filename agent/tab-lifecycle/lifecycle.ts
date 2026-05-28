@@ -5,9 +5,9 @@
  * scoped to the tab's cwd. The per-tab subscriber is wired in here so
  * `handleSessionEvent` (in `./events.ts`) carries the routing context.
  *
- * Sessions share authStorage / modelRegistry / settingsManager /
- * resourceLoader so they all see the same models and extension surface
- * — only message history and active turn are isolated.
+ * Sessions usually share authStorage / modelRegistry / settingsManager /
+ * resourceLoader. Tabs with an auth profile get isolated auth/model services
+ * so one desktop session can switch between multiple signed-in accounts.
  */
 
 import { mkdirSync } from "node:fs";
@@ -22,6 +22,7 @@ import { buildDashboardTools } from "../dashboard-tools";
 import { buildDevshellSpawnHook, ensureFetched as ensureDevshellFetched } from "../devshell";
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
+import { authProfileServicesForTab } from "../auth-profiles";
 import { findSessionFileMatchingCwd } from "../session-history";
 import type { AethonAgentState, TabRecord } from "../state";
 import { handleSessionEvent } from "./events";
@@ -103,10 +104,15 @@ export async function ensureTab(
   const devshellBashTool = createBashToolDefinition(resolvedCwd, {
     spawnHook: buildDevshellSpawnHook(state, deps),
   });
+  const authServices = authProfileServicesForTab(
+    state,
+    tabId,
+    options.initialModel,
+  );
 
   const { session } = await createAgentSession({
-    authStorage: state.authStorage,
-    modelRegistry: state.modelRegistry,
+    authStorage: authServices.authStorage,
+    modelRegistry: authServices.modelRegistry,
     settingsManager: state.settingsManager,
     sessionManager,
     resourceLoader: state.resourceLoader,

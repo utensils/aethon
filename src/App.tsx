@@ -800,6 +800,7 @@ export default function App() {
     paletteOpen,
     settingsOpen,
     searchOpen,
+    authProfilesOpen,
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
 
   return (
@@ -814,6 +815,7 @@ export default function App() {
       paletteOpen={paletteOpen}
       settingsOpen={settingsOpen}
       searchOpen={searchOpen}
+      authProfilesOpen={authProfilesOpen}
       topBanner={
         <UpdateBanner
           state={updaterState}

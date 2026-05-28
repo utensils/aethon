@@ -65,6 +65,7 @@ import {
   type LayoutSlotsCatalogue,
 } from "./state";
 import { buildAethonApi } from "./aethon-api";
+import { loadAuthProfiles } from "./auth-profiles";
 import {
   getRuntimeSnapshot,
   scheduleStateFileWrite as scheduleStateFileWriteImpl,
@@ -124,6 +125,7 @@ async function main(): Promise<void> {
   state.authStorage = AuthStorage.create();
   state.modelRegistry = ModelRegistry.create(state.authStorage);
   state.settingsManager = SettingsManager.create(process.cwd());
+  state.authProfiles = loadAuthProfiles(state.userDir);
 
   // -- User's persisted "disabled extensions" list -----------------------
   // Read before any extension load so the loader honors it on first pass.

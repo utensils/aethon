@@ -43,6 +43,48 @@ export function trimMessage(m: ChatMessage): ChatMessage {
   return out;
 }
 
+function normalizedText(value: string): string {
+  return value.replace(/\r\n/g, "\n").trim();
+}
+
+function toolResultTexts(message: ChatMessage): string[] {
+  const components = message.a2ui?.components ?? [];
+  const texts: string[] = [];
+  for (const component of components) {
+    if (component.type !== "tool-card") continue;
+    for (const child of component.children ?? []) {
+      if (child.type !== "code") continue;
+      const content = child.props?.content;
+      if (typeof content === "string" && content.trim().length > 0) {
+        texts.push(normalizedText(content));
+      }
+    }
+  }
+  return texts;
+}
+
+export function dedupeToolResultTextMessages(
+  messages: ChatMessage[],
+): ChatMessage[] {
+  const toolOutputs = new Set<string>();
+  const out: ChatMessage[] = [];
+  for (const message of messages) {
+    const outputs = toolResultTexts(message);
+    if (outputs.length > 0) {
+      for (const output of outputs) toolOutputs.add(output);
+      out.push(message);
+      continue;
+    }
+    const text =
+      message.role === "agent" && message.text
+        ? normalizedText(message.text)
+        : "";
+    if (text && toolOutputs.has(text)) continue;
+    out.push(message);
+  }
+  return out;
+}
+
 export function coerceChatMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value)) return [];
   const messages: ChatMessage[] = [];

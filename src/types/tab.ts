@@ -101,6 +101,8 @@ export interface Tab {
   // Immutable working directory the bridge session was created with.
   // For worktree sessions this is the worktree path, not the project root.
   cwd?: string;
+  /** Auth profile id selected for this agent session, if any. */
+  authProfileId?: string;
   /** Present iff kind === "shell". */
   shell?: ShellMeta;
   /** Present iff kind === "editor". */

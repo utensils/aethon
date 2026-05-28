@@ -34,6 +34,17 @@ export interface SlashCommandContext {
   listExtensions: () => string[];
   installExtension: (spec: string) => Promise<string>;
   listModels: () => { id: string; label: string; active?: boolean }[];
+  openLogin: () => void;
+  listAuthProfiles: () => {
+    id: string;
+    label: string;
+    providerId: string;
+    kind: "oauth" | "api_key";
+    active?: boolean;
+    default?: boolean;
+  }[];
+  useAuthProfile: (idOrLabel: string) => Promise<void>;
+  setDefaultAuthProfile: (idOrLabel: string) => Promise<void>;
   toggleTerminal: () => void;
   // Show / hide / toggle the sidebar. State changes propagate via the
   // /layout/sidebarVisible / /layout/columns / /layout/areas $refs the
@@ -165,6 +176,66 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           return;
         }
         await ctx.setModel(id);
+      },
+    },
+    {
+      name: "login",
+      description: "Manage stored provider accounts",
+      usage: "[list|use <account>|default <account>]",
+      run: async (args, ctx) => {
+        const [subcommand, ...rest] = args.trim().split(/\s+/);
+        const target = rest.join(" ").trim();
+        if (!subcommand) {
+          ctx.openLogin();
+          return;
+        }
+        if (subcommand === "list") {
+          const profiles = ctx.listAuthProfiles();
+          const list = profiles
+            .map((p) => {
+              const flags = [
+                p.active ? "active" : "",
+                p.default ? "default" : "",
+              ].filter(Boolean);
+              return `- \`${p.id}\` — ${p.label} (${p.providerId}, ${p.kind}${flags.length ? `, ${flags.join(", ")}` : ""})`;
+            })
+            .join("\n");
+          ctx.appendSystem(
+            profiles.length > 0
+              ? `Stored accounts:\n${list}`
+              : "No stored accounts yet. Run `/login` to add one.",
+          );
+          return;
+        }
+        if (subcommand === "use") {
+          if (!target) {
+            ctx.notify({
+              title: "Missing account",
+              message: "Usage: /login use <account>",
+              kind: "error",
+            });
+            return;
+          }
+          await ctx.useAuthProfile(target);
+          return;
+        }
+        if (subcommand === "default") {
+          if (!target) {
+            ctx.notify({
+              title: "Missing account",
+              message: "Usage: /login default <account>",
+              kind: "error",
+            });
+            return;
+          }
+          await ctx.setDefaultAuthProfile(target);
+          return;
+        }
+        ctx.notify({
+          title: `Unknown login command: ${subcommand}`,
+          message: "Usage: /login [list|use <account>|default <account>]",
+          kind: "error",
+        });
       },
     },
     {

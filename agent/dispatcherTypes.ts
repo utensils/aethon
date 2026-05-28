@@ -42,6 +42,11 @@ export interface InboundMessage {
   mutationId?: string;
   success?: boolean;
   error?: string;
+  providerId?: string;
+  profileId?: string;
+  label?: string;
+  key?: string;
+  challengeId?: string;
   event?: {
     componentId?: string;
     componentType?: string;

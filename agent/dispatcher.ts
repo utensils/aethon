@@ -15,6 +15,7 @@ import { ackMutation, markFrontendReady } from "./mutation-ack";
 import { onDevshellEvent } from "./devshell";
 import { handleNativeSlashCommand } from "./nativeSlash";
 import { handleSetProject } from "./projectLifecycle";
+import { handleAuthProfileMessage } from "./auth-profiles";
 import {
   handleLocalChatMessage,
   handleSetSessionLabel,
@@ -68,6 +69,8 @@ export async function dispatchInboundMessage(
 ): Promise<void> {
   const notifDeps = { send: deps.send };
   try {
+    if (await handleAuthProfileMessage(state, deps, msg)) return;
+
     switch (msg.type) {
       case "chat":
         await handleChat(state, deps, msg);

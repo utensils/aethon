@@ -319,6 +319,58 @@ describe("handleSessionHistory", () => {
     expect(out.waiting).toBe(false);
   });
 
+  it("drops plain-text tool output copies from restored session history", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "tool-card",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "restored-tool-call_1",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    startedAt: 1_000,
+                    endedAt: 2_000,
+                  },
+                  children: [
+                    {
+                      id: "result",
+                      type: "code",
+                      props: {
+                        content:
+                          "IN_NIX_SHELL=impure DEVSHELL_DIR=/nix/store/example",
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          {
+            id: "plain-copy",
+            role: "agent",
+            text: "IN_NIX_SHELL=impure DEVSHELL_DIR=/nix/store/example",
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("tab-1", "Tab 1"));
+
+    expect(out.messages.map((message: ChatMessage) => message.id)).toEqual([
+      "tool-card",
+    ]);
+  });
+
   it("drops failed local user messages on restore (they are informational once history arrives)", () => {
     const { ctx, mocks } = buildHandlerFixture();
     handleSessionHistory(

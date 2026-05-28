@@ -70,6 +70,7 @@ describe("buildBuiltinSlashCommands", () => {
       "help",
       "theme",
       "model",
+      "login",
       "context",
       "session",
       "compact",
@@ -114,6 +115,10 @@ describe("buildBuiltinSlashCommands", () => {
         return Promise.resolve("installed output");
       },
       listModels: () => [],
+      openLogin: () => {},
+      listAuthProfiles: () => [],
+      useAuthProfile: () => Promise.resolve(),
+      setDefaultAuthProfile: () => Promise.resolve(),
       toggleTerminal: () => {},
       toggleSidebar: () => {},
       toggleFilesSidebar: () => {},
@@ -156,6 +161,10 @@ describe("buildBuiltinSlashCommands", () => {
       listExtensions: () => [],
       installExtension: () => Promise.resolve(""),
       listModels: () => [],
+      openLogin: () => {},
+      listAuthProfiles: () => [],
+      useAuthProfile: () => Promise.resolve(),
+      setDefaultAuthProfile: () => Promise.resolve(),
       toggleTerminal: () => {},
       toggleSidebar: () => {},
       toggleFilesSidebar: () => {},
@@ -183,6 +192,61 @@ describe("buildBuiltinSlashCommands", () => {
     expect(calls).toEqual([{ tabId: "tab-7", label: "Refactor pass" }]);
   });
 
+  it("/login opens the account manager and can switch accounts", async () => {
+    let opened = 0;
+    const calls: string[] = [];
+    const ctx: SlashCommandContext = {
+      appendSystem: () => {},
+      notify: () => {},
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      resetLayout: () => {},
+      listExtensions: () => [],
+      installExtension: () => Promise.resolve(""),
+      listModels: () => [],
+      openLogin: () => {
+        opened += 1;
+      },
+      listAuthProfiles: () => [],
+      useAuthProfile: (id) => {
+        calls.push(`use:${id}`);
+        return Promise.resolve();
+      },
+      setDefaultAuthProfile: (id) => {
+        calls.push(`default:${id}`);
+        return Promise.resolve();
+      },
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      toggleFilesSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+      reloadAgent: () => Promise.resolve(),
+      runNativeCommand: () => Promise.resolve(),
+      renameSession: () => Promise.resolve(),
+      activeTabId: () => "tab-7",
+    };
+    const login = buildBuiltinSlashCommands().find(
+      (c) => c.name === "login",
+    )!;
+
+    await login.run("", ctx);
+    await login.run("use claude-work", ctx);
+    await login.run("default claude-home", ctx);
+
+    expect(opened).toBe(1);
+    expect(calls).toEqual(["use:claude-work", "default:claude-home"]);
+  });
+
   it("/reload calls reloadAgent and toasts", async () => {
     let reloadCalls = 0;
     const titles: string[] = [];
@@ -197,6 +261,10 @@ describe("buildBuiltinSlashCommands", () => {
       listExtensions: () => [],
       installExtension: () => Promise.resolve(""),
       listModels: () => [],
+      openLogin: () => {},
+      listAuthProfiles: () => [],
+      useAuthProfile: () => Promise.resolve(),
+      setDefaultAuthProfile: () => Promise.resolve(),
       toggleTerminal: () => {},
       toggleSidebar: () => {},
       toggleFilesSidebar: () => {},
@@ -239,6 +307,10 @@ describe("buildBuiltinSlashCommands", () => {
       listExtensions: () => [],
       installExtension: () => Promise.resolve(""),
       listModels: () => [],
+      openLogin: () => {},
+      listAuthProfiles: () => [],
+      useAuthProfile: () => Promise.resolve(),
+      setDefaultAuthProfile: () => Promise.resolve(),
       toggleTerminal: () => {},
       toggleSidebar: () => {},
       toggleFilesSidebar: () => {},
@@ -279,6 +351,10 @@ describe("buildBuiltinSlashCommands", () => {
       listExtensions: () => [],
       installExtension: () => Promise.resolve(""),
       listModels: () => [],
+      openLogin: () => {},
+      listAuthProfiles: () => [],
+      useAuthProfile: () => Promise.resolve(),
+      setDefaultAuthProfile: () => Promise.resolve(),
       toggleTerminal: () => {},
       toggleSidebar: () => {},
       toggleFilesSidebar: () => {},

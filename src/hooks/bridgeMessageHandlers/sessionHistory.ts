@@ -1,4 +1,7 @@
-import { coerceChatMessages } from "../../utils/messages";
+import {
+  coerceChatMessages,
+  dedupeToolResultTextMessages,
+} from "../../utils/messages";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import type { BridgeMessageHandler } from "./types";
 
@@ -164,7 +167,9 @@ function mergePendingLocalPrompts(
 
 export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
-  const messages = coerceChatMessages(data.messages);
+  const messages = dedupeToolResultTextMessages(
+    coerceChatMessages(data.messages),
+  );
   const session = ctx.allDiscoveredSessionsRef.current.find(
     (s) => s.tabId === tabId,
   );
@@ -174,10 +179,13 @@ export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
       ? session.firstUserMessage.replace(/\s+/g, " ").trim()
       : undefined);
   ctx.updateTab(tabId, (tab) => {
-    const merged = mergePendingLocalPrompts(messages, tab.messages);
+    const merged = mergePendingLocalPrompts(
+      messages,
+      dedupeToolResultTextMessages(tab.messages),
+    );
     return {
       ...tab,
-      messages: merged.messages,
+      messages: dedupeToolResultTextMessages(merged.messages),
       waiting: merged.hasLivePending ? tab.waiting : false,
       ...(label
         ? { label }

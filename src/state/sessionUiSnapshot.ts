@@ -1,4 +1,5 @@
 import type { Tab } from "../types/tab";
+import { dedupeToolResultTextMessages } from "../utils/messages";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
 
@@ -27,19 +28,12 @@ function canUseSessionStorage(): boolean {
   );
 }
 
-function canUseLocalStorage(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.localStorage?.getItem === "function" &&
-    typeof window.localStorage?.setItem === "function" &&
-    typeof window.localStorage?.removeItem === "function"
-  );
-}
-
 function trimTab(tab: Tab): Tab {
   return {
     ...tab,
-    messages: tab.messages.slice(-MAX_MESSAGES_PER_TAB),
+    messages: dedupeToolResultTextMessages(tab.messages).slice(
+      -MAX_MESSAGES_PER_TAB,
+    ),
     terminalBuffer: tab.terminalBuffer.slice(-MAX_TERMINAL_BUFFER),
   };
 }
@@ -124,18 +118,9 @@ function durableTerminalSnapshot(
 }
 
 export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
-  const candidates: string[] = [];
   if (canUseSessionStorage()) {
     const raw = window.sessionStorage.getItem(KEY);
-    if (raw) candidates.push(raw);
-  }
-  if (canUseLocalStorage()) {
-    const raw = window.localStorage.getItem(KEY);
-    if (raw) candidates.push(raw);
-  }
-  for (const raw of candidates) {
-    const parsed = parseSessionUiSnapshot(raw);
-    if (parsed) return parsed;
+    if (raw) return parseSessionUiSnapshot(raw);
   }
   return null;
 }
@@ -164,6 +149,7 @@ export function parseSessionUiSnapshot(raw: string): SessionUiSnapshot | null {
       tabs: tabs.map((t) => ({
         ...t,
         kind: t.kind ?? "agent",
+        messages: dedupeToolResultTextMessages(t.messages),
         draft: t.draft ?? "",
         // Waiting is process-local state. After an app restart there is no
         // still-attached prompt runner behind this tab, so restoring it as
@@ -277,12 +263,10 @@ export function saveSessionUiSnapshot(
   try {
     if (serialized === null) {
       if (canUseSessionStorage()) window.sessionStorage.removeItem(KEY);
-      if (canUseLocalStorage()) window.localStorage.removeItem(KEY);
       persistDisk?.("");
       return;
     }
     if (canUseSessionStorage()) window.sessionStorage.setItem(KEY, serialized);
-    if (canUseLocalStorage()) window.localStorage.setItem(KEY, serialized);
     persistDisk?.(serialized);
   } catch {
     /* best-effort; quota or privacy settings should not break the app */

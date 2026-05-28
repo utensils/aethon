@@ -18,6 +18,7 @@ export interface AppRootProps {
   paletteOpen: boolean;
   settingsOpen: boolean;
   searchOpen: boolean;
+  authProfilesOpen: boolean;
   /** Optional banner row rendered above the layout. Sits in flow as the
    *  first flex child of `.app` so it pushes the rest of the chrome
    *  down instead of floating over it. */
@@ -42,6 +43,7 @@ export function AppRoot({
   paletteOpen,
   settingsOpen,
   searchOpen,
+  authProfilesOpen,
   topBanner,
 }: AppRootProps) {
   return (
@@ -82,6 +84,14 @@ export function AppRoot({
         {searchOpen && (
           <RegistryComponent
             type="search-panel"
+            state={renderState}
+            onEvent={onEvent}
+            tabId={activeTabId}
+          />
+        )}
+        {authProfilesOpen && (
+          <RegistryComponent
+            type="auth-profile-panel"
             state={renderState}
             onEvent={onEvent}
             tabId={activeTabId}

@@ -32,6 +32,7 @@ import { handleChatInput } from "./chatInput";
 import { handleChatMessages } from "./chatMessages";
 import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
+import { handleAuthProfiles } from "./authProfiles";
 import { handleSearch } from "./search";
 import { handlePalette } from "./palette";
 import { handleNotifications } from "./notifications";
@@ -84,6 +85,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // top-precedence gate; the general handler runs here.
     ["type:notification-stack", [handleNotifications]],
     ["type:settings-panel", [handleSettings]],
+    ["type:auth-profile-panel", [handleAuthProfiles]],
     ["type:search-panel", [handleSearch]],
     ["type:command-palette", [handlePalette]],
     // Order matters: handleQueuedMessages runs FIRST and only matches

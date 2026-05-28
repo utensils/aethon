@@ -26,6 +26,7 @@ import {
   Terminal,
   TerminalPanel,
   ToolCard,
+  AuthProfilePanel,
 } from "./components";
 import {
   AgentStatusPill,
@@ -119,6 +120,7 @@ export const defaultLayoutSkill: A2UISkill = {
     "command-palette": CommandPalette,
     "notification-stack": NotificationStack,
     "settings-panel": SettingsPanel,
+    "auth-profile-panel": AuthProfilePanel,
     "search-panel": SearchPanel,
     // M6 P2: shell tab share-mode badge — extracted as its own
     // registerable component so a skill can replace it (e.g. with a
