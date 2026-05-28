@@ -179,7 +179,7 @@ fn normalize_interleaved_u64(input: &[u64], channels: u16) -> Vec<f32> {
 
 fn normalize_interleaved_samples<T>(input: &[T], channels: u16) -> Vec<f32>
 where
-    T: cpal::Sample + Copy,
+    T: Sample + Copy,
     f64: cpal::FromSample<T>,
 {
     mix_interleaved_to_mono(input, channels, |sample| {
