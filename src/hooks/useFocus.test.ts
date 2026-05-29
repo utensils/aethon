@@ -109,11 +109,11 @@ describe("workstationLayout", () => {
 
   it("falls back to default widths when current columns missing or malformed", () => {
     expect(workstationLayout({}, true, true).columns).toBe(
-      "220px minmax(0,1fr) 360px",
+      "320px minmax(0,1fr) 360px",
     );
     expect(
       workstationLayout({ columns: "garbage" }, true, true).columns,
-    ).toBe("220px minmax(0,1fr) 360px");
+    ).toBe("320px minmax(0,1fr) 360px");
   });
 
   it("animates hidden chrome tracks with 0px sentinels but preserves memos", () => {

@@ -54,7 +54,13 @@ export function useProjectSyncEffects({
   const discoverIconsForProjects = useCallback(() => {
     const ps = projectsRef.current.projects;
     for (const project of ps) {
-      if (project.iconUrl) continue;
+      // Skip only projects that already resolved to a local (data:) icon.
+      // A project still carrying a remote fallback (e.g. the GitHub-org
+      // avatar) is re-checked so it can upgrade to an in-repo
+      // favicon/logo — discoverIcon prefers a found local icon and keeps
+      // the remote url otherwise. The in-memory TTL cache keeps the
+      // re-check cheap (no IPC on a hit).
+      if (project.iconUrl?.startsWith("data:")) continue;
       void (async () => {
         const url = await discoverIcon(project);
         if (!url) return;

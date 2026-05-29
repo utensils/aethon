@@ -1,8 +1,4 @@
-import type {
-  Dispatch,
-  MutableRefObject,
-  SetStateAction,
-} from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { isOverviewActive, type Tab } from "../types/tab";
 import { focusTerminalPanel, isFocusInTerminalPanel } from "../utils/focus";
 
@@ -29,7 +25,10 @@ export interface UseFocusActions {
   toggleFilesSidebar: () => void;
 }
 
-const DEFAULT_LEFT_WIDTH = "220px";
+// Mirrors the default sidebar column in workstation.a2ui.json /
+// layoutPrefs.ts — width inference falls back to this when nothing is
+// memoized, so reset + first boot agree.
+const DEFAULT_LEFT_WIDTH = "320px";
 const DEFAULT_RIGHT_WIDTH = "360px";
 const DEFAULT_TERMINAL_HEIGHT = 240;
 
@@ -86,12 +85,14 @@ function pickWidths(current: {
           /^minmax/.test(first)
         ? last
         : undefined;
-  const memoLeft = typeof current.lastLeftWidth === "string"
-    ? current.lastLeftWidth
-    : undefined;
-  const memoRight = typeof current.lastRightWidth === "string"
-    ? current.lastRightWidth
-    : undefined;
+  const memoLeft =
+    typeof current.lastLeftWidth === "string"
+      ? current.lastLeftWidth
+      : undefined;
+  const memoRight =
+    typeof current.lastRightWidth === "string"
+      ? current.lastRightWidth
+      : undefined;
   return {
     left: parseWidth(inferredLeft ?? memoLeft, DEFAULT_LEFT_WIDTH),
     right: parseWidth(inferredRight ?? memoRight, DEFAULT_RIGHT_WIDTH),
@@ -191,9 +192,7 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
     // shells: hand off to the auto-spawn so the user lands in a real
     // shell instead of the panel's empty placeholder.
     if (!wasOpen && newShellTabOnOverviewOpen) {
-      const overview = isOverviewActive(
-        prev.activeTabId as string | undefined,
-      );
+      const overview = isOverviewActive(prev.activeTabId as string | undefined);
       const tabs = (prev.tabs as Tab[] | undefined) ?? [];
       const hasShell = tabs.some((t) => t.kind === "shell");
       if (overview && !hasShell) {
@@ -218,7 +217,9 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
    *  typing continues seamlessly. Without this users have to re-click
    *  to refocus after every panel toggle. */
   function toggleTerminalAndFocus() {
-    const wasOpen = !!(stateRef.current.terminal as { open?: boolean } | undefined)?.open;
+    const wasOpen = !!(
+      stateRef.current.terminal as { open?: boolean } | undefined
+    )?.open;
     toggleTerminal();
     // Defer focus until after React has committed the render so the
     // panel's xterm canvas exists in the DOM.
@@ -239,12 +240,14 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
       focusComposer();
       return;
     }
-    const term = (stateRef.current.terminal as { open?: boolean } | undefined) ?? {};
+    const term =
+      (stateRef.current.terminal as { open?: boolean } | undefined) ?? {};
     if (!term.open) {
       // Open first, then focus on the next frame.
       setState((prev) => {
         const t = (prev.terminal as { open?: boolean } | undefined) ?? {};
-        const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
+        const layout =
+          (prev.layout as Record<string, unknown> | undefined) ?? {};
         return {
           ...prev,
           terminal: { ...t, open: true },
@@ -295,7 +298,9 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
   function toggleSidebar() {
     setState((prev) => {
       const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
-      const leftVisible = !((layout.sidebarVisible as boolean | undefined) ?? true);
+      const leftVisible = !(
+        (layout.sidebarVisible as boolean | undefined) ?? true
+      );
       const rightVisible =
         (layout.filesSidebarVisible as boolean | undefined) ?? true;
       const next = workstationLayout(layout, leftVisible, rightVisible);

@@ -19,7 +19,8 @@
             "align": "center",
             "gap": 12,
             "padding": 0,
-            "className": "app-header ae-tight"
+            "className": "app-header ae-tight",
+            "dragRegion": true
           },
           "children": [
             {
@@ -77,15 +78,11 @@
               "id": "sidebar",
               "type": "sidebar",
               "props": {
-                "title": "aethon",
                 "version": { "$ref": "/appVersion" },
                 "brandMark": true,
+                "hostGroups": true,
+                "hosts": { "$ref": "/sidebar/hosts" },
                 "sections": [
-                  {
-                    "id": "hosts",
-                    "title": "",
-                    "items": { "$ref": "/sidebar/hosts" }
-                  },
                   {
                     "id": "projects",
                     "title": "projects",
@@ -246,7 +243,7 @@
     "layout": {
       "sidebarVisible": true,
       "filesSidebarVisible": true,
-      "columns": "220px minmax(0,1fr) 360px",
+      "columns": "320px minmax(0,1fr) 360px",
       "rows": "38px 38px minmax(0,1fr) 0px auto auto",
       "areas": [
         "sidebar header files-sidebar",
@@ -265,10 +262,17 @@
       "extensions": [],
       "extraSections": [],
       "themes": [
-        { "id": "ember", "label": "Ember — deep warm dark, glowing brass", "active": true },
+        {
+          "id": "ember",
+          "label": "Ember — deep warm dark, glowing brass",
+          "active": true
+        },
         { "id": "paper", "label": "Paper — crisp neutral light" },
         { "id": "aether", "label": "Æther — deep cosmic ink-blue" },
-        { "id": "brink", "label": "Brink — warm chrome with slate wash + gold" },
+        {
+          "id": "brink",
+          "label": "Brink — warm chrome with slate wash + gold"
+        },
         { "id": "daylight", "label": "Daylight — warm golden light" },
         { "id": "mist", "label": "Mist — cool teal light" },
         { "id": "nocturne", "label": "Nocturne — neon navy, cyan + magenta" }

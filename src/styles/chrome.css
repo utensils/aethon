@@ -52,6 +52,28 @@
   -webkit-user-select: text;
 }
 
+/* macOS overlay-titlebar drag regions. With `titleBarStyle: Overlay`
+   there's no native bar to grab, so marked chrome (the sidebar brand
+   strip + the canvas header strip) drags the window; interactive
+   descendants opt back out so clicks still land. Scoped under
+   `[data-platform="mac"]` — and the `data-tauri-drag-region` attribute is
+   only emitted on mac (see isMacOS() gating in the components) — so
+   Linux/Windows native-titlebar dragging is unchanged. */
+[data-platform="mac"] [data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+[data-platform="mac"] [data-tauri-drag-region] button,
+[data-platform="mac"] [data-tauri-drag-region] input,
+[data-platform="mac"] [data-tauri-drag-region] textarea,
+[data-platform="mac"] [data-tauri-drag-region] select,
+[data-platform="mac"] [data-tauri-drag-region] a,
+[data-platform="mac"] [data-tauri-drag-region] [role="button"],
+[data-platform="mac"] [data-tauri-drag-region] [data-no-drag] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 input,
 textarea,
 [contenteditable="true"],
@@ -230,6 +252,25 @@ body.ae-resizing-composer .a2ui-layout {
   overflow-y: auto;
   overscroll-behavior: none;
   position: relative;
+  /* Shared gutter geometry for the project → worktree hierarchy. The
+     stacked project row lays out as [chevron][icon][stacked text]; these
+     drive where the worktree indent + guide line land so a worktree
+     label sits under its project name and the guide descends through the
+     project's icon column. Change here, both follow. */
+  --ae-sb-chevron: 16px;
+  --ae-sb-icon: 18px;
+  --ae-sb-row-pad-x: 10px;
+  --ae-sb-row-gap: 8px;
+  /* label start (within the li padding box) = pad + chevron + gap + icon + gap */
+  --ae-sb-indent: calc(
+    var(--ae-sb-row-pad-x) + var(--ae-sb-chevron) + var(--ae-sb-row-gap) +
+      var(--ae-sb-icon) + var(--ae-sb-row-gap)
+  );
+  /* guide line at the icon column centre */
+  --ae-sb-guide: calc(
+    var(--ae-sb-row-pad-x) + var(--ae-sb-chevron) + var(--ae-sb-row-gap) +
+      (var(--ae-sb-icon) / 2)
+  );
 }
 
 /* Files sidebar (right column) — quiet, seamless. No top/bottom dividers
@@ -578,6 +619,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-shrink: 0;
 }
 
+/* macOS overlay titlebar: the brand strip is the window drag region, so
+   reserve the top-left for the floating traffic lights — with extra gap
+   so the Æthon wordmark clears the green control. Only on mac. */
+[data-platform="mac"] .a2ui-sidebar-title {
+  padding-left: 94px;
+}
+
 .a2ui-sidebar-title-version {
   margin-left: auto;
   flex-shrink: 0;
@@ -585,6 +633,108 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: var(--chrome-text-compact);
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
+}
+
+/* ---- Host group (top tier of host → project → worktree) --------------- */
+
+.ae-host-group {
+  display: flex;
+  flex-direction: column;
+}
+.ae-host-group + .ae-host-group {
+  margin-top: var(--space-1);
+}
+
+/* Host header — the root node. Machine glyph + name + this-mac/remote
+   badge. Reads heavier than a project row so the tiers are legible. */
+.ae-host-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ae-sb-row-gap);
+  padding: 7px var(--ae-sb-row-pad-x);
+  margin: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.ae-host-group-header:hover {
+  background: var(--bg-hover);
+}
+.ae-host-glyph-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--ae-sb-icon);
+  height: var(--ae-sb-icon);
+  color: var(--accent);
+}
+.ae-host-glyph {
+  display: block;
+}
+.ae-host-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--chrome-text);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.ae-host-group--active .ae-host-name {
+  color: var(--text);
+}
+.ae-host-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  background: var(--bg-active);
+}
+.ae-host-badge--local {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The host's projects, nested one tier in. A left rail makes the
+   grouping unmistakable and scales to multiple stacked hosts — each
+   host owns its own rail. The rail sits under the host glyph column. */
+.ae-host-group-body {
+  position: relative;
+  /* Small step only — the rail carries the grouping, so projects don't
+     need a deep indent on top of their own chevron/icon gutter. Keeps
+     names + worktrees from over-truncating in a narrow column. */
+  padding-left: var(--space-3);
+}
+.ae-host-group-body::before {
+  content: "";
+  position: absolute;
+  /* Rail sits under the host header's chevron column. */
+  left: calc(var(--space-2) + (var(--ae-sb-chevron) / 2));
+  top: 2px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+.ae-host-group--active .ae-host-group-body::before {
+  background: color-mix(in oklab, var(--accent) 35%, var(--border));
+}
+/* The nested projects section drops its own vertical padding and its
+   "PROJECTS" sub-label — the host header already names the group, so a
+   second label just adds noise. The "Open project…" action stays. */
+.ae-host-group-body .a2ui-sidebar-section {
+  padding-top: 0;
+}
+.ae-host-group-body .a2ui-sidebar-section-title {
+  display: none;
 }
 
 .a2ui-sidebar-sections {
@@ -708,11 +858,26 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 0;
   border-radius: var(--radius-sm);
   margin: 0 var(--space-2);
+  position: relative;
 }
 
 .a2ui-sidebar-item:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+/* Active selection — 2px accent bar hugging the row's left edge. Skips
+   worktree rows (their guide line already carries the accent) and rows
+   inside the searchable group lists, which read as a flat menu. */
+.a2ui-sidebar-item-active:not(.ae-worktree-row)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 .a2ui-sidebar-item:active {
@@ -819,6 +984,92 @@ body.ae-resizing-sidebar .a2ui-layout {
   white-space: nowrap;
 }
 
+/* ---- Stacked (two-line) project rows ----------------------------------
+   Project rows render as a small card: name on line 1, a git meta line
+   (branch · dirty · ahead/behind) on line 2. This keeps the project name
+   full-width — the branch no longer competes for the same line and the
+   one-character truncation ("C…", "m") is gone. */
+.a2ui-sidebar-item-stacked {
+  align-items: center;
+  gap: var(--ae-sb-row-gap);
+  padding: 6px var(--ae-sb-row-pad-x);
+}
+/* Clean fixed gutter — override the single-line chevron's negative margin
+   so the icon column lands exactly where --ae-sb-indent / --ae-sb-guide
+   expect it (worktree alignment depends on this). */
+.a2ui-sidebar-item-stacked > .a2ui-sidebar-item-discl,
+.a2ui-sidebar-item-stacked > .a2ui-sidebar-item-discl-spacer {
+  width: var(--ae-sb-chevron);
+  height: var(--ae-sb-chevron);
+  margin-left: 0;
+}
+.a2ui-sidebar-item-stacked > .a2ui-sidebar-item-icon {
+  width: var(--ae-sb-icon);
+  height: var(--ae-sb-icon);
+  margin-right: 0;
+  align-self: center;
+}
+/* Fallback glyph when a project has no cached favicon — keeps the icon
+   column (and therefore the worktree guide) aligned across all rows. */
+.a2ui-sidebar-item-icon--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background: var(--bg-active);
+  border-radius: 4px;
+}
+.a2ui-sidebar-item-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.a2ui-sidebar-item-stacked .a2ui-sidebar-item-label {
+  font-weight: 500;
+  line-height: 1.2;
+}
+.a2ui-sidebar-item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  line-height: 1.2;
+}
+/* In the meta line the branch sits at the start (not pushed right) and
+   shares the line with the dirty dot + sync counts. */
+.a2ui-sidebar-item-meta .a2ui-sidebar-item-git-branch {
+  margin-left: 0;
+  max-width: 100%;
+  font-size: var(--chrome-text-compact);
+  color: var(--text-secondary);
+}
+.a2ui-sidebar-item-git-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.ae-git-ahead {
+  color: var(--success, #3fb950);
+}
+.ae-git-behind {
+  color: var(--warn);
+}
+/* Active project: carry the accent into the name + chevron so the whole
+   card reads as one selected unit. */
+.a2ui-sidebar-item-stacked.a2ui-sidebar-item-active .a2ui-sidebar-item-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Disclosure triangle inside a project row. Sits before the label,
    hover-able + clickable independent of the row's select target.
    Big enough to be a real click target (18×18) and uses chrome-text
@@ -868,14 +1119,11 @@ body.ae-resizing-sidebar .a2ui-layout {
    project's icon column. */
 .ae-worktree-row {
   position: relative;
-  /* Align the label under the parent project's LABEL column. The
-     project row internally pads through:
-       16 row padding + (20 chevron - 4 negative margin)
-       + 8 gap + 6 git-dot + 8 gap + 16 icon + 4 icon margin-right
-       = 74px from the row's inner edge.
-     Setting the worktree row's own left padding to the same value
-     keeps the label flush under the project's name. */
-  padding-left: 74px;
+  /* Align the label under the parent project's NAME column. Both the
+     indent and the guide line derive from the shared --ae-sb-* gutter
+     vars on .a2ui-sidebar, so project (stacked) rows and worktree rows
+     stay locked together if the gutter changes. */
+  padding-left: var(--ae-sb-indent);
   /* Tighter than full project rows — these are subordinate. */
   padding-top: 4px;
   padding-bottom: 4px;
@@ -890,7 +1138,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 .ae-worktree-row::before {
   content: "";
   position: absolute;
-  left: 56px;
+  left: var(--ae-sb-guide);
   top: 0;
   bottom: 0;
   width: 1px;

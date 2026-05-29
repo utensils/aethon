@@ -120,7 +120,7 @@ describe("layoutPrefs", () => {
     });
     expect(next.layout).toEqual(
       expect.objectContaining({
-        columns: "220px minmax(0,1fr) 360px",
+        columns: "320px minmax(0,1fr) 360px",
         rows: "38px 38px minmax(0,1fr) 0px auto auto",
         sidebarVisible: true,
         filesSidebarVisible: true,

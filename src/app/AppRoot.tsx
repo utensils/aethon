@@ -6,6 +6,7 @@ import A2UIRenderer, {
 import { ExtensionRegistryProvider } from "../extensions/ExtensionRegistryProvider";
 import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { A2UIPayload } from "../types/a2ui";
+import { isMacOS } from "../utils/platform";
 
 export interface AppRootProps {
   registry: ExtensionRegistry;
@@ -48,7 +49,9 @@ export function AppRoot({
 }: AppRootProps) {
   return (
     <ExtensionRegistryProvider registry={registry}>
-      <div className="app">
+      {/* `data-platform="mac"` gates the overlay-titlebar chrome (traffic-
+          light clearance + drag regions) so non-mac builds render unchanged. */}
+      <div className="app" {...(isMacOS() ? { "data-platform": "mac" } : {})}>
         {topBanner}
         <A2UIRenderer
           payload={layout}

@@ -7,7 +7,10 @@ import { WORKSTATION_AREAS } from "./hooks/useFocus";
 export const LAYOUT_PREFS_FILE = "layout_prefs";
 
 const KEY = "aethon:layout-prefs:v1";
-const DEFAULT_LEFT_WIDTH = "220px";
+// Keep in sync with the default sidebar column in
+// `extensions/default-layout/workstation.a2ui.json` and useFocus.ts so a
+// layout reset lands on the same width as a fresh boot.
+const DEFAULT_LEFT_WIDTH = "320px";
 const DEFAULT_RIGHT_WIDTH = "360px";
 const DEFAULT_TERMINAL_HEIGHT = 240;
 const TERMINAL_HEIGHT_MIN = 120;
@@ -36,9 +39,10 @@ function sanitizeColumns(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const tokens = value.trim().split(/\s+/);
   if (tokens.length < 2 || !isPx(tokens[0])) return undefined;
-  const right = tokens.length >= 3 && isPx(tokens[tokens.length - 1])
-    ? tokens[tokens.length - 1]
-    : undefined;
+  const right =
+    tokens.length >= 3 && isPx(tokens[tokens.length - 1])
+      ? tokens[tokens.length - 1]
+      : undefined;
   return right
     ? `${tokens[0]} minmax(0,1fr) ${right}`
     : `${tokens[0]} minmax(0,1fr)`;
@@ -133,8 +137,7 @@ export function mergeLayoutPrefsIntoState(
   prefs: LayoutPrefs | null,
 ): Record<string, unknown> {
   if (!prefs) return state;
-  const layout =
-    (state.layout as Record<string, unknown> | undefined) ?? {};
+  const layout = (state.layout as Record<string, unknown> | undefined) ?? {};
   const terminalPanel =
     (state.terminalPanel as Record<string, unknown> | undefined) ?? {};
   const mergedTerminalPanel = prefs.terminalPanel
@@ -156,8 +159,7 @@ export function mergeLayoutPrefsIntoState(
 export function resetLayoutPrefsInState(
   state: Record<string, unknown>,
 ): Record<string, unknown> {
-  const layout =
-    (state.layout as Record<string, unknown> | undefined) ?? {};
+  const layout = (state.layout as Record<string, unknown> | undefined) ?? {};
   const terminalPanel =
     (state.terminalPanel as Record<string, unknown> | undefined) ?? {};
   const { height: _height, ...terminalRest } = terminalPanel;

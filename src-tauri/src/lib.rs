@@ -176,6 +176,7 @@ pub fn run() {
             commands::fs::fs_unwatch_root,
             commands::fs::fs_read_file,
             commands::fs::fs_read_file_base64,
+            commands::fs::fs_discover_project_icon,
             commands::fs::fs_write_file,
             commands::fs::fs_create_file,
             commands::fs::fs_create_dir,
