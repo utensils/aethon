@@ -29,6 +29,11 @@ export interface ItemRowProps {
    *  label at the same x-coordinate as a sibling project with worktrees.
    *  Other sections (panels, history) leave it off so they stay tight. */
   alignSlots?: boolean;
+  /** Render as a two-line card: the label on line 1, a git meta line
+   *  (branch · dirty · ahead/behind) on line 2. Set for project rows so
+   *  the branch never squeezes the project name onto a single line.
+   *  Other sections stay single-line. */
+  stacked?: boolean;
   /** Optional trailing control rendered after the hint (e.g. a toggle
    *  switch for extension rows). Click propagation is the caller's
    *  responsibility — `ToggleSwitch` already stops propagation so the
@@ -49,6 +54,7 @@ export function ItemRow({
   disclosure,
   onToggleDisclosure,
   alignSlots,
+  stacked,
   trailingControl,
 }: ItemRowProps) {
   if (item.componentType && renderChildWithState) {
@@ -79,70 +85,166 @@ export function ItemRow({
   const tooltip = (item as { tooltip?: string }).tooltip;
   // Per-item git badge — { branch?, dirty?, ahead?, behind? }.
   // Drives a small chip + dirty dot before the hint.
-  const git = (item as {
-    git?: {
-      branch?: string;
-      dirty?: boolean;
-      ahead?: number;
-      behind?: number;
-    };
-  }).git;
+  const git = (
+    item as {
+      git?: {
+        branch?: string;
+        dirty?: boolean;
+        ahead?: number;
+        behind?: number;
+      };
+    }
+  ).git;
   const branchTitle = git?.branch
     ? `Branch: ${git.branch}${git.dirty ? " (uncommitted changes)" : ""}`
     : undefined;
+  const ahead = git?.ahead ?? 0;
+  const behind = git?.behind ?? 0;
+
+  // Disclosure caret (or a reserved spacer when alignSlots is set so
+  // worktree-less rows align with their siblings). Shared by both the
+  // flat and stacked layouts; lives in the row's left gutter.
+  const chevronEl = disclosure ? (
+    <button
+      type="button"
+      className={`a2ui-sidebar-item-discl a2ui-sidebar-item-discl-${disclosure}`}
+      aria-label={disclosure === "expanded" ? "Collapse" : "Expand"}
+      aria-expanded={disclosure === "expanded"}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleDisclosure?.();
+      }}
+    >
+      {/* Inline SVG instead of Unicode ▸/▾ — the geometric glyphs
+          render tiny at any font size because their metric box is
+          vertically thin. SVG scales exactly to the 12×12 viewport
+          so the chevron actually reads on Paper / Ember alike.
+          `currentColor` so the parent's `color:` controls fill. */}
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 12 12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path
+          d={
+            disclosure === "expanded"
+              ? "M2.5 4.5L6 8L9.5 4.5"
+              : "M4.5 2.5L8 6L4.5 9.5"
+          }
+        />
+      </svg>
+    </button>
+  ) : alignSlots ? (
+    <span className="a2ui-sidebar-item-discl-spacer" aria-hidden="true" />
+  ) : null;
+
+  const iconEl = item.iconUrl ? (
+    <img
+      src={item.iconUrl}
+      alt=""
+      aria-hidden="true"
+      className="a2ui-sidebar-item-icon"
+      loading="lazy"
+    />
+  ) : stacked ? (
+    // Fallback repo glyph so the icon column (and the worktree guide that
+    // aligns to it) stays consistent across projects without a favicon.
+    <span
+      className="a2ui-sidebar-item-icon a2ui-sidebar-item-icon--fallback"
+      aria-hidden="true"
+    >
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M2 4.5C2 3.7 2.7 3 3.5 3h3l1.5 1.6h4.5c.8 0 1.5.7 1.5 1.5v5.4c0 .8-.7 1.5-1.5 1.5h-9C2.7 13 2 12.3 2 11.5z" />
+      </svg>
+    </span>
+  ) : null;
+
+  const rowClass = [
+    "a2ui-sidebar-item",
+    stacked ? "a2ui-sidebar-item-stacked" : "",
+    item.active ? "a2ui-sidebar-item-active" : "",
+    monoItems ? "a2ui-sidebar-item-mono" : "",
+    disclosure ? `a2ui-sidebar-item-discl-${disclosure}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  // Stacked (two-line) layout — used by project rows. Name on line 1,
+  // a git meta line (branch · dirty · ahead/behind) on line 2.
+  if (stacked) {
+    const hasMeta = !!git?.branch || !!git?.dirty || ahead > 0 || behind > 0;
+    return (
+      <li
+        className={rowClass}
+        title={tooltip}
+        onClick={() =>
+          onEvent("select", { sectionId, itemId: item.id }, item.id)
+        }
+        onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
+      >
+        {chevronEl}
+        {iconEl}
+        <span className="a2ui-sidebar-item-stack">
+          <span className="a2ui-sidebar-item-label">{item.label}</span>
+          {hasMeta && (
+            <span className="a2ui-sidebar-item-meta">
+              {git?.branch && (
+                <span
+                  className="a2ui-sidebar-item-git-branch"
+                  title={branchTitle}
+                >
+                  {git.branch}
+                </span>
+              )}
+              {git?.dirty && (
+                <span
+                  className="a2ui-sidebar-item-git-dot"
+                  aria-hidden="true"
+                  title="Uncommitted changes"
+                />
+              )}
+              {(ahead > 0 || behind > 0) && (
+                <span
+                  className="a2ui-sidebar-item-git-sync"
+                  title={`${ahead} ahead, ${behind} behind`}
+                >
+                  {ahead > 0 && <span className="ae-git-ahead">↑{ahead}</span>}
+                  {behind > 0 && (
+                    <span className="ae-git-behind">↓{behind}</span>
+                  )}
+                </span>
+              )}
+            </span>
+          )}
+        </span>
+        {trailingControl}
+      </li>
+    );
+  }
+
   return (
     <li
-      className={[
-        "a2ui-sidebar-item",
-        item.active ? "a2ui-sidebar-item-active" : "",
-        monoItems ? "a2ui-sidebar-item-mono" : "",
-        disclosure ? `a2ui-sidebar-item-discl-${disclosure}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      className={rowClass}
       title={tooltip}
       onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
       onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
-      {disclosure ? (
-        <button
-          type="button"
-          className={`a2ui-sidebar-item-discl a2ui-sidebar-item-discl-${disclosure}`}
-          aria-label={disclosure === "expanded" ? "Collapse" : "Expand"}
-          aria-expanded={disclosure === "expanded"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleDisclosure?.();
-          }}
-        >
-          {/* Inline SVG instead of Unicode ▸/▾ — the geometric glyphs
-              render tiny at any font size because their metric box is
-              vertically thin. SVG scales exactly to the 12×12 viewport
-              so the chevron actually reads on Paper / Ember alike.
-              `currentColor` so the parent's `color:` controls fill. */}
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path
-              d={
-                disclosure === "expanded"
-                  ? "M2.5 4.5L6 8L9.5 4.5"
-                  : "M4.5 2.5L8 6L4.5 9.5"
-              }
-            />
-          </svg>
-        </button>
-      ) : alignSlots ? (
-        <span className="a2ui-sidebar-item-discl-spacer" aria-hidden="true" />
-      ) : null}
+      {chevronEl}
       {git?.dirty ? (
         <span
           className="a2ui-sidebar-item-git-dot"
@@ -152,15 +254,7 @@ export function ItemRow({
       ) : alignSlots ? (
         <span className="a2ui-sidebar-item-git-dot-spacer" aria-hidden="true" />
       ) : null}
-      {item.iconUrl ? (
-        <img
-          src={item.iconUrl}
-          alt=""
-          aria-hidden="true"
-          className="a2ui-sidebar-item-icon"
-          loading="lazy"
-        />
-      ) : null}
+      {iconEl}
       <span className="a2ui-sidebar-item-label">{item.label}</span>
       {git?.branch ? (
         <span className="a2ui-sidebar-item-git-branch" title={branchTitle}>

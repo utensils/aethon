@@ -8,8 +8,10 @@
 import { useRef, type MouseEvent as ReactMouseEvent } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 
-const MIN_WIDTH = 180;
-const MAX_WIDTH = 540;
+// Two-line project rows + the host bar need a little more breathing room
+// than the old single-line list, so the floor is nudged up from 180.
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 560;
 
 export interface UseSidebarResizeDeps {
   onEvent: BuiltinComponentProps["onEvent"];

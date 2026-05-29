@@ -54,7 +54,11 @@ export function Card({ component, state, renderChildren }: ComponentProps) {
 }
 
 // Container component
-export function Container({ component, state, renderChildren }: ComponentProps) {
+export function Container({
+  component,
+  state,
+  renderChildren,
+}: ComponentProps) {
   const props = component.props as {
     direction?: "row" | "column";
     gap?: NumberValue;
@@ -62,6 +66,12 @@ export function Container({ component, state, renderChildren }: ComponentProps) 
     align?: "start" | "center" | "end" | "stretch";
     justify?: "start" | "center" | "end" | "space-between";
     className?: string;
+    /** When true, the container becomes a macOS window drag region
+     *  (`data-tauri-drag-region`). Interactive children opt back out via
+     *  the global `-webkit-app-region: no-drag` reset in chrome.css. Used
+     *  to make the canvas header strip drag the window under the overlay
+     *  titlebar; a no-op on Linux/Windows. */
+    dragRegion?: BooleanValue;
   };
 
   const direction = props.direction || "column";
@@ -86,8 +96,16 @@ export function Container({ component, state, renderChildren }: ComponentProps) 
     ? `a2ui-container ${props.className}`
     : "a2ui-container";
 
+  const dragRegion = props.dragRegion
+    ? resolveBoolean(props.dragRegion, state)
+    : false;
+
   return (
-    <div className={cls} style={style}>
+    <div
+      className={cls}
+      style={style}
+      {...(dragRegion ? { "data-tauri-drag-region": true } : {})}
+    >
       {renderChildren && renderChildren()}
     </div>
   );

@@ -23,6 +23,7 @@ import { ContextMenu } from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
 import { AeWordmark } from "../layout";
+import { HostBar, type HostBarItem } from "./host-bar";
 import { ItemRow } from "./item-row";
 import { ToggleSwitch } from "../toggle-switch";
 import {
@@ -57,6 +58,13 @@ export function Sidebar({
     version?: StringValue;
     /** When true, render an inline AeMark monogram before the title. */
     brandMark?: BooleanValue;
+    /** When true, render the host-identity top bar (machine + this-mac /
+     *  remote badge + brand monogram) in place of the plain title row.
+     *  The default workstation layout sets this; generic sidebars omit it
+     *  and keep the title/brandMark behaviour. */
+    hostBar?: BooleanValue;
+    /** Host list ($ref or inline) feeding the host bar / switcher. */
+    hosts?: SidebarItem[] | { $ref: string };
     sections?: SidebarSectionExt[];
     // Optional list of extra sections appended after the inline `sections`.
     // Bound via $ref so extensions can push into a state path and have
@@ -90,6 +98,12 @@ export function Sidebar({
   const showBrand = props.brandMark
     ? resolveBoolean(props.brandMark, state)
     : !!title;
+  const showHostBar = props.hostBar
+    ? resolveBoolean(props.hostBar, state)
+    : false;
+  const hosts = showHostBar
+    ? (resolveSidebarItems(props.hosts, state) as unknown as HostBarItem[])
+    : [];
 
   const allSections = composeSidebarSections({
     sections: props.sections,
@@ -102,19 +116,23 @@ export function Sidebar({
       ref={asideRef}
       className={`a2ui-sidebar ${resizeFromLeft ? "a2ui-sidebar-resize-left" : ""}`}
     >
-      {(showBrand || title || version) && (
-        <div className="a2ui-sidebar-title">
-          {showBrand ? (
-            // Full wordmark replaces the monogram + plain "aethon" text so
-            // the bare Æ stays unique to the overview tab / dashboard hero.
-            <AeWordmark height={22} />
-          ) : (
-            title && <span>{title}</span>
-          )}
-          {version && (
-            <span className="a2ui-sidebar-title-version">{version}</span>
-          )}
-        </div>
+      {showHostBar ? (
+        <HostBar hosts={hosts} version={version} onEvent={onEvent} />
+      ) : (
+        (showBrand || title || version) && (
+          <div className="a2ui-sidebar-title">
+            {showBrand ? (
+              // Full wordmark replaces the monogram + plain "aethon" text so
+              // the bare Æ stays unique to the overview tab / dashboard hero.
+              <AeWordmark height={22} />
+            ) : (
+              title && <span>{title}</span>
+            )}
+            {version && (
+              <span className="a2ui-sidebar-title-version">{version}</span>
+            )}
+          </div>
+        )
       )}
       <div className="a2ui-sidebar-sections">
         {allSections.map((section) => {
@@ -323,6 +341,9 @@ function SidebarSectionBlock({
                   // which rows happen to have worktrees or uncommitted
                   // changes.
                   alignSlots={isProjects}
+                  // Projects render as two-line cards (name over a git
+                  // meta line) so the branch never squeezes out the name.
+                  stacked={isProjects}
                   trailingControl={trailingControl}
                 />
                 {hasExtraWorktrees && expanded
