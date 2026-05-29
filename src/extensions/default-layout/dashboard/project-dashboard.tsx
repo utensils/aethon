@@ -169,7 +169,16 @@ export function ProjectDashboard({
       <div className="a2ui-project-dashboard-card">
         <header className="a2ui-project-dashboard-header">
           <div className="a2ui-project-dashboard-hero" aria-hidden="true">
-            <AeMarkInline size={48} radius={10} />
+            {project.iconUrl ? (
+              <img
+                src={project.iconUrl}
+                alt=""
+                className="a2ui-project-dashboard-icon"
+                loading="lazy"
+              />
+            ) : (
+              <AeMarkInline size={48} radius={10} />
+            )}
           </div>
           <div className="a2ui-project-dashboard-header-text">
             <h1 className="a2ui-project-dashboard-title">{project.label}</h1>

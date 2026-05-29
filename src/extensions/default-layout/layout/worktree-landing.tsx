@@ -43,6 +43,7 @@ export function WorktreeLanding({
       kind?: string;
       projectId?: string;
       projectLabel?: string;
+      iconUrl?: string;
       worktreeId?: string;
       worktreeLabel?: string;
       branch?: string;
@@ -76,6 +77,7 @@ export function WorktreeLanding({
 
   return (
     <WorktreeLandingInner
+      iconUrl={landing.iconUrl}
       title={title}
       projectLabel={projectLabel}
       branch={branch}
@@ -101,6 +103,7 @@ function normalizeLandingPath(path?: string): string {
 }
 
 function WorktreeLandingInner(props: {
+  iconUrl?: string;
   title: string;
   projectLabel: string;
   branch: string;
@@ -116,6 +119,7 @@ function WorktreeLandingInner(props: {
   ) => void;
 }) {
   const {
+    iconUrl,
     title,
     projectLabel,
     branch,
@@ -163,7 +167,16 @@ function WorktreeLandingInner(props: {
     <div className="a2ui-empty-state a2ui-worktree-landing">
       <div className="a2ui-empty-state-card">
         <div className="a2ui-empty-state-hero" aria-hidden="true">
-          <AeMarkInline size={64} radius={12} />
+          {iconUrl ? (
+            <img
+              src={iconUrl}
+              alt=""
+              className="a2ui-worktree-landing-icon"
+              loading="lazy"
+            />
+          ) : (
+            <AeMarkInline size={64} radius={12} />
+          )}
         </div>
         <h1 className="a2ui-empty-state-title">{title}</h1>
         <p className="a2ui-empty-state-subtitle">
