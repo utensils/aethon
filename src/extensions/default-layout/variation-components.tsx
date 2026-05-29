@@ -23,6 +23,7 @@ import { resolvePointer } from "../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { VcsSlice } from "../../hooks/useVcsStatus";
 import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
+import { absolutePathFor } from "./sidebar/fileTreeModel";
 
 function readUiScale(): number {
   const raw = getComputedStyle(document.documentElement)
@@ -476,9 +477,12 @@ export function VcsStatus({ component, state, onEvent }: BuiltinComponentProps) 
   const firstChanged = vcs.changes.files[0];
   const openChanged = () => {
     if (!vcs.root || !firstChanged) return;
-    const root = vcs.root.replace(/\/+$/, "");
-    const rel = firstChanged.path.replace(/^\/+/, "");
-    onEvent("file-tree-open", { filePath: `${root}/${rel}`, rootPath: vcs.root });
+    // Reuse the file tree's separator-aware join so this path is identical
+    // to the one the tree emits for the same file (editor-tab dedupe).
+    onEvent("file-tree-open", {
+      filePath: absolutePathFor(vcs.root, firstChanged.path),
+      rootPath: vcs.root,
+    });
   };
   const changeTitle =
     changeTotal === 1 && firstChanged

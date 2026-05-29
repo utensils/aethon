@@ -16,12 +16,8 @@ import { FileIcon } from "../../../components/file-icon";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { VcsSlice } from "../../../hooks/useVcsStatus";
 import { resolvePointer } from "../../../utils/jsonPointer";
-import { GIT_STATUS_META, basename } from "./fileTreeModel";
+import { GIT_STATUS_META, absolutePathFor, basename } from "./fileTreeModel";
 import { changeBreakdown, ciMeta, prMeta } from "./vcs-presentation";
-
-function joinPath(root: string, rel: string): string {
-  return `${root.replace(/\/+$/, "")}/${rel.replace(/^\/+/, "")}`;
-}
 
 export function SourceControlPanel({
   component,
@@ -148,7 +144,7 @@ export function SourceControlPanel({
                     title={`${f.path} — ${meta?.title ?? f.status}`}
                     onClick={() =>
                       onEvent("file-tree-open", {
-                        filePath: joinPath(root, f.path),
+                        filePath: absolutePathFor(root, f.path),
                         rootPath: root,
                       })
                     }

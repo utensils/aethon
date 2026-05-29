@@ -222,9 +222,14 @@ export default function App() {
   // VCS surface wiring. Polls working-tree changes + PR + CI status for the
   // active project/worktree root into the `/vcs` slice, consumed by the
   // header `vcs-status` cluster and the `source-control-panel` above the
-  // file tree. The root is derived the same way the file tree does:
+  // file tree. Root derivation mirrors the file tree (file-tree.tsx): the
   // active worktree path when one is selected, else the active project's
-  // path. (devshellActiveRoot reads a different state shape and can lag.)
+  // path, else the active editor tab's root — so when an editor is open on
+  // a git repo with no project selected, the VCS surface tracks the same
+  // root the tree is decorating. The file tree's final `~/.aethon` fallback
+  // is intentionally omitted: it is never a git repo, so `/vcs` would
+  // collapse anyway, and replicating the async home-dir fetch here is noise.
+  // (devshellActiveRoot reads a different state shape and can lag.)
   const vcsActiveRoot = (() => {
     const wtId = (state.activeWorktreeId as string | null) ?? null;
     if (wtId) {
@@ -236,7 +241,20 @@ export default function App() {
         if (wt?.path) return wt.path;
       }
     }
-    return ((state.project as { path?: string } | null)?.path) ?? null;
+    const projectPath = (state.project as { path?: string } | null)?.path;
+    if (projectPath) return projectPath;
+    const tabs =
+      (state.tabs as
+        | Array<{ id: string; kind?: string; editor?: { rootPath?: string } }>
+        | undefined) ?? [];
+    const activeTabId = state.activeTabId as string | undefined;
+    const activeTab = activeTabId
+      ? tabs.find((t) => t.id === activeTabId)
+      : undefined;
+    if (activeTab?.kind === "editor" && activeTab.editor?.rootPath) {
+      return activeTab.editor.rootPath;
+    }
+    return null;
   })();
   useVcsStatus({ activeRoot: vcsActiveRoot, setState });
 
