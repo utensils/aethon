@@ -184,6 +184,13 @@ fn discover_project_icon(project_path: &str) -> Result<Option<String>, String> {
         } else {
             root.join(dir)
         };
+        // Reject a candidate dir that symlinks outside the project BEFORE
+        // reading it, so a hostile `public -> /` symlink can't make us walk
+        // a huge or out-of-root tree (the per-file check below would catch
+        // the leak, but only after the expensive scan).
+        if ensure_symlink_safe(&dir_path, &root_canon).is_err() {
+            continue;
+        }
         let present = file_index(&dir_path);
         if present.is_empty() {
             continue;
@@ -316,6 +323,26 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_candidate_dir_that_symlinks_outside_root() {
+        use std::os::unix::fs::symlink;
+        let root = tmp_dir("escape-root");
+        let outside = tmp_dir("escape-outside");
+        std::fs::write(outside.join("favicon.png"), b"png").unwrap();
+        // root/public -> outside : an escaping symlink must not be scanned.
+        symlink(&outside, root.join("public")).unwrap();
+
+        assert!(
+            discover(&root).is_none(),
+            "escaped symlink dir must be skipped"
+        );
+
+        std::fs::remove_file(root.join("public")).ok();
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&outside).ok();
     }
 
     #[test]

@@ -53,21 +53,23 @@
 }
 
 /* macOS overlay-titlebar drag regions. With `titleBarStyle: Overlay`
-   there's no native bar to grab, so marked chrome (the sidebar host bar
-   + the canvas header strip) drags the window. Interactive descendants
-   opt back out so clicks still land. Inert on Linux/Windows — the
-   attribute is simply never emitted there. */
-[data-tauri-drag-region] {
+   there's no native bar to grab, so marked chrome (the sidebar brand
+   strip + the canvas header strip) drags the window; interactive
+   descendants opt back out so clicks still land. Scoped under
+   `[data-platform="mac"]` — and the `data-tauri-drag-region` attribute is
+   only emitted on mac (see isMacOS() gating in the components) — so
+   Linux/Windows native-titlebar dragging is unchanged. */
+[data-platform="mac"] [data-tauri-drag-region] {
   -webkit-app-region: drag;
   app-region: drag;
 }
-[data-tauri-drag-region] button,
-[data-tauri-drag-region] input,
-[data-tauri-drag-region] textarea,
-[data-tauri-drag-region] select,
-[data-tauri-drag-region] a,
-[data-tauri-drag-region] [role="button"],
-[data-tauri-drag-region] [data-no-drag] {
+[data-platform="mac"] [data-tauri-drag-region] button,
+[data-platform="mac"] [data-tauri-drag-region] input,
+[data-platform="mac"] [data-tauri-drag-region] textarea,
+[data-platform="mac"] [data-tauri-drag-region] select,
+[data-platform="mac"] [data-tauri-drag-region] a,
+[data-platform="mac"] [data-tauri-drag-region] [role="button"],
+[data-platform="mac"] [data-tauri-drag-region] [data-no-drag] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }

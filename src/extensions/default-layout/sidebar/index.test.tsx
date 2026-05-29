@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+// Force the macOS branch so the brand-strip drag-region assertion is
+// deterministic under jsdom (navigator.platform is empty there).
+vi.mock("../../../utils/platform", () => ({ isMacOS: () => true }));
 import { Sidebar } from ".";
 import type { A2UIComponent } from "../../../types/a2ui";
 import type { ComponentProps } from "react";

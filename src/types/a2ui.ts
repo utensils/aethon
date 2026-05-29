@@ -65,6 +65,12 @@ export interface ContainerComponent extends A2UIComponent {
     padding?: NumberValue;
     align?: "start" | "center" | "end" | "stretch";
     justify?: "start" | "center" | "end" | "space-between";
+    /** Extra class names appended to the container element. */
+    className?: string;
+    /** Mark the container as a macOS window drag region
+     *  (`data-tauri-drag-region`). Honored only on macOS (overlay
+     *  titlebar); a no-op elsewhere. */
+    dragRegion?: BooleanValue;
   };
   children?: A2UIComponent[];
 }
@@ -237,7 +243,9 @@ export interface ChatInputComponent extends A2UIComponent {
     onChange?: string;
     // Slash command suggestions. When the input starts with `/`, the
     // matching commands surface in an autocomplete dropdown.
-    commands?: { name: string; description?: string; usage?: string }[] | { $ref: string };
+    commands?:
+      | { name: string; description?: string; usage?: string }[]
+      | { $ref: string };
   };
 }
 

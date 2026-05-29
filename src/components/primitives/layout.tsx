@@ -15,6 +15,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
+import { isMacOS } from "../../utils/platform";
 import type { ComponentProps } from "./shared";
 
 // Card component
@@ -96,9 +97,13 @@ export function Container({
     ? `a2ui-container ${props.className}`
     : "a2ui-container";
 
-  const dragRegion = props.dragRegion
-    ? resolveBoolean(props.dragRegion, state)
-    : false;
+  // Drag regions only matter under the macOS overlay titlebar; on
+  // Linux/Windows the native titlebar handles dragging, so don't emit the
+  // attribute there (keeps non-mac chrome behaviour unchanged).
+  const dragRegion =
+    isMacOS() && props.dragRegion
+      ? resolveBoolean(props.dragRegion, state)
+      : false;
 
   return (
     <div
