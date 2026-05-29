@@ -232,6 +232,14 @@ CloseRequested. Monitor matching is three-tier (exact → intersects →
 nearest by saved center) with titlebar-reachability clamp. Fullscreen
 is transient and skipped. v0 (physical) files migrate to v1.
 
+On macOS the window uses an **overlay titlebar** (`tauri.conf.json`:
+`titleBarStyle: Overlay` + `hiddenTitle` + `trafficLightPosition`) so the
+sidebar runs to the top with the traffic lights floating over the brand
+strip. The `Container` primitive takes a `dragRegion` prop; the app root
+sets `data-platform="mac"` (`src/utils/platform.ts`) and drag / no-drag
+CSS lives in `styles/chrome.css`. All macOS-gated — Linux/Windows render
+a normal titlebar unchanged.
+
 ### Projects + worktrees
 
 Pi sessions are scoped to a cwd. `src/projects.ts` persists the project
@@ -242,10 +250,37 @@ via `src/worktrees.ts`, with Rust commands in `commands/git/`. Active
 worktree is mirrored to `/activeWorktreeId` so the file tree and new
 tabs follow the sidebar selection.
 
-### Dashboard caches (M9)
+The sidebar tree is **host → project → worktree**
+(`src/extensions/default-layout/sidebar/`). The host is a first-class,
+collapsible node (`host-group.tsx`) that owns its project list via a
+tinted left rail; `select → setActiveHost` switches the active one.
+Project rows are two-line cards (`item-row.tsx` stacked mode: name +
+git meta); worktrees nest under them (`worktree-row.tsx`) aligned via
+shared `--ae-sb-*` gutter vars. Projects without a cached icon get a
+fallback repo glyph; icons come from the async Rust command
+`fs_discover_project_icon` (in-repo discovery).
+
+### Always-on VCS surface
+
+`src/hooks/useVcsStatus.ts` consolidates working-tree changes, branch
+ahead/behind, PR state, and CI rollup for the active project/worktree
+into a single `/vcs` state slice. Both the header `vcs-status` cluster
+and the `source-control-panel` read from `/vcs`, so polling + fan-out
+live in one place. Cadence mirrors `useProjects`: tick on mount / root
+change, every 20 s, and on window focus, with a `cancelled` flag +
+in-flight guard against stale-root clobber. Sources (all best-effort,
+degrade silently): `git_status` (worktree-aware — called against the
+active root so a worktree reports its own branch), `git_file_status`
+(per-file breakdown), `gh_branch_status` + `gh_checks` (via caches).
+Conclusion→icon/tone mapping is shared in `sidebar/vcs-presentation.ts`
+so the two surfaces never disagree on what "green" means.
+
+### Dashboard + VCS caches
 
 - `src/ghRepoOverviewCache.ts` — 5-min live TTL, 30-min negative.
 - `src/ghIssuesCache.ts` — 90-s live, 60-s negative; cap clamped to 100.
+- `src/ghBranchStatusCache.ts` — 60-s live, 5-min negative (PRs for a branch).
+- `src/ghChecksCache.ts` — 45-s live, 5-min negative (CI check-run rollup).
 
 Use `gh issue list -q length` for the open-issue count, **not**
 `open_issues_count` (that counts PRs + issues). Percent-encode branch
