@@ -77,10 +77,13 @@ describe("buildEditorMenus", () => {
     expect(menus.map((m) => m.id)).toEqual(["file", "edit", "view", "go"]);
   });
 
-  it("enables Save only when dirty and mutable", () => {
+  it("enables Save whenever the buffer is dirty (incl. preview mode)", () => {
     expect(option(build({ isDirty: true, canMutate: true }).menus, "file-save").disabled).toBe(false);
     expect(option(build({ isDirty: false }).menus, "file-save").disabled).toBe(true);
-    expect(option(build({ canMutate: false }).menus, "file-save").disabled).toBe(true);
+    // Dirty Markdown in preview (canMutate false) must still be saveable.
+    expect(
+      option(build({ isDirty: true, canMutate: false }).menus, "file-save").disabled,
+    ).toBe(false);
   });
 
   it("disables Revert when not dirty", () => {

@@ -36,6 +36,15 @@ export interface EditorBuffer {
    *  sync with `tab.editor.filePath` so file-tree rename + Cmd+S land
    *  at the new location. */
   filePath: string;
+  /** Last-known on-disk mtime (unix ms) for external-change detection.
+   *  Stored on the buffer (not the canvas) so the baseline + warning
+   *  survive a tab switch that unmounts/remounts the editor canvas.
+   *  `undefined` until first captured. */
+  externalBaselineMtime?: number;
+  /** True when an external on-disk edit was detected under a *dirty*
+   *  buffer and the user hasn't reloaded yet — durable across remounts
+   *  so the reload affordance isn't lost when switching tabs. */
+  externalChanged?: boolean;
 }
 
 const EDITOR_BUFFERS = new Map<string, EditorBuffer>();

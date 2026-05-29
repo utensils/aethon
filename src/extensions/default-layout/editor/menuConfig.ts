@@ -54,7 +54,9 @@ export function buildEditorMenus({
         id: "file-save",
         label: "Save",
         hint: "⌘S",
-        disabled: !canMutate || !isDirty,
+        // Gated on dirtiness only — a dirty Markdown buffer in Preview
+        // mode (canMutate false) is still saveable via the same event.
+        disabled: !isDirty,
         onSelect: file.save,
       },
       {
