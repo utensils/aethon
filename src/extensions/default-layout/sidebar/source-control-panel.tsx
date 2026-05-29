@@ -16,6 +16,7 @@
 import { useRef, useState } from "react";
 
 import { FileIcon } from "../../../components/file-icon";
+import { Chevron } from "./chevron";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { VcsSlice } from "../../../hooks/useVcsStatus";
 import { resolvePointer } from "../../../utils/jsonPointer";
@@ -192,7 +193,7 @@ export function SourceControlPanel({
             onClick={() => setFilesOpen((o) => !o)}
           >
             <span className="ae-scm-chevron" aria-hidden="true">
-              {filesOpen ? "▾" : "▸"}
+              <Chevron expanded={filesOpen} />
             </span>
             <span className="ae-scm-changes-count">
               {changes.total} changed
@@ -255,7 +256,14 @@ export function SourceControlPanel({
           ) : null}
         </div>
       ) : (
-        <div className="ae-scm-clean">Working tree clean</div>
+        // Mirror the "N CHANGED" header's box (same wrapper + chevron
+        // column) so the rows below sit at the exact same y in every state.
+        <div className="ae-scm-changes">
+          <div className="ae-scm-changes-header ae-scm-changes-header--static">
+            <span className="ae-scm-chevron" aria-hidden="true" />
+            <span className="ae-scm-changes-count">Working tree clean</span>
+          </div>
+        </div>
       )}
     </section>
   );

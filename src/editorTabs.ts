@@ -124,6 +124,20 @@ export function parseEditorTabsStore(raw: string): EditorTabsStore {
 // `loadEditorTabsStore`.
 let cache: EditorTabsStore = emptyStore();
 let loaded = false;
+// Projects whose tabs have been restored (hydrated) this session. Saving
+// is gated on this so switching to a project before its bucket hydrates
+// can't overwrite its persisted tabs with the (momentarily empty) list.
+const hydrated = new Set<string>();
+
+/** Mark a project's editor tabs as restored — enables persistence for it. */
+export function markProjectHydrated(projectId: string | null | undefined): void {
+  hydrated.add(projectId ?? NO_PROJECT_TABS_KEY);
+}
+
+/** Whether a project's editor tabs have been restored this session. */
+export function isProjectHydrated(projectId: string | null | undefined): boolean {
+  return hydrated.has(projectId ?? NO_PROJECT_TABS_KEY);
+}
 
 /** Load the store from disk into the in-memory cache. Call once at boot
  *  before any save so saves don't drop other projects' tabs. */
@@ -151,6 +165,9 @@ export async function saveEditorTabsForProject(
   // the active project and drop every other project's remembered tabs.
   if (!loaded) return;
   const key = projectId ?? NO_PROJECT_TABS_KEY;
+  // Don't clobber a project's saved tabs before it has been hydrated — its
+  // bucket is empty until `restoreEditorTabs` runs for it.
+  if (!hydrated.has(key)) return;
   const collected = editorTabsFromTabs(tabs, activeTabId);
   if (collected.tabs.length === 0) {
     delete cache.byProject[key];
@@ -165,6 +182,7 @@ export const __testing = {
   reset(): void {
     cache = emptyStore();
     loaded = false;
+    hydrated.clear();
   },
   markLoaded(): void {
     loaded = true;

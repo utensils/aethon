@@ -1,10 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  __testing,
   editorTabsFromTabs,
+  isProjectHydrated,
+  markProjectHydrated,
   parseEditorTabsStore,
+  persistedTabsForProject,
+  saveEditorTabsForProject,
   toPersistedEditorTab,
 } from "./editorTabs";
 import type { Tab } from "./types/tab";
+
+afterEach(() => __testing.reset());
 
 function editorTab(id: string, filePath: string, extra: object = {}): Tab {
   return {
@@ -36,6 +43,25 @@ describe("editorTabsFromTabs", () => {
   it("omits activeFilePath when the active tab is a diff or non-editor", () => {
     const tabs = [editorTab("e2", "/r/x.ts", { diff: true })];
     expect(editorTabsFromTabs(tabs, "e2").activeFilePath).toBeUndefined();
+  });
+});
+
+describe("hydration gate (no clobber before restore)", () => {
+  const tab = editorTab("e1", "/r/a.ts");
+
+  it("does not persist a project's tabs until it is hydrated", async () => {
+    __testing.markLoaded();
+    // Not hydrated yet → save is a no-op, so a momentarily-empty bucket on
+    // project switch can't wipe the saved tabs.
+    await saveEditorTabsForProject("p1", [tab], "e1");
+    expect(persistedTabsForProject("p1").tabs).toEqual([]);
+
+    markProjectHydrated("p1");
+    expect(isProjectHydrated("p1")).toBe(true);
+    await saveEditorTabsForProject("p1", [tab], "e1");
+    expect(persistedTabsForProject("p1").tabs).toEqual([
+      { filePath: "/r/a.ts", language: "typescript" },
+    ]);
   });
 });
 

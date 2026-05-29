@@ -7181,6 +7181,14 @@ button.ae-vcs-chip:focus-visible {
 .ae-scm-changes-header:hover {
   color: var(--text-secondary);
 }
+/* Clean-tree state reuses the header box for alignment but isn't
+   clickable — no pointer, no hover affordance. */
+.ae-scm-changes-header--static {
+  cursor: default;
+}
+.ae-scm-changes-header--static:hover {
+  color: var(--text-dim);
+}
 .ae-scm-chevron {
   display: inline-flex;
   align-items: center;
@@ -7288,11 +7296,6 @@ button.ae-vcs-chip:focus-visible {
   font-weight: 700;
 }
 .ae-scm-file-more,
-.ae-scm-clean {
-  padding: 4px var(--space-3);
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-}
 
 /* =========================================================================
    Theme-switch crossfade — a one-shot transition class added to <html> by

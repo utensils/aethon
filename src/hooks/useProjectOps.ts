@@ -15,7 +15,9 @@ import {
   type Tab,
 } from "../types/tab";
 import {
+  isProjectHydrated,
   loadEditorTabsStore,
+  markProjectHydrated,
   persistedTabsForProject,
 } from "../editorTabs";
 import { editorLabelForPath } from "./tabOps/helpers";
@@ -171,6 +173,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     );
     scheduleProjectsSave();
     announceProjectToBridge(nextTabId ?? "default", path);
+    void restoreEditorTabs(id, path);
     return id;
   }
 
@@ -202,6 +205,11 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     }
     watchProjectForBridge(target.path);
     void worktreeOps.refreshProjectWorktrees(id);
+    // Hydrate this project's persisted editor tabs the first time it
+    // becomes active (no-op on later switches) so they survive restarts
+    // even when it wasn't the boot project — and so persistence isn't
+    // gated off for it.
+    void restoreEditorTabs(id, target.path);
     return true;
   }
 
@@ -315,7 +323,13 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     projectId: string,
     projectPath: string,
   ): Promise<void> {
+    // Idempotent per project (boot + every project switch calls this).
+    if (isProjectHydrated(projectId)) return;
     await loadEditorTabsStore();
+    // Mark hydrated up front (before any early return) so persistence is
+    // enabled for this project even when it has no saved tabs yet — that's
+    // what lets newly-opened tabs in a fresh project get saved.
+    markProjectHydrated(projectId);
     const persisted = persistedTabsForProject(projectId);
     if (persisted.tabs.length === 0) return;
     const checks = await Promise.all(
