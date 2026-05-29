@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-import { ModelPicker } from "./variation-components";
+// Force the macOS branch so the drag-region assertion is deterministic
+// under jsdom (navigator.platform is empty there).
+vi.mock("../../utils/platform", () => ({ isMacOS: () => true }));
+
+import { AgentStatusPill, ModelPicker } from "./variation-components";
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
@@ -14,6 +18,20 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+describe("AgentStatusPill", () => {
+  it("is a macOS window drag handle", () => {
+    render(
+      <AgentStatusPill
+        component={{ id: "p", type: "agent-pulse", props: {} }}
+        state={{}}
+        onEvent={vi.fn()}
+      />,
+    );
+    const pill = screen.getByText("agent live");
+    expect(pill.hasAttribute("data-tauri-drag-region")).toBe(true);
+  });
 });
 
 describe("ModelPicker", () => {

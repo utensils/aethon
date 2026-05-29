@@ -6968,6 +6968,11 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Cap the branch so a long name truncates instead of consuming the whole
+     header row — keeps the right-side pickers visible and preserves the
+     draggable spacer between the clusters. */
+  max-width: 16ch;
 }
 .ae-vcs-aheadbehind {
   font-family: var(--font-mono);
