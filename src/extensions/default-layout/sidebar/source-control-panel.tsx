@@ -145,7 +145,7 @@ export function SourceControlPanel({
                 className="ae-scm-chevron ae-scm-ci-chevron"
                 aria-hidden="true"
               >
-                {ciOpen ? "▾" : "▸"}
+                <Chevron expanded={ciOpen} />
               </span>
             ) : null}
           </button>

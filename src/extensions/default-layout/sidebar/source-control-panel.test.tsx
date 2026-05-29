@@ -122,6 +122,23 @@ describe("SourceControlPanel — CI jobs", () => {
     expect(screen.getByText("lint")).not.toBeNull();
   });
 
+  it("renders the shared SVG chevron (not the tiny text glyph)", () => {
+    renderPanel(
+      vcs({
+        ci: ci({
+          checks: [run({ name: "lint" }), run({ name: "test" })],
+        }),
+      }),
+    );
+    const ciRow = screen.getByRole("button", { name: /CI/ });
+    const chevron = ciRow.querySelector(".ae-scm-ci-chevron");
+    expect(chevron).not.toBeNull();
+    // Shared <Chevron> SVG, matching the file tree + "N CHANGED" header.
+    expect(chevron?.querySelector("svg")).not.toBeNull();
+    // No leftover unicode triangle glyphs anywhere in the row.
+    expect(ciRow.textContent ?? "").not.toMatch(/[▾▸]/);
+  });
+
   it("opens the check URL when a job row is clicked", () => {
     const onEvent = vi.fn();
     renderPanel(

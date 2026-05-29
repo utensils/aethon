@@ -6912,11 +6912,19 @@ button.ae-vcs-chip:focus-visible {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  gap: 2px;
-  /* No top padding: the titlebar is a flush 38px header row so its
-     bottom border lands on the same y as the app header + sidebar brand,
-     keeping the top divider line continuous across all three columns. */
-  padding: 0 0 var(--space-2);
+  /* No inter-row gap: rows sit flush so the first content band lands
+     immediately below the titlebar divider — mirroring the left column,
+     where the tab strip sits flush under the project-switcher header
+     (both 38px bands, continuous dividers). A gap here pushed the first
+     row ~6px down and broke the two-column grid alignment. */
+  gap: 0;
+  /* No padding at all: the titlebar is a flush 38px header row (its bottom
+     border lands on the same y as the app header + sidebar brand), and the
+     bottom border sits flush under the last summary band so the file tree
+     below starts on the same y as the editor under the tab strip — the
+     third band of the two-column grid. Any bottom padding here pushed the
+     tree down out of alignment with the editor. */
+  padding: 0;
   border-bottom: 1px solid var(--border);
   background: var(--gradient-surface, var(--bg-elev));
   box-shadow: var(--inner-highlight, none);
@@ -6951,7 +6959,6 @@ button.ae-vcs-chip:focus-visible {
   height: 38px;
   flex: 0 0 auto;
   padding: 0 var(--space-3);
-  margin-bottom: var(--space-1);
   border-bottom: 1px solid var(--border);
 }
 .ae-scm-title {
@@ -7083,6 +7090,19 @@ button.ae-vcs-chip:focus-visible {
   flex: 0 0 auto;
   margin-left: 2px;
 }
+/* CI summary is the first content band in the CI state — snap it to the
+   same 38px grid as the changed/clean header so every state lines up with
+   the left column. Its two-line label (name + "N failing") rides a tight
+   line-height and zero vertical padding so both lines center inside 38px. */
+.ae-scm-ci {
+  min-height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.ae-scm-ci .ae-scm-row-label {
+  gap: 0;
+  line-height: 1.2;
+}
 
 /* Expandable CI job list — mirrors the changed-file list, indented to sit
    under the CI row's icon column. Per-tone icon colors reuse the rollup
@@ -7159,13 +7179,17 @@ button.ae-vcs-chip:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin-top: 2px;
 }
 .ae-scm-changes-header {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   width: 100%;
+  /* Snap the summary band to the 38px header grid so the first content
+     row aligns with the left column's tab-strip band (titlebar 38 +
+     summary 38 == project-switcher 38 + tab-strip 38), keeping the file
+     tree below in lockstep with the editor across clean/changed states. */
+  min-height: 38px;
   /* Left padding + chevron width match the file-tree rows below so the
      disclosure-chevron column and the label column line up exactly. */
   padding: 4px var(--space-2) 4px 6px;

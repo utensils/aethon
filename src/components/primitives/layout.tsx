@@ -76,8 +76,11 @@ export function Container({
   };
 
   const direction = props.direction || "column";
-  const gap = props.gap ? resolveNumber(props.gap, state) : 8;
-  const padding = props.padding ? resolveNumber(props.padding, state) : 0;
+  // Use `!= null` (not truthiness) so an explicit `gap: 0` / `padding: 0`
+  // in the layout is honored — a falsy `0` previously fell through to the
+  // default 8px, leaving containers that asked for no gap with one anyway.
+  const gap = props.gap != null ? resolveNumber(props.gap, state) : 8;
+  const padding = props.padding != null ? resolveNumber(props.padding, state) : 0;
   const align = props.align || "stretch";
   const justify = props.justify || "start";
 
