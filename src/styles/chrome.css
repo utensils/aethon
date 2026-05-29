@@ -617,6 +617,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-shrink: 0;
 }
 
+/* macOS overlay titlebar: the brand strip is the window drag region, so
+   reserve the top-left for the floating traffic lights. Only on mac. */
+[data-platform="mac"] .a2ui-sidebar-title {
+  padding-left: 76px;
+}
+
 .a2ui-sidebar-title-version {
   margin-left: auto;
   flex-shrink: 0;
@@ -626,66 +632,46 @@ body.ae-resizing-sidebar .a2ui-layout {
   letter-spacing: 0.02em;
 }
 
-/* ---- Host identity bar (sidebar top strip, hierarchy root) ------------- */
+/* ---- Host group (top tier of host → project → worktree) --------------- */
 
-.a2ui-sidebar-hostbar {
-  position: relative;
+.ae-host-group {
+  display: flex;
+  flex-direction: column;
+}
+.ae-host-group + .ae-host-group {
+  margin-top: var(--space-1);
+}
+
+/* Host header — the root node. Machine glyph + name + this-mac/remote
+   badge. Reads heavier than a project row so the tiers are legible. */
+.ae-host-group-header {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: 38px;
-  height: 38px;
-  flex-shrink: 0;
-  padding: 0 var(--space-2) 0 var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-
-/* Host chip — machine glyph + name + this-mac/remote badge. Quiet by
-   default; lifts on hover when it doubles as a host switcher. */
-.ae-hostbar-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  flex: 0 1 auto;
-  max-width: 100%;
-  height: 26px;
-  padding: 0 var(--space-2);
-  margin: 0;
-  border: 1px solid transparent;
+  gap: var(--ae-sb-row-gap);
+  padding: 7px var(--ae-sb-row-pad-x);
+  margin: 0 var(--space-2);
   border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  cursor: default;
-  text-align: left;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out);
-}
-.ae-hostbar-chip--switcher {
   cursor: pointer;
+  color: var(--text);
+  transition: background var(--motion-fast) var(--ease-out);
 }
-.ae-hostbar-chip--switcher:hover,
-.ae-hostbar-chip--open {
+.ae-host-group-header:hover {
   background: var(--bg-hover);
-  border-color: var(--border);
 }
-.ae-hostbar-chip:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.ae-hostbar-glyph-wrap {
+.ae-host-glyph-wrap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  width: var(--ae-sb-icon);
+  height: var(--ae-sb-icon);
   color: var(--accent);
 }
-.ae-hostbar-glyph {
+.ae-host-glyph {
   display: block;
 }
-.ae-hostbar-name {
+.ae-host-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -693,11 +679,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: var(--chrome-text);
   font-weight: 600;
   letter-spacing: 0;
+}
+.ae-host-group--active .ae-host-name {
   color: var(--text);
 }
-.ae-hostbar-badge {
+.ae-host-badge {
   flex-shrink: 0;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: var(--radius-pill);
   font-size: var(--chrome-text-muted);
   font-weight: 600;
@@ -706,95 +694,44 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   background: var(--bg-active);
 }
-.ae-hostbar-badge--local {
+.ae-host-badge--local {
   color: var(--accent);
   background: var(--accent-soft);
 }
-.ae-hostbar-caret {
-  flex-shrink: 0;
-  color: var(--text-dim);
-  transition: transform var(--motion-fast) var(--ease-out);
-}
-.ae-hostbar-chip--open .ae-hostbar-caret {
-  transform: rotate(180deg);
-}
 
-/* Brand lockup pinned right so the Æπ mark never collides with the
-   macOS traffic lights on the left. */
-.ae-hostbar-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-  flex-shrink: 0;
-  opacity: 0.92;
+/* The host's projects, nested one tier in. A left rail makes the
+   grouping unmistakable and scales to multiple stacked hosts — each
+   host owns its own rail. The rail sits under the host glyph column. */
+.ae-host-group-body {
+  position: relative;
+  /* Small step only — the rail carries the grouping, so projects don't
+     need a deep indent on top of their own chevron/icon gutter. Keeps
+     names + worktrees from over-truncating in a narrow column. */
+  padding-left: var(--space-3);
 }
-.ae-hostbar-version {
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
-}
-
-/* Host switcher dropdown. */
-.ae-hostbar-menu {
+.ae-host-group-body::before {
+  content: "";
   position: absolute;
-  top: calc(100% + 2px);
-  left: var(--space-3);
-  z-index: var(--z-dropdown);
-  min-width: 200px;
-  max-width: calc(100% - var(--space-4));
-  margin: 0;
-  padding: var(--space-1);
-  list-style: none;
-  background: var(--popover-bg, var(--bg-elev));
-  border: 1px solid var(--popover-border, var(--border));
-  border-radius: var(--radius-md);
-  box-shadow: var(--popover-shadow, var(--shadow-3));
+  /* Rail sits under the host header's chevron column. */
+  left: calc(var(--space-2) + (var(--ae-sb-chevron) / 2));
+  top: 2px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
 }
-.ae-hostbar-menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-1) var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--chrome-text);
-  cursor: pointer;
-  text-align: left;
+.ae-host-group--active .ae-host-group-body::before {
+  background: color-mix(in oklab, var(--accent) 35%, var(--border));
 }
-.ae-hostbar-menu-item:hover {
-  background: var(--bg-hover);
+/* The nested projects section drops its own vertical padding and its
+   "PROJECTS" sub-label — the host header already names the group, so a
+   second label just adds noise. The "Open project…" action stays. */
+.ae-host-group-body .a2ui-sidebar-section {
+  padding-top: 0;
 }
-.ae-hostbar-menu-item--active {
-  color: var(--accent);
-}
-.ae-hostbar-menu-glyph {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--accent);
-}
-.ae-hostbar-menu-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ae-hostbar-menu-hint {
-  flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-}
-
-/* macOS overlay titlebar: reserve the top-left for the traffic lights
-   and let the whole strip drag the window. Only on mac. */
-[data-platform="mac"] .a2ui-sidebar-hostbar {
-  padding-left: 76px;
+.ae-host-group-body .a2ui-sidebar-section-title {
+  display: none;
 }
 
 .a2ui-sidebar-sections {

@@ -240,7 +240,7 @@ describe("handleReady", () => {
 
     const next = applySetState();
     expect(next.layout).toMatchObject({
-      columns: "264px minmax(0,1fr) 360px",
+      columns: "320px minmax(0,1fr) 360px",
       rows: "38px 38px minmax(0,1fr) 0px auto auto",
       areas: [
         "sidebar header files-sidebar",

@@ -79,7 +79,8 @@
               "type": "sidebar",
               "props": {
                 "version": { "$ref": "/appVersion" },
-                "hostBar": true,
+                "brandMark": true,
+                "hostGroups": true,
                 "hosts": { "$ref": "/sidebar/hosts" },
                 "sections": [
                   {
@@ -242,7 +243,7 @@
     "layout": {
       "sidebarVisible": true,
       "filesSidebarVisible": true,
-      "columns": "264px minmax(0,1fr) 360px",
+      "columns": "320px minmax(0,1fr) 360px",
       "rows": "38px 38px minmax(0,1fr) 0px auto auto",
       "areas": [
         "sidebar header files-sidebar",

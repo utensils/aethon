@@ -11,7 +11,7 @@
  * `extensionToggleState` live in `menuItems.ts` as pure data.
  */
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -23,7 +23,7 @@ import { ContextMenu } from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
 import { AeWordmark } from "../layout";
-import { HostBar, type HostBarItem } from "./host-bar";
+import { HostGroup, type HostGroupItem } from "./host-group";
 import { ItemRow } from "./item-row";
 import { ToggleSwitch } from "../toggle-switch";
 import {
@@ -58,12 +58,13 @@ export function Sidebar({
     version?: StringValue;
     /** When true, render an inline AeMark monogram before the title. */
     brandMark?: BooleanValue;
-    /** When true, render the host-identity top bar (machine + this-mac /
-     *  remote badge + brand monogram) in place of the plain title row.
-     *  The default workstation layout sets this; generic sidebars omit it
-     *  and keep the title/brandMark behaviour. */
-    hostBar?: BooleanValue;
-    /** Host list ($ref or inline) feeding the host bar / switcher. */
+    /** When true, group the `projects` section under host node(s) — the
+     *  top tier of the host → project → worktree hierarchy. Each host is
+     *  a collapsible header; the active host owns the project list. The
+     *  default workstation layout sets this; generic sidebars omit it and
+     *  render `projects` as a plain top-level section. */
+    hostGroups?: BooleanValue;
+    /** Host list ($ref or inline) feeding the host group headers. */
     hosts?: SidebarItem[] | { $ref: string };
     sections?: SidebarSectionExt[];
     // Optional list of extra sections appended after the inline `sections`.
@@ -98,78 +99,131 @@ export function Sidebar({
   const showBrand = props.brandMark
     ? resolveBoolean(props.brandMark, state)
     : !!title;
-  const showHostBar = props.hostBar
-    ? resolveBoolean(props.hostBar, state)
+  const useHostGroups = props.hostGroups
+    ? resolveBoolean(props.hostGroups, state)
     : false;
-  const hosts = showHostBar
-    ? (resolveSidebarItems(props.hosts, state) as unknown as HostBarItem[])
+  const hosts = useHostGroups
+    ? (resolveSidebarItems(props.hosts, state) as unknown as HostGroupItem[])
     : [];
+
+  // Per-host collapse state for the project list (local UI only — the
+  // active host defaults to expanded). Keyed by host id.
+  const [collapsedHosts, setCollapsedHosts] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleHostCollapsed = (id: string) =>
+    setCollapsedHosts((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const allSections = composeSidebarSections({
     sections: props.sections,
     extraSectionsRaw: props.extraSections,
     state,
   });
+  // When host groups are on, the projects section is rendered nested
+  // inside the active host's group; everything else stays top-level.
+  const groupHosts = useHostGroups && hosts.length > 0;
+  const projectsSection = groupHosts
+    ? allSections.find((s) => s.id === "projects")
+    : undefined;
+  const topLevelSections = projectsSection
+    ? allSections.filter((s) => s.id !== "projects")
+    : allSections;
+
+  const renderSection = (section: SidebarSectionExt) => {
+    const items = resolveSidebarItems(section.items, state);
+    if (section.hideWhenEmpty === true && items.length === 0) {
+      return null;
+    }
+    const monoItems = section.monoItems === true;
+    if (section.searchable === true || section.groupByPrefix === true) {
+      return (
+        <SearchableSidebarSection
+          key={section.id}
+          section={section}
+          items={items}
+          componentId={component.id}
+          state={state}
+          onEvent={onEvent}
+          onItemContextMenu={menu.openItemContextMenu}
+          renderChildWithState={renderChildWithState}
+        />
+      );
+    }
+    return (
+      <SidebarSectionBlock
+        key={section.id}
+        section={section}
+        items={items}
+        monoItems={monoItems}
+        componentId={component.id}
+        state={state}
+        onEvent={onEvent}
+        renderChildWithState={renderChildWithState}
+        openItemContextMenu={menu.openItemContextMenu}
+        openWorktreeContextMenu={menu.openWorktreeContextMenu}
+      />
+    );
+  };
 
   return (
     <aside
       ref={asideRef}
       className={`a2ui-sidebar ${resizeFromLeft ? "a2ui-sidebar-resize-left" : ""}`}
     >
-      {showHostBar ? (
-        <HostBar hosts={hosts} version={version} onEvent={onEvent} />
-      ) : (
-        (showBrand || title || version) && (
-          <div className="a2ui-sidebar-title">
-            {showBrand ? (
-              // Full wordmark replaces the monogram + plain "aethon" text so
-              // the bare Æ stays unique to the overview tab / dashboard hero.
-              <AeWordmark height={22} />
-            ) : (
-              title && <span>{title}</span>
-            )}
-            {version && (
-              <span className="a2ui-sidebar-title-version">{version}</span>
-            )}
-          </div>
-        )
+      {(showBrand || title || version) && (
+        // Brand strip — also the macOS overlay-titlebar drag region. On
+        // mac it reserves the top-left for the traffic lights (see the
+        // [data-platform="mac"] rule in chrome.css); the host hierarchy
+        // lives in the body below, not here.
+        <div className="a2ui-sidebar-title" data-tauri-drag-region>
+          {showBrand ? (
+            // Full wordmark replaces the monogram + plain "aethon" text so
+            // the bare Æ stays unique to the overview tab / dashboard hero.
+            <AeWordmark height={20} />
+          ) : (
+            title && <span>{title}</span>
+          )}
+          {version && (
+            <span className="a2ui-sidebar-title-version">{version}</span>
+          )}
+        </div>
       )}
       <div className="a2ui-sidebar-sections">
-        {allSections.map((section) => {
-          const items = resolveSidebarItems(section.items, state);
-          if (section.hideWhenEmpty === true && items.length === 0) {
-            return null;
-          }
-          const monoItems = section.monoItems === true;
-          if (section.searchable === true || section.groupByPrefix === true) {
-            return (
-              <SearchableSidebarSection
-                key={section.id}
-                section={section}
-                items={items}
-                componentId={component.id}
-                state={state}
-                onEvent={onEvent}
-                onItemContextMenu={menu.openItemContextMenu}
-                renderChildWithState={renderChildWithState}
-              />
-            );
-          }
-          return (
-            <SidebarSectionBlock
-              key={section.id}
-              section={section}
-              items={items}
-              monoItems={monoItems}
-              componentId={component.id}
-              state={state}
-              onEvent={onEvent}
-              renderChildWithState={renderChildWithState}
-              openItemContextMenu={menu.openItemContextMenu}
-              openWorktreeContextMenu={menu.openWorktreeContextMenu}
-            />
-          );
-        })}
+        {groupHosts
+          ? hosts.map((host) => {
+              const collapsed = collapsedHosts.has(host.id);
+              // Only the active host shows its projects today; selecting
+              // another host switches the active one (then its projects
+              // show). Designed to scale to per-host project lists.
+              const showsProjects = host.active && !!projectsSection;
+              return (
+                <HostGroup
+                  key={host.id}
+                  host={host}
+                  collapsible={showsProjects}
+                  expanded={showsProjects && !collapsed}
+                  onToggleExpand={() => toggleHostCollapsed(host.id)}
+                  onSelectHost={() =>
+                    onEvent(
+                      "select",
+                      { sectionId: "hosts", itemId: host.id },
+                      host.id,
+                    )
+                  }
+                >
+                  {showsProjects && projectsSection
+                    ? renderSection(projectsSection)
+                    : null}
+                </HostGroup>
+              );
+            })
+          : null}
+        {topLevelSections.map((section) => renderSection(section))}
       </div>
       {resizable && (
         <div
