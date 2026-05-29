@@ -29,8 +29,11 @@ interface DiffCanvasProps {
   filePath: string;
   projectPath: string;
   tabId?: string;
-  /** Bumps to force a re-read (e.g. after the working tree changes). */
-  refreshKey?: number;
+  /** Changes to force a re-read (e.g. after the working tree changes). A
+   *  string signature (count + diff stat) so editing the same file and
+   *  saving — which leaves the changed-file *count* unchanged — still
+   *  refreshes the diff. */
+  refreshKey?: number | string;
 }
 
 function disposeModels(

@@ -102,7 +102,10 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   // without depending on the whole `state` object (which would re-run on
   // every keystroke).
   const vcs = state["vcs"] as
-    | { branch?: string; changes?: { total?: number } }
+    | {
+        branch?: string;
+        changes?: { total?: number; additions?: number; deletions?: number };
+      }
     | undefined;
   const vcsSignal = `${vcs?.branch ?? ""}:${vcs?.changes?.total ?? 0}`;
 
@@ -585,8 +588,14 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
             projectPath,
             tabId,
             // Re-read the diff when the working tree shifts (save, discard,
-            // branch switch) — the vcs poll bumps `changes.total`.
-            refreshKey: vcs?.changes?.total ?? 0,
+            // branch switch). Key on the diff stat (additions/deletions),
+            // not just the changed-file count — editing the same already-
+            // modified file and saving leaves `total` unchanged but moves
+            // the +/- counts, and a count-only key would leave the diff
+            // stale.
+            refreshKey: `${vcs?.changes?.total ?? 0}:${
+              vcs?.changes?.additions ?? 0
+            }:${vcs?.changes?.deletions ?? 0}`,
           }}
         />
       )}

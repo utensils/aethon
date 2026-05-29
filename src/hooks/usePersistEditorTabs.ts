@@ -30,13 +30,29 @@ export function usePersistEditorTabs(ctx: UsePersistEditorTabsContext): void {
     ctx;
   useEffect(() => {
     if (!projectsLoadedRef.current) return;
+    // Bind the save to the project active *now*, and snapshot the tabs at
+    // schedule time. By the time cleanup runs after a project switch,
+    // `stateRef` already holds the incoming project's tabs, so the snapshot
+    // is the only way to flush the outgoing project's tabs correctly.
+    const projectId = projectsRef.current.activeId;
+    const snapshotTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const snapshotActive = stateRef.current.activeTabId as string | undefined;
     const timer = window.setTimeout(() => {
       void saveEditorTabsForProject(
-        projectsRef.current.activeId,
+        projectId,
         (stateRef.current.tabs as Tab[] | undefined) ?? [],
         stateRef.current.activeTabId as string | undefined,
       );
     }, DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      // If the active project changed before the debounce fired, the pending
+      // save would be lost (and a later tick would persist the new project's
+      // tabs). Flush the outgoing project's snapshot now so its edits
+      // survive a switch-then-quit.
+      if (projectsRef.current.activeId !== projectId) {
+        void saveEditorTabsForProject(projectId, snapshotTabs, snapshotActive);
+      }
+    };
   }, [tabsSignal, activeTabId, stateRef, projectsRef, projectsLoadedRef]);
 }
