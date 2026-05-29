@@ -24,6 +24,7 @@ import { OVERVIEW_TAB_ID } from "../../../types/tab";
 import { resolveString } from "../../../utils/dataBinding";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { FileIcon } from "../../../components/file-icon";
 import {
   ContextMenu,
   type ContextMenuItem,
@@ -45,6 +46,34 @@ interface TabStripItem {
    *  view. The TabStrip composite filters them out so any layout that
    *  binds `/tabs` to TabStrip drops shells automatically. */
   kind?: "agent" | "shell" | "editor";
+  /** Editor-tab metadata. The file path drives the file-type icon and
+   *  the editor context menu (copy path / reveal); rootPath lets us
+   *  compute a project-relative path. */
+  editor?: { filePath?: string; rootPath?: string; diff?: boolean };
+}
+
+/** Best-effort clipboard write — Tauri's webview exposes the async
+ *  Clipboard API; failures (denied permission, older webview) degrade
+ *  silently rather than throwing into a click handler. */
+function copyToClipboard(text: string): void {
+  try {
+    void navigator.clipboard?.writeText(text);
+  } catch {
+    /* clipboard unavailable */
+  }
+}
+
+/** Strip the project/worktree root from an absolute path for a
+ *  VS Code-style "Copy Relative Path". Falls back to the absolute path
+ *  when the root isn't a prefix. */
+function relativePath(filePath: string, root: string): string {
+  if (!root) return filePath;
+  const normRoot = root.replace(/[/\\]+$/, "");
+  if (filePath === normRoot) return filePath;
+  if (filePath.startsWith(`${normRoot}/`)) {
+    return filePath.slice(normRoot.length + 1);
+  }
+  return filePath;
 }
 
 export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
@@ -80,25 +109,83 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     setContextMenu({ x: event.clientX, y: event.clientY, tab });
   };
 
-  const menuItems: ContextMenuItem[] = contextMenu
-    ? [
+  const projectPath =
+    (state["project"] as { path?: string } | undefined)?.path ?? "";
+
+  const buildMenuItems = (): ContextMenuItem[] => {
+    if (!contextMenu) return [];
+    const tab = contextMenu.tab;
+    const closeFamily: ContextMenuItem[] = [
+      {
+        id: "close-tab",
+        label: "Close",
+        onSelect: () => onEvent("close", { tabId: tab.id }),
+      },
+      {
+        id: "close-others",
+        label: "Close Others",
+        onSelect: () => onEvent("close-others", { tabId: tab.id }),
+      },
+      {
+        id: "close-all",
+        label: "Close All",
+        onSelect: () => onEvent("close-all", { tabId: tab.id }),
+      },
+    ];
+
+    if (tab.kind === "editor" && tab.editor?.filePath) {
+      const filePath = tab.editor.filePath;
+      const root = tab.editor.rootPath ?? projectPath;
+      const isActive = tab.id === activeId && !tab.editor.diff;
+      return [
+        ...(isActive
+          ? ([
+              {
+                id: "save",
+                label: "Save",
+                onSelect: () =>
+                  window.dispatchEvent(new Event("aethon:editor-save")),
+              },
+              {
+                id: "revert",
+                label: "Revert File",
+                onSelect: () =>
+                  window.dispatchEvent(new Event("aethon:editor-revert")),
+              },
+              { type: "separator" },
+            ] as ContextMenuItem[])
+          : []),
         {
-          type: "input",
-          id: "rename-session",
-          label: "Session name",
-          defaultValue: contextMenu.tab.label,
-          submitLabel: "Rename",
-          onSubmit: (label) =>
-            onEvent("rename", { tabId: contextMenu.tab.id, label }),
+          id: "copy-path",
+          label: "Copy Path",
+          onSelect: () => copyToClipboard(filePath),
+        },
+        {
+          id: "copy-rel-path",
+          label: "Copy Relative Path",
+          onSelect: () => copyToClipboard(relativePath(filePath, root)),
         },
         { type: "separator" },
-        {
-          id: "close-tab",
-          label: "Close tab",
-          onSelect: () => onEvent("close", { tabId: contextMenu.tab.id }),
-        },
-      ]
-    : [];
+        ...closeFamily,
+      ];
+    }
+
+    // Agent (and any other) tabs keep the rename + close menu.
+    return [
+      {
+        type: "input",
+        id: "rename-session",
+        label: "Session name",
+        defaultValue: tab.label,
+        submitLabel: "Rename",
+        onSubmit: (label) => onEvent("rename", { tabId: tab.id, label }),
+      },
+      { type: "separator" },
+      ...closeFamily,
+    ];
+  };
+
+  const menuItems: ContextMenuItem[] = buildMenuItems();
 
   const overviewActive =
     !activeId ||
@@ -158,6 +245,13 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
                 className="a2ui-tab-busy-dot"
                 aria-hidden="true"
                 title="Working…"
+              />
+            ) : t.kind === "editor" && t.editor?.filePath ? (
+              <FileIcon
+                path={t.editor.filePath}
+                isDir={false}
+                size={13}
+                className="a2ui-tab-icon"
               />
             ) : null}
             <span className="a2ui-tab-label">{t.label}</span>

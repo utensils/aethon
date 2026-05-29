@@ -185,3 +185,31 @@ describe("SourceControlPanel — CI jobs", () => {
     });
   });
 });
+
+describe("SourceControlPanel — changed files", () => {
+  it("opens a diff view when a changed file is clicked", () => {
+    const onEvent = vi.fn();
+    renderPanel(
+      vcs({
+        dirty: true,
+        changes: {
+          total: 1,
+          modified: 1,
+          added: 0,
+          deleted: 0,
+          untracked: 0,
+          renamed: 0,
+          copied: 0,
+          conflicted: 0,
+          files: [{ path: "src/App.tsx", status: "modified" }],
+        },
+      }),
+      onEvent,
+    );
+    fireEvent.click(screen.getByText("src/App.tsx"));
+    expect(onEvent).toHaveBeenCalledWith("file-tree-diff", {
+      filePath: "/repo/src/App.tsx",
+      rootPath: "/repo",
+    });
+  });
+});

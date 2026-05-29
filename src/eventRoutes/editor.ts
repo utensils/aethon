@@ -66,6 +66,18 @@ export const handleEditorCanvas: EventRouteHandler = async (
       ctx.updateEditorMeta(tabId, { isDirty: false });
       return true;
     }
+    case "editor-preview-toggle": {
+      // The button only renders on markdown tabs; toggleEditorPreview
+      // also guards the language so a stray event is harmless.
+      ctx.toggleEditorPreview();
+      return true;
+    }
+    case "editor-diff-to-edit": {
+      // "Edit file" affordance in the diff view: drop the diff flag so
+      // this tab becomes the editable Monaco editor for the same path.
+      ctx.updateEditorMeta(tabId, { diff: false });
+      return true;
+    }
     case "editor-save": {
       const filePath =
         typeof payload.filePath === "string" ? payload.filePath : "";
@@ -149,6 +161,19 @@ export const handleFileTree: EventRouteHandler = (
       typeof payload.rootPath === "string" ? payload.rootPath : "";
     if (rootPath) ctx.newEditorTab(filePath, { rootPath });
     else ctx.newEditorTab(filePath);
+    return true;
+  }
+  if (event.eventType === "file-tree-diff") {
+    const payload = asRecord(event.data);
+    const filePath =
+      typeof payload.filePath === "string" ? payload.filePath : "";
+    if (!filePath) return false;
+    const rootPath =
+      typeof payload.rootPath === "string" ? payload.rootPath : "";
+    ctx.newEditorTab(filePath, {
+      diff: true,
+      ...(rootPath ? { rootPath } : {}),
+    });
     return true;
   }
   if (event.eventType === "file-tree-rename") {

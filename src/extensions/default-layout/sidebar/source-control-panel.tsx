@@ -209,7 +209,7 @@ export function SourceControlPanel({
                     className={`ae-scm-file git-status-${f.status}`}
                     title={`${f.path} — ${meta?.title ?? f.status}`}
                     onClick={() =>
-                      onEvent("file-tree-open", {
+                      onEvent("file-tree-diff", {
                         filePath: absolutePathFor(root, f.path),
                         rootPath: root,
                       })

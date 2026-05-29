@@ -808,6 +808,7 @@ export default function App() {
     newShellTab,
     newEditorTab,
     updateEditorMeta,
+    toggleEditorPreview,
     renameEditorTabsForPath,
     closeEditorTabsForPath,
     closeTab,

@@ -180,7 +180,9 @@ pub async fn git_file_status(root: String) -> Result<Option<Vec<GitFileStatusEnt
 /// Resolve `(repo_root, active_root)` for a directory, both canonicalized so
 /// path math against git output is stable. Returns `None` when `dir` is not
 /// inside a git worktree, so callers can render the plain filesystem tree.
-fn resolve_repo_and_active_root(dir: &Path) -> Result<Option<(PathBuf, PathBuf)>, String> {
+pub(crate) fn resolve_repo_and_active_root(
+    dir: &Path,
+) -> Result<Option<(PathBuf, PathBuf)>, String> {
     let inside = env::command("git")
         .arg("-C")
         .arg(dir)

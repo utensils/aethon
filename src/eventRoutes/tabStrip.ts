@@ -38,6 +38,27 @@ export const handleTabStrip: EventRouteHandler = (
     ctx.closeTab(sel.tabId);
     return true;
   }
+  if (eventType === "close-others" && sel?.tabId) {
+    const tabs =
+      (ctx.stateRef.current.tabs as
+        | Array<{ id: string; kind?: string }>
+        | undefined) ?? [];
+    // Shell tabs live in the bottom panel, not the top strip — leave them.
+    for (const t of tabs) {
+      if (t.id !== sel.tabId && t.kind !== "shell") ctx.closeTab(t.id);
+    }
+    return true;
+  }
+  if (eventType === "close-all") {
+    const tabs =
+      (ctx.stateRef.current.tabs as
+        | Array<{ id: string; kind?: string }>
+        | undefined) ?? [];
+    for (const t of tabs) {
+      if (t.kind !== "shell") ctx.closeTab(t.id);
+    }
+    return true;
+  }
   if (eventType === "rename" && sel?.tabId) {
     const label = typeof sel.label === "string" ? sel.label : "";
     renameSessionLabel(ctx, sel.tabId, label);

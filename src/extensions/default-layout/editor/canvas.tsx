@@ -46,6 +46,7 @@ import {
 } from "../../../monaco/editor-buffers";
 import { pickFileViewer } from "./file-viewers";
 import { compressPath } from "./path";
+import { hunksToGutterDecorations, type DiffHunk } from "./git-gutter";
 
 interface EditorTabLike {
   id: string;
@@ -63,6 +64,9 @@ interface EditorTabLike {
     previewMode?: boolean;
     /** Bumps on every successful save so the preview re-reads. */
     previewRefreshKey?: number;
+    /** When true, render the read-only side-by-side diff (HEAD vs working
+     *  tree) instead of the editable Monaco editor. */
+    diff?: boolean;
   };
 }
 
@@ -77,9 +81,20 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   const editorMeta = boundTab?.editor;
   const project = state["project"] as { path?: string } | undefined;
   const projectPath = editorMeta?.rootPath ?? project?.path ?? "";
+  // Cheap primitive that changes when the working tree shifts under us
+  // (branch switch, discard, external edit) so the gutter re-polls
+  // without depending on the whole `state` object (which would re-run on
+  // every keystroke).
+  const vcs = state["vcs"] as
+    | { branch?: string; changes?: { total?: number } }
+    | undefined;
+  const vcsSignal = `${vcs?.branch ?? ""}:${vcs?.changes?.total ?? 0}`;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const gutterRef = useRef<monaco.editor.IEditorDecorationsCollection | null>(
+    null,
+  );
   const currentTabIdRef = useRef<string>("");
   const projectPathRef = useRef<string>(projectPath);
   // Stable reference to the live onEvent callback. The renderer
@@ -91,6 +106,14 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   useEffect(() => {
     onEventRef.current = onEvent;
   }, [onEvent]);
+  // Whether the active tab is a (read-only) diff view — guards the native
+  // menu Save/Revert listeners from writing the hidden editable buffer.
+  // Synced in an effect declared *before* the mount effect that reads it,
+  // so the ref is written before it's used downstream.
+  const isDiffRef = useRef(false);
+  useEffect(() => {
+    isDiffRef.current = editorMeta?.diff === true;
+  }, [editorMeta?.diff]);
   const [loadError, setLoadError] = useState<string>("");
   const [cursorDisplay, setCursorDisplay] = useState<{ line: number; column: number }>({
     line: 1,
@@ -163,7 +186,47 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       });
     });
 
+    // Native File-menu Save / Revert (Cmd+S routes to the menu on macOS,
+    // not the addCommand above) and the toolbar fall through to these.
+    const onMenuSave = () => {
+      const tid = currentTabIdRef.current;
+      if (!tid || isDiffRef.current) return;
+      const buf = getEditorBuffer(tid);
+      if (!buf) return;
+      onEventRef.current("editor-save", {
+        tabId: tid,
+        filePath: buf.filePath,
+        content: buf.model.getValue(),
+      });
+    };
+    const onMenuRevert = () => {
+      const tid = currentTabIdRef.current;
+      if (!tid || isDiffRef.current) return;
+      const buf = getEditorBuffer(tid);
+      if (!buf) return;
+      const root = projectPathRef.current;
+      if (!root) return;
+      void invoke<string>("fs_read_file", { root, path: buf.filePath })
+        .then((text) => {
+          buf.loading = true;
+          buf.model.setValue(text);
+          buf.loading = false;
+          buf.loaded = true;
+          onEventRef.current("editor-loaded", {
+            tabId: tid,
+            filePath: buf.filePath,
+          });
+        })
+        .catch(() => {
+          /* file vanished or unreadable — leave the buffer as-is */
+        });
+    };
+    window.addEventListener("aethon:editor-save", onMenuSave);
+    window.addEventListener("aethon:editor-revert", onMenuRevert);
+
     return () => {
+      window.removeEventListener("aethon:editor-save", onMenuSave);
+      window.removeEventListener("aethon:editor-revert", onMenuRevert);
       // Save the active tab's view state before unmount so it survives
       // the canvas going away (e.g. user switched to a non-editor tab).
       const tid = currentTabIdRef.current;
@@ -309,9 +372,12 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
   const viewerType = pickFileViewer(filePath);
   const previewMode =
     editorMeta?.previewMode === true && editorMeta?.language === "markdown";
-  const showViewer = !!viewerType;
-  const showPreview = previewMode && !showViewer;
-  const showMonaco = !showViewer && !showPreview;
+  // A diff tab takes precedence over every other surface — it's an
+  // explicit "show me the changes" request.
+  const showDiff = editorMeta?.diff === true;
+  const showViewer = !!viewerType && !showDiff;
+  const showPreview = previewMode && !showViewer && !showDiff;
+  const showMonaco = !showDiff && !showViewer && !showPreview;
 
   // Re-measure the editor when the host transitions from display:none
   // back to visible. automaticLayout's ResizeObserver fires on the size
@@ -324,6 +390,55 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     const raf = requestAnimationFrame(() => ed.layout());
     return () => cancelAnimationFrame(raf);
   }, [showMonaco]);
+
+  // ─── Git gutter (dirty-diff) indicators ────────────────────────────
+  // VS Code-style added/modified/deleted bars in the line gutter, polled
+  // from `git_file_diff_hunks` (working tree vs HEAD). Refreshes on tab
+  // swap, save (isDirty flip), and external working-tree changes
+  // (vcsSignal). Cleared for non-text surfaces (image/preview viewers).
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const collection =
+      gutterRef.current ?? (gutterRef.current = ed.createDecorationsCollection());
+    if (!showMonaco || !tabId || !editorMeta?.filePath || !projectPath) {
+      collection.clear();
+      return;
+    }
+    const path = editorMeta.filePath;
+    const root = projectPath;
+    const forTabId = tabId;
+    let cancelled = false;
+    void invoke<DiffHunk[] | null>("git_file_diff_hunks", { root, path })
+      .then((hunks) => {
+        if (cancelled || currentTabIdRef.current !== forTabId) return;
+        const model = ed.getModel();
+        const lineCount = model ? model.getLineCount() : 0;
+        const decorations = hunksToGutterDecorations(hunks, lineCount).map(
+          (d) => ({
+            range: new monaco.Range(d.startLine, 1, d.endLine, 1),
+            options: {
+              isWholeLine: false,
+              linesDecorationsClassName: d.className,
+            },
+          }),
+        );
+        collection.set(decorations);
+      })
+      .catch(() => {
+        if (!cancelled) collection.clear();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    tabId,
+    editorMeta?.filePath,
+    editorMeta?.isDirty,
+    projectPath,
+    showMonaco,
+    vcsSignal,
+  ]);
 
   return (
     <div className="ae-editor-canvas-wrap" style={{ gridArea: "canvas" }}>
@@ -352,7 +467,25 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
           componentProps={{
             filePath,
             projectPath,
+            tabId,
             refreshKey: editorMeta?.previewRefreshKey ?? 0,
+          }}
+        />
+      )}
+      {showDiff && (
+        <RegistryComponent
+          type="diff-canvas"
+          state={state}
+          onEvent={(_c, eventType, data) => {
+            onEvent(eventType, data);
+          }}
+          componentProps={{
+            filePath,
+            projectPath,
+            tabId,
+            // Re-read the diff when the working tree shifts (save, discard,
+            // branch switch) — the vcs poll bumps `changes.total`.
+            refreshKey: vcs?.changes?.total ?? 0,
           }}
         />
       )}
@@ -366,6 +499,12 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
           isDirty={Boolean(editorMeta?.isDirty)}
           line={cursorDisplay.line}
           column={cursorDisplay.column}
+          canPreview={editorMeta?.language === "markdown"}
+          onTogglePreview={
+            tabId
+              ? () => onEventRef.current("editor-preview-toggle", { tabId })
+              : undefined
+          }
         />
       )}
     </div>
@@ -378,6 +517,10 @@ interface EditorStatusBarProps {
   isDirty: boolean;
   line: number;
   column: number;
+  /** True for markdown files — reveals the Preview toggle button. */
+  canPreview?: boolean;
+  /** Enter markdown preview. Undefined when there's no bound tab. */
+  onTogglePreview?: () => void;
 }
 
 function EditorStatusBar({
@@ -386,6 +529,8 @@ function EditorStatusBar({
   isDirty,
   line,
   column,
+  canPreview,
+  onTogglePreview,
 }: EditorStatusBarProps) {
   const shortPath = compressPath(filePath);
   return (
@@ -399,6 +544,17 @@ function EditorStatusBar({
         </span>
       )}
       <span className="ae-editor-status-spacer" />
+      {canPreview && onTogglePreview && (
+        <button
+          type="button"
+          className="ae-editor-status-action"
+          title="Markdown preview (⌘⇧V)"
+          aria-label="Markdown preview"
+          onClick={onTogglePreview}
+        >
+          Preview
+        </button>
+      )}
       <span className="ae-editor-status-pos">
         Ln {line}, Col {column}
       </span>

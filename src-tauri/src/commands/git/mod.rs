@@ -6,6 +6,7 @@
 //! picking each live in their own file.
 
 pub mod checks;
+pub mod diff;
 pub mod github;
 pub mod issues;
 pub mod picker;

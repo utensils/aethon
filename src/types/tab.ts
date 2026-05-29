@@ -47,6 +47,10 @@ export interface EditorMeta {
   /** Increments on every successful save while previewMode is true so
    *  the preview re-reads fresh disk content. */
   previewRefreshKey?: number;
+  /** When true, the canvas renders a read-only side-by-side diff
+   *  (HEAD vs working tree) instead of the editable Monaco editor.
+   *  Set by the Source Control / CI panel's "open changes" flow. */
+  diff?: boolean;
 }
 
 export type TabKind = "agent" | "shell" | "editor";

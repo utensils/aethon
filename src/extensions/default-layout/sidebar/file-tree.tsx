@@ -140,6 +140,17 @@ export function FileTreePanel({
     collapseUnder,
   });
 
+  // Native File menu → "New File…" routes here (the file tree owns the
+  // create flow). No-op when no project is active.
+  useEffect(() => {
+    if (!projectPath) return;
+    const onNewFile = () => {
+      void createEntry(projectPath, "file");
+    };
+    window.addEventListener("aethon:new-file", onNewFile);
+    return () => window.removeEventListener("aethon:new-file", onNewFile);
+  }, [projectPath, createEntry]);
+
   const activeFilePath =
     activeTab?.kind === "editor" ? activeTab.editor?.filePath : undefined;
 

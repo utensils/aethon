@@ -29,10 +29,15 @@ vi.mock("monaco-editor", () => {
     editor: {
       create: vi.fn(() => ({
         addCommand: vi.fn(),
+        createDecorationsCollection: vi.fn(() => ({
+          set: vi.fn(),
+          clear: vi.fn(),
+        })),
         dispose: vi.fn(),
         focus: vi.fn(),
         getModel: vi.fn(() => null),
         getValue: vi.fn(() => ""),
+        layout: vi.fn(),
         onDidChangeCursorPosition: vi.fn(noop),
         onDidChangeModelContent: vi.fn(noop),
         restoreViewState: vi.fn(),
@@ -42,8 +47,14 @@ vi.mock("monaco-editor", () => {
         setPosition: vi.fn(),
         setValue: vi.fn(),
       })),
+      createDiffEditor: vi.fn(() => ({
+        dispose: vi.fn(),
+        getModel: vi.fn(() => null),
+        setModel: vi.fn(),
+      })),
       createModel: vi.fn(() => ({
         dispose: vi.fn(),
+        getLineCount: vi.fn(() => 1),
         getValue: vi.fn(() => ""),
         getValueLength: vi.fn(() => 0),
         setValue: vi.fn(),
@@ -51,6 +62,20 @@ vi.mock("monaco-editor", () => {
       defineTheme: vi.fn(),
       setTheme: vi.fn(),
     },
+    languages: {
+      getLanguages: vi.fn(() => []),
+      register: vi.fn(),
+    },
+    Range: vi
+      .fn()
+      .mockImplementation(
+        (
+          startLineNumber: number,
+          startColumn: number,
+          endLineNumber: number,
+          endColumn: number,
+        ) => ({ startLineNumber, startColumn, endLineNumber, endColumn }),
+      ),
     KeyMod: { CtrlCmd: 0 },
     KeyCode: { KeyS: 0 },
   };

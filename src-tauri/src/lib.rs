@@ -189,6 +189,8 @@ pub fn run() {
             commands::git::status::git_status,
             commands::git::status::git_file_status,
             commands::git::status::git_ignored_paths,
+            commands::git::diff::git_file_diff_hunks,
+            commands::git::diff::git_show_head,
             commands::git::worktrees::git_worktrees,
             commands::git::worktrees::git_worktree_add,
             commands::git::worktrees::git_worktree_remove,

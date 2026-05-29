@@ -201,4 +201,59 @@ describe("TabStrip", () => {
     expect(overviewPill.getAttribute("aria-selected")).toBe("false");
     expect(overviewPill.className).not.toContain("a2ui-tab-active");
   });
+
+  it("shows an editor-specific context menu (copy path + close family)", () => {
+    const onEvent = vi.fn<TabStripOnEvent>();
+    render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{
+          activeTabId: "ed-1",
+          project: { path: "/repo" },
+          tabs: [
+            {
+              id: "ed-1",
+              label: "App.tsx",
+              kind: "editor",
+              editor: { filePath: "/repo/src/App.tsx", rootPath: "/repo" },
+            },
+          ],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByText("App.tsx").closest('[role="tab"]')!);
+    // Editor menu, not the agent rename input.
+    expect(screen.queryByLabelText("Session name")).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: /Copy Relative Path/ }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close Others" }));
+    expect(onEvent).toHaveBeenCalledWith("close-others", { tabId: "ed-1" });
+  });
+
+  it("renders a file-type icon for editor tabs but not agent tabs", () => {
+    render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{
+          activeTabId: "ed-1",
+          tabs: [
+            { id: "ag-1", label: "Chat", kind: "agent" },
+            {
+              id: "ed-1",
+              label: "Cargo.toml",
+              kind: "editor",
+              editor: { filePath: "/repo/Cargo.toml" },
+            },
+          ],
+        }}
+        onEvent={vi.fn<TabStripOnEvent>()}
+      />,
+    );
+    const editorTab = screen.getByText("Cargo.toml").closest('[role="tab"]')!;
+    expect(editorTab.querySelector("img.a2ui-tab-icon")).not.toBeNull();
+    const agentTab = screen.getByText("Chat").closest('[role="tab"]')!;
+    expect(agentTab.querySelector("img.a2ui-tab-icon")).toBeNull();
+  });
 });

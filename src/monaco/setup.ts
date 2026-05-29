@@ -63,6 +63,14 @@ if (typeof window !== "undefined" && !window.MonacoEnvironment) {
 
 loader.config({ monaco });
 
+// Register every editor language id with Monaco eagerly, before the
+// first model is created. Shiki's token providers (bound later, async)
+// only attach to languages Monaco already knows about; ids not in
+// Monaco's bundled `basic-languages` (toml, nix, terraform, …) would
+// otherwise render as plaintext forever. See `shiki.ts`.
+import { registerEditorLanguages } from "./shiki";
+registerEditorLanguages();
+
 // Install the WebKit-only context-view positioning fix once, here, so
 // Monaco's right-click menu lands at the cursor under non-1 UI zoom.
 // On Chromium/at-zoom-1 every callback short-circuits — no measurable

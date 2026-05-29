@@ -52,6 +52,17 @@ pub fn install_app_menu(
     let close_tab = MenuItemBuilder::with_id("close_tab", "Close Tab")
         .accelerator("CmdOrCtrl+W")
         .build(app)?;
+    // Editor file operations. The accelerators land on the menu at the OS
+    // level (macOS routes Cmd+S/Cmd+N to the menu before the webview), so
+    // the React menu dispatcher forwards them to the active editor via
+    // window events. New File reuses the file tree's create flow.
+    let new_file = MenuItemBuilder::with_id("new_file", "New File…")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let save_file = MenuItemBuilder::with_id("save_file", "Save")
+        .accelerator("CmdOrCtrl+S")
+        .build(app)?;
+    let revert_file = MenuItemBuilder::with_id("revert_file", "Revert File").build(app)?;
     let next_tab = MenuItemBuilder::with_id("next_tab", "Next Tab")
         .accelerator("CmdOrCtrl+Shift+]")
         .build(app)?;
@@ -98,6 +109,10 @@ pub fn install_app_menu(
     // red traffic light or Cmd+Q. Adding both would let macOS route
     // Cmd+W to whichever menu item it picks first.
     let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&new_file)
+        .item(&save_file)
+        .item(&revert_file)
+        .separator()
         .item(&new_tab)
         .item(&new_agent_tab)
         .item(&close_tab)
