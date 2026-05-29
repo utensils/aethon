@@ -102,38 +102,6 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     y: number;
     tab: TabStripItem;
   } | null>(null);
-  // In-editor File menu (anchored to the toolbar button) — keeps file
-  // operations reachable inside the editor window, not just the native
-  // macOS menu bar. Save/Revert act on the active editor tab via the same
-  // window events the native menu uses.
-  const [fileMenu, setFileMenu] = useState<{ x: number; y: number } | null>(
-    null,
-  );
-  const fileMenuItems: ContextMenuItem[] = [
-    {
-      id: "file-new",
-      label: "New File…",
-      onSelect: () => window.dispatchEvent(new Event("aethon:new-file")),
-    },
-    {
-      id: "file-save",
-      label: "Save",
-      onSelect: () => window.dispatchEvent(new Event("aethon:editor-save")),
-    },
-    {
-      id: "file-revert",
-      label: "Revert File",
-      onSelect: () => window.dispatchEvent(new Event("aethon:editor-revert")),
-    },
-    { type: "separator" },
-    { id: "file-new-tab", label: "New Tab", onSelect: () => onEvent("new") },
-    {
-      id: "file-close-all",
-      label: "Close All Tabs",
-      onSelect: () => onEvent("close-all", { tabId: activeId }),
-    },
-  ];
-
   const openTabMenu = (event: MouseEvent, tab: TabStripItem) => {
     event.preventDefault();
     event.stopPropagation();
@@ -320,27 +288,6 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
       >
         +
       </button>
-      <button
-        type="button"
-        className="a2ui-tab-filemenu"
-        title="File actions"
-        aria-label="File menu"
-        aria-haspopup="menu"
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          setFileMenu({ x: Math.round(r.right), y: Math.round(r.bottom) });
-        }}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M3 4.5h10M3 8h10M3 11.5h10"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            fill="none"
-          />
-        </svg>
-      </button>
       <ContextMenu
         open={!!contextMenu}
         x={contextMenu?.x ?? 0}
@@ -350,16 +297,6 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
         ariaLabel="Tab actions"
         estimatedWidth={320}
         estimatedHeight={176}
-      />
-      <ContextMenu
-        open={!!fileMenu}
-        x={fileMenu?.x ?? 0}
-        y={fileMenu?.y ?? 0}
-        items={fileMenuItems}
-        onClose={() => setFileMenu(null)}
-        ariaLabel="File menu"
-        estimatedWidth={220}
-        estimatedHeight={200}
       />
     </div>
   );

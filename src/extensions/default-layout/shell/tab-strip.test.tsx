@@ -232,23 +232,6 @@ describe("TabStrip", () => {
     expect(onEvent).toHaveBeenCalledWith("close-others", { tabId: "ed-1" });
   });
 
-  it("opens an in-editor File menu and dispatches Save", () => {
-    const dispatched: string[] = [];
-    const orig = window.dispatchEvent.bind(window);
-    const spy = vi
-      .spyOn(window, "dispatchEvent")
-      .mockImplementation((e: Event) => {
-        dispatched.push(e.type);
-        return orig(e);
-      });
-    renderTabStrip();
-    fireEvent.click(screen.getByRole("button", { name: "File menu" }));
-    expect(screen.getByRole("menuitem", { name: /New File/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Save" }));
-    expect(dispatched).toContain("aethon:editor-save");
-    spy.mockRestore();
-  });
-
   it("renders a file-type icon for editor tabs but not agent tabs", () => {
     render(
       <TabStrip

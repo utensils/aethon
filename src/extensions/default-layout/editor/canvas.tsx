@@ -47,6 +47,7 @@ import {
 import { pickFileViewer } from "./file-viewers";
 import { compressPath } from "./path";
 import { hunksToGutterDecorations, type DiffHunk } from "./git-gutter";
+import { EditorToolbar } from "./toolbar";
 
 interface EditorTabLike {
   id: string;
@@ -442,6 +443,17 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
 
   return (
     <div className="ae-editor-canvas-wrap" style={{ gridArea: "canvas" }}>
+      {(showMonaco || showPreview) && (
+        <EditorToolbar
+          canPreview={editorMeta?.language === "markdown"}
+          previewActive={showPreview}
+          onTogglePreview={
+            tabId
+              ? () => onEventRef.current("editor-preview-toggle", { tabId })
+              : undefined
+          }
+        />
+      )}
       <div
         ref={containerRef}
         className="ae-editor-canvas-host"
@@ -499,12 +511,6 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
           isDirty={Boolean(editorMeta?.isDirty)}
           line={cursorDisplay.line}
           column={cursorDisplay.column}
-          canPreview={editorMeta?.language === "markdown"}
-          onTogglePreview={
-            tabId
-              ? () => onEventRef.current("editor-preview-toggle", { tabId })
-              : undefined
-          }
         />
       )}
     </div>
@@ -517,10 +523,6 @@ interface EditorStatusBarProps {
   isDirty: boolean;
   line: number;
   column: number;
-  /** True for markdown files — reveals the Preview toggle button. */
-  canPreview?: boolean;
-  /** Enter markdown preview. Undefined when there's no bound tab. */
-  onTogglePreview?: () => void;
 }
 
 function EditorStatusBar({
@@ -529,8 +531,6 @@ function EditorStatusBar({
   isDirty,
   line,
   column,
-  canPreview,
-  onTogglePreview,
 }: EditorStatusBarProps) {
   const shortPath = compressPath(filePath);
   return (
@@ -544,17 +544,6 @@ function EditorStatusBar({
         </span>
       )}
       <span className="ae-editor-status-spacer" />
-      {canPreview && onTogglePreview && (
-        <button
-          type="button"
-          className="ae-editor-status-action"
-          title="Markdown preview (⌘⇧V)"
-          aria-label="Markdown preview"
-          onClick={onTogglePreview}
-        >
-          Preview
-        </button>
-      )}
       <span className="ae-editor-status-pos">
         Ln {line}, Col {column}
       </span>

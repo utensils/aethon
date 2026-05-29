@@ -5533,6 +5533,70 @@ body.ae-resizing-terminal * {
   border-color: var(--accent, #f9cc6c);
 }
 
+/* Editor toolbar — slim action strip across the top of the editor pane
+   (File menu + quick Save/Revert + markdown Preview toggle). Flush under
+   the tab strip, above the Monaco host; flex:0 0 auto so the host keeps
+   filling the remaining height. */
+.ae-editor-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+  user-select: none;
+}
+.ae-editor-toolbar-menu,
+.ae-editor-toolbar-action {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.ae-editor-toolbar-menu {
+  font-weight: 600;
+}
+.ae-editor-toolbar-menu:hover,
+.ae-editor-toolbar-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ae-editor-toolbar-menu:focus-visible,
+.ae-editor-toolbar-action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-editor-toolbar-caret {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.7;
+}
+.ae-editor-toolbar-action[aria-pressed="true"] {
+  background: var(--accent-soft, rgba(127, 127, 127, 0.15));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.ae-editor-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
 /* =============================================================================
    Image viewer — alternate editor canvas for image extensions.
    ============================================================================= */
