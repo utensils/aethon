@@ -91,17 +91,16 @@ describe("Sidebar extension controls", () => {
     });
 
     fireEvent.contextMenu(screen.getByText("mold-gallery").closest("li")!);
-    fireEvent.click(screen.getByRole("menuitem", { name: /Disable extension/ }));
-
-    expect(onEvent).toHaveBeenCalledWith(
-      "toggle-extension",
-      {
-        sectionId: "extensions",
-        itemId: "ext:mold-gallery",
-        name: "mold-gallery",
-        disabled: true,
-      },
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Disable extension/ }),
     );
+
+    expect(onEvent).toHaveBeenCalledWith("toggle-extension", {
+      sectionId: "extensions",
+      itemId: "ext:mold-gallery",
+      name: "mold-gallery",
+      disabled: true,
+    });
   });
 
   it("renders an inline toggle switch on each extension row", () => {
@@ -357,5 +356,102 @@ describe("Sidebar project menu", () => {
       projectId: "project-1",
       baseBranch: "upstream/trunk",
     });
+  });
+});
+
+describe("Sidebar host groups", () => {
+  function renderWithHost({
+    onEvent = vi.fn<SidebarOnEvent>(),
+    projectItem = { id: "project:aethon", label: "aethon" },
+    hosts = [
+      { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+    ],
+  }: {
+    onEvent?: SidebarOnEventMock;
+    projectItem?: Record<string, unknown>;
+    hosts?: Record<string, unknown>[];
+  } = {}) {
+    render(
+      <Sidebar
+        component={sidebarComponent({
+          brandMark: true,
+          version: "v9.9",
+          hostGroups: true,
+          hosts: { $ref: "/sidebar/hosts" },
+          sections: [
+            {
+              id: "projects",
+              title: "projects",
+              items: { $ref: "/sidebar/projects" },
+            },
+          ],
+        })}
+        state={{ sidebar: { hosts, projects: [projectItem] } }}
+        onEvent={onEvent}
+        renderChildWithState={() => null}
+      />,
+    );
+    return { onEvent };
+  }
+
+  it("renders the host header with name + this-mac badge above the projects", () => {
+    renderWithHost();
+    expect(screen.getByText("halcyon")).toBeTruthy();
+    expect(screen.getByText("this mac")).toBeTruthy();
+    // The project nests inside the active host's group body.
+    const project = screen.getByText("aethon").closest("li");
+    expect(project?.closest(".ae-host-group-body")).toBeTruthy();
+  });
+
+  it("switches the active host when a host header is clicked", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "bender.local",
+          active: false,
+        },
+      ],
+    });
+    fireEvent.click(screen.getByText("bender"));
+    expect(onEvent).toHaveBeenCalledWith(
+      "select",
+      { sectionId: "hosts", itemId: "remote:bender" },
+      "remote:bender",
+    );
+  });
+
+  it("renders project rows as two-line cards with branch + ahead/behind meta", () => {
+    renderWithHost({
+      projectItem: {
+        id: "project:aethon",
+        label: "aethon",
+        git: { branch: "feat/sidebar", dirty: true, ahead: 2, behind: 1 },
+      },
+    });
+    const row = screen.getByText("aethon").closest("li");
+    expect(row?.classList.contains("a2ui-sidebar-item-stacked")).toBe(true);
+    expect(screen.getByText("feat/sidebar")).toBeTruthy();
+    expect(screen.getByText("↑2")).toBeTruthy();
+    expect(screen.getByText("↓1")).toBeTruthy();
+  });
+
+  it("makes the brand strip a macOS window drag region", () => {
+    const { container } = render(
+      <Sidebar
+        component={sidebarComponent({
+          brandMark: true,
+          version: "v1",
+          sections: [],
+        })}
+        state={{}}
+        onEvent={vi.fn<SidebarOnEvent>()}
+        renderChildWithState={() => null}
+      />,
+    );
+    const title = container.querySelector(".a2ui-sidebar-title");
+    expect(title?.hasAttribute("data-tauri-drag-region")).toBe(true);
   });
 });
