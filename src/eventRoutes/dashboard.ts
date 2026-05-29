@@ -77,6 +77,16 @@ export const handleProjectDashboard: EventRouteHandler = (
   { eventType, data },
   ctx,
 ) => {
+  if (eventType === "open-url") {
+    // The gh-stats-strip is rendered inline inside the dashboard (not via
+    // the registry), so its open-url events arrive under this component's
+    // context rather than type:gh-stats-strip. Delegate to the shared
+    // opener handler so the stat badges actually open GitHub.
+    return handleGhStatsStrip(
+      { component: { id: "", type: "gh-stats-strip" }, eventType, data },
+      ctx,
+    );
+  }
   if (eventType === "start-task") {
     return handleTaskLauncher(
       { component: { id: "", type: "task-launcher" }, eventType, data },

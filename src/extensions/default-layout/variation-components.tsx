@@ -21,6 +21,9 @@ import {
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import type { VcsSlice } from "../../hooks/useVcsStatus";
+import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
+import { absolutePathFor } from "./sidebar/fileTreeModel";
 
 function readUiScale(): number {
   const raw = getComputedStyle(document.documentElement)
@@ -433,5 +436,118 @@ export function AppearanceMenu({ component, state, onEvent }: BuiltinComponentPr
         onEvent("select", { sectionId, itemId }, itemId)
       }
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// VcsStatus — compact header cluster reading the `/vcs` slice: branch (with
+// ahead/behind), working-tree change count, PR state, and CI status. PR/CI
+// pills open GitHub via the `open-url` event. Hidden gracefully when the
+// active root is not a git repo.
+// ---------------------------------------------------------------------------
+
+export function VcsStatus({ component, state, onEvent }: BuiltinComponentProps) {
+  const props = component.props as { source?: { $ref: string } };
+  const vcs =
+    (props.source && "$ref" in props.source
+      ? (resolvePointer(state, props.source.$ref) as VcsSlice | undefined)
+      : (resolvePointer(state, "/vcs") as VcsSlice | undefined)) ?? undefined;
+
+  // No git repo for the active root → render nothing (keeps the header
+  // clean on non-repo projects / the overview tab).
+  if (!vcs || (!vcs.branch && vcs.changes.total === 0)) return null;
+
+  const pr = prMeta(vcs.pr);
+  const ci = ciMeta(vcs.ci);
+  const changeTotal = vcs.changes.total;
+
+  const openUrl = (url: string | undefined | null) => {
+    if (url) onEvent("open-url", { url });
+  };
+  const ciUrl =
+    vcs.ci?.checks.find((c) => c.conclusion === "failure")?.url ??
+    vcs.ci?.checks[0]?.url ??
+    vcs.pr?.url ??
+    null;
+
+  // Clicking the "N changed" chip opens the (first) changed file in an
+  // editor tab. With one change that's the file; with several it's a quick
+  // jump to the top of the list (the full set lives in the source-control
+  // panel). Paths from git_file_status are relative to the root.
+  const firstChanged = vcs.changes.files[0];
+  const openChanged = () => {
+    if (!vcs.root || !firstChanged) return;
+    // Reuse the file tree's separator-aware join so this path is identical
+    // to the one the tree emits for the same file (editor-tab dedupe).
+    onEvent("file-tree-open", {
+      filePath: absolutePathFor(vcs.root, firstChanged.path),
+      rootPath: vcs.root,
+    });
+  };
+  const changeTitle =
+    changeTotal === 1 && firstChanged
+      ? `${firstChanged.path} — open in editor`
+      : `${changeTotal} changed files — open the first in editor`;
+
+  return (
+    <div className="ae-vcs-cluster" data-loading={vcs.loading ? "true" : undefined}>
+      {vcs.branch ? (
+        <span className="ae-vcs-chip ae-vcs-branch" title={`On branch ${vcs.branch}`}>
+          <span className="ae-vcs-glyph" aria-hidden="true">
+            ⎇
+          </span>
+          <span className="ae-vcs-branch-name">{vcs.branch}</span>
+          {vcs.ahead > 0 ? (
+            <span className="ae-vcs-aheadbehind" title={`${vcs.ahead} ahead`}>
+              ↑{vcs.ahead}
+            </span>
+          ) : null}
+          {vcs.behind > 0 ? (
+            <span className="ae-vcs-aheadbehind" title={`${vcs.behind} behind`}>
+              ↓{vcs.behind}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+      {changeTotal > 0 ? (
+        <button
+          type="button"
+          className="ae-vcs-chip ae-vcs-changes"
+          title={changeTitle}
+          onClick={openChanged}
+          disabled={!firstChanged}
+        >
+          <span className="ae-vcs-changes-dot" aria-hidden="true" />
+          {changeTotal} changed
+        </button>
+      ) : null}
+      {pr && vcs.pr ? (
+        <button
+          type="button"
+          className={`ae-vcs-chip ae-vcs-pr is-${pr.tone}`}
+          title={pr.title}
+          onClick={() => openUrl(vcs.pr?.url)}
+        >
+          <span className="ae-vcs-glyph" aria-hidden="true">
+            ⊶
+          </span>
+          PR #{vcs.pr.number}
+          <span className="ae-vcs-pr-state">{pr.label}</span>
+        </button>
+      ) : null}
+      {ci ? (
+        <button
+          type="button"
+          className={`ae-vcs-chip ae-vcs-ci is-${ci.tone}`}
+          title={ci.title}
+          onClick={() => openUrl(ciUrl)}
+        >
+          <span className="ae-vcs-ci-icon" aria-hidden="true">
+            {ci.icon}
+          </span>
+          CI
+        </button>
+      ) : null}
+    </div>
   );
 }

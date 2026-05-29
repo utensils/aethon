@@ -339,7 +339,10 @@ describe("Sidebar project menu", () => {
       },
     });
 
-    fireEvent.contextMenu(screen.getAllByText("aethon")[1].closest("li")!);
+    // The brand row now renders the AeWordmark SVG (aria-label "Æthon"),
+    // not the literal text "aethon", so the only "aethon" text node is the
+    // project row label.
+    fireEvent.contextMenu(screen.getByText("aethon").closest("li")!);
     fireEvent.click(
       screen.getByRole("menuitem", { name: /Set worktree base/ }),
     );

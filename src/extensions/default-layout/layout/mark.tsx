@@ -15,6 +15,58 @@ export function readUiScale(): number {
   return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 
+// Full Æthon wordmark — the horizontal brand lockup from
+// `assets/brand/aethon-brand-marks.svg` (FORMAT 5), redrawn with NO
+// background tile and design-token fills so it adapts to every theme.
+// Used for the primary brand position (sidebar header). Keeping the
+// wordmark here and the bare monogram (AeMarkInline) on the overview tab
+// stops the Æ glyph from reading as repeated chrome.
+export function AeWordmark({ height = 22 }: { height?: number }) {
+  // viewBox is 196×52; width tracks the aspect ratio so the lockup keeps
+  // its proportions at any row height.
+  const width = Math.round((height * 196) / 52);
+  return (
+    <svg
+      className="ae-wordmark"
+      width={width}
+      height={height}
+      viewBox="0 0 196 52"
+      role="img"
+      aria-label="Æthon"
+      style={{ display: "block", flexShrink: 0 }}
+    >
+      <title>Æthon</title>
+      <text
+        x="0"
+        y="43"
+        fontFamily='"Playfair Display", "Bodoni 72", Didot, Georgia, serif'
+        fontSize="48"
+        fontWeight={700}
+        letterSpacing="0.01em"
+        fill="var(--text, #fef3e2)"
+      >
+        Æthon
+      </text>
+      {/* π badge over the top-right shoulder of the Æ — the brand's
+          signature "pi with a face" accent. */}
+      <circle cx="57" cy="11" r="9" fill="var(--accent, #ff6a18)" />
+      <text
+        x="57"
+        y="12"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily='"Playfair Display", Didot, Georgia, serif'
+        fontSize="11"
+        fontWeight={700}
+        fontStyle="italic"
+        fill="var(--text-on-accent, #1f1f23)"
+      >
+        π
+      </text>
+    </svg>
+  );
+}
+
 // Inline Æπ monogram — used by Sidebar / TabRail / etc. without going
 // through the A2UI registry (so brand-chrome inside a composite doesn't
 // require a payload to declare an `ae-mark` child).

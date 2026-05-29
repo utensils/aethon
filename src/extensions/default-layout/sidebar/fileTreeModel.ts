@@ -123,7 +123,11 @@ function relativePathFor(rootPath: string, path: string): string | null {
   return null;
 }
 
-function absolutePathFor(rootPath: string, relativePath: string): string {
+/** Join a root + a (forward-slash) relative path, picking the OS separator
+ *  from the root so file-tree-derived and SCM-panel-derived paths for the
+ *  same file are byte-identical (matters for editor-tab dedupe on Windows
+ *  backslash roots). The canonical path-join for the whole files surface. */
+export function absolutePathFor(rootPath: string, relativePath: string): string {
   const separator =
     rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
   const normalizedRelative = normalizeRelativePath(relativePath).replace(

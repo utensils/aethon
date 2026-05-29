@@ -280,8 +280,14 @@ body.ae-resizing-composer .a2ui-layout {
   gap: var(--space-2);
   padding: 0 var(--space-3);
   min-height: 38px;
+  height: 38px;
   flex: 0 0 auto;
   background: transparent;
+  /* Matches the app-header / sidebar-title divider so the y=38 rule is
+     continuous across all three columns. When the source-control panel
+     is present it sits above this row (with its own 38px titlebar), so
+     this border then reads as the files section header — still aligned. */
+  border-bottom: 1px solid var(--border);
 }
 .ae-file-tree-toggle {
   flex: 1 1 auto;
@@ -551,17 +557,21 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-sidebar-title {
-  /* Quiet brand row — flush with the header height, no heavy divider. */
+  /* Brand row — flush with the header height. Shares the app-header's
+     bottom divider so the y=38 rule runs continuously across all three
+     columns (sidebar / canvas header / file-tree titlebar). */
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-height: 38px;
+  height: 38px;
   flex-shrink: 0;
   padding: 0 var(--space-3);
   font-size: var(--chrome-text);
   font-weight: 600;
   letter-spacing: 0;
   min-width: 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .a2ui-sidebar-title .ae-mark {
@@ -1410,9 +1420,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   overscroll-behavior: contain;
   padding: 6px;
   background: var(--popover-bg, var(--bg-elev, #1f1f23));
-  border: 1px solid var(--popover-border, var(--border, rgba(255, 255, 255, 0.08)));
+  border: 1px solid
+    var(--popover-border, var(--border, rgba(255, 255, 255, 0.08)));
   border-radius: 8px;
-  box-shadow: var(--popover-shadow, 0 14px 40px rgba(0, 0, 0, 0.4)),
+  box-shadow:
+    var(--popover-shadow, 0 14px 40px rgba(0, 0, 0, 0.4)),
     var(--inner-highlight, none);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--chrome-text-compact);
@@ -2266,7 +2278,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   /* Bold reads slightly brighter than running text so it actually
      looks weighted. Mixes toward the syntax-symbol colour so theme
      personality bleeds through. */
-  color: color-mix(in oklab, var(--text) 80%, var(--syntax-symbol, var(--accent-3, var(--text))));
+  color: color-mix(
+    in oklab,
+    var(--text) 80%,
+    var(--syntax-symbol, var(--accent-3, var(--text)))
+  );
   font-weight: 700;
 }
 
@@ -2302,7 +2318,8 @@ body.ae-resizing-sidebar .a2ui-layout {
   /* Left gutter picks up the cool secondary accent — keeps the visual
      distinct from agent message bodies (warm primary) and gives the
      "thinking" passages their own voice in the transcript. */
-  border-left: 2px solid var(--accent-2, color-mix(in oklab, var(--text-dim) 40%, transparent));
+  border-left: 2px solid
+    var(--accent-2, color-mix(in oklab, var(--text-dim) 40%, transparent));
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-dim);
 }
@@ -3331,6 +3348,16 @@ body.ae-resizing-composer * {
   color: var(--warn);
   font-size: var(--chrome-text-compact);
 }
+.a2ui-status-chip-changes {
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+}
 
 /* Devshell chip — sits to the right of the project chip. Same visual
  * treatment, with the hex icon coloured by state. */
@@ -4301,7 +4328,8 @@ body.ae-resizing-terminal * {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
+  box-shadow:
+    var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
     var(--inner-highlight, none);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
@@ -4392,8 +4420,14 @@ body.ae-resizing-terminal * {
   box-shadow: var(--inner-highlight, none);
 }
 .ae-settings-ext-row--failed {
-  border-color: var(--state-error-border, color-mix(in srgb, var(--error) 40%, var(--border)));
-  background: var(--state-error-bg, color-mix(in srgb, var(--error) 5%, var(--bg-elev)));
+  border-color: var(
+    --state-error-border,
+    color-mix(in srgb, var(--error) 40%, var(--border))
+  );
+  background: var(
+    --state-error-bg,
+    color-mix(in srgb, var(--error) 5%, var(--bg-elev))
+  );
 }
 .ae-settings-ext-row--disabled {
   opacity: var(--opacity-muted);
@@ -4806,6 +4840,10 @@ body.ae-resizing-terminal * {
   border-radius: 10px;
   width: 100%;
   background: var(--bg-elev);
+}
+.ae-tool-card:not([open]):hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
 }
 .ae-tool-card[data-running="true"] {
   border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
@@ -5716,6 +5754,20 @@ button.a2ui-gh-stat:hover {
 
 .a2ui-project-dashboard-card {
   align-items: stretch;
+  /* Premium landing touch: a thin accent strip across the very top of
+     the card so the dashboard reads as the app's "home" surface. */
+  position: relative;
+  overflow: hidden;
+}
+.a2ui-project-dashboard-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-accent, var(--accent));
+  opacity: 0.9;
 }
 
 .a2ui-project-dashboard-header {
@@ -5725,6 +5777,13 @@ button.a2ui-gh-stat:hover {
 }
 .a2ui-project-dashboard-hero {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 .a2ui-project-dashboard-header-text {
   display: flex;
@@ -6050,8 +6109,16 @@ button.a2ui-gh-stat:hover {
      bug, mint for enhancement, etc.) while guaranteeing the fg/bg pair
      clears WCAG AA — the foreground inherits most of its luminance
      from --text, which is already a passing colour in every theme. */
-  background: color-mix(in oklab, var(--label-color, var(--accent)) 18%, var(--bg-elev));
-  border-color: color-mix(in oklab, var(--label-color, var(--accent)) 55%, var(--border));
+  background: color-mix(
+    in oklab,
+    var(--label-color, var(--accent)) 18%,
+    var(--bg-elev)
+  );
+  border-color: color-mix(
+    in oklab,
+    var(--label-color, var(--accent)) 55%,
+    var(--border)
+  );
   color: color-mix(in oklab, var(--label-color, var(--text)) 30%, var(--text));
 }
 .a2ui-dashboard-issue-send {
@@ -6259,4 +6326,449 @@ button.a2ui-gh-stat:hover {
 .a2ui-task-launcher-submit:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* =========================================================================
+   VCS surface — header `vcs-status` cluster + `source-control-panel`.
+   Both read the /vcs slice (useVcsStatus). Tones map to the state quads so
+   pass/fail/pending reads identically across light and dark themes.
+   ========================================================================= */
+
+/* ---- Header cluster ---------------------------------------------------- */
+
+.ae-vcs-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-left: var(--space-2);
+  font-size: var(--chrome-text-compact);
+  transition: opacity var(--motion-base) var(--ease-out);
+}
+.ae-vcs-cluster[data-loading="true"] {
+  opacity: 0.6;
+}
+
+.ae-vcs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 30ch;
+  padding: 1px 9px;
+  height: 22px;
+  border: 1px solid var(--pill-border, var(--border));
+  border-radius: var(--radius-pill);
+  background: var(--pill-bg, var(--bg-elev));
+  color: var(--pill-text, var(--text-secondary));
+  font: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--inner-highlight, none);
+}
+button.ae-vcs-chip {
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+button.ae-vcs-chip:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+button.ae-vcs-chip:active {
+  transform: translateY(0.5px);
+}
+button.ae-vcs-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ae-vcs-glyph {
+  color: var(--accent);
+  font-size: 1.05em;
+  opacity: 0.95;
+}
+.ae-vcs-branch-name {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-vcs-aheadbehind {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  font-size: 0.92em;
+}
+.ae-vcs-changes-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ae-vcs-pr-state {
+  text-transform: lowercase;
+  opacity: 0.85;
+}
+.ae-vcs-ci-icon {
+  font-weight: 700;
+}
+
+/* Tones — shared by header chips + panel rows below. */
+.ae-vcs-chip.is-success,
+.ae-vcs-chip.is-success .ae-vcs-ci-icon {
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
+}
+.ae-vcs-chip.is-failure,
+.ae-vcs-chip.is-failure .ae-vcs-ci-icon {
+  color: var(--state-error-fg);
+  border-color: var(--state-error-border);
+}
+.ae-vcs-chip.is-pending,
+.ae-vcs-chip.is-pending .ae-vcs-ci-icon {
+  color: var(--state-warning-fg);
+  border-color: var(--state-warning-border);
+}
+.ae-vcs-chip.is-neutral {
+  color: var(--text-secondary);
+}
+.ae-vcs-chip.is-muted {
+  color: var(--text-dim);
+}
+.ae-vcs-chip.is-pending .ae-vcs-ci-icon {
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+
+/* ---- Source-control panel (above the file tree) ------------------------ */
+
+.ae-scm-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 2px;
+  /* No top padding: the titlebar is a flush 38px header row so its
+     bottom border lands on the same y as the app header + sidebar brand,
+     keeping the top divider line continuous across all three columns. */
+  padding: 0 0 var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--gradient-surface, var(--bg-elev));
+  box-shadow: var(--inner-highlight, none);
+  transition: opacity var(--motion-base) var(--ease-out);
+  animation: ae-scm-reveal var(--motion-panel) var(--ease-panel);
+}
+@keyframes ae-scm-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-scm-panel {
+    animation: none;
+  }
+}
+.ae-scm-panel[data-loading="true"] {
+  opacity: 0.7;
+}
+
+.ae-scm-titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* 38px to match the app header + sidebar brand row; bottom border is
+     the shared top divider line across the three columns. */
+  height: 38px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
+}
+.ae-scm-title {
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ae-scm-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  color: var(--accent);
+}
+.ae-scm-branch-glyph {
+  opacity: 0.9;
+}
+.ae-scm-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18ch;
+}
+.ae-scm-aheadbehind {
+  color: var(--text-dim);
+  font-size: 0.92em;
+}
+
+.ae-scm-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 5px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ae-scm-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.ae-scm-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-scm-row-glyph {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.ae-scm-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ae-scm-row-sub {
+  font-weight: 400;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-scm-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: var(--chrome-text-muted);
+  text-transform: lowercase;
+}
+.ae-scm-badge.is-success {
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
+}
+.ae-scm-badge.is-failure {
+  color: var(--state-error-fg);
+  border-color: var(--state-error-border);
+}
+.ae-scm-badge.is-neutral {
+  color: var(--text-secondary);
+}
+.ae-scm-badge.is-muted {
+  color: var(--text-dim);
+}
+.ae-scm-ci-icon {
+  flex: 0 0 auto;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
+}
+.ae-scm-ci-icon.is-success {
+  color: var(--state-success-strong);
+}
+.ae-scm-ci-icon.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-ci-icon.is-pending {
+  color: var(--state-warning-strong);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+.ae-scm-ci-icon.is-neutral {
+  color: var(--text-dim);
+}
+.ae-scm-ci-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+
+.ae-scm-changes {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 2px;
+}
+.ae-scm-changes-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 4px var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--chrome-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ae-scm-changes-header:hover {
+  color: var(--text-secondary);
+}
+.ae-scm-chevron {
+  width: 10px;
+  opacity: 0.7;
+}
+.ae-scm-changes-count {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ae-scm-changes-breakdown {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim);
+}
+.ae-scm-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+.ae-scm-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px var(--space-3);
+  cursor: pointer;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ae-scm-file:hover {
+  background: var(--bg-hover);
+}
+.ae-scm-file-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+.ae-scm-file-name {
+  flex: 0 0 auto;
+  color: var(--text);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-scm-file.git-status-deleted .ae-scm-file-name {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+.ae-scm-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.ae-scm-file-status {
+  flex: 0 0 auto;
+  min-width: 1.2em;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  text-align: right;
+  color: var(--accent);
+}
+.ae-scm-file-status.git-status-added,
+.ae-scm-file-status.git-status-untracked,
+.ae-scm-file-status.git-status-copied {
+  color: var(--success);
+}
+.ae-scm-file-status.git-status-deleted {
+  color: var(--error);
+}
+.ae-scm-file-status.git-status-renamed {
+  color: var(--warn);
+}
+.ae-scm-file-status.git-status-conflicted {
+  color: var(--error);
+  font-weight: 700;
+}
+.ae-scm-file-more,
+.ae-scm-clean {
+  padding: 4px var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+
+/* =========================================================================
+   Theme-switch crossfade — a one-shot transition class added to <html> by
+   useZoomAndTheme.setTheme for ~320ms so surfaces + text glide between
+   palettes instead of hard-cutting. Scoped to the big chrome surfaces so
+   we don't animate thousands of nodes; cleared after the swap so idle/hover
+   stays instant.
+   ========================================================================= */
+.ae-theme-switching .app-header,
+.ae-theme-switching .a2ui-status-bar,
+.ae-theme-switching .a2ui-sidebar,
+.ae-theme-switching .ae-sidebar-area,
+.ae-theme-switching .ae-files-sidebar-area,
+.ae-theme-switching .ae-file-tree,
+.ae-theme-switching .ae-scm-panel,
+.ae-theme-switching .a2ui-tab-strip,
+.ae-theme-switching .a2ui-main-canvas,
+.ae-theme-switching .a2ui-chat-input,
+.ae-theme-switching .a2ui-project-dashboard,
+.ae-theme-switching .a2ui-projects-dashboard,
+.ae-theme-switching body {
+  transition:
+    background-color var(--motion-slow) var(--ease-out),
+    color var(--motion-slow) var(--ease-out),
+    border-color var(--motion-slow) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-theme-switching .app-header,
+  .ae-theme-switching .a2ui-status-bar,
+  .ae-theme-switching .a2ui-sidebar,
+  .ae-theme-switching .ae-sidebar-area,
+  .ae-theme-switching .ae-files-sidebar-area,
+  .ae-theme-switching .ae-file-tree,
+  .ae-theme-switching .ae-scm-panel,
+  .ae-theme-switching .a2ui-tab-strip,
+  .ae-theme-switching .a2ui-main-canvas,
+  .ae-theme-switching .a2ui-chat-input,
+  .ae-theme-switching .a2ui-project-dashboard,
+  .ae-theme-switching .a2ui-projects-dashboard,
+  .ae-theme-switching body {
+    transition: none;
+  }
 }

@@ -5,6 +5,7 @@
 //! worktree lifecycle, GitHub metadata, issue fetches, and native directory
 //! picking each live in their own file.
 
+pub mod checks;
 pub mod github;
 pub mod issues;
 pub mod picker;

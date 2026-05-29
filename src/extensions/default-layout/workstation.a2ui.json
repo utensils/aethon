@@ -31,6 +31,11 @@
               }
             },
             {
+              "id": "header-vcs",
+              "type": "vcs-status",
+              "props": { "source": { "$ref": "/vcs" } }
+            },
+            {
               "id": "header-spacer",
               "type": "container",
               "props": { "direction": "row", "className": "ae-header-spacer" }
@@ -107,6 +112,11 @@
             "visible": { "$ref": "/layout/filesSidebarVisible" }
           },
           "children": [
+            {
+              "id": "source-control-panel",
+              "type": "source-control-panel",
+              "props": { "source": { "$ref": "/vcs" } }
+            },
             {
               "id": "file-tree",
               "type": "file-tree",
@@ -255,13 +265,13 @@
       "extensions": [],
       "extraSections": [],
       "themes": [
-        { "id": "ember", "label": "Ember — warm dark", "active": true },
-        { "id": "paper", "label": "Paper — cream light" },
-        { "id": "aether", "label": "Æther — signature" },
-        { "id": "brink", "label": "Brink — Ristretto warm chrome with gold accent" },
-        { "id": "daylight", "label": "Daylight — rich warm light" },
-        { "id": "mist", "label": "Mist — cool light, mint accent" },
-        { "id": "nocturne", "label": "Nocturne — high-contrast navy + cyan" }
+        { "id": "ember", "label": "Ember — deep warm dark, glowing brass", "active": true },
+        { "id": "paper", "label": "Paper — crisp neutral light" },
+        { "id": "aether", "label": "Æther — deep cosmic ink-blue" },
+        { "id": "brink", "label": "Brink — warm chrome with slate wash + gold" },
+        { "id": "daylight", "label": "Daylight — warm golden light" },
+        { "id": "mist", "label": "Mist — cool teal light" },
+        { "id": "nocturne", "label": "Nocturne — neon navy, cyan + magenta" }
       ]
     },
     "projects": [],
@@ -275,6 +285,28 @@
     },
     "terminalPanel": {
       "activeSubId": "agent-bash"
+    },
+    "vcs": {
+      "root": null,
+      "branch": null,
+      "ahead": 0,
+      "behind": 0,
+      "dirty": false,
+      "ghAvailable": false,
+      "loading": false,
+      "changes": {
+        "total": 0,
+        "modified": 0,
+        "added": 0,
+        "deleted": 0,
+        "untracked": 0,
+        "renamed": 0,
+        "copied": 0,
+        "conflicted": 0,
+        "files": []
+      },
+      "pr": null,
+      "ci": null
     },
     "slashCommands": []
   }

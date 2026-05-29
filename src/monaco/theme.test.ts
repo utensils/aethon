@@ -52,7 +52,7 @@ describe("applyMonacoTheme", () => {
         rules: expect.arrayContaining([
           expect.objectContaining({
             token: "keyword",
-            foreground: "f9cc6c",
+            foreground: "ffd479",
           }),
         ]),
       }),
@@ -67,12 +67,12 @@ describe("applyMonacoTheme", () => {
       expect.objectContaining({
         base: "vs",
         colors: expect.objectContaining({
-          "editor.background": "#fef3e2",
+          "editor.background": "#ffffff",
         }),
         rules: expect.arrayContaining([
           expect.objectContaining({
             token: "keyword",
-            foreground: "b94000",
+            foreground: "b8400a",
           }),
         ]),
       }),

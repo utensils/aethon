@@ -195,6 +195,7 @@ pub fn run() {
             commands::git::github::gh_branch_status,
             commands::git::github::gh_repo_overview,
             commands::git::github::gh_repo_avatar_url,
+            commands::git::checks::gh_checks,
             commands::git::issues::gh_issue_list,
             commands::git::issues::gh_issue_view,
             commands::git::picker::pick_project_directory,

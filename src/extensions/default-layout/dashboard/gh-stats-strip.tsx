@@ -98,7 +98,7 @@ export function GhStatsStrip({
       <button
         type="button"
         className="a2ui-gh-stat"
-        onClick={() => openUrl(overview.url)}
+        onClick={() => openUrl(overview.url ? `${overview.url}/stargazers` : null)}
         title="Stargazers"
       >
         <span className="a2ui-gh-stat-icon" aria-hidden="true">
@@ -146,17 +146,36 @@ export function GhStatsStrip({
         <span className="a2ui-gh-stat-label">PRs</span>
       </button>
       {overview.defaultBranch && (
-        <span className="a2ui-gh-stat a2ui-gh-stat--branch">
+        <button
+          type="button"
+          className="a2ui-gh-stat a2ui-gh-stat--branch"
+          onClick={() =>
+            openUrl(
+              overview.url
+                ? `${overview.url}/tree/${encodeURIComponent(overview.defaultBranch ?? "")}`
+                : null,
+            )
+          }
+          title={`Browse ${overview.defaultBranch} on GitHub`}
+        >
           <span className="a2ui-gh-stat-icon" aria-hidden="true">
             ⎇
           </span>
           <span className="a2ui-gh-stat-value">{overview.defaultBranch}</span>
-        </span>
+        </button>
       )}
       {overview.pushedAt && (
-        <span
+        <button
+          type="button"
           className="a2ui-gh-stat a2ui-gh-stat--pushed"
-          title={overview.pushedAt}
+          onClick={() =>
+            openUrl(
+              overview.url
+                ? `${overview.url}/commits/${encodeURIComponent(overview.defaultBranch ?? "")}`
+                : null,
+            )
+          }
+          title={`Last push ${overview.pushedAt} — view commits`}
         >
           <span className="a2ui-gh-stat-icon" aria-hidden="true">
             ⏱
@@ -164,7 +183,7 @@ export function GhStatsStrip({
           <span className="a2ui-gh-stat-value">
             {formatRelativeAgo(overview.pushedAt)}
           </span>
-        </span>
+        </button>
       )}
     </div>
   );

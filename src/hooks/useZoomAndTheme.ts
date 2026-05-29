@@ -72,7 +72,14 @@ export function useZoomAndTheme(
   }
 
   function setTheme(id: string) {
-    document.documentElement.dataset.theme = id;
+    const root = document.documentElement;
+    // One-shot crossfade: enable surface/text transitions for the duration
+    // of the swap, then drop the class so hover/idle interactions stay
+    // snappy. Skipped implicitly under prefers-reduced-motion (the CSS
+    // rule zeroes the transition there).
+    root.classList.add("ae-theme-switching");
+    window.setTimeout(() => root.classList.remove("ae-theme-switching"), 320);
+    root.dataset.theme = id;
     writeState("theme", id).catch(() => {
       /* ignore */
     });

@@ -2,13 +2,13 @@
 // and the ANSI swatch indices for the palette preview block.
 
 export const BUILTIN_THEMES = [
-  { id: "ember", label: "Ember — warm dark" },
-  { id: "paper", label: "Paper — cream light" },
-  { id: "aether", label: "Æther — signature" },
-  { id: "brink", label: "Brink — Ristretto warm chrome with gold accent" },
-  { id: "daylight", label: "Daylight — rich warm light" },
-  { id: "mist", label: "Mist — cool light, mint accent" },
-  { id: "nocturne", label: "Nocturne — high-contrast navy + cyan" },
+  { id: "ember", label: "Ember — deep warm dark, glowing brass" },
+  { id: "paper", label: "Paper — crisp neutral light" },
+  { id: "aether", label: "Æther — deep cosmic ink-blue" },
+  { id: "brink", label: "Brink — warm chrome with slate wash + gold" },
+  { id: "daylight", label: "Daylight — warm golden light" },
+  { id: "mist", label: "Mist — cool teal light" },
+  { id: "nocturne", label: "Nocturne — neon navy, cyan + magenta" },
 ];
 
 // 16-swatch ANSI preview block — order matches xterm's standard ANSI
