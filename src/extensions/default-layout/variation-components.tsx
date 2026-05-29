@@ -20,7 +20,6 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
-import { isMacOS } from "../../utils/platform";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { VcsSlice } from "../../hooks/useVcsStatus";
 import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
@@ -50,16 +49,12 @@ export function AgentStatusPill({
   };
   const label = props.label ? resolveString(props.label, state) : "agent live";
   const variant = props.state ? resolveString(props.state, state) : "live";
-  // Non-interactive status text — make it a macOS drag handle so the
-  // window can be moved by grabbing the header pill (Tauri matches the
-  // exact mousedown target, and the label is a text node, so the span
-  // itself is what gets clicked).
+  // Non-interactive status text. The window drag-region lives on the header
+  // Container (`dragRegion: true` → `data-tauri-drag-region="deep"`), so this
+  // pill is draggable by virtue of being a non-clickable header descendant —
+  // it needs no attribute of its own.
   return (
-    <span
-      className="app-header-pill"
-      data-state={variant}
-      {...(isMacOS() ? { "data-tauri-drag-region": true } : {})}
-    >
+    <span className="app-header-pill" data-state={variant}>
       {label}
     </span>
   );

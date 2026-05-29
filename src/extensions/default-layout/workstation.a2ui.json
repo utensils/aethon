@@ -41,8 +41,7 @@
               "type": "container",
               "props": {
                 "direction": "row",
-                "className": "ae-header-spacer",
-                "dragRegion": true
+                "className": "ae-header-spacer"
               }
             },
             {

@@ -16,6 +16,7 @@ import {
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { isMacOS } from "../../utils/platform";
+import { onWindowDragMouseDown } from "../../utils/windowDrag";
 import type { ComponentProps } from "./shared";
 
 // Card component
@@ -67,11 +68,15 @@ export function Container({
     align?: "start" | "center" | "end" | "stretch";
     justify?: "start" | "center" | "end" | "space-between";
     className?: string;
-    /** When true, the container becomes a macOS window drag region
-     *  (`data-tauri-drag-region`). Interactive children opt back out via
-     *  the global `-webkit-app-region: no-drag` reset in chrome.css. Used
-     *  to make the canvas header strip drag the window under the overlay
-     *  titlebar; a no-op on Linux/Windows. */
+    /** When true, the container becomes a macOS window drag region. Emits
+     *  `data-tauri-drag-region="deep"`, which Tauri's drag handler treats as
+     *  "drag on a click anywhere in this subtree" — except over elements it
+     *  recognizes as clickable (BUTTON / INPUT / A / SELECT / TEXTAREA /
+     *  LABEL / SUMMARY, contenteditable, `tabindex`, or an interactive
+     *  `role`), where the click passes through normally. So the header fill
+     *  and its text labels move the window while the pickers/buttons stay
+     *  clickable. Used under the macOS overlay titlebar; a no-op on
+     *  Linux/Windows. */
     dragRegion?: BooleanValue;
   };
 
@@ -112,7 +117,12 @@ export function Container({
     <div
       className={cls}
       style={style}
-      {...(dragRegion ? { "data-tauri-drag-region": true } : {})}
+      {...(dragRegion
+        ? {
+            "data-tauri-drag-region": "deep",
+            onMouseDown: onWindowDragMouseDown,
+          }
+        : {})}
     >
       {renderChildren && renderChildren()}
     </div>

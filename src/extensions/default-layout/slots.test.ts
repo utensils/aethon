@@ -114,31 +114,3 @@ describe("inspectLayoutSlotCoverage — edge cases", () => {
     expect(r.missingRequired).toEqual([...REQUIRED_SLOT_NAMES]);
   });
 });
-
-describe("workstation header drag region", () => {
-  // The header's interactive pickers cover the marked Container, and Tauri
-  // matches the exact mousedown target — so the empty spacer must carry its
-  // own drag-region flag to stay a reliable window-move handle.
-  it("marks the header spacer as a drag region", () => {
-    const findById = (
-      node: unknown,
-      id: string,
-    ): Record<string, unknown> | null => {
-      if (!node || typeof node !== "object") return null;
-      const n = node as Record<string, unknown>;
-      if (n.id === id) return n;
-      const kids = [
-        ...(Array.isArray(n.children) ? n.children : []),
-        ...(Array.isArray(n.components) ? n.components : []),
-      ];
-      for (const kid of kids) {
-        const hit = findById(kid, id);
-        if (hit) return hit;
-      }
-      return null;
-    };
-    const spacer = findById(workstationPayload, "header-spacer");
-    expect(spacer).not.toBeNull();
-    expect((spacer?.props as Record<string, unknown>).dragRegion).toBe(true);
-  });
-});
