@@ -28,7 +28,7 @@
  * re-tokenise in place.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as monaco from "monaco-editor";
 
@@ -47,7 +47,22 @@ import {
 import { pickFileViewer } from "./file-viewers";
 import { compressPath } from "./path";
 import { hunksToGutterDecorations, type DiffHunk } from "./git-gutter";
-import { EditorToolbar } from "./toolbar";
+import { EditorMenubar } from "./menubar";
+import { createEditorActions, type EditorActions } from "./editorActions";
+import { useEditorViewSettings } from "./useEditorViewSettings";
+import { useEditorExternalChange } from "./useEditorExternalChange";
+import { monacoOptionsFor } from "./viewSettings";
+
+/** Read the shared `--scrollbar-size` token (px) so Monaco's scrollbar
+ *  matches the terminal + WebKit scrollbars. Falls back to 4px. */
+function scrollbarSizePx(): number {
+  if (typeof getComputedStyle !== "function") return 4;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--scrollbar-size")
+    .trim();
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 4;
+}
 
 interface EditorTabLike {
   id: string;
@@ -121,9 +136,71 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     column: 1,
   });
 
+  // Persisted View-menu settings (word wrap / minimap / line numbers / zoom).
+  // viewSettingsRef seeds the one-time create() options; live changes flow
+  // through the updateOptions effect below, so the ref needs no resync.
+  const view = useEditorViewSettings();
+  const viewSettingsRef = useRef(view.settings);
+
+  const isDirty = Boolean(editorMeta?.isDirty);
+  const isDirtyRef = useRef(isDirty);
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+
   useEffect(() => {
     projectPathRef.current = projectPath;
   }, [projectPath]);
+
+  // Reload the active buffer from disk — shared by the menu Revert action
+  // and external-change auto-reload. Skips only the setValue when the
+  // content is byte-identical (so our own saves don't churn the undo
+  // stack), but ALWAYS emits editor-loaded so Revert clears a dirty flag
+  // even when the buffer already matches disk (edit-then-undo case).
+  const reloadActiveBuffer = useCallback(() => {
+    const tid = currentTabIdRef.current;
+    if (!tid || isDiffRef.current) return;
+    const buf = getEditorBuffer(tid);
+    if (!buf) return;
+    const root = projectPathRef.current;
+    if (!root) return;
+    void invoke<string>("fs_read_file", { root, path: buf.filePath })
+      .then((text) => {
+        if (buf.model.getValue() !== text) {
+          buf.loading = true;
+          buf.model.setValue(text);
+          buf.loading = false;
+        }
+        buf.loaded = true;
+        onEventRef.current("editor-loaded", {
+          tabId: tid,
+          filePath: buf.filePath,
+        });
+      })
+      .catch(() => {
+        /* file vanished or unreadable — leave the buffer as-is */
+      });
+  }, []);
+
+  // Imperative editor operations for the menubar (Edit / View / Go +
+  // reveal / close). Created once in the mount effect (where ref access
+  // is allowed) and held in state so its closures bind the stable refs.
+  const [actions, setActions] = useState<EditorActions | null>(null);
+
+  const { externalChanged, captureBaseline, reloadExternal } =
+    useEditorExternalChange({
+      tabId,
+      filePath: editorMeta?.filePath ?? "",
+      root: projectPath,
+      isDirtyRef,
+      reload: reloadActiveBuffer,
+    });
+
+  // Re-baseline the external-change watcher whenever the buffer returns to
+  // a clean state (our own save / load), so a self-write never trips it.
+  useEffect(() => {
+    if (!isDirty) captureBaseline();
+  }, [isDirty, captureBaseline]);
 
   // ─── Mount one editor instance for the lifetime of this canvas ──────
   useEffect(() => {
@@ -141,12 +218,32 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       automaticLayout: true,
       contextmenu: true,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      minimap: { enabled: false },
       scrollBeyondLastLine: false,
       tabSize: 2,
-      wordWrap: "off",
+      // Match the terminal + WebKit scrollbar width for a consistent UI.
+      scrollbar: {
+        verticalScrollbarSize: scrollbarSizePx(),
+        horizontalScrollbarSize: scrollbarSizePx(),
+      },
+      // Seed word wrap / minimap / line numbers / font size from the
+      // persisted View settings so there's no default-then-snap flash.
+      ...monacoOptionsFor(viewSettingsRef.current),
     });
     editorRef.current = ed;
+
+    // Build the menubar actions now that the editor exists. The closures
+    // bind the stable refs, so this object stays valid across tab swaps.
+    setActions(
+      createEditorActions({
+        getEditor: () => editorRef.current,
+        getFilePath: () =>
+          getEditorBuffer(currentTabIdRef.current)?.filePath ?? "",
+        getRoot: () => projectPathRef.current,
+        getTabId: () => currentTabIdRef.current,
+        invoke,
+        closeTab: (id) => onEventRef.current("editor-close", { tabId: id }),
+      }),
+    );
 
     const positionDisposable = ed.onDidChangeCursorPosition((e) => {
       setCursorDisplay({ line: e.position.lineNumber, column: e.position.column });
@@ -200,28 +297,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
         content: buf.model.getValue(),
       });
     };
-    const onMenuRevert = () => {
-      const tid = currentTabIdRef.current;
-      if (!tid || isDiffRef.current) return;
-      const buf = getEditorBuffer(tid);
-      if (!buf) return;
-      const root = projectPathRef.current;
-      if (!root) return;
-      void invoke<string>("fs_read_file", { root, path: buf.filePath })
-        .then((text) => {
-          buf.loading = true;
-          buf.model.setValue(text);
-          buf.loading = false;
-          buf.loaded = true;
-          onEventRef.current("editor-loaded", {
-            tabId: tid,
-            filePath: buf.filePath,
-          });
-        })
-        .catch(() => {
-          /* file vanished or unreadable — leave the buffer as-is */
-        });
-    };
+    const onMenuRevert = () => reloadActiveBuffer();
     window.addEventListener("aethon:editor-save", onMenuSave);
     window.addEventListener("aethon:editor-revert", onMenuRevert);
 
@@ -240,7 +316,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       ed.dispose();
       editorRef.current = null;
     };
-  }, []);
+  }, [reloadActiveBuffer]);
 
   // Initial cursor for a NEW (just-loaded) buffer comes from the
   // persisted editor meta. We capture it via a ref to avoid putting
@@ -353,6 +429,13 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
       });
   }, [tabId, editorMeta?.filePath, projectPath]);
 
+  // ─── Apply View-menu settings to the live editor ───────────────────
+  // updateOptions is editor-wide (survives setModel), so applying on
+  // settings change is enough; the create() call seeds the initial pass.
+  useEffect(() => {
+    editorRef.current?.updateOptions(monacoOptionsFor(view.settings));
+  }, [view.settings]);
+
   // ─── React to theme changes after mount ────────────────────────────
   useEffect(() => {
     const root = document.documentElement;
@@ -443,15 +526,21 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
 
   return (
     <div className="ae-editor-canvas-wrap" style={{ gridArea: "canvas" }}>
-      {(showMonaco || showPreview) && (
-        <EditorToolbar
+      {(showMonaco || showPreview) && actions && (
+        <EditorMenubar
+          isDirty={isDirty}
+          canMutate={showMonaco}
           canPreview={editorMeta?.language === "markdown"}
           previewActive={showPreview}
+          externalChanged={externalChanged}
           onTogglePreview={
             tabId
               ? () => onEventRef.current("editor-preview-toggle", { tabId })
               : undefined
           }
+          onReloadExternal={reloadExternal}
+          actions={actions}
+          view={view}
         />
       )}
       <div

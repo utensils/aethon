@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   PaletteItem,
@@ -201,6 +202,18 @@ export function usePaletteOverlay(ctx: PaletteOverlayContext) {
         return;
     }
   }
+
+  // Editor menubar → "Go to File…" opens quick-open without duplicating
+  // the palette wiring. A ref keeps the listener stable across renders.
+  const openPaletteRef = useRef(openPalette);
+  useEffect(() => {
+    openPaletteRef.current = openPalette;
+  });
+  useEffect(() => {
+    const onGotoFile = () => openPaletteRef.current("files");
+    window.addEventListener("aethon:goto-file", onGotoFile);
+    return () => window.removeEventListener("aethon:goto-file", onGotoFile);
+  }, []);
 
   return {
     openPalette,

@@ -5,6 +5,7 @@ import { readState, writeState } from "../../../persist";
 import {
   EXPANDED_CAP_PER_PROJECT,
   EXPAND_STATE_FILE,
+  ancestorDirsFor,
   buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
@@ -38,6 +39,7 @@ function useFileTreeData({
 }: UseFileTreeDataArgs) {
   const [root, setRoot] = useState<TreeNode | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [revealTarget, setRevealTarget] = useState<string | null>(null);
   const [gitStatuses, setGitStatuses] = useState<
     Map<string, GitFileStatusEntry>
   >(new Map());
@@ -348,6 +350,39 @@ function useFileTreeData({
     [ignoreMatcher, schedulePersist],
   );
 
+  const clearRevealTarget = useCallback(() => setRevealTarget(null), []);
+
+  // Reveal a file: load + graft + expand every ancestor directory, then
+  // mark the leaf as the reveal target so the row scrolls into view and
+  // flashes. Used by the editor menubar's "Reveal in Files Panel".
+  const revealPath = useCallback(
+    async (filePath: string) => {
+      const projectKey = projectPathRef.current;
+      if (!projectKey || !filePath) return;
+      const ancestors = ancestorDirsFor(projectKey, filePath);
+      const expandNext = new Set(expandedRef.current);
+      for (const dir of ancestors) {
+        try {
+          const entries = await invoke<FsEntry[]>("fs_list_dir", {
+            root: projectKey,
+            path: dir,
+          });
+          if (projectPathRef.current !== projectKey) return;
+          setRoot((r) => (r ? graftChildren(r, dir, entries) : r));
+          expandNext.add(dir);
+        } catch {
+          // Ancestor vanished — stop descending; reveal what we can.
+          break;
+        }
+      }
+      if (projectPathRef.current !== projectKey) return;
+      setExpanded(expandNext);
+      schedulePersist(expandNext);
+      setRevealTarget(filePath);
+    },
+    [schedulePersist],
+  );
+
   const deletedChildrenByParent = useMemo(
     () => deletedChildrenByParentFromStatuses(gitStatuses, projectPath),
     [gitStatuses, projectPath],
@@ -447,6 +482,9 @@ function useFileTreeData({
     ignoreMatcher,
     projectPathRef,
     refreshFolder,
+    revealPath,
+    revealTarget,
+    clearRevealTarget,
     root,
     toggleFolder,
     visibleNodes,

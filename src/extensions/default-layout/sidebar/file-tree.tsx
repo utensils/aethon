@@ -10,6 +10,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
@@ -113,6 +114,9 @@ export function FileTreePanel({
     ignoreMatcher,
     projectPathRef,
     refreshFolder,
+    revealPath,
+    revealTarget,
+    clearRevealTarget,
     root,
     toggleFolder,
     visibleNodes,
@@ -151,6 +155,29 @@ export function FileTreePanel({
     window.addEventListener("aethon:new-file", onNewFile);
     return () => window.removeEventListener("aethon:new-file", onNewFile);
   }, [projectPath, createEntry]);
+
+  // Editor menubar → "Reveal in Files Panel": un-hide + un-collapse the
+  // panel, then expand the tree down to the file and flash its row.
+  useEffect(() => {
+    if (!projectPath) return;
+    const onReveal = (e: Event) => {
+      const detail = (e as CustomEvent<{ filePath?: string }>).detail;
+      if (!detail?.filePath) return;
+      setHidden(false);
+      setCollapsed(false);
+      void revealPath(detail.filePath);
+    };
+    window.addEventListener("aethon:reveal-in-tree", onReveal);
+    return () => window.removeEventListener("aethon:reveal-in-tree", onReveal);
+  }, [projectPath, revealPath, setHidden, setCollapsed]);
+
+  // The reveal highlight is transient — clear it after the flash so a
+  // later git/status repaint doesn't keep the row lit.
+  useEffect(() => {
+    if (!revealTarget) return;
+    const t = setTimeout(() => clearRevealTarget(), 1500);
+    return () => clearTimeout(t);
+  }, [revealTarget, clearRevealTarget]);
 
   const activeFilePath =
     activeTab?.kind === "editor" ? activeTab.editor?.filePath : undefined;
@@ -464,6 +491,7 @@ export function FileTreePanel({
                   node.entry.kind === "file" &&
                   node.entry.path === activeFilePath
                 }
+                revealed={node.entry.path === revealTarget}
                 onClick={() => onItemClick(node)}
                 onContextMenu={(e) => openContextMenu(e, node)}
               />
@@ -492,6 +520,9 @@ interface FileTreeRowProps {
   decoration?: GitDecoration;
   ignored?: boolean;
   active?: boolean;
+  /** Transiently set after "Reveal in Files Panel" — scrolls into view
+   *  and flashes a highlight. */
+  revealed?: boolean;
   onClick: () => void;
   onContextMenu: (e: ReactMouseEvent) => void;
 }
@@ -502,9 +533,14 @@ function FileTreeRow({
   decoration,
   ignored,
   active,
+  revealed,
   onClick,
   onContextMenu,
 }: FileTreeRowProps) {
+  const rowRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (revealed) rowRef.current?.scrollIntoView({ block: "center" });
+  }, [revealed]);
   const isDir = node.entry.kind === "dir";
   const statusMeta = decoration ? GIT_STATUS_META[decoration.status] : null;
   const statusTitle = statusMeta
@@ -518,13 +554,14 @@ function FileTreeRow({
   const guideCount = Math.max(0, node.depth - 1);
   return (
     <li
+      ref={rowRef}
       role="treeitem"
       aria-level={node.depth}
       aria-expanded={isDir ? expanded : undefined}
       aria-current={active ? "true" : undefined}
       className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}${
         active ? " is-active" : ""
-      }${ignored ? " is-ignored" : ""}${
+      }${revealed ? " is-revealed" : ""}${ignored ? " is-ignored" : ""}${
         decoration
           ? ` has-git-status git-status-${decoration.status} git-status-${decoration.source}`
           : ""

@@ -141,6 +141,22 @@ export function absolutePathFor(
   return `${rootPath.replace(/[\\/]+$/, "")}${separator}${normalizedRelative}`;
 }
 
+/** Absolute paths of every directory between `rootPath` (exclusive) and
+ *  `filePath` (exclusive), in root → leaf order — i.e. the folders the file
+ *  tree must expand to reveal the file. Empty when the file is outside the
+ *  root or sits directly under it. Uses the root's separator so the paths
+ *  match the tree's node keys (matters on Windows backslash roots). */
+export function ancestorDirsFor(rootPath: string, filePath: string): string[] {
+  const rel = relativePathFor(rootPath, filePath);
+  if (rel == null || rel === "") return [];
+  const segments = rel.split("/").filter(Boolean);
+  const dirs: string[] = [];
+  for (let i = 1; i < segments.length; i += 1) {
+    dirs.push(absolutePathFor(rootPath, segments.slice(0, i).join("/")));
+  }
+  return dirs;
+}
+
 function normalizeAbsolutePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/, "");
 }

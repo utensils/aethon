@@ -510,6 +510,20 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
 .ae-file-tree-row.is-active .ae-file-tree-label {
   color: var(--text);
 }
+/* Transient highlight after "Reveal in Files Panel" — a brief accent
+   flash that fades so it draws the eye without sticking. */
+.ae-file-tree-row.is-revealed {
+  animation: ae-file-tree-reveal-flash 1.5s ease-out;
+}
+@keyframes ae-file-tree-reveal-flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
 /* Indent guides: one faint vertical line per ancestor level. */
 .ae-file-tree-guide {
   flex: 0 0 12px;
@@ -5537,19 +5551,20 @@ body.ae-resizing-terminal * {
    (File menu + quick Save/Revert + markdown Preview toggle). Flush under
    the tab strip, above the Monaco host; flex:0 0 auto so the host keeps
    filling the remaining height. */
-.ae-editor-toolbar {
+.ae-editor-menubar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   height: 32px;
   padding: 0 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
   user-select: none;
 }
-.ae-editor-toolbar-menu,
-.ae-editor-toolbar-action {
+.ae-editor-menubar-trigger,
+.ae-editor-menubar-action,
+.ae-editor-menubar-external {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -5569,32 +5584,61 @@ body.ae-resizing-terminal * {
     color 0.12s ease,
     border-color 0.12s ease;
 }
-.ae-editor-toolbar-menu {
-  font-weight: 600;
-}
-.ae-editor-toolbar-menu:hover,
-.ae-editor-toolbar-action:hover {
+.ae-editor-menubar-trigger:hover,
+.ae-editor-menubar-action:hover,
+.ae-editor-menubar-external:hover,
+.ae-editor-menubar-trigger[aria-expanded="true"] {
   background: var(--bg-hover);
   border-color: var(--border);
   color: var(--text);
 }
-.ae-editor-toolbar-menu:focus-visible,
-.ae-editor-toolbar-action:focus-visible {
+.ae-editor-menubar-trigger:focus-visible,
+.ae-editor-menubar-action:focus-visible,
+.ae-editor-menubar-external:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
-.ae-editor-toolbar-caret {
-  display: inline-flex;
-  align-items: center;
-  opacity: 0.7;
-}
-.ae-editor-toolbar-action[aria-pressed="true"] {
+.ae-editor-menubar-action[aria-pressed="true"] {
   background: var(--accent-soft, rgba(127, 127, 127, 0.15));
   color: var(--accent);
   border-color: var(--accent);
 }
-.ae-editor-toolbar-spacer {
+.ae-editor-menubar-spacer {
   flex: 1 1 auto;
+}
+.ae-editor-menubar-dirty {
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.ae-editor-menubar-external {
+  color: var(--warning, #d6a23a);
+  border-color: var(--warning, #d6a23a);
+}
+.ae-editor-menubar-external-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
+/* Monaco scrollbar — match the terminal / WebKit slim slider so all
+   scroll surfaces read the same. Width is set via the editor's
+   scrollbar option (token-driven); this only tunes the slider colour. */
+.ae-editor-canvas-host .monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-sm);
+}
+.ae-editor-canvas-host
+  .monaco-scrollable-element
+  > .scrollbar
+  > .slider:hover,
+.ae-editor-canvas-host
+  .monaco-scrollable-element
+  > .scrollbar
+  > .slider.active {
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* =============================================================================

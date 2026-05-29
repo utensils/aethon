@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ancestorDirsFor,
   buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
@@ -108,6 +109,32 @@ describe("fileTreeModel", () => {
         projectPath: "/repo",
       }),
     ).toEqual([]);
+  });
+});
+
+describe("ancestorDirsFor", () => {
+  it("lists each ancestor dir in root → leaf order", () => {
+    expect(ancestorDirsFor("/repo", "/repo/src/a/b/App.tsx")).toEqual([
+      "/repo/src",
+      "/repo/src/a",
+      "/repo/src/a/b",
+    ]);
+  });
+  it("is empty for a file directly under the root", () => {
+    expect(ancestorDirsFor("/repo", "/repo/App.tsx")).toEqual([]);
+  });
+  it("is empty for a file outside the root", () => {
+    expect(ancestorDirsFor("/repo", "/other/App.tsx")).toEqual([]);
+  });
+  it("uses the root separator on Windows backslash roots", () => {
+    expect(ancestorDirsFor("C:\\repo", "C:\\repo\\src\\App.tsx")).toEqual([
+      "C:\\repo\\src",
+    ]);
+  });
+  it("tolerates a trailing slash on the root", () => {
+    expect(ancestorDirsFor("/repo/", "/repo/src/App.tsx")).toEqual([
+      "/repo/src",
+    ]);
   });
 });
 

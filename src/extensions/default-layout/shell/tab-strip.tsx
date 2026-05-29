@@ -29,6 +29,7 @@ import {
   ContextMenu,
   type ContextMenuItem,
 } from "../../../components/primitives/context-menu";
+import { copyToClipboard, relativePath } from "../editor/path";
 
 interface TabStripItem {
   id: string;
@@ -50,30 +51,6 @@ interface TabStripItem {
    *  the editor context menu (copy path / reveal); rootPath lets us
    *  compute a project-relative path. */
   editor?: { filePath?: string; rootPath?: string; diff?: boolean };
-}
-
-/** Best-effort clipboard write — Tauri's webview exposes the async
- *  Clipboard API; failures (denied permission, older webview) degrade
- *  silently rather than throwing into a click handler. */
-function copyToClipboard(text: string): void {
-  try {
-    void navigator.clipboard?.writeText(text);
-  } catch {
-    /* clipboard unavailable */
-  }
-}
-
-/** Strip the project/worktree root from an absolute path for a
- *  VS Code-style "Copy Relative Path". Falls back to the absolute path
- *  when the root isn't a prefix. */
-function relativePath(filePath: string, root: string): string {
-  if (!root) return filePath;
-  const normRoot = root.replace(/[/\\]+$/, "");
-  if (filePath === normRoot) return filePath;
-  if (filePath.startsWith(`${normRoot}/`)) {
-    return filePath.slice(normRoot.length + 1);
-  }
-  return filePath;
 }
 
 export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {

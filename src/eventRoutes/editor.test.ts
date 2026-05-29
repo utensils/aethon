@@ -44,6 +44,16 @@ describe("handleEditorCanvas", () => {
     });
   });
 
+  it("routes editor-close through closeTab (honours dirty confirm)", async () => {
+    const fx = buildRouteFixture();
+    const claimed = await handleEditorCanvas(
+      editorEvent("editor-close", { tabId: "tab-1" }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.closeTab).toHaveBeenCalledWith("tab-1");
+  });
+
   it("toggles markdown preview on editor-preview-toggle", async () => {
     const fx = buildRouteFixture();
     const claimed = await handleEditorCanvas(

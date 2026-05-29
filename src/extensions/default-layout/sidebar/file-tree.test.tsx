@@ -769,4 +769,53 @@ describe("FileTreePanel", () => {
       ).toBe("true");
     });
   });
+
+  it("reveals a nested file on aethon:reveal-in-tree", async () => {
+    // jsdom doesn't define scrollIntoView; install a spy so the reveal
+    // effect is safe and observable.
+    const scrollSpy = vi.fn();
+    const proto = Element.prototype as unknown as {
+      scrollIntoView?: () => void;
+    };
+    const prevScroll = proto.scrollIntoView;
+    proto.scrollIntoView = scrollSpy;
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir") {
+        if (args?.path === "/projects/aethon") {
+          return Promise.resolve([
+            { name: "src", path: "/projects/aethon/src", kind: "dir" },
+          ]);
+        }
+        if (args?.path === "/projects/aethon/src") {
+          return Promise.resolve([
+            {
+              name: "App.tsx",
+              path: "/projects/aethon/src/App.tsx",
+              kind: "file",
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    // The nested file isn't visible until the ancestor expands.
+    expect(screen.queryByText("App.tsx")).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("aethon:reveal-in-tree", {
+          detail: { filePath: "/projects/aethon/src/App.tsx" },
+        }),
+      );
+    });
+
+    const appRow = await waitFor(() => screen.getByText("App.tsx"));
+    expect(appRow.closest("li")?.className).toContain("is-revealed");
+    expect(scrollSpy).toHaveBeenCalled();
+    proto.scrollIntoView = prevScroll;
+  });
 });

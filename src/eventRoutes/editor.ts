@@ -78,6 +78,12 @@ export const handleEditorCanvas: EventRouteHandler = async (
       ctx.updateEditorMeta(tabId, { diff: false });
       return true;
     }
+    case "editor-close": {
+      // "Close File" from the editor menubar. Routes through the shared
+      // close path so the unsaved-changes confirm prompt still fires.
+      ctx.closeTab(tabId);
+      return true;
+    }
     case "editor-save": {
       const filePath =
         typeof payload.filePath === "string" ? payload.filePath : "";
