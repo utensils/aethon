@@ -2,9 +2,12 @@
 // each project" pass. Resolution order:
 //
 //   1. cached `project.iconUrl` (persisted on the Project record)
-//   2. local scan: logo.{png,svg,jpg,webp}, .github/logo.*, public/favicon.*
-//      → returned as a `data:image/...;base64,...` URL so the renderer
-//        doesn't need the asset protocol or convertFileSrc.
+//   2. local scan via the `fs_discover_project_icon` Rust command — one
+//      IPC round-trip that walks a curated set of logo / favicon /
+//      app-icon locations (logo.*, public/favicon.*, src-tauri/icons/*,
+//      …) and returns the first match as a `data:image/...;base64,...`
+//      URL. Doing the walk natively keeps it to a single invoke instead
+//      of one list+read per candidate directory.
 //   3. GitHub avatar via `gh_repo_avatar_url`
 //        → returns the canonical `https://github.com/<owner>.png?size=200`.
 //   4. null → caller renders the initial-tile fallback.
@@ -30,53 +33,15 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-const LOCAL_CANDIDATES: { sub: string; names: string[] }[] = [
-  { sub: "", names: ["logo.png", "logo.svg", "logo.jpg", "logo.webp", "icon.png", "icon.svg"] },
-  { sub: ".github", names: ["logo.png", "logo.svg"] },
-  { sub: "public", names: ["logo.png", "logo.svg", "favicon.png", "favicon.svg"] },
-  { sub: "assets", names: ["logo.png", "logo.svg"] },
-  { sub: "docs", names: ["logo.png", "logo.svg"] },
-];
-
-interface FsEntry {
-  name: string;
-  isDir: boolean;
-}
-
-function mime(name: string): string {
-  if (name.endsWith(".svg")) return "image/svg+xml";
-  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-  if (name.endsWith(".webp")) return "image/webp";
-  return "image/png";
-}
-
 async function tryLocalScan(projectPath: string): Promise<string | null> {
-  for (const { sub, names } of LOCAL_CANDIDATES) {
-    let entries: FsEntry[];
-    try {
-      entries = await invoke<FsEntry[]>("fs_list_dir", {
-        root: projectPath,
-        path: sub,
-      });
-    } catch {
-      continue;
-    }
-    const lookup = new Set(entries.filter((e) => !e.isDir).map((e) => e.name.toLowerCase()));
-    for (const name of names) {
-      if (!lookup.has(name)) continue;
-      const relPath = sub ? `${sub}/${name}` : name;
-      try {
-        const b64 = await invoke<string>("fs_read_file_base64", {
-          root: projectPath,
-          path: relPath,
-        });
-        return `data:${mime(name)};base64,${b64}`;
-      } catch {
-        // File found, read failed — keep walking.
-      }
-    }
+  try {
+    const url = await invoke<string | null>("fs_discover_project_icon", {
+      projectPath,
+    });
+    return url ?? null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 async function tryGhAvatar(projectPath: string): Promise<string | null> {
@@ -104,15 +69,24 @@ export async function discoverIcon(project: Project): Promise<string | null> {
   const now = Date.now();
   const hit = cache.get(key);
   if (hit && hit.expires > now) return hit.value;
-  if (project.iconUrl) {
+  // An already-local persisted icon (`data:`) is the best we can do —
+  // trust it without re-scanning (the efficient path).
+  if (project.iconUrl?.startsWith("data:")) {
     cache.set(key, { value: project.iconUrl, expires: now + LIVE_TTL_MS });
     return project.iconUrl;
   }
   let resolved: string | null;
   try {
-    resolved = (await tryLocalScan(project.path)) ?? (await tryGhAvatar(project.path));
+    // Prefer a real in-repo icon over a persisted *remote* avatar so a
+    // project that only had the GitHub-org fallback upgrades to its own
+    // logo/favicon once. Falls back to the persisted avatar, then a fresh
+    // gh lookup, then null.
+    resolved =
+      (await tryLocalScan(project.path)) ??
+      project.iconUrl ??
+      (await tryGhAvatar(project.path));
   } catch {
-    resolved = null;
+    resolved = project.iconUrl ?? null;
   }
   cache.set(key, {
     value: resolved,

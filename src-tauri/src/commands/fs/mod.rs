@@ -27,6 +27,7 @@
 
 mod security;
 
+pub mod icons;
 pub mod io;
 pub mod listing;
 pub mod open;
@@ -36,6 +37,7 @@ pub mod watch;
 // Glob re-exports so `tauri::generate_handler![commands::fs::fs_…, …]`
 // in `lib.rs` resolves both each command function and the macro-generated
 // `__cmd__*` / `__tauri_command_name_*` siblings the handler relies on.
+pub use icons::*;
 pub use io::*;
 pub use listing::*;
 pub use open::*;
