@@ -53,6 +53,25 @@ pub fn fs_read_file(root: String, path: String) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| format!("file is not valid UTF-8: {}", target.display()))
 }
 
+/// Report whether a regular file exists at `path` inside `root`. Used to
+/// prune persisted editor tabs whose file was deleted/moved between app
+/// runs. Path validation mirrors the read commands; a path that resolves
+/// outside the root, or doesn't exist, returns `Ok(false)` rather than an
+/// error so the caller can treat "gone" and "never valid" the same way.
+#[tauri::command]
+pub fn fs_exists(root: String, path: String) -> Result<bool, String> {
+    let Ok(target) = validated_target(&root, &path) else {
+        return Ok(false);
+    };
+    let Ok(root_canon) = canonical_root(&root) else {
+        return Ok(false);
+    };
+    if ensure_symlink_safe(&target, &root_canon).is_err() {
+        return Ok(false);
+    }
+    Ok(target.is_file())
+}
+
 /// Overwrite an existing file. Atomic via tempfile + rename so a crash
 /// mid-write can't leave a half-written file. Refuses to write outside
 /// the root or above the size cap.

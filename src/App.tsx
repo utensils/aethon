@@ -26,6 +26,7 @@ import { useFocus } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
+import { usePersistEditorTabs } from "./hooks/usePersistEditorTabs";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -743,6 +744,15 @@ export default function App() {
   // state changes (typing into the composer) coalesces into a single
   // patch per slice.
   useFrontendStateMirror({ state });
+
+  // Persist open editor tabs (debounced) so they restore on next launch.
+  usePersistEditorTabs({
+    stateRef,
+    projectsRef,
+    projectsLoadedRef,
+    tabsSignal: state.tabs,
+    activeTabId: state.activeTabId,
+  });
 
   // OS-edge event listeners — PTY streams, agent supervisor signals,
   // native menu, drag-drop file paths, clipboard image paste. Bridge

@@ -86,6 +86,59 @@ pub async fn git_file_diff_hunks(
     Ok(Some(parse_diff_hunks(&output.stdout)))
 }
 
+/// Aggregate insertion/deletion line counts for the active root vs HEAD —
+/// the `+N -M` stat shown in the Source Control header. `None` when the
+/// directory isn't a git worktree.
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffStat {
+    pub insertions: u64,
+    pub deletions: u64,
+}
+
+#[tauri::command]
+pub async fn git_diff_stat(root: String) -> Result<Option<DiffStat>, String> {
+    let dir = PathBuf::from(&root);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
+        return Ok(None);
+    };
+    // `--numstat` prints `adds<TAB>dels<TAB>path` per file (binary files
+    // report `-`); summing the columns gives the working-tree-vs-HEAD
+    // totals. `-- .` scopes to the active root for subdirectory-opened repos.
+    let output = env::command("git")
+        .arg("-C")
+        .arg(&active_root)
+        .args(["diff", "--no-color", "--numstat", "HEAD", "--", "."])
+        .output()
+        .map_err(|e| format!("git diff --numstat: {e}"))?;
+    if !output.status.success() {
+        return Ok(Some(DiffStat::default()));
+    }
+    Ok(Some(parse_numstat(&output.stdout)))
+}
+
+/// Sum the add/delete columns of `git diff --numstat` output. Binary files
+/// (`-\t-\tpath`) contribute nothing.
+pub(crate) fn parse_numstat(bytes: &[u8]) -> DiffStat {
+    let text = String::from_utf8_lossy(bytes);
+    let mut stat = DiffStat::default();
+    for line in text.lines() {
+        let mut cols = line.split('\t');
+        let adds = cols.next().unwrap_or("");
+        let dels = cols.next().unwrap_or("");
+        if let Ok(a) = adds.parse::<u64>() {
+            stat.insertions += a;
+        }
+        if let Ok(d) = dels.parse::<u64>() {
+            stat.deletions += d;
+        }
+    }
+    stat
+}
+
 /// Return the file's content at HEAD — the original side of the diff
 /// editor. `None` when not in a worktree, the path can't be resolved, or
 /// the file doesn't exist at HEAD (untracked / newly added).
@@ -234,5 +287,12 @@ index 000..111 100644\n\
     fn ignores_non_hunk_lines() {
         assert!(parse_diff_hunks(b"diff --git a/f b/f\njust text\n").is_empty());
         assert!(parse_diff_hunks(b"").is_empty());
+    }
+
+    #[test]
+    fn sums_numstat_columns_skipping_binaries() {
+        let out = parse_numstat(b"3\t1\tsrc/a.ts\n12\t0\tsrc/b.ts\n-\t-\tlogo.png\n");
+        assert_eq!(out, DiffStat { insertions: 15, deletions: 1 });
+        assert_eq!(parse_numstat(b""), DiffStat::default());
     }
 }

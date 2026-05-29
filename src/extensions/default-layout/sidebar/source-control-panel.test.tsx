@@ -52,6 +52,8 @@ function vcs(over: Partial<VcsSlice> = {}): VcsSlice {
       renamed: 0,
       copied: 0,
       conflicted: 0,
+      insertions: 0,
+      deletions: 0,
       files: [],
     },
     pr: null,
@@ -187,6 +189,52 @@ describe("SourceControlPanel — CI jobs", () => {
 });
 
 describe("SourceControlPanel — changed files", () => {
+  it("renders the +adds / -dels line stat in the header", () => {
+    renderPanel(
+      vcs({
+        dirty: true,
+        changes: {
+          total: 2,
+          modified: 2,
+          added: 0,
+          deleted: 0,
+          untracked: 0,
+          renamed: 0,
+          copied: 0,
+          conflicted: 0,
+          insertions: 3157,
+          deletions: 249,
+          files: [],
+        },
+      }),
+    );
+    expect(screen.getByText("+3,157")).toBeTruthy();
+    expect(screen.getByText("−249")).toBeTruthy();
+  });
+
+  it("starts with the changed-files list collapsed", () => {
+    renderPanel(
+      vcs({
+        dirty: true,
+        changes: {
+          total: 1,
+          modified: 1,
+          added: 0,
+          deleted: 0,
+          untracked: 0,
+          renamed: 0,
+          copied: 0,
+          conflicted: 0,
+          insertions: 1,
+          deletions: 0,
+          files: [{ path: "src/App.tsx", status: "modified" }],
+        },
+      }),
+    );
+    // File row hidden until the header is clicked.
+    expect(screen.queryByText("src/App.tsx")).toBeNull();
+  });
+
   it("opens a diff view when a changed file is clicked", () => {
     const onEvent = vi.fn();
     renderPanel(
@@ -201,11 +249,15 @@ describe("SourceControlPanel — changed files", () => {
           renamed: 0,
           copied: 0,
           conflicted: 0,
+          insertions: 12,
+          deletions: 3,
           files: [{ path: "src/App.tsx", status: "modified" }],
         },
       }),
       onEvent,
     );
+    // The list is collapsed by default — expand it first.
+    fireEvent.click(screen.getByText(/1 changed/));
     fireEvent.click(screen.getByText("src/App.tsx"));
     expect(onEvent).toHaveBeenCalledWith("file-tree-diff", {
       filePath: "/repo/src/App.tsx",

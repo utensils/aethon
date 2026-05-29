@@ -39,7 +39,9 @@ export function SourceControlPanel({
       ? (resolvePointer(state, props.source.$ref) as VcsSlice | undefined)
       : (resolvePointer(state, "/vcs") as VcsSlice | undefined)) ?? undefined;
 
-  const [filesOpen, setFilesOpen] = useState(true);
+  // Collapsed by default — the changed-files list expands on click so the
+  // panel opens compact and the user opts into the (potentially long) list.
+  const [filesOpen, setFilesOpen] = useState(false);
 
   // CI job list expand state. Auto-expands on failure; a manual toggle wins
   // until the rollup conclusion flips (reset via the guarded set below).
@@ -195,7 +197,20 @@ export function SourceControlPanel({
             <span className="ae-scm-changes-count">
               {changes.total} changed
             </span>
-            {breakdown ? (
+            {changes.insertions > 0 || changes.deletions > 0 ? (
+              <span className="ae-scm-changes-stat" title={breakdown ?? undefined}>
+                {changes.insertions > 0 ? (
+                  <span className="ae-scm-stat-add">
+                    +{changes.insertions.toLocaleString()}
+                  </span>
+                ) : null}
+                {changes.deletions > 0 ? (
+                  <span className="ae-scm-stat-del">
+                    −{changes.deletions.toLocaleString()}
+                  </span>
+                ) : null}
+              </span>
+            ) : breakdown ? (
               <span className="ae-scm-changes-breakdown">{breakdown}</span>
             ) : null}
           </button>

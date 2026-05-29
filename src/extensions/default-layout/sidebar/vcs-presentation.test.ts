@@ -61,6 +61,8 @@ function changes(over: Partial<VcsChanges> = {}): VcsChanges {
     renamed: 0,
     copied: 0,
     conflicted: 0,
+    insertions: 0,
+    deletions: 0,
     files: [],
     ...over,
   };

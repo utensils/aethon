@@ -68,7 +68,17 @@ export function DiffCanvas(props: BuiltinComponentProps) {
       renderSideBySide: true,
       ignoreTrimWhitespace: false,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      // Keep both panes visually symmetric: no minimap, no per-side diff
+      // overview ruler (the asymmetric colored band), and identical
+      // scrollbar gutters left and right.
       minimap: { enabled: false },
+      renderOverviewRuler: false,
+      scrollbar: {
+        verticalScrollbarSize: 12,
+        horizontalScrollbarSize: 12,
+        verticalSliderSize: 12,
+      },
+      overviewRulerLanes: 0,
       scrollBeyondLastLine: false,
     });
     diffRef.current = ed;

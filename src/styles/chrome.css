@@ -3841,11 +3841,14 @@ body.ae-resizing-composer * {
   user-select: none;
   white-space: nowrap;
   position: relative;
-  /* Keep open tabs readable and let the strip scroll horizontally when
-     many sessions exist instead of compressing labels to crumbs. */
-  min-inline-size: 8.5rem;
-  max-inline-size: min(16rem, 32vw);
-  flex: 0 0 clamp(8.5rem, 16vw, 16rem);
+  /* Tabs shrink to fit (VS Code style): a comfortable preferred width
+     that compresses down to a small floor as more tabs open, with the
+     label ellipsizing. Only once every tab is at the floor does the strip
+     scroll. `flex-shrink: 1` is the crux — `0 0` made tabs overflow off
+     the right edge. */
+  min-inline-size: 4.5rem;
+  max-inline-size: 16rem;
+  flex: 0 1 13rem;
   transition:
     color 120ms var(--ease-out, ease),
     background-color 120ms var(--ease-out, ease);
@@ -3965,6 +3968,9 @@ body.ae-resizing-composer * {
   margin-left: 2px;
   cursor: pointer;
   border-radius: 3px;
+  /* The label absorbs all the shrink; the close button stays full-size so
+     it's always clickable even on a compressed tab. */
+  flex: 0 0 auto;
 }
 
 .a2ui-tab-close:hover {
@@ -3983,11 +3989,35 @@ body.ae-resizing-composer * {
   cursor: pointer;
   border-radius: 6px;
   align-self: center;
+  /* Never shrink/scroll away — the "+" stays reachable no matter how many
+     tabs are open. */
+  flex: 0 0 auto;
 }
 
 .a2ui-tab-new:hover {
   color: var(--text);
   border-color: var(--border);
+}
+
+/* In-editor File menu trigger — sits at the far right of the tab strip,
+   never shrinks, opens the file-actions dropdown. */
+.a2ui-tab-filemenu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px 6px;
+  margin-left: 2px;
+  cursor: pointer;
+  border-radius: 6px;
+  align-self: center;
+  flex: 0 0 auto;
+}
+.a2ui-tab-filemenu:hover {
+  color: var(--text);
+  background: var(--bg-hover, var(--accent-hover-tint));
 }
 
 /* Overview pseudo-tab — always-visible escape hatch back to the host /
@@ -7136,7 +7166,9 @@ button.ae-vcs-chip:focus-visible {
   align-items: center;
   gap: var(--space-1);
   width: 100%;
-  padding: 4px var(--space-2);
+  /* Left padding + chevron width match the file-tree rows below so the
+     disclosure-chevron column and the label column line up exactly. */
+  padding: 4px var(--space-2) 4px 6px;
   border: 0;
   background: transparent;
   color: var(--text-dim);
@@ -7150,7 +7182,11 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
 }
 .ae-scm-chevron {
-  width: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
   opacity: 0.7;
 }
 .ae-scm-changes-count {
@@ -7163,6 +7199,23 @@ button.ae-vcs-chip:focus-visible {
   letter-spacing: 0;
   text-transform: none;
   color: var(--text-dim);
+}
+/* +adds / -dels line stat (git diff --numstat totals), pinned right. */
+.ae-scm-changes-stat {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ae-scm-stat-add {
+  color: var(--success, #4ec07a);
+}
+.ae-scm-stat-del {
+  color: var(--error, #e5534b);
 }
 .ae-scm-file-list {
   list-style: none;
