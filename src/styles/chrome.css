@@ -6861,6 +6861,81 @@ button.ae-vcs-chip:focus-visible {
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
 }
+.ae-scm-ci-chevron {
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+/* Expandable CI job list — mirrors the changed-file list, indented to sit
+   under the CI row's icon column. Per-tone icon colors reuse the rollup
+   tokens so a job's red matches the summary's red. */
+.ae-scm-ci-group {
+  display: flex;
+  flex-direction: column;
+}
+.ae-scm-checks-list {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 2px 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+.ae-scm-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px var(--space-3);
+  font-size: var(--font-size-sidebar);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ae-scm-check[data-clickable="true"] {
+  cursor: pointer;
+}
+.ae-scm-check[data-clickable="true"]:hover {
+  background: var(--bg-hover);
+}
+.ae-scm-check-icon {
+  flex: 0 0 auto;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
+}
+.ae-scm-check-icon.is-success {
+  color: var(--state-success-strong);
+}
+.ae-scm-check-icon.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-check-icon.is-pending {
+  color: var(--state-warning-strong);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+.ae-scm-check-icon.is-neutral {
+  color: var(--text-dim);
+}
+.ae-scm-check-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-scm-check-status {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  text-align: right;
+  color: var(--text-dim);
+}
+.ae-scm-check-status.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-check-status.is-pending {
+  color: var(--state-warning-strong);
+}
 
 .ae-scm-changes {
   display: flex;
