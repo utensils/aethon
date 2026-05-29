@@ -54,6 +54,69 @@ describe("WorktreeLanding sessions", () => {
     expect(hero.querySelector("svg")).toBeNull();
   });
 
+  it("derives the project icon from live sidebar state", () => {
+    const { container, rerender } = render(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "Claudette",
+            worktreeId: "wt-1",
+            worktreeLabel: "feat/phaethon",
+            branch: "feat/phaethon",
+            path: "/repo/claudette-feat-phaethon",
+          },
+          sidebar: { projects: [{ id: "p1" }] },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".a2ui-empty-state-hero img")).toBeNull();
+
+    rerender(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "Claudette",
+            worktreeId: "wt-1",
+            worktreeLabel: "feat/phaethon",
+            branch: "feat/phaethon",
+            path: "/repo/claudette-feat-phaethon",
+          },
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                iconUrl: "asset://localhost/project-icons/claudette.png",
+              },
+            ],
+          },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(
+      container
+        .querySelector(".a2ui-empty-state-hero img")
+        ?.getAttribute("src"),
+    ).toBe("asset://localhost/project-icons/claudette.png");
+  });
+
   it("lists resumable sessions for the selected worktree", () => {
     const onEvent = vi.fn();
     render(

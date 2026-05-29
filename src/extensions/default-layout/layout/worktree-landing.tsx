@@ -74,10 +74,12 @@ export function WorktreeLanding({
   const branch = landing.branch ?? "";
   const path = landing.path ?? "";
   const isMain = landing.isMain === true;
+  const sidebarIconUrl = projectIconUrlFromSidebar(state, landing.projectId);
+  const iconUrl = sidebarIconUrl ?? landing.iconUrl;
 
   return (
     <WorktreeLandingInner
-      iconUrl={landing.iconUrl}
+      iconUrl={iconUrl}
       title={title}
       projectLabel={projectLabel}
       branch={branch}
@@ -96,6 +98,18 @@ interface WorktreeLandingSession {
   label: string;
   lastModified?: string;
   cwd?: string;
+}
+
+function projectIconUrlFromSidebar(
+  state: Record<string, unknown>,
+  projectId?: string,
+): string | undefined {
+  if (!projectId) return undefined;
+  const sidebar = state.sidebar as
+    | { projects?: Array<{ id?: string; iconUrl?: unknown }> }
+    | undefined;
+  const project = sidebar?.projects?.find((p) => p.id === projectId);
+  return typeof project?.iconUrl === "string" ? project.iconUrl : undefined;
 }
 
 function normalizeLandingPath(path?: string): string {
