@@ -44,6 +44,7 @@ interface EditorTabShape {
   kind?: string;
   editor?: {
     rootPath?: string;
+    filePath?: string;
   };
 }
 
@@ -221,6 +222,28 @@ function nodesFromEntries(
   });
 }
 
+/** Return a copy of `root` with `folderPath`'s children replaced by nodes
+ *  built from `entries` (at the right depth, preserving already-loaded
+ *  grandchildren). Shared by the initial expanded-folder restore and
+ *  expand-all so the lazy-load graft logic lives in one place. */
+function graftChildren(
+  root: TreeNode,
+  folderPath: string,
+  entries: FsEntry[],
+): TreeNode {
+  const walk = (node: TreeNode): TreeNode => {
+    if (node.entry.path === folderPath) {
+      return {
+        ...node,
+        children: nodesFromEntries(entries, node.depth + 1, node.children),
+      };
+    }
+    if (!node.children) return node;
+    return { ...node, children: node.children.map(walk) };
+  };
+  return walk(root);
+}
+
 /** Parse the persisted store; tolerate corruption by returning empty. */
 function parseExpandedStore(raw: string): ExpandedStore {
   if (!raw) return { byProject: {} };
@@ -383,6 +406,7 @@ export {
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
+  graftChildren,
   nodesFromEntries,
   parentDirOf,
   parseExpandedStore,

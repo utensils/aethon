@@ -5,6 +5,7 @@ import {
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
+  graftChildren,
   nodesFromEntries,
   parseExpandedStore,
   visibleTreeNodes,
@@ -107,6 +108,28 @@ describe("fileTreeModel", () => {
         projectPath: "/repo",
       }),
     ).toEqual([]);
+  });
+});
+
+describe("graftChildren", () => {
+  it("inserts children at the target path, leaving siblings untouched", () => {
+    const root: TreeNode = {
+      entry: { name: "root", path: "/r", kind: "dir" },
+      depth: 0,
+      children: [
+        { entry: { name: "a", path: "/r/a", kind: "dir" }, depth: 1 },
+        { entry: { name: "b", path: "/r/b", kind: "dir" }, depth: 1 },
+      ],
+    };
+    const next = graftChildren(root, "/r/a", [
+      { name: "x.ts", path: "/r/a/x.ts", kind: "file" },
+    ]);
+    const a = next.children?.find((c) => c.entry.path === "/r/a");
+    const b = next.children?.find((c) => c.entry.path === "/r/b");
+    expect(a?.children?.map((c) => c.entry.path)).toEqual(["/r/a/x.ts"]);
+    expect(a?.children?.[0].depth).toBe(2);
+    // sibling is left exactly as it was (children still unloaded)
+    expect(b?.children).toBeUndefined();
   });
 });
 

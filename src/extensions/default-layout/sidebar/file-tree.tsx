@@ -18,7 +18,10 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { FileIcon } from "../../../components/file-icon";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
-import { ContextMenu } from "../../../components/primitives/context-menu";
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "../../../components/primitives/context-menu";
 import { useFileTreeActions } from "./fileTreeActions";
 import {
   GIT_STATUS_META,
@@ -100,7 +103,10 @@ export function FileTreePanel({
   const { collapsed, hidden, height, setCollapsed, setHidden, setHeight } =
     useFileTreePrefs();
   const {
+    collapseAll,
+    collapseUnder,
     error,
+    expandAll,
     expanded,
     gitDecorations,
     ignoreMatcher,
@@ -119,13 +125,46 @@ export function FileTreePanel({
     watchedDirs,
   });
 
-  const { contextMenu, fileTreeMenuItems, openContextMenu, setContextMenu } =
-    useFileTreeActions({
-      onEvent,
-      projectPath,
-      projectPathRef,
-      refreshFolder,
-    });
+  const {
+    contextMenu,
+    createEntry,
+    fileTreeMenuItems,
+    openContextMenu,
+    setContextMenu,
+  } = useFileTreeActions({
+    onEvent,
+    projectPath,
+    projectPathRef,
+    refreshFolder,
+    expandAll,
+    collapseUnder,
+  });
+
+  const activeFilePath =
+    activeTab?.kind === "editor" ? activeTab.editor?.filePath : undefined;
+
+  // Right-click menu on the files header — surfaces whole-tree actions.
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const headerMenuItems: ContextMenuItem[] = [
+    {
+      id: "expand-all",
+      label: "Expand All",
+      onSelect: () => {
+        setHeaderMenu(null);
+        void expandAll();
+      },
+    },
+    {
+      id: "collapse-all",
+      label: "Collapse All",
+      onSelect: () => {
+        setHeaderMenu(null);
+        collapseAll();
+      },
+    },
+  ];
 
   const onItemClick = (node: TreeNode) => {
     if (node.entry.kind === "dir") {
@@ -231,8 +270,49 @@ export function FileTreePanel({
     activeWorktree?.branch ??
     activeProject?.git?.branch;
 
+  const headerActions =
+    !collapsed && projectPath ? (
+      <div className="ae-file-tree-actions" aria-label="File tree actions">
+        {TREE_ACTIONS.map((action) => (
+          <button
+            key={action.key}
+            type="button"
+            className="ae-file-tree-action"
+            aria-label={action.label}
+            title={action.label}
+            onClick={(e) => {
+              e.stopPropagation();
+              switch (action.key) {
+                case "new-file":
+                  void createEntry(projectPath, "file");
+                  break;
+                case "new-folder":
+                  void createEntry(projectPath, "dir");
+                  break;
+                case "refresh":
+                  void refreshFolder(projectPath);
+                  break;
+              }
+            }}
+          >
+            <TreeActionIcon name={action.key} />
+          </button>
+        ))}
+      </div>
+    ) : null;
+
   const titleRow = (
-    <div className="ae-file-tree-titlebar">
+    <div
+      className="ae-file-tree-titlebar"
+      onContextMenu={
+        projectPath
+          ? (e) => {
+              e.preventDefault();
+              setHeaderMenu({ x: e.clientX, y: e.clientY });
+            }
+          : undefined
+      }
+    >
       <button
         type="button"
         className="ae-file-tree-toggle"
@@ -242,13 +322,14 @@ export function FileTreePanel({
         onClick={() => setCollapsed((c) => !c)}
       >
         <span className="ae-file-tree-chevron" aria-hidden="true">
-          {collapsed ? "▸" : "▾"}
+          <Chevron expanded={!collapsed} />
         </span>
         <span className="ae-file-tree-title">{headerLabel}</span>
         {headerBranch ? (
           <span className="ae-file-tree-branch">{headerBranch}</span>
         ) : null}
       </button>
+      {headerActions}
       {fillsContainer ? null : (
         <button
           type="button"
@@ -260,6 +341,17 @@ export function FileTreePanel({
           ×
         </button>
       )}
+      <ContextMenu
+        open={!!headerMenu}
+        x={headerMenu?.x ?? 0}
+        y={headerMenu?.y ?? 0}
+        items={headerMenuItems}
+        onClose={() => setHeaderMenu(null)}
+        ariaLabel="Files header actions"
+        className="ae-file-tree-context-menu"
+        estimatedWidth={180}
+        estimatedHeight={96}
+      />
     </div>
   );
 
@@ -356,6 +448,10 @@ export function FileTreePanel({
                 expanded={expanded.has(node.entry.path)}
                 decoration={decoration}
                 ignored={ignored}
+                active={
+                  node.entry.kind === "file" &&
+                  node.entry.path === activeFilePath
+                }
                 onClick={() => onItemClick(node)}
                 onContextMenu={(e) => openContextMenu(e, node)}
               />
@@ -383,6 +479,7 @@ interface FileTreeRowProps {
   expanded: boolean;
   decoration?: GitDecoration;
   ignored?: boolean;
+  active?: boolean;
   onClick: () => void;
   onContextMenu: (e: ReactMouseEvent) => void;
 }
@@ -392,10 +489,10 @@ function FileTreeRow({
   expanded,
   decoration,
   ignored,
+  active,
   onClick,
   onContextMenu,
 }: FileTreeRowProps) {
-  const indent = (node.depth - 1) * 12;
   const isDir = node.entry.kind === "dir";
   const statusMeta = decoration ? GIT_STATUS_META[decoration.status] : null;
   const statusTitle = statusMeta
@@ -404,26 +501,32 @@ function FileTreeRow({
       }`
     : "";
   const titleBase = ignored ? `${node.entry.path} — Ignored` : node.entry.path;
+  // One guide cell per ancestor level (depth 1 = root children → none); each
+  // draws a faint vertical line so deep rows trace back to their parent.
+  const guideCount = Math.max(0, node.depth - 1);
   return (
     <li
       role="treeitem"
       aria-level={node.depth}
       aria-expanded={isDir ? expanded : undefined}
+      aria-current={active ? "true" : undefined}
       className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}${
-        ignored ? " is-ignored" : ""
-      }${
+        active ? " is-active" : ""
+      }${ignored ? " is-ignored" : ""}${
         decoration
           ? ` has-git-status git-status-${decoration.status} git-status-${decoration.source}`
           : ""
       }`}
-      style={{ paddingLeft: indent }}
       onClick={onClick}
       onContextMenu={onContextMenu}
       title={statusTitle ? `${node.entry.path} — ${statusTitle}` : titleBase}
     >
+      {Array.from({ length: guideCount }, (_, i) => (
+        <span key={i} className="ae-file-tree-guide" aria-hidden="true" />
+      ))}
       {isDir ? (
         <span className="ae-file-tree-chevron-row" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
+          <Chevron expanded={expanded} />
         </span>
       ) : (
         <span className="ae-file-tree-chevron-row ae-file-tree-chevron-spacer" />
@@ -451,4 +554,71 @@ function FileTreeRow({
       )}
     </li>
   );
+}
+
+/** Rotating disclosure chevron for folder rows — matches the host-group
+ *  twistie so the sidebar reads consistently. */
+function Chevron({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={expanded ? "M2.5 4.5L6 8L9.5 4.5" : "M4.5 2.5L8 6L4.5 9.5"} />
+    </svg>
+  );
+}
+
+type TreeActionKey = "new-file" | "new-folder" | "refresh";
+
+const TREE_ACTIONS: { key: TreeActionKey; label: string }[] = [
+  { key: "new-file", label: "New File" },
+  { key: "new-folder", label: "New Folder" },
+  { key: "refresh", label: "Refresh" },
+];
+
+/** Compact 16px line icons for the file-tree header toolbar. */
+function TreeActionIcon({ name }: { name: TreeActionKey }) {
+  const common = {
+    width: 15,
+    height: 15,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.3,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  switch (name) {
+    case "new-file":
+      return (
+        <svg {...common}>
+          <path d="M9 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.5z" />
+          <path d="M9 1.5V5.5H13" />
+          <path d="M8 8v4M6 10h4" />
+        </svg>
+      );
+    case "new-folder":
+      return (
+        <svg {...common}>
+          <path d="M1.5 4.5 A1 1 0 0 1 2.5 3.5H6l1.5 1.5H13.5a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
+          <path d="M8 7.5v4M6 9.5h4" />
+        </svg>
+      );
+    case "refresh":
+      return (
+        <svg {...common}>
+          <path d="M13 8a5 5 0 1 1-1.46-3.54" />
+          <path d="M13 2.5V5H10.5" />
+        </svg>
+      );
+  }
 }

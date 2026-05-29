@@ -19,6 +19,8 @@ interface UseFileTreeActionsArgs {
   projectPath: string;
   projectPathRef: RefObject<string>;
   refreshFolder: (folderPath: string) => Promise<void>;
+  expandAll: (startPath?: string) => void;
+  collapseUnder: (path: string) => void;
 }
 
 function useFileTreeActions({
@@ -26,6 +28,8 @@ function useFileTreeActions({
   projectPath,
   projectPathRef,
   refreshFolder,
+  expandAll,
+  collapseUnder,
 }: UseFileTreeActionsArgs) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const activeContextMenu =
@@ -48,51 +52,47 @@ function useFileTreeActions({
     [projectPath],
   );
 
+  // Create a file/folder under `parentPath`, prompting for the name. Shared by
+  // the right-click menu (anchored at the clicked node) and the header toolbar
+  // icons (anchored at the project root).
+  const createEntry = useCallback(
+    async (parentPath: string, kind: "file" | "dir") => {
+      const label = kind === "file" ? "file" : "folder";
+      const name = window.prompt(`New ${label} name`);
+      if (!name) return;
+      const target = `${parentPath.replace(/\/$/, "")}/${name}`;
+      try {
+        await invoke(kind === "file" ? "fs_create_file" : "fs_create_dir", {
+          root: projectPathRef.current,
+          path: target,
+        });
+        await refreshFolder(parentPath);
+        if (kind === "file") {
+          onEvent("file-tree-open", {
+            filePath: target,
+            rootPath: projectPathRef.current,
+          });
+        }
+      } catch (err) {
+        window.alert(`Failed to create ${label}: ${String(err)}`);
+      }
+    },
+    [onEvent, projectPathRef, refreshFolder],
+  );
+
   const onContextNewFile = useCallback(async () => {
     if (!activeContextMenu) return;
     const parentPath = parentDirOf(activeContextMenu.node);
     closeContextMenu();
-    const name = window.prompt("New file name");
-    if (!name) return;
-    const target = `${parentPath.replace(/\/$/, "")}/${name}`;
-    try {
-      await invoke("fs_create_file", {
-        root: projectPathRef.current,
-        path: target,
-      });
-      await refreshFolder(parentPath);
-      onEvent("file-tree-open", {
-        filePath: target,
-        rootPath: projectPathRef.current,
-      });
-    } catch (err) {
-      window.alert(`Failed to create file: ${String(err)}`);
-    }
-  }, [
-    activeContextMenu,
-    closeContextMenu,
-    onEvent,
-    projectPathRef,
-    refreshFolder,
-  ]);
+    await createEntry(parentPath, "file");
+  }, [activeContextMenu, closeContextMenu, createEntry]);
 
   const onContextNewFolder = useCallback(async () => {
     if (!activeContextMenu) return;
     const parentPath = parentDirOf(activeContextMenu.node);
     closeContextMenu();
-    const name = window.prompt("New folder name");
-    if (!name) return;
-    const target = `${parentPath.replace(/\/$/, "")}/${name}`;
-    try {
-      await invoke("fs_create_dir", {
-        root: projectPathRef.current,
-        path: target,
-      });
-      await refreshFolder(parentPath);
-    } catch (err) {
-      window.alert(`Failed to create folder: ${String(err)}`);
-    }
-  }, [activeContextMenu, closeContextMenu, projectPathRef, refreshFolder]);
+    await createEntry(parentPath, "dir");
+  }, [activeContextMenu, closeContextMenu, createEntry]);
 
   const onContextRename = useCallback(async () => {
     if (!activeContextMenu) return;
@@ -216,10 +216,37 @@ function useFileTreeActions({
     }
   }, [activeContextMenu, closeContextMenu, projectPath]);
 
+  const onContextExpandAll = useCallback(() => {
+    const node = activeContextMenu?.node;
+    closeContextMenu();
+    if (node) expandAll(node.entry.path);
+  }, [activeContextMenu, closeContextMenu, expandAll]);
+
+  const onContextCollapse = useCallback(() => {
+    const node = activeContextMenu?.node;
+    closeContextMenu();
+    if (node) collapseUnder(node.entry.path);
+  }, [activeContextMenu, closeContextMenu, collapseUnder]);
+
   const fileTreeMenuItems: ContextMenuItem[] = useMemo(
     () =>
       activeContextMenu
         ? [
+            ...(activeContextMenu.node.entry.kind === "dir"
+              ? ([
+                  {
+                    id: "expand-all",
+                    label: "Expand All",
+                    onSelect: onContextExpandAll,
+                  },
+                  {
+                    id: "collapse-all",
+                    label: "Collapse",
+                    onSelect: onContextCollapse,
+                  },
+                  { type: "separator" },
+                ] satisfies ContextMenuItem[])
+              : []),
             {
               id: "new-file",
               label: "New File…",
@@ -265,9 +292,11 @@ function useFileTreeActions({
         : [],
     [
       activeContextMenu,
+      onContextCollapse,
       onContextCopyPath,
       onContextCopyRelativePath,
       onContextDelete,
+      onContextExpandAll,
       onContextNewFile,
       onContextNewFolder,
       onContextOpenWithDefault,
@@ -278,6 +307,7 @@ function useFileTreeActions({
 
   return {
     contextMenu: activeContextMenu,
+    createEntry,
     fileTreeMenuItems,
     openContextMenu,
     setContextMenu,

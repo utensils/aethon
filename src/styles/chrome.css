@@ -353,11 +353,15 @@ body.ae-resizing-composer .a2ui-layout {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
+  width: 16px;
   flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  opacity: 0.7;
+  color: var(--text-secondary, var(--text-dim));
+  opacity: 0.85;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-toggle:hover .ae-file-tree-chevron {
+  opacity: 1;
+  color: var(--text);
 }
 .ae-file-tree-title {
   font-size: var(--chrome-text);
@@ -394,6 +398,40 @@ body.ae-resizing-composer .a2ui-layout {
 }
 .ae-file-tree-hide:hover {
   color: var(--text);
+}
+/* Header toolbar — VS Code Explorer-style actions, revealed on hover/focus. */
+.ae-file-tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-titlebar:hover .ae-file-tree-actions,
+.ae-file-tree-titlebar:focus-within .ae-file-tree-actions {
+  opacity: 1;
+}
+.ae-file-tree-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-action:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 .ae-file-tree-resize-handle {
   position: absolute;
@@ -452,27 +490,50 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 3px 8px 3px 4px;
+  padding: 5px 8px 5px 6px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--font-size-sidebar);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .ae-file-tree-row:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
+/* The file open in the focused editor tab — accent wash + left bar. */
+.ae-file-tree-row.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.ae-file-tree-row.is-active .ae-file-tree-label {
+  color: var(--text);
+}
+/* Indent guides: one faint vertical line per ancestor level. */
+.ae-file-tree-guide {
+  flex: 0 0 12px;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  opacity: 0.45;
+}
+.ae-file-tree-row:hover .ae-file-tree-guide {
+  opacity: 0.85;
+}
 .ae-file-tree-chevron-row {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
+  width: 16px;
   flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  opacity: 0.6;
+  color: var(--text-secondary, var(--text-dim));
+  opacity: 0.8;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-row:hover .ae-file-tree-chevron-row,
+.ae-file-tree-row.is-dir[aria-expanded="true"] .ae-file-tree-chevron-row {
+  opacity: 1;
+  color: var(--text);
 }
 .ae-file-tree-chevron-spacer {
   visibility: hidden;

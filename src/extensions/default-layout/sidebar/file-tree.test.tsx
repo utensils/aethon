@@ -307,6 +307,210 @@ describe("FileTreePanel", () => {
     expect(badge?.textContent).toBe("M");
   });
 
+  it("renders header actions, svg twisties, and depth indent guides", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          { name: "app.ts", path: "/projects/aethon/src/app.ts", kind: "file" },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    for (const label of ["New File", "New Folder", "Refresh"]) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    // Expand/Collapse-all live in the header right-click menu, not the toolbar.
+    expect(screen.queryByLabelText("Expand All")).toBeNull();
+    const srcRow = screen.getByText("src").closest("li");
+    expect(srcRow?.querySelector(".ae-file-tree-chevron-row svg")).toBeTruthy();
+    expect(srcRow?.querySelectorAll(".ae-file-tree-guide").length).toBe(0);
+
+    fireEvent.click(screen.getByText("src"));
+    await waitFor(() => screen.getByText("app.ts"));
+    const childRow = screen.getByText("app.ts").closest("li");
+    expect(childRow?.querySelectorAll(".ae-file-tree-guide").length).toBe(1);
+  });
+
+  it("offers Expand/Collapse All in the header right-click menu", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    const { container } = render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    const titlebar = container.querySelector(".ae-file-tree-titlebar");
+    fireEvent.contextMenu(titlebar as Element);
+    expect(screen.getByRole("menuitem", { name: /Expand All/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Collapse All/ })).toBeTruthy();
+  });
+
+  it("highlights the row for the file open in the focused editor tab", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          {
+            name: "README.md",
+            path: "/projects/aethon/README.md",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(
+      <FileTreePanel
+        {...panelProps({
+          state: {
+            project: { path: "/projects/aethon", name: "aethon" },
+            tabs: [
+              {
+                id: "t1",
+                kind: "editor",
+                editor: {
+                  rootPath: "/projects/aethon",
+                  filePath: "/projects/aethon/README.md",
+                },
+              },
+            ],
+            activeTabId: "t1",
+          },
+        })}
+      />,
+    );
+    await waitFor(() => screen.getByText("README.md"));
+    expect(screen.getByText("README.md").closest("li")?.className).toContain(
+      "is-active",
+    );
+  });
+
+  it("expand all reveals nested folders but skips ignored dirs", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+          {
+            name: "node_modules",
+            path: "/projects/aethon/node_modules",
+            kind: "dir",
+          },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          { name: "app.ts", path: "/projects/aethon/src/app.ts", kind: "file" },
+        ]);
+      }
+      if (
+        cmd === "fs_list_dir" &&
+        args?.path === "/projects/aethon/node_modules"
+      ) {
+        return Promise.resolve([
+          {
+            name: "pkg",
+            path: "/projects/aethon/node_modules/pkg",
+            kind: "dir",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      if (cmd === "git_ignored_paths")
+        return Promise.resolve(["node_modules/"]);
+      return Promise.resolve(1);
+    });
+
+    const { container } = render(<FileTreePanel {...panelProps()} />);
+    // Wait until the ignored set has loaded so expand-all can honor it.
+    await waitFor(() => {
+      const li = screen.getByText("node_modules").closest("li");
+      if (!li?.className.includes("is-ignored")) throw new Error("not yet");
+    });
+    fireEvent.contextMenu(
+      container.querySelector(".ae-file-tree-titlebar") as Element,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Expand All/ }));
+    await waitFor(() => screen.getByText("app.ts"));
+    // The ignored dir was never descended into.
+    expect(screen.queryByText("pkg")).toBeNull();
+  });
+
+  it("collapse all (header menu) hides expanded folders", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          { name: "app.ts", path: "/projects/aethon/src/app.ts", kind: "file" },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    const { container } = render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    fireEvent.click(screen.getByText("src"));
+    await waitFor(() => screen.getByText("app.ts"));
+    fireEvent.contextMenu(
+      container.querySelector(".ae-file-tree-titlebar") as Element,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Collapse All/ }));
+    await waitFor(() => expect(screen.queryByText("app.ts")).toBeNull());
+  });
+
+  it("expands a single directory's subtree from its right-click menu", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          { name: "ui", path: "/projects/aethon/src/ui", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src/ui") {
+        return Promise.resolve([
+          {
+            name: "Button.tsx",
+            path: "/projects/aethon/src/ui/Button.tsx",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      if (cmd === "git_ignored_paths") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    fireEvent.contextMenu(screen.getByText("src").closest("li") as Element);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Expand All/ }));
+    // The whole src subtree opens — the nested file becomes visible.
+    await waitFor(() => screen.getByText("Button.tsx"));
+  });
+
   it("watches the visible project directories without recursive scans", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "fs_list_dir") {
