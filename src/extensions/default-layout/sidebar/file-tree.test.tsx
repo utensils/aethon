@@ -251,6 +251,62 @@ describe("FileTreePanel", () => {
     expect(screen.queryByLabelText("Untracked")).toBeNull();
   });
 
+  it("greys out ignored paths and gives them no git decoration", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          {
+            name: "node_modules",
+            path: "/projects/aethon/node_modules",
+            kind: "dir",
+          },
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      if (cmd === "git_ignored_paths")
+        return Promise.resolve(["node_modules/"]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    const ignoredLi = await waitFor(() => {
+      const li = screen.getByText("node_modules").closest("li");
+      if (!li?.className.includes("is-ignored")) throw new Error("not yet");
+      return li;
+    });
+    expect(ignoredLi.className).not.toContain("has-git-status");
+    // a non-ignored sibling stays undimmed
+    expect(screen.getByText("src").closest("li")?.className).not.toContain(
+      "is-ignored",
+    );
+  });
+
+  it("shows the propagated status letter (not a bullet) on a changed dir", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "git_file_status")
+        return Promise.resolve([{ path: "src/app.ts", status: "modified" }]);
+      if (cmd === "git_ignored_paths") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    const srcLi = await waitFor(() => {
+      const li = screen.getByText("src").closest("li");
+      if (!li?.className.includes("git-status-descendant")) {
+        throw new Error("not yet");
+      }
+      return li;
+    });
+    const badge = srcLi.querySelector(".ae-file-tree-git-decoration");
+    expect(badge?.textContent).toBe("M");
+  });
+
   it("watches the visible project directories without recursive scans", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "fs_list_dir") {

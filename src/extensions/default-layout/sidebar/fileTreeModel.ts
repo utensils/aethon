@@ -127,7 +127,10 @@ function relativePathFor(rootPath: string, path: string): string | null {
  *  from the root so file-tree-derived and SCM-panel-derived paths for the
  *  same file are byte-identical (matters for editor-tab dedupe on Windows
  *  backslash roots). The canonical path-join for the whole files surface. */
-export function absolutePathFor(rootPath: string, relativePath: string): string {
+export function absolutePathFor(
+  rootPath: string,
+  relativePath: string,
+): string {
   const separator =
     rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
   const normalizedRelative = normalizeRelativePath(relativePath).replace(
@@ -265,6 +268,36 @@ function gitDecorationsFromStatuses(
   return { direct, descendants };
 }
 
+interface IgnoreMatcher {
+  isIgnored(relativePath: string): boolean;
+}
+
+/** Build a matcher from git-ignored paths (as returned by `git_ignored_paths`,
+ *  relative to the active root). Entries ending in `/` are directory prefixes
+ *  that dim their whole subtree (e.g. `node_modules/` collapses to one entry
+ *  yet greys every descendant); others are exact files. An empty list matches
+ *  nothing, so a clean / non-git tree renders undimmed. */
+function buildIgnoreMatcher(paths: string[] | null | undefined): IgnoreMatcher {
+  const exact = new Set<string>();
+  const dirs: string[] = [];
+  for (const raw of Array.isArray(paths) ? paths : []) {
+    if (typeof raw !== "string") continue;
+    const isDir = /[/\\]$/.test(raw);
+    const norm = normalizeRelativePath(raw);
+    if (!norm) continue;
+    if (isDir) dirs.push(norm);
+    else exact.add(norm);
+  }
+  return {
+    isIgnored(relativePath: string): boolean {
+      const rel = normalizeRelativePath(relativePath);
+      if (!rel) return false;
+      if (exact.has(rel)) return true;
+      return dirs.some((dir) => rel === dir || rel.startsWith(`${dir}/`));
+    },
+  };
+}
+
 function deletedChildrenByParentFromStatuses(
   gitStatuses: Map<string, GitFileStatusEntry>,
   projectPath: string,
@@ -346,6 +379,7 @@ export {
   EXPAND_STATE_FILE,
   GIT_STATUS_META,
   basename,
+  buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
@@ -365,6 +399,7 @@ export type {
   GitDecoration,
   GitFileStatusEntry,
   GitFileStatusKind,
+  IgnoreMatcher,
   ProjectShape,
   TreeNode,
 };

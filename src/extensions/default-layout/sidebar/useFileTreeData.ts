@@ -5,6 +5,7 @@ import { readState, writeState } from "../../../persist";
 import {
   EXPANDED_CAP_PER_PROJECT,
   EXPAND_STATE_FILE,
+  buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
@@ -34,6 +35,7 @@ function useFileTreeData({
   const [gitStatuses, setGitStatuses] = useState<
     Map<string, GitFileStatusEntry>
   >(new Map());
+  const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
   const expandedStoreRef = useRef<ExpandedStore>({ byProject: {} });
   const projectPathRef = useRef<string>(projectPath);
@@ -88,19 +90,29 @@ function useFileTreeData({
   const refreshGitStatuses = useCallback(async (rootPath: string) => {
     if (!rootPath) {
       setGitStatuses(new Map());
+      setIgnoredPaths([]);
       return;
     }
     try {
-      const entries = await invoke<GitFileStatusEntry[] | null>(
-        "git_file_status",
-        { root: rootPath },
-      );
+      // Decorations + ignored set are fetched together so a single refresh
+      // tick repaints both. `git_ignored_paths` is `--directory`-collapsed,
+      // so this stays cheap even on trees with a huge node_modules.
+      const [entries, ignored] = await Promise.all([
+        invoke<GitFileStatusEntry[] | null>("git_file_status", {
+          root: rootPath,
+        }),
+        invoke<string[] | null>("git_ignored_paths", { root: rootPath }),
+      ]);
       if (projectPathRef.current !== rootPath) return;
       setGitStatuses(gitStatusesFromEntries(entries));
+      setIgnoredPaths(Array.isArray(ignored) ? ignored : []);
     } catch {
       // Non-git directories, missing git binary, or transient status errors
       // should never block the file tree; just render without decorations.
-      if (projectPathRef.current === rootPath) setGitStatuses(new Map());
+      if (projectPathRef.current === rootPath) {
+        setGitStatuses(new Map());
+        setIgnoredPaths([]);
+      }
     }
   }, []);
 
@@ -242,6 +254,11 @@ function useFileTreeData({
     [gitStatuses],
   );
 
+  const ignoreMatcher = useMemo(
+    () => buildIgnoreMatcher(ignoredPaths),
+    [ignoredPaths],
+  );
+
   const deletedChildrenByParent = useMemo(
     () => deletedChildrenByParentFromStatuses(gitStatuses, projectPath),
     [gitStatuses, projectPath],
@@ -335,6 +352,7 @@ function useFileTreeData({
     error,
     expanded,
     gitDecorations,
+    ignoreMatcher,
     projectPathRef,
     refreshFolder,
     root,

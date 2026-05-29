@@ -103,6 +103,7 @@ export function FileTreePanel({
     error,
     expanded,
     gitDecorations,
+    ignoreMatcher,
     projectPathRef,
     refreshFolder,
     root,
@@ -332,10 +333,17 @@ export function FileTreePanel({
         <ul className="ae-file-tree-list">
           {visibleNodes.map((node) => {
             const rel = relativePathFor(projectPath, node.entry.path);
+            const ignored = rel != null && ignoreMatcher.isIgnored(rel);
+            // Ignored paths carry no git status anyway; skip the lookup so an
+            // ignored row never picks up a tint and reads as dimmed-only.
             const direct =
-              rel == null ? undefined : gitDecorations.direct.get(rel);
+              rel == null || ignored
+                ? undefined
+                : gitDecorations.direct.get(rel);
             const descendant =
-              rel == null ? undefined : gitDecorations.descendants.get(rel);
+              rel == null || ignored
+                ? undefined
+                : gitDecorations.descendants.get(rel);
             const decoration = direct
               ? ({ status: direct, source: "direct" } as const)
               : descendant
@@ -347,6 +355,7 @@ export function FileTreePanel({
                 node={node}
                 expanded={expanded.has(node.entry.path)}
                 decoration={decoration}
+                ignored={ignored}
                 onClick={() => onItemClick(node)}
                 onContextMenu={(e) => openContextMenu(e, node)}
               />
@@ -373,6 +382,7 @@ interface FileTreeRowProps {
   node: TreeNode;
   expanded: boolean;
   decoration?: GitDecoration;
+  ignored?: boolean;
   onClick: () => void;
   onContextMenu: (e: ReactMouseEvent) => void;
 }
@@ -381,6 +391,7 @@ function FileTreeRow({
   node,
   expanded,
   decoration,
+  ignored,
   onClick,
   onContextMenu,
 }: FileTreeRowProps) {
@@ -392,12 +403,15 @@ function FileTreeRow({
         decoration?.source === "descendant" ? " descendant" : ""
       }`
     : "";
+  const titleBase = ignored ? `${node.entry.path} — Ignored` : node.entry.path;
   return (
     <li
       role="treeitem"
       aria-level={node.depth}
       aria-expanded={isDir ? expanded : undefined}
       className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}${
+        ignored ? " is-ignored" : ""
+      }${
         decoration
           ? ` has-git-status git-status-${decoration.status} git-status-${decoration.source}`
           : ""
@@ -405,9 +419,7 @@ function FileTreeRow({
       style={{ paddingLeft: indent }}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      title={
-        statusTitle ? `${node.entry.path} — ${statusTitle}` : node.entry.path
-      }
+      title={statusTitle ? `${node.entry.path} — ${statusTitle}` : titleBase}
     >
       {isDir ? (
         <span className="ae-file-tree-chevron-row" aria-hidden="true">
@@ -429,7 +441,7 @@ function FileTreeRow({
           aria-label={statusTitle}
           title={statusTitle}
         >
-          {decoration?.source === "descendant" ? "•" : statusMeta.label}
+          {statusMeta.label}
         </span>
       )}
       {node.loading && (

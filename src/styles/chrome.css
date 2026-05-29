@@ -494,11 +494,25 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ae-file-tree-row.has-git-status .ae-file-tree-label {
-  color: var(--text);
+/* Color the whole name by git status (VS Code style). Keyed on the row's
+   git-status class regardless of source, so folders carrying a propagated
+   status tint just like the leaf files underneath them — follow the colored
+   trail down to the change. */
+.ae-file-tree-row.git-status-modified .ae-file-tree-label,
+.ae-file-tree-row.git-status-renamed .ae-file-tree-label {
+  color: var(--warn);
+}
+.ae-file-tree-row.git-status-added .ae-file-tree-label,
+.ae-file-tree-row.git-status-untracked .ae-file-tree-label,
+.ae-file-tree-row.git-status-copied .ae-file-tree-label {
+  color: var(--success, #3fb950);
+}
+.ae-file-tree-row.git-status-conflicted .ae-file-tree-label {
+  color: var(--error);
+  font-weight: 600;
 }
 .ae-file-tree-row.git-status-deleted .ae-file-tree-label {
-  color: var(--text-dim);
+  color: var(--error);
   text-decoration: line-through;
 }
 .ae-file-tree-git-decoration {
@@ -512,9 +526,13 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   color: var(--accent);
   opacity: 0.95;
 }
+/* Folder rollup letters read as secondary to leaf changes. */
 .ae-file-tree-row.git-status-descendant .ae-file-tree-git-decoration {
-  min-width: auto;
-  opacity: 0.7;
+  opacity: 0.75;
+}
+.ae-file-tree-row.git-status-modified .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-renamed .ae-file-tree-git-decoration {
+  color: var(--warn);
 }
 .ae-file-tree-row.git-status-added .ae-file-tree-git-decoration,
 .ae-file-tree-row.git-status-untracked .ae-file-tree-git-decoration,
@@ -524,12 +542,19 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
 .ae-file-tree-row.git-status-deleted .ae-file-tree-git-decoration {
   color: var(--error);
 }
-.ae-file-tree-row.git-status-renamed .ae-file-tree-git-decoration {
-  color: var(--warn);
-}
 .ae-file-tree-row.git-status-conflicted .ae-file-tree-git-decoration {
   color: var(--error);
   font-weight: 700;
+}
+/* Ignored paths (node_modules, build dirs, .env…) — dimmed but still
+   expandable so they read as background, not noise. */
+.ae-file-tree-row.is-ignored .ae-file-tree-label,
+.ae-file-tree-row.is-ignored .ae-file-tree-icon,
+.ae-file-tree-row.is-ignored .ae-file-tree-chevron-row {
+  opacity: var(--opacity-muted);
+}
+.ae-file-tree-row.is-ignored .ae-file-tree-label {
+  color: var(--text-dim);
 }
 .ae-file-tree-loading {
   opacity: var(--opacity-muted);

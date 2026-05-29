@@ -188,6 +188,7 @@ pub fn run() {
             commands::fs::fs_open_in_default_app,
             commands::git::status::git_status,
             commands::git::status::git_file_status,
+            commands::git::status::git_ignored_paths,
             commands::git::worktrees::git_worktrees,
             commands::git::worktrees::git_worktree_add,
             commands::git::worktrees::git_worktree_remove,

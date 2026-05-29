@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
@@ -106,5 +107,33 @@ describe("fileTreeModel", () => {
         projectPath: "/repo",
       }),
     ).toEqual([]);
+  });
+});
+
+describe("buildIgnoreMatcher", () => {
+  it("matches exact ignored files", () => {
+    const m = buildIgnoreMatcher([".env", "dist/bundle.js"]);
+    expect(m.isIgnored(".env")).toBe(true);
+    expect(m.isIgnored("dist/bundle.js")).toBe(true);
+    expect(m.isIgnored("src/app.ts")).toBe(false);
+  });
+
+  it("dims the whole subtree of a collapsed ignored directory", () => {
+    const m = buildIgnoreMatcher(["node_modules/"]);
+    // the dir node itself…
+    expect(m.isIgnored("node_modules")).toBe(true);
+    // …and any descendant, even though git collapsed it to one entry.
+    expect(m.isIgnored("node_modules/react/index.js")).toBe(true);
+    // a sibling that merely shares the prefix is NOT ignored.
+    expect(m.isIgnored("node_modules_keep/file.ts")).toBe(false);
+  });
+
+  it("normalizes separators and tolerates non-array input", () => {
+    const m = buildIgnoreMatcher(["build\\cache/"]);
+    expect(m.isIgnored("build/cache/out.o")).toBe(true);
+    expect(buildIgnoreMatcher(null).isIgnored("anything")).toBe(false);
+    expect(
+      buildIgnoreMatcher(undefined as unknown as string[]).isIgnored("x"),
+    ).toBe(false);
   });
 });
