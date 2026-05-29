@@ -213,3 +213,173 @@ fn rollup_conclusion(c: &GhChecks) -> &'static str {
         "neutral"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a `check_runs` body from `(name, status, conclusion)` tuples so
+    /// each test reads as a table of CI states.
+    fn body(runs: &[(&str, &str, Option<&str>)]) -> String {
+        let items: Vec<String> = runs
+            .iter()
+            .map(|(name, status, conclusion)| {
+                let concl = match conclusion {
+                    Some(c) => format!("\"{c}\""),
+                    None => "null".to_string(),
+                };
+                format!(
+                    r#"{{"name":"{name}","status":"{status}","conclusion":{concl},"details_url":"https://ci/{name}"}}"#
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"total_count":{},"check_runs":[{}]}}"#,
+            runs.len(),
+            items.join(",")
+        )
+    }
+
+    #[test]
+    fn all_success_rolls_up_to_success() {
+        let parsed = parse_check_runs_json(&body(&[
+            ("build", "completed", Some("success")),
+            ("test", "completed", Some("success")),
+        ]))
+        .expect("parse");
+        assert_eq!(parsed.total, 2);
+        assert_eq!(parsed.passed, 2);
+        assert_eq!(parsed.failed, 0);
+        assert_eq!(parsed.conclusion.as_deref(), Some("success"));
+        assert_eq!(parsed.checks.len(), 2);
+        assert_eq!(parsed.checks[0].url.as_deref(), Some("https://ci/build"));
+    }
+
+    #[test]
+    fn any_failure_dominates() {
+        // A single failure outranks a passing majority.
+        let parsed = parse_check_runs_json(&body(&[
+            ("build", "completed", Some("success")),
+            ("lint", "completed", Some("failure")),
+            ("test", "completed", Some("success")),
+        ]))
+        .expect("parse");
+        assert_eq!(parsed.passed, 2);
+        assert_eq!(parsed.failed, 1);
+        assert_eq!(parsed.conclusion.as_deref(), Some("failure"));
+    }
+
+    #[test]
+    fn failure_dominates_even_pending() {
+        // failure > pending > success in the rollup order.
+        let parsed = parse_check_runs_json(&body(&[
+            ("deploy", "in_progress", None),
+            ("lint", "completed", Some("failure")),
+        ]))
+        .expect("parse");
+        assert_eq!(parsed.pending, 1);
+        assert_eq!(parsed.failed, 1);
+        assert_eq!(parsed.conclusion.as_deref(), Some("failure"));
+    }
+
+    #[test]
+    fn pending_dominates_success() {
+        let parsed = parse_check_runs_json(&body(&[
+            ("build", "completed", Some("success")),
+            ("deploy", "queued", None),
+        ]))
+        .expect("parse");
+        assert_eq!(parsed.passed, 1);
+        assert_eq!(parsed.pending, 1);
+        assert_eq!(parsed.conclusion.as_deref(), Some("pending"));
+    }
+
+    #[test]
+    fn failure_equivalent_conclusions_all_count_as_failed() {
+        // Every non-success terminal conclusion GitHub can emit must land
+        // in the `failed` bucket so the chip never shows green on a red run.
+        for concl in [
+            "timed_out",
+            "cancelled",
+            "action_required",
+            "startup_failure",
+            "stale",
+        ] {
+            let parsed =
+                parse_check_runs_json(&body(&[("job", "completed", Some(concl))])).expect("parse");
+            assert_eq!(parsed.failed, 1, "{concl} should count as failed");
+            assert_eq!(parsed.conclusion.as_deref(), Some("failure"));
+        }
+    }
+
+    #[test]
+    fn skipped_and_neutral_roll_up_to_neutral() {
+        let parsed = parse_check_runs_json(&body(&[
+            ("optional-a", "completed", Some("skipped")),
+            ("optional-b", "completed", Some("neutral")),
+        ]))
+        .expect("parse");
+        assert_eq!(parsed.skipped, 2);
+        assert_eq!(parsed.passed, 0);
+        assert_eq!(parsed.failed, 0);
+        assert_eq!(parsed.conclusion.as_deref(), Some("neutral"));
+    }
+
+    #[test]
+    fn completed_without_conclusion_counts_as_skipped_not_pending() {
+        // A completed run with a null conclusion is terminal — it must not
+        // read as still-pending.
+        let parsed = parse_check_runs_json(&body(&[("weird", "completed", None)])).expect("parse");
+        assert_eq!(parsed.pending, 0);
+        assert_eq!(parsed.skipped, 1);
+        assert_eq!(parsed.conclusion.as_deref(), Some("neutral"));
+    }
+
+    #[test]
+    fn empty_check_runs_is_none() {
+        let parsed = parse_check_runs_json(r#"{"total_count":0,"check_runs":[]}"#).expect("parse");
+        assert_eq!(parsed.total, 0);
+        assert_eq!(parsed.conclusion.as_deref(), Some("none"));
+        assert!(parsed.checks.is_empty());
+    }
+
+    #[test]
+    fn url_falls_back_to_html_url_then_none() {
+        let fixture = r#"{
+            "check_runs": [
+                {"name":"with-details","status":"completed","conclusion":"success","details_url":"https://d/1","html_url":"https://h/1"},
+                {"name":"html-only","status":"completed","conclusion":"success","details_url":"","html_url":"https://h/2"},
+                {"name":"neither","status":"completed","conclusion":"success","details_url":"","html_url":""}
+            ]
+        }"#;
+        let parsed = parse_check_runs_json(fixture).expect("parse");
+        assert_eq!(parsed.checks[0].url.as_deref(), Some("https://d/1"));
+        assert_eq!(parsed.checks[1].url.as_deref(), Some("https://h/2"));
+        assert_eq!(parsed.checks[2].url, None);
+    }
+
+    #[test]
+    fn malformed_or_missing_key_is_none() {
+        assert!(parse_check_runs_json("{ broken").is_none());
+        assert!(parse_check_runs_json("").is_none());
+        // Valid JSON but no `check_runs` array (e.g. a 404 error body).
+        assert!(parse_check_runs_json(r#"{"message":"Not Found"}"#).is_none());
+        assert!(parse_check_runs_json(r#"{"check_runs":{}}"#).is_none());
+    }
+
+    #[test]
+    fn rollup_conclusion_matches_buckets_directly() {
+        let mk = |total, failed, pending, passed| GhChecks {
+            total,
+            failed,
+            pending,
+            passed,
+            ..Default::default()
+        };
+        assert_eq!(rollup_conclusion(&mk(0, 0, 0, 0)), "none");
+        assert_eq!(rollup_conclusion(&mk(3, 1, 1, 1)), "failure");
+        assert_eq!(rollup_conclusion(&mk(2, 0, 1, 1)), "pending");
+        assert_eq!(rollup_conclusion(&mk(2, 0, 0, 2)), "success");
+        assert_eq!(rollup_conclusion(&mk(1, 0, 0, 0)), "neutral");
+    }
+}
