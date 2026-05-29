@@ -22,6 +22,101 @@ function worktreeLanding(props: Record<string, unknown>): A2UIComponent {
 }
 
 describe("WorktreeLanding sessions", () => {
+  it("uses the parent project's discovered icon when one is available", () => {
+    const { container } = render(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "Claudette",
+            iconUrl: "asset://localhost/project-icons/claudette.png",
+            worktreeId: "wt-1",
+            worktreeLabel: "feat/phaethon",
+            branch: "feat/phaethon",
+            path: "/repo/claudette-feat-phaethon",
+          },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    const hero = container.querySelector(".a2ui-empty-state-hero")!;
+    const image = hero.querySelector("img");
+    expect(image?.getAttribute("src")).toBe(
+      "asset://localhost/project-icons/claudette.png",
+    );
+    expect(hero.querySelector("svg")).toBeNull();
+  });
+
+  it("derives the project icon from live sidebar state", () => {
+    const { container, rerender } = render(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "Claudette",
+            worktreeId: "wt-1",
+            worktreeLabel: "feat/phaethon",
+            branch: "feat/phaethon",
+            path: "/repo/claudette-feat-phaethon",
+          },
+          sidebar: { projects: [{ id: "p1" }] },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".a2ui-empty-state-hero img")).toBeNull();
+
+    rerender(
+      <WorktreeLanding
+        component={worktreeLanding({
+          landing: { $ref: "/landing" },
+          recentSessions: { $ref: "/recentSessions" },
+        })}
+        state={{
+          landing: {
+            kind: "worktree",
+            projectId: "p1",
+            projectLabel: "Claudette",
+            worktreeId: "wt-1",
+            worktreeLabel: "feat/phaethon",
+            branch: "feat/phaethon",
+            path: "/repo/claudette-feat-phaethon",
+          },
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                iconUrl: "asset://localhost/project-icons/claudette.png",
+              },
+            ],
+          },
+          recentSessions: [],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(
+      container
+        .querySelector(".a2ui-empty-state-hero img")
+        ?.getAttribute("src"),
+    ).toBe("asset://localhost/project-icons/claudette.png");
+  });
+
   it("lists resumable sessions for the selected worktree", () => {
     const onEvent = vi.fn();
     render(

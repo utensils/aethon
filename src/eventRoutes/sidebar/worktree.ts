@@ -40,6 +40,7 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
           projects?: {
             id: string;
             label: string;
+            iconUrl?: string;
             worktrees?: {
               id: string;
               label?: string;
@@ -85,6 +86,7 @@ export const handleSidebarSwitchWorktree: EventRouteHandler = (
           kind: "worktree",
           projectId: project.id,
           projectLabel: project.label,
+          iconUrl: project.iconUrl,
           worktreeId: worktree.id,
           worktreeLabel: worktree.label,
           branch: worktree.branch,

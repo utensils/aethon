@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ShellMeta, Tab } from "../../types/tab";
+import { OVERVIEW_TAB_ID } from "../../types/tab";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { TAB_MIRROR_KEYS, VALID_SHARE_MODES } from "./constants";
 
@@ -98,6 +99,16 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
    *  dispatches a terminal replay so the shared xterm clears and
    *  re-writes the new tab's buffered output. */
   function setActiveTab(tabId: string): void {
+    if (tabId === OVERVIEW_TAB_ID) {
+      setState((prev) => {
+        if (prev.activeTabId === OVERVIEW_TAB_ID && prev.landing == null) {
+          return prev;
+        }
+        return { ...prev, activeTabId: OVERVIEW_TAB_ID, landing: null };
+      });
+      dispatchTerminalReplay("");
+      return;
+    }
     let nextBuffer = "";
     setState((prev) => {
       const tabs = (prev.tabs as Tab[] | undefined) ?? [];

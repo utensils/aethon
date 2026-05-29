@@ -43,6 +43,7 @@ export function WorktreeLanding({
       kind?: string;
       projectId?: string;
       projectLabel?: string;
+      iconUrl?: string;
       worktreeId?: string;
       worktreeLabel?: string;
       branch?: string;
@@ -73,9 +74,12 @@ export function WorktreeLanding({
   const branch = landing.branch ?? "";
   const path = landing.path ?? "";
   const isMain = landing.isMain === true;
+  const sidebarIconUrl = projectIconUrlFromSidebar(state, landing.projectId);
+  const iconUrl = sidebarIconUrl ?? landing.iconUrl;
 
   return (
     <WorktreeLandingInner
+      iconUrl={iconUrl}
       title={title}
       projectLabel={projectLabel}
       branch={branch}
@@ -96,11 +100,24 @@ interface WorktreeLandingSession {
   cwd?: string;
 }
 
+function projectIconUrlFromSidebar(
+  state: Record<string, unknown>,
+  projectId?: string,
+): string | undefined {
+  if (!projectId) return undefined;
+  const sidebar = state.sidebar as
+    | { projects?: Array<{ id?: string; iconUrl?: unknown }> }
+    | undefined;
+  const project = sidebar?.projects?.find((p) => p.id === projectId);
+  return typeof project?.iconUrl === "string" ? project.iconUrl : undefined;
+}
+
 function normalizeLandingPath(path?: string): string {
   return (path ?? "").replace(/[/\\]+$/, "");
 }
 
 function WorktreeLandingInner(props: {
+  iconUrl?: string;
   title: string;
   projectLabel: string;
   branch: string;
@@ -116,6 +133,7 @@ function WorktreeLandingInner(props: {
   ) => void;
 }) {
   const {
+    iconUrl,
     title,
     projectLabel,
     branch,
@@ -163,7 +181,16 @@ function WorktreeLandingInner(props: {
     <div className="a2ui-empty-state a2ui-worktree-landing">
       <div className="a2ui-empty-state-card">
         <div className="a2ui-empty-state-hero" aria-hidden="true">
-          <AeMarkInline size={64} radius={12} />
+          {iconUrl ? (
+            <img
+              src={iconUrl}
+              alt=""
+              className="a2ui-worktree-landing-icon"
+              loading="lazy"
+            />
+          ) : (
+            <AeMarkInline size={64} radius={12} />
+          )}
         </div>
         <h1 className="a2ui-empty-state-title">{title}</h1>
         <p className="a2ui-empty-state-subtitle">

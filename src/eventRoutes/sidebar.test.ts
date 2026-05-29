@@ -275,6 +275,7 @@ describe("handleSidebarSwitchWorktree", () => {
         {
           id: "proj-1",
           label: "aethon",
+          iconUrl: "asset://localhost/project-icons/aethon.png",
           worktrees: [
             {
               id: "wt-1",
@@ -306,6 +307,7 @@ describe("handleSidebarSwitchWorktree", () => {
     expect(applySetState().landing).toMatchObject({
       kind: "worktree",
       projectId: "proj-1",
+      iconUrl: "asset://localhost/project-icons/aethon.png",
       worktreeId: "wt-1",
       path: "/repo/aethon-fix-issue",
     });

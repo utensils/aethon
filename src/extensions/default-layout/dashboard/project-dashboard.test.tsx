@@ -26,13 +26,20 @@ function dashboard(props: Record<string, unknown>): A2UIComponent {
   };
 }
 
-function renderDashboard(onEvent = vi.fn()) {
+function renderDashboard(
+  onEvent = vi.fn(),
+  project: Record<string, unknown> = {
+    id: "p1",
+    label: "aethon",
+    path: "/repo",
+  },
+) {
   const registry = new ExtensionRegistry();
-  render(
+  const result = render(
     <ExtensionRegistryProvider registry={registry}>
       <ProjectDashboard
         component={dashboard({
-          project: { id: "p1", label: "aethon", path: "/repo" },
+          project,
           worktrees: [
             {
               id: "main",
@@ -57,8 +64,26 @@ function renderDashboard(onEvent = vi.fn()) {
       />
     </ExtensionRegistryProvider>,
   );
-  return { onEvent };
+  return { onEvent, ...result };
 }
+
+describe("ProjectDashboard project icon", () => {
+  it("uses the discovered project icon in the hero when one is available", () => {
+    const { container } = renderDashboard(vi.fn(), {
+      id: "p1",
+      label: "Claudette",
+      path: "/repo/claudette",
+      iconUrl: "asset://localhost/project-icons/claudette.png",
+    });
+
+    const hero = container.querySelector(".a2ui-project-dashboard-hero")!;
+    const image = hero.querySelector("img");
+    expect(image?.getAttribute("src")).toBe(
+      "asset://localhost/project-icons/claudette.png",
+    );
+    expect(hero.querySelector("svg")).toBeNull();
+  });
+});
 
 describe("ProjectDashboard worktree removal", () => {
   it("opens inline confirmation from a worktree remove icon", () => {

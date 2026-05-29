@@ -1937,6 +1937,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   filter: drop-shadow(var(--shadow-1));
 }
 
+.a2ui-worktree-landing-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  display: block;
+}
+
 .a2ui-empty-state-title {
   margin: 0;
   font-size: 1.5rem;
@@ -6358,6 +6366,13 @@ button.a2ui-gh-stat:hover {
   border-radius: var(--radius-lg);
   background: var(--accent-soft);
   box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.a2ui-project-dashboard-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  display: block;
 }
 .a2ui-project-dashboard-header-text {
   display: flex;
