@@ -19,6 +19,10 @@
   -webkit-app-region: no-drag;
 }
 
+[data-platform="mac"] .banner {
+  padding-left: max(94px, 0.9rem);
+}
+
 .message {
   flex: 1 1 auto;
   white-space: nowrap;
