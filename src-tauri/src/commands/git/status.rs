@@ -137,37 +137,9 @@ pub async fn git_file_status(root: String) -> Result<Option<Vec<GitFileStatusEnt
         return Ok(None);
     }
 
-    let inside = env::command("git")
-        .arg("-C")
-        .arg(&dir)
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output();
-    let inside_ok = match inside {
-        Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true",
-        Err(_) => false,
+    let Some((repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
+        return Ok(None);
     };
-    if !inside_ok {
-        return Ok(None);
-    }
-
-    let top_level = env::command("git")
-        .arg("-C")
-        .arg(&dir)
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .map_err(|e| format!("git rev-parse --show-toplevel: {e}"))?;
-    if !top_level.status.success() {
-        return Ok(None);
-    }
-    let repo_root_raw = PathBuf::from(
-        String::from_utf8_lossy(&top_level.stdout)
-            .trim()
-            .to_string(),
-    );
-    let repo_root = repo_root_raw.canonicalize().unwrap_or(repo_root_raw);
-    let active_root = dir
-        .canonicalize()
-        .map_err(|e| format!("root canonicalize {}: {e}", dir.display()))?;
 
     // `--porcelain=v1 -z` gives a stable, NUL-delimited format whose paths
     // are not quoted, so spaces and unusual characters do not need a fragile
@@ -203,6 +175,98 @@ pub async fn git_file_status(root: String) -> Result<Option<Vec<GitFileStatusEnt
         })
         .collect();
     Ok(Some(entries))
+}
+
+/// Resolve `(repo_root, active_root)` for a directory, both canonicalized so
+/// path math against git output is stable. Returns `None` when `dir` is not
+/// inside a git worktree, so callers can render the plain filesystem tree.
+pub(crate) fn resolve_repo_and_active_root(
+    dir: &Path,
+) -> Result<Option<(PathBuf, PathBuf)>, String> {
+    let inside = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output();
+    let inside_ok = match inside {
+        Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true",
+        Err(_) => false,
+    };
+    if !inside_ok {
+        return Ok(None);
+    }
+
+    let top_level = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| format!("git rev-parse --show-toplevel: {e}"))?;
+    if !top_level.status.success() {
+        return Ok(None);
+    }
+    let repo_root_raw = PathBuf::from(
+        String::from_utf8_lossy(&top_level.stdout)
+            .trim()
+            .to_string(),
+    );
+    let repo_root = repo_root_raw.canonicalize().unwrap_or(repo_root_raw);
+    let active_root = dir
+        .canonicalize()
+        .map_err(|e| format!("root canonicalize {}: {e}", dir.display()))?;
+    Ok(Some((repo_root, active_root)))
+}
+
+/// Return the git-ignored paths under the active file tree root, so the
+/// frontend can grey them out. `None` means the directory is not a git
+/// worktree. `--directory` collapses a wholly-ignored folder to a single
+/// `node_modules/` entry instead of enumerating every file inside it, so the
+/// result stays small even for large vendored trees. Paths are relative to
+/// the active root and directories keep their trailing `/`.
+#[tauri::command]
+pub async fn git_ignored_paths(root: String) -> Result<Option<Vec<String>>, String> {
+    let dir = PathBuf::from(&root);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+
+    let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
+        return Ok(None);
+    };
+
+    // `--others --ignored --exclude-standard` lists only ignored entries; `-z`
+    // keeps paths unquoted + NUL-delimited; `-- .` scopes to the active root
+    // so a subdirectory-opened repo reports its own ignores, output relative
+    // to that root.
+    let output = env::command("git")
+        .arg("-C")
+        .arg(&active_root)
+        .args([
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+            "--",
+            ".",
+        ])
+        .output()
+        .map_err(|e| format!("git ls-files: {e}"))?;
+    if !output.status.success() {
+        return Ok(Some(Vec::new()));
+    }
+    Ok(Some(parse_nul_paths(&output.stdout)))
+}
+
+/// Split a NUL-delimited byte stream (`-z` git output) into non-empty path
+/// strings, lossily decoding any non-UTF-8 bytes.
+pub(crate) fn parse_nul_paths(bytes: &[u8]) -> Vec<String> {
+    bytes
+        .split(|b| *b == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8_lossy(part).to_string())
+        .collect()
 }
 
 pub(crate) fn path_relative_to_active_root(
@@ -304,6 +368,16 @@ mod tests {
         assert_eq!(out[0].path, "src/new.ts");
         assert_eq!(out[0].status, "renamed");
         assert_eq!(out[0].original_path.as_deref(), Some("src/old.ts"));
+    }
+
+    #[test]
+    fn parses_nul_delimited_ignored_paths() {
+        // `ls-files -z --directory` keeps a trailing slash on collapsed dirs
+        // and leaves file paths (incl. spaces) intact.
+        let text = b"node_modules/\0.env\0build/cache file.txt\0";
+        let out = parse_nul_paths(text);
+        assert_eq!(out, vec!["node_modules/", ".env", "build/cache file.txt"]);
+        assert!(parse_nul_paths(b"").is_empty());
     }
 
     #[test]

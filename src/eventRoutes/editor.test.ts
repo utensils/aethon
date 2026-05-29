@@ -44,6 +44,38 @@ describe("handleEditorCanvas", () => {
     });
   });
 
+  it("routes editor-close through closeTab (honours dirty confirm)", async () => {
+    const fx = buildRouteFixture();
+    const claimed = await handleEditorCanvas(
+      editorEvent("editor-close", { tabId: "tab-1" }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.closeTab).toHaveBeenCalledWith("tab-1");
+  });
+
+  it("toggles markdown preview on editor-preview-toggle", async () => {
+    const fx = buildRouteFixture();
+    const claimed = await handleEditorCanvas(
+      editorEvent("editor-preview-toggle", { tabId: "tab-1" }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.toggleEditorPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the diff flag on editor-diff-to-edit", async () => {
+    const fx = buildRouteFixture();
+    const claimed = await handleEditorCanvas(
+      editorEvent("editor-diff-to-edit", { tabId: "tab-1" }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.updateEditorMeta).toHaveBeenCalledWith("tab-1", {
+      diff: false,
+    });
+  });
+
   it("invokes fs_write_file on editor-save and clears dirty", async () => {
     const fx = buildRouteFixture({
       state: { project: { path: "/projects/aethon" } },
@@ -216,6 +248,26 @@ describe("handleFileTree", () => {
     expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
       "/projects/aethon/src/App.tsx",
       { rootPath: "/projects/aethon" },
+    );
+  });
+
+  it("opens a diff tab on file-tree-diff", () => {
+    const fx = buildRouteFixture();
+    const claimed = handleFileTree(
+      {
+        component: { id: "source-control-panel", type: "source-control-panel" },
+        eventType: "file-tree-diff",
+        data: {
+          filePath: "/projects/aethon/src/App.tsx",
+          rootPath: "/projects/aethon",
+        },
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
+      "/projects/aethon/src/App.tsx",
+      { diff: true, rootPath: "/projects/aethon" },
     );
   });
 

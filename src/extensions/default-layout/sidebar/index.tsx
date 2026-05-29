@@ -20,6 +20,7 @@ import type {
 } from "../../../types/a2ui";
 import { resolveBoolean, resolveString } from "../../../utils/dataBinding";
 import { isMacOS } from "../../../utils/platform";
+import { onWindowDragMouseDown } from "../../../utils/windowDrag";
 import { ContextMenu } from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
@@ -180,11 +181,18 @@ export function Sidebar({
         // Brand strip — also the macOS overlay-titlebar drag region. On
         // mac it reserves the top-left for the traffic lights (see the
         // [data-platform="mac"] rule in chrome.css); the host hierarchy
-        // lives in the body below, not here. The drag attribute is emitted
-        // only on mac so Linux/Windows native-titlebar dragging is unchanged.
+        // lives in the body below, not here. `"deep"` + the explicit
+        // mousedown handler make the whole strip (logo + version) drag the
+        // window, matching the header. Emitted only on mac so Linux/Windows
+        // native-titlebar dragging is unchanged.
         <div
           className="a2ui-sidebar-title"
-          {...(isMacOS() ? { "data-tauri-drag-region": true } : {})}
+          {...(isMacOS()
+            ? {
+                "data-tauri-drag-region": "deep",
+                onMouseDown: onWindowDragMouseDown,
+              }
+            : {})}
         >
           {showBrand ? (
             // Full wordmark replaces the monogram + plain "aethon" text so

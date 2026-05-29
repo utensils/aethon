@@ -4,6 +4,7 @@
  * conclusion→icon/tone mapping in one place so the two surfaces never
  * disagree on what "green" means.
  */
+import type { GhCheckRun } from "../../../ghChecksCache";
 import type { VcsCi, VcsChanges, VcsPr } from "../../../hooks/useVcsStatus";
 
 export type Tone = "success" | "failure" | "pending" | "neutral" | "muted";
@@ -52,6 +53,57 @@ export function ciMeta(ci: VcsCi | null): CiMeta | null {
   }
 }
 
+export interface CheckMeta {
+  icon: string;
+  label: string;
+  tone: Tone;
+}
+
+/** Map a single check run to an icon + short label + tone, reusing the same
+ *  glyphs/tones as `ciMeta` so the expanded list agrees with the rollup. A
+ *  run is "running" until `status === "completed"`, regardless of conclusion. */
+export function checkRunMeta(run: GhCheckRun): CheckMeta {
+  if (run.status !== "completed") {
+    return { icon: "●", label: "running", tone: "pending" };
+  }
+  switch (run.conclusion) {
+    case "success":
+      return { icon: "✓", label: "passed", tone: "success" };
+    case "failure":
+    case "timed_out":
+    case "action_required":
+      return { icon: "✕", label: "failing", tone: "failure" };
+    case "cancelled":
+      return { icon: "✕", label: "cancelled", tone: "neutral" };
+    case "skipped":
+    case "neutral":
+    case "stale":
+      return { icon: "–", label: "skipped", tone: "neutral" };
+    default:
+      return { icon: "–", label: run.conclusion ?? "unknown", tone: "neutral" };
+  }
+}
+
+/** Sort priority for the expanded job list: problems first, green last. */
+const CHECK_STATUS_PRIORITY: Record<Tone, number> = {
+  failure: 0,
+  pending: 1,
+  neutral: 2,
+  muted: 3,
+  success: 4,
+};
+
+/** Non-mutating sort: failures → running → skipped/cancelled → passed, then
+ *  alphabetical by name. Mirrors the expanded list so red surfaces at the top. */
+export function sortChecks(runs: GhCheckRun[]): GhCheckRun[] {
+  return [...runs].sort((a, b) => {
+    const pa = CHECK_STATUS_PRIORITY[checkRunMeta(a).tone];
+    const pb = CHECK_STATUS_PRIORITY[checkRunMeta(b).tone];
+    if (pa !== pb) return pa - pb;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export interface PrMeta {
   label: string;
   tone: Tone;
@@ -63,10 +115,18 @@ export function prMeta(pr: VcsPr | null): PrMeta | null {
   if (!pr) return null;
   const state = pr.state?.toUpperCase();
   if (pr.merged || state === "MERGED") {
-    return { label: "merged", tone: "neutral", title: `PR #${pr.number} merged` };
+    return {
+      label: "merged",
+      tone: "neutral",
+      title: `PR #${pr.number} merged`,
+    };
   }
   if (state === "CLOSED") {
-    return { label: "closed", tone: "failure", title: `PR #${pr.number} closed` };
+    return {
+      label: "closed",
+      tone: "failure",
+      title: `PR #${pr.number} closed`,
+    };
   }
   if (pr.isDraft) {
     return { label: "draft", tone: "muted", title: `PR #${pr.number} (draft)` };

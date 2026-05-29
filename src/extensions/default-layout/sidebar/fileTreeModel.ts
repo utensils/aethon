@@ -44,6 +44,7 @@ interface EditorTabShape {
   kind?: string;
   editor?: {
     rootPath?: string;
+    filePath?: string;
   };
 }
 
@@ -127,7 +128,10 @@ function relativePathFor(rootPath: string, path: string): string | null {
  *  from the root so file-tree-derived and SCM-panel-derived paths for the
  *  same file are byte-identical (matters for editor-tab dedupe on Windows
  *  backslash roots). The canonical path-join for the whole files surface. */
-export function absolutePathFor(rootPath: string, relativePath: string): string {
+export function absolutePathFor(
+  rootPath: string,
+  relativePath: string,
+): string {
   const separator =
     rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
   const normalizedRelative = normalizeRelativePath(relativePath).replace(
@@ -135,6 +139,22 @@ export function absolutePathFor(rootPath: string, relativePath: string): string 
     separator,
   );
   return `${rootPath.replace(/[\\/]+$/, "")}${separator}${normalizedRelative}`;
+}
+
+/** Absolute paths of every directory between `rootPath` (exclusive) and
+ *  `filePath` (exclusive), in root → leaf order — i.e. the folders the file
+ *  tree must expand to reveal the file. Empty when the file is outside the
+ *  root or sits directly under it. Uses the root's separator so the paths
+ *  match the tree's node keys (matters on Windows backslash roots). */
+export function ancestorDirsFor(rootPath: string, filePath: string): string[] {
+  const rel = relativePathFor(rootPath, filePath);
+  if (rel == null || rel === "") return [];
+  const segments = rel.split("/").filter(Boolean);
+  const dirs: string[] = [];
+  for (let i = 1; i < segments.length; i += 1) {
+    dirs.push(absolutePathFor(rootPath, segments.slice(0, i).join("/")));
+  }
+  return dirs;
 }
 
 function normalizeAbsolutePath(path: string): string {
@@ -218,6 +238,28 @@ function nodesFromEntries(
   });
 }
 
+/** Return a copy of `root` with `folderPath`'s children replaced by nodes
+ *  built from `entries` (at the right depth, preserving already-loaded
+ *  grandchildren). Shared by the initial expanded-folder restore and
+ *  expand-all so the lazy-load graft logic lives in one place. */
+function graftChildren(
+  root: TreeNode,
+  folderPath: string,
+  entries: FsEntry[],
+): TreeNode {
+  const walk = (node: TreeNode): TreeNode => {
+    if (node.entry.path === folderPath) {
+      return {
+        ...node,
+        children: nodesFromEntries(entries, node.depth + 1, node.children),
+      };
+    }
+    if (!node.children) return node;
+    return { ...node, children: node.children.map(walk) };
+  };
+  return walk(root);
+}
+
 /** Parse the persisted store; tolerate corruption by returning empty. */
 function parseExpandedStore(raw: string): ExpandedStore {
   if (!raw) return { byProject: {} };
@@ -263,6 +305,47 @@ function gitDecorationsFromStatuses(
     }
   }
   return { direct, descendants };
+}
+
+interface IgnoreMatcher {
+  isIgnored(relativePath: string): boolean;
+}
+
+/** Build a matcher from git-ignored paths (as returned by `git_ignored_paths`,
+ *  relative to the active root). Entries ending in `/` are directory prefixes
+ *  that dim their whole subtree (e.g. `node_modules/` collapses to one entry
+ *  yet greys every descendant); others are exact files. An empty list matches
+ *  nothing, so a clean / non-git tree renders undimmed.
+ *
+ *  Special case: when the active root is itself ignored by a parent
+ *  `.gitignore` (e.g. opening `repo/build` where `/build/` is ignored),
+ *  `git ls-files --directory -- .` reports `./` — meaning *everything* under
+ *  the root is ignored. That normalizes to `.`, which can't match children as
+ *  a normal prefix, so treat it as a blanket match instead. */
+function buildIgnoreMatcher(paths: string[] | null | undefined): IgnoreMatcher {
+  const exact = new Set<string>();
+  const dirs: string[] = [];
+  let rootIgnored = false;
+  for (const raw of Array.isArray(paths) ? paths : []) {
+    if (typeof raw !== "string") continue;
+    const isDir = /[/\\]$/.test(raw);
+    const norm = normalizeRelativePath(raw);
+    if (norm === "" || norm === ".") {
+      rootIgnored = true;
+      continue;
+    }
+    if (isDir) dirs.push(norm);
+    else exact.add(norm);
+  }
+  return {
+    isIgnored(relativePath: string): boolean {
+      if (rootIgnored) return true;
+      const rel = normalizeRelativePath(relativePath);
+      if (!rel) return false;
+      if (exact.has(rel)) return true;
+      return dirs.some((dir) => rel === dir || rel.startsWith(`${dir}/`));
+    },
+  };
 }
 
 function deletedChildrenByParentFromStatuses(
@@ -346,9 +429,11 @@ export {
   EXPAND_STATE_FILE,
   GIT_STATUS_META,
   basename,
+  buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
+  graftChildren,
   nodesFromEntries,
   parentDirOf,
   parseExpandedStore,
@@ -365,6 +450,7 @@ export type {
   GitDecoration,
   GitFileStatusEntry,
   GitFileStatusKind,
+  IgnoreMatcher,
   ProjectShape,
   TreeNode,
 };

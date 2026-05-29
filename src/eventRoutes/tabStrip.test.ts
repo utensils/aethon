@@ -71,6 +71,53 @@ describe("handleTabStrip", () => {
     expect(mocks.closeTab).toHaveBeenCalledWith("tab-4");
   });
 
+  it("close-others closes every non-shell tab except the chosen one", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "ed-1", kind: "editor" },
+          { id: "ed-2", kind: "editor" },
+          { id: "ag-1", kind: "agent" },
+          { id: "sh-1", kind: "shell" },
+        ],
+      },
+    });
+    await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "close-others",
+        data: { tabId: "ed-1" },
+      },
+      ctx,
+    );
+    expect(mocks.closeTab).toHaveBeenCalledWith("ed-2");
+    expect(mocks.closeTab).toHaveBeenCalledWith("ag-1");
+    expect(mocks.closeTab).not.toHaveBeenCalledWith("ed-1");
+    expect(mocks.closeTab).not.toHaveBeenCalledWith("sh-1");
+  });
+
+  it("close-all closes every non-shell tab", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "ed-1", kind: "editor" },
+          { id: "ag-1", kind: "agent" },
+          { id: "sh-1", kind: "shell" },
+        ],
+      },
+    });
+    await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "close-all",
+      },
+      ctx,
+    );
+    expect(mocks.closeTab).toHaveBeenCalledWith("ed-1");
+    expect(mocks.closeTab).toHaveBeenCalledWith("ag-1");
+    expect(mocks.closeTab).not.toHaveBeenCalledWith("sh-1");
+  });
+
   it("rename updates the label and persists it through the bridge", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {

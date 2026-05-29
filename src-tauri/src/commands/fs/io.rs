@@ -53,6 +53,52 @@ pub fn fs_read_file(root: String, path: String) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| format!("file is not valid UTF-8: {}", target.display()))
 }
 
+/// Report whether a regular file exists at `path` inside `root`. Used to
+/// prune persisted editor tabs whose file was deleted/moved between app
+/// runs. Path validation mirrors the read commands; a path that resolves
+/// outside the root, or doesn't exist, returns `Ok(false)` rather than an
+/// error so the caller can treat "gone" and "never valid" the same way.
+#[tauri::command]
+pub fn fs_exists(root: String, path: String) -> Result<bool, String> {
+    let Ok(target) = validated_target(&root, &path) else {
+        return Ok(false);
+    };
+    let Ok(root_canon) = canonical_root(&root) else {
+        return Ok(false);
+    };
+    if ensure_symlink_safe(&target, &root_canon).is_err() {
+        return Ok(false);
+    }
+    Ok(target.is_file())
+}
+
+/// Report the file's last-modified time as Unix milliseconds. Backs the
+/// editor's external-change detection: the canvas captures this at load
+/// and compares against it when the file-tree watcher fires, so an edit
+/// made on disk by another tool surfaces a reload affordance. Path
+/// validation mirrors the read commands; a path that resolves outside
+/// the root, is a directory, or can't be stat'd returns an error so the
+/// caller treats it as "unknown" rather than "unchanged".
+#[tauri::command]
+pub fn fs_file_mtime(root: String, path: String) -> Result<u64, String> {
+    let target = validated_target(&root, &path)?;
+    let root_canon = canonical_root(&root)?;
+    ensure_symlink_safe(&target, &root_canon)?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|e| format!("stat {}: {e}", target.display()))?;
+    if metadata.is_dir() {
+        return Err(format!("not a file: {}", target.display()));
+    }
+    let modified = metadata
+        .modified()
+        .map_err(|e| format!("mtime {}: {e}", target.display()))?;
+    let millis = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    Ok(millis)
+}
+
 /// Overwrite an existing file. Atomic via tempfile + rename so a crash
 /// mid-write can't leave a half-written file. Refuses to write outside
 /// the root or above the size cap.
@@ -262,6 +308,44 @@ mod tests {
         fs_rename(s(&canon), s(&from), s(&to)).unwrap();
         assert!(!from.exists());
         assert_eq!(std::fs::read_to_string(&to).unwrap(), "x");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn file_mtime_reports_for_existing_file() {
+        let tmp = std::env::temp_dir().join(format!("aethon-fs-mtime-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let canon = tmp.canonicalize().unwrap();
+        let file = canon.join("m.txt");
+        std::fs::write(&file, "x").unwrap();
+        let mtime = fs_file_mtime(s(&canon), s(&file)).unwrap();
+        assert!(mtime > 0, "expected a positive unix-ms mtime; got {mtime}");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn file_mtime_rejects_path_outside_root() {
+        let tmp = std::env::temp_dir().join(format!("aethon-fs-mtime-esc-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let canon = tmp.canonicalize().unwrap();
+        let escape = canon.parent().unwrap().join("escape-mtime.txt");
+        let err = fs_file_mtime(s(&canon), s(&escape));
+        assert!(err.is_err(), "expected refusal; got {err:?}");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn file_mtime_rejects_directory() {
+        let tmp = std::env::temp_dir().join(format!("aethon-fs-mtime-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let canon = tmp.canonicalize().unwrap();
+        let sub = canon.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let err = fs_file_mtime(s(&canon), s(&sub));
+        assert!(err.is_err(), "expected refusal for dir; got {err:?}");
 
         std::fs::remove_dir_all(&tmp).ok();
     }

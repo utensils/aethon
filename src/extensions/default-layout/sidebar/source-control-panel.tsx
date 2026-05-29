@@ -5,19 +5,29 @@
  *   - working-tree change breakdown with an expandable changed-file list
  *     (click a file → opens it in an editor tab)
  *   - PR card (click → opens GitHub)
- *   - CI rollup (click → opens the failing/first check, or the PR)
+ *   - CI rollup with an expandable per-job list (click the row → toggles
+ *     the jobs; click a job → opens that check on GitHub). Auto-expands
+ *     when the rollup is failing. Falls back to open-on-click when the
+ *     rollup carries no individual check runs.
  *
  * Render-only: all data + polling lives in `useVcsStatus`. Hidden entirely
  * when the active root is not a git repo so the file tree keeps its space.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { FileIcon } from "../../../components/file-icon";
+import { Chevron } from "./chevron";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { VcsSlice } from "../../../hooks/useVcsStatus";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { GIT_STATUS_META, absolutePathFor, basename } from "./fileTreeModel";
-import { changeBreakdown, ciMeta, prMeta } from "./vcs-presentation";
+import {
+  changeBreakdown,
+  checkRunMeta,
+  ciMeta,
+  prMeta,
+  sortChecks,
+} from "./vcs-presentation";
 
 export function SourceControlPanel({
   component,
@@ -30,7 +40,19 @@ export function SourceControlPanel({
       ? (resolvePointer(state, props.source.$ref) as VcsSlice | undefined)
       : (resolvePointer(state, "/vcs") as VcsSlice | undefined)) ?? undefined;
 
-  const [filesOpen, setFilesOpen] = useState(true);
+  // Collapsed by default — the changed-files list expands on click so the
+  // panel opens compact and the user opts into the (potentially long) list.
+  const [filesOpen, setFilesOpen] = useState(false);
+
+  // CI job list expand state. Auto-expands on failure; a manual toggle wins
+  // until the rollup conclusion flips (reset via the guarded set below).
+  const ciConclusion = vcs?.ci?.conclusion ?? null;
+  const [ciOverride, setCiOverride] = useState<boolean | null>(null);
+  const prevConclusion = useRef(ciConclusion);
+  if (prevConclusion.current !== ciConclusion) {
+    prevConclusion.current = ciConclusion;
+    setCiOverride(null);
+  }
 
   // Not a git repo → render nothing so the file tree gets the full column.
   if (!vcs || (!vcs.branch && vcs.changes.total === 0) || !vcs.root) {
@@ -50,6 +72,8 @@ export function SourceControlPanel({
     vcs.ci?.checks[0]?.url ??
     vcs.pr?.url ??
     null;
+  const hasChecks = (vcs.ci?.checks.length ?? 0) > 0;
+  const ciOpen = ciOverride ?? ciConclusion === "failure";
 
   return (
     <section
@@ -94,25 +118,70 @@ export function SourceControlPanel({
       ) : null}
 
       {ci ? (
-        <button
-          type="button"
-          className={`ae-scm-row ae-scm-ci is-${ci.tone}`}
-          title={ci.title}
-          onClick={() => openUrl(ciUrl)}
-        >
-          <span className={`ae-scm-ci-icon is-${ci.tone}`} aria-hidden="true">
-            {ci.icon}
-          </span>
-          <span className="ae-scm-row-label">
-            CI
-            <span className="ae-scm-row-sub">{ci.label}</span>
-          </span>
-          {vcs.ci ? (
-            <span className="ae-scm-ci-count">
-              {vcs.ci.passed}/{vcs.ci.total}
+        <div className="ae-scm-ci-group">
+          <button
+            type="button"
+            className={`ae-scm-row ae-scm-ci is-${ci.tone}`}
+            title={hasChecks ? `${ci.title} — show jobs` : ci.title}
+            aria-expanded={hasChecks ? ciOpen : undefined}
+            onClick={() =>
+              hasChecks ? setCiOverride(!ciOpen) : openUrl(ciUrl)
+            }
+          >
+            <span className={`ae-scm-ci-icon is-${ci.tone}`} aria-hidden="true">
+              {ci.icon}
             </span>
+            <span className="ae-scm-row-label">
+              CI
+              <span className="ae-scm-row-sub">{ci.label}</span>
+            </span>
+            {vcs.ci ? (
+              <span className="ae-scm-ci-count">
+                {vcs.ci.passed}/{vcs.ci.total}
+              </span>
+            ) : null}
+            {hasChecks ? (
+              <span
+                className="ae-scm-chevron ae-scm-ci-chevron"
+                aria-hidden="true"
+              >
+                <Chevron expanded={ciOpen} />
+              </span>
+            ) : null}
+          </button>
+          {ciOpen && hasChecks ? (
+            <ul className="ae-scm-checks-list">
+              {sortChecks(vcs.ci?.checks ?? []).map((run) => {
+                const meta = checkRunMeta(run);
+                const clickable = Boolean(run.url);
+                return (
+                  <li
+                    key={run.name}
+                    className={`ae-scm-check is-${meta.tone}`}
+                    data-clickable={clickable ? "true" : undefined}
+                    title={
+                      clickable
+                        ? `${run.name} — ${meta.label} · open on GitHub`
+                        : `${run.name} — ${meta.label}`
+                    }
+                    onClick={clickable ? () => openUrl(run.url) : undefined}
+                  >
+                    <span
+                      className={`ae-scm-check-icon is-${meta.tone}`}
+                      aria-hidden="true"
+                    >
+                      {meta.icon}
+                    </span>
+                    <span className="ae-scm-check-name">{run.name}</span>
+                    <span className={`ae-scm-check-status is-${meta.tone}`}>
+                      {meta.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           ) : null}
-        </button>
+        </div>
       ) : null}
 
       {changes.total > 0 ? (
@@ -124,12 +193,25 @@ export function SourceControlPanel({
             onClick={() => setFilesOpen((o) => !o)}
           >
             <span className="ae-scm-chevron" aria-hidden="true">
-              {filesOpen ? "▾" : "▸"}
+              <Chevron expanded={filesOpen} />
             </span>
             <span className="ae-scm-changes-count">
               {changes.total} changed
             </span>
-            {breakdown ? (
+            {changes.insertions > 0 || changes.deletions > 0 ? (
+              <span className="ae-scm-changes-stat" title={breakdown ?? undefined}>
+                {changes.insertions > 0 ? (
+                  <span className="ae-scm-stat-add">
+                    +{changes.insertions.toLocaleString()}
+                  </span>
+                ) : null}
+                {changes.deletions > 0 ? (
+                  <span className="ae-scm-stat-del">
+                    −{changes.deletions.toLocaleString()}
+                  </span>
+                ) : null}
+              </span>
+            ) : breakdown ? (
               <span className="ae-scm-changes-breakdown">{breakdown}</span>
             ) : null}
           </button>
@@ -143,7 +225,7 @@ export function SourceControlPanel({
                     className={`ae-scm-file git-status-${f.status}`}
                     title={`${f.path} — ${meta?.title ?? f.status}`}
                     onClick={() =>
-                      onEvent("file-tree-open", {
+                      onEvent("file-tree-diff", {
                         filePath: absolutePathFor(root, f.path),
                         rootPath: root,
                       })
@@ -174,7 +256,14 @@ export function SourceControlPanel({
           ) : null}
         </div>
       ) : (
-        <div className="ae-scm-clean">Working tree clean</div>
+        // Mirror the "N CHANGED" header's box (same wrapper + chevron
+        // column) so the rows below sit at the exact same y in every state.
+        <div className="ae-scm-changes">
+          <div className="ae-scm-changes-header ae-scm-changes-header--static">
+            <span className="ae-scm-chevron" aria-hidden="true" />
+            <span className="ae-scm-changes-count">Working tree clean</span>
+          </div>
+        </div>
       )}
     </section>
   );

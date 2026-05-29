@@ -55,6 +55,10 @@ export interface VcsChanges {
   renamed: number;
   copied: number;
   conflicted: number;
+  /** Total inserted / deleted lines vs HEAD (git diff --numstat), for the
+   *  `+N -M` stat in the Source Control header. */
+  insertions: number;
+  deletions: number;
   /** Capped list (most-recent-first as git returns them) for the panel. */
   files: { path: string; status: GitFileStatusKind }[];
 }
@@ -112,8 +116,15 @@ const EMPTY_CHANGES: VcsChanges = {
   renamed: 0,
   copied: 0,
   conflicted: 0,
+  insertions: 0,
+  deletions: 0,
   files: [],
 };
+
+interface DiffStat {
+  insertions: number;
+  deletions: number;
+}
 
 function emptySlice(root: string | null, loading: boolean): VcsSlice {
   return {
@@ -227,17 +238,23 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
       try {
         // Working-tree status + branch (worktree-aware) + change breakdown
         // run together; PR/CI gate on having a branch.
-        const [statusRes, filesRes] = await Promise.all([
+        const [statusRes, filesRes, statRes] = await Promise.all([
           invoke<GitStatus | null>("git_status", { path: root }).catch(
             () => null,
           ),
           invoke<GitFileStatusEntry[] | null>("git_file_status", {
             root,
           }).catch(() => null),
+          invoke<DiffStat | null>("git_diff_stat", { root }).catch(() => null),
         ]);
 
         const branch = statusRes?.branch ?? null;
-        const changes = summariseChanges(filesRes);
+        // Spread so we never mutate the shared EMPTY_CHANGES constant.
+        const changes: VcsChanges = {
+          ...summariseChanges(filesRes),
+          insertions: statRes?.insertions ?? 0,
+          deletions: statRes?.deletions ?? 0,
+        };
 
         let pr: VcsPr | null = null;
         let ci: VcsCi | null = null;

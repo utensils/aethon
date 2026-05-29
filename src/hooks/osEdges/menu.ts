@@ -76,6 +76,18 @@ export function subscribeMenu(deps: MenuDeps): () => void {
       case "new_shell_tab":
         newShellTab();
         break;
+      // Editor file ops — forwarded to the active editor canvas (and the
+      // file tree for New File) via window events so the menu, the
+      // in-editor buttons, and Monaco's own Cmd+S all converge.
+      case "new_file":
+        window.dispatchEvent(new Event("aethon:new-file"));
+        break;
+      case "save_file":
+        window.dispatchEvent(new Event("aethon:editor-save"));
+        break;
+      case "revert_file":
+        window.dispatchEvent(new Event("aethon:editor-revert"));
+        break;
       case "close_tab": {
         const activeId = stateRef.current.activeTabId as string | undefined;
         if (activeId) closeTab(activeId);

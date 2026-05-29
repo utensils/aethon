@@ -11,6 +11,7 @@ import {
   ChatHistory,
   ChatInput,
   EditorCanvas,
+  DiffCanvas,
   EmptyState,
   WorktreeLanding,
   FileTreePanel,
@@ -97,6 +98,9 @@ export const defaultLayoutExtension: A2UIExtension = {
     // override either component via `aethon.registerComponent`.
     "image-viewer": ImageViewer,
     "markdown-preview": MarkdownPreview,
+    // Read-only side-by-side diff (HEAD vs working tree). EditorCanvas
+    // dispatches it when the active editor tab carries `editor.diff`.
+    "diff-canvas": DiffCanvas,
     // M6 restructure: tabbed bottom panel. Hosts the read-only
     // agent-bash sub-tab + every user shell as a separate sub-tab.
     // Replaces the standalone `terminal` cell in workstation.

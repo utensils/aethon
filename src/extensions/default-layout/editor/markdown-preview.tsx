@@ -31,6 +31,9 @@ import { MARKDOWN_COMPONENTS } from "../markdown-adapter";
 interface MarkdownPreviewProps {
   filePath: string;
   projectPath: string;
+  /** The editor tab this preview belongs to — needed so the Edit button
+   *  routes the preview-toggle event back to the right tab. */
+  tabId?: string;
   /** Bumps whenever the user saves the file — forces the preview to
    *  re-read fresh content. */
   refreshKey?: number;
@@ -40,6 +43,7 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
   const componentProps = (props.component.props as Partial<MarkdownPreviewProps>) ?? {};
   const filePath = componentProps.filePath ?? "";
   const projectPath = componentProps.projectPath ?? "";
+  const tabId = componentProps.tabId ?? "";
   const refreshKey = componentProps.refreshKey ?? 0;
   const [text, setText] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -92,7 +96,17 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
           {filePath}
         </span>
         <span className="ae-md-preview-spacer" />
-        <span className="ae-md-preview-hint">preview · ⌘⇧V</span>
+        <button
+          type="button"
+          className="ae-md-preview-edit"
+          title="Back to editor (⌘⇧V)"
+          aria-label="Back to editor"
+          onClick={() => {
+            if (tabId) props.onEvent("editor-preview-toggle", { tabId });
+          }}
+        >
+          Edit · ⌘⇧V
+        </button>
       </div>
     </div>
   );

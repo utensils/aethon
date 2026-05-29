@@ -18,7 +18,10 @@ export interface EditorTabDeps {
 }
 
 export interface EditorTabActions {
-  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
+  newEditorTab: (
+    filePath: string,
+    opts?: { rootPath?: string; diff?: boolean },
+  ) => void;
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
   toggleEditorPreview: () => void;
   renameEditorTabsForPath: (from: string, to: string, kind: string) => void;
@@ -35,16 +38,20 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
    *  switch to it instead of creating a duplicate. */
   function newEditorTab(
     filePath: string,
-    opts: { rootPath?: string } = {},
+    opts: { rootPath?: string; diff?: boolean } = {},
   ): void {
     if (!filePath) return;
     const rootPath = opts.rootPath;
+    const diff = opts.diff === true;
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    // A diff tab and an editable tab for the same path coexist — match on
+    // the diff flag too so "open changes" doesn't just focus the editor.
     const existing = tabs.find(
       (t) =>
         t.kind === "editor" &&
         t.editor?.filePath === filePath &&
-        (t.editor.rootPath ?? "") === (rootPath ?? ""),
+        (t.editor.rootPath ?? "") === (rootPath ?? "") &&
+        !!t.editor.diff === diff,
     );
     if (existing) {
       setActiveTab(existing.id);
@@ -53,13 +60,20 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
     const id = crypto.randomUUID();
     const projectId = projectsRef.current.activeId;
     const language = languageFromPath(filePath);
+    const baseLabel = editorLabelForPath(filePath);
     const tab: Tab = {
-      ...makeEmptyTab(id, editorLabelForPath(filePath), projectId, "editor"),
+      ...makeEmptyTab(
+        id,
+        diff ? `${baseLabel} (diff)` : baseLabel,
+        projectId,
+        "editor",
+      ),
       editor: {
         filePath,
         ...(rootPath ? { rootPath } : {}),
         language,
         isDirty: false,
+        ...(diff ? { diff: true } : {}),
       },
     };
     setState((prev) => {
@@ -88,12 +102,27 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
       const merged = { ...t.editor, ...patch };
       // Skip the setState if nothing meaningful changed — guards against
       // re-render storms from Monaco's cursorPosition events on every key.
+      // NOTE: every field a caller can patch must be compared here, or the
+      // guard silently swallows the change. `previewMode`/`previewRefreshKey`
+      // are part of this contract — omitting them once broke Cmd+Shift+V.
       const samePath = merged.filePath === t.editor.filePath;
       const sameLang = merged.language === t.editor.language;
       const sameDirty = merged.isDirty === t.editor.isDirty;
       const sameLine = merged.cursorLine === t.editor.cursorLine;
       const sameCol = merged.cursorColumn === t.editor.cursorColumn;
-      if (samePath && sameLang && sameDirty && sameLine && sameCol) return t;
+      const samePreview = merged.previewMode === t.editor.previewMode;
+      const sameRefresh =
+        merged.previewRefreshKey === t.editor.previewRefreshKey;
+      if (
+        samePath &&
+        sameLang &&
+        sameDirty &&
+        sameLine &&
+        sameCol &&
+        samePreview &&
+        sameRefresh
+      )
+        return t;
       return { ...t, editor: merged };
     });
   }

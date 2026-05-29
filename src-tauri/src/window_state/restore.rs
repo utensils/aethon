@@ -1,7 +1,8 @@
 //! Restore-before-visible setup path. Applies persisted geometry to the
 //! main window in `setup()` (Tauri's manifest sets `visible: false`,
 //! this module sizes/positions, then shows). First launch — no file —
-//! falls back to maximized on the primary monitor.
+//! keeps the manifest default size (1200×800, centered); it does not
+//! force-maximize.
 
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Position, Size};
 
@@ -19,8 +20,8 @@ const CLAMP_MARGIN_X: f64 = 80.0;
 const CLAMP_MARGIN_Y: f64 = 40.0;
 
 /// Apply persisted geometry before the window is shown. First launch
-/// falls back to maximized on the primary monitor. Always shows the
-/// window so a partial failure can't strand the user. When
+/// keeps the manifest default geometry (no forced maximize). Always
+/// shows the window so a partial failure can't strand the user. When
 /// `activate_after_show` is true, the main window is also brought to
 /// the foreground after an updater relaunch.
 pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<(), String> {
@@ -60,10 +61,12 @@ pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<()
         {
             tracing::warn!(target: "aethon::window_state", "maximize: {e}");
         }
-    } else if let Err(e) = window.maximize() {
-        // Manifest `"maximized": true` is unreliable on macOS — force.
-        tracing::warn!(target: "aethon::window_state", "default maximize: {e}");
     }
+    // First launch (or no monitors enumerated): keep the manifest default
+    // geometry (1200×800, centered). Do NOT force-maximize — booting
+    // maximized then snapping to the restored size is jarring, and a
+    // zoomed window on macOS also can't be moved via the overlay
+    // titlebar's drag region.
 
     show_main_window(app, &window, activate_after_show);
     Ok(())
@@ -260,6 +263,37 @@ mod tests {
         // should translate as if `near_window` was picked — dx = 0.
         assert!(approx_eq(out.x, 100.0));
         assert!(approx_eq(out.y, 100.0));
+    }
+
+    #[test]
+    fn first_launch_does_not_force_maximize() {
+        // Regression: the window used to boot maximized (manifest
+        // `"maximized": true` + a forced `window.maximize()` fallback),
+        // then snap to the restored size — a jarring flash. A zoomed macOS
+        // window also can't be moved via the overlay titlebar's drag
+        // region. The ONLY surviving maximize() must be gated on a saved
+        // `state.maximized` flag; there must be no unconditional
+        // first-launch fallback.
+        let src = include_str!("restore.rs");
+        let logic = &src[..src.find("#[cfg(test)]").unwrap()];
+
+        // Exactly one real maximize() call (unmaximize() does not match the
+        // "window.maximize()" needle), and it sits under the state guard.
+        assert_eq!(
+            logic.matches("window.maximize()").count(),
+            1,
+            "restore logic must contain exactly one maximize() call",
+        );
+        let guard = logic.find("if state.maximized").expect("state.maximized guard");
+        let maximize = logic.find("window.maximize()").expect("maximize call");
+        assert!(
+            guard < maximize,
+            "the surviving maximize() must be gated by `if state.maximized`",
+        );
+        assert!(
+            !logic.contains("else if let Err(e) = window.maximize()"),
+            "must not force-maximize on first launch",
+        );
     }
 
     #[test]

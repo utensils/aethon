@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   activeProject,
   loadProjects,
@@ -8,10 +9,19 @@ import {
 } from "../projects";
 import {
   isOverviewActive,
+  makeEmptyTab,
   NO_PROJECT_KEY,
   OVERVIEW_TAB_ID,
   type Tab,
 } from "../types/tab";
+import {
+  isProjectHydrated,
+  loadEditorTabsStore,
+  markProjectHydrated,
+  persistedTabsForProject,
+} from "../editorTabs";
+import { editorLabelForPath } from "./tabOps/helpers";
+import { TAB_MIRROR_KEYS } from "./tabOps/constants";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { useProjectStore } from "./projectOps/projectStore";
 import {
@@ -163,6 +173,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     );
     scheduleProjectsSave();
     announceProjectToBridge(nextTabId ?? "default", path);
+    void restoreEditorTabs(id, path);
     return id;
   }
 
@@ -194,6 +205,11 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     }
     watchProjectForBridge(target.path);
     void worktreeOps.refreshProjectWorktrees(id);
+    // Hydrate this project's persisted editor tabs the first time it
+    // becomes active (no-op on later switches) so they survive restarts
+    // even when it wasn't the boot project — and so persistence isn't
+    // gated off for it.
+    void restoreEditorTabs(id, target.path);
     return true;
   }
 
@@ -293,9 +309,99 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       const scoped = scopedDiscoveredSessions(allDiscoveredSessionsRef.current);
       autoRestoreDiscoveredSessions(scoped, knownTabIds());
       syncRecentSessionsToState();
+      if (active) await restoreEditorTabs(active.id, active.path);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Restore the active project's persisted editor tabs, dropping any whose
+   *  file no longer exists. Appends to /tabs (deduping against already-open
+   *  editor tabs) and activates the previously-active editor tab only when
+   *  the overview is still showing (so a restored agent session keeps
+   *  focus). */
+  async function restoreEditorTabs(
+    projectId: string,
+    projectPath: string,
+  ): Promise<void> {
+    // Idempotent per project (boot + every project switch calls this).
+    if (isProjectHydrated(projectId)) return;
+    await loadEditorTabsStore();
+    // Mark hydrated up front (before any early return) so persistence is
+    // enabled for this project even when it has no saved tabs yet — that's
+    // what lets newly-opened tabs in a fresh project get saved.
+    markProjectHydrated(projectId);
+    const persisted = persistedTabsForProject(projectId);
+    if (persisted.tabs.length === 0) return;
+    const checks = await Promise.all(
+      persisted.tabs.map((p) =>
+        invoke<boolean>("fs_exists", {
+          root: p.rootPath ?? projectPath,
+          path: p.filePath,
+        }).catch(() => false),
+      ),
+    );
+    const restored: Tab[] = [];
+    persisted.tabs.forEach((p, i) => {
+      if (!checks[i]) return;
+      const id = crypto.randomUUID();
+      const baseLabel = editorLabelForPath(p.filePath);
+      restored.push({
+        ...makeEmptyTab(
+          id,
+          p.diff ? `${baseLabel} (diff)` : baseLabel,
+          projectId,
+          "editor",
+        ),
+        editor: {
+          filePath: p.filePath,
+          ...(p.rootPath ? { rootPath: p.rootPath } : {}),
+          language: p.language,
+          isDirty: false,
+          ...(p.diff ? { diff: true } : {}),
+          ...(typeof p.cursorLine === "number"
+            ? { cursorLine: p.cursorLine }
+            : {}),
+          ...(typeof p.cursorColumn === "number"
+            ? { cursorColumn: p.cursorColumn }
+            : {}),
+        },
+      });
+    });
+    if (restored.length === 0) return;
+    const dedupeKey = (t: Tab) =>
+      `${t.editor?.filePath}::${t.editor?.diff ? "d" : "e"}`;
+    const activeRestored = persisted.activeFilePath
+      ? restored.find(
+          (t) => t.editor?.filePath === persisted.activeFilePath && !t.editor?.diff,
+        )
+      : undefined;
+    setState((prev) => {
+      const existing = (prev.tabs as Tab[] | undefined) ?? [];
+      const have = new Set(
+        existing.filter((t) => t.kind === "editor").map(dedupeKey),
+      );
+      const toAdd = restored.filter((t) => !have.has(dedupeKey(t)));
+      if (toAdd.length === 0) return prev;
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs: [...existing, ...toAdd],
+        hasTabs: true,
+        empty: false,
+      };
+      if (
+        activeRestored &&
+        toAdd.some((t) => t.id === activeRestored.id) &&
+        isOverviewActive(prev.activeTabId as string | undefined)
+      ) {
+        result.activeTabId = activeRestored.id;
+        const rec = activeRestored as unknown as Record<string, unknown>;
+        for (const key of TAB_MIRROR_KEYS) {
+          result[key as string] = rec[key as string];
+        }
+      }
+      return result;
+    });
+  }
 
   return {
     projectsLoadedRef,

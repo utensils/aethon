@@ -5,11 +5,15 @@ import { readState, writeState } from "../../../persist";
 import {
   EXPANDED_CAP_PER_PROJECT,
   EXPAND_STATE_FILE,
+  ancestorDirsFor,
+  buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
+  graftChildren,
   nodesFromEntries,
   parseExpandedStore,
+  relativePathFor,
   visibleTreeNodes,
   watchedDirsFor,
   type ExpandedStore,
@@ -17,6 +21,10 @@ import {
   type GitFileStatusEntry,
   type TreeNode,
 } from "./fileTreeModel";
+
+/** Bound expand-all so a deep / huge tree can't fan out into thousands of
+ *  fs_list_dir calls. Mirrors the persisted-expand cap. */
+const EXPAND_ALL_MAX_DEPTH = 8;
 
 interface UseFileTreeDataArgs {
   hidden: boolean;
@@ -31,9 +39,11 @@ function useFileTreeData({
 }: UseFileTreeDataArgs) {
   const [root, setRoot] = useState<TreeNode | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [revealTarget, setRevealTarget] = useState<string | null>(null);
   const [gitStatuses, setGitStatuses] = useState<
     Map<string, GitFileStatusEntry>
   >(new Map());
+  const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
   const expandedStoreRef = useRef<ExpandedStore>({ byProject: {} });
   const projectPathRef = useRef<string>(projectPath);
@@ -41,10 +51,18 @@ function useFileTreeData({
   const gitStatusRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const expandAllInFlightRef = useRef(false);
 
   useEffect(() => {
     projectPathRef.current = projectPath;
   }, [projectPath]);
+
+  // Mirror `expanded` into a ref so the sub-tree expand/collapse callbacks can
+  // read the current set without re-subscribing on every toggle.
+  const expandedRef = useRef(expanded);
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,19 +106,29 @@ function useFileTreeData({
   const refreshGitStatuses = useCallback(async (rootPath: string) => {
     if (!rootPath) {
       setGitStatuses(new Map());
+      setIgnoredPaths([]);
       return;
     }
     try {
-      const entries = await invoke<GitFileStatusEntry[] | null>(
-        "git_file_status",
-        { root: rootPath },
-      );
+      // Decorations + ignored set are fetched together so a single refresh
+      // tick repaints both. `git_ignored_paths` is `--directory`-collapsed,
+      // so this stays cheap even on trees with a huge node_modules.
+      const [entries, ignored] = await Promise.all([
+        invoke<GitFileStatusEntry[] | null>("git_file_status", {
+          root: rootPath,
+        }),
+        invoke<string[] | null>("git_ignored_paths", { root: rootPath }),
+      ]);
       if (projectPathRef.current !== rootPath) return;
       setGitStatuses(gitStatusesFromEntries(entries));
+      setIgnoredPaths(Array.isArray(ignored) ? ignored : []);
     } catch {
       // Non-git directories, missing git binary, or transient status errors
       // should never block the file tree; just render without decorations.
-      if (projectPathRef.current === rootPath) setGitStatuses(new Map());
+      if (projectPathRef.current === rootPath) {
+        setGitStatuses(new Map());
+        setIgnoredPaths([]);
+      }
     }
   }, []);
 
@@ -162,24 +190,9 @@ function useFileTreeData({
               path: folderPath,
             });
             if (cancelled) return;
-            setRoot((r) => {
-              if (!r) return r;
-              const walk = (node: TreeNode): TreeNode => {
-                if (node.entry.path === folderPath) {
-                  return {
-                    ...node,
-                    children: nodesFromEntries(
-                      childEntries,
-                      node.depth + 1,
-                      node.children,
-                    ),
-                  };
-                }
-                if (!node.children) return node;
-                return { ...node, children: node.children.map(walk) };
-              };
-              return { ...r, children: r.children?.map(walk) ?? undefined };
-            });
+            setRoot((r) =>
+              r ? graftChildren(r, folderPath, childEntries) : r,
+            );
           } catch {
             // Folder may have been deleted since last persist; skip it
             // silently — the user can re-expand if they want.
@@ -240,6 +253,134 @@ function useFileTreeData({
   const gitDecorations = useMemo(
     () => gitDecorationsFromStatuses(gitStatuses),
     [gitStatuses],
+  );
+
+  const ignoreMatcher = useMemo(
+    () => buildIgnoreMatcher(ignoredPaths),
+    [ignoredPaths],
+  );
+
+  const collapseAll = useCallback(() => {
+    const empty = new Set<string>();
+    setExpanded(empty);
+    schedulePersist(empty);
+  }, [schedulePersist]);
+
+  // Collapse a single directory's subtree: drop the dir and every descendant
+  // from the expanded set, leaving the rest of the tree as-is.
+  const collapseUnder = useCallback(
+    (path: string) => {
+      const next = new Set(
+        [...expandedRef.current].filter(
+          (p) =>
+            p !== path &&
+            !p.startsWith(`${path}/`) &&
+            !p.startsWith(`${path}\\`),
+        ),
+      );
+      setExpanded(next);
+      schedulePersist(next);
+    },
+    [schedulePersist],
+  );
+
+  // Bounded breadth-first expand: load each non-ignored directory's listing,
+  // skipping gitignored trees (no node_modules fan-out) and stopping at the
+  // persist cap / max depth so a huge repo can't lock up the UI. Children are
+  // grafted into the tree in BFS order so each level's nodes exist before we
+  // graft into them. With `startPath`, expands only that subtree and keeps the
+  // rest of the tree's expansion intact.
+  const expandAll = useCallback(
+    async (startPath?: string) => {
+      const projectKey = projectPathRef.current;
+      if (!projectKey || expandAllInFlightRef.current) return;
+      expandAllInFlightRef.current = true;
+      try {
+        const base = startPath ?? projectKey;
+        const expand = startPath
+          ? new Set(expandedRef.current)
+          : new Set<string>();
+        const loaded: { path: string; entries: FsEntry[] }[] = [];
+        let frontier: { path: string; depth: number }[] = [
+          { path: base, depth: 0 },
+        ];
+        while (frontier.length > 0 && expand.size < EXPANDED_CAP_PER_PROJECT) {
+          const next: { path: string; depth: number }[] = [];
+          for (const { path, depth } of frontier) {
+            if (expand.size >= EXPANDED_CAP_PER_PROJECT) break;
+            if (projectPathRef.current !== projectKey) return;
+            let entries: FsEntry[];
+            try {
+              entries = await invoke<FsEntry[]>("fs_list_dir", {
+                root: projectKey,
+                path,
+              });
+            } catch {
+              continue;
+            }
+            loaded.push({ path, entries });
+            // The project root is implicitly expanded; only sub-dirs (incl. a
+            // sub-tree's own base) go in the set.
+            if (path !== projectKey) expand.add(path);
+            if (depth >= EXPAND_ALL_MAX_DEPTH) continue;
+            for (const entry of entries) {
+              if (entry.kind !== "dir") continue;
+              const rel = relativePathFor(projectKey, entry.path);
+              if (rel != null && ignoreMatcher.isIgnored(rel)) continue;
+              next.push({ path: entry.path, depth: depth + 1 });
+            }
+          }
+          frontier = next;
+        }
+        if (projectPathRef.current !== projectKey) return;
+        setRoot((r) => {
+          if (!r) return r;
+          let acc = r;
+          for (const { path, entries } of loaded) {
+            acc = graftChildren(acc, path, entries);
+          }
+          return acc;
+        });
+        setExpanded(expand);
+        schedulePersist(expand);
+      } finally {
+        expandAllInFlightRef.current = false;
+      }
+    },
+    [ignoreMatcher, schedulePersist],
+  );
+
+  const clearRevealTarget = useCallback(() => setRevealTarget(null), []);
+
+  // Reveal a file: load + graft + expand every ancestor directory, then
+  // mark the leaf as the reveal target so the row scrolls into view and
+  // flashes. Used by the editor menubar's "Reveal in Files Panel".
+  const revealPath = useCallback(
+    async (filePath: string) => {
+      const projectKey = projectPathRef.current;
+      if (!projectKey || !filePath) return;
+      const ancestors = ancestorDirsFor(projectKey, filePath);
+      const expandNext = new Set(expandedRef.current);
+      for (const dir of ancestors) {
+        try {
+          const entries = await invoke<FsEntry[]>("fs_list_dir", {
+            root: projectKey,
+            path: dir,
+          });
+          if (projectPathRef.current !== projectKey) return;
+          setRoot((r) => (r ? graftChildren(r, dir, entries) : r));
+          expandNext.add(dir);
+        } catch {
+          // Ancestor vanished — stop descending; reveal what we can.
+          break;
+        }
+      }
+      if (projectPathRef.current !== projectKey) return;
+      setExpanded(expandNext);
+      schedulePersist(expandNext);
+      setRevealTarget(filePath);
+    },
+    [schedulePersist],
   );
 
   const deletedChildrenByParent = useMemo(
@@ -332,11 +473,18 @@ function useFileTreeData({
   }, []);
 
   return {
+    collapseAll,
+    collapseUnder,
     error,
+    expandAll,
     expanded,
     gitDecorations,
+    ignoreMatcher,
     projectPathRef,
     refreshFolder,
+    revealPath,
+    revealTarget,
+    clearRevealTarget,
     root,
     toggleFolder,
     visibleNodes,

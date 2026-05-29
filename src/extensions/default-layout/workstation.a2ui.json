@@ -39,7 +39,10 @@
             {
               "id": "header-spacer",
               "type": "container",
-              "props": { "direction": "row", "className": "ae-header-spacer" }
+              "props": {
+                "direction": "row",
+                "className": "ae-header-spacer"
+              }
             },
             {
               "id": "model-picker",

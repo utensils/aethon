@@ -1,5 +1,5 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import type { Tab } from "../types/tab";
+import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 
 export interface UseTabNavigationContext {
   stateRef: MutableRefObject<Record<string, unknown>>;
@@ -16,7 +16,9 @@ export interface UseTabNavigationContext {
 export interface UseTabNavigationActions {
   /** Cycle the active top-strip tab one slot. Includes both agent
    *  (chat) and editor tabs; skips shells (they own the bottom panel).
-   *  Wraps at the ends. */
+   *  The overview pill is the leftmost slot; cycling does **not** wrap —
+   *  going left past the first tab lands on overview and stops, going
+   *  right past the last tab stays put. */
   nextTab: (direction: 1 | -1) => void;
   /** Jump to the top-strip tab at zero-based index. Includes both
    *  agent and editor tabs in left-to-right order. Out-of-range is
@@ -55,18 +57,17 @@ export function useTabNavigation(
       // nextShellSubTab when focus is inside the bottom panel.
       const tabs = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
         .filter((t) => t.kind !== "shell");
-      if (tabs.length <= 1) return;
+      if (tabs.length === 0) return;
+      // Model the strip as [overview, tab0, … tabN-1] and clamp — cycling
+      // never wraps. overview is position -1; tabK is position k. Anything
+      // that isn't a known top-strip tab (no active id, the overview
+      // sentinel, or focus in the bottom panel) counts as overview.
       const activeId = stateRef.current.activeTabId as string | undefined;
-      const idx = tabs.findIndex((t) => t.id === activeId);
-      if (idx < 0) {
-        // Active tab isn't a top-strip tab (e.g. user has focus in the
-        // bottom panel, or no tab is active). Jump to the first/last
-        // top-strip tab in the requested direction.
-        setActiveTab(direction > 0 ? tabs[0].id : tabs[tabs.length - 1].id);
-        return;
-      }
-      const nextIdx = (idx + direction + tabs.length) % tabs.length;
-      setActiveTab(tabs[nextIdx].id);
+      const known = tabs.findIndex((t) => t.id === activeId);
+      const pos = known < 0 ? -1 : known;
+      const target = pos + direction;
+      if (target < -1 || target > tabs.length - 1) return; // at a boundary
+      setActiveTab(target < 0 ? OVERVIEW_TAB_ID : tabs[target].id);
     },
     [stateRef, setActiveTab],
   );

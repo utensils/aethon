@@ -49,6 +49,10 @@ export function AgentStatusPill({
   };
   const label = props.label ? resolveString(props.label, state) : "agent live";
   const variant = props.state ? resolveString(props.state, state) : "live";
+  // Non-interactive status text. The window drag-region lives on the header
+  // Container (`dragRegion: true` → `data-tauri-drag-region="deep"`), so this
+  // pill is draggable by virtue of being a non-clickable header descendant —
+  // it needs no attribute of its own.
   return (
     <span className="app-header-pill" data-state={variant}>
       {label}

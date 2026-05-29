@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ancestorDirsFor,
+  buildIgnoreMatcher,
   deletedChildrenByParentFromStatuses,
   gitDecorationsFromStatuses,
   gitStatusesFromEntries,
+  graftChildren,
   nodesFromEntries,
   parseExpandedStore,
   visibleTreeNodes,
@@ -106,5 +109,89 @@ describe("fileTreeModel", () => {
         projectPath: "/repo",
       }),
     ).toEqual([]);
+  });
+});
+
+describe("ancestorDirsFor", () => {
+  it("lists each ancestor dir in root → leaf order", () => {
+    expect(ancestorDirsFor("/repo", "/repo/src/a/b/App.tsx")).toEqual([
+      "/repo/src",
+      "/repo/src/a",
+      "/repo/src/a/b",
+    ]);
+  });
+  it("is empty for a file directly under the root", () => {
+    expect(ancestorDirsFor("/repo", "/repo/App.tsx")).toEqual([]);
+  });
+  it("is empty for a file outside the root", () => {
+    expect(ancestorDirsFor("/repo", "/other/App.tsx")).toEqual([]);
+  });
+  it("uses the root separator on Windows backslash roots", () => {
+    expect(ancestorDirsFor("C:\\repo", "C:\\repo\\src\\App.tsx")).toEqual([
+      "C:\\repo\\src",
+    ]);
+  });
+  it("tolerates a trailing slash on the root", () => {
+    expect(ancestorDirsFor("/repo/", "/repo/src/App.tsx")).toEqual([
+      "/repo/src",
+    ]);
+  });
+});
+
+describe("graftChildren", () => {
+  it("inserts children at the target path, leaving siblings untouched", () => {
+    const root: TreeNode = {
+      entry: { name: "root", path: "/r", kind: "dir" },
+      depth: 0,
+      children: [
+        { entry: { name: "a", path: "/r/a", kind: "dir" }, depth: 1 },
+        { entry: { name: "b", path: "/r/b", kind: "dir" }, depth: 1 },
+      ],
+    };
+    const next = graftChildren(root, "/r/a", [
+      { name: "x.ts", path: "/r/a/x.ts", kind: "file" },
+    ]);
+    const a = next.children?.find((c) => c.entry.path === "/r/a");
+    const b = next.children?.find((c) => c.entry.path === "/r/b");
+    expect(a?.children?.map((c) => c.entry.path)).toEqual(["/r/a/x.ts"]);
+    expect(a?.children?.[0].depth).toBe(2);
+    // sibling is left exactly as it was (children still unloaded)
+    expect(b?.children).toBeUndefined();
+  });
+});
+
+describe("buildIgnoreMatcher", () => {
+  it("matches exact ignored files", () => {
+    const m = buildIgnoreMatcher([".env", "dist/bundle.js"]);
+    expect(m.isIgnored(".env")).toBe(true);
+    expect(m.isIgnored("dist/bundle.js")).toBe(true);
+    expect(m.isIgnored("src/app.ts")).toBe(false);
+  });
+
+  it("dims the whole subtree of a collapsed ignored directory", () => {
+    const m = buildIgnoreMatcher(["node_modules/"]);
+    // the dir node itself…
+    expect(m.isIgnored("node_modules")).toBe(true);
+    // …and any descendant, even though git collapsed it to one entry.
+    expect(m.isIgnored("node_modules/react/index.js")).toBe(true);
+    // a sibling that merely shares the prefix is NOT ignored.
+    expect(m.isIgnored("node_modules_keep/file.ts")).toBe(false);
+  });
+
+  it("treats an ignored active root ('./') as matching everything under it", () => {
+    // git ls-files --directory reports `./` when the cwd itself is ignored.
+    const m = buildIgnoreMatcher(["./"]);
+    expect(m.isIgnored("anything")).toBe(true);
+    expect(m.isIgnored("nested/deep/file.ts")).toBe(true);
+    expect(buildIgnoreMatcher(["."]).isIgnored("x")).toBe(true);
+  });
+
+  it("normalizes separators and tolerates non-array input", () => {
+    const m = buildIgnoreMatcher(["build\\cache/"]);
+    expect(m.isIgnored("build/cache/out.o")).toBe(true);
+    expect(buildIgnoreMatcher(null).isIgnored("anything")).toBe(false);
+    expect(
+      buildIgnoreMatcher(undefined as unknown as string[]).isIgnored("x"),
+    ).toBe(false);
   });
 });

@@ -91,8 +91,15 @@ export interface EventRouteContext {
     },
   ) => void;
   newShellTab: () => void;
-  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
+  newEditorTab: (
+    filePath: string,
+    opts?: { rootPath?: string; diff?: boolean },
+  ) => void;
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
+  /** Toggle markdown preview on the active editor tab. No-op unless the
+   *  active tab is a markdown editor tab. Backs both Cmd+Shift+V and the
+   *  in-editor Preview button. */
+  toggleEditorPreview: () => void;
   /** Reconcile any open editor tabs whose `editor.filePath` is `from`
    *  (or, when `kind === "dir"`, starts with `from/`) to point at the
    *  renamed location. Used after fs_rename completes so the next

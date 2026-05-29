@@ -77,3 +77,35 @@ pub fn toggle_devtools(app: AppHandle) -> Result<(), String> {
 pub fn toggle_devtools(_app: AppHandle) -> Result<(), String> {
     Err("devtools are unavailable in release builds".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    /// Regression: macOS overlay-titlebar window dragging and
+    /// double-click-to-maximize go through `plugin:window|start_dragging`
+    /// and `plugin:window|internal_toggle_maximize`. Tauri's ACL rejects
+    /// those IPC calls server-side unless the capability set grants them —
+    /// and the frontend `.catch` swallows the rejection, so the only symptom
+    /// is "the window won't move." Lock the grants in so a capabilities edit
+    /// can't silently break dragging again.
+    #[test]
+    fn default_capability_grants_window_drag_and_maximize() {
+        static CAPS: &str = include_str!("../../capabilities/default.json");
+        let v: serde_json::Value =
+            serde_json::from_str(CAPS).expect("capabilities/default.json parses");
+        let perms: Vec<&str> = v
+            .get("permissions")
+            .and_then(|p| p.as_array())
+            .expect("permissions array")
+            .iter()
+            .filter_map(|p| p.as_str())
+            .collect();
+        assert!(
+            perms.contains(&"core:window:allow-start-dragging"),
+            "missing core:window:allow-start-dragging — header/sidebar window drag will silently fail",
+        );
+        assert!(
+            perms.contains(&"core:window:allow-internal-toggle-maximize"),
+            "missing core:window:allow-internal-toggle-maximize — double-click-to-maximize will silently fail",
+        );
+    }
+}

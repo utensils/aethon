@@ -353,11 +353,15 @@ body.ae-resizing-composer .a2ui-layout {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
+  width: 16px;
   flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  opacity: 0.7;
+  color: var(--text-secondary, var(--text-dim));
+  opacity: 0.85;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-toggle:hover .ae-file-tree-chevron {
+  opacity: 1;
+  color: var(--text);
 }
 .ae-file-tree-title {
   font-size: var(--chrome-text);
@@ -394,6 +398,40 @@ body.ae-resizing-composer .a2ui-layout {
 }
 .ae-file-tree-hide:hover {
   color: var(--text);
+}
+/* Header toolbar — VS Code Explorer-style actions, revealed on hover/focus. */
+.ae-file-tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-titlebar:hover .ae-file-tree-actions,
+.ae-file-tree-titlebar:focus-within .ae-file-tree-actions {
+  opacity: 1;
+}
+.ae-file-tree-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-action:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 .ae-file-tree-resize-handle {
   position: absolute;
@@ -452,27 +490,64 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 3px 8px 3px 4px;
+  padding: 5px 8px 5px 6px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--font-size-sidebar);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .ae-file-tree-row:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
+/* The file open in the focused editor tab — accent wash + left bar. */
+.ae-file-tree-row.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.ae-file-tree-row.is-active .ae-file-tree-label {
+  color: var(--text);
+}
+/* Transient highlight after "Reveal in Files Panel" — a brief accent
+   flash that fades so it draws the eye without sticking. */
+.ae-file-tree-row.is-revealed {
+  animation: ae-file-tree-reveal-flash 1.5s ease-out;
+}
+@keyframes ae-file-tree-reveal-flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+/* Indent guides: one faint vertical line per ancestor level. */
+.ae-file-tree-guide {
+  flex: 0 0 12px;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  opacity: 0.45;
+}
+.ae-file-tree-row:hover .ae-file-tree-guide {
+  opacity: 0.85;
+}
 .ae-file-tree-chevron-row {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
+  width: 16px;
   flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-  opacity: 0.6;
+  color: var(--text-secondary, var(--text-dim));
+  opacity: 0.8;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-row:hover .ae-file-tree-chevron-row,
+.ae-file-tree-row.is-dir[aria-expanded="true"] .ae-file-tree-chevron-row {
+  opacity: 1;
+  color: var(--text);
 }
 .ae-file-tree-chevron-spacer {
   visibility: hidden;
@@ -494,11 +569,25 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ae-file-tree-row.has-git-status .ae-file-tree-label {
-  color: var(--text);
+/* Color the whole name by git status (VS Code style). Keyed on the row's
+   git-status class regardless of source, so folders carrying a propagated
+   status tint just like the leaf files underneath them — follow the colored
+   trail down to the change. */
+.ae-file-tree-row.git-status-modified .ae-file-tree-label,
+.ae-file-tree-row.git-status-renamed .ae-file-tree-label {
+  color: var(--warn);
+}
+.ae-file-tree-row.git-status-added .ae-file-tree-label,
+.ae-file-tree-row.git-status-untracked .ae-file-tree-label,
+.ae-file-tree-row.git-status-copied .ae-file-tree-label {
+  color: var(--success, #3fb950);
+}
+.ae-file-tree-row.git-status-conflicted .ae-file-tree-label {
+  color: var(--error);
+  font-weight: 600;
 }
 .ae-file-tree-row.git-status-deleted .ae-file-tree-label {
-  color: var(--text-dim);
+  color: var(--error);
   text-decoration: line-through;
 }
 .ae-file-tree-git-decoration {
@@ -512,9 +601,13 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
   color: var(--accent);
   opacity: 0.95;
 }
+/* Folder rollup letters read as secondary to leaf changes. */
 .ae-file-tree-row.git-status-descendant .ae-file-tree-git-decoration {
-  min-width: auto;
-  opacity: 0.7;
+  opacity: 0.75;
+}
+.ae-file-tree-row.git-status-modified .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-renamed .ae-file-tree-git-decoration {
+  color: var(--warn);
 }
 .ae-file-tree-row.git-status-added .ae-file-tree-git-decoration,
 .ae-file-tree-row.git-status-untracked .ae-file-tree-git-decoration,
@@ -524,12 +617,19 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
 .ae-file-tree-row.git-status-deleted .ae-file-tree-git-decoration {
   color: var(--error);
 }
-.ae-file-tree-row.git-status-renamed .ae-file-tree-git-decoration {
-  color: var(--warn);
-}
 .ae-file-tree-row.git-status-conflicted .ae-file-tree-git-decoration {
   color: var(--error);
   font-weight: 700;
+}
+/* Ignored paths (node_modules, build dirs, .env…) — dimmed but still
+   expandable so they read as background, not noise. */
+.ae-file-tree-row.is-ignored .ae-file-tree-label,
+.ae-file-tree-row.is-ignored .ae-file-tree-icon,
+.ae-file-tree-row.is-ignored .ae-file-tree-chevron-row {
+  opacity: var(--opacity-muted);
+}
+.ae-file-tree-row.is-ignored .ae-file-tree-label {
+  color: var(--text-dim);
 }
 .ae-file-tree-loading {
   opacity: var(--opacity-muted);
@@ -3755,11 +3855,14 @@ body.ae-resizing-composer * {
   user-select: none;
   white-space: nowrap;
   position: relative;
-  /* Keep open tabs readable and let the strip scroll horizontally when
-     many sessions exist instead of compressing labels to crumbs. */
-  min-inline-size: 8.5rem;
-  max-inline-size: min(16rem, 32vw);
-  flex: 0 0 clamp(8.5rem, 16vw, 16rem);
+  /* Tabs shrink to fit (VS Code style): a comfortable preferred width
+     that compresses down to a small floor as more tabs open, with the
+     label ellipsizing. Only once every tab is at the floor does the strip
+     scroll. `flex-shrink: 1` is the crux — `0 0` made tabs overflow off
+     the right edge. */
+  min-inline-size: 4.5rem;
+  max-inline-size: 16rem;
+  flex: 0 1 13rem;
   transition:
     color 120ms var(--ease-out, ease),
     background-color 120ms var(--ease-out, ease);
@@ -3851,6 +3954,15 @@ body.ae-resizing-composer * {
   flex-shrink: 0;
 }
 
+/* File-type icon on editor tabs — sits where the busy dot would, before
+   the label. Slightly dimmed so it reads as a hint, not chrome. */
+.a2ui-tab-icon {
+  flex-shrink: 0;
+  margin-right: 6px;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
 .a2ui-tab-label {
   flex: 1 1 auto;
   pointer-events: none;
@@ -3870,6 +3982,9 @@ body.ae-resizing-composer * {
   margin-left: 2px;
   cursor: pointer;
   border-radius: 3px;
+  /* The label absorbs all the shrink; the close button stays full-size so
+     it's always clickable even on a compressed tab. */
+  flex: 0 0 auto;
 }
 
 .a2ui-tab-close:hover {
@@ -3888,11 +4003,35 @@ body.ae-resizing-composer * {
   cursor: pointer;
   border-radius: 6px;
   align-self: center;
+  /* Never shrink/scroll away — the "+" stays reachable no matter how many
+     tabs are open. */
+  flex: 0 0 auto;
 }
 
 .a2ui-tab-new:hover {
   color: var(--text);
   border-color: var(--border);
+}
+
+/* In-editor File menu trigger — sits at the far right of the tab strip,
+   never shrinks, opens the file-actions dropdown. */
+.a2ui-tab-filemenu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px 6px;
+  margin-left: 2px;
+  cursor: pointer;
+  border-radius: 6px;
+  align-self: center;
+  flex: 0 0 auto;
+}
+.a2ui-tab-filemenu:hover {
+  color: var(--text);
+  background: var(--bg-hover, var(--accent-hover-tint));
 }
 
 /* Overview pseudo-tab — always-visible escape hatch back to the host /
@@ -5294,6 +5433,31 @@ body.ae-resizing-terminal * {
   min-height: 0;
   width: 100%;
 }
+/* Diff canvas — same column shell as the editor canvas, hosting Monaco's
+   side-by-side diff editor above a status bar. */
+.ae-diff-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ae-diff-canvas-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+.ae-diff-canvas-badge {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--accent, #f9cc6c);
+  background: var(--accent-soft, rgba(127, 127, 127, 0.15));
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
 .ae-editor-canvas-error {
   padding: 8px 12px;
   color: var(--text-error, #d6655a);
@@ -5336,6 +5500,145 @@ body.ae-resizing-terminal * {
 }
 .ae-editor-status-sep {
   opacity: 0.5;
+}
+
+/* Git gutter (dirty-diff) bars — VS Code-style colored stripe in the
+   line-decorations margin marking added/modified/deleted lines vs HEAD.
+   Drawn as a 3px left border so it hugs the content edge regardless of
+   the gutter's measured width. */
+.ae-git-gutter-added,
+.ae-git-gutter-modified,
+.ae-git-gutter-deleted {
+  margin-left: 3px;
+  width: 3px;
+}
+.ae-git-gutter-added {
+  border-left: 3px solid var(--success, #4ec07a);
+}
+.ae-git-gutter-modified {
+  border-left: 3px solid var(--warning, #f9cc6c);
+}
+.ae-git-gutter-deleted {
+  border-left: 3px solid var(--error, #e5534b);
+}
+
+/* Inline action button in the editor status bar (e.g. markdown Preview).
+   Quiet by default, accent on hover — reads as an affordance, not chrome. */
+.ae-editor-status-action {
+  appearance: none;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.25));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  padding: 2px 8px;
+  margin-right: 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.ae-editor-status-action:hover {
+  background: var(--accent-soft, rgba(127, 127, 127, 0.15));
+  color: var(--accent, #f9cc6c);
+  border-color: var(--accent, #f9cc6c);
+}
+
+/* Editor toolbar — slim action strip across the top of the editor pane
+   (File menu + quick Save/Revert + markdown Preview toggle). Flush under
+   the tab strip, above the Monaco host; flex:0 0 auto so the host keeps
+   filling the remaining height. */
+.ae-editor-menubar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+  user-select: none;
+}
+.ae-editor-menubar-trigger,
+.ae-editor-menubar-action,
+.ae-editor-menubar-external {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.ae-editor-menubar-trigger:hover,
+.ae-editor-menubar-action:hover,
+.ae-editor-menubar-external:hover,
+.ae-editor-menubar-trigger[aria-expanded="true"] {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ae-editor-menubar-trigger:focus-visible,
+.ae-editor-menubar-action:focus-visible,
+.ae-editor-menubar-external:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-editor-menubar-action[aria-pressed="true"] {
+  background: var(--accent-soft, rgba(127, 127, 127, 0.15));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.ae-editor-menubar-spacer {
+  flex: 1 1 auto;
+}
+.ae-editor-menubar-dirty {
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.ae-editor-menubar-external {
+  color: var(--warning, #d6a23a);
+  border-color: var(--warning, #d6a23a);
+}
+.ae-editor-menubar-external-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
+/* Monaco scrollbar — match the terminal / WebKit slim slider so all
+   scroll surfaces read the same. Width is set via the editor's
+   scrollbar option (token-driven); this only tunes the slider colour. */
+.ae-editor-canvas-host .monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-sm);
+}
+.ae-editor-canvas-host
+  .monaco-scrollable-element
+  > .scrollbar
+  > .slider:hover,
+.ae-editor-canvas-host
+  .monaco-scrollable-element
+  > .scrollbar
+  > .slider.active {
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* =============================================================================
@@ -5458,6 +5761,29 @@ body.ae-resizing-terminal * {
 }
 .ae-md-preview-hint {
   opacity: 0.7;
+}
+/* "Edit" button in the markdown preview status bar — mirrors the editor
+   status-bar action so toggling preview is fully button-driven. */
+.ae-md-preview-edit {
+  appearance: none;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.25));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.ae-md-preview-edit:hover {
+  background: var(--accent-soft, rgba(127, 127, 127, 0.15));
+  color: var(--accent, #f9cc6c);
+  border-color: var(--accent, #f9cc6c);
 }
 
 .ae-shell-status-bar {
@@ -6642,6 +6968,11 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Cap the branch so a long name truncates instead of consuming the whole
+     header row — keeps the right-side pickers visible and preserves the
+     draggable spacer between the clusters. */
+  max-width: 16ch;
 }
 .ae-vcs-aheadbehind {
   font-family: var(--font-mono);
@@ -6694,11 +7025,19 @@ button.ae-vcs-chip:focus-visible {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  gap: 2px;
-  /* No top padding: the titlebar is a flush 38px header row so its
-     bottom border lands on the same y as the app header + sidebar brand,
-     keeping the top divider line continuous across all three columns. */
-  padding: 0 0 var(--space-2);
+  /* No inter-row gap: rows sit flush so the first content band lands
+     immediately below the titlebar divider — mirroring the left column,
+     where the tab strip sits flush under the project-switcher header
+     (both 38px bands, continuous dividers). A gap here pushed the first
+     row ~6px down and broke the two-column grid alignment. */
+  gap: 0;
+  /* No padding at all: the titlebar is a flush 38px header row (its bottom
+     border lands on the same y as the app header + sidebar brand), and the
+     bottom border sits flush under the last summary band so the file tree
+     below starts on the same y as the editor under the tab strip — the
+     third band of the two-column grid. Any bottom padding here pushed the
+     tree down out of alignment with the editor. */
+  padding: 0;
   border-bottom: 1px solid var(--border);
   background: var(--gradient-surface, var(--bg-elev));
   box-shadow: var(--inner-highlight, none);
@@ -6733,7 +7072,6 @@ button.ae-vcs-chip:focus-visible {
   height: 38px;
   flex: 0 0 auto;
   padding: 0 var(--space-3);
-  margin-bottom: var(--space-1);
   border-bottom: 1px solid var(--border);
 }
 .ae-scm-title {
@@ -6861,19 +7199,113 @@ button.ae-vcs-chip:focus-visible {
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
 }
+.ae-scm-ci-chevron {
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+/* CI summary is the first content band in the CI state — snap it to the
+   same 38px grid as the changed/clean header so every state lines up with
+   the left column. Its two-line label (name + "N failing") rides a tight
+   line-height and zero vertical padding so both lines center inside 38px. */
+.ae-scm-ci {
+  min-height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.ae-scm-ci .ae-scm-row-label {
+  gap: 0;
+  line-height: 1.2;
+}
+
+/* Expandable CI job list — mirrors the changed-file list, indented to sit
+   under the CI row's icon column. Per-tone icon colors reuse the rollup
+   tokens so a job's red matches the summary's red. */
+.ae-scm-ci-group {
+  display: flex;
+  flex-direction: column;
+}
+.ae-scm-checks-list {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 2px 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+.ae-scm-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px var(--space-3);
+  font-size: var(--font-size-sidebar);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ae-scm-check[data-clickable="true"] {
+  cursor: pointer;
+}
+.ae-scm-check[data-clickable="true"]:hover {
+  background: var(--bg-hover);
+}
+.ae-scm-check-icon {
+  flex: 0 0 auto;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
+}
+.ae-scm-check-icon.is-success {
+  color: var(--state-success-strong);
+}
+.ae-scm-check-icon.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-check-icon.is-pending {
+  color: var(--state-warning-strong);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+.ae-scm-check-icon.is-neutral {
+  color: var(--text-dim);
+}
+.ae-scm-check-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-scm-check-status {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  text-align: right;
+  color: var(--text-dim);
+}
+.ae-scm-check-status.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-check-status.is-pending {
+  color: var(--state-warning-strong);
+}
 
 .ae-scm-changes {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin-top: 2px;
 }
 .ae-scm-changes-header {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   width: 100%;
-  padding: 4px var(--space-2);
+  /* Snap the summary band to the 38px header grid so the first content
+     row aligns with the left column's tab-strip band (titlebar 38 +
+     summary 38 == project-switcher 38 + tab-strip 38), keeping the file
+     tree below in lockstep with the editor across clean/changed states. */
+  min-height: 38px;
+  /* Left padding + chevron width match the file-tree rows below so the
+     disclosure-chevron column and the label column line up exactly. */
+  padding: 4px var(--space-2) 4px 6px;
   border: 0;
   background: transparent;
   color: var(--text-dim);
@@ -6886,8 +7318,20 @@ button.ae-vcs-chip:focus-visible {
 .ae-scm-changes-header:hover {
   color: var(--text-secondary);
 }
+/* Clean-tree state reuses the header box for alignment but isn't
+   clickable — no pointer, no hover affordance. */
+.ae-scm-changes-header--static {
+  cursor: default;
+}
+.ae-scm-changes-header--static:hover {
+  color: var(--text-dim);
+}
 .ae-scm-chevron {
-  width: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
   opacity: 0.7;
 }
 .ae-scm-changes-count {
@@ -6900,6 +7344,23 @@ button.ae-vcs-chip:focus-visible {
   letter-spacing: 0;
   text-transform: none;
   color: var(--text-dim);
+}
+/* +adds / -dels line stat (git diff --numstat totals), pinned right. */
+.ae-scm-changes-stat {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ae-scm-stat-add {
+  color: var(--success, #4ec07a);
+}
+.ae-scm-stat-del {
+  color: var(--error, #e5534b);
 }
 .ae-scm-file-list {
   list-style: none;
@@ -6972,11 +7433,6 @@ button.ae-vcs-chip:focus-visible {
   font-weight: 700;
 }
 .ae-scm-file-more,
-.ae-scm-clean {
-  padding: 4px var(--space-3);
-  color: var(--text-dim);
-  font-size: var(--chrome-text-muted);
-}
 
 /* =========================================================================
    Theme-switch crossfade — a one-shot transition class added to <html> by

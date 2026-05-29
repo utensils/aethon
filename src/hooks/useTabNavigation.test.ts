@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 
 import { useTabNavigation } from "./useTabNavigation";
-import { makeEmptyTab, type Tab } from "../types/tab";
+import { makeEmptyTab, OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 
 interface Fixture {
   tabs: Tab[];
@@ -24,7 +24,7 @@ function setup(fx: Fixture) {
 }
 
 describe("nextTab includes editor tabs", () => {
-  it("cycles between agent and editor tabs", () => {
+  it("cycles forward between agent and editor tabs", () => {
     const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
     const editor = makeEmptyTab("editor-1", "App.tsx", null, "editor");
     const agentB = makeEmptyTab("agent-b", "Agent B", null, "agent");
@@ -36,7 +36,48 @@ describe("nextTab includes editor tabs", () => {
     expect(setActiveTab).toHaveBeenLastCalledWith("editor-1");
     actions.nextTab(1);
     expect(setActiveTab).toHaveBeenLastCalledWith("agent-b");
-    actions.nextTab(1); // wrap
+  });
+
+  it("does not wrap forward past the last tab", () => {
+    const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
+    const agentB = makeEmptyTab("agent-b", "Agent B", null, "agent");
+    const { actions, setActiveTab } = setup({
+      tabs: [agentA, agentB],
+      activeTabId: "agent-b", // already last
+    });
+    actions.nextTab(1);
+    expect(setActiveTab).not.toHaveBeenCalled();
+  });
+
+  it("lands on overview when cycling left past the first tab", () => {
+    const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
+    const agentB = makeEmptyTab("agent-b", "Agent B", null, "agent");
+    const { actions, setActiveTab } = setup({
+      tabs: [agentA, agentB],
+      activeTabId: "agent-a", // first
+    });
+    actions.nextTab(-1);
+    expect(setActiveTab).toHaveBeenLastCalledWith(OVERVIEW_TAB_ID);
+  });
+
+  it("stops at overview when cycling left again", () => {
+    const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
+    const { actions, setActiveTab } = setup({
+      tabs: [agentA],
+      activeTabId: OVERVIEW_TAB_ID,
+    });
+    actions.nextTab(-1);
+    expect(setActiveTab).not.toHaveBeenCalled();
+  });
+
+  it("enters the first tab when cycling right from overview", () => {
+    const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
+    const agentB = makeEmptyTab("agent-b", "Agent B", null, "agent");
+    const { actions, setActiveTab } = setup({
+      tabs: [agentA, agentB],
+      activeTabId: OVERVIEW_TAB_ID,
+    });
+    actions.nextTab(1);
     expect(setActiveTab).toHaveBeenLastCalledWith("agent-a");
   });
 
@@ -52,15 +93,15 @@ describe("nextTab includes editor tabs", () => {
     expect(setActiveTab).toHaveBeenLastCalledWith("agent-1");
   });
 
-  it("wraps backwards across editor + agent tabs", () => {
+  it("cycles backward to the previous tab", () => {
     const editor = makeEmptyTab("editor-1", "App.tsx", null, "editor");
     const agent = makeEmptyTab("agent-1", "Agent", null, "agent");
     const { actions, setActiveTab } = setup({
       tabs: [editor, agent],
-      activeTabId: "editor-1",
+      activeTabId: "agent-1",
     });
     actions.nextTab(-1);
-    expect(setActiveTab).toHaveBeenLastCalledWith("agent-1");
+    expect(setActiveTab).toHaveBeenLastCalledWith("editor-1");
   });
 });
 
