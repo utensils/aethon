@@ -61,6 +61,23 @@ export interface UseUpdaterActions {
   setDisableAutoCheck: (next: boolean) => void;
 }
 
+interface UpdaterDebugControl {
+  show: (patch?: Partial<UpdaterStateView>) => void;
+  hide: () => void;
+  progress: (
+    progress: number,
+    preparing?: UpdaterStateView["preparing"],
+  ) => void;
+  error: (message: string) => void;
+  state: () => UpdaterStateView;
+}
+
+declare global {
+  interface Window {
+    __AETHON_UPDATER_DEBUG__?: UpdaterDebugControl;
+  }
+}
+
 const INITIAL_STATE: UpdaterStateView = {
   available: false,
   version: null,
@@ -124,6 +141,60 @@ export function useUpdater(ctx: UseUpdaterContext): {
     },
     [setState],
   );
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    window.__AETHON_UPDATER_DEBUG__ = {
+      show: (patch = {}) => {
+        update({
+          available: true,
+          version: "0.4.0-dev.66.g4e64993",
+          body: null,
+          channel: "nightly",
+          downloading: false,
+          preparing: null,
+          progress: 0,
+          error: null,
+          dismissed: false,
+          ...patch,
+        });
+      },
+      hide: () => {
+        update({
+          available: false,
+          downloading: false,
+          preparing: null,
+          progress: 0,
+          error: null,
+          dismissed: false,
+        });
+      },
+      progress: (progress, preparing = "downloading") => {
+        update({
+          available: true,
+          downloading: true,
+          preparing,
+          progress,
+          error: null,
+          dismissed: false,
+        });
+      },
+      error: (message) => {
+        update({
+          available: true,
+          downloading: false,
+          preparing: null,
+          progress: 0,
+          error: message,
+          dismissed: false,
+        });
+      },
+      state: () => stateRef.current,
+    };
+    return () => {
+      delete window.__AETHON_UPDATER_DEBUG__;
+    };
+  }, [update]);
 
   // Channel changes from settings UI: persist the runtime view + trigger
   // a fresh check against the new endpoint.
