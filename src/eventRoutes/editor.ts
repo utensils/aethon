@@ -16,11 +16,17 @@
  * suppresses its default bridge forward.
  */
 
-import type { EventRouteContext, EventRouteEvent, EventRouteHandler } from "./types";
+import type {
+  EventRouteContext,
+  EventRouteEvent,
+  EventRouteHandler,
+} from "./types";
 import { WORKSTATION_AREAS } from "../hooks/useFocus";
 
 function asRecord(data: unknown): Record<string, unknown> {
-  return data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  return data && typeof data === "object"
+    ? (data as Record<string, unknown>)
+    : {};
 }
 
 const FILES_SIDEBAR_MIN_WIDTH = 220;
@@ -49,7 +55,8 @@ export const handleEditorCanvas: EventRouteHandler = async (
     }
     case "editor-cursor": {
       const line = typeof payload.line === "number" ? payload.line : undefined;
-      const column = typeof payload.column === "number" ? payload.column : undefined;
+      const column =
+        typeof payload.column === "number" ? payload.column : undefined;
       if (line !== undefined && column !== undefined) {
         ctx.updateEditorMeta(tabId, { cursorLine: line, cursorColumn: column });
       }
@@ -60,13 +67,18 @@ export const handleEditorCanvas: EventRouteHandler = async (
       return true;
     }
     case "editor-save": {
-      const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
-      const content = typeof payload.content === "string" ? payload.content : "";
+      const filePath =
+        typeof payload.filePath === "string" ? payload.filePath : "";
+      const content =
+        typeof payload.content === "string" ? payload.content : "";
       if (!filePath) return true;
-      const project = ctx.stateRef.current.project as { path?: string } | undefined;
-      const tabs = (ctx.stateRef.current.tabs as
-        | Array<{ id: string; editor?: { rootPath?: string } }>
-        | undefined) ?? [];
+      const project = ctx.stateRef.current.project as
+        | { path?: string }
+        | undefined;
+      const tabs =
+        (ctx.stateRef.current.tabs as
+          | Array<{ id: string; editor?: { rootPath?: string } }>
+          | undefined) ?? [];
       const tabRoot = tabs.find((t) => t.id === tabId)?.editor?.rootPath;
       const root = tabRoot ?? project?.path ?? "";
       try {
@@ -102,12 +114,11 @@ export const handleFileTree: EventRouteHandler = (
     if (!Number.isFinite(rawWidth)) return true;
     const width = clampFilesSidebarWidth(rawWidth);
     ctx.setState((prev) => {
-      const layout =
-        (prev.layout as Record<string, unknown> | undefined) ?? {};
+      const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
       const current =
         typeof layout.columns === "string"
           ? layout.columns
-          : "220px minmax(0,1fr) 360px";
+          : "320px minmax(0,1fr) 360px";
       const tokens = current.trim().split(/\s+/);
       if (tokens.length >= 3) {
         tokens[tokens.length - 1] = `${width}px`;
@@ -131,9 +142,11 @@ export const handleFileTree: EventRouteHandler = (
   }
   if (event.eventType === "file-tree-open") {
     const payload = asRecord(event.data);
-    const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
+    const filePath =
+      typeof payload.filePath === "string" ? payload.filePath : "";
     if (!filePath) return false;
-    const rootPath = typeof payload.rootPath === "string" ? payload.rootPath : "";
+    const rootPath =
+      typeof payload.rootPath === "string" ? payload.rootPath : "";
     if (rootPath) ctx.newEditorTab(filePath, { rootPath });
     else ctx.newEditorTab(filePath);
     return true;

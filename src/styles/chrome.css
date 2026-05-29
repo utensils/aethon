@@ -618,9 +618,10 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 /* macOS overlay titlebar: the brand strip is the window drag region, so
-   reserve the top-left for the floating traffic lights. Only on mac. */
+   reserve the top-left for the floating traffic lights — with extra gap
+   so the Æthon wordmark clears the green control. Only on mac. */
 [data-platform="mac"] .a2ui-sidebar-title {
-  padding-left: 76px;
+  padding-left: 94px;
 }
 
 .a2ui-sidebar-title-version {

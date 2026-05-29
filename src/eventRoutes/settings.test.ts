@@ -140,8 +140,8 @@ describe("handleSettings", () => {
       expect.objectContaining({
         sidebarVisible: true,
         filesSidebarVisible: true,
-        columns: "220px minmax(0,1fr) 360px",
-        lastLeftWidth: "220px",
+        columns: "320px minmax(0,1fr) 360px",
+        lastLeftWidth: "320px",
         lastRightWidth: "360px",
       }),
     );

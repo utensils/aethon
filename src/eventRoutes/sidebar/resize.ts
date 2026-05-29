@@ -20,7 +20,7 @@ export const handleSidebarResize: EventRouteHandler = (
     ctx.setState((prev) => {
       const layout = (prev.layout as Record<string, unknown> | undefined) ?? {};
       const current =
-        (layout.columns as string | undefined) ?? "220px minmax(0,1fr)";
+        (layout.columns as string | undefined) ?? "320px minmax(0,1fr)";
       const tokens = current.trim().split(/\s+/);
       tokens[0] = `${next}px`;
       // Stash the new left width on the layout so a hide/show
