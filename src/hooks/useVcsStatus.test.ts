@@ -134,6 +134,51 @@ describe("useVcsStatus", () => {
     expect(checksMock).not.toHaveBeenCalled();
   });
 
+  it("fetches a newly selected root even while the previous poll is in flight", async () => {
+    // Regression: the in-flight guard must be effect-scoped, not a
+    // component-wide ref. Root "/a"'s poll hangs forever; switching to "/b"
+    // must still fetch immediately instead of bailing on a shared guard and
+    // leaving "/b" stuck on the loading shell.
+    invokeMock.mockImplementation((_cmd: string, args: { path?: string; root?: string }) => {
+      const root = args?.path ?? args?.root;
+      if (root === "/a") return new Promise(() => {}); // never resolves
+      if (_cmd === "git_status")
+        return Promise.resolve({ branch: "b-branch", ahead: 0, behind: 0, dirty: false });
+      if (_cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+    branchMock.mockResolvedValue({
+      ghAvailable: false,
+      repo: null,
+      pushed: false,
+      worktreeBroken: false,
+      prs: [],
+    });
+    checksMock.mockResolvedValue({
+      ghAvailable: false,
+      repo: null,
+      conclusion: null,
+      total: 0,
+      passed: 0,
+      failed: 0,
+      pending: 0,
+      skipped: 0,
+      checks: [],
+    });
+
+    const h = makeSetState();
+    const { rerender } = renderHook(
+      ({ root }: { root: string }) =>
+        useVcsStatus({ activeRoot: root, setState: h.setState }),
+      { initialProps: { root: "/a" } },
+    );
+    // "/a"'s poll is hanging; switch to "/b" mid-flight.
+    rerender({ root: "/b" });
+    await waitFor(() => expect(h.vcs()?.root).toBe("/b"));
+    await waitFor(() => expect(h.vcs()?.branch).toBe("b-branch"));
+    expect(h.vcs()?.loading).toBe(false);
+  });
+
   it("treats a 'none' CI conclusion as no CI signal", async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_status"

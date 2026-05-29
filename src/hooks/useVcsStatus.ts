@@ -18,7 +18,7 @@
  * roots from clobbering fresh data and stop overlapping ticks from forking
  * redundant git/gh processes.
  */
-import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { getGhBranchStatus, type GhPr } from "../ghBranchStatusCache";
@@ -185,10 +185,15 @@ function pickPr(prs: GhPr[]): VcsPr | null {
 }
 
 export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): void {
-  const pollingRef = useRef(false);
-
   useEffect(() => {
     let cancelled = false;
+    // In-flight guard is effect-scoped (one per root), NOT a component-wide
+    // ref: it dedupes the concurrent mount/interval/focus ticks for THIS
+    // root, but must never block the first tick of a freshly-selected root
+    // while the previous root's poll is still awaiting git/gh — that would
+    // leave the new root's /vcs stuck on the loading shell until the next
+    // interval/focus fire.
+    let polling = false;
 
     // The effect re-runs (and cleans up) whenever activeRoot changes, so the
     // `cancelled` flag alone guards against a stale root's late response
@@ -216,9 +221,9 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     });
 
     const tick = async () => {
-      if (cancelled || pollingRef.current) return;
+      if (cancelled || polling) return;
       const root = activeRoot;
-      pollingRef.current = true;
+      polling = true;
       try {
         // Working-tree status + branch (worktree-aware) + change breakdown
         // run together; PR/CI gate on having a branch.
@@ -276,7 +281,7 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
           ci,
         });
       } finally {
-        pollingRef.current = false;
+        polling = false;
       }
     };
 
