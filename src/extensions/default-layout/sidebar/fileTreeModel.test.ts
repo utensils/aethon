@@ -151,6 +151,14 @@ describe("buildIgnoreMatcher", () => {
     expect(m.isIgnored("node_modules_keep/file.ts")).toBe(false);
   });
 
+  it("treats an ignored active root ('./') as matching everything under it", () => {
+    // git ls-files --directory reports `./` when the cwd itself is ignored.
+    const m = buildIgnoreMatcher(["./"]);
+    expect(m.isIgnored("anything")).toBe(true);
+    expect(m.isIgnored("nested/deep/file.ts")).toBe(true);
+    expect(buildIgnoreMatcher(["."]).isIgnored("x")).toBe(true);
+  });
+
   it("normalizes separators and tolerates non-array input", () => {
     const m = buildIgnoreMatcher(["build\\cache/"]);
     expect(m.isIgnored("build/cache/out.o")).toBe(true);

@@ -299,20 +299,31 @@ interface IgnoreMatcher {
  *  relative to the active root). Entries ending in `/` are directory prefixes
  *  that dim their whole subtree (e.g. `node_modules/` collapses to one entry
  *  yet greys every descendant); others are exact files. An empty list matches
- *  nothing, so a clean / non-git tree renders undimmed. */
+ *  nothing, so a clean / non-git tree renders undimmed.
+ *
+ *  Special case: when the active root is itself ignored by a parent
+ *  `.gitignore` (e.g. opening `repo/build` where `/build/` is ignored),
+ *  `git ls-files --directory -- .` reports `./` — meaning *everything* under
+ *  the root is ignored. That normalizes to `.`, which can't match children as
+ *  a normal prefix, so treat it as a blanket match instead. */
 function buildIgnoreMatcher(paths: string[] | null | undefined): IgnoreMatcher {
   const exact = new Set<string>();
   const dirs: string[] = [];
+  let rootIgnored = false;
   for (const raw of Array.isArray(paths) ? paths : []) {
     if (typeof raw !== "string") continue;
     const isDir = /[/\\]$/.test(raw);
     const norm = normalizeRelativePath(raw);
-    if (!norm) continue;
+    if (norm === "" || norm === ".") {
+      rootIgnored = true;
+      continue;
+    }
     if (isDir) dirs.push(norm);
     else exact.add(norm);
   }
   return {
     isIgnored(relativePath: string): boolean {
+      if (rootIgnored) return true;
       const rel = normalizeRelativePath(relativePath);
       if (!rel) return false;
       if (exact.has(rel)) return true;
