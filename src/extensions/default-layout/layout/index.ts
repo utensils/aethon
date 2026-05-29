@@ -9,7 +9,7 @@
  * from `./layout` / `../layout` and resolve here unchanged.
  */
 
-export { AeMarkInline, readUiScale } from "./mark";
+export { AeMarkInline, AeWordmark, readUiScale } from "./mark";
 export { Layout } from "./grid";
 export { StatusBar } from "./status-bar";
 export { EmptyState } from "./empty-state";

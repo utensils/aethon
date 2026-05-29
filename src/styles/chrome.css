@@ -1410,9 +1410,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   overscroll-behavior: contain;
   padding: 6px;
   background: var(--popover-bg, var(--bg-elev, #1f1f23));
-  border: 1px solid var(--popover-border, var(--border, rgba(255, 255, 255, 0.08)));
+  border: 1px solid
+    var(--popover-border, var(--border, rgba(255, 255, 255, 0.08)));
   border-radius: 8px;
-  box-shadow: var(--popover-shadow, 0 14px 40px rgba(0, 0, 0, 0.4)),
+  box-shadow:
+    var(--popover-shadow, 0 14px 40px rgba(0, 0, 0, 0.4)),
     var(--inner-highlight, none);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--chrome-text-compact);
@@ -2266,7 +2268,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   /* Bold reads slightly brighter than running text so it actually
      looks weighted. Mixes toward the syntax-symbol colour so theme
      personality bleeds through. */
-  color: color-mix(in oklab, var(--text) 80%, var(--syntax-symbol, var(--accent-3, var(--text))));
+  color: color-mix(
+    in oklab,
+    var(--text) 80%,
+    var(--syntax-symbol, var(--accent-3, var(--text)))
+  );
   font-weight: 700;
 }
 
@@ -2302,7 +2308,8 @@ body.ae-resizing-sidebar .a2ui-layout {
   /* Left gutter picks up the cool secondary accent — keeps the visual
      distinct from agent message bodies (warm primary) and gives the
      "thinking" passages their own voice in the transcript. */
-  border-left: 2px solid var(--accent-2, color-mix(in oklab, var(--text-dim) 40%, transparent));
+  border-left: 2px solid
+    var(--accent-2, color-mix(in oklab, var(--text-dim) 40%, transparent));
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-dim);
 }
@@ -4311,7 +4318,8 @@ body.ae-resizing-terminal * {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
+  box-shadow:
+    var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
     var(--inner-highlight, none);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
@@ -4402,8 +4410,14 @@ body.ae-resizing-terminal * {
   box-shadow: var(--inner-highlight, none);
 }
 .ae-settings-ext-row--failed {
-  border-color: var(--state-error-border, color-mix(in srgb, var(--error) 40%, var(--border)));
-  background: var(--state-error-bg, color-mix(in srgb, var(--error) 5%, var(--bg-elev)));
+  border-color: var(
+    --state-error-border,
+    color-mix(in srgb, var(--error) 40%, var(--border))
+  );
+  background: var(
+    --state-error-bg,
+    color-mix(in srgb, var(--error) 5%, var(--bg-elev))
+  );
 }
 .ae-settings-ext-row--disabled {
   opacity: var(--opacity-muted);
@@ -4816,6 +4830,10 @@ body.ae-resizing-terminal * {
   border-radius: 10px;
   width: 100%;
   background: var(--bg-elev);
+}
+.ae-tool-card:not([open]):hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
 }
 .ae-tool-card[data-running="true"] {
   border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
@@ -5726,6 +5744,20 @@ button.a2ui-gh-stat:hover {
 
 .a2ui-project-dashboard-card {
   align-items: stretch;
+  /* Premium landing touch: a thin accent strip across the very top of
+     the card so the dashboard reads as the app's "home" surface. */
+  position: relative;
+  overflow: hidden;
+}
+.a2ui-project-dashboard-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-accent, var(--accent));
+  opacity: 0.9;
 }
 
 .a2ui-project-dashboard-header {
@@ -5735,6 +5767,13 @@ button.a2ui-gh-stat:hover {
 }
 .a2ui-project-dashboard-hero {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 .a2ui-project-dashboard-header-text {
   display: flex;
@@ -6060,8 +6099,16 @@ button.a2ui-gh-stat:hover {
      bug, mint for enhancement, etc.) while guaranteeing the fg/bg pair
      clears WCAG AA — the foreground inherits most of its luminance
      from --text, which is already a passing colour in every theme. */
-  background: color-mix(in oklab, var(--label-color, var(--accent)) 18%, var(--bg-elev));
-  border-color: color-mix(in oklab, var(--label-color, var(--accent)) 55%, var(--border));
+  background: color-mix(
+    in oklab,
+    var(--label-color, var(--accent)) 18%,
+    var(--bg-elev)
+  );
+  border-color: color-mix(
+    in oklab,
+    var(--label-color, var(--accent)) 55%,
+    var(--border)
+  );
   color: color-mix(in oklab, var(--label-color, var(--text)) 30%, var(--text));
 }
 .a2ui-dashboard-issue-send {
@@ -6390,7 +6437,10 @@ button.ae-vcs-chip:focus-visible {
   flex-direction: column;
   flex: 0 0 auto;
   gap: 2px;
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  /* No top padding: the titlebar is a flush 38px header row so its
+     bottom border lands on the same y as the app header + sidebar brand,
+     keeping the top divider line continuous across all three columns. */
+  padding: 0 0 var(--space-2);
   border-bottom: 1px solid var(--border);
   background: var(--gradient-surface, var(--bg-elev));
   box-shadow: var(--inner-highlight, none);
@@ -6420,8 +6470,13 @@ button.ae-vcs-chip:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 28px;
-  padding: 0 var(--space-1);
+  /* 38px to match the app header + sidebar brand row; bottom border is
+     the shared top divider line across the three columns. */
+  height: 38px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
 }
 .ae-scm-title {
   font-size: var(--chrome-text-muted);

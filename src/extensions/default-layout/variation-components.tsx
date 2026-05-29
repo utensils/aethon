@@ -469,6 +469,22 @@ export function VcsStatus({ component, state, onEvent }: BuiltinComponentProps) 
     vcs.pr?.url ??
     null;
 
+  // Clicking the "N changed" chip opens the (first) changed file in an
+  // editor tab. With one change that's the file; with several it's a quick
+  // jump to the top of the list (the full set lives in the source-control
+  // panel). Paths from git_file_status are relative to the root.
+  const firstChanged = vcs.changes.files[0];
+  const openChanged = () => {
+    if (!vcs.root || !firstChanged) return;
+    const root = vcs.root.replace(/\/+$/, "");
+    const rel = firstChanged.path.replace(/^\/+/, "");
+    onEvent("file-tree-open", { filePath: `${root}/${rel}`, rootPath: vcs.root });
+  };
+  const changeTitle =
+    changeTotal === 1 && firstChanged
+      ? `${firstChanged.path} — open in editor`
+      : `${changeTotal} changed files — open the first in editor`;
+
   return (
     <div className="ae-vcs-cluster" data-loading={vcs.loading ? "true" : undefined}>
       {vcs.branch ? (
@@ -490,13 +506,16 @@ export function VcsStatus({ component, state, onEvent }: BuiltinComponentProps) 
         </span>
       ) : null}
       {changeTotal > 0 ? (
-        <span
+        <button
+          type="button"
           className="ae-vcs-chip ae-vcs-changes"
-          title={`${changeTotal} changed file${changeTotal === 1 ? "" : "s"}`}
+          title={changeTitle}
+          onClick={openChanged}
+          disabled={!firstChanged}
         >
           <span className="ae-vcs-changes-dot" aria-hidden="true" />
           {changeTotal} changed
-        </span>
+        </button>
       ) : null}
       {pr && vcs.pr ? (
         <button

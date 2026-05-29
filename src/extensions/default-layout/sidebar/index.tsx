@@ -22,7 +22,7 @@ import { resolveBoolean, resolveString } from "../../../utils/dataBinding";
 import { ContextMenu } from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
-import { AeMarkInline } from "../layout";
+import { AeWordmark } from "../layout";
 import { ItemRow } from "./item-row";
 import { ToggleSwitch } from "../toggle-switch";
 import {
@@ -102,10 +102,15 @@ export function Sidebar({
       ref={asideRef}
       className={`a2ui-sidebar ${resizeFromLeft ? "a2ui-sidebar-resize-left" : ""}`}
     >
-      {(title || version) && (
+      {(showBrand || title || version) && (
         <div className="a2ui-sidebar-title">
-          {showBrand && <AeMarkInline size={20} radius={4} />}
-          {title && <span>{title}</span>}
+          {showBrand ? (
+            // Full wordmark replaces the monogram + plain "aethon" text so
+            // the bare Æ stays unique to the overview tab / dashboard hero.
+            <AeWordmark height={22} />
+          ) : (
+            title && <span>{title}</span>
+          )}
           {version && (
             <span className="a2ui-sidebar-title-version">{version}</span>
           )}

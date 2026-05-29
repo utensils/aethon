@@ -148,7 +148,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // source-control panel also opens changed files in an editor tab
     // (handleFileTree claims `file-tree-open`, falling through to the
     // opener for PR/CI `open-url`).
-    ["type:vcs-status", [handleGhStatsStrip]],
+    ["type:vcs-status", [handleFileTree, handleGhStatsStrip]],
     ["type:source-control-panel", [handleFileTree, handleGhStatsStrip]],
     ["type:project-card", [handleProjectsDashboard]],
     // Issues section emits the same `start-task` payload as the task
