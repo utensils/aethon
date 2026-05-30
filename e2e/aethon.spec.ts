@@ -92,6 +92,92 @@ test("boots the real app shell through mocked Tauri IPC", async ({ page }) => {
   );
 });
 
+test("chat canvas contains wide content without horizontal scrolling", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await waitForAethonReady(page);
+
+  await page.getByRole("button", { name: "New Tab" }).click();
+  await expect(page.locator(".a2ui-chat-input-field")).toBeVisible();
+
+  const tabId = await page.evaluate(
+    () => window.__AETHON_STATE__?.().activeTabId ?? "default",
+  );
+  const longToken = "0123456789abcdef".repeat(220);
+  const wideMarkdown = [
+    `Long URL: https://example.com/${longToken}`,
+    "",
+    "| path | value |",
+    "| --- | --- |",
+    `| ${longToken} | ${longToken} |`,
+    "",
+    "```typescript",
+    `const value = "${longToken}";`,
+    "```",
+  ].join("\n");
+
+  await page.evaluate(
+    ({ tabId: activeTabId, longToken: token, wideMarkdown: markdown }) => {
+      window.__AETHON_E2E__?.emitAgent({
+        type: "response",
+        tabId: activeTabId,
+        content: markdown,
+        done: true,
+      });
+      window.__AETHON_E2E__?.emitAgent({
+        type: "a2ui",
+        tabId: activeTabId,
+        id: "wide-tool",
+        done: true,
+        payload: {
+          components: [
+            {
+              id: "tool-wide",
+              type: "tool-card",
+              props: {
+                title: "bash",
+                description: token,
+                startedAt: 1,
+                endedAt: 2,
+              },
+              children: [
+                {
+                  id: "tool-code-wide",
+                  type: "code",
+                  props: {
+                    content: `const value = "${token}";`,
+                    language: "typescript",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+    },
+    { tabId, longToken, wideMarkdown },
+  );
+
+  await expect(page.locator(".a2ui-canvas-message")).toHaveCount(2);
+
+  const scrollerMetrics = await page
+    .locator(".a2ui-canvas-scroller")
+    .evaluate((el) => ({ overflowX: getComputedStyle(el).overflowX }));
+  expect(scrollerMetrics.overflowX).toBe("hidden");
+
+  await page.locator(".ae-tool-card-summary").click();
+  await expect(page.locator(".ae-tool-card[open] .a2ui-code")).toBeVisible();
+
+  const codeMetrics = await page
+    .locator(".ae-tool-card[open] .a2ui-code")
+    .evaluate((el) => ({
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    }));
+  expect(codeMetrics.scrollWidth).toBeGreaterThan(codeMetrics.clientWidth);
+});
+
 test("queues normal Enter messages behind an in-flight turn and drains cleanly", async ({
   page,
 }) => {
