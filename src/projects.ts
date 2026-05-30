@@ -48,6 +48,11 @@ export interface ProjectsState {
 }
 
 const FILE = "projects.json";
+/** Project icons (base64 `data:` URLs) live in a sidecar keyed by project id,
+ *  NOT inline in projects.json — embedding them bloated the hot project-list
+ *  file to hundreds of KB, slowing every load/save/parse on the sidebar path
+ *  (#159). The sidecar is read once on load and rewritten on save. */
+const ICONS_FILE = "project-icons.json";
 const MAX_PROJECTS = 16;
 const SCHEMA_VERSION = 3;
 export const DEFAULT_WORKTREE_BASE_BRANCH = "origin/main";
@@ -88,6 +93,34 @@ interface PersistedV3 extends PersistedV2 {
   activeHostId?: string | null;
 }
 
+/** Read the project-icon sidecar: a `{ projectId: iconUrl }` map. Returns an
+ *  empty map when absent or malformed (icons are a cosmetic cache). */
+async function loadProjectIcons(): Promise<Record<string, string>> {
+  const raw = await readState(ICONS_FILE);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, string> = {};
+    for (const [id, url] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof url === "string" && url.length > 0) out[id] = url;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Persist the icon sidecar from the live project list. Only projects that
+ *  actually have an icon are written, so the file stays minimal. */
+async function saveProjectIcons(projects: Project[]): Promise<void> {
+  const map: Record<string, string> = {};
+  for (const p of projects) {
+    if (p.iconUrl) map[p.id] = p.iconUrl;
+  }
+  await writeState(ICONS_FILE, JSON.stringify(map));
+}
+
 export async function loadProjects(localHostId?: string): Promise<ProjectsState> {
   // Resolve the local host id from the bridge BEFORE migrating so v1/v2
   // entries get stamped with the real id, not the FALLBACK placeholder
@@ -99,7 +132,16 @@ export async function loadProjects(localHostId?: string): Promise<ProjectsState>
   if (!raw) return emptyProjectsState(hostId);
   try {
     const parsed = JSON.parse(raw) as PersistedV3 | PersistedV2 | PersistedV1;
-    return migrateProjects(parsed, hostId);
+    const state = migrateProjects(parsed, hostId);
+    // Re-attach icons from the sidecar. The sidecar wins; an inline `iconUrl`
+    // from a pre-externalization projects.json is kept as a fallback (it gets
+    // moved into the sidecar + stripped from the main file on the next save).
+    const icons = await loadProjectIcons();
+    for (const p of state.projects) {
+      const fromSidecar = icons[p.id];
+      if (fromSidecar) p.iconUrl = fromSidecar;
+    }
+    return state;
   } catch {
     return emptyProjectsState(hostId);
   }
@@ -183,15 +225,21 @@ export async function saveProjects(state: ProjectsState): Promise<void> {
   for (const [pid, list] of Object.entries(state.worktreesByProject)) {
     worktreesByProject[pid] = worktreesForPersist(list);
   }
+  // Externalize icons: keep the (potentially hundreds-of-KB base64) `iconUrl`
+  // out of the hot projects.json and in the sidecar instead.
+  const projectsForPersist = state.projects.map(({ iconUrl: _icon, ...rest }) =>
+    rest,
+  );
   const payload: PersistedV3 = {
     schemaVersion: SCHEMA_VERSION,
-    projects: state.projects,
+    projects: projectsForPersist,
     activeId: state.activeId,
     activeWorktreeId: state.activeWorktreeId,
     worktreesByProject,
     activeHostId: state.activeHostId,
   };
   await writeState(FILE, JSON.stringify(payload));
+  await saveProjectIcons(state.projects);
 }
 
 export function setActiveWorktree(
