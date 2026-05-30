@@ -2,6 +2,7 @@ import type { A2UIPayload } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { BridgeMessageHandler } from "./types";
+import { flushResponseDeltas } from "./responseDelta";
 
 function completedToolCardIdentity(payload: A2UIPayload): string | undefined {
   const toolCards = (payload.components ?? []).filter(
@@ -38,6 +39,10 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
   const payload = data.payload as A2UIPayload | undefined;
   const id = (data.id as string) || crypto.randomUUID();
   const tabId = (data.tabId as string | undefined) ?? "default";
+  // Tool cards / A2UI payloads are appended synchronously, while streamed
+  // response deltas are frame-batched. Drain this tab's pending deltas first
+  // so any pre-tool assistant text/thinking renders before the tool card.
+  flushResponseDeltas(tabId);
   if (payload) {
     const tabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
     const tab = tabs.find((t) => t.id === tabId);

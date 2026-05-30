@@ -156,11 +156,13 @@ export function parseSessionHistoryLines(
         : `restored-${messages.length}`;
     if ((text || thinking) && !seen.has(id)) {
       seen.add(id);
+      const createdAt = parseMessageTime(record, msg);
       messages.push({
         id,
         role,
         ...(text ? { text: trimText(text) } : {}),
         ...(thinking ? { thinking: trimText(thinking) } : {}),
+        ...(createdAt !== undefined ? { createdAt } : {}),
       });
     }
 

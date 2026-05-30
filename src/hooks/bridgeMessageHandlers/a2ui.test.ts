@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleA2ui } from "./a2ui";
+import { handleResponseDelta } from "./responseDelta";
 import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
 import type { ChatMessage } from "../../types/a2ui";
@@ -27,6 +28,39 @@ describe("handleA2ui", () => {
     const [, updater] = mocks.updateTab.mock.calls[0];
     expect(updater(makeEmptyTab("default", "Tab 1")).waiting).toBe(false);
     expect(mocks.setStatusFlags).toHaveBeenCalledWith({ status: "ready" });
+  });
+
+  it("flushes pending streamed deltas before appending an a2ui bubble", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1" },
+    });
+    handleResponseDelta(
+      {
+        type: "response_delta",
+        content: "before tool",
+        messageId: "msg-1",
+        tabId: "tab-1",
+        channel: "thinking",
+      },
+      ctx,
+    );
+
+    const payload = { components: [{ id: "tool-1", type: "tool-card" }] };
+    handleA2ui({ type: "a2ui", payload, id: "tool-1", tabId: "tab-1" }, ctx);
+
+    expect(mocks.appendOrAmendAgentText).toHaveBeenCalledWith(
+      "before tool",
+      "msg-1",
+      "tab-1",
+      "thinking",
+    );
+    expect(mocks.appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "tool-1", role: "agent", a2ui: payload }),
+      "tab-1",
+    );
+    expect(
+      mocks.appendOrAmendAgentText.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.appendMessage.mock.invocationCallOrder[0]);
   });
 
   it("replaces a stale running terminal tool card when the final event has a sibling id", () => {

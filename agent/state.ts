@@ -237,6 +237,16 @@ export interface TabRecord {
   agentEndFired: boolean;
   queuedCount: number;
   toolCardSeq: number;
+  /** Synthetic assistant message id currently receiving streamed text /
+   *  thinking deltas. Cleared at tool boundaries so post-tool deltas land
+   *  after the tool card instead of amending an earlier bubble. */
+  activeResponseMessageId?: string;
+  /** Canonical pi id (when present) for the active streamed segment. */
+  activeResponseCanonicalId?: string;
+  /** Monotonic per-tab counter used to make synthetic response ids unique
+   *  without trusting pi message_update timestamps (which can refer to an
+   *  earlier transcript record during streaming). */
+  responseMessageSeq: number;
 }
 
 export interface ProjectBaselineSnapshot {

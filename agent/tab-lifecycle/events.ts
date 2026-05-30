@@ -14,6 +14,9 @@
  *    prompt (cf. cancelRunningToolCards in `./tools.ts`).
  *  - `agent_end` always emits `response_end` so the frontend can release
  *    the turn UI, even on error.
+ *  - Streaming assistant text/thinking ids are synthetic per assistant
+ *    segment and roll at tool boundaries; never key them from pi event
+ *    timestamps, which can point at earlier transcript records.
  */
 
 import {
@@ -34,6 +37,59 @@ import { modelKey } from "./utils";
 
 const turnLog = logger.scope("turn");
 
+function assistantEventMessageId(
+  ame: { id?: unknown; messageId?: unknown },
+): string | undefined {
+  if (typeof ame.messageId === "string" && ame.messageId.length > 0) {
+    return ame.messageId;
+  }
+  if (typeof ame.id === "string" && ame.id.length > 0) return ame.id;
+  return undefined;
+}
+
+function safeIdPart(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96) || "assistant";
+}
+
+function startResponseSegment(
+  rec: TabRecord,
+  canonical: string | undefined,
+): string {
+  rec.responseMessageSeq = (rec.responseMessageSeq ?? 0) + 1;
+  rec.activeResponseCanonicalId = canonical;
+  rec.activeResponseMessageId = canonical
+    ? `text-${safeIdPart(canonical)}-${rec.responseMessageSeq}`
+    : `text-${Date.now()}-${rec.responseMessageSeq}`;
+  return rec.activeResponseMessageId;
+}
+
+function responseMessageId(
+  rec: TabRecord,
+  ame: { id?: unknown; messageId?: unknown },
+): string {
+  // Do not derive identity from the outer message_update.message timestamp
+  // (or its surrounding record). In practice that metadata can refer to an
+  // earlier transcript record during streaming, causing later thinking deltas
+  // to amend an older bubble and render above intervening tool cards.
+  const canonical = assistantEventMessageId(ame);
+  if (
+    rec.activeResponseMessageId &&
+    rec.activeResponseCanonicalId === canonical
+  ) {
+    return rec.activeResponseMessageId;
+  }
+  // Even when pi supplies a canonical assistant id, use a segment-scoped UI
+  // id. Some providers use one canonical id for an assistant message that
+  // spans tool calls; reusing it after a tool boundary would amend the
+  // pre-tool bubble above the tool card.
+  return startResponseSegment(rec, canonical);
+}
+
+function rollResponseMessage(rec: TabRecord): void {
+  rec.activeResponseMessageId = undefined;
+  rec.activeResponseCanonicalId = undefined;
+}
+
 /** Per-tab pi session event subscriber. Extracted so tests can drive it
  *  directly with synthetic event payloads. */
 export function handleSessionEvent(
@@ -48,6 +104,7 @@ export function handleSessionEvent(
 ): void {
   switch (event.type) {
     case "agent_start": {
+      rollResponseMessage(rec);
       state.currentAgentTabId = tabId;
       state.turnStartTimes.set(tabId, Date.now());
       const model = rec.session.model ? modelKey(rec.session.model) : "unknown";
@@ -84,14 +141,10 @@ export function handleSessionEvent(
       ) {
         const delta = ame.delta ?? "";
         if (delta) {
-          const ts =
-            (event as { message?: { timestamp?: number } }).message
-              ?.timestamp ?? 0;
-          const messageId = `text-${ts}`;
           deps.send({
             type: "response_delta",
             tabId,
-            messageId,
+            messageId: responseMessageId(rec, ame),
             content: delta,
             channel,
           });
@@ -121,6 +174,7 @@ export function handleSessionEvent(
         startedAt,
       });
       deps.send({ type: "a2ui", tabId, id: uiId, payload });
+      rollResponseMessage(rec);
       if (ev.toolName === "bash") {
         const cmd = String(
           (ev.args as { command?: unknown } | undefined)?.command ?? "",
@@ -195,6 +249,7 @@ export function handleSessionEvent(
         deps.send({ type: "terminal_output", tabId, content: "\r\n" });
       }
       rec.toolArgsCache.delete(ev.toolCallId);
+      rollResponseMessage(rec);
       break;
     }
     case "agent_end": {
@@ -235,6 +290,7 @@ export function handleSessionEvent(
         if (state.currentAgentTabId === tabId) {
           state.currentAgentTabId = undefined;
         }
+        rollResponseMessage(rec);
         deps.send({ type: "response_end", tabId });
       }
       break;
@@ -274,6 +330,7 @@ export function handleSessionEvent(
         if (state.currentAgentTabId === tabId) {
           state.currentAgentTabId = undefined;
         }
+        rollResponseMessage(rec);
         deps.send({ type: "response_end", tabId });
       }
       break;

@@ -9,7 +9,9 @@
  *  - Dedup of local-chat entries already covered by pi messages
  *
  * The dedupe runs only on local-chat entries to avoid pi-on-pi
- * collisions (pi never replays the same id twice within a file).
+ * collisions (pi never replays the same id twice within a file). Assistant
+ * local content is also considered covered when it is a slice of canonical
+ * pi text/thinking, which filters streaming snapshots from completed turns.
  */
 
 import { readFile } from "node:fs/promises";
@@ -19,13 +21,75 @@ import { readLocalChatTranscript } from "./parse-local";
 import { parseSessionHistoryLines } from "./parse-pi";
 import { MAX_RESTORED_MESSAGES, type RestoredChatMessage } from "./shared";
 
-function comparableMessageText(
-  message: RestoredChatMessage,
-): string | undefined {
-  const value = message.text ?? message.thinking;
+type ContentChannel = "text" | "thinking";
+
+function normalizedMessageText(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function messageContentParts(
+  message: RestoredChatMessage,
+): Array<[ContentChannel, string]> {
+  const parts: Array<[ContentChannel, string]> = [];
+  const text = normalizedMessageText(message.text);
+  if (text) parts.push(["text", text]);
+  const thinking = normalizedMessageText(message.thinking);
+  if (thinking) parts.push(["thinking", thinking]);
+  return parts;
+}
+
+interface IndexedPiContent {
+  text: string;
+  createdAt?: number;
+}
+
+function piContentIndex(
+  piMessages: RestoredChatMessage[],
+): Map<string, IndexedPiContent[]> {
+  const index = new Map<string, IndexedPiContent[]>();
+  for (const message of piMessages) {
+    for (const [channel, text] of messageContentParts(message)) {
+      const key = `${message.role}\0${channel}`;
+      const existing = index.get(key);
+      const entry = {
+        text,
+        ...(typeof message.createdAt === "number"
+          ? { createdAt: message.createdAt }
+          : {}),
+      };
+      if (existing) existing.push(entry);
+      else index.set(key, [entry]);
+    }
+  }
+  return index;
+}
+
+function isCoveredByPiContent(
+  message: RestoredChatMessage,
+  index: ReadonlyMap<string, IndexedPiContent[]>,
+): boolean {
+  const parts = messageContentParts(message);
+  if (parts.length === 0) return false;
+  return parts.every(([channel, text]) => {
+    const candidates = index.get(`${message.role}\0${channel}`) ?? [];
+    return candidates.some((candidate) => {
+      if (candidate.text === text) return true;
+      // Partial local agent snapshots are only safe to drop when they are
+      // timestamped streaming snapshots that were later finalized into a pi
+      // assistant message. A global substring match against older pi content
+      // can otherwise erase unrelated stopped/crashed-turn snapshots.
+      return (
+        message.role === "agent" &&
+        message.id.startsWith("text-") &&
+        typeof message.createdAt === "number" &&
+        typeof candidate.createdAt === "number" &&
+        message.createdAt <= candidate.createdAt &&
+        candidate.text.includes(text)
+      );
+    });
+  });
 }
 
 function dedupeLocalMessages(
@@ -33,19 +97,10 @@ function dedupeLocalMessages(
   localMessages: RestoredChatMessage[],
 ): RestoredChatMessage[] {
   const seenIds = new Set(piMessages.map((message) => message.id));
-  const seenContent = new Set(
-    piMessages
-      .map((message) => {
-        const text = comparableMessageText(message);
-        return text ? `${message.role}\0${text}` : undefined;
-      })
-      .filter((value): value is string => Boolean(value)),
-  );
+  const contentIndex = piContentIndex(piMessages);
   return localMessages.filter((message) => {
     if (seenIds.has(message.id)) return false;
-    const text = comparableMessageText(message);
-    if (!text) return true;
-    return !seenContent.has(`${message.role}\0${text}`);
+    return !isCoveredByPiContent(message, contentIndex);
   });
 }
 

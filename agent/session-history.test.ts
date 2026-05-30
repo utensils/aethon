@@ -340,6 +340,70 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("drops local streamed thinking slices already covered by pi history", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-agent",
+        timestamp: 1779979121365,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "thinking",
+              thinking:
+                "**Earlier reasoning**\n\nstep one\n\n**Later reasoning**\n\nstep two",
+            },
+          ],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "text-1779979103491",
+      role: "agent",
+      thinking: "**Later reasoning**\n\nstep two",
+      createdAt: 1779979120970,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "pi-agent",
+        role: "agent",
+        thinking: "**Earlier reasoning**\n\nstep one\n\n**Later reasoning**\n\nstep two",
+        createdAt: 1779979121365,
+      },
+    ]);
+  });
+
+  it("keeps later local streamed snapshots even when their text appears in earlier pi history", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-agent",
+        timestamp: 1_000,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "all done" }],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "text-2",
+      role: "agent",
+      text: "done",
+      createdAt: 2_000,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-agent", role: "agent", text: "all done", createdAt: 1_000 },
+      { id: "text-2", role: "agent", text: "done", createdAt: 2_000 },
+    ]);
+  });
+
   it("keeps the latest local assistant snapshot for stopped turns", async () => {
     const dir = await tempRoot();
     await appendLocalChatMessage(dir, {
