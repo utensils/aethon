@@ -370,12 +370,18 @@ function VirtualMessageList({
         data={messages}
         computeItemKey={(_index, m) => m.id}
         itemContent={itemContent}
-        // Open scrolled to the newest message. Do NOT also pass
-        // `initialItemCount` here: combined with a bottom `initialTopMostItemIndex`
-        // Virtuoso requests rows past the end of `data` and feeds `undefined`
-        // into computeItemKey, crashing on m.id for any restored 2+ message chat
-        // (see message-list.virtuoso.test.tsx).
-        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+        // Open scrolled to the BOTTOM of the newest message. `align: "end"`
+        // pins the last item's bottom to the viewport bottom — a bare index
+        // aligns it to the top, so a tall final message would open at its start
+        // instead of the latest content (the old scrollTop=scrollHeight
+        // contract). Do NOT also pass `initialItemCount`: combined with a bottom
+        // index Virtuoso requests rows past the end of `data` and feeds
+        // `undefined` into computeItemKey, crashing on m.id for any restored 2+
+        // message chat (see message-list.virtuoso.test.tsx).
+        initialTopMostItemIndex={{
+          index: Math.max(0, messages.length - 1),
+          align: "end",
+        }}
         followOutput="auto"
         atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
         atBottomStateChange={setIsAtBottom}
