@@ -33,6 +33,7 @@ function renderDashboard(
     label: "aethon",
     path: "/repo",
   },
+  state: Record<string, unknown> = {},
 ) {
   const registry = new ExtensionRegistry();
   const result = render(
@@ -59,7 +60,7 @@ function renderDashboard(
           widgets: [],
           otherProjects: [],
         })}
-        state={{}}
+        state={state}
         onEvent={onEvent}
       />
     </ExtensionRegistryProvider>,
@@ -82,6 +83,57 @@ describe("ProjectDashboard project icon", () => {
       "asset://localhost/project-icons/claudette.png",
     );
     expect(hero.querySelector("svg")).toBeNull();
+  });
+
+  it("derives the project icon from live sidebar state", () => {
+    const { container, rerender } = renderDashboard(
+      vi.fn(),
+      {
+        id: "p1",
+        label: "nyc-real-estate",
+        path: "/repo/nyc-real-estate",
+      },
+      {
+        sidebar: { projects: [{ id: "p1" }] },
+      },
+    );
+
+    expect(container.querySelector(".a2ui-project-dashboard-hero img")).toBeNull();
+
+    rerender(
+      <ExtensionRegistryProvider registry={new ExtensionRegistry()}>
+        <ProjectDashboard
+          component={dashboard({
+            project: {
+              id: "p1",
+              label: "nyc-real-estate",
+              path: "/repo/nyc-real-estate",
+            },
+            worktrees: [],
+            recentSessions: [],
+            widgets: [],
+            otherProjects: [],
+          })}
+          state={{
+            sidebar: {
+              projects: [
+                {
+                  id: "p1",
+                  iconUrl: "asset://localhost/project-icons/nyc-real-estate.png",
+                },
+              ],
+            },
+          }}
+          onEvent={vi.fn()}
+        />
+      </ExtensionRegistryProvider>,
+    );
+
+    expect(
+      container
+        .querySelector(".a2ui-project-dashboard-hero img")
+        ?.getAttribute("src"),
+    ).toBe("asset://localhost/project-icons/nyc-real-estate.png");
   });
 });
 

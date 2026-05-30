@@ -77,6 +77,18 @@ function resolveArray<T>(v: unknown, state: Record<string, unknown>): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
 }
 
+function projectIconUrlFromSidebar(
+  state: Record<string, unknown>,
+  projectId?: string,
+): string | undefined {
+  if (!projectId) return undefined;
+  const sidebar = state.sidebar as
+    | { projects?: Array<{ id?: string; iconUrl?: unknown }> }
+    | undefined;
+  const project = sidebar?.projects?.find((p) => p.id === projectId);
+  return typeof project?.iconUrl === "string" ? project.iconUrl : undefined;
+}
+
 export function ProjectDashboard({
   component,
   state,
@@ -163,15 +175,16 @@ export function ProjectDashboard({
   const overviewData = overview?.path === project?.path ? overview?.data : null;
 
   if (!project) return null;
+  const iconUrl = projectIconUrlFromSidebar(state, project.id) ?? project.iconUrl;
 
   return (
     <div className="a2ui-project-dashboard">
       <div className="a2ui-project-dashboard-card">
         <header className="a2ui-project-dashboard-header">
           <div className="a2ui-project-dashboard-hero" aria-hidden="true">
-            {project.iconUrl ? (
+            {iconUrl ? (
               <img
-                src={project.iconUrl}
+                src={iconUrl}
                 alt=""
                 className="a2ui-project-dashboard-icon"
                 loading="lazy"
