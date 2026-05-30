@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, State};
 
@@ -81,6 +81,71 @@ pub(crate) fn touch_worker_activity(
             entry.prompt_in_flight = flag;
         }
     }
+}
+
+/// Should this worker be retired by the idle sweep? Pure so the policy is
+/// testable without spawning processes. Never retires the global agent or a
+/// worker that's mid-prompt; otherwise retires once idle past `ttl`.
+pub(crate) fn should_retire_idle(
+    key: &str,
+    meta: &WorkerMeta,
+    now: Instant,
+    ttl: Duration,
+) -> bool {
+    if key == GLOBAL_AGENT_KEY {
+        return false;
+    }
+    if meta.prompt_in_flight {
+        return false;
+    }
+    now.duration_since(meta.last_activity) >= ttl
+}
+
+/// Collect the worker keys the idle sweep should retire this tick. Snapshots
+/// under the meta lock and returns owned keys so the caller can retire them
+/// after releasing the lock (retirement re-locks meta + children).
+pub(crate) fn idle_keys_to_retire(
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    now: Instant,
+    ttl: Duration,
+) -> Vec<String> {
+    let Ok(map) = meta.lock() else {
+        return Vec::new();
+    };
+    map.iter()
+        .filter(|(key, m)| should_retire_idle(key, m, now, ttl))
+        .map(|(key, _)| key.clone())
+        .collect()
+}
+
+/// Worker keys to retire because their tab no longer exists in the frontend's
+/// live set — a safety net for a dropped `tab_close` or a post-crash straggler.
+/// Retires only a `tab:<id>` worker that is ALL of: not the global agent; not
+/// mid-prompt (don't kill an in-flight turn); older than `min_age` (so a worker
+/// the frontend just spawned but hasn't reported yet survives); and whose tab
+/// id is absent from `live_tab_ids`. `live_tab_ids` must span every project
+/// bucket, not just the active one — tabs are project-scoped (see
+/// `useAgentWorkerReconcile`).
+pub(crate) fn keys_to_reconcile(
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    live_tab_ids: &HashSet<String>,
+    now: Instant,
+    min_age: Duration,
+) -> Vec<String> {
+    let Ok(map) = meta.lock() else {
+        return Vec::new();
+    };
+    map.iter()
+        .filter(|(key, m)| {
+            *key != GLOBAL_AGENT_KEY
+                && !m.prompt_in_flight
+                && now.duration_since(m.spawned_at) >= min_age
+                && m.tab_id
+                    .as_deref()
+                    .is_some_and(|t| !live_tab_ids.contains(t))
+        })
+        .map(|(key, _)| key.clone())
+        .collect()
 }
 
 pub(crate) struct AgentWorker {
@@ -204,10 +269,135 @@ pub(crate) fn route_payload_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        Arc, GLOBAL_AGENT_KEY, HashMap, Instant, Mutex, WorkerMeta, payload_starts_prompt,
-        tab_agent_key, touch_worker_activity,
+        Arc, GLOBAL_AGENT_KEY, HashMap, HashSet, Instant, Mutex, WorkerMeta, idle_keys_to_retire,
+        keys_to_reconcile, payload_starts_prompt, should_retire_idle, tab_agent_key,
+        touch_worker_activity,
     };
     use std::time::Duration;
+
+    fn worker_aged(tab_id: &str, age: Duration) -> WorkerMeta {
+        let spawned = Instant::now().checked_sub(age).expect("instant in range");
+        WorkerMeta {
+            tab_id: Some(tab_id.into()),
+            cwd: None,
+            pid: 1,
+            spawned_at: spawned,
+            last_activity: spawned,
+            prompt_in_flight: false,
+        }
+    }
+
+    fn worker(prompt_in_flight: bool, idle: Duration) -> WorkerMeta {
+        let last = Instant::now().checked_sub(idle).expect("instant in range");
+        WorkerMeta {
+            tab_id: Some("t".into()),
+            cwd: None,
+            pid: 1,
+            spawned_at: last,
+            last_activity: last,
+            prompt_in_flight,
+        }
+    }
+
+    #[test]
+    fn idle_tab_worker_past_ttl_is_retired() {
+        let ttl = Duration::from_secs(60);
+        let now = Instant::now();
+        assert!(should_retire_idle(
+            "tab:x",
+            &worker(false, Duration::from_secs(120)),
+            now,
+            ttl
+        ));
+    }
+
+    #[test]
+    fn fresh_or_busy_or_global_workers_are_kept() {
+        let ttl = Duration::from_secs(60);
+        let now = Instant::now();
+        // Recently active.
+        assert!(!should_retire_idle(
+            "tab:x",
+            &worker(false, Duration::from_secs(5)),
+            now,
+            ttl
+        ));
+        // Mid-prompt, even if idle clock would otherwise trip.
+        assert!(!should_retire_idle(
+            "tab:x",
+            &worker(true, Duration::from_secs(120)),
+            now,
+            ttl
+        ));
+        // The global agent is never swept.
+        assert!(!should_retire_idle(
+            GLOBAL_AGENT_KEY,
+            &worker(false, Duration::from_secs(9999)),
+            now,
+            ttl
+        ));
+    }
+
+    #[test]
+    fn idle_keys_collects_only_eligible() {
+        let mut map = HashMap::new();
+        map.insert(
+            "tab:idle".to_string(),
+            worker(false, Duration::from_secs(120)),
+        );
+        map.insert(
+            "tab:busy".to_string(),
+            worker(true, Duration::from_secs(120)),
+        );
+        map.insert(
+            "tab:fresh".to_string(),
+            worker(false, Duration::from_secs(1)),
+        );
+        map.insert(
+            GLOBAL_AGENT_KEY.to_string(),
+            worker(false, Duration::from_secs(120)),
+        );
+        let meta = Arc::new(Mutex::new(map));
+
+        let keys = idle_keys_to_retire(&meta, Instant::now(), Duration::from_secs(60));
+
+        assert_eq!(keys, vec!["tab:idle".to_string()]);
+    }
+
+    #[test]
+    fn reconcile_retires_only_aged_orphan_tab_workers() {
+        let mut map = HashMap::new();
+        // Orphaned (tab gone) and old enough → retire.
+        map.insert(
+            tab_agent_key("gone"),
+            worker_aged("gone", Duration::from_secs(30)),
+        );
+        // Orphaned but just spawned → keep (frontend may not have reported it).
+        map.insert(
+            tab_agent_key("new"),
+            worker_aged("new", Duration::from_secs(1)),
+        );
+        // Still live → keep.
+        map.insert(
+            tab_agent_key("live"),
+            worker_aged("live", Duration::from_secs(30)),
+        );
+        // Orphaned + aged but mid-prompt → keep (don't kill an in-flight turn).
+        let mut busy_orphan = worker_aged("busy", Duration::from_secs(30));
+        busy_orphan.prompt_in_flight = true;
+        map.insert(tab_agent_key("busy"), busy_orphan);
+        // Global is never reconciled.
+        map.insert(
+            GLOBAL_AGENT_KEY.to_string(),
+            worker_aged("ignored", Duration::from_secs(30)),
+        );
+        let meta = Arc::new(Mutex::new(map));
+        let live: HashSet<String> = ["live".to_string()].into_iter().collect();
+
+        let keys = keys_to_reconcile(&meta, &live, Instant::now(), Duration::from_secs(10));
+
+        assert_eq!(keys, vec![tab_agent_key("gone")]);
+    }
 
     #[test]
     fn global_agent_key_is_stable() {

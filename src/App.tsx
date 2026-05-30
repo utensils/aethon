@@ -13,6 +13,7 @@ import { useHostInfo } from "./hooks/useHostInfo";
 import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
 import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
+import { useAgentWorkerReconcile } from "./hooks/useAgentWorkerReconcile";
 import { useVcsStatus } from "./hooks/useVcsStatus";
 import { useGitWatch } from "./hooks/useGitWatch";
 import { useTabNavigation } from "./hooks/useTabNavigation";
@@ -367,6 +368,7 @@ export default function App() {
   const {
     projectsLoadedRef,
     allDiscoveredSessionsRef,
+    tabBucketsRef,
     buildSidebarHistory,
     knownTabIds,
     scopedDiscoveredSessions,
@@ -414,6 +416,12 @@ export default function App() {
     activateWorktree,
     setProjectIconUrl,
   });
+
+  // Orphan agent-worker cleanup (#159): retire per-tab workers whose tab is
+  // gone from the live set, a faster complement to the Rust idle sweep. Needs
+  // tabBucketsRef so the live set spans every project bucket, not just the
+  // active one (tabs are project-scoped).
+  useAgentWorkerReconcile(stateRef, tabBucketsRef);
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.

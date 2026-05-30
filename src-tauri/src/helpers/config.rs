@@ -31,6 +31,11 @@ pub struct UiConfig {
 #[derive(Default, Deserialize)]
 pub struct AgentConfig {
     pub model: Option<String>,
+    /// Minutes a per-tab agent worker may sit idle (no prompt in flight, no
+    /// traffic) before the background sweep retires it; it respawns lazily from
+    /// the persisted session on the next message. `0` disables retirement.
+    /// Clamped to 24h. Default 15.
+    pub idle_retire_minutes: Option<u32>,
 }
 
 #[derive(Default, Deserialize)]
@@ -286,6 +291,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "agent": {
             "model": cfg.agent.model,
+            "idleRetireMinutes": cfg.agent.idle_retire_minutes.map(|n| n.min(1440)).unwrap_or(15),
         },
         "shell": {
             "defaultShareMode": default_share_mode,
@@ -387,6 +393,19 @@ mod tests {
         let v = parse_config_toml("[agent]\nmodel = \"anthropic/claude-sonnet-4-6\"\n");
         assert_eq!(v["agent"]["model"], "anthropic/claude-sonnet-4-6");
         assert_eq!(v["ui"]["theme"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn idle_retire_minutes_defaults_clamps_and_disables() {
+        assert_eq!(parse_config_toml("")["agent"]["idleRetireMinutes"], 15);
+        assert_eq!(
+            parse_config_toml("[agent]\nidle_retire_minutes = 0\n")["agent"]["idleRetireMinutes"],
+            0
+        );
+        assert_eq!(
+            parse_config_toml("[agent]\nidle_retire_minutes = 99999\n")["agent"]["idleRetireMinutes"],
+            1440
+        );
     }
 
     #[test]

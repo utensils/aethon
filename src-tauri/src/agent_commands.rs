@@ -1,14 +1,19 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, State};
 
 use crate::agent_process::{
     AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, ensure_global_agent,
-    retire_agent_key, route_payload_key, write_agent_payload,
+    keys_to_reconcile, retire_agent_key, route_payload_key, write_agent_payload,
 };
+
+/// Grace period before a worker is eligible for orphan reconciliation, so a
+/// tab the frontend just opened (but hasn't yet included in its reported live
+/// set) isn't killed mid-handshake.
+const RECONCILE_MIN_AGE: Duration = Duration::from_secs(10);
 
 #[tauri::command]
 pub(crate) fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> Result<(), String> {
@@ -227,6 +232,26 @@ pub(crate) fn agent_diagnostics(
         .collect();
     rows.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(rows)
+}
+
+/// Retire per-tab workers whose tab no longer exists in the frontend's live
+/// set — a safety net for a dropped `tab_close` or a worker left over from a
+/// previous crash that session-restore didn't re-adopt. The frontend owns the
+/// authoritative tab list and calls this on a low cadence + after restore.
+/// Returns the keys retired (for observability/tests). The global agent and
+/// just-spawned workers (younger than [`RECONCILE_MIN_AGE`]) are never touched.
+#[tauri::command]
+pub(crate) fn reconcile_agent_workers(
+    live_tab_ids: Vec<String>,
+    state: State<'_, AgentProcesses>,
+) -> Result<Vec<String>, String> {
+    let live: HashSet<String> = live_tab_ids.into_iter().collect();
+    let keys = keys_to_reconcile(&state.meta, &live, Instant::now(), RECONCILE_MIN_AGE);
+    for key in &keys {
+        tracing::info!(target: "aethon::agent", key = key.as_str(), "reconcile-retiring orphaned worker");
+        retire_agent_key(&state, key)?;
+    }
+    Ok(keys)
 }
 
 fn worker_for_payload(
