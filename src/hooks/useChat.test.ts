@@ -107,6 +107,40 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("sends image attachments with the user message and clears draft attachments", async () => {
+    const attachment = {
+      id: "img-1",
+      kind: "image" as const,
+      path: "/Users/james/.aethon/pastes/one.png",
+      name: "one.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+    };
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("what is this?", {
+        attachments: [attachment],
+      });
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      message: "what is this?",
+      tabId: "tab-1",
+      mode: "normal",
+      attachments: [attachment],
+      model: "anthropic/claude-opus-4-7",
+    });
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    expect(tab.messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "what is this?",
+      attachments: [attachment],
+    });
+    expect(tab.draftAttachments).toEqual([]);
+  });
+
   it("can send a programmatic prompt to an explicit non-active tab", async () => {
     const mainTab = { ...makeEmptyTab("main-tab", "Main"), projectId: "p1" };
     const issueTab = {
@@ -291,6 +325,34 @@ describe("useChat setModel", () => {
     // No user bubble lands in history while queued — the popover owns
     // the visual representation until drain.
     expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
+  });
+
+  it("holds attachments with queued normal messages while the prompt is busy", async () => {
+    const attachment = {
+      id: "img-queued",
+      kind: "image" as const,
+      path: "/Users/james/.aethon/pastes/queued.png",
+      name: "queued.png",
+      mimeType: "image/png",
+      sizeBytes: 10,
+    };
+    const { ctx, stateRef } = buildContext({ waiting: true });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("after this", {
+        attachments: [attachment],
+      });
+    });
+
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    expect(tab.queuedMessages).toEqual([
+      expect.objectContaining({
+        content: "after this",
+        attachments: [attachment],
+      }),
+    ]);
+    expect(tab.draftAttachments).toEqual([]);
   });
 
   it("stopPrompt empties the client-held queue (regression: P2 from peer review)", async () => {

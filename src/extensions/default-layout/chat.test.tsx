@@ -11,6 +11,11 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrl(...args),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (path: string) => `asset://${path}`,
+  invoke: vi.fn(),
+}));
+
 vi.mock("../../components/HighlightedCode", () => ({
   HighlightedCode: ({ code }: { code: string }) => code,
 }));
@@ -293,6 +298,31 @@ describe("ChatInput", () => {
     expect(screen.getByText("Cmd/Ctrl+Enter steers latest queued")).toBeTruthy();
   });
 
+  it("renders draft image attachments and submits them with the message", () => {
+    const attachment = {
+      id: "img-1",
+      kind: "image" as const,
+      path: "/tmp/one.png",
+      name: "one.png",
+      mimeType: "image/png",
+      sizeBytes: 10,
+    };
+    const { input, onEvent } = renderInput(
+      vi.fn(),
+      {},
+      { draftAttachments: [attachment] },
+    );
+
+    expect(screen.getByText("one.png")).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onEvent).toHaveBeenLastCalledWith("submit", {
+      value: "",
+      mode: "normal",
+      attachments: [attachment],
+    });
+  });
+
   it("renders queued and steered delivery badges on user messages", () => {
     renderHistory({
       messages: [
@@ -331,6 +361,32 @@ describe("ChatInput", () => {
       messageId: "1",
       value: "again please",
     });
+  });
+
+  it("renders user image attachments and opens them in a lightbox", () => {
+    renderHistory({
+      messages: [
+        {
+          id: "1",
+          role: "user",
+          text: "see this",
+          attachments: [
+            {
+              id: "img-1",
+              kind: "image",
+              path: "/tmp/one.png",
+              name: "one.png",
+              mimeType: "image/png",
+              sizeBytes: 10,
+            },
+          ],
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open one.png" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getAllByText("one.png").length).toBeGreaterThanOrEqual(2);
   });
 
   it("renders bare HTTP URLs as links in user, agent, and system bubbles", () => {

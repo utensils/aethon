@@ -18,8 +18,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import type { ChatAttachment } from "../../../types/a2ui";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
+import {
+  imageAttachmentSrc,
+  saveClipboardImageAttachment,
+} from "../../../utils/imageAttachments";
 
 interface ProjectLite {
   id: string;
@@ -105,6 +110,7 @@ export function TaskLauncher({
   );
 
   const [promptText, setPromptText] = useState(initialPrompt);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   // Seed worktree selection from the project's currently-active
   // worktree so the chip shows what the user has switched to in the
   // sidebar, not just "project root". Falls back to "current" (project
@@ -128,7 +134,8 @@ export function TaskLauncher({
   // implies intent, so don't yank their selection out from under them.
   const [touched, setTouched] = useState(false);
   useEffect(() => {
-    if (!touched) setWorktreeChoice(initialChoice);
+    if (touched) return;
+    queueMicrotask(() => setWorktreeChoice(initialChoice));
   }, [initialChoice, touched]);
   const [newBranch, setNewBranch] = useState("");
   const defaultBaseBranch =
@@ -150,7 +157,7 @@ export function TaskLauncher({
   const submit = useCallback(() => {
     if (submitting) return;
     const text = promptText.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
     if (!data.project) return;
     if (worktreeChoice.kind === "new" && !newBranch.trim()) return;
     setSubmitting(true);
@@ -158,6 +165,7 @@ export function TaskLauncher({
     onEvent("start-task", {
       projectId: data.project.id,
       prompt: text,
+      attachments,
       newWorktree: worktreeChoice.kind === "new",
       branch:
         worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
@@ -174,11 +182,13 @@ export function TaskLauncher({
     // will surface the error via the notification stack. Reset `touched`
     // so a fresh dashboard visit re-syncs to the active worktree.
     setPromptText("");
+    setAttachments([]);
     setTouched(false);
     setSubmitting(false);
   }, [
     submitting,
     promptText,
+    attachments,
     data.project,
     worktreeChoice,
     newBranch,
@@ -194,6 +204,26 @@ export function TaskLauncher({
       e.preventDefault();
       submit();
     }
+  };
+
+  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = event.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length === 0) return;
+    event.preventDefault();
+    void Promise.all(files.map((file) => saveClipboardImageAttachment(file)))
+      .then((saved) => setAttachments((current) => [...current, ...saved]))
+      .catch((err) => {
+        console.warn("task-launcher paste image failed:", err);
+      });
   };
 
   if (!data.project) return null;
@@ -219,10 +249,32 @@ export function TaskLauncher({
           setPromptText(e.target.value);
           setTouched(true);
         }}
+        onPaste={onPaste}
         onKeyDown={onKey}
         disabled={submitting}
         aria-label="Task prompt"
       />
+      {attachments.length > 0 && (
+        <div className="a2ui-task-launcher-attachments">
+          {attachments.map((attachment) => (
+            <figure className="a2ui-task-launcher-attachment" key={attachment.id}>
+              <img src={imageAttachmentSrc(attachment)} alt={attachment.name} />
+              <figcaption title={attachment.name}>{attachment.name}</figcaption>
+              <button
+                type="button"
+                aria-label={`Remove ${attachment.name}`}
+                onClick={() =>
+                  setAttachments((current) =>
+                    current.filter((item) => item.id !== attachment.id),
+                  )
+                }
+              >
+                ×
+              </button>
+            </figure>
+          ))}
+        </div>
+      )}
       <div className="a2ui-task-launcher-row">
         <ChipMenu
           label={data.project.label}
@@ -307,7 +359,7 @@ export function TaskLauncher({
           onClick={submit}
           disabled={
             submitting ||
-            !promptText.trim() ||
+            (!promptText.trim() && attachments.length === 0) ||
             (worktreeChoice.kind === "new" && !newBranch.trim())
           }
         >

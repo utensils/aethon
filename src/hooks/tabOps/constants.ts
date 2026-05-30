@@ -12,6 +12,7 @@ export const TERMINAL_REPLAY_MAX = 256 * 1024;
 export const TAB_MIRROR_KEYS: (keyof Tab)[] = [
   "messages",
   "draft",
+  "draftAttachments",
   "waiting",
   "queueCount",
   "queuedMessages",

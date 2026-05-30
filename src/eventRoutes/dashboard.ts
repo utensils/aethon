@@ -139,6 +139,7 @@ export const handleTaskLauncher: EventRouteHandler = (
       | {
           projectId?: string;
           prompt?: string;
+          attachments?: unknown;
           newWorktree?: boolean;
           branch?: string;
           baseBranch?: string;
@@ -150,6 +151,7 @@ export const handleTaskLauncher: EventRouteHandler = (
       projectId: sel.projectId,
       prompt: sel.prompt,
       newWorktree: sel.newWorktree === true,
+      attachments: Array.isArray(sel.attachments) ? sel.attachments : undefined,
       branch: sel.branch,
       baseBranch: sel.baseBranch,
       worktreeId: sel.worktreeId,

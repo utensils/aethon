@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { EditorMeta, Tab } from "../types/tab";
+import type { ChatAttachment } from "../types/a2ui";
 import type { ShareMode } from "../utils/shareMode";
 import type {
   NotificationEntry,
@@ -65,7 +66,7 @@ export interface EventRouteContext {
   // ─── Chat / prompt ──────────────────────────────────────────────────
   sendChat: (
     text: string,
-    options?: { mode?: "normal" | "steer" },
+    options?: { mode?: "normal" | "steer"; attachments?: ChatAttachment[] },
   ) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   updateActiveTab: (updater: (tab: Tab) => Tab) => void;
@@ -158,6 +159,7 @@ export interface EventRouteContext {
   startTaskInProject: (opts: {
     projectId: string;
     prompt: string;
+    attachments?: ChatAttachment[];
     newWorktree?: boolean;
     branch?: string;
     baseBranch?: string;

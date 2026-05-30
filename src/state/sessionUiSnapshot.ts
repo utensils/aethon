@@ -199,6 +199,9 @@ export function parseSessionUiSnapshot(
           kind: t.kind ?? "agent",
           messages: dedupeToolResultTextMessages(t.messages),
           draft: t.draft ?? "",
+          draftAttachments: Array.isArray(t.draftAttachments)
+            ? t.draftAttachments
+            : [],
         // Waiting is process-local state. After an app restart there is no
         // still-attached prompt runner behind this tab, so restoring it as
         // busy leaves the UI stuck in "thinking..." with a dead stop button.

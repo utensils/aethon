@@ -26,6 +26,12 @@ export interface DispatcherDeps {
 export interface InboundMessage {
   type: string;
   content?: string;
+  images?: {
+    id?: string;
+    name?: string;
+    mimeType: string;
+    data: string;
+  }[];
   mode?: "normal" | "steer";
   cwd?: string;
   model?: string;

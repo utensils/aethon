@@ -10,6 +10,7 @@ import ReactMarkdown from "react-markdown";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type {
   A2UIComponent,
+  ChatAttachment,
   ChatMessage,
   StringValue,
 } from "../../types/a2ui";
@@ -22,6 +23,7 @@ import {
   CHAT_MARKDOWN_COMPONENTS,
   MARKDOWN_REMARK_PLUGINS,
 } from "./markdown-adapter";
+import { imageAttachmentSrc } from "../../utils/imageAttachments";
 
 // Distance (px) from the bottom still treated as "at the bottom" for follow +
 // the scroll-to-bottom pill. Matches the old StickyScrollController default.
@@ -173,6 +175,74 @@ function MarkdownWithThinking({ text }: { text: string }) {
 
 const MemoMarkdownWithThinking = memo(MarkdownWithThinking);
 
+function ImageLightbox({
+  attachment,
+  onClose,
+}: {
+  attachment: ChatAttachment;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="a2ui-image-lightbox" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        className="a2ui-image-lightbox-backdrop"
+        aria-label="Close image preview"
+        onClick={onClose}
+      />
+      <figure className="a2ui-image-lightbox-figure">
+        <img src={imageAttachmentSrc(attachment)} alt={attachment.name} />
+        <figcaption>{attachment.name}</figcaption>
+        <button
+          type="button"
+          className="a2ui-image-lightbox-close"
+          aria-label="Close image preview"
+          onClick={onClose}
+          autoFocus
+        >
+          ×
+        </button>
+      </figure>
+    </div>
+  );
+}
+
+function AttachmentGallery({ attachments }: { attachments: ChatAttachment[] }) {
+  const [open, setOpen] = useState<ChatAttachment | null>(null);
+  if (attachments.length === 0) return null;
+  return (
+    <>
+      <div className="a2ui-message-attachments">
+        {attachments.map((attachment) => (
+          <button
+            key={attachment.id}
+            type="button"
+            className="a2ui-message-attachment"
+            onClick={() => setOpen(attachment)}
+            aria-label={`Open ${attachment.name}`}
+          >
+            <img src={imageAttachmentSrc(attachment)} alt="" />
+            <span>{attachment.name}</span>
+          </button>
+        ))}
+      </div>
+      {open && (
+        <ImageLightbox attachment={open} onClose={() => setOpen(null)} />
+      )}
+    </>
+  );
+}
+
 const ChatMessageRow = memo(
   function ChatMessageRow({
     message,
@@ -242,6 +312,9 @@ const ChatMessageRow = memo(
           <div className={textClass}>
             <MemoMarkdownWithThinking text={message.text} />
           </div>
+        )}
+        {message.attachments && message.attachments.length > 0 && (
+          <AttachmentGallery attachments={message.attachments} />
         )}
         {message.a2ui && (
           <A2UIRenderer payload={message.a2ui} state={state} tabId={tabId} />

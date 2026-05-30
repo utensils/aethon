@@ -1,7 +1,7 @@
 import type { MutableRefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { Tab } from "../../types/tab";
 import type { NotificationInput } from "../useNotifications";
+import { saveClipboardImageAttachment } from "../../utils/imageAttachments";
 
 export interface ClipboardPasteDeps {
   stateRef: MutableRefObject<Record<string, unknown>>;
@@ -12,9 +12,8 @@ export interface ClipboardPasteDeps {
 /** Image paste into the chat composer. Tauri webview surfaces
  *  clipboard images via `event.clipboardData.items`; for each
  *  `image/*` item we persist the bytes to `~/.aethon/pastes/<uuid>.<ext>`
- *  via the `save_paste_image` Tauri command and insert `@<path>` into
- *  the active agent tab's draft. The agent's existing read tool can
- *  then pick up the image via the path. Files larger than the Rust
+ *  via the `save_paste_image` Tauri command and attach it to the
+ *  active agent tab's draft. Files larger than the Rust
  *  32 MiB cap surface as a notification rather than silently dropping.
  *
  *  Target tab is captured at paste time, NOT after the async save
@@ -52,15 +51,8 @@ export function subscribeClipboardPaste(deps: ClipboardPasteDeps): () => void {
       imageItems.map(async (item) => {
         const file = item.getAsFile();
         if (!file) return null;
-        const buffer = await file.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buffer));
-        const ext = file.type.split("/")[1] ?? "png";
         try {
-          const path = await invoke<string>("save_paste_image", {
-            bytes,
-            extension: ext,
-          });
-          return path;
+          return await saveClipboardImageAttachment(file);
         } catch (err) {
           pushNotification({
             id: "ae-paste-image-failed",
@@ -73,18 +65,15 @@ export function subscribeClipboardPaste(deps: ClipboardPasteDeps): () => void {
         }
       }),
     ).then((paths) => {
-      const tokens = paths
-        .filter((p): p is string => typeof p === "string")
-        .map((p) => `@${p}`)
-        .join(" ");
-      if (tokens.length === 0) return;
+      const attachments = paths.filter((p): p is NonNullable<typeof p> => !!p);
+      if (attachments.length === 0) return;
       const stillExists = (stateRef.current.tabs as Tab[] | undefined)?.some(
         (t) => t.id === targetId,
       );
       if (!stillExists) return;
       updateTab(targetId, (t) => ({
         ...t,
-        draft: t.draft.length > 0 ? `${t.draft} ${tokens}` : tokens,
+        draftAttachments: [...(t.draftAttachments ?? []), ...attachments],
       }));
     });
   };

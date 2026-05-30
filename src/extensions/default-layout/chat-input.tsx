@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import type {
+  ChatAttachment,
   BooleanValue,
   NumberValue,
   StringValue,
@@ -39,6 +40,7 @@ import {
   type SlashCommandSource,
   useSlashMatching,
 } from "./use-slash-matching";
+import { imageAttachmentSrc } from "../../utils/imageAttachments";
 
 export function ChatInput({
   component,
@@ -77,6 +79,8 @@ export function ChatInput({
     : 0;
   const queuedMessages =
     (state.queuedMessages as QueuedMessage[] | undefined) ?? [];
+  const attachments =
+    (state.draftAttachments as ChatAttachment[] | undefined) ?? [];
   const canSteerQueuedMessage = queuedMessages.length > 0 || queueCount > 0;
   const sendLabel = props.sendLabel
     ? resolveString(props.sendLabel, state)
@@ -198,11 +202,17 @@ export function ChatInput({
     commitDraft(text);
   };
 
+  const submitPayload = (value: string, mode: "normal" | "steer") => ({
+    value,
+    mode,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  });
+
   const submitArgMatch = (match: ArgMatch) => {
     const submitText = `/${match.cmd.name} ${match.choice.value}`;
     setValue(submitText);
     commitDraft(submitText);
-    onEvent("submit", { value: submitText, mode: "normal" });
+    onEvent("submit", submitPayload(submitText, "normal"));
   };
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
@@ -217,14 +227,14 @@ export function ChatInput({
         voice.cancel();
       }
       const v = (e.target as HTMLTextAreaElement).value;
-      if (v.trim().length === 0) {
+      if (v.trim().length === 0 && attachments.length === 0) {
         if (mode === "steer" && canSteerQueuedMessage) {
-          onEvent("submit", { value: "", mode });
+          onEvent("submit", submitPayload("", mode));
         }
         return;
       }
       commitDraft(v);
-      onEvent("submit", { value: v, mode });
+      onEvent("submit", submitPayload(v, mode));
     };
 
     if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
@@ -268,7 +278,7 @@ export function ChatInput({
           (c) => v === `/${c.cmd.name}` || v.startsWith(`/${c.cmd.name} `),
         );
         if (exact && v.trim().length > 0) {
-          onEvent("submit", { value: v, mode: "normal" });
+          onEvent("submit", submitPayload(v, "normal"));
           return;
         }
         const match = list[highlightIdx] ?? list[0];
@@ -283,12 +293,12 @@ export function ChatInput({
   };
 
   const handleClick = () => {
-    if (value.trim().length > 0) {
+    if (value.trim().length > 0 || attachments.length > 0) {
       if (voice.state === "recording" || voice.state === "starting") {
         voice.cancel();
       }
       commitDraft(value);
-      onEvent("submit", { value, mode: "normal" });
+      onEvent("submit", submitPayload(value, "normal"));
     }
   };
 
@@ -337,6 +347,12 @@ export function ChatInput({
               : "Cmd/Ctrl+Enter steers"}
           </span>
         </div>
+      )}
+      {attachments.length > 0 && (
+        <AttachmentTray
+          attachments={attachments}
+          onRemove={(id) => onEvent("attachment:remove", { id })}
+        />
       )}
       <div className="a2ui-chat-input-field-wrap">
         <textarea
@@ -423,7 +439,7 @@ export function ChatInput({
             type="button"
             className="a2ui-chat-input-send"
             onClick={handleClick}
-            disabled={value.trim().length === 0}
+            disabled={value.trim().length === 0 && attachments.length === 0}
             aria-label={sendLabel}
             title={`${sendLabel} (Enter)`}
           >
@@ -450,6 +466,33 @@ export function ChatInput({
 }
 
 type VoiceView = ReturnType<typeof useVoiceInput>;
+
+function AttachmentTray({
+  attachments,
+  onRemove,
+}: {
+  attachments: ChatAttachment[];
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="a2ui-chat-attachments" aria-label="Attached images">
+      {attachments.map((attachment) => (
+        <figure className="a2ui-chat-attachment" key={attachment.id}>
+          <img src={imageAttachmentSrc(attachment)} alt={attachment.name} />
+          <figcaption title={attachment.name}>{attachment.name}</figcaption>
+          <button
+            type="button"
+            className="a2ui-chat-attachment-remove"
+            aria-label={`Remove ${attachment.name}`}
+            onClick={() => onRemove(attachment.id)}
+          >
+            ×
+          </button>
+        </figure>
+      ))}
+    </div>
+  );
+}
 
 function VoiceStatus({
   voice,

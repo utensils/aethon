@@ -1,4 +1,4 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { maybeExitForReload } from "./dispatcherTypes";
@@ -37,11 +37,14 @@ export async function handleChat(
     cwdOverride || initialModel ? { cwdOverride, initialModel } : {},
   );
   const wantsSteer = msg.mode === "steer";
+  const images = normalizeImages(msg.images);
   if (wantsSteer && tab.promptInFlight) {
     state.currentAgentTabId = tabId;
     const content = msg.content;
     state.tabContext
-      .run(tabId, () => tab.session.steer(content))
+      .run(tabId, () =>
+        images.length > 0 ? tab.session.steer(content, images) : tab.session.steer(content),
+      )
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         deps.send({ type: "error", tabId, message: `steer: ${message}` });
@@ -53,7 +56,11 @@ export async function handleChat(
     tab.queuedCount += 1;
     const content = msg.content;
     state.tabContext
-      .run(tabId, () => tab.session.followUp(content))
+      .run(tabId, () =>
+        images.length > 0
+          ? tab.session.followUp(content, images)
+          : tab.session.followUp(content),
+      )
       .catch((err: unknown) => {
         tab.queuedCount = Math.max(0, tab.queuedCount - 1);
         const message = err instanceof Error ? err.message : String(err);
@@ -73,7 +80,11 @@ export async function handleChat(
   state.currentAgentTabId = tabId;
   const content = msg.content;
   state.tabContext
-    .run(tabId, () => tab.session.prompt(content))
+    .run(tabId, () =>
+      images.length > 0
+        ? tab.session.prompt(content, { images })
+        : tab.session.prompt(content),
+    )
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       deps.send({ type: "error", tabId, message: `prompt: ${message}` });
@@ -88,6 +99,23 @@ export async function handleChat(
       }
       maybeExitForReload(state, deps);
     });
+}
+
+function normalizeImages(images: InboundMessage["images"]): ImageContent[] {
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter(
+      (image): image is { mimeType: string; data: string } =>
+        typeof image?.mimeType === "string" &&
+        image.mimeType.startsWith("image/") &&
+        typeof image.data === "string" &&
+        image.data.length > 0,
+    )
+    .map((image) => ({
+      type: "image" as const,
+      mimeType: image.mimeType,
+      data: image.data,
+    }));
 }
 
 export async function handleSetModel(
