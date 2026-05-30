@@ -60,6 +60,7 @@ function fakeRec(model = "anthropic/claude-x"): TabRecord {
     agentEndFired: false,
     queuedCount: 0,
     toolCardSeq: 0,
+    responseMessageSeq: 0,
   };
 }
 
@@ -452,7 +453,7 @@ describe("handleSessionEvent", () => {
       type: "response_delta",
       tabId: "tab-1",
       content: "hello",
-      messageId: "text-1234",
+      messageId: expect.stringMatching(/^text-\d+-1$/),
       channel: "text",
     });
   });
@@ -469,9 +470,90 @@ describe("handleSessionEvent", () => {
       type: "response_delta",
       tabId: "tab-1",
       content: "plan",
-      messageId: "text-1234",
+      messageId: expect.stringMatching(/^text-\d+-1$/),
       channel: "thinking",
     });
+  });
+
+  it("rolls streamed assistant message ids at tool boundaries", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "before" },
+      message: { timestamp: 1111 },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "read",
+      args: { path: "a.ts" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "after" },
+      // Regression: pi can report the previous tool/result timestamp here.
+      // The second delta must still allocate a new id so it renders after
+      // the tool card rather than amending the earlier bubble in place.
+      message: { timestamp: 1111 },
+    });
+
+    const deltas = f.sent.filter((m) => m.type === "response_delta");
+    expect(deltas).toHaveLength(2);
+    expect(deltas[0].messageId).toEqual(expect.stringMatching(/^text-\d+-1$/));
+    expect(deltas[1].messageId).toEqual(expect.stringMatching(/^text-\d+-2$/));
+    expect(deltas[1].messageId).not.toBe(deltas[0].messageId);
+  });
+
+  it("uses canonical assistant message ids as segment id source when available", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "text_delta",
+        delta: "hello",
+        messageId: "a0468d98",
+      },
+      message: { timestamp: 1234 },
+    });
+    expect(f.sent[0]).toMatchObject({
+      type: "response_delta",
+      messageId: "text-a0468d98-1",
+    });
+  });
+
+  it("does not reuse canonical assistant ids across tool boundaries", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "thinking_delta",
+        delta: "before",
+        messageId: "assistant-1",
+      },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "read",
+      args: { path: "a.ts" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "thinking_delta",
+        delta: "after",
+        messageId: "assistant-1",
+      },
+    });
+
+    const deltas = f.sent.filter((m) => m.type === "response_delta");
+    expect(deltas.map((m) => m.messageId)).toEqual([
+      "text-assistant-1-1",
+      "text-assistant-1-2",
+    ]);
   });
 
   it("tool_execution_start emits a2ui card and (for bash) a terminal echo", () => {

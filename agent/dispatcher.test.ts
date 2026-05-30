@@ -66,6 +66,7 @@ function fakeTabRecord(overrides: Partial<TabRecord> = {}): TabRecord {
     agentEndFired: false,
     queuedCount: 0,
     toolCardSeq: 0,
+    responseMessageSeq: 0,
     ...overrides,
   };
 }

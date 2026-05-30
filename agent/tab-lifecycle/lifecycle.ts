@@ -135,6 +135,7 @@ export async function ensureTab(
     agentEndFired: false,
     queuedCount: 0,
     toolCardSeq: 0,
+    responseMessageSeq: 0,
   };
   state.tabs.set(tabId, rec);
   refreshPiSlashCommands(state, session);

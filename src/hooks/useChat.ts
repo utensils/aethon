@@ -124,9 +124,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   } = ctx;
 
   // Fallback id for text bubbles when the bridge doesn't supply one. The
-  // bridge now sends a stable `messageId` per pi assistant message so text
-  // deltas after a tool card still land in the original bubble; this ref
-  // only matters for old-bridge / legacy `response_delta` payloads.
+  // bridge sends a stable `messageId` for the active streamed assistant
+  // segment and rolls it at tool boundaries so later deltas do not amend an
+  // earlier bubble above intervening tool cards. This ref only matters for
+  // old-bridge / legacy `response_delta` payloads.
   const activeResponseIdRef = useRef<string | null>(null);
   // P4: per-tab turn start timestamps. Set on `prompt_started`, cleared
   // on `response_end`. Used to compute turn duration for the OS
@@ -156,10 +157,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   }
 
   // Append a streaming text delta to its bubble. When the bridge supplies a
-  // stable `messageId` (one per pi assistant message), look up the bubble by
-  // id anywhere in the array — this keeps text from a single agent message in
-  // one bubble even after tool cards land between deltas. Without a messageId
-  // (legacy bridges), fall back to the previous "is it the last message?"
+  // stable `messageId`, look up the bubble by id anywhere in the array —
+  // this keeps deltas for one streamed assistant segment in one bubble while
+  // allowing the bridge to start a fresh bubble after tool cards. Without a
+  // messageId (legacy bridges), fall back to the previous "is it the last message?"
   // behavior tracked via activeResponseIdRef.
   function appendOrAmendAgentText(
     delta: string,
