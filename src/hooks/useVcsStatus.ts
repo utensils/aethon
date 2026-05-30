@@ -20,6 +20,7 @@
  */
 import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { getGhBranchStatus, type GhPr } from "../ghBranchStatusCache";
 import { getGhChecks, type GhCheckRun } from "../ghChecksCache";
@@ -205,6 +206,13 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     // leave the new root's /vcs stuck on the loading shell until the next
     // interval/focus fire.
     let polling = false;
+    // Coalesce ticks requested mid-poll. A `git-state-changed` event (or a
+    // focus / interval fire) that lands while a poll is in flight would be
+    // dropped by the `polling` guard — and if that poll already read git
+    // status before the external commit, it writes stale `/vcs` data the
+    // fast path never corrects until the next interval. Instead, remember the
+    // request and run exactly one follow-up when the current poll settles.
+    let rerun = false;
 
     // The effect re-runs (and cleans up) whenever activeRoot changes, so the
     // `cancelled` flag alone guards against a stale root's late response
@@ -232,7 +240,11 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     });
 
     const tick = async () => {
-      if (cancelled || polling) return;
+      if (cancelled) return;
+      if (polling) {
+        rerun = true;
+        return;
+      }
       const root = activeRoot;
       polling = true;
       try {
@@ -299,6 +311,10 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
         });
       } finally {
         polling = false;
+        if (rerun && !cancelled) {
+          rerun = false;
+          void tick();
+        }
       }
     };
 
@@ -307,10 +323,24 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     window.addEventListener("focus", onFocus);
     const interval = window.setInterval(() => void tick(), POLL_INTERVAL_MS);
 
+    // Event-driven refresh: the Rust git watcher fires `git-state-changed`
+    // when this root's `.git/` mutates (commit, stage, branch switch — incl.
+    // ones run in an external terminal), so we repaint within a couple hundred
+    // milliseconds instead of waiting up to 20s for the next interval tick.
+    let unlisten: (() => void) | undefined;
+    void listen<{ root: string }>("git-state-changed", (event) => {
+      if (cancelled || event.payload.root !== activeRoot) return;
+      void tick();
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
       window.clearInterval(interval);
+      unlisten?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoot]);

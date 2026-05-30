@@ -8,15 +8,32 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-const { invokeMock, branchMock, checksMock } = vi.hoisted(() => ({
-  invokeMock: vi.fn(),
-  branchMock: vi.fn(),
-  checksMock: vi.fn(),
-}));
+const { invokeMock, branchMock, checksMock, listenMock, gitEventHandlers } =
+  vi.hoisted(() => {
+    const gitEventHandlers: Array<(e: { payload: unknown }) => void> = [];
+    return {
+      invokeMock: vi.fn(),
+      branchMock: vi.fn(),
+      checksMock: vi.fn(),
+      gitEventHandlers,
+      listenMock: vi.fn(
+        (event: string, handler: (e: { payload: unknown }) => void) => {
+          if (event === "git-state-changed") gitEventHandlers.push(handler);
+          return Promise.resolve(() => {});
+        },
+      ),
+    };
+  });
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
 vi.mock("../ghBranchStatusCache", () => ({ getGhBranchStatus: branchMock }));
 vi.mock("../ghChecksCache", () => ({ getGhChecks: checksMock }));
+
+/** Fire a `git-state-changed` event at every handler the hook registered. */
+function emitGitStateChanged(root: string) {
+  for (const h of gitEventHandlers) h({ payload: { root } });
+}
 
 import { useVcsStatus, type VcsSlice } from "./useVcsStatus";
 
@@ -38,6 +55,8 @@ beforeEach(() => {
   invokeMock.mockReset();
   branchMock.mockReset();
   checksMock.mockReset();
+  listenMock.mockClear();
+  gitEventHandlers.length = 0;
 });
 
 describe("useVcsStatus", () => {
@@ -210,5 +229,93 @@ describe("useVcsStatus", () => {
     // gh is reachable (so ghAvailable stays true) but there are no checks.
     expect(vcs.ghAvailable).toBe(true);
     expect(vcs.ci).toBeNull();
+  });
+
+  it("re-ticks when a git-state-changed event fires for the active root", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.resolve({ branch: "main", ahead: 0, behind: 0, dirty: false })
+        : Promise.resolve(cmd === "git_file_status" ? [] : null),
+    );
+    branchMock.mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    const h = makeSetState();
+    renderHook(() =>
+      useVcsStatus({ activeRoot: "/repo", setState: h.setState }),
+    );
+    await waitFor(() => expect(h.vcs()?.loading).toBe(false));
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "git_status",
+    ).length;
+
+    // Simulate an external `git commit`: only `.git/` changed, so the
+    // watcher emits git-state-changed and the hook must re-poll.
+    emitGitStateChanged("/repo");
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+      ).toBeGreaterThan(before),
+    );
+  });
+
+  it("re-ticks after the in-flight poll when a git event arrives mid-poll", async () => {
+    // Hold the first poll in-flight (awaiting gh) so the git-state-changed
+    // event lands while `polling` is true — the dropped-event race.
+    let releaseGh: () => void = () => {};
+    const ghGate = new Promise<null>((res) => {
+      releaseGh = () => res(null);
+    });
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.resolve({ branch: "main", ahead: 0, behind: 0, dirty: false })
+        : Promise.resolve(cmd === "git_file_status" ? [] : null),
+    );
+    branchMock.mockReturnValueOnce(ghGate).mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    const h = makeSetState();
+    renderHook(() =>
+      useVcsStatus({ activeRoot: "/repo", setState: h.setState }),
+    );
+    // The first poll has read git status and is now awaiting gh.
+    await waitFor(() => expect(branchMock).toHaveBeenCalledTimes(1));
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "git_status",
+    ).length;
+
+    // External commit while the poll is mid-flight: the event must not be
+    // swallowed by the in-flight guard.
+    emitGitStateChanged("/repo");
+    releaseGh();
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+      ).toBeGreaterThan(before),
+    );
+  });
+
+  it("ignores git-state-changed events for a different root", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.resolve({ branch: "main", ahead: 0, behind: 0, dirty: false })
+        : Promise.resolve(cmd === "git_file_status" ? [] : null),
+    );
+    branchMock.mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    const h = makeSetState();
+    renderHook(() =>
+      useVcsStatus({ activeRoot: "/repo", setState: h.setState }),
+    );
+    await waitFor(() => expect(h.vcs()?.loading).toBe(false));
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "git_status",
+    ).length;
+
+    emitGitStateChanged("/other-repo");
+    // Give any erroneous tick a chance to fire before asserting no-op.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(
+      invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+    ).toBe(before);
   });
 });

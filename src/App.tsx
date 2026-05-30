@@ -14,6 +14,7 @@ import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
 import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
 import { useVcsStatus } from "./hooks/useVcsStatus";
+import { useGitWatch } from "./hooks/useGitWatch";
 import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs } from "./hooks/useTabs";
 import { useRestoreShellTabs } from "./hooks/useRestoreShellTabs";
@@ -258,6 +259,7 @@ export default function App() {
     return null;
   })();
   useVcsStatus({ activeRoot: vcsActiveRoot, setState });
+  useGitWatch(vcsActiveRoot);
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the
