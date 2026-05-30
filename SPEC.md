@@ -361,10 +361,10 @@ pick which one each tab speaks as.
 
 #### Voice-to-text input
 
-- [x] **Cross-platform capture + transcription** — `src-tauri/src/voice.rs`
-      records via a `cpal` pipeline (`voice/audio.rs`, level metering + 16-bit
-      PCM WAV) and transcribes through one of several providers behind the
-      `platform_speech.rs` `PlatformSpeechEngine` trait: a bundled local Whisper
+- [x] **Cross-platform capture + transcription** — the `src-tauri/src/voice/`
+      module records via a `cpal` pipeline (`voice/audio.rs`, level metering +
+      16-bit PCM WAV) and transcribes through one of several providers behind
+      the `platform_speech/` `PlatformSpeechEngine` trait: a bundled local Whisper
       model (`candle-transformers`, weights downloaded on demand), macOS
       `SFSpeechRecognizer`/`SpeechAnalyzer` (Swift static lib compiled in
       `build.rs`), and Windows SAPI 5.4 via COM (`windows` crate; no .NET /
