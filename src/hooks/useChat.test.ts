@@ -111,7 +111,7 @@ describe("useChat setModel", () => {
     const attachment = {
       id: "img-1",
       kind: "image" as const,
-      path: "/Users/james/.aethon/pastes/one.png",
+      path: "/tmp/aethon-pastes/one.png",
       name: "one.png",
       mimeType: "image/png",
       sizeBytes: 12,
@@ -331,7 +331,7 @@ describe("useChat setModel", () => {
     const attachment = {
       id: "img-queued",
       kind: "image" as const,
-      path: "/Users/james/.aethon/pastes/queued.png",
+      path: "/tmp/aethon-pastes/queued.png",
       name: "queued.png",
       mimeType: "image/png",
       sizeBytes: 10,

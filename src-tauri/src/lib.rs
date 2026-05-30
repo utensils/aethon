@@ -162,6 +162,7 @@ pub fn run() {
             agent_commands::reconcile_agent_workers,
             agent_commands::dispatch_a2ui_event,
             paste::save_paste_image,
+            paste::read_paste_image_base64,
             commands::config::read_state,
             commands::config::write_state,
             commands::config::read_config,
@@ -395,6 +396,7 @@ mod tests {
             "agent_commands::reconcile_agent_workers",
             "agent_commands::dispatch_a2ui_event",
             "paste::save_paste_image",
+            "paste::read_paste_image_base64",
         ] {
             assert!(
                 src.contains(command),

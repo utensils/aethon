@@ -36,3 +36,16 @@ export function imageAttachmentSrc(attachment: ChatAttachment): string {
   if (attachment.previewUrl) return attachment.previewUrl;
   return convertFileSrc(attachment.path);
 }
+
+export function durableImageAttachment(
+  attachment: ChatAttachment,
+): ChatAttachment {
+  const { previewUrl: _previewUrl, ...durable } = attachment;
+  return durable;
+}
+
+export function durableImageAttachments(
+  attachments: ChatAttachment[] | undefined,
+): ChatAttachment[] {
+  return (attachments ?? []).map(durableImageAttachment);
+}

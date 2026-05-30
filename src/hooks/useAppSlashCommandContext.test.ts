@@ -131,4 +131,66 @@ describe("useAppSlashCommandContext", () => {
 
     expect(invokeMock).not.toHaveBeenCalled();
   });
+
+  it("persists image attachment metadata without blob preview URLs", () => {
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef: ref({}),
+        projectsRef: ref(makeProjects()),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage: vi.fn(),
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    act(() => {
+      result.current.persistLocalChatMessage(
+        {
+          id: "m1",
+          role: "user",
+          attachments: [
+            {
+              id: "img-1",
+              kind: "image",
+              path: "/tmp/aethon-pastes/one.png",
+              name: "one.png",
+              mimeType: "image/png",
+              sizeBytes: 12,
+              previewUrl: "blob:temp",
+            },
+          ],
+        },
+        "tab-1",
+      );
+    });
+
+    const payload = JSON.parse(invokeMock.mock.calls[0]?.[1]?.payload);
+    expect(payload.payload.attachments).toEqual([
+      {
+        id: "img-1",
+        kind: "image",
+        path: "/tmp/aethon-pastes/one.png",
+        name: "one.png",
+        mimeType: "image/png",
+        sizeBytes: 12,
+      },
+    ]);
+  });
 });

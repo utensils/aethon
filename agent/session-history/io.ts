@@ -27,6 +27,7 @@ import {
   type RestoredChatMessage,
   hasA2ui,
   isChatRole,
+  parseChatAttachments,
   trimText,
 } from "./shared";
 
@@ -83,8 +84,9 @@ export async function appendLocalChatMessage(
   const text = typeof message.text === "string" ? trimText(message.text) : "";
   const thinking =
     typeof message.thinking === "string" ? trimText(message.thinking) : "";
+  const attachments = parseChatAttachments(message.attachments);
   const a2ui = hasA2ui(message.a2ui) ? message.a2ui : undefined;
-  if (!text && !thinking && !a2ui) return;
+  if (!text && !thinking && !a2ui && attachments.length === 0) return;
   await mkdir(sessionDir, { recursive: true });
   const entry = {
     type: "aethon_chat",
@@ -92,9 +94,11 @@ export async function appendLocalChatMessage(
     role: message.role,
     ...(text ? { text } : {}),
     ...(thinking ? { thinking } : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
     ...(a2ui ? { a2ui } : {}),
     createdAt:
-      typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
+      typeof message.createdAt === "number" &&
+      Number.isFinite(message.createdAt)
         ? message.createdAt
         : Date.now(),
     ...(typeof message.cwd === "string" && message.cwd.length > 0
@@ -120,8 +124,13 @@ async function pruneLocalChatFile(path: string): Promise<void> {
           role: m.role,
           ...(m.text ? { text: m.text } : {}),
           ...(m.thinking ? { thinking: m.thinking } : {}),
+          ...(m.attachments && m.attachments.length > 0
+            ? { attachments: m.attachments }
+            : {}),
           ...(m.a2ui ? { a2ui: m.a2ui } : {}),
-          ...(typeof m.createdAt === "number" ? { createdAt: m.createdAt } : {}),
+          ...(typeof m.createdAt === "number"
+            ? { createdAt: m.createdAt }
+            : {}),
           ...(m.cwd ? { cwd: m.cwd } : {}),
         }),
       )

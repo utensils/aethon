@@ -40,8 +40,8 @@ import {
   type SlashCommandSource,
   useSlashMatching,
 } from "./use-slash-matching";
+import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
-import { imageAttachmentSrc } from "../../utils/imageAttachments";
 
 export function ChatInput({
   component,
@@ -65,12 +65,10 @@ export function ChatInput({
   };
 
   const externalValue = props.value ? resolveString(props.value, state) : "";
-  const {
-    value,
-    setValue,
-    commitDraft,
-    scheduleDraftCommit,
-  } = useDraftCommit(externalValue, onEvent);
+  const { value, setValue, commitDraft, scheduleDraftCommit } = useDraftCommit(
+    externalValue,
+    onEvent,
+  );
   const placeholder = props.placeholder
     ? resolveString(props.placeholder, state)
     : "";
@@ -103,16 +101,12 @@ export function ChatInput({
     ? resolveString(props.queueBadgeFormat, state)
     : "+{n}";
 
-  const {
-    slashMatch,
-    highlightIdx,
-    setHighlightIdx,
-    dismissPicker,
-  } = useSlashMatching({
-    value,
-    commandsRaw: props.commands,
-    state,
-  });
+  const { slashMatch, highlightIdx, setHighlightIdx, dismissPicker } =
+    useSlashMatching({
+      value,
+      commandsRaw: props.commands,
+      state,
+    });
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { composerHeight, startComposerResize } = useComposerResize();
@@ -389,7 +383,10 @@ export function ChatInput({
           }`}
           onClick={() => {
             if (voice.state === "recording") voice.stop();
-            else if (voice.state === "starting" || voice.state === "transcribing") {
+            else if (
+              voice.state === "starting" ||
+              voice.state === "transcribing"
+            ) {
               voice.cancel();
             } else {
               void voice.start();
@@ -487,7 +484,7 @@ function AttachmentTray({
               aria-label={`Open ${attachment.name}`}
               onClick={() => setOpen(attachment)}
             >
-              <img src={imageAttachmentSrc(attachment)} alt="" />
+              <ImageAttachmentImage attachment={attachment} alt="" />
             </button>
             <figcaption title={attachment.name}>{attachment.name}</figcaption>
             <button

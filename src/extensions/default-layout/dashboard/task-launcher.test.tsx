@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskLauncher } from "./task-launcher";
 import type { A2UIComponent } from "../../../types/a2ui";
@@ -44,11 +50,7 @@ describe("TaskLauncher", () => {
 
   it("renders nothing when no project is set", () => {
     const html = renderToStaticMarkup(
-      <TaskLauncher
-        component={launcher({})}
-        state={{}}
-        onEvent={() => {}}
-      />,
+      <TaskLauncher component={launcher({})} state={{}} onEvent={() => {}} />,
     );
     expect(html).toBe("");
   });
@@ -107,7 +109,7 @@ describe("TaskLauncher", () => {
   });
 
   it("pastes image attachments into the task launcher and submits them", async () => {
-    invoke.mockResolvedValue("/Users/james/.aethon/pastes/pasted.png");
+    invoke.mockResolvedValue("/tmp/aethon-pastes/pasted.png");
     const onEvent = vi.fn();
     render(
       <TaskLauncher
@@ -149,7 +151,7 @@ describe("TaskLauncher", () => {
           attachments: [
             expect.objectContaining({
               name: "shot.png",
-              path: "/Users/james/.aethon/pastes/pasted.png",
+              path: "/tmp/aethon-pastes/pasted.png",
               mimeType: "image/png",
             }),
           ],

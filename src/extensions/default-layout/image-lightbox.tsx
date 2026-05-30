@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { ChatAttachment } from "../../types/a2ui";
-import { imageAttachmentSrc } from "../../utils/imageAttachments";
+import { ImageAttachmentImage } from "./image-attachment-image";
 
 export function ImageLightbox({
   attachment,
@@ -28,7 +28,7 @@ export function ImageLightbox({
         onClick={onClose}
       />
       <figure className="a2ui-image-lightbox-figure">
-        <img src={imageAttachmentSrc(attachment)} alt={attachment.name} />
+        <ImageAttachmentImage attachment={attachment} alt={attachment.name} />
         <figcaption>{attachment.name}</figcaption>
         <button
           type="button"

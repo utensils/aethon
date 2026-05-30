@@ -2364,10 +2364,11 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-canvas-message {
-  max-width: min(88%, 100%);
+  max-width: min(88%, calc(100% - 24px));
   min-width: 0;
   padding: 8px 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .a2ui-canvas-message.user {
@@ -2376,6 +2377,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   border: 1px solid var(--border);
   border-radius: 14px 14px 4px 14px;
   margin-left: 14%;
+  margin-right: 0;
   margin-top: 10px;
 }
 .a2ui-canvas-message.user.ae-msg-cont {
@@ -2501,6 +2503,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: 0.88em;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--syntax-keyword, var(--text));
+  overflow-wrap: anywhere;
 }
 .a2ui-markdown pre {
   margin: 0.35em 0;
@@ -2825,9 +2828,10 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding: 8px 12px;
   font-size: var(--text-sm);
   min-width: 0;
-  max-width: 88%;
+  max-width: min(88%, calc(100% - 24px));
   line-height: 1.5;
   position: relative;
+  overflow-wrap: anywhere;
 }
 
 /* Continuation message — same sender, no top margin needed */
@@ -2842,6 +2846,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   border-radius: 14px 14px 4px 14px;
   align-self: flex-end;
   margin-left: 14%;
+  margin-right: 0;
   margin-top: 10px;
 }
 .a2ui-chat-message.user.ae-msg-cont {

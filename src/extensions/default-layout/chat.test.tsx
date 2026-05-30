@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
-  invoke: vi.fn(),
+  invoke: vi.fn(() => Promise.reject(new Error("invoke not mocked"))),
 }));
 
 vi.mock("../../components/HighlightedCode", () => ({

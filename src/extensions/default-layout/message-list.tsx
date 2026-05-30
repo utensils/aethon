@@ -16,8 +16,8 @@ import {
   CHAT_MARKDOWN_COMPONENTS,
   MARKDOWN_REMARK_PLUGINS,
 } from "./markdown-adapter";
+import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
-import { imageAttachmentSrc } from "../../utils/imageAttachments";
 
 // Distance (px) from the bottom still treated as "at the bottom" for follow +
 // the scroll-to-bottom pill. Matches the old StickyScrollController default.
@@ -183,7 +183,7 @@ function AttachmentGallery({ attachments }: { attachments: ChatAttachment[] }) {
             onClick={() => setOpen(attachment)}
             aria-label={`Open ${attachment.name}`}
           >
-            <img src={imageAttachmentSrc(attachment)} alt="" />
+            <ImageAttachmentImage attachment={attachment} alt="" />
             <span>{attachment.name}</span>
           </button>
         ))}

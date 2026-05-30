@@ -21,10 +21,8 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { ChatAttachment } from "../../../types/a2ui";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
-import {
-  imageAttachmentSrc,
-  saveClipboardImageAttachment,
-} from "../../../utils/imageAttachments";
+import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
+import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
 
 interface ProjectLite {
@@ -53,10 +51,13 @@ interface LauncherData {
 }
 
 function isRef(v: unknown): v is { $ref: string } {
-  return typeof v === "object" && v !== null && "$ref" in (v);
+  return typeof v === "object" && v !== null && "$ref" in v;
 }
 
-function resolveOrInline<T>(v: unknown, state: Record<string, unknown>): T | null {
+function resolveOrInline<T>(
+  v: unknown,
+  state: Record<string, unknown>,
+): T | null {
   if (!v) return null;
   if (isRef(v)) {
     const r = resolvePointer(state, v.$ref);
@@ -91,8 +92,7 @@ export function TaskLauncher({
       project: resolveOrInline<ProjectLite>(props?.project, state),
       otherProjects:
         resolveOrInline<ProjectLite[]>(props?.otherProjects, state) ?? [],
-      worktrees:
-        resolveOrInline<WorktreeLite[]>(props?.worktrees, state) ?? [],
+      worktrees: resolveOrInline<WorktreeLite[]>(props?.worktrees, state) ?? [],
       activeWorktreeId:
         resolveOrInline<string>(props?.activeWorktreeId, state) ?? null,
     }),
@@ -171,8 +171,7 @@ export function TaskLauncher({
       prompt: text,
       attachments,
       newWorktree: worktreeChoice.kind === "new",
-      branch:
-        worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
+      branch: worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
       baseBranch:
         worktreeChoice.kind === "new" && baseTrimmed.length > 0
           ? baseTrimmed
@@ -236,8 +235,8 @@ export function TaskLauncher({
     worktreeChoice.kind === "current"
       ? "project root"
       : worktreeChoice.kind === "existing"
-      ? worktreeChoice.label
-      : "+ New worktree";
+        ? worktreeChoice.label
+        : "+ New worktree";
 
   return (
     <div className="a2ui-task-launcher">
@@ -261,14 +260,17 @@ export function TaskLauncher({
       {attachments.length > 0 && (
         <div className="a2ui-task-launcher-attachments">
           {attachments.map((attachment) => (
-            <figure className="a2ui-task-launcher-attachment" key={attachment.id}>
+            <figure
+              className="a2ui-task-launcher-attachment"
+              key={attachment.id}
+            >
               <button
                 type="button"
                 className="a2ui-task-launcher-attachment-thumb"
                 aria-label={`Open ${attachment.name}`}
                 onClick={() => setOpenAttachment(attachment)}
               >
-                <img src={imageAttachmentSrc(attachment)} alt="" />
+                <ImageAttachmentImage attachment={attachment} alt="" />
               </button>
               <figcaption title={attachment.name}>{attachment.name}</figcaption>
               <button

@@ -1,4 +1,6 @@
 import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
+import type { ChatMessage } from "../types/a2ui";
+import { durableImageAttachments } from "../utils/imageAttachments";
 import { dedupeToolResultTextMessages } from "../utils/messages";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
@@ -35,11 +37,21 @@ function canUseSessionStorage(): boolean {
 }
 
 function trimTab(tab: Tab): Tab {
+  const messages = dedupeToolResultTextMessages(tab.messages)
+    .slice(-MAX_MESSAGES_PER_TAB)
+    .map((message): ChatMessage => {
+      if (!message.attachments || message.attachments.length === 0) {
+        return message;
+      }
+      return {
+        ...message,
+        attachments: durableImageAttachments(message.attachments),
+      };
+    });
   return {
     ...tab,
-    messages: dedupeToolResultTextMessages(tab.messages).slice(
-      -MAX_MESSAGES_PER_TAB,
-    ),
+    messages,
+    draftAttachments: durableImageAttachments(tab.draftAttachments),
     terminalBuffer: tab.terminalBuffer.slice(-MAX_TERMINAL_BUFFER),
   };
 }
@@ -197,52 +209,60 @@ export function parseSessionUiSnapshot(
         const base = {
           ...t,
           kind: t.kind ?? "agent",
-          messages: dedupeToolResultTextMessages(t.messages),
+          messages: dedupeToolResultTextMessages(t.messages).map(
+            (message): ChatMessage =>
+              message.attachments && message.attachments.length > 0
+                ? {
+                    ...message,
+                    attachments: durableImageAttachments(message.attachments),
+                  }
+                : message,
+          ),
           draft: t.draft ?? "",
           draftAttachments: Array.isArray(t.draftAttachments)
-            ? t.draftAttachments
+            ? durableImageAttachments(t.draftAttachments)
             : [],
-        // Waiting is process-local state. After an app restart there is no
-        // still-attached prompt runner behind this tab, so restoring it as
-        // busy leaves the UI stuck in "thinking..." with a dead stop button.
-        waiting: false,
-        // Client-held queue is intentionally NOT restored: queued
-        // messages are ephemeral, and a user who closed the app while
-        // queue items were pending probably abandoned them. The next
-        // run starts with a clean queue. `queueCount` is derived from
-        // `queuedMessages.length`, so zero it in lockstep — otherwise
-        // the composer badge / "Stop + clear" label would read as
-        // non-empty against an empty popover.
-        queueCount: 0,
-        queuedMessages: [],
-        canvas: t.canvas ?? null,
-        model: t.model ?? "",
-        terminalBuffer: t.terminalBuffer ?? "",
+          // Waiting is process-local state. After an app restart there is no
+          // still-attached prompt runner behind this tab, so restoring it as
+          // busy leaves the UI stuck in "thinking..." with a dead stop button.
+          waiting: false,
+          // Client-held queue is intentionally NOT restored: queued
+          // messages are ephemeral, and a user who closed the app while
+          // queue items were pending probably abandoned them. The next
+          // run starts with a clean queue. `queueCount` is derived from
+          // `queuedMessages.length`, so zero it in lockstep — otherwise
+          // the composer badge / "Stop + clear" label would read as
+          // non-empty against an empty popover.
+          queueCount: 0,
+          queuedMessages: [],
+          canvas: t.canvas ?? null,
+          model: t.model ?? "",
+          terminalBuffer: t.terminalBuffer ?? "",
           projectId: t.projectId ?? null,
-        // Preserve editor metadata so a persisted editor tab reopens
-        // pointing at the same file. Validate the shape minimally —
-        // `filePath` is the field EditorCanvas actually requires; the
-        // rest fall back to safe defaults on the next render.
-        ...(t.kind === "editor" &&
-        t.editor &&
-        typeof t.editor.filePath === "string"
-          ? {
-              editor: {
-                filePath: t.editor.filePath,
-                ...(typeof t.editor.rootPath === "string" && t.editor.rootPath
-                  ? { rootPath: t.editor.rootPath }
-                  : {}),
-                language:
-                  typeof t.editor.language === "string"
-                    ? t.editor.language
-                    : "plaintext",
-                isDirty: false,
-                ...(typeof t.editor.cursorLine === "number"
-                  ? { cursorLine: t.editor.cursorLine }
-                  : {}),
-                ...(typeof t.editor.cursorColumn === "number"
-                  ? { cursorColumn: t.editor.cursorColumn }
-                  : {}),
+          // Preserve editor metadata so a persisted editor tab reopens
+          // pointing at the same file. Validate the shape minimally —
+          // `filePath` is the field EditorCanvas actually requires; the
+          // rest fall back to safe defaults on the next render.
+          ...(t.kind === "editor" &&
+          t.editor &&
+          typeof t.editor.filePath === "string"
+            ? {
+                editor: {
+                  filePath: t.editor.filePath,
+                  ...(typeof t.editor.rootPath === "string" && t.editor.rootPath
+                    ? { rootPath: t.editor.rootPath }
+                    : {}),
+                  language:
+                    typeof t.editor.language === "string"
+                      ? t.editor.language
+                      : "plaintext",
+                  isDirty: false,
+                  ...(typeof t.editor.cursorLine === "number"
+                    ? { cursorLine: t.editor.cursorLine }
+                    : {}),
+                  ...(typeof t.editor.cursorColumn === "number"
+                    ? { cursorColumn: t.editor.cursorColumn }
+                    : {}),
                 },
               }
             : {}),
@@ -287,8 +307,7 @@ export function serializeSessionUiSnapshot(
     const activeTab = tabs.find((t) => t.id === state.activeTabId);
     const activeTabId =
       typeof state.activeTabId === "string" &&
-      (state.activeTabId === OVERVIEW_TAB_ID ||
-        tabCanOwnMainSurface(activeTab))
+      (state.activeTabId === OVERVIEW_TAB_ID || tabCanOwnMainSurface(activeTab))
         ? state.activeTabId
         : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
     const snapshot: SessionUiSnapshot = {
