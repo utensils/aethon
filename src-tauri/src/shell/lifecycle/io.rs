@@ -68,10 +68,7 @@ pub fn shell_resize(
 /// the rare "child gone" race is intentional: a dead shell tab can be
 /// closed without confirmation.
 #[tauri::command]
-pub fn shell_is_busy(
-    state: State<'_, ShellRegistry>,
-    tab_id: String,
-) -> Result<bool, String> {
+pub fn shell_is_busy(state: State<'_, ShellRegistry>, tab_id: String) -> Result<bool, String> {
     let (pid, is_interactive_shell) = {
         let guard = state.slots.lock().map_err(|e| format!("lock: {e}"))?;
         let Some(slot) = guard.get(&tab_id) else {
@@ -176,7 +173,10 @@ mod busy_tests {
         let busy = has_foreground_job(me);
         let _ = child.kill();
         let _ = child.wait();
-        assert!(busy, "has_foreground_job should detect the spawned sleep child");
+        assert!(
+            busy,
+            "has_foreground_job should detect the spawned sleep child"
+        );
     }
 }
 

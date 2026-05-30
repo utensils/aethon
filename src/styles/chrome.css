@@ -5638,10 +5638,7 @@ body.ae-resizing-terminal * {
   background: var(--scrollbar-thumb);
   border-radius: var(--radius-sm);
 }
-.ae-editor-canvas-host
-  .monaco-scrollable-element
-  > .scrollbar
-  > .slider:hover,
+.ae-editor-canvas-host .monaco-scrollable-element > .scrollbar > .slider:hover,
 .ae-editor-canvas-host
   .monaco-scrollable-element
   > .scrollbar

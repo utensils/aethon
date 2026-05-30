@@ -15,7 +15,7 @@ pub(crate) struct CapturedAudio {
 }
 
 /// Cancels the level-emitter Tokio task when dropped.
-pub(super) struct LevelTask(pub(super) AbortHandle);
+pub(crate) struct LevelTask(pub(super) AbortHandle);
 
 impl Drop for LevelTask {
     fn drop(&mut self) {
@@ -23,7 +23,7 @@ impl Drop for LevelTask {
     }
 }
 
-pub(super) struct RecordingSession {
+pub(crate) struct RecordingSession {
     pub(super) samples: Arc<Mutex<Vec<f32>>>,
     stream_error: Arc<Mutex<Option<String>>>,
     sample_rate: u32,
@@ -72,11 +72,11 @@ impl RecordingSession {
     }
 }
 
-pub(super) trait AudioRecorder: Send + Sync {
+pub(crate) trait AudioRecorder: Send + Sync {
     fn start(&self) -> Result<RecordingSession, String>;
 }
 
-pub(super) struct CpalAudioRecorder;
+pub(crate) struct CpalAudioRecorder;
 
 fn compute_rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
@@ -95,7 +95,7 @@ fn compute_rms(samples: &[f32]) -> f32 {
 ///
 /// Returns an `AbortHandle`; store it in a `LevelTask` so the task is
 /// cancelled automatically when recording stops.
-pub(super) fn spawn_level_emitter(app: AppHandle, samples: Arc<Mutex<Vec<f32>>>) -> AbortHandle {
+pub(crate) fn spawn_level_emitter(app: AppHandle, samples: Arc<Mutex<Vec<f32>>>) -> AbortHandle {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
         let mut offset = 0usize;
@@ -118,7 +118,7 @@ pub(super) fn spawn_level_emitter(app: AppHandle, samples: Arc<Mutex<Vec<f32>>>)
     .abort_handle()
 }
 
-pub(super) fn validate_captured_audio(audio: &CapturedAudio) -> Result<(), String> {
+pub(crate) fn validate_captured_audio(audio: &CapturedAudio) -> Result<(), String> {
     let peak = audio
         .samples
         .iter()

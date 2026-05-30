@@ -262,9 +262,21 @@ index 000..111 100644\n\
         assert_eq!(
             hunks,
             vec![
-                DiffHunk { kind: "added", start: 5, count: 2 },
-                DiffHunk { kind: "modified", start: 10, count: 1 },
-                DiffHunk { kind: "deleted", start: 20, count: 1 },
+                DiffHunk {
+                    kind: "added",
+                    start: 5,
+                    count: 2
+                },
+                DiffHunk {
+                    kind: "modified",
+                    start: 10,
+                    count: 1
+                },
+                DiffHunk {
+                    kind: "deleted",
+                    start: 20,
+                    count: 1
+                },
             ]
         );
     }
@@ -273,14 +285,28 @@ index 000..111 100644\n\
     fn defaults_count_to_one_when_omitted() {
         let diff = b"@@ -3 +3 @@\n-x\n+y\n";
         let hunks = parse_diff_hunks(diff);
-        assert_eq!(hunks, vec![DiffHunk { kind: "modified", start: 3, count: 1 }]);
+        assert_eq!(
+            hunks,
+            vec![DiffHunk {
+                kind: "modified",
+                start: 3,
+                count: 1
+            }]
+        );
     }
 
     #[test]
     fn clamps_top_of_file_insertion_to_line_one() {
         let diff = b"@@ -0,0 +1,3 @@\n+a\n+b\n+c\n";
         let hunks = parse_diff_hunks(diff);
-        assert_eq!(hunks, vec![DiffHunk { kind: "added", start: 1, count: 3 }]);
+        assert_eq!(
+            hunks,
+            vec![DiffHunk {
+                kind: "added",
+                start: 1,
+                count: 3
+            }]
+        );
     }
 
     #[test]
@@ -292,7 +318,13 @@ index 000..111 100644\n\
     #[test]
     fn sums_numstat_columns_skipping_binaries() {
         let out = parse_numstat(b"3\t1\tsrc/a.ts\n12\t0\tsrc/b.ts\n-\t-\tlogo.png\n");
-        assert_eq!(out, DiffStat { insertions: 15, deletions: 1 });
+        assert_eq!(
+            out,
+            DiffStat {
+                insertions: 15,
+                deletions: 1
+            }
+        );
         assert_eq!(parse_numstat(b""), DiffStat::default());
     }
 }

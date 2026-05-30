@@ -284,7 +284,9 @@ mod tests {
             1,
             "restore logic must contain exactly one maximize() call",
         );
-        let guard = logic.find("if state.maximized").expect("state.maximized guard");
+        let guard = logic
+            .find("if state.maximized")
+            .expect("state.maximized guard");
         let maximize = logic.find("window.maximize()").expect("maximize call");
         assert!(
             guard < maximize,
