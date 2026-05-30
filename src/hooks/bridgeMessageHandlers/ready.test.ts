@@ -539,7 +539,7 @@ describe("handleReady", () => {
     ]);
   });
 
-  it("does not replay tab_open for non-default tabs already present in bridge ready data", () => {
+  it("requests transcript replay for non-default tabs already present in bridge ready data", () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({
       state: {
@@ -575,7 +575,14 @@ describe("handleReady", () => {
       .filter((call) => call[0] === "agent_command")
       .map((call) => JSON.parse(call[1].payload as string))
       .filter((payload) => payload.type === "tab_open");
-    expect(tabOpenPayloads).toEqual([]);
+    expect(tabOpenPayloads).toEqual([
+      expect.objectContaining({
+        type: "tab_open",
+        tabId: "tab-2",
+        restoreHistory: true,
+        cwd: "/repo/a",
+      }),
+    ]);
   });
 
   it("does not replay shell tabs as bridge agent sessions after frontend reload", () => {

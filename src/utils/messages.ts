@@ -1,4 +1,4 @@
-import type { A2UIPayload, ChatMessage } from "../types/a2ui";
+import type { A2UIPayload, ChatAttachment, ChatMessage } from "../types/a2ui";
 
 // Persisted-history budget per message text. The in-memory message keeps
 // the full string; only the persisted snapshot is trimmed so localStorage
@@ -85,6 +85,36 @@ export function dedupeToolResultTextMessages(
   return out;
 }
 
+function coerceChatAttachments(value: unknown): ChatAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      record.kind !== "image" ||
+      typeof record.path !== "string" ||
+      typeof record.name !== "string" ||
+      typeof record.mimeType !== "string" ||
+      !record.mimeType.startsWith("image/") ||
+      typeof record.sizeBytes !== "number" ||
+      !Number.isFinite(record.sizeBytes)
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: record.id,
+        kind: "image",
+        path: record.path,
+        name: record.name,
+        mimeType: record.mimeType,
+        sizeBytes: record.sizeBytes,
+      },
+    ];
+  });
+}
+
 export function coerceChatMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value)) return [];
   const messages: ChatMessage[] = [];
@@ -114,7 +144,8 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
       record.delivery === "failed"
         ? record.delivery
         : undefined;
-    if (!text && !thinking && !a2ui) continue;
+    const attachments = coerceChatAttachments(record.attachments);
+    if (!text && !thinking && !a2ui && attachments.length === 0) continue;
     messages.push(
       trimMessage({
         id:
@@ -124,6 +155,7 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
         role,
         ...(text ? { text } : {}),
         ...(thinking ? { thinking } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
         ...(a2ui ? { a2ui } : {}),
         ...(delivery ? { delivery } : {}),
       }),
