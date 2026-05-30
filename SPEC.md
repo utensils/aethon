@@ -20,17 +20,17 @@ Helios's sun chariot. The blazing one that shapes what you see.
 
 ## Core Decisions
 
-| Decision              | Choice                                                                | Rationale                                                                                                                     |
-| --------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Agent runtime         | Pi SDK (embedded)                                                     | Direct `createAgentSession()`, no subprocess bridge for agent logic                                                           |
-| Primary language      | TypeScript (agent + UI) / Rust (OS shim)                              | Native pi integration, single language for extensions                                                                         |
-| Desktop framework     | Tauri 2                                                               | Native binary, ~5MB shell, system webview                                                                                     |
-| UI protocol           | A2UI v0.9 (full spec)                                                 | Agent-generated declarative UI, framework-agnostic                                                                            |
-| LLM providers         | Multi-provider via pi-ai                                              | Anthropic, OpenAI, Google, any OpenAI-compatible endpoint. BYOK.                                                              |
+| Decision              | Choice                                                                | Rationale                                                                                                                         |
+| --------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Agent runtime         | Pi SDK (embedded)                                                     | Direct `createAgentSession()`, no subprocess bridge for agent logic                                                               |
+| Primary language      | TypeScript (agent + UI) / Rust (OS shim)                              | Native pi integration, single language for extensions                                                                             |
+| Desktop framework     | Tauri 2                                                               | Native binary, ~5MB shell, system webview                                                                                         |
+| UI protocol           | A2UI v0.9 (full spec)                                                 | Agent-generated declarative UI, framework-agnostic                                                                                |
+| LLM providers         | Multi-provider via pi-ai                                              | Anthropic, OpenAI, Google, any OpenAI-compatible endpoint. BYOK.                                                                  |
 | Agent model           | Opinionated default layout + full canvas flexibility                  | Ships with a Claudette-style layout as the default, but the layout itself is A2UI — users and extensions can replace or extend it |
-| Packaging             | Compiled pi binary (bun build --compile) + Tauri shell in single .app | No runtime dependencies for end users                                                                                         |
-| License               | MIT                                                                   | Open source under utensils org                                                                                                |
-| Relation to Claudette | None                                                                  | Independent project, no shared code                                                                                           |
+| Packaging             | Compiled pi binary (bun build --compile) + Tauri shell in single .app | No runtime dependencies for end users                                                                                             |
+| License               | MIT                                                                   | Open source under utensils org                                                                                                    |
+| Relation to Claudette | None                                                                  | Independent project, no shared code                                                                                               |
 
 ## Architecture
 
@@ -362,41 +362,41 @@ pick which one each tab speaks as.
 #### Voice-to-text input
 
 - [x] **Cross-platform capture + transcription** — `src-tauri/src/voice.rs`
-  records via a `cpal` pipeline (`voice/audio.rs`, level metering + 16-bit
-  PCM WAV) and transcribes through one of several providers behind the
-  `platform_speech.rs` `PlatformSpeechEngine` trait: a bundled local Whisper
-  model (`candle-transformers`, weights downloaded on demand), macOS
-  `SFSpeechRecognizer`/`SpeechAnalyzer` (Swift static lib compiled in
-  `build.rs`), and Windows SAPI 5.4 via COM (`windows` crate; no .NET /
-  PowerShell). Linux falls back to the local-Whisper provider.
+      records via a `cpal` pipeline (`voice/audio.rs`, level metering + 16-bit
+      PCM WAV) and transcribes through one of several providers behind the
+      `platform_speech.rs` `PlatformSpeechEngine` trait: a bundled local Whisper
+      model (`candle-transformers`, weights downloaded on demand), macOS
+      `SFSpeechRecognizer`/`SpeechAnalyzer` (Swift static lib compiled in
+      `build.rs`), and Windows SAPI 5.4 via COM (`windows` crate; no .NET /
+      PowerShell). Linux falls back to the local-Whisper provider.
 - [x] **IPC + chrome** — `commands/voice.rs` exposes provider
-  list/select/enable, model `prepare`/`remove`, and
-  `start_recording` / `stop_and_transcribe` / `cancel_recording`. Push-to-talk
-  toggle is `Cmd+Shift+M` with an optional hold-to-record key; both
-  configurable via `[voice]` (`toggle_hotkey`, `hold_hotkey`) and surfaced in
-  Settings → Voice.
+      list/select/enable, model `prepare`/`remove`, and
+      `start_recording` / `stop_and_transcribe` / `cancel_recording`. Push-to-talk
+      toggle is `Cmd+Shift+M` with an optional hold-to-record key; both
+      configurable via `[voice]` (`toggle_hotkey`, `hold_hotkey`) and surfaced in
+      Settings → Voice.
 
 #### Multi-account auth profiles
 
 - [x] **Per-tab login identities** — `agent/auth-profiles/` (store + manager)
-  persists `oauth | api_key` profiles scoped per provider, with a per-tab
-  active profile and a per-provider default. Profile ids are sanitized
-  (`isSafeProfileId` / `sanitizeProfileId`) before touching disk; credentials
-  live under `authProfilesDir()` in `~/.aethon/`. Login streams an
-  `AuthProfileLoginEvent` (`started → auth → progress → prompt → complete`).
-  Frontend mirror in `src/auth-profiles/`; the active profile selects which
-  model registry a tab sees. Driven by
-  `/login [list | use <account> | default <account>]`.
+      persists `oauth | api_key` profiles scoped per provider, with a per-tab
+      active profile and a per-provider default. Profile ids are sanitized
+      (`isSafeProfileId` / `sanitizeProfileId`) before touching disk; credentials
+      live under `authProfilesDir()` in `~/.aethon/`. Login streams an
+      `AuthProfileLoginEvent` (`started → auth → progress → prompt → complete`).
+      Frontend mirror in `src/auth-profiles/`; the active profile selects which
+      model registry a tab sees. Driven by
+      `/login [list | use <account> | default <account>]`.
 
 #### Cross-cutting
 
 - [x] **Command PATH resolution** — `src-tauri/src/env.rs` centralizes
-  external-binary lookup (`COMMON_TOOL_DIRS`) so every Rust IPC command
-  resolves tools identically even when the `.app` is launched from Finder/Dock
-  with a minimal PATH.
+      external-binary lookup (`COMMON_TOOL_DIRS`) so every Rust IPC command
+      resolves tools identically even when the `.app` is launched from Finder/Dock
+      with a minimal PATH.
 - [x] **Docs synced** — README feature list, `website/` (voice config,
-  keyboard reference, `/login`), `docs/aethon-agent/api.md`, CLAUDE.md, and
-  AGENTS.md updated alongside the shipped surface.
+      keyboard reference, `/login`), `docs/aethon-agent/api.md`, CLAUDE.md, and
+      AGENTS.md updated alongside the shipped surface.
 
 ### Cross-cutting
 

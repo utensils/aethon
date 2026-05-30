@@ -422,7 +422,7 @@ Tauri sets these when spawning `agent/main.ts`:
 | Env var               | Purpose                                                                                   |
 | --------------------- | ----------------------------------------------------------------------------------------- |
 | `AETHON_DOCS_DIR`     | Bundled docs (`docs/aethon-agent/`) — system prompt points the model here.                |
-| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, sessions, state file.                                  |
+| `AETHON_USER_DIR`     | `~/.aethon/` — extensions, sessions, state file.                                          |
 | `AETHON_STATE_FILE`   | `~/.aethon/state.json` snapshot, debounced 200 ms.                                        |
 | `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` — pi `SessionManager.continueRecent` per tab.               |
 | `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release. |

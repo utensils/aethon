@@ -307,13 +307,21 @@ fn devshell_effective_config<R: Runtime>(
 /// as a direct command and gets the conservative answer.
 pub(super) fn is_known_interactive_shell(command: &str) -> bool {
     const SHELLS: &[&str] = &[
-        "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh",
-        "nu", "xonsh", "elvish", "pwsh", "powershell",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "dash",
+        "ksh",
+        "tcsh",
+        "csh",
+        "nu",
+        "xonsh",
+        "elvish",
+        "pwsh",
+        "powershell",
     ];
-    let basename = command
-        .split(['/', '\\'])
-        .next_back()
-        .unwrap_or(command);
+    let basename = command.split(['/', '\\']).next_back().unwrap_or(command);
     // Strip any trailing args ("zsh -il") + extension (".exe").
     let basename = basename
         .split_whitespace()
@@ -355,7 +363,14 @@ mod shell_classification_tests {
 
     #[test]
     fn classifies_common_unix_shells() {
-        for cmd in ["bash", "/bin/bash", "/usr/bin/zsh", "fish", "dash", "/bin/sh"] {
+        for cmd in [
+            "bash",
+            "/bin/bash",
+            "/usr/bin/zsh",
+            "fish",
+            "dash",
+            "/bin/sh",
+        ] {
             assert!(
                 is_known_interactive_shell(cmd),
                 "expected {cmd} to be classified as an interactive shell",
