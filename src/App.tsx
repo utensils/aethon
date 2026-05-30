@@ -115,10 +115,6 @@ export default function App() {
 
   useSessionPersistence({ appStore, hasSyncSessionSnapshot });
 
-  // Orphan agent-worker cleanup (#159): retire per-tab workers whose tab is
-  // gone from the live set, as a faster complement to the Rust idle sweep.
-  useAgentWorkerReconcile(stateRef);
-
   const recordProjectModel = useProjectModelRecorder(setState);
 
   // ---------------------------------------------------------------------
@@ -372,6 +368,7 @@ export default function App() {
   const {
     projectsLoadedRef,
     allDiscoveredSessionsRef,
+    tabBucketsRef,
     buildSidebarHistory,
     knownTabIds,
     scopedDiscoveredSessions,
@@ -419,6 +416,12 @@ export default function App() {
     activateWorktree,
     setProjectIconUrl,
   });
+
+  // Orphan agent-worker cleanup (#159): retire per-tab workers whose tab is
+  // gone from the live set, a faster complement to the Rust idle sweep. Needs
+  // tabBucketsRef so the live set spans every project bucket, not just the
+  // active one (tabs are project-scoped).
+  useAgentWorkerReconcile(stateRef, tabBucketsRef);
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.

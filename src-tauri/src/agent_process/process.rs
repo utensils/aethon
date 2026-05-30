@@ -120,9 +120,12 @@ pub(crate) fn idle_keys_to_retire(
 
 /// Worker keys to retire because their tab no longer exists in the frontend's
 /// live set — a safety net for a dropped `tab_close` or a post-crash straggler.
-/// Only `tab:<id>` workers (never global), only those whose tab id is absent
-/// from `live_tab_ids`, and only those older than `min_age` so a worker the
-/// frontend just spawned but hasn't reported in its set yet isn't killed.
+/// Retires only a `tab:<id>` worker that is ALL of: not the global agent; not
+/// mid-prompt (don't kill an in-flight turn); older than `min_age` (so a worker
+/// the frontend just spawned but hasn't reported yet survives); and whose tab
+/// id is absent from `live_tab_ids`. `live_tab_ids` must span every project
+/// bucket, not just the active one — tabs are project-scoped (see
+/// `useAgentWorkerReconcile`).
 pub(crate) fn keys_to_reconcile(
     meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
     live_tab_ids: &HashSet<String>,
@@ -135,6 +138,7 @@ pub(crate) fn keys_to_reconcile(
     map.iter()
         .filter(|(key, m)| {
             *key != GLOBAL_AGENT_KEY
+                && !m.prompt_in_flight
                 && now.duration_since(m.spawned_at) >= min_age
                 && m.tab_id
                     .as_deref()
@@ -378,6 +382,10 @@ mod tests {
             tab_agent_key("live"),
             worker_aged("live", Duration::from_secs(30)),
         );
+        // Orphaned + aged but mid-prompt → keep (don't kill an in-flight turn).
+        let mut busy_orphan = worker_aged("busy", Duration::from_secs(30));
+        busy_orphan.prompt_in_flight = true;
+        map.insert(tab_agent_key("busy"), busy_orphan);
         // Global is never reconciled.
         map.insert(
             GLOBAL_AGENT_KEY.to_string(),
