@@ -28,7 +28,9 @@ pub async fn server_start(
     app: AppHandle,
     state: State<'_, Arc<ServerState>>,
 ) -> Result<u16, String> {
-    crate::server::start(&app, state.inner()).await
+    // Explicit user action always advertises, regardless of the
+    // `[server] enabled` boot gate.
+    crate::server::start(&app, state.inner(), true).await
 }
 
 #[tauri::command]

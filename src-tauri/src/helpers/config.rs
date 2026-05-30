@@ -98,6 +98,17 @@ pub struct UpdatesConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct ServerConfig {
+    /// Whether to advertise this host over mDNS (`_aethon._tcp.local.`) on
+    /// boot. Default `true`. Set `false` to stop the LAN announcement — and
+    /// the "No route to host" send-failure log churn it can produce on
+    /// networks without multicast — while keeping peer *discovery* (the
+    /// browser) running, since that's read-only. The `server_start` IPC
+    /// (explicit user action) always advertises regardless of this flag.
+    pub enabled: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct DevshellConfig {
     /// Whether to detect + apply a Nix devshell on shell + agent
     /// spawn. Accepted values: `"auto"` (default — detect via marker
@@ -155,6 +166,8 @@ pub struct AethonConfig {
     pub updates: UpdatesConfig,
     #[serde(default)]
     pub devshell: DevshellConfig,
+    #[serde(default)]
+    pub server: ServerConfig,
 }
 
 /// Validate-and-normalize `[devshell] enabled`. Unknown values fall
@@ -322,6 +335,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "cacheTtlHours": devshell_cache_ttl_hours,
             "refreshOnLockfileChange": devshell_refresh_on_lockfile_change,
         },
+        "server": {
+            "enabled": cfg.server.enabled.unwrap_or(true),
+        },
     })
 }
 
@@ -393,6 +409,15 @@ mod tests {
         let v = parse_config_toml("[agent]\nmodel = \"anthropic/claude-sonnet-4-6\"\n");
         assert_eq!(v["agent"]["model"], "anthropic/claude-sonnet-4-6");
         assert_eq!(v["ui"]["theme"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn server_enabled_defaults_true_and_honors_override() {
+        assert_eq!(parse_config_toml("")["server"]["enabled"], true);
+        assert_eq!(
+            parse_config_toml("[server]\nenabled = false\n")["server"]["enabled"],
+            false
+        );
     }
 
     #[test]
