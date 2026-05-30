@@ -26,6 +26,39 @@ import {
 const INITIAL_VISIBLE_MESSAGES = 160;
 const MESSAGE_PAGE_SIZE = 120;
 
+// Top-level state keys that change identity on every streamed token — the
+// active tab's `messages` array and the `tabs` array that nests it (both
+// rewritten by `updateTab` / TAB_MIRROR_KEYS on each delta). Historical chat
+// rows never read these, so the row memo can ignore them: an already-rendered
+// A2UI row stays put across a streaming turn instead of reconciling the whole
+// list on every token (#159 chat-lag fix).
+const VOLATILE_ROW_STATE_KEYS: ReadonlySet<string> = new Set([
+  "messages",
+  "tabs",
+]);
+
+/** Shallow equality of two state records, ignoring `exclude`d keys. Lets the
+ *  chat-row memo bail when only the per-token-volatile `messages`/`tabs` keys
+ *  changed. Cheap (a ~15-key reference scan) and only reached after the
+ *  cheaper message/onEvent identity checks already passed. */
+function shallowEqualExcept(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  exclude: ReadonlySet<string>,
+): boolean {
+  if (a === b) return true;
+  for (const key of Object.keys(a)) {
+    if (exclude.has(key)) continue;
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  // Catch retained keys that exist only in `b` (added since the last render).
+  for (const key of Object.keys(b)) {
+    if (exclude.has(key)) continue;
+    if (!(key in a)) return false;
+  }
+  return true;
+}
+
 function TypingIndicator() {
   return (
     <div
@@ -222,7 +255,8 @@ const ChatMessageRow = memo(
     prev.prevRole === next.prevRole &&
     prev.onEvent === next.onEvent &&
     prev.deliveryText === next.deliveryText &&
-    (!next.message.a2ui || prev.state === next.state),
+    (!next.message.a2ui ||
+      shallowEqualExcept(prev.state, next.state, VOLATILE_ROW_STATE_KEYS)),
 );
 
 function useMessageWindow(messages: ChatMessage[]) {
