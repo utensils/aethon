@@ -448,11 +448,11 @@ describe("ChatInput", () => {
 describe("ChatHistory render isolation", () => {
   // Perf regression guard (#159): streaming a new message rewrites the
   // top-level `messages`/`tabs` keys on every token, producing a fresh root
-  // state object. An already-rendered A2UI row must NOT reconcile on that
-  // churn — ChatHistory hands rows a slice with the volatile keys stripped, so
-  // the row memo's `prev.state === next.state` check still bails. Passing the
-  // full root state instead (the old behavior) re-renders every A2UI row per
-  // token, which is the scroll/stream lag this test pins down.
+  // state object. Rows still receive the full root state, but the row memo
+  // compares it with `shallowEqualExcept`, ignoring those volatile keys — so an
+  // already-rendered A2UI row bails and does NOT reconcile on that churn. A
+  // plain `prev.state === next.state` check (the old behavior) re-renders every
+  // A2UI row per token, which is the scroll/stream lag this test pins down.
   it("does not re-render an existing A2UI row when another message is appended", () => {
     let spyRenders = 0;
     function SpyCard({ component }: BuiltinComponentProps) {
