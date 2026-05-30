@@ -159,6 +159,7 @@ pub fn run() {
             agent_commands::force_restart_agent,
             agent_commands::reload_agent,
             agent_commands::agent_diagnostics,
+            agent_commands::reconcile_agent_workers,
             agent_commands::dispatch_a2ui_event,
             paste::save_paste_image,
             commands::config::read_state,
@@ -329,6 +330,11 @@ pub fn run() {
             let server_state = app.state::<Arc<server::ServerState>>().inner().clone();
             server::boot(app.handle().clone(), server_state);
 
+            // Idle per-tab agent worker retirement (#159): a background sweep
+            // retires `tab:<id>` workers that have sat idle past the configured
+            // TTL; they respawn lazily from their session on next use.
+            agent_process::spawn_idle_sweep(app.handle().clone());
+
             // Release app launches can start with a skeletal PATH. Warm
             // the launch-safe tool path off the setup thread so the
             // first devshell status/probe IPC does not pay for the
@@ -386,6 +392,7 @@ mod tests {
             "agent_commands::force_restart_agent",
             "agent_commands::reload_agent",
             "agent_commands::agent_diagnostics",
+            "agent_commands::reconcile_agent_workers",
             "agent_commands::dispatch_a2ui_event",
             "paste::save_paste_image",
         ] {
