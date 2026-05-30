@@ -54,14 +54,16 @@ impl AgentProcesses {
     }
 }
 
-/// Outbound message types that begin an agent turn — used to flip
-/// `prompt_in_flight` true the instant we forward a prompt, before the bridge
-/// echoes `prompt_started`. Idle-retirement (Phase 5) keys off this flag.
+/// Whether an outbound payload begins a real agent turn — used to flip
+/// `prompt_in_flight` true the instant we forward it, before the bridge echoes
+/// `prompt_started`. ONLY `chat` qualifies: it's the one type guaranteed to be
+/// bracketed by `prompt_started`/`response_end`, so the flag is always cleared.
+/// `local_chat_message` (persist-only) and `native_slash_command` (emits
+/// `notice`/`native_slash_result`, no `response_end`) must NOT set it, or the
+/// worker would read as permanently mid-prompt. They still bump `last_activity`
+/// via the write path. Idle-retirement (Phase 5) keys off this flag.
 pub(crate) fn payload_starts_prompt(payload: &serde_json::Value) -> bool {
-    matches!(
-        payload.get("type").and_then(|v| v.as_str()),
-        Some("chat" | "local_chat_message" | "native_slash_command")
-    )
+    payload.get("type").and_then(|v| v.as_str()) == Some("chat")
 }
 
 /// Record activity against a worker key: bump `last_activity` and, when given,
@@ -218,11 +220,20 @@ mod tests {
     }
 
     #[test]
-    fn prompt_starting_types_are_recognized() {
-        for ty in ["chat", "local_chat_message", "native_slash_command"] {
-            assert!(payload_starts_prompt(&serde_json::json!({ "type": ty })));
-        }
-        for ty in ["a2ui_event", "set_model", "tab_open", "report"] {
+    fn only_chat_starts_a_prompt() {
+        assert!(payload_starts_prompt(
+            &serde_json::json!({ "type": "chat" })
+        ));
+        // These reach the bridge but never produce a response_end, so they must
+        // not latch prompt_in_flight (codex P2).
+        for ty in [
+            "local_chat_message",
+            "native_slash_command",
+            "a2ui_event",
+            "set_model",
+            "tab_open",
+            "report",
+        ] {
             assert!(!payload_starts_prompt(&serde_json::json!({ "type": ty })));
         }
     }
