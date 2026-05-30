@@ -14,6 +14,35 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 vi.mock("../../components/HighlightedCode", () => ({
   HighlightedCode: ({ code }: { code: string }) => code,
 }));
+
+// jsdom measures every element as 0px, so the real Virtuoso virtualizes down to
+// nothing. Render all rows synchronously here — scroll/measurement behavior is
+// verified live in the app, while these tests assert row content + memoization.
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({
+    data = [],
+    itemContent,
+    components,
+    context,
+    className,
+  }: {
+    data?: Array<{ id?: string }>;
+    itemContent: (index: number, item: unknown) => React.ReactNode;
+    components?: { Footer?: (props: { context?: unknown }) => React.ReactNode };
+    context?: unknown;
+    className?: string;
+  }) => {
+    const Footer = components?.Footer;
+    return (
+      <div className={className} data-testid="virtuoso-mock">
+        {data.map((item, index) => (
+          <div key={item.id ?? index}>{itemContent(index, item)}</div>
+        ))}
+        {Footer ? <Footer context={context} /> : null}
+      </div>
+    );
+  },
+}));
 import { ExtensionRegistry } from "../ExtensionRegistry";
 import { ExtensionRegistryProvider } from "../ExtensionRegistryProvider";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";

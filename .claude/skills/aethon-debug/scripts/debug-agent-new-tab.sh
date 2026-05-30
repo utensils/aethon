@@ -35,11 +35,23 @@ if (!cwd) return "ERROR: no cwd resolvable";
 //      gets bound to that cwd, threading the devshell env through
 //      pi's BashSpawnHook).
 const tab = { id: "${TAB_ID}", kind: "agent", cwd, label: "UAT", messages: [], draft: "", waiting: false, queuedMessages: [], queueCount: 0, canvas: null };
+// \`tabs\` is an ARRAY in central state (see useTabs / tabOps). Append the new
+// tab and mirror its fields onto the root (TAB_MIRROR_KEYS) so layout \$refs
+// like /messages, /draft, /kind resolve for the freshly-active tab.
+const __s = window.__AETHON_STATE__();
+const __tabs = [...((__s.tabs ?? []).filter(t => t.id !== "${TAB_ID}")), tab];
 window.__AETHON_SET_STATE__({
-  ...window.__AETHON_STATE__(),
-  tabs: { ...(window.__AETHON_STATE__().tabs ?? {}), "${TAB_ID}": tab },
+  ...__s,
+  tabs: __tabs,
   activeTabId: "${TAB_ID}",
   hasTabs: true,
+  messages: tab.messages,
+  draft: tab.draft,
+  waiting: tab.waiting,
+  queueCount: tab.queueCount,
+  queuedMessages: tab.queuedMessages,
+  canvas: tab.canvas,
+  kind: tab.kind,
 });
 await inv("agent_command", { payload: JSON.stringify({ type: "tab_open", tabId: "${TAB_ID}", cwd }) });
 return "${TAB_ID}";
