@@ -8,6 +8,7 @@
 //! release URLs, tracing target, and managed-state hand-off rebased on
 //! Aethon's conventions.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -106,10 +107,60 @@ fn nightly_candidate_urls_from_json(body: &str, limit: usize) -> Vec<Url> {
     urls
 }
 
+/// The nightly-discovery failure modes, distinguished so a *transition* between
+/// them warns once but a steady-state repeat (e.g. a 403 every 30 min) stays
+/// quiet after the first occurrence per boot.
+#[derive(Clone, PartialEq, Eq)]
+enum DiscoveryWarn {
+    Request,
+    Status(u16),
+    Body,
+}
+
+/// Should we warn for `current`? True only when it differs from the last
+/// warned state; `None` (a successful discovery) resets so a later failure
+/// warns again. Pure so the gate logic is unit-testable.
+fn should_warn_discovery(last: &mut Option<DiscoveryWarn>, current: Option<DiscoveryWarn>) -> bool {
+    match current {
+        None => {
+            *last = None;
+            false
+        }
+        Some(w) => {
+            let warn = last.as_ref() != Some(&w);
+            *last = Some(w);
+            warn
+        }
+    }
+}
+
+fn discovery_warn_gate() -> &'static Mutex<Option<DiscoveryWarn>> {
+    static GATE: std::sync::OnceLock<Mutex<Option<DiscoveryWarn>>> = std::sync::OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(None))
+}
+
+/// Process-lifetime gate: returns true the first time `w` recurs, false on
+/// steady-state repeats. Poisoned lock falls back to warning (fail loud).
+fn warn_once(w: DiscoveryWarn) -> bool {
+    discovery_warn_gate()
+        .lock()
+        .map(|mut g| should_warn_discovery(&mut g, Some(w)))
+        .unwrap_or(true)
+}
+
+/// Reset the gate after a successful discovery so the next failure warns.
+fn reset_discovery_warn() {
+    if let Ok(mut g) = discovery_warn_gate().lock() {
+        should_warn_discovery(&mut g, None);
+    }
+}
+
 /// Discover nightly `latest.json` candidate URLs by querying the GitHub
 /// Releases API. Always returns a (possibly empty) vec; transport, HTTP,
 /// or parse failures are logged and downgrade to "no candidates," letting
-/// the caller fall back to the static [`NIGHTLY_URL`].
+/// the caller fall back to the static [`NIGHTLY_URL`]. Repeated identical
+/// failures (the every-30-min poll hitting a steady 403) log once at warn,
+/// then drop to debug — see [`should_warn_discovery`].
 async fn discover_nightly_endpoints() -> Vec<Url> {
     let resp = match http_client()
         .get(GITHUB_RELEASES_API)
@@ -121,37 +172,39 @@ async fn discover_nightly_endpoints() -> Vec<Url> {
     {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!(
-                target: "aethon::updater",
-                error = %e,
-                "nightly discovery request failed — falling back to static URL"
-            );
+            if warn_once(DiscoveryWarn::Request) {
+                tracing::warn!(target: "aethon::updater", error = %e, "nightly discovery request failed — falling back to static URL");
+            } else {
+                tracing::debug!(target: "aethon::updater", error = %e, "nightly discovery request failed (repeat)");
+            }
             return Vec::new();
         }
     };
 
     let status = resp.status();
     if !status.is_success() {
-        tracing::warn!(
-            target: "aethon::updater",
-            status = %status,
-            "nightly discovery returned non-success HTTP status — falling back to static URL"
-        );
+        if warn_once(DiscoveryWarn::Status(status.as_u16())) {
+            tracing::warn!(target: "aethon::updater", status = %status, "nightly discovery returned non-success HTTP status — falling back to static URL");
+        } else {
+            tracing::debug!(target: "aethon::updater", status = %status, "nightly discovery non-success status (repeat)");
+        }
         return Vec::new();
     }
 
     let body = match resp.text().await {
         Ok(b) => b,
         Err(e) => {
-            tracing::warn!(
-                target: "aethon::updater",
-                error = %e,
-                "nightly discovery body read failed — falling back to static URL"
-            );
+            if warn_once(DiscoveryWarn::Body) {
+                tracing::warn!(target: "aethon::updater", error = %e, "nightly discovery body read failed — falling back to static URL");
+            } else {
+                tracing::debug!(target: "aethon::updater", error = %e, "nightly discovery body read failed (repeat)");
+            }
             return Vec::new();
         }
     };
 
+    // A clean fetch resets the gate so a later failure warns once again.
+    reset_discovery_warn();
     nightly_candidate_urls_from_json(&body, NIGHTLY_CANDIDATE_LIMIT)
 }
 
@@ -347,6 +400,41 @@ fn aethon_data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovery_warn_suppresses_steady_state_repeats() {
+        let mut last = None;
+        // First 403 warns.
+        assert!(should_warn_discovery(
+            &mut last,
+            Some(DiscoveryWarn::Status(403))
+        ));
+        // Same 403 again stays quiet.
+        assert!(!should_warn_discovery(
+            &mut last,
+            Some(DiscoveryWarn::Status(403))
+        ));
+        // A different failure mode warns once.
+        assert!(should_warn_discovery(
+            &mut last,
+            Some(DiscoveryWarn::Request)
+        ));
+        assert!(!should_warn_discovery(
+            &mut last,
+            Some(DiscoveryWarn::Request)
+        ));
+        // A different status code warns.
+        assert!(should_warn_discovery(
+            &mut last,
+            Some(DiscoveryWarn::Status(500))
+        ));
+        // Success resets, so the next 403 warns again.
+        assert!(!should_warn_discovery(&mut last, None));
+        assert!(should_warn_discovery(
+            &mut last,
+            Some(DiscoveryWarn::Status(403))
+        ));
+    }
 
     #[test]
     fn release_not_found_is_treated_as_no_update() {

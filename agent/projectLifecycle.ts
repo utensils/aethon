@@ -245,7 +245,7 @@ export async function handleSetProject(
     unloadProjectExtensions(state, deps);
     logger
       .scope("project-switch")
-      .info(`set_project unload took ${Date.now() - t0}ms (cwd=${cwd})`);
+      .debug(`set_project unload took ${Date.now() - t0}ms (cwd=${cwd})`);
   }
   const projectName = projectDisplayName(cwd);
   const loadingNoticeId = `aethon:loading-project-ext:${cwd}`;
@@ -277,7 +277,7 @@ export async function handleSetProject(
   if (projectChanged) {
     logger
       .scope("project-switch")
-      .info(
+      .debug(
         `set_project load took ${Date.now() - tLoad}ms (loaded=${result.loaded} failed=${result.failed} prunedDisabled=${result.prunedDisabled})`,
       );
   }
@@ -293,16 +293,21 @@ export async function handleSetProject(
     if (projectChanged) {
       logger
         .scope("project-switch")
-        .info(
+        .debug(
           `set_project resourceLoader.reload took ${Date.now() - tReload}ms`,
         );
     }
     deps.scheduleStateFileWrite();
     emitGlobalReady(state, deps);
     if (projectChanged) {
+      // Single info summary per real project switch (the per-phase timings
+      // above are debug) — keeps the signal without ~4 info lines per switch,
+      // which dominated logs during worktree-heavy sessions (#159).
       logger
         .scope("project-switch")
-        .info(`set_project total ${Date.now() - t0}ms (cwd=${cwd})`);
+        .info(
+          `set_project total ${Date.now() - t0}ms (cwd=${cwd}, loaded=${result.loaded} failed=${result.failed})`,
+        );
     }
   }
 }

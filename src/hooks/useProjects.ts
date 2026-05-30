@@ -112,7 +112,10 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      if (cancelled || gitPollingRef.current) return;
+      // Skip background git polling while the window is hidden — no chips are
+      // visible to update, so it's pure wasted subprocess churn. The
+      // visibilitychange listener below refreshes on the way back.
+      if (cancelled || gitPollingRef.current || document.hidden) return;
       gitPollingRef.current = true;
       try {
         await refreshAllGitStatus();
@@ -138,12 +141,20 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     };
     void bootstrap();
     const onFocus = () => void tick();
+    // Refresh when the window becomes visible again (covers restore-from-
+    // minimized, which doesn't always fire `focus`), catching up on anything
+    // that drifted while polling was paused.
+    const onVisibility = () => {
+      if (!document.hidden) void tick();
+    };
     window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     const interval = window.setInterval(tick, 30_000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
     // ctx.getProjectPaths is read inside `tick`, so we deliberately
     // capture the closure-time reference; the hook is mounted once with

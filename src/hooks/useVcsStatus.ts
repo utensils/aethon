@@ -240,7 +240,10 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     });
 
     const tick = async () => {
-      if (cancelled) return;
+      // Pause VCS polling while the window is hidden — the status cluster +
+      // source-control panel aren't visible, so the git/gh calls are wasted.
+      // The visibilitychange listener refreshes on return.
+      if (cancelled || document.hidden) return;
       if (polling) {
         rerun = true;
         return;
@@ -320,7 +323,11 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
 
     void tick();
     const onFocus = () => void tick();
+    const onVisibility = () => {
+      if (!document.hidden) void tick();
+    };
     window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     const interval = window.setInterval(() => void tick(), POLL_INTERVAL_MS);
 
     // Event-driven refresh: the Rust git watcher fires `git-state-changed`
@@ -339,6 +346,7 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(interval);
       unlisten?.();
     };
