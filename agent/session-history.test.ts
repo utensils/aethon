@@ -380,6 +380,57 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("merges local attachment metadata into matching pi user messages", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        timestamp: 1_500,
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "what is this?" }],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "local-user",
+      role: "user",
+      text: "what is this?",
+      attachments: [
+        {
+          id: "img-1",
+          kind: "image",
+          path: "/tmp/aethon-pastes/one.png",
+          name: "one.png",
+          mimeType: "image/png",
+          sizeBytes: 12,
+        },
+      ],
+      createdAt: 1_000,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "pi-user",
+        role: "user",
+        text: "what is this?",
+        createdAt: 1_500,
+        attachments: [
+          {
+            id: "img-1",
+            kind: "image",
+            path: "/tmp/aethon-pastes/one.png",
+            name: "one.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("does not duplicate local prompt snapshots already present in pi history", async () => {
     const dir = await tempRoot();
     const path = join(dir, "session.jsonl");

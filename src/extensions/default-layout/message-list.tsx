@@ -399,7 +399,11 @@ function VirtualMessageList({
       // through it. Virtuoso measures the wrapper, so the margins are counted —
       // bare margins on the row would escape measurement and drift the
       // follow-to-bottom / scrollToIndex offsets in long transcripts.
-      <div className="a2ui-msg-row">
+      <div
+        className={`a2ui-msg-row${index === 0 ? " a2ui-msg-row-first" : ""}${
+          index === messages.length - 1 ? " a2ui-msg-row-last" : ""
+        }`}
+      >
         <ChatMessageRow
           message={m}
           state={state}

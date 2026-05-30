@@ -1906,7 +1906,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-width: 100%;
   overflow-x: hidden;
   overscroll-behavior: none;
-  padding: 16px 20px 12px;
+  padding: 0;
   background: var(--bg);
 }
 
@@ -2775,7 +2775,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-width: 100%;
   overflow-x: hidden;
   overscroll-behavior: none;
-  padding: 12px 12px 8px;
+  padding: 0;
   contain: layout style;
 }
 
@@ -2803,7 +2803,32 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-direction: column;
   min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.a2ui-canvas-scroller .a2ui-msg-row {
+  padding-inline: 20px;
+}
+
+.a2ui-chat-history .a2ui-msg-row {
+  padding-inline: 12px;
+}
+
+.a2ui-canvas-scroller .a2ui-msg-row-first {
+  padding-top: 16px;
+}
+
+.a2ui-chat-history .a2ui-msg-row-first {
+  padding-top: 12px;
+}
+
+.a2ui-canvas-scroller .a2ui-msg-row-last {
+  padding-bottom: 12px;
+}
+
+.a2ui-chat-history .a2ui-msg-row-last {
+  padding-bottom: 8px;
 }
 
 .a2ui-chat-load-older {
