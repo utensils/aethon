@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
+import { useEffect } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatHistory, ChatInput, QueuedMessagesPopover, ToolCard } from "./chat";
+import {
+  ChatHistory,
+  ChatInput,
+  QueuedMessagesPopover,
+  ToolCard,
+} from "./chat";
 
 const { openUrl } = vi.hoisted(() => ({
   openUrl: vi.fn(),
@@ -30,14 +36,29 @@ vi.mock("react-virtuoso", () => ({
     components,
     context,
     className,
+    atBottomStateChange,
+    scrollerRef,
+    totalListHeightChanged,
   }: {
     data?: Array<{ id?: string }>;
     itemContent: (index: number, item: unknown) => React.ReactNode;
     components?: { Footer?: (props: { context?: unknown }) => React.ReactNode };
     context?: unknown;
     className?: string;
+    atBottomStateChange?: (atBottom: boolean) => void;
+    scrollerRef?: (ref: HTMLElement | null) => void;
+    totalListHeightChanged?: (height: number) => void;
   }) => {
     const Footer = components?.Footer;
+    useEffect(() => {
+      const el = document.querySelector<HTMLElement>(
+        "[data-testid='virtuoso-mock']",
+      );
+      scrollerRef?.(el);
+      totalListHeightChanged?.(0);
+      atBottomStateChange?.(false);
+      return () => scrollerRef?.(null);
+    }, [atBottomStateChange, scrollerRef, totalListHeightChanged]);
     return (
       <div className={className} data-testid="virtuoso-mock">
         {data.map((item, index) => (
@@ -268,7 +289,9 @@ describe("ChatInput", () => {
 
     unmount();
 
-    expect(document.body.classList.contains("ae-resizing-composer")).toBe(false);
+    expect(document.body.classList.contains("ae-resizing-composer")).toBe(
+      false,
+    );
   });
 
   it("shows the running-turn shortcut hint only when busy", () => {
@@ -278,7 +301,11 @@ describe("ChatInput", () => {
     expect(screen.getByText("Cmd/Ctrl+Enter steers")).toBeTruthy();
 
     cleanup();
-    renderInput(vi.fn(), { disabled: { $ref: "/waiting" } }, { waiting: false });
+    renderInput(
+      vi.fn(),
+      { disabled: { $ref: "/waiting" } },
+      { waiting: false },
+    );
     expect(screen.queryByText("Enter queues")).toBeNull();
   });
 
@@ -290,12 +317,16 @@ describe("ChatInput", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Stop + clear" }).getAttribute("title"),
+      screen
+        .getByRole("button", { name: "Stop + clear" })
+        .getAttribute("title"),
     ).toBe("Stop the current prompt and clear 2 messages queued");
     expect(screen.getByText("+2").getAttribute("title")).toBe(
       "2 messages queued behind the current prompt",
     );
-    expect(screen.getByText("Cmd/Ctrl+Enter steers latest queued")).toBeTruthy();
+    expect(
+      screen.getByText("Cmd/Ctrl+Enter steers latest queued"),
+    ).toBeTruthy();
   });
 
   it("renders draft image attachments and submits them with the message", () => {
@@ -366,6 +397,16 @@ describe("ChatInput", () => {
       messageId: "1",
       value: "again please",
     });
+  });
+
+  it("keeps the latest pill hidden when the feed is not scrollable", () => {
+    renderHistory({
+      messages: [{ id: "1", role: "agent", text: "short answer" }],
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
   });
 
   it("renders user image attachments and opens them in a lightbox", () => {
@@ -450,9 +491,7 @@ describe("ChatInput", () => {
       throw new Error("opener failed");
     });
     renderHistory({
-      messages: [
-        { id: "1", role: "agent", text: "https://example.com/fail" },
-      ],
+      messages: [{ id: "1", role: "agent", text: "https://example.com/fail" }],
     });
 
     expect(() =>

@@ -1,11 +1,4 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type {
@@ -346,9 +339,41 @@ function VirtualMessageList({
 }: VirtualMessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [canScroll, setCanScroll] = useState(false);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
-  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
+  const queuedLabels = useMemo(
+    () => queuedDeliveryLabels(messages),
+    [messages],
+  );
+  const updateCanScroll = useCallback(() => {
+    const el = scrollerElRef.current;
+    setCanScroll(
+      Boolean(
+        el && el.scrollHeight - el.clientHeight > DEFAULT_AT_BOTTOM_THRESHOLD,
+      ),
+    );
+  }, []);
+
+  const handleScrollerRef = useCallback(
+    (ref: HTMLElement | Window | null) => {
+      scrollerElRef.current =
+        typeof HTMLElement !== "undefined" && ref instanceof HTMLElement
+          ? ref
+          : null;
+      updateCanScroll();
+    },
+    [updateCanScroll],
+  );
+
+  const handleAtBottomStateChange = useCallback(
+    (atBottom: boolean) => {
+      updateCanScroll();
+      setIsAtBottom(atBottom);
+    },
+    [updateCanScroll],
+  );
 
   // Jump to the newest message matching the search needle and flash it. Virtuoso
   // mounts the target row even when it's far offscreen, so no DOM walk is needed.
@@ -430,11 +455,13 @@ function VirtualMessageList({
         }}
         followOutput="auto"
         atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
-        atBottomStateChange={setIsAtBottom}
+        atBottomStateChange={handleAtBottomStateChange}
+        scrollerRef={handleScrollerRef}
+        totalListHeightChanged={updateCanScroll}
         {...footerProps}
       />
       <ScrollToBottomPill
-        visible={!isAtBottom && hasContent}
+        visible={!isAtBottom && canScroll && hasContent}
         onClick={() =>
           // Scroll to the true bottom of the scroller, which includes the
           // Footer (live subtree / typing indicator) — scrollToIndex(last)
