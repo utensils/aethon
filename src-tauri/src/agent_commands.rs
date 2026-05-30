@@ -68,6 +68,11 @@ pub(crate) fn force_restart_agent(state: State<'_, AgentProcesses>) -> Result<()
     if let Ok(mut routes) = state.mutation_routes.lock() {
         routes.clear();
     }
+    // Children were drained; drop their diagnostics rows so agent_diagnostics
+    // never reports a worker that no longer exists. They re-register on respawn.
+    if let Ok(mut meta) = state.meta.lock() {
+        meta.clear();
+    }
     Ok(())
 }
 
@@ -94,6 +99,11 @@ pub(crate) fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> 
         }
         if let Ok(mut routes) = state.mutation_routes.lock() {
             routes.clear();
+        }
+        // Match the drained children: clear stale diagnostics rows so
+        // agent_diagnostics stays "one row per live worker".
+        if let Ok(mut meta) = state.meta.lock() {
+            meta.clear();
         }
     }
     let _ = app.emit("agent-reloaded", "extension-toggle");
