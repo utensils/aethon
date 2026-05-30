@@ -1902,6 +1902,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-canvas-scroller {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   overscroll-behavior: none;
   padding: 16px 20px 12px;
   background: var(--bg);
@@ -2423,8 +2426,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   opacity: 0.55;
 }
 
+.a2ui-chat-text,
 .a2ui-canvas-text {
+  min-width: 0;
+  max-width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -2435,6 +2442,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   line-height: 1.55;
   min-width: 0;
   max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .a2ui-markdown > :first-child {
   margin-top: 0;
@@ -2475,6 +2483,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   margin: 0.15em 0;
 }
 
+.a2ui-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
 .a2ui-markdown code {
   /* Inline code sits over running prose, so the tint is intentionally
      warm-leaning — it nudges the eye toward the syntax-highlighted
@@ -2495,8 +2508,9 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 6px;
-  overflow-x: auto;
+  min-width: 0;
   max-width: 100%;
+  overflow-x: auto;
 }
 .a2ui-markdown pre code {
   background: transparent;
@@ -2516,13 +2530,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 6px;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--syntax-text, var(--text));
   white-space: pre;
-  max-width: 100%;
 }
 .a2ui-code code {
   background: transparent;
@@ -2674,6 +2689,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   margin: 0.5em 0;
 }
@@ -2681,6 +2699,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-markdown td {
   border: 1px solid var(--border);
   padding: 4px 8px;
+  overflow-wrap: anywhere;
 }
 .a2ui-markdown th {
   background: var(--bg-input);
@@ -2740,13 +2759,18 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   min-height: 0;
+  overflow-x: hidden;
 }
 
 /* Standalone chat-history (used when sidebars or panels need a feed). With
    virtualization this class lands on Virtuoso's scroller; Virtuoso supplies
    the overflow + height, so we only add chrome (padding, no-bounce). */
 .a2ui-chat-history {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   overscroll-behavior: none;
   padding: 12px 12px 8px;
   contain: layout style;
@@ -2758,7 +2782,9 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -2772,6 +2798,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-msg-row {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .a2ui-chat-load-older {

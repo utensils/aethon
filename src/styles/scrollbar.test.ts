@@ -55,3 +55,41 @@ describe("terminal overflow containment CSS", () => {
     );
   });
 });
+
+describe("chat overflow containment CSS", () => {
+  it("prevents the chat scroller from owning horizontal overflow", () => {
+    const canvasScroller = cssRuleBody(chromeCss, ".a2ui-canvas-scroller");
+    expect(canvasScroller).toMatch(/min-width:\s*0;/);
+    expect(canvasScroller).toMatch(/max-width:\s*100%;/);
+    expect(canvasScroller).toMatch(/overflow-x:\s*hidden;/);
+
+    const chatHistory = cssRuleBody(chromeCss, ".a2ui-chat-history");
+    expect(chatHistory).toMatch(/min-width:\s*0;/);
+    expect(chatHistory).toMatch(/max-width:\s*100%;/);
+    expect(chatHistory).toMatch(/overflow-x:\s*hidden;/);
+
+    const row = cssRuleBody(chromeCss, ".a2ui-msg-row");
+    expect(row).toMatch(/min-width:\s*0;/);
+    expect(row).toMatch(/max-width:\s*100%;/);
+  });
+
+  it("wraps prose while keeping code and tables constrained locally", () => {
+    expect(chromeCss).toMatch(
+      /\.a2ui-chat-text,\s*\.a2ui-canvas-text\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/,
+    );
+
+    const markdownTable = cssRuleBody(chromeCss, ".a2ui-markdown table");
+    expect(markdownTable).toMatch(/display:\s*block;/);
+    expect(markdownTable).toMatch(/max-width:\s*100%;/);
+    expect(markdownTable).toMatch(/overflow-x:\s*auto;/);
+
+    const markdownImage = cssRuleBody(chromeCss, ".a2ui-markdown img");
+    expect(markdownImage).toMatch(/max-width:\s*100%;/);
+    expect(markdownImage).toMatch(/height:\s*auto;/);
+
+    const codeBlock = cssRuleBody(chromeCss, ".a2ui-code");
+    expect(codeBlock).toMatch(/min-width:\s*0;/);
+    expect(codeBlock).toMatch(/max-width:\s*100%;/);
+    expect(codeBlock).toMatch(/overflow-x:\s*auto;/);
+  });
+});
