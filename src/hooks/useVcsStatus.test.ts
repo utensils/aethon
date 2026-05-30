@@ -258,6 +258,42 @@ describe("useVcsStatus", () => {
     );
   });
 
+  it("re-ticks after the in-flight poll when a git event arrives mid-poll", async () => {
+    // Hold the first poll in-flight (awaiting gh) so the git-state-changed
+    // event lands while `polling` is true — the dropped-event race.
+    let releaseGh: () => void = () => {};
+    const ghGate = new Promise<null>((res) => {
+      releaseGh = () => res(null);
+    });
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.resolve({ branch: "main", ahead: 0, behind: 0, dirty: false })
+        : Promise.resolve(cmd === "git_file_status" ? [] : null),
+    );
+    branchMock.mockReturnValueOnce(ghGate).mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    const h = makeSetState();
+    renderHook(() =>
+      useVcsStatus({ activeRoot: "/repo", setState: h.setState }),
+    );
+    // The first poll has read git status and is now awaiting gh.
+    await waitFor(() => expect(branchMock).toHaveBeenCalledTimes(1));
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "git_status",
+    ).length;
+
+    // External commit while the poll is mid-flight: the event must not be
+    // swallowed by the in-flight guard.
+    emitGitStateChanged("/repo");
+    releaseGh();
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+      ).toBeGreaterThan(before),
+    );
+  });
+
   it("ignores git-state-changed events for a different root", async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_status"

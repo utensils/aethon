@@ -206,6 +206,13 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     // leave the new root's /vcs stuck on the loading shell until the next
     // interval/focus fire.
     let polling = false;
+    // Coalesce ticks requested mid-poll. A `git-state-changed` event (or a
+    // focus / interval fire) that lands while a poll is in flight would be
+    // dropped by the `polling` guard — and if that poll already read git
+    // status before the external commit, it writes stale `/vcs` data the
+    // fast path never corrects until the next interval. Instead, remember the
+    // request and run exactly one follow-up when the current poll settles.
+    let rerun = false;
 
     // The effect re-runs (and cleans up) whenever activeRoot changes, so the
     // `cancelled` flag alone guards against a stale root's late response
@@ -233,7 +240,11 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     });
 
     const tick = async () => {
-      if (cancelled || polling) return;
+      if (cancelled) return;
+      if (polling) {
+        rerun = true;
+        return;
+      }
       const root = activeRoot;
       polling = true;
       try {
@@ -300,6 +311,10 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
         });
       } finally {
         polling = false;
+        if (rerun && !cancelled) {
+          rerun = false;
+          void tick();
+        }
       }
     };
 
