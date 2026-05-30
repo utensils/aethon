@@ -22,6 +22,8 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter};
 
+use super::process::{WorkerMeta, touch_worker_activity};
+
 pub(super) const STDERR_TAIL_CAP: usize = 32;
 
 /// Inputs for the stdout reader thread. Bundled into a struct so the
@@ -35,6 +37,7 @@ pub(super) struct StdoutReaderCtx {
     pub(super) tab_id: Option<String>,
     pub(super) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     pub(super) intentional_exits: Arc<Mutex<HashSet<String>>>,
+    pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
     pub(super) stderr_tail: Arc<Mutex<VecDeque<String>>>,
 }
 
@@ -47,6 +50,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
         tab_id,
         mutation_routes,
         intentional_exits,
+        meta,
         stderr_tail,
     } = ctx;
     std::thread::spawn(move || {
@@ -60,12 +64,24 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                         let _ = app.emit("agent-reloaded", "");
                         continue;
                     }
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
-                        && let Some(mutation_id) = value.get("mutationId").and_then(|v| v.as_str())
-                        && let Ok(mut routes) = mutation_routes.lock()
-                    {
-                        routes.insert(mutation_id.to_string(), key.clone());
+                    // Any stdout line is activity — including non-JSON noise
+                    // (startup banners, panics) — so bump last_activity
+                    // unconditionally. Only parsed turn-lifecycle events flip
+                    // prompt_in_flight (idle sweep + diagnostics read both).
+                    let mut prompt_flag = None;
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if let Some(mutation_id) = value.get("mutationId").and_then(|v| v.as_str())
+                            && let Ok(mut routes) = mutation_routes.lock()
+                        {
+                            routes.insert(mutation_id.to_string(), key.clone());
+                        }
+                        prompt_flag = match value.get("type").and_then(|v| v.as_str()) {
+                            Some("prompt_started") => Some(true),
+                            Some("response_end") => Some(false),
+                            _ => None,
+                        };
                     }
+                    touch_worker_activity(&meta, &key, prompt_flag);
                     let _ = app.emit("agent-response", text);
                 }
                 Err(_) => break,

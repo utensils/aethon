@@ -158,6 +158,7 @@ pub fn run() {
             agent_commands::agent_command,
             agent_commands::force_restart_agent,
             agent_commands::reload_agent,
+            agent_commands::agent_diagnostics,
             agent_commands::dispatch_a2ui_event,
             paste::save_paste_image,
             commands::config::read_state,
@@ -384,6 +385,7 @@ mod tests {
             "agent_commands::agent_command",
             "agent_commands::force_restart_agent",
             "agent_commands::reload_agent",
+            "agent_commands::agent_diagnostics",
             "agent_commands::dispatch_a2ui_event",
             "paste::save_paste_image",
         ] {

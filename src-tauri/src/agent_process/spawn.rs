@@ -17,7 +17,9 @@ use tauri::{AppHandle, Manager};
 use crate::helpers::parse_config_toml;
 use crate::{env, helpers};
 
-use super::process::AgentWorker;
+use std::time::Instant;
+
+use super::process::{AgentWorker, WorkerMeta};
 use super::readers::{
     STDERR_TAIL_CAP, StderrReaderCtx, StdoutReaderCtx, spawn_stderr_reader, spawn_stdout_reader,
 };
@@ -34,6 +36,7 @@ pub(super) fn ensure_agent_spawned(
     app: &AppHandle,
     mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     intentional_exits: Arc<Mutex<HashSet<String>>>,
+    meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
     worker: Option<AgentWorker>,
 ) -> Result<(), String> {
     let exited_status = guard.get(key).and_then(|child| {
@@ -77,6 +80,7 @@ pub(super) fn ensure_agent_spawned(
         tab_id: worker.as_ref().map(|w| w.tab_id.clone()),
         mutation_routes,
         intentional_exits,
+        meta: Arc::clone(&meta),
         stderr_tail: Arc::clone(&stderr_tail),
     });
 
@@ -104,6 +108,27 @@ pub(super) fn ensure_agent_spawned(
             key = key,
             "failed to inject initial handshake: {e}"
         );
+    }
+
+    {
+        let now = Instant::now();
+        let (tab_id, cwd) = worker
+            .as_ref()
+            .map(|w| (Some(w.tab_id.clone()), w.cwd.clone()))
+            .unwrap_or((None, None));
+        if let Ok(mut map) = meta.lock() {
+            map.insert(
+                key.to_string(),
+                WorkerMeta {
+                    tab_id,
+                    cwd,
+                    pid,
+                    spawned_at: now,
+                    last_activity: now,
+                    prompt_in_flight: false,
+                },
+            );
+        }
     }
 
     guard.insert(key.to_string(), Arc::new(Mutex::new(child)));
