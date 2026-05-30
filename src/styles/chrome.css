@@ -1881,6 +1881,32 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg);
 }
 
+/* Virtualized canvas: the <main> is a non-scrolling flex host; Virtuoso
+   (.a2ui-canvas-scroller) owns the scroll. Padding moves onto the scroller;
+   inter-row gap becomes per-row margin since Virtuoso's items aren't flex
+   children. */
+.a2ui-canvas-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+
+.a2ui-canvas-empty-host {
+  overflow: hidden;
+}
+
+.a2ui-canvas-scroller {
+  overscroll-behavior: none;
+  padding: 16px 20px 12px;
+  background: var(--bg);
+}
+
 .a2ui-canvas-empty {
   margin: auto;
   color: var(--text-dim);
@@ -2705,19 +2731,42 @@ body.ae-resizing-sidebar .a2ui-layout {
   margin-top: 12px;
 }
 
-/* Standalone chat-history (used when sidebars or panels need a feed). */
+/* Shell: a non-scrolling flex slot that hosts the Virtuoso scroller plus the
+   floating scroll-to-bottom pill (now absolutely positioned over the list
+   instead of a sticky flex child of the scroll container). */
+.a2ui-msg-list-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
 
+/* Standalone chat-history (used when sidebars or panels need a feed). With
+   virtualization this class lands on Virtuoso's scroller; Virtuoso supplies
+   the overflow + height, so we only add chrome (padding, no-bounce). */
 .a2ui-chat-history {
+  overscroll-behavior: none;
+  padding: 12px 12px 8px;
+  contain: layout style;
+}
+
+/* Empty state renders without Virtuoso, so it keeps the old centering box. */
+.a2ui-chat-history-empty {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  overscroll-behavior: none;
-  padding: 12px 12px 8px;
-  gap: 4px;
-  contain: layout style;
+}
+
+/* Virtuoso lays items out in normal flow (not a flex column), so the old
+   container `gap` no longer applies — restore inter-message spacing per row. */
+.a2ui-chat-message,
+.a2ui-canvas-message {
+  margin-bottom: 4px;
 }
 
 .a2ui-chat-load-older {
@@ -2905,9 +2954,10 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* Scroll-to-bottom pill — uses position:sticky so it floats at the bottom
    of the flex container without needing absolute/fixed positioning. */
 .a2ui-scroll-to-bottom {
-  position: sticky;
+  position: absolute;
   bottom: 10px;
-  align-self: center;
+  left: 50%;
+  transform: translateX(-50%);
   background: var(--accent);
   color: var(--btn-text, var(--bg));
   border: none;
@@ -2920,8 +2970,6 @@ body.ae-resizing-sidebar .a2ui-layout {
   z-index: 10;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   animation: a2ui-pill-in 0.15s ease both;
-  flex-shrink: 0;
-  margin-top: 4px;
 }
 
 .a2ui-scroll-to-bottom:hover {
@@ -2931,11 +2979,11 @@ body.ae-resizing-sidebar .a2ui-layout {
 @keyframes a2ui-pill-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translate(-50%, 6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(-50%, 0);
   }
 }
 

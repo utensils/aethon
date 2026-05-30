@@ -1,12 +1,13 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type RefObject,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type {
   A2UIComponent,
   ChatMessage,
@@ -17,14 +18,20 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
-import { useStickyScroll } from "../../utils/useStickyScroll";
 import {
   CHAT_MARKDOWN_COMPONENTS,
   MARKDOWN_REMARK_PLUGINS,
 } from "./markdown-adapter";
 
-const INITIAL_VISIBLE_MESSAGES = 160;
-const MESSAGE_PAGE_SIZE = 120;
+// Render a chunk of the newest rows on first paint before Virtuoso has
+// measured anything, so a restored session isn't briefly blank. Virtuoso
+// virtualizes normally once real heights are known. (jsdom never measures, so
+// chat.test.tsx mocks Virtuoso to render rows directly.)
+const INITIAL_ITEM_COUNT = 24;
+
+// Distance (px) from the bottom still treated as "at the bottom" for follow +
+// the scroll-to-bottom pill. Matches the old StickyScrollController default.
+const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
 
 // Top-level state keys that change identity on every streamed token — the
 // active tab's `messages` array and the `tabs` array that nests it (both
@@ -259,119 +266,128 @@ const ChatMessageRow = memo(
       shallowEqualExcept(prev.state, next.state, VOLATILE_ROW_STATE_KEYS)),
 );
 
-function useMessageWindow(messages: ChatMessage[]) {
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_MESSAGES);
-  const visibleMessages = useMemo(
-    () => messages.slice(Math.max(0, messages.length - visibleCount)),
-    [messages, visibleCount],
-  );
-  const hiddenCount = Math.max(0, messages.length - visibleMessages.length);
-
-  useEffect(() => {
-    if (messages.length < visibleCount) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pagination when history shrinks after tab switch or clear
-      setVisibleCount(INITIAL_VISIBLE_MESSAGES);
-    }
-  }, [messages.length, visibleCount]);
-
-  return {
-    visibleCount,
-    visibleMessages,
-    hiddenCount,
-    loadOlder: () =>
-      setVisibleCount((n) => Math.min(messages.length, n + MESSAGE_PAGE_SIZE)),
-    showFrom: Math.max(0, messages.length - visibleMessages.length),
-    setVisibleCount,
-  };
+// Footer riding below the last message inside Virtuoso's scroller, so the live
+// canvas subtree + typing indicator scroll and follow with the messages. Passed
+// dynamic data via Virtuoso's `context` so its component identity stays stable.
+interface CanvasFooterContext {
+  liveSubtree: { components: A2UIComponent[] } | null;
+  showTyping: boolean;
+  state: Record<string, unknown>;
+  tabId?: string;
 }
 
-interface MessageListProps {
+function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
+  if (!context) return null;
+  const { liveSubtree, showTyping, state, tabId } = context;
+  if (!liveSubtree && !showTyping) return null;
+  return (
+    <>
+      {liveSubtree && (
+        <div className="a2ui-canvas-live">
+          <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
+        </div>
+      )}
+      {showTyping && <TypingIndicator />}
+    </>
+  );
+}
+
+interface VirtualMessageListProps {
   messages: ChatMessage[];
   state: Record<string, unknown>;
   tabId?: string;
   onEvent?: BuiltinComponentProps["onEvent"];
   rowClassName?: string;
-  containerRef: RefObject<HTMLElement | null>;
+  /** Class for Virtuoso's scroller — the former scroll container. */
+  className: string;
   scrollToMatch?: string;
+  footerContext?: CanvasFooterContext;
 }
 
-function MessageList({
+/** Virtualized chat feed. Replaces the old hand-rolled window + useStickyScroll:
+ *  Virtuoso mounts only the visible rows (long histories no longer pin 160+
+ *  markdown subtrees in the DOM) and owns stick-to-bottom via `followOutput`,
+ *  the at-bottom signal for the pill, and index scrolling for search matches. */
+function VirtualMessageList({
   messages,
   state,
   tabId,
   onEvent,
   rowClassName = "a2ui-chat-message",
-  containerRef,
+  className,
   scrollToMatch,
-}: MessageListProps) {
-  const { visibleMessages, hiddenCount, loadOlder, showFrom, setVisibleCount } =
-    useMessageWindow(messages);
-  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
+  footerContext,
+}: VirtualMessageListProps) {
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
+  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
 
+  // Jump to the newest message matching the search needle and flash it. Virtuoso
+  // mounts the target row even when it's far offscreen, so no DOM walk is needed.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !scrollToMatch || scrollToMatch === prevScrollToMatch.current) {
-      return;
-    }
+    if (!scrollToMatch || scrollToMatch === prevScrollToMatch.current) return;
     prevScrollToMatch.current = scrollToMatch;
     const needle = scrollToMatch.toLowerCase();
     const idx = messages.findIndex((m) =>
       (m.text ?? "").toLowerCase().includes(needle),
     );
     if (idx < 0) return;
-    const scrollRowIntoView = (offset: number) => {
-      const row = el.querySelectorAll(`.${rowClassName}`)[offset];
-      if (row instanceof HTMLElement) {
-        row.scrollIntoView({ block: "center", behavior: "auto" });
-        row.classList.add("a2ui-chat-message-flash");
-        window.setTimeout(
-          () => row.classList.remove("a2ui-chat-message-flash"),
-          1200,
-        );
-      }
-    };
-    if (idx < showFrom) {
-      window.setTimeout(() => {
-        setVisibleCount(messages.length - idx);
-        scrollRowIntoView(0);
-      }, 0);
-    } else {
-      scrollRowIntoView(idx - showFrom);
-    }
-  }, [
-    containerRef,
-    messages,
-    rowClassName,
-    scrollToMatch,
-    setVisibleCount,
-    showFrom,
-  ]);
+    virtuosoRef.current?.scrollToIndex({ index: idx, align: "center" });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- transient flash driven by an external search action (the same effect also imperatively scrolls); not derivable during render
+    setFlashIndex(idx);
+    const timer = window.setTimeout(() => setFlashIndex(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [messages, scrollToMatch]);
+
+  const itemContent = useCallback(
+    (index: number, m: ChatMessage) => (
+      <ChatMessageRow
+        message={m}
+        state={state}
+        tabId={tabId}
+        className={
+          index === flashIndex
+            ? `${rowClassName} a2ui-chat-message-flash`
+            : rowClassName
+        }
+        prevRole={index > 0 ? messages[index - 1].role : undefined}
+        onEvent={onEvent}
+        deliveryText={queuedLabels.get(m.id)}
+      />
+    ),
+    [state, tabId, rowClassName, flashIndex, messages, onEvent, queuedLabels],
+  );
 
   return (
-    <>
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          className="a2ui-chat-load-older"
-          onClick={loadOlder}
-        >
-          Load older messages ({hiddenCount})
-        </button>
-      )}
-      {visibleMessages.map((m, i) => (
-        <ChatMessageRow
-          key={m.id}
-          message={m}
-          state={state}
-          tabId={tabId}
-          className={rowClassName}
-          prevRole={i > 0 ? visibleMessages[i - 1].role : undefined}
-          onEvent={onEvent}
-          deliveryText={queuedLabels.get(m.id)}
-        />
-      ))}
-    </>
+    <div className="a2ui-msg-list-shell">
+      <Virtuoso
+        ref={virtuosoRef}
+        className={className}
+        style={{ flex: 1, minHeight: 0 }}
+        data={messages}
+        computeItemKey={(_index, m) => m.id}
+        itemContent={itemContent}
+        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+        initialItemCount={Math.min(messages.length, INITIAL_ITEM_COUNT)}
+        followOutput="auto"
+        atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
+        atBottomStateChange={setIsAtBottom}
+        context={footerContext}
+        components={footerContext ? { Footer: CanvasFooter } : undefined}
+      />
+      <ScrollToBottomPill
+        visible={!isAtBottom && messages.length > 0}
+        onClick={() =>
+          virtuosoRef.current?.scrollToIndex({
+            index: messages.length - 1,
+            align: "end",
+            behavior: "auto",
+          })
+        }
+      />
+    </div>
   );
 }
 
@@ -386,10 +402,6 @@ export function ChatHistory({
     emptyHint?: StringValue;
   };
 
-  const listRef = useRef<HTMLDivElement>(null);
-  const { isAtBottom, scrollToBottom, handleContentChanged } =
-    useStickyScroll(listRef);
-
   const messages = useMemo(
     () => (resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [],
     [props.messages.$ref, state],
@@ -402,33 +414,23 @@ export function ChatHistory({
     (state.scrollToMatchByTab as Record<string, string> | undefined) ?? {};
   const scrollToMatch = tabId ? scrollToMatchByTab[tabId] : undefined;
 
-  const prevLength = useRef(messages.length);
-  useEffect(() => {
-    if (messages.length !== prevLength.current) {
-      prevLength.current = messages.length;
-      handleContentChanged();
-    }
-  }, [messages.length, handleContentChanged]);
+  if (messages.length === 0) {
+    return (
+      <div className="a2ui-chat-history a2ui-chat-history-empty">
+        <div className="a2ui-chat-empty">{emptyHint}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="a2ui-chat-history" ref={listRef}>
-      {messages.length === 0 ? (
-        <div className="a2ui-chat-empty">{emptyHint}</div>
-      ) : (
-        <MessageList
-          messages={messages}
-          state={state}
-          tabId={tabId}
-          onEvent={onEvent}
-          containerRef={listRef}
-          scrollToMatch={scrollToMatch}
-        />
-      )}
-      <ScrollToBottomPill
-        visible={!isAtBottom && messages.length > 0}
-        onClick={scrollToBottom}
-      />
-    </div>
+    <VirtualMessageList
+      className="a2ui-chat-history"
+      messages={messages}
+      state={state}
+      tabId={tabId}
+      onEvent={onEvent}
+      scrollToMatch={scrollToMatch}
+    />
   );
 }
 
@@ -463,53 +465,46 @@ export function MainCanvas({
     ? resolveString(props.emptyHint, state)
     : "The agent's canvas is empty. Send a message to populate it.";
 
-  const listRef = useRef<HTMLElement>(null);
-  const { isAtBottom, scrollToBottom, handleContentChanged } =
-    useStickyScroll(listRef);
+  // Non-chat canvas: the agent fully owns this surface, no message feed.
+  if (!chatMode) {
+    return (
+      <main className="a2ui-canvas a2ui-canvas-bare">
+        {liveSubtree && (
+          <div className="a2ui-canvas-live">
+            <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
+          </div>
+        )}
+      </main>
+    );
+  }
 
-  const prevLength = useRef(messages.length);
-  const prevLive = useRef(liveSubtree);
-  useEffect(() => {
-    const lengthChanged = messages.length !== prevLength.current;
-    const liveChanged = liveSubtree !== prevLive.current;
-    prevLength.current = messages.length;
-    prevLive.current = liveSubtree;
-    if (lengthChanged || liveChanged) handleContentChanged();
-  }, [messages.length, liveSubtree, handleContentChanged]);
+  // Empty chat canvas with nothing live yet — just the hint.
+  if (messages.length === 0 && !liveSubtree) {
+    return (
+      <main className="a2ui-canvas a2ui-canvas-empty-host">
+        <div className="a2ui-canvas-empty">{emptyHint}</div>
+      </main>
+    );
+  }
+
+  const footerContext: CanvasFooterContext = {
+    liveSubtree,
+    showTyping: state.waiting === true && !liveSubtree && messages.length > 0,
+    state,
+    tabId,
+  };
 
   return (
-    <main
-      className={chatMode ? "a2ui-canvas" : "a2ui-canvas a2ui-canvas-bare"}
-      ref={listRef}
-    >
-      {chatMode && messages.length === 0 && !liveSubtree && (
-        <div className="a2ui-canvas-empty">{emptyHint}</div>
-      )}
-      {chatMode && (
-        <MessageList
-          messages={messages}
-          state={state}
-          tabId={tabId}
-          onEvent={onEvent}
-          rowClassName="a2ui-canvas-message"
-          containerRef={listRef}
-        />
-      )}
-      {liveSubtree && (
-        <div className="a2ui-canvas-live">
-          <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
-        </div>
-      )}
-      {chatMode &&
-        state.waiting === true &&
-        !liveSubtree &&
-        messages.length > 0 && <TypingIndicator />}
-      {chatMode && (
-        <ScrollToBottomPill
-          visible={!isAtBottom && (messages.length > 0 || !!liveSubtree)}
-          onClick={scrollToBottom}
-        />
-      )}
+    <main className="a2ui-canvas a2ui-canvas-host">
+      <VirtualMessageList
+        className="a2ui-canvas-scroller"
+        rowClassName="a2ui-canvas-message"
+        messages={messages}
+        state={state}
+        tabId={tabId}
+        onEvent={onEvent}
+        footerContext={footerContext}
+      />
     </main>
   );
 }
