@@ -337,19 +337,26 @@ function VirtualMessageList({
 
   const itemContent = useCallback(
     (index: number, m: ChatMessage) => (
-      <ChatMessageRow
-        message={m}
-        state={state}
-        tabId={tabId}
-        className={
-          index === flashIndex
-            ? `${rowClassName} a2ui-chat-message-flash`
-            : rowClassName
-        }
-        prevRole={index > 0 ? messages[index - 1].role : undefined}
-        onEvent={onEvent}
-        deliveryText={queuedLabels.get(m.id)}
-      />
+      // flow-root establishes a BFC so the row's vertical margins (role-change
+      // spacing, etc.) are CONTAINED in this wrapper rather than collapsing
+      // through it. Virtuoso measures the wrapper, so the margins are counted —
+      // bare margins on the row would escape measurement and drift the
+      // follow-to-bottom / scrollToIndex offsets in long transcripts.
+      <div className="a2ui-msg-row">
+        <ChatMessageRow
+          message={m}
+          state={state}
+          tabId={tabId}
+          className={
+            index === flashIndex
+              ? `${rowClassName} a2ui-chat-message-flash`
+              : rowClassName
+          }
+          prevRole={index > 0 ? messages[index - 1].role : undefined}
+          onEvent={onEvent}
+          deliveryText={queuedLabels.get(m.id)}
+        />
+      </div>
     ),
     [state, tabId, rowClassName, flashIndex, messages, onEvent, queuedLabels],
   );

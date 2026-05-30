@@ -2762,11 +2762,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   overflow-y: auto;
 }
 
-/* Virtuoso lays items out in normal flow (not a flex column), so the old
-   container `gap` no longer applies — restore inter-message spacing per row. */
-.a2ui-chat-message,
-.a2ui-canvas-message {
-  margin-bottom: 4px;
+/* Per-row wrapper inside Virtuoso's measured item. `flow-root` contains the
+   row's vertical margins (role-change spacing) so they're included in the
+   measured height — otherwise they escape and Virtuoso's offsets drift in long
+   transcripts. Replaces the old flex-container `gap`. */
+.a2ui-msg-row {
+  display: flow-root;
 }
 
 .a2ui-chat-load-older {
