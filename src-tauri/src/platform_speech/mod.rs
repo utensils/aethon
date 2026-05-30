@@ -257,6 +257,10 @@ mod windows_speech;
 #[cfg(windows)]
 pub(crate) fn cancel_active_transcription() {}
 
+// Platform-gated integration tests kept beside the trait in `mod.rs`: they
+// drive the default engine and the per-OS backends end-to-end through the
+// public `PlatformSpeechEngine` surface, so they belong with the trait
+// contract rather than the `macos` / `windows_speech` backend files.
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;

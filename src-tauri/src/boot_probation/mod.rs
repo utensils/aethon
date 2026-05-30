@@ -44,6 +44,12 @@ pub(crate) use report::show_pending_report;
 pub(crate) use rollback::run_helper_from_args;
 pub(crate) use schema::BootStage;
 
+// Integration-scoped suite kept in `mod.rs` by design rather than split
+// across the submodules it covers. The tests share the `env_lock` /
+// `sample_probation` fixtures and exercise backup, monitor, report, rollback,
+// and schema together (e.g. a failed install restoring a backup), reaching
+// into each module's private items via `super::<module>::{...}`. Per-file
+// unit tests would fragment that cross-module coverage.
 #[cfg(test)]
 mod tests {
     use super::backup::{copy_path, create_backup, remove_path, restore_backup};

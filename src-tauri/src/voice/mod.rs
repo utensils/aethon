@@ -92,6 +92,12 @@ pub(super) const WHISPER_LANGUAGE_CODES: [&str; 99] = [
     "ha", "ba", "jw", "su",
 ];
 
+// Integration-scoped suite kept in `mod.rs` by design rather than split
+// across the submodules it covers. The tests share heavyweight fixtures
+// (temp-dir settings DBs, WAV decoding, Whisper forward probes) and exercise
+// settings/registry/providers/inference/mel together via `super::*`. Pulling
+// them apart per file would duplicate fixtures and lose the cross-module
+// coverage, so the leaf modules stay test-free intentionally.
 #[cfg(test)]
 mod tests {
     use super::*;
