@@ -13,4 +13,7 @@ pub mod picker;
 pub mod status;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod watch;
 pub mod worktrees;
+
+pub use watch::GitWatchState;

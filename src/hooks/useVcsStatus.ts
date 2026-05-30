@@ -20,6 +20,7 @@
  */
 import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { getGhBranchStatus, type GhPr } from "../ghBranchStatusCache";
 import { getGhChecks, type GhCheckRun } from "../ghChecksCache";
@@ -307,10 +308,24 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     window.addEventListener("focus", onFocus);
     const interval = window.setInterval(() => void tick(), POLL_INTERVAL_MS);
 
+    // Event-driven refresh: the Rust git watcher fires `git-state-changed`
+    // when this root's `.git/` mutates (commit, stage, branch switch — incl.
+    // ones run in an external terminal), so we repaint within a couple hundred
+    // milliseconds instead of waiting up to 20s for the next interval tick.
+    let unlisten: (() => void) | undefined;
+    void listen<{ root: string }>("git-state-changed", (event) => {
+      if (cancelled || event.payload.root !== activeRoot) return;
+      void tick();
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
       window.clearInterval(interval);
+      unlisten?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoot]);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { readState, writeState } from "../../../persist";
 import {
@@ -25,6 +26,11 @@ import {
 /** Bound expand-all so a deep / huge tree can't fan out into thousands of
  *  fs_list_dir calls. Mirrors the persisted-expand cap. */
 const EXPAND_ALL_MAX_DEPTH = 8;
+
+/** Backstop poll for git decorations, mirroring `useVcsStatus`. The
+ *  `git-state-changed` event is the fast path; this heals a dropped notify
+ *  event so badges never stick stale indefinitely. */
+const GIT_STATUS_POLL_MS = 20_000;
 
 interface UseFileTreeDataArgs {
   hidden: boolean;
@@ -207,6 +213,37 @@ function useFileTreeData({
       cancelled = true;
     };
   }, [projectPath, refreshGitStatuses, rootLabel]);
+
+  // Git-decoration refresh that the working-tree fs watcher can't drive. The
+  // file tree's primary refresh is `useFileTreeWatch`, which only fires on
+  // working-tree file changes — git operations that touch *only* `.git/`
+  // (commit, stage, branch switch, stash, incl. ones run in an external
+  // terminal) never trip it, so decorations would stay stale indefinitely.
+  // The Rust git watcher's `git-state-changed` event is the instant path; a
+  // focus + 20s poll backstops a dropped notify event so badges self-heal.
+  useEffect(() => {
+    if (!projectPath) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ root: string }>("git-state-changed", (event) => {
+      if (disposed || event.payload.root !== projectPathRef.current) return;
+      scheduleGitStatusRefresh(projectPathRef.current);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    const refresh = () => {
+      if (projectPathRef.current) void refreshGitStatuses(projectPathRef.current);
+    };
+    window.addEventListener("focus", refresh);
+    const interval = window.setInterval(refresh, GIT_STATUS_POLL_MS);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", refresh);
+      window.clearInterval(interval);
+      unlisten?.();
+    };
+  }, [projectPath, refreshGitStatuses, scheduleGitStatusRefresh]);
 
   const loadFolderChildren = useCallback(
     async (node: TreeNode): Promise<TreeNode[] | null> => {

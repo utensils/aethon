@@ -128,6 +128,7 @@ pub fn run() {
         .manage(agent_process::AgentProcesses::new())
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
+        .manage(commands::git::GitWatchState::default())
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
         .manage(Arc::new(server::ServerState::new()))
@@ -191,6 +192,8 @@ pub fn run() {
             commands::git::status::git_status,
             commands::git::status::git_file_status,
             commands::git::status::git_ignored_paths,
+            commands::git::watch::git_watch_root,
+            commands::git::watch::git_unwatch_root,
             commands::git::diff::git_file_diff_hunks,
             commands::git::diff::git_show_head,
             commands::git::diff::git_diff_stat,

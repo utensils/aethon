@@ -770,6 +770,92 @@ describe("FileTreePanel", () => {
     });
   });
 
+  it("refreshes git decorations when a git-state-changed event fires for the root", async () => {
+    let gitStateListener:
+      | ((event: { payload: { root: string } }) => void)
+      | undefined;
+    listenMock.mockImplementation((eventName: string, listener) => {
+      if (eventName === "git-state-changed") {
+        gitStateListener = listener as typeof gitStateListener;
+      }
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      if (cmd === "git_ignored_paths") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.some((c) => c[0] === "git_file_status"),
+      ).toBe(true),
+    );
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "git_file_status",
+    ).length;
+
+    // External `git commit`: only `.git/` changed, so no fs-tree-changed —
+    // the git watcher's git-state-changed must drive the decoration refresh.
+    act(() => {
+      gitStateListener?.({ payload: { root: "/projects/aethon" } });
+    });
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter((c) => c[0] === "git_file_status").length,
+      ).toBeGreaterThan(before),
+    );
+  });
+
+  it("ignores git-state-changed events for a different root", async () => {
+    let gitStateListener:
+      | ((event: { payload: { root: string } }) => void)
+      | undefined;
+    listenMock.mockImplementation((eventName: string, listener) => {
+      if (eventName === "git-state-changed") {
+        gitStateListener = listener as typeof gitStateListener;
+      }
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "fs_list_dir") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      if (cmd === "git_ignored_paths") return Promise.resolve([]);
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    await waitFor(() => screen.getByText("src"));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.some((c) => c[0] === "git_file_status"),
+      ).toBe(true),
+    );
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "git_file_status",
+    ).length;
+
+    act(() => {
+      gitStateListener?.({ payload: { root: "/projects/other" } });
+    });
+    await new Promise((r) => setTimeout(r, 220));
+    expect(
+      invokeMock.mock.calls.filter((c) => c[0] === "git_file_status").length,
+    ).toBe(before);
+  });
+
   it("reveals a nested file on aethon:reveal-in-tree", async () => {
     // jsdom doesn't define scrollIntoView; install a spy so the reveal
     // effect is safe and observable.
