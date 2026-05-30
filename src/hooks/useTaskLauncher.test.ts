@@ -108,4 +108,51 @@ describe("useTaskLauncher", () => {
     });
     expect(sendChat).toHaveBeenCalledWith("implement this", { tabId });
   });
+
+  it("uses automatic worktree naming when the launcher branch is blank", async () => {
+    const projects = makeProjects();
+    projects.worktreesByProject.p1 = [
+      {
+        id: "wt-auto",
+        projectId: "p1",
+        path: "/tmp/aethon/aethon/feat-aurora",
+        branch: "feat/aurora",
+        isMain: false,
+      },
+    ];
+    const projectsRef = ref(projects);
+    const createWorktreeWithParams = vi.fn(() =>
+      Promise.resolve("/tmp/aethon/aethon/feat-aurora"),
+    );
+    const activateWorktree = vi.fn();
+    const newTab = vi.fn();
+    const sendChat = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() =>
+      useTaskLauncher({
+        projectsRef,
+        pushNotificationRef: ref((_: NotificationInput) => {}),
+        setActiveProjectById: vi.fn(() => true),
+        createWorktreeWithParams,
+        activateWorktree,
+        newTab,
+        pendingTabOpens: ref(new Map()),
+        sendChat,
+      }),
+    );
+
+    await act(async () => {
+      await result.current({
+        projectId: "p1",
+        prompt: "  implement this  ",
+        newWorktree: true,
+        branch: "   ",
+      });
+    });
+
+    expect(createWorktreeWithParams).toHaveBeenCalledWith({
+      projectId: "p1",
+      baseBranch: undefined,
+    });
+    expect(activateWorktree).toHaveBeenCalledWith("wt-auto");
+  });
 });

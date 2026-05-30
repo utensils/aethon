@@ -846,7 +846,7 @@ describe("useProjectOps worktree creation", () => {
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktree_add") {
         return Promise.resolve({
-          path: "/projects/aethon-fix-thing",
+          path: "/tmp/aethon/aethon/fix-thing",
           branch: "fix/thing",
           head: "def456",
           isMain: false,
@@ -863,7 +863,7 @@ describe("useProjectOps worktree creation", () => {
             locked: false,
           },
           {
-            path: "/projects/aethon-fix-thing",
+            path: "/tmp/aethon/aethon/fix-thing",
             branch: "fix/thing",
             head: "def456",
             isMain: false,
@@ -874,7 +874,8 @@ describe("useProjectOps worktree creation", () => {
       return Promise.resolve(undefined);
     });
     const initial = makeProjectsState({ activeId: "project-1" });
-    const { result, projectsRef } = renderProjectOps(initial);
+    const { result, projectsRef, stateRef } = renderProjectOps(initial);
+    stateRef.current.aethonRoot = "/tmp/aethon";
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -886,12 +887,12 @@ describe("useProjectOps worktree creation", () => {
         projectId: "project-1",
         branch: "fix/thing",
       });
-      expect(created).toBe("/projects/aethon-fix-thing");
+      expect(created).toBe("/tmp/aethon/aethon/fix-thing");
     });
 
     expect(harness.invoke).toHaveBeenCalledWith("git_worktree_add", {
       projectPath: "/projects/aethon",
-      targetPath: "/projects/aethon-fix-thing",
+      targetPath: "/tmp/aethon/aethon/fix-thing",
       branch: "fix/thing",
       base: "origin/main",
     });
@@ -899,8 +900,71 @@ describe("useProjectOps worktree creation", () => {
     const active = projectsRef.current.worktreesByProject["project-1"]?.find(
       (w) => w.id === projectsRef.current.activeWorktreeId,
     );
-    expect(active?.path).toBe("/projects/aethon-fix-thing");
+    expect(active?.path).toBe("/tmp/aethon/aethon/fix-thing");
     expect(projectsRef.current.projects[0].uiExpanded).toBe(true);
+  });
+
+  it("auto-generates blank worktree branches under the Aethon user dir", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation((cmd: string, args) => {
+      if (cmd === "git_branch_list") {
+        return Promise.resolve([{ name: "main", current: true }]);
+      }
+      if (cmd === "git_worktree_add") {
+        return Promise.resolve({
+          path: args.targetPath,
+          branch: args.branch,
+          head: "def456",
+          isMain: false,
+          locked: false,
+        });
+      }
+      if (cmd === "git_worktrees") {
+        const addCall = harness.invoke.mock.calls.find(
+          ([name]) => name === "git_worktree_add",
+        );
+        return Promise.resolve([
+          {
+            path: "/projects/aethon",
+            branch: "main",
+            head: "abc123",
+            isMain: true,
+            locked: false,
+          },
+          {
+            path: addCall?.[1]?.targetPath,
+            branch: addCall?.[1]?.branch,
+            head: "def456",
+            isMain: false,
+            locked: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const initial = makeProjectsState({ activeId: "project-1" });
+    const { result, stateRef } = renderProjectOps(initial);
+    stateRef.current.aethonRoot = "/tmp/aethon";
+
+    let created: string | null = null;
+    await act(async () => {
+      created = await result.current.createWorktreeWithParams({
+        projectId: "project-1",
+      });
+    });
+
+    const addCall = harness.invoke.mock.calls.find(
+      ([cmd]) => cmd === "git_worktree_add",
+    );
+    expect(addCall?.[1]).toMatchObject({
+      projectPath: "/projects/aethon",
+      base: "origin/main",
+    });
+    expect(addCall?.[1]?.branch).toMatch(/^feat\//);
+    expect(addCall?.[1]?.targetPath).toMatch(
+      /^\/tmp\/aethon\/aethon\/feat-/,
+    );
+    expect(created).toBe(addCall?.[1]?.targetPath);
   });
 
   it("uses project and explicit base branch overrides in priority order", async () => {

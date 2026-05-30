@@ -93,6 +93,41 @@ describe("TaskLauncher", () => {
     }
   });
 
+  it("allows a new worktree session with an automatic branch", async () => {
+    const onEvent = vi.fn();
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/repo/aethon" },
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Task prompt"), {
+      target: { value: "start this" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "+ New worktree" }));
+
+    const start = screen.getByRole("button", { name: "Start" });
+    expect(start.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(start);
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p1",
+          prompt: "start this",
+          newWorktree: true,
+          branch: "",
+        }),
+      ),
+    );
+  });
+
   it("resolves project via $ref", () => {
     const html = renderToStaticMarkup(
       <TaskLauncher

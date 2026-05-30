@@ -13,6 +13,12 @@ const { openUrl } = vi.hoisted(() => ({
   openUrl: vi.fn(),
 }));
 
+const virtuosoMockState = vi.hoisted(
+  (): { followOutput?: unknown } => ({
+    followOutput: undefined,
+  }),
+);
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrl(...args),
 }));
@@ -39,6 +45,7 @@ vi.mock("react-virtuoso", () => ({
     atBottomStateChange,
     scrollerRef,
     totalListHeightChanged,
+    followOutput,
   }: {
     data?: Array<{ id?: string }>;
     itemContent: (index: number, item: unknown) => React.ReactNode;
@@ -48,12 +55,25 @@ vi.mock("react-virtuoso", () => ({
     atBottomStateChange?: (atBottom: boolean) => void;
     scrollerRef?: (ref: HTMLElement | null) => void;
     totalListHeightChanged?: (height: number) => void;
+    followOutput?: unknown;
   }) => {
     const Footer = components?.Footer;
+    virtuosoMockState.followOutput = followOutput;
     useEffect(() => {
       const el = document.querySelector<HTMLElement>(
         "[data-testid='virtuoso-mock']",
       );
+      if (el) {
+        Object.defineProperties(el, {
+          scrollHeight: { value: 1000, configurable: true },
+          clientHeight: { value: 500, configurable: true },
+          scrollTop: {
+            value: 470,
+            writable: true,
+            configurable: true,
+          },
+        });
+      }
       scrollerRef?.(el);
       totalListHeightChanged?.(0);
       atBottomStateChange?.(false);
@@ -407,6 +427,21 @@ describe("ChatInput", () => {
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();
+  });
+
+  it("keeps following latest when Virtuoso reports false before a user scrolls away", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
+    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
   });
 
   it("renders user image attachments and opens them in a lightbox", () => {

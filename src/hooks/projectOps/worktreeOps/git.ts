@@ -19,6 +19,7 @@ import type { ProjectLookups } from "./types";
 
 interface GitDeps {
   projectsRef: MutableRefObject<ProjectsState>;
+  stateRef?: MutableRefObject<Record<string, unknown>>;
   lookups: ProjectLookups;
   syncProjectsToState: () => void;
   persistProjects: () => Promise<void>;
@@ -38,9 +39,48 @@ export function resolveWorktreeBaseBranch(
 export function defaultWorktreePath(
   projectPath: string,
   branch: string,
+  aethonRoot?: string,
 ): string {
-  const safe = branch.replace(/[^a-z0-9._-]/gi, "-");
-  return `${projectPath.replace(/\/$/, "")}-${safe}`;
+  const worktreeName = safePathSegment(branch, "worktree");
+  const root = aethonRoot?.trim();
+  if (root) {
+    const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+    const repoName = safePathSegment(pathBasename(projectPath), "repo");
+    return `${trimTrailingSeparators(root)}${sep}${repoName}${sep}${worktreeName}`;
+  }
+  return `${projectPath.replace(/[\\/]+$/, "")}-${worktreeName}`;
+}
+
+function trimTrailingSeparators(path: string): string {
+  return path.replace(/[\\/]+$/, "");
+}
+
+function pathBasename(path: string): string {
+  const parts = trimTrailingSeparators(path).split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? "repo";
+}
+
+function safePathSegment(value: string, fallback: string): string {
+  return value.replace(/[^a-z0-9._-]/gi, "-").replace(/^-+|-+$/g, "") || fallback;
+}
+
+async function pickGeneratedWorktreeBranch(
+  deps: Pick<GitDeps, "projectsRef"> & { lookups: ProjectLookups },
+  project: Project,
+): Promise<string> {
+  const taken = new Set<string>();
+  for (const w of deps.projectsRef.current.worktreesByProject[project.id] ??
+    []) {
+    if (w.branch) taken.add(w.branch);
+    if (w.label) taken.add(w.label);
+  }
+  try {
+    const branches = await gitBranchList(project.path);
+    for (const b of branches) taken.add(b.name);
+  } catch {
+    // Branch list failed; random naming remains good enough.
+  }
+  return pickWorktreeName(taken);
 }
 
 export function navigateToWorktree(
@@ -112,37 +152,29 @@ export async function createWorktreeForProject(
 ): Promise<void> {
   const project = deps.lookups.findProject(projectId);
   if (!project) return;
-  const taken = new Set<string>();
-  for (const w of deps.projectsRef.current.worktreesByProject[projectId] ??
-    []) {
-    if (w.branch) taken.add(w.branch);
-    if (w.label) taken.add(w.label);
-  }
-  try {
-    const branches = await gitBranchList(project.path);
-    for (const b of branches) taken.add(b.name);
-  } catch {
-    // Branch list failed; random naming remains good enough.
-  }
-  const branch = pickWorktreeName(taken);
-  await createWorktreeWithParams(deps, { projectId, branch });
+  await createWorktreeWithParams(deps, { projectId });
 }
 
 export async function createWorktreeWithParams(
   deps: GitDeps,
   opts: {
     projectId: string;
-    branch: string;
+    branch?: string;
     targetPath?: string;
     baseBranch?: string;
   },
 ): Promise<string | null> {
   const project = deps.lookups.findProject(opts.projectId);
   if (!project) return null;
-  const branch = opts.branch.trim();
-  if (!branch) return null;
+  const branch =
+    opts.branch?.trim() || (await pickGeneratedWorktreeBranch(deps, project));
+  const aethonRoot =
+    typeof deps.stateRef?.current.aethonRoot === "string"
+      ? deps.stateRef.current.aethonRoot
+      : undefined;
   const targetPath =
-    opts.targetPath?.trim() || defaultWorktreePath(project.path, branch);
+    opts.targetPath?.trim() ||
+    defaultWorktreePath(project.path, branch, aethonRoot);
   const pending = newPendingWorktree(opts.projectId, branch, targetPath);
   const baseBranch = resolveWorktreeBaseBranch(project, opts.baseBranch);
   const before =

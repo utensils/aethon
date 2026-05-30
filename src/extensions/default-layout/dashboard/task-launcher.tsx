@@ -169,7 +169,6 @@ export function TaskLauncher({
     const text = promptText.trim();
     if (!text && attachments.length === 0) return;
     if (!data.project) return;
-    if (worktreeChoice.kind === "new" && !newBranch.trim()) return;
     setSubmitting(true);
     const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
@@ -387,8 +386,7 @@ export function TaskLauncher({
           onClick={submit}
           disabled={
             submitting ||
-            (!promptText.trim() && attachments.length === 0) ||
-            (worktreeChoice.kind === "new" && !newBranch.trim())
+            (!promptText.trim() && attachments.length === 0)
           }
         >
           {submitting ? "…" : "Start"}

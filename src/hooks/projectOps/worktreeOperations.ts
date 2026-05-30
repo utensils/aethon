@@ -52,6 +52,7 @@ export function useWorktreeOperations(
 
   const gitDeps = {
     projectsRef: deps.projectsRef,
+    stateRef: deps.stateRef,
     lookups,
     syncProjectsToState: deps.syncProjectsToState,
     persistProjects: deps.persistProjects,

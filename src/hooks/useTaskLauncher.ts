@@ -19,7 +19,7 @@ export interface UseTaskLauncherOptions {
   setActiveProjectById: (id: string) => boolean;
   createWorktreeWithParams: (opts: {
     projectId: string;
-    branch: string;
+    branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
@@ -69,23 +69,17 @@ export function useTaskLauncher({
       let cwd = project.path;
       if (opts.newWorktree) {
         const branch = (opts.branch ?? "").trim();
-        if (!branch) {
-          pushNotificationRef.current({
-            title: "New worktree needs a branch name",
-            message: "Enter a branch name in the launcher before starting.",
-            kind: "warning",
-          });
-          return;
-        }
         const created = await createWorktreeWithParams({
           projectId: opts.projectId,
-          branch,
+          ...(branch ? { branch } : {}),
           baseBranch: opts.baseBranch,
         });
         if (!created) {
           pushNotificationRef.current({
             title: "Worktree create failed",
-            message: `Could not create '${branch}'. See the sidebar's pending row for details.`,
+            message: branch
+              ? `Could not create '${branch}'. See the sidebar's pending row for details.`
+              : "Could not create an automatic worktree. See the sidebar's pending row for details.",
             kind: "warning",
           });
           return;

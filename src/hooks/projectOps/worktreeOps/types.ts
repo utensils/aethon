@@ -31,7 +31,7 @@ export interface WorktreeOperations {
   createWorktreeForProject: (projectId: string) => Promise<void>;
   createWorktreeWithParams: (opts: {
     projectId: string;
-    branch: string;
+    branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
