@@ -40,6 +40,7 @@ import {
   type SlashCommandSource,
   useSlashMatching,
 } from "./use-slash-matching";
+import { ImageLightbox } from "./image-lightbox";
 import { imageAttachmentSrc } from "../../utils/imageAttachments";
 
 export function ChatInput({
@@ -474,23 +475,36 @@ function AttachmentTray({
   attachments: ChatAttachment[];
   onRemove: (id: string) => void;
 }) {
+  const [open, setOpen] = useState<ChatAttachment | null>(null);
   return (
-    <div className="a2ui-chat-attachments" aria-label="Attached images">
-      {attachments.map((attachment) => (
-        <figure className="a2ui-chat-attachment" key={attachment.id}>
-          <img src={imageAttachmentSrc(attachment)} alt={attachment.name} />
-          <figcaption title={attachment.name}>{attachment.name}</figcaption>
-          <button
-            type="button"
-            className="a2ui-chat-attachment-remove"
-            aria-label={`Remove ${attachment.name}`}
-            onClick={() => onRemove(attachment.id)}
-          >
-            ×
-          </button>
-        </figure>
-      ))}
-    </div>
+    <>
+      <div className="a2ui-chat-attachments" aria-label="Attached images">
+        {attachments.map((attachment) => (
+          <figure className="a2ui-chat-attachment" key={attachment.id}>
+            <button
+              type="button"
+              className="a2ui-chat-attachment-thumb"
+              aria-label={`Open ${attachment.name}`}
+              onClick={() => setOpen(attachment)}
+            >
+              <img src={imageAttachmentSrc(attachment)} alt="" />
+            </button>
+            <figcaption title={attachment.name}>{attachment.name}</figcaption>
+            <button
+              type="button"
+              className="a2ui-chat-attachment-remove"
+              aria-label={`Remove ${attachment.name}`}
+              onClick={() => onRemove(attachment.id)}
+            >
+              ×
+            </button>
+          </figure>
+        ))}
+      </div>
+      {open && (
+        <ImageLightbox attachment={open} onClose={() => setOpen(null)} />
+      )}
+    </>
   );
 }
 

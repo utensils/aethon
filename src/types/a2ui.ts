@@ -299,6 +299,7 @@ export interface ChatAttachment {
   name: string;
   mimeType: string;
   sizeBytes: number;
+  previewUrl?: string;
 }
 
 // Message shape used by ChatHistory and MainCanvas — text or embedded A2UI subtree.

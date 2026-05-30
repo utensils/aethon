@@ -25,6 +25,7 @@ import {
   imageAttachmentSrc,
   saveClipboardImageAttachment,
 } from "../../../utils/imageAttachments";
+import { ImageLightbox } from "../image-lightbox";
 
 interface ProjectLite {
   id: string;
@@ -111,6 +112,9 @@ export function TaskLauncher({
 
   const [promptText, setPromptText] = useState(initialPrompt);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [openAttachment, setOpenAttachment] = useState<ChatAttachment | null>(
+    null,
+  );
   // Seed worktree selection from the project's currently-active
   // worktree so the chip shows what the user has switched to in the
   // sidebar, not just "project root". Falls back to "current" (project
@@ -258,10 +262,18 @@ export function TaskLauncher({
         <div className="a2ui-task-launcher-attachments">
           {attachments.map((attachment) => (
             <figure className="a2ui-task-launcher-attachment" key={attachment.id}>
-              <img src={imageAttachmentSrc(attachment)} alt={attachment.name} />
+              <button
+                type="button"
+                className="a2ui-task-launcher-attachment-thumb"
+                aria-label={`Open ${attachment.name}`}
+                onClick={() => setOpenAttachment(attachment)}
+              >
+                <img src={imageAttachmentSrc(attachment)} alt="" />
+              </button>
               <figcaption title={attachment.name}>{attachment.name}</figcaption>
               <button
                 type="button"
+                className="a2ui-task-launcher-attachment-remove"
                 aria-label={`Remove ${attachment.name}`}
                 onClick={() =>
                   setAttachments((current) =>
@@ -274,6 +286,12 @@ export function TaskLauncher({
             </figure>
           ))}
         </div>
+      )}
+      {openAttachment && (
+        <ImageLightbox
+          attachment={openAttachment}
+          onClose={() => setOpenAttachment(null)}
+        />
       )}
       <div className="a2ui-task-launcher-row">
         <ChipMenu

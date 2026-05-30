@@ -133,6 +133,11 @@ describe("TaskLauncher", () => {
     });
 
     await screen.findByText("shot.png");
+    fireEvent.click(screen.getByRole("button", { name: "Open shot.png" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
 
     await waitFor(() =>

@@ -9,6 +9,10 @@ export function imageNameFromPath(path: string): string {
 export async function saveClipboardImageAttachment(
   file: File,
 ): Promise<ChatAttachment> {
+  const previewUrl =
+    typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+      ? URL.createObjectURL(file)
+      : undefined;
   const buffer = await file.arrayBuffer();
   const bytes = Array.from(new Uint8Array(buffer));
   const mimeType = file.type || "image/png";
@@ -24,9 +28,11 @@ export async function saveClipboardImageAttachment(
     name: file.name || imageNameFromPath(path),
     mimeType,
     sizeBytes: file.size,
+    ...(previewUrl ? { previewUrl } : {}),
   };
 }
 
 export function imageAttachmentSrc(attachment: ChatAttachment): string {
+  if (attachment.previewUrl) return attachment.previewUrl;
   return convertFileSrc(attachment.path);
 }

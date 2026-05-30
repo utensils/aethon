@@ -314,6 +314,11 @@ describe("ChatInput", () => {
     );
 
     expect(screen.getByText("one.png")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open one.png" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onEvent).toHaveBeenLastCalledWith("submit", {

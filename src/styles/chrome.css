@@ -3181,10 +3181,20 @@ body.ae-resizing-composer * {
   background: var(--bg-elev);
 }
 
-.a2ui-chat-attachment img,
-.a2ui-task-launcher-attachment img {
+.a2ui-chat-attachment-thumb,
+.a2ui-task-launcher-attachment-thumb {
   width: 46px;
   height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.a2ui-chat-attachment-thumb img,
+.a2ui-task-launcher-attachment-thumb img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   border-radius: 4px;
   border: 1px solid var(--border);
@@ -3201,7 +3211,7 @@ body.ae-resizing-composer * {
 }
 
 .a2ui-chat-attachment-remove,
-.a2ui-task-launcher-attachment button {
+.a2ui-task-launcher-attachment-remove {
   position: absolute;
   top: 5px;
   right: 5px;
@@ -3218,7 +3228,7 @@ body.ae-resizing-composer * {
 }
 
 .a2ui-chat-attachment-remove:hover,
-.a2ui-task-launcher-attachment button:hover {
+.a2ui-task-launcher-attachment-remove:hover {
   color: var(--text);
   border-color: var(--accent);
 }
