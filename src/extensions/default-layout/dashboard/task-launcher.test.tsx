@@ -69,6 +69,30 @@ describe("TaskLauncher", () => {
     expect(html).toContain("Start");
   });
 
+  it("disables OS autocorrection on branch inputs", () => {
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{}}
+        onEvent={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "+ New worktree" }));
+
+    for (const input of [
+      screen.getByLabelText("New branch name"),
+      screen.getByLabelText("Base branch (empty = project default)"),
+    ]) {
+      expect(input.getAttribute("autocapitalize")).toBe("none");
+      expect(input.getAttribute("autocorrect")).toBe("off");
+      expect(input.getAttribute("spellcheck")).toBe("false");
+    }
+  });
+
   it("resolves project via $ref", () => {
     const html = renderToStaticMarkup(
       <TaskLauncher

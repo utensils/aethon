@@ -71,6 +71,12 @@ type WorktreeChoice =
   | { kind: "existing"; id: string; path: string; label: string }
   | { kind: "new" };
 
+const codeInputProps = {
+  autoCapitalize: "none",
+  autoCorrect: "off",
+  spellCheck: false,
+} as const;
+
 export function TaskLauncher({
   component,
   state,
@@ -361,6 +367,7 @@ export function TaskLauncher({
               value={newBranch}
               onChange={(e) => setNewBranch(e.target.value)}
               aria-label="New branch name"
+              {...codeInputProps}
             />
             <input
               type="text"
@@ -370,6 +377,7 @@ export function TaskLauncher({
               onChange={(e) => setBaseBranch(e.target.value)}
               aria-label="Base branch (empty = project default)"
               title="Base branch to fork from. Leave empty to use the project default."
+              {...codeInputProps}
             />
           </>
         )}
