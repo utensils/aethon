@@ -51,15 +51,14 @@ import { makeExtStateLogLimiter } from "./state-limits";
 import { normalizeTheme, RESERVED_THEME_IDS } from "./extension-loader";
 import type { CanvasApi } from "./canvas";
 import type { RuntimeSnapshot } from "./system-prompt";
+import { buildShellsApi } from "./aethon-api-shells";
+import { buildDashboardApi, buildTasksApi } from "./aethon-api-dashboard";
 
 export interface AethonApiDeps {
   send: (obj: Record<string, unknown>) => void;
   scheduleStateFileWrite: () => void;
   getRuntimeSnapshot: () => RuntimeSnapshot;
 }
-
-const SHELL_WRITE_ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 min — user may step away
-const MUTATION_ACK_TIMEOUT_MS_DEFAULT = 5_000;
 
 /** Built-in slash command names — extensions cannot shadow these.
  *  Keeps independent of frontend imports so the bridge can decide. */
@@ -408,162 +407,10 @@ export function buildAethonApi(
     }
   }
 
-  // -- shells.list/read/write --------------------------------------------
-  async function _shellQuery(
-    op: "list" | "read" | "write",
-    args: Record<string, unknown> = {},
-    timeoutMs?: number,
-  ): Promise<MutationResult> {
-    if (!state.frontendReady) {
-      // Bounded handshake wait — see shellQuery comment in original main.ts.
-      const ready = await Promise.race<boolean>([
-        state.frontendReadyPromise.then(() => true),
-        new Promise<boolean>((resolve) =>
-          setTimeout(() => resolve(false), MUTATION_ACK_TIMEOUT_MS_DEFAULT),
-        ),
-      ]);
-      if (!ready) return { ok: false, error: "frontend_not_ready" };
-    }
-    const { id, promise } = trackMutation(state, timeoutMs);
-    deps.send({ type: "shell_query", mutationId: id, op, args });
-    return promise;
-  }
-
-  // -- dashboard / tasks pi tools ----------------------------------------
-  async function _dashboardQuery(
-    op: "start_task" | "get_repo_overview" | "refresh",
-    args: Record<string, unknown> = {},
-    timeoutMs?: number,
-  ): Promise<MutationResult> {
-    if (!state.frontendReady) {
-      const ready = await Promise.race<boolean>([
-        state.frontendReadyPromise.then(() => true),
-        new Promise<boolean>((resolve) =>
-          setTimeout(() => resolve(false), MUTATION_ACK_TIMEOUT_MS_DEFAULT),
-        ),
-      ]);
-      if (!ready) return { ok: false, error: "frontend_not_ready" };
-    }
-    const { id, promise } = trackMutation(state, timeoutMs);
-    deps.send({ type: "dashboard_query", mutationId: id, op, args });
-    return promise;
-  }
-
-  const tasks: TasksApi = {
-    start: (input) => {
-      if (
-        !input ||
-        typeof input.projectPath !== "string" ||
-        !input.projectPath
-      ) {
-        return Promise.resolve({ ok: false, error: "projectPath required" });
-      }
-      if (typeof input.prompt !== "string" || !input.prompt.trim()) {
-        return Promise.resolve({ ok: false, error: "prompt required" });
-      }
-      return _dashboardQuery(
-        "start_task",
-        {
-          projectPath: input.projectPath,
-          prompt: input.prompt,
-          ...(typeof input.newWorktree === "boolean"
-            ? { newWorktree: input.newWorktree }
-            : {}),
-          ...(typeof input.branch === "string" ? { branch: input.branch } : {}),
-          ...(typeof input.baseBranch === "string"
-            ? { baseBranch: input.baseBranch }
-            : {}),
-        },
-        // Worktree-create + tab-open + send can take several seconds on a
-        // large repo. 30s is the same ceiling as the shell-write ack
-        // pattern, which is the closest existing precedent.
-        30_000,
-      );
-    },
-  };
-
-  const dashboard: DashboardApi = {
-    getRepoOverview: (input) => {
-      if (
-        !input ||
-        typeof input.projectPath !== "string" ||
-        !input.projectPath
-      ) {
-        return Promise.resolve({ ok: false, error: "projectPath required" });
-      }
-      return _dashboardQuery("get_repo_overview", {
-        projectPath: input.projectPath,
-      });
-    },
-    refresh: (input) =>
-      _dashboardQuery("refresh", {
-        ...(input && typeof input.projectPath === "string"
-          ? { projectPath: input.projectPath }
-          : {}),
-      }),
-    listIssues: (input) => {
-      if (
-        !input ||
-        typeof input.projectPath !== "string" ||
-        !input.projectPath
-      ) {
-        return Promise.resolve({ ok: false, error: "projectPath required" });
-      }
-      return _dashboardQuery("list_issues", {
-        projectPath: input.projectPath,
-        ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
-      });
-    },
-    getIssue: (input) => {
-      if (
-        !input ||
-        typeof input.projectPath !== "string" ||
-        !input.projectPath ||
-        typeof input.number !== "number" ||
-        input.number <= 0
-      ) {
-        return Promise.resolve({
-          ok: false,
-          error: "projectPath + positive integer number required",
-        });
-      }
-      return _dashboardQuery("get_issue", {
-        projectPath: input.projectPath,
-        number: input.number,
-      });
-    },
-  };
-
-  const shells: ShellsApi = {
-    list: () => _shellQuery("list"),
-    read: (input) => {
-      if (!input || typeof input.tabId !== "string" || !input.tabId) {
-        return Promise.resolve({ ok: false, error: "tabId required" });
-      }
-      return _shellQuery("read", {
-        tabId: input.tabId,
-        ...(typeof input.sinceTotal === "number"
-          ? { sinceTotal: input.sinceTotal }
-          : {}),
-        ...(typeof input.maxBytes === "number"
-          ? { maxBytes: input.maxBytes }
-          : {}),
-      });
-    },
-    write: (input) => {
-      if (!input || typeof input.tabId !== "string" || !input.tabId) {
-        return Promise.resolve({ ok: false, error: "tabId required" });
-      }
-      if (typeof input.text !== "string") {
-        return Promise.resolve({ ok: false, error: "text must be a string" });
-      }
-      return _shellQuery(
-        "write",
-        { tabId: input.tabId, text: input.text },
-        SHELL_WRITE_ACK_TIMEOUT_MS,
-      );
-    },
-  };
+  const queryDeps = { send: deps.send };
+  const shells = buildShellsApi(state, queryDeps);
+  const tasks = buildTasksApi(state, queryDeps);
+  const dashboard = buildDashboardApi(state, queryDeps);
 
   return {
     registerComponent: _registerComponent,
