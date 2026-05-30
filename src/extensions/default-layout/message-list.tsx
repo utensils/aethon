@@ -23,12 +23,6 @@ import {
   MARKDOWN_REMARK_PLUGINS,
 } from "./markdown-adapter";
 
-// Render a chunk of the newest rows on first paint before Virtuoso has
-// measured anything, so a restored session isn't briefly blank. Virtuoso
-// virtualizes normally once real heights are known. (jsdom never measures, so
-// chat.test.tsx mocks Virtuoso to render rows directly.)
-const INITIAL_ITEM_COUNT = 24;
-
 // Distance (px) from the bottom still treated as "at the bottom" for follow +
 // the scroll-to-bottom pill. Matches the old StickyScrollController default.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
@@ -360,6 +354,13 @@ function VirtualMessageList({
     [state, tabId, rowClassName, flashIndex, messages, onEvent, queuedLabels],
   );
 
+  // Only wire `context`/`components` when there's a footer. Passing
+  // `components={undefined}` explicitly trips Virtuoso's internal
+  // `components.EmptyPlaceholder` access, so omit the props entirely otherwise.
+  const footerProps = footerContext
+    ? { context: footerContext, components: { Footer: CanvasFooter } }
+    : {};
+
   return (
     <div className="a2ui-msg-list-shell">
       <Virtuoso
@@ -369,13 +370,16 @@ function VirtualMessageList({
         data={messages}
         computeItemKey={(_index, m) => m.id}
         itemContent={itemContent}
+        // Open scrolled to the newest message. Do NOT also pass
+        // `initialItemCount` here: combined with a bottom `initialTopMostItemIndex`
+        // Virtuoso requests rows past the end of `data` and feeds `undefined`
+        // into computeItemKey, crashing on m.id for any restored 2+ message chat
+        // (see message-list.virtuoso.test.tsx).
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-        initialItemCount={Math.min(messages.length, INITIAL_ITEM_COUNT)}
         followOutput="auto"
         atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
         atBottomStateChange={setIsAtBottom}
-        context={footerContext}
-        components={footerContext ? { Footer: CanvasFooter } : undefined}
+        {...footerProps}
       />
       <ScrollToBottomPill
         visible={!isAtBottom && messages.length > 0}
