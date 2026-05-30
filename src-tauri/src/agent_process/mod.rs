@@ -28,7 +28,7 @@ mod sidecar;
 mod spawn;
 
 pub(crate) use process::{
-    AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, ensure_global_agent, retire_agent_key,
-    route_payload_key, write_agent_payload,
+    AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, ensure_global_agent,
+    retire_agent_key, route_payload_key, write_agent_payload,
 };
 pub(crate) use sidecar::project_root;

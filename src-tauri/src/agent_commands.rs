@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+use std::process::Child;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 use tauri::{AppHandle, Emitter, State};
 
 use crate::agent_process::{
-    AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, ensure_global_agent, retire_agent_key,
-    route_payload_key, write_agent_payload,
+    AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, ensure_global_agent,
+    retire_agent_key, route_payload_key, write_agent_payload,
 };
 
 #[tauri::command]
@@ -135,6 +140,85 @@ pub(crate) fn dispatch_a2ui_event(
     write_agent_payload(&state, &app, key, payload, worker)
 }
 
+/// Read-only per-worker diagnostic row. Maps a live `aethon-agent` PID back to
+/// its key / tab / cwd plus idle + prompt state, so a release build (no debug
+/// webview hooks) can answer "which agent is hot and why" (#159 acceptance
+/// criterion). All timing is relative ("ms ago") from monotonic clocks.
+#[derive(serde::Serialize)]
+pub(crate) struct AgentDiagnostic {
+    pub(crate) key: String,
+    pub(crate) tab_id: Option<String>,
+    pub(crate) cwd: Option<String>,
+    pub(crate) pid: u32,
+    pub(crate) alive: bool,
+    pub(crate) spawned_ms_ago: u128,
+    pub(crate) last_activity_ms_ago: u128,
+    pub(crate) prompt_in_flight: bool,
+    pub(crate) session_label: String,
+}
+
+/// Human-friendly label for a worker: "global" for the shared agent, otherwise
+/// the cwd basename (project/worktree name) falling back to the tab id.
+fn session_label_for(key: &str, meta: &WorkerMeta) -> String {
+    if key == GLOBAL_AGENT_KEY {
+        return "global".to_string();
+    }
+    if let Some(cwd) = meta.cwd.as_deref()
+        && let Some(name) = cwd.rsplit(['/', '\\']).find(|s| !s.is_empty())
+    {
+        return name.to_string();
+    }
+    meta.tab_id
+        .clone()
+        .unwrap_or_else(|| key.trim_start_matches("tab:").to_string())
+}
+
+#[tauri::command]
+pub(crate) fn agent_diagnostics(
+    state: State<'_, AgentProcesses>,
+) -> Result<Vec<AgentDiagnostic>, String> {
+    // Snapshot child handles, then release the `children` lock before probing
+    // liveness so we never hold it across a per-child `try_wait`.
+    let children: Vec<(String, Arc<Mutex<Child>>)> = {
+        let guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard
+            .iter()
+            .map(|(k, c)| (k.clone(), Arc::clone(c)))
+            .collect()
+    };
+    let alive: HashMap<String, bool> = children
+        .into_iter()
+        .map(|(k, child)| {
+            let running = child
+                .lock()
+                .ok()
+                .and_then(|mut c| c.try_wait().ok())
+                .map(|exit| exit.is_none())
+                .unwrap_or(false);
+            (k, running)
+        })
+        .collect();
+
+    let now = Instant::now();
+    let map = state.meta.lock().map_err(|e| e.to_string())?;
+    let mut rows: Vec<AgentDiagnostic> = map
+        .iter()
+        .map(|(key, m)| AgentDiagnostic {
+            key: key.clone(),
+            tab_id: m.tab_id.clone(),
+            cwd: m.cwd.clone(),
+            pid: m.pid,
+            alive: alive.get(key).copied().unwrap_or(false),
+            spawned_ms_ago: now.duration_since(m.spawned_at).as_millis(),
+            last_activity_ms_ago: now.duration_since(m.last_activity).as_millis(),
+            prompt_in_flight: m.prompt_in_flight,
+            session_label: session_label_for(key, m),
+        })
+        .collect();
+    rows.sort_by(|a, b| a.key.cmp(&b.key));
+    Ok(rows)
+}
+
 fn worker_for_payload(
     key: &str,
     payload: &serde_json::Value,
@@ -159,7 +243,44 @@ fn worker_for_payload(
 
 #[cfg(test)]
 mod tests {
-    use super::worker_for_payload;
+    use super::{GLOBAL_AGENT_KEY, WorkerMeta, session_label_for, worker_for_payload};
+    use std::time::Instant;
+
+    fn meta(tab_id: Option<&str>, cwd: Option<&str>) -> WorkerMeta {
+        let now = Instant::now();
+        WorkerMeta {
+            tab_id: tab_id.map(str::to_string),
+            cwd: cwd.map(str::to_string),
+            pid: 1,
+            spawned_at: now,
+            last_activity: now,
+            prompt_in_flight: false,
+        }
+    }
+
+    #[test]
+    fn session_label_uses_global_cwd_basename_then_tab() {
+        assert_eq!(
+            session_label_for(GLOBAL_AGENT_KEY, &meta(None, None)),
+            "global"
+        );
+        assert_eq!(
+            session_label_for(
+                "tab:abc",
+                &meta(Some("abc"), Some("/Users/x/Projects/aethon/"))
+            ),
+            "aethon",
+        );
+        assert_eq!(
+            session_label_for("tab:abc", &meta(Some("abc"), None)),
+            "abc"
+        );
+    }
+
+    #[test]
+    fn session_label_falls_back_to_key_without_tab() {
+        assert_eq!(session_label_for("tab:xyz", &meta(None, None)), "xyz");
+    }
 
     #[test]
     fn worker_context_carries_tab_and_optional_cwd() {

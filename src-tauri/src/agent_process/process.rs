@@ -15,6 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use tauri::{AppHandle, State};
 
@@ -22,10 +23,24 @@ use super::spawn::ensure_agent_spawned;
 
 pub(crate) const GLOBAL_AGENT_KEY: &str = "__global__";
 
+/// Per-worker diagnostic metadata, keyed alongside `children`. Lets a
+/// release-safe `agent_diagnostics` command map a live `aethon-agent` PID back
+/// to its key / tab / cwd and report idle + prompt state (#159). `Instant`s are
+/// monotonic and reported as "ms ago" so no wall-clock serialization is needed.
+pub(crate) struct WorkerMeta {
+    pub(crate) tab_id: Option<String>,
+    pub(crate) cwd: Option<String>,
+    pub(crate) pid: u32,
+    pub(crate) spawned_at: Instant,
+    pub(crate) last_activity: Instant,
+    pub(crate) prompt_in_flight: bool,
+}
+
 pub(crate) struct AgentProcesses {
     pub(crate) children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
     pub(crate) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) intentional_exits: Arc<Mutex<HashSet<String>>>,
+    pub(crate) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
 }
 
 impl AgentProcesses {
@@ -34,6 +49,34 @@ impl AgentProcesses {
             children: Mutex::new(HashMap::new()),
             mutation_routes: Arc::new(Mutex::new(HashMap::new())),
             intentional_exits: Arc::new(Mutex::new(HashSet::new())),
+            meta: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+/// Outbound message types that begin an agent turn — used to flip
+/// `prompt_in_flight` true the instant we forward a prompt, before the bridge
+/// echoes `prompt_started`. Idle-retirement (Phase 5) keys off this flag.
+pub(crate) fn payload_starts_prompt(payload: &serde_json::Value) -> bool {
+    matches!(
+        payload.get("type").and_then(|v| v.as_str()),
+        Some("chat" | "local_chat_message" | "native_slash_command")
+    )
+}
+
+/// Record activity against a worker key: bump `last_activity` and, when given,
+/// set `prompt_in_flight`. No-op if the key has no meta entry yet.
+pub(crate) fn touch_worker_activity(
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    key: &str,
+    prompt_in_flight: Option<bool>,
+) {
+    if let Ok(mut map) = meta.lock()
+        && let Some(entry) = map.get_mut(key)
+    {
+        entry.last_activity = Instant::now();
+        if let Some(flag) = prompt_in_flight {
+            entry.prompt_in_flight = flag;
         }
     }
 }
@@ -62,16 +105,25 @@ pub(crate) fn write_agent_payload(
             app,
             Arc::clone(&state.mutation_routes),
             Arc::clone(&state.intentional_exits),
+            Arc::clone(&state.meta),
             worker,
         )?;
         guard.get(&key).cloned().ok_or("agent not running")?
     };
 
-    let mut child = child.lock().map_err(|e| e.to_string())?;
-    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-    use std::io::Write;
-    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
-    stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+    let prompt_flag = payload_starts_prompt(&payload).then_some(true);
+
+    {
+        let mut child = child.lock().map_err(|e| e.to_string())?;
+        let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+        use std::io::Write;
+        writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
+        stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+    }
+
+    // Inbound traffic counts as activity; a forwarded prompt also marks the
+    // worker busy so the idle sweep won't retire it mid-turn.
+    touch_worker_activity(&state.meta, &key, prompt_flag);
     Ok(())
 }
 
@@ -86,6 +138,7 @@ pub(crate) fn ensure_global_agent(
         app,
         Arc::clone(&state.mutation_routes),
         Arc::clone(&state.intentional_exits),
+        Arc::clone(&state.meta),
         None,
     )
 }
@@ -95,6 +148,9 @@ pub(crate) fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> 
         let mut guard = state.children.lock().map_err(|e| e.to_string())?;
         guard.remove(key)
     };
+    if let Ok(mut map) = state.meta.lock() {
+        map.remove(key);
+    }
     let Some(child) = child else {
         return Ok(());
     };
@@ -145,7 +201,11 @@ pub(crate) fn route_payload_key(
 
 #[cfg(test)]
 mod tests {
-    use super::{GLOBAL_AGENT_KEY, tab_agent_key};
+    use super::{
+        Arc, GLOBAL_AGENT_KEY, HashMap, Instant, Mutex, WorkerMeta, payload_starts_prompt,
+        tab_agent_key, touch_worker_activity,
+    };
+    use std::time::Duration;
 
     #[test]
     fn global_agent_key_is_stable() {
@@ -155,5 +215,65 @@ mod tests {
     #[test]
     fn tab_agent_key_keeps_tab_prefix() {
         assert_eq!(tab_agent_key("abc"), "tab:abc");
+    }
+
+    #[test]
+    fn prompt_starting_types_are_recognized() {
+        for ty in ["chat", "local_chat_message", "native_slash_command"] {
+            assert!(payload_starts_prompt(&serde_json::json!({ "type": ty })));
+        }
+        for ty in ["a2ui_event", "set_model", "tab_open", "report"] {
+            assert!(!payload_starts_prompt(&serde_json::json!({ "type": ty })));
+        }
+    }
+
+    fn meta_with_stale_entry(key: &str) -> Arc<Mutex<HashMap<String, WorkerMeta>>> {
+        let stale = Instant::now()
+            .checked_sub(Duration::from_secs(30))
+            .expect("instant in range");
+        let mut map = HashMap::new();
+        map.insert(
+            key.to_string(),
+            WorkerMeta {
+                tab_id: Some("t".into()),
+                cwd: None,
+                pid: 1,
+                spawned_at: stale,
+                last_activity: stale,
+                prompt_in_flight: true,
+            },
+        );
+        Arc::new(Mutex::new(map))
+    }
+
+    #[test]
+    fn touch_bumps_activity_and_sets_prompt_flag() {
+        let meta = meta_with_stale_entry("tab:x");
+        let before = meta.lock().unwrap().get("tab:x").unwrap().last_activity;
+
+        touch_worker_activity(&meta, "tab:x", Some(false));
+
+        let entry_guard = meta.lock().unwrap();
+        let entry = entry_guard.get("tab:x").unwrap();
+        assert!(entry.last_activity > before, "last_activity should advance");
+        assert!(
+            !entry.prompt_in_flight,
+            "flag should clear when Some(false)"
+        );
+    }
+
+    #[test]
+    fn touch_without_flag_leaves_prompt_state() {
+        let meta = meta_with_stale_entry("tab:x");
+        touch_worker_activity(&meta, "tab:x", None);
+        assert!(meta.lock().unwrap().get("tab:x").unwrap().prompt_in_flight);
+    }
+
+    #[test]
+    fn touch_unknown_key_is_a_noop() {
+        let meta = meta_with_stale_entry("tab:x");
+        touch_worker_activity(&meta, "tab:missing", Some(false));
+        // Existing entry untouched, no panic for the missing key.
+        assert!(meta.lock().unwrap().get("tab:x").unwrap().prompt_in_flight);
     }
 }
