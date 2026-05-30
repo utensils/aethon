@@ -4,7 +4,20 @@ import type { Tab } from "../types/tab";
 import type { TabBucket } from "./projectOps/types";
 
 function tab(id: string, kind: Tab["kind"]): Tab {
-  return { id, kind, label: id, messages: [] } as Tab;
+  return {
+    id,
+    kind,
+    label: id,
+    messages: [],
+    draft: "",
+    waiting: false,
+    queueCount: 0,
+    queuedMessages: [],
+    canvas: null,
+    model: "",
+    terminalBuffer: "",
+    projectId: null,
+  };
 }
 
 function bucket(tabs: Tab[]): TabBucket {
