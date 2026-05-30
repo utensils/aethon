@@ -2762,12 +2762,16 @@ body.ae-resizing-sidebar .a2ui-layout {
   overflow-y: auto;
 }
 
-/* Per-row wrapper inside Virtuoso's measured item. `flow-root` contains the
-   row's vertical margins (role-change spacing) so they're included in the
-   measured height — otherwise they escape and Virtuoso's offsets drift in long
-   transcripts. Replaces the old flex-container `gap`. */
+/* Per-row wrapper inside Virtuoso's measured item. A flex column does two
+   jobs: (1) flex items' vertical margins are contained in the measured height
+   (no margin-collapse escaping the wrapper), so Virtuoso's offsets stay
+   accurate in long transcripts; (2) it re-establishes the flex context the
+   rows' `align-self` rules need (user bubbles right-aligned, system centered,
+   agent stretched) now that rows are no longer direct children of the
+   scroll column. Replaces the old flex-container `gap`. */
 .a2ui-msg-row {
-  display: flow-root;
+  display: flex;
+  flex-direction: column;
 }
 
 .a2ui-chat-load-older {

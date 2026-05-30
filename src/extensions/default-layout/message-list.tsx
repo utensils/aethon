@@ -368,6 +368,13 @@ function VirtualMessageList({
     ? { context: footerContext, components: { Footer: CanvasFooter } }
     : {};
 
+  // The canvas can be scrollable with zero messages (a live subtree / typing
+  // indicator in the Footer), so the pill must consider footer content too.
+  const hasFooterContent = Boolean(
+    footerContext && (footerContext.liveSubtree || footerContext.showTyping),
+  );
+  const hasContent = messages.length > 0 || hasFooterContent;
+
   return (
     <div className="a2ui-msg-list-shell">
       <Virtuoso
@@ -395,13 +402,12 @@ function VirtualMessageList({
         {...footerProps}
       />
       <ScrollToBottomPill
-        visible={!isAtBottom && messages.length > 0}
+        visible={!isAtBottom && hasContent}
         onClick={() =>
-          virtuosoRef.current?.scrollToIndex({
-            index: messages.length - 1,
-            align: "end",
-            behavior: "auto",
-          })
+          // Scroll to the true bottom of the scroller, which includes the
+          // Footer (live subtree / typing indicator) — scrollToIndex(last)
+          // would stop at the last message, above a footer-only response.
+          virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER })
         }
       />
     </div>
