@@ -166,10 +166,15 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
     .evaluate((el) => ({ overflowX: getComputedStyle(el).overflowX }));
   expect(scrollerMetrics.overflowX).toBe("hidden");
 
-  const codeMetrics = await page.locator(".a2ui-code").last().evaluate((el) => ({
-    clientWidth: el.clientWidth,
-    scrollWidth: el.scrollWidth,
-  }));
+  await page.locator(".ae-tool-card-summary").click();
+  await expect(page.locator(".ae-tool-card[open] .a2ui-code")).toBeVisible();
+
+  const codeMetrics = await page
+    .locator(".ae-tool-card[open] .a2ui-code")
+    .evaluate((el) => ({
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    }));
   expect(codeMetrics.scrollWidth).toBeGreaterThan(codeMetrics.clientWidth);
 });
 
