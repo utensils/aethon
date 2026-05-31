@@ -22,7 +22,12 @@
  * barrel resolves their imports to the directory's index.
  */
 
-export type { RestoredChatMessage, SessionLogMetadata } from "./shared";
+export type {
+  RestoredChatAttachment,
+  RestoredChatMessage,
+  SessionLogMetadata,
+} from "./shared";
+export { parseChatAttachments } from "./shared";
 export { parseSessionHistoryLines } from "./parse-pi";
 export {
   appendLocalChatMessage,

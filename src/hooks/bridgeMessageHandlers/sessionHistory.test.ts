@@ -26,6 +26,91 @@ describe("handleSessionHistory", () => {
     expect(mocks.syncRecentSessionsToState).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps restored image attachments on user messages", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "image-user",
+            role: "user",
+            text: "what is this?",
+            attachments: [
+              {
+                id: "img-1",
+                kind: "image",
+                path: "/tmp/aethon-pastes/one.png",
+                name: "one.png",
+                mimeType: "image/png",
+                sizeBytes: 12,
+              },
+            ],
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("tab-1", "Tab 1"));
+    expect(out.messages).toEqual([
+      {
+        id: "image-user",
+        role: "user",
+        text: "what is this?",
+        attachments: [
+          {
+            id: "img-1",
+            kind: "image",
+            path: "/tmp/aethon-pastes/one.png",
+            name: "one.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("restores image-only messages", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "image-only",
+            role: "user",
+            attachments: [
+              {
+                id: "img-1",
+                kind: "image",
+                path: "/tmp/aethon-pastes/one.png",
+                name: "one.png",
+                mimeType: "image/png",
+                sizeBytes: 12,
+              },
+            ],
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("tab-1", "Tab 1"));
+    expect(out.messages[0]).toMatchObject({
+      id: "image-only",
+      role: "user",
+      attachments: [
+        expect.objectContaining({
+          path: "/tmp/aethon-pastes/one.png",
+        }),
+      ],
+    });
+  });
+
   it("uses discovered custom session labels for restored chat tabs", () => {
     const { ctx, mocks } = buildHandlerFixture();
     ctx.allDiscoveredSessionsRef.current = [

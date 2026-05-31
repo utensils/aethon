@@ -18,8 +18,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import type { ChatAttachment } from "../../../types/a2ui";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
+import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
+import { ImageAttachmentImage } from "../image-attachment-image";
+import { ImageLightbox } from "../image-lightbox";
 
 interface ProjectLite {
   id: string;
@@ -47,10 +51,13 @@ interface LauncherData {
 }
 
 function isRef(v: unknown): v is { $ref: string } {
-  return typeof v === "object" && v !== null && "$ref" in (v);
+  return typeof v === "object" && v !== null && "$ref" in v;
 }
 
-function resolveOrInline<T>(v: unknown, state: Record<string, unknown>): T | null {
+function resolveOrInline<T>(
+  v: unknown,
+  state: Record<string, unknown>,
+): T | null {
   if (!v) return null;
   if (isRef(v)) {
     const r = resolvePointer(state, v.$ref);
@@ -63,6 +70,12 @@ type WorktreeChoice =
   | { kind: "current" }
   | { kind: "existing"; id: string; path: string; label: string }
   | { kind: "new" };
+
+const codeInputProps = {
+  autoCapitalize: "none",
+  autoCorrect: "off",
+  spellCheck: false,
+} as const;
 
 export function TaskLauncher({
   component,
@@ -85,8 +98,7 @@ export function TaskLauncher({
       project: resolveOrInline<ProjectLite>(props?.project, state),
       otherProjects:
         resolveOrInline<ProjectLite[]>(props?.otherProjects, state) ?? [],
-      worktrees:
-        resolveOrInline<WorktreeLite[]>(props?.worktrees, state) ?? [],
+      worktrees: resolveOrInline<WorktreeLite[]>(props?.worktrees, state) ?? [],
       activeWorktreeId:
         resolveOrInline<string>(props?.activeWorktreeId, state) ?? null,
     }),
@@ -105,6 +117,10 @@ export function TaskLauncher({
   );
 
   const [promptText, setPromptText] = useState(initialPrompt);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [openAttachment, setOpenAttachment] = useState<ChatAttachment | null>(
+    null,
+  );
   // Seed worktree selection from the project's currently-active
   // worktree so the chip shows what the user has switched to in the
   // sidebar, not just "project root". Falls back to "current" (project
@@ -128,7 +144,8 @@ export function TaskLauncher({
   // implies intent, so don't yank their selection out from under them.
   const [touched, setTouched] = useState(false);
   useEffect(() => {
-    if (!touched) setWorktreeChoice(initialChoice);
+    if (touched) return;
+    queueMicrotask(() => setWorktreeChoice(initialChoice));
   }, [initialChoice, touched]);
   const [newBranch, setNewBranch] = useState("");
   const defaultBaseBranch =
@@ -150,17 +167,16 @@ export function TaskLauncher({
   const submit = useCallback(() => {
     if (submitting) return;
     const text = promptText.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
     if (!data.project) return;
-    if (worktreeChoice.kind === "new" && !newBranch.trim()) return;
     setSubmitting(true);
     const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
       projectId: data.project.id,
       prompt: text,
+      attachments,
       newWorktree: worktreeChoice.kind === "new",
-      branch:
-        worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
+      branch: worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
       baseBranch:
         worktreeChoice.kind === "new" && baseTrimmed.length > 0
           ? baseTrimmed
@@ -174,11 +190,13 @@ export function TaskLauncher({
     // will surface the error via the notification stack. Reset `touched`
     // so a fresh dashboard visit re-syncs to the active worktree.
     setPromptText("");
+    setAttachments([]);
     setTouched(false);
     setSubmitting(false);
   }, [
     submitting,
     promptText,
+    attachments,
     data.project,
     worktreeChoice,
     newBranch,
@@ -196,14 +214,38 @@ export function TaskLauncher({
     }
   };
 
+  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = event.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length === 0) return;
+    event.preventDefault();
+    void Promise.all(files.map((file) => saveClipboardImageAttachment(file)))
+      .then((saved) => setAttachments((current) => [...current, ...saved]))
+      .catch((err) => {
+        console.warn("task-launcher paste image failed:", err);
+        onEvent("paste-image-failed", {
+          message:
+            err instanceof Error ? err.message : "Could not paste image.",
+        });
+      });
+  };
+
   if (!data.project) return null;
 
   const worktreeLabel =
     worktreeChoice.kind === "current"
       ? "project root"
       : worktreeChoice.kind === "existing"
-      ? worktreeChoice.label
-      : "+ New worktree";
+        ? worktreeChoice.label
+        : "+ New worktree";
 
   return (
     <div className="a2ui-task-launcher">
@@ -219,10 +261,49 @@ export function TaskLauncher({
           setPromptText(e.target.value);
           setTouched(true);
         }}
+        onPaste={onPaste}
         onKeyDown={onKey}
         disabled={submitting}
         aria-label="Task prompt"
       />
+      {attachments.length > 0 && (
+        <div className="a2ui-task-launcher-attachments">
+          {attachments.map((attachment) => (
+            <figure
+              className="a2ui-task-launcher-attachment"
+              key={attachment.id}
+            >
+              <button
+                type="button"
+                className="a2ui-task-launcher-attachment-thumb"
+                aria-label={`Open ${attachment.name}`}
+                onClick={() => setOpenAttachment(attachment)}
+              >
+                <ImageAttachmentImage attachment={attachment} alt="" />
+              </button>
+              <figcaption title={attachment.name}>{attachment.name}</figcaption>
+              <button
+                type="button"
+                className="a2ui-task-launcher-attachment-remove"
+                aria-label={`Remove ${attachment.name}`}
+                onClick={() =>
+                  setAttachments((current) =>
+                    current.filter((item) => item.id !== attachment.id),
+                  )
+                }
+              >
+                ×
+              </button>
+            </figure>
+          ))}
+        </div>
+      )}
+      {openAttachment && (
+        <ImageLightbox
+          attachment={openAttachment}
+          onClose={() => setOpenAttachment(null)}
+        />
+      )}
       <div className="a2ui-task-launcher-row">
         <ChipMenu
           label={data.project.label}
@@ -289,6 +370,7 @@ export function TaskLauncher({
               value={newBranch}
               onChange={(e) => setNewBranch(e.target.value)}
               aria-label="New branch name"
+              {...codeInputProps}
             />
             <input
               type="text"
@@ -298,6 +380,7 @@ export function TaskLauncher({
               onChange={(e) => setBaseBranch(e.target.value)}
               aria-label="Base branch (empty = project default)"
               title="Base branch to fork from. Leave empty to use the project default."
+              {...codeInputProps}
             />
           </>
         )}
@@ -306,9 +389,7 @@ export function TaskLauncher({
           className="a2ui-task-launcher-submit"
           onClick={submit}
           disabled={
-            submitting ||
-            !promptText.trim() ||
-            (worktreeChoice.kind === "new" && !newBranch.trim())
+            submitting || (!promptText.trim() && attachments.length === 0)
           }
         >
           {submitting ? "…" : "Start"}

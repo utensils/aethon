@@ -7,16 +7,23 @@ import type { A2UIComponent } from "../../../types/a2ui";
 import { ExtensionRegistry } from "../../ExtensionRegistry";
 import { ExtensionRegistryProvider } from "../../ExtensionRegistryProvider";
 
-vi.mock("../../../ghRepoOverviewCache", () => ({
-  getRepoOverview: vi.fn(
-    () =>
+const { refreshRepoOverview } = vi.hoisted(() => ({
+  refreshRepoOverview: vi.fn(
+    (_projectPath: string) =>
       new Promise(() => {
         /* keep dashboard overview pending */
       }),
   ),
 }));
 
-afterEach(() => cleanup());
+vi.mock("../../../ghRepoOverviewCache", () => ({
+  refreshRepoOverview: (projectPath: string) => refreshRepoOverview(projectPath),
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function dashboard(props: Record<string, unknown>): A2UIComponent {
   return {
@@ -69,6 +76,12 @@ function renderDashboard(
 }
 
 describe("ProjectDashboard project icon", () => {
+  it("force-refreshes repo overview when the project dashboard loads", () => {
+    renderDashboard();
+
+    expect(refreshRepoOverview).toHaveBeenCalledWith("/repo");
+  });
+
   it("uses the discovered project icon in the hero when one is available", () => {
     const { container } = renderDashboard(vi.fn(), {
       id: "p1",

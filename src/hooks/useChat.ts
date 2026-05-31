@@ -5,7 +5,7 @@ import {
   type SetStateAction,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ChatMessage } from "../types/a2ui";
+import type { ChatAttachment, ChatMessage } from "../types/a2ui";
 import type { QueuedMessage, Tab } from "../types/tab";
 import {
   parseSlashCommand,
@@ -72,7 +72,11 @@ export interface UseChatActions {
   clearChat: () => void;
   sendChat: (
     text: string,
-    options?: { mode?: "normal" | "steer"; tabId?: string },
+    options?: {
+      mode?: "normal" | "steer";
+      tabId?: string;
+      attachments?: ChatAttachment[];
+    },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
@@ -266,10 +270,15 @@ export function useChat(ctx: UseChatContext): UseChatActions {
 
   async function sendChat(
     text: string,
-    options?: { mode?: "normal" | "steer"; tabId?: string },
+    options?: {
+      mode?: "normal" | "steer";
+      tabId?: string;
+      attachments?: ChatAttachment[];
+    },
   ) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    const attachments = options?.attachments ?? [];
+    if (!trimmed && attachments.length === 0) return;
 
     const activeTabId = stateRef.current.activeTabId as string | undefined;
     const explicitTabId = options?.tabId;
@@ -299,7 +308,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         // draft still holds the slash text and any subsequent mirror
         // (clearChat, theme switch, …) writes it back into root.draft,
         // making the input "stick".
-        updateActiveTab((tab) => ({ ...tab, draft: "" }));
+        updateActiveTab((tab) => ({
+          ...tab,
+          draft: "",
+          draftAttachments: [],
+        }));
         try {
           await cmd.run(parsed.args, slashContext());
         } catch (err) {
@@ -313,6 +326,12 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
+    const bridgeText =
+      sendText.length > 0
+        ? sendText
+        : attachments.length === 1
+          ? "Please inspect the attached image."
+          : "Please inspect the attached images.";
     const mode = options?.mode === "steer" ? "steer" : "normal";
     const tabId = explicitTabId ?? activeTabId ?? "default";
     const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
@@ -338,13 +357,18 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     ) {
       const entry: QueuedMessage = {
         id: crypto.randomUUID(),
-        content: sendText,
+        content: bridgeText,
+        attachments,
       };
       updateTab(tabId, (tab) => withQueue(tab, [...queueOf(tab), entry]));
       // Clear the draft on the originating tab so the textarea empties
       // even though we didn't ship the message. Mirrors the normal-send
       // behavior below.
-      updateTab(tabId, (tab) => ({ ...tab, draft: "" }));
+      updateTab(tabId, (tab) => ({
+        ...tab,
+        draft: "",
+        draftAttachments: [],
+      }));
       return;
     }
 
@@ -354,11 +378,17 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const userMessage = {
       id: userMessageId,
       role: "user" as const,
-      text: sendText,
+      text: bridgeText,
+      ...(attachments.length > 0 ? { attachments } : {}),
       delivery,
     };
     appendMessage(userMessage, tabId);
-    updateTab(tabId, (tab) => ({ ...tab, draft: "", waiting: true }));
+    updateTab(tabId, (tab) => ({
+      ...tab,
+      draft: "",
+      draftAttachments: [],
+      waiting: true,
+    }));
     setState((prev) =>
       prev.activeTabId === tabId
         ? {
@@ -395,11 +425,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           : undefined;
     try {
       await invoke("send_message", {
-        message: sendText,
-        tabId,
-        mode,
-        ...(targetCwd ? { cwd: targetCwd } : {}),
-        ...(targetModel ? { model: targetModel } : {}),
+        request: {
+          message: bridgeText,
+          tabId,
+          mode,
+          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(targetCwd ? { cwd: targetCwd } : {}),
+          ...(targetModel ? { model: targetModel } : {}),
+        },
       });
     } catch (err) {
       updateTab(tabId, (tab) => ({
@@ -585,7 +618,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       queuedSteeringId: messageId,
     }));
     try {
-      await sendChat(entry.content, { mode: "steer", tabId });
+      await sendChat(entry.content, {
+        mode: "steer",
+        tabId,
+        attachments: entry.attachments,
+      });
     } finally {
       updateTab(tabId, (t) =>
         t.queuedSteeringId === messageId

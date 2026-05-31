@@ -130,6 +130,13 @@ pub async fn git_worktree_add(
     if !dir.is_dir() {
         return Err(format!("not a directory: {project_path}"));
     }
+    let target = PathBuf::from(&target_path);
+    if let Some(parent) = target.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create worktree parent {}: {e}", parent.display()))?;
+    }
     // Detect whether the branch exists so we know whether to pass `-b`.
     let exists = env::command("git")
         .arg("-C")
@@ -455,6 +462,31 @@ mod tests {
             .expect("worktree remove");
         let after = git_worktrees(project_path).await.expect("list after");
         assert_eq!(after.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn add_worktree_creates_missing_parent_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = parent.path().join("aethon").join("feature-y");
+        assert!(!target.parent().expect("target parent").exists());
+
+        let wt = git_worktree_add(
+            project_path.clone(),
+            target.to_string_lossy().to_string(),
+            "feature-y".to_string(),
+            None,
+        )
+        .await
+        .expect("worktree add");
+
+        assert_eq!(wt.branch.as_deref(), Some("feature-y"));
+        assert!(target.exists());
+        git_worktree_remove(project_path, target.to_string_lossy().to_string(), false)
+            .await
+            .expect("worktree remove");
     }
 
     #[tokio::test]

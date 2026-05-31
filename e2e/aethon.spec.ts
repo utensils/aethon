@@ -21,6 +21,11 @@ type ActiveTurnState = {
   status?: string;
 };
 
+type InvokeCall = {
+  cmd: string;
+  args: Record<string, unknown>;
+};
+
 function isTransientNavigationError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -67,6 +72,16 @@ async function completeActiveTurn(page: Page): Promise<void> {
   });
 }
 
+function sendMessageRequests(calls: InvokeCall[]): Record<string, unknown>[] {
+  return calls
+    .filter((c) => c.cmd === "send_message")
+    .map((c) =>
+      c.args.request && typeof c.args.request === "object"
+        ? (c.args.request as Record<string, unknown>)
+        : c.args,
+    );
+}
+
 test.beforeEach(async ({ page }) => {
   await installAethonHarness(page);
 });
@@ -74,8 +89,12 @@ test.beforeEach(async ({ page }) => {
 test("boots the real app shell through mocked Tauri IPC", async ({ page }) => {
   await waitForAethonReady(page);
 
-  await expect(page.getByRole("tab", { name: "Back to overview" })).toBeVisible();
-  await expect(page.locator(".a2ui-tab:not(.a2ui-tab-overview)")).toHaveCount(0);
+  await expect(
+    page.getByRole("tab", { name: "Back to overview" }),
+  ).toBeVisible();
+  await expect(page.locator(".a2ui-tab:not(.a2ui-tab-overview)")).toHaveCount(
+    0,
+  );
   await expect(page.getByRole("heading", { name: "aethon" })).toBeVisible();
   await expect(page.locator(".ae-file-tree")).toContainText("package.json");
 
@@ -205,8 +224,12 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await expect(page.locator(".a2ui-tab-active")).toContainText("+1");
   await expect(page.locator(".a2ui-queued-popover")).toBeVisible();
   await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);
-  await expect(page.locator(".a2ui-queued-content")).toHaveText("queued prompt");
-  await expect(page.getByRole("button", { name: "Stop + clear" })).toBeVisible();
+  await expect(page.locator(".a2ui-queued-content")).toHaveText(
+    "queued prompt",
+  );
+  await expect(
+    page.getByRole("button", { name: "Stop + clear" }),
+  ).toBeVisible();
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
@@ -256,8 +279,7 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await expect(page.getByText("Enter queues")).toHaveCount(0);
 
   const calls = await getInvokeCalls(page);
-  const sends = calls.filter((c) => c.cmd === "send_message");
-  expect(sends.map((c) => c.args)).toEqual(
+  expect(sendMessageRequests(calls)).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ message: "first prompt", mode: "normal" }),
       expect.objectContaining({ message: "queued prompt", mode: "normal" }),
@@ -288,7 +310,9 @@ test("steers Command-Enter into the running turn without queuing it", async ({
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveCount(0);
   await expect(page.locator(".a2ui-tab-active")).not.toContainText("+1");
-  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
+  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText(
+    "steered",
+  );
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
@@ -309,8 +333,7 @@ test("steers Command-Enter into the running turn without queuing it", async ({
     model: DEFAULT_MODEL,
   });
 
-  const sends = calls.filter((c) => c.cmd === "send_message");
-  expect(sends.map((c) => c.args)).toEqual(
+  expect(sendMessageRequests(calls)).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ message: "first prompt", mode: "normal" }),
       expect.objectContaining({ message: "steer now", mode: "steer" }),
@@ -341,8 +364,7 @@ test("retries failed user sends from the transcript", async ({ page }) => {
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: false, queueCount: 0, status: "ready" });
 
-  const sends = (await getInvokeCalls(page)).filter((c) => c.cmd === "send_message");
-  expect(sends.map((c) => c.args)).toEqual([
+  expect(sendMessageRequests(await getInvokeCalls(page))).toEqual([
     expect.objectContaining({ message: "retry me", mode: "normal" }),
     expect.objectContaining({ message: "retry me", mode: "normal" }),
   ]);
@@ -371,8 +393,12 @@ test("steering during an existing follow-up queue preserves the queued turn", as
   // queued message in the popover untouched.
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
   await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);
-  await expect(page.locator(".a2ui-queued-content")).toHaveText("queued prompt");
-  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
+  await expect(page.locator(".a2ui-queued-content")).toHaveText(
+    "queued prompt",
+  );
+  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText(
+    "steered",
+  );
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 1, status: "thinking…" });
@@ -381,7 +407,9 @@ test("steering during an existing follow-up queue preserves the queued turn", as
   // as historical record of the mid-turn interjection.
   await completeActiveTurn(page);
   await expect(page.locator(".a2ui-queued-popover")).toHaveCount(0);
-  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText("steered");
+  await expect(page.locator(".a2ui-chat-delivery-steered")).toHaveText(
+    "steered",
+  );
   await expect
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: true, queueCount: 0, status: "thinking…" });
@@ -391,8 +419,7 @@ test("steering during an existing follow-up queue preserves the queued turn", as
     .poll(() => getActiveTurnState(page))
     .toEqual({ waiting: false, queueCount: 0, status: "ready" });
 
-  const sends = (await getInvokeCalls(page)).filter((c) => c.cmd === "send_message");
-  expect(sends.map((c) => c.args)).toEqual([
+  expect(sendMessageRequests(await getInvokeCalls(page))).toEqual([
     expect.objectContaining({ message: "first prompt", mode: "normal" }),
     expect.objectContaining({ message: "steer current turn", mode: "steer" }),
     expect.objectContaining({ message: "queued prompt", mode: "normal" }),
@@ -425,8 +452,13 @@ test("switches models through the real picker path and keeps active state aligne
   await waitForAethonReady(page);
 
   await page.getByRole("button", { name: "New Tab" }).click();
-  await page.locator(".a2ui-dropdown-trigger").filter({ hasText: "GPT-5.5" }).click();
-  await page.getByRole("option", { name: /qwen3\.6:35b-a3b-coding-nvfp4/ }).click();
+  await page
+    .locator(".a2ui-dropdown-trigger")
+    .filter({ hasText: "GPT-5.5" })
+    .click();
+  await page
+    .getByRole("option", { name: /qwen3\.6:35b-a3b-coding-nvfp4/ })
+    .click();
 
   await expect
     .poll(() =>
@@ -434,8 +466,9 @@ test("switches models through the real picker path and keeps active state aligne
         const state = window.__AETHON_STATE__?.();
         return {
           model: state?.model,
-          active: state?.sidebar?.models?.find((m: { id: string }) => m.id === state?.model)
-            ?.active,
+          active: state?.sidebar?.models?.find(
+            (m: { id: string }) => m.id === state?.model,
+          )?.active,
         };
       }),
     )
@@ -447,21 +480,38 @@ test("refreshes visible file-tree folders after fs-tree-changed events", async (
 }) => {
   await waitForAethonReady(page);
 
-  await page.evaluate(({ root }) => {
-    window.__AETHON_E2E__?.setDir(root, root, [
-      { name: "agent", path: `${root}/agent`, kind: "dir", size: 0, modified: 1 },
-      { name: "src", path: `${root}/src`, kind: "dir", size: 0, modified: 1 },
-      { name: "package.json", path: `${root}/package.json`, kind: "file", size: 42, modified: 1 },
-      {
-        name: "z-e2e-created.txt",
-        path: `${root}/z-e2e-created.txt`,
-        kind: "file",
-        size: 42,
-        modified: 1,
-      },
-    ]);
-    window.__AETHON_E2E__?.emit("fs-tree-changed", { root, dirs: [root] });
-  }, { root: PROJECT_ROOT });
+  await page.evaluate(
+    ({ root }) => {
+      window.__AETHON_E2E__?.setDir(root, root, [
+        {
+          name: "agent",
+          path: `${root}/agent`,
+          kind: "dir",
+          size: 0,
+          modified: 1,
+        },
+        { name: "src", path: `${root}/src`, kind: "dir", size: 0, modified: 1 },
+        {
+          name: "package.json",
+          path: `${root}/package.json`,
+          kind: "file",
+          size: 42,
+          modified: 1,
+        },
+        {
+          name: "z-e2e-created.txt",
+          path: `${root}/z-e2e-created.txt`,
+          kind: "file",
+          size: 42,
+          modified: 1,
+        },
+      ]);
+      window.__AETHON_E2E__?.emit("fs-tree-changed", { root, dirs: [root] });
+    },
+    { root: PROJECT_ROOT },
+  );
 
-  await expect(page.locator(".ae-file-tree")).toContainText("z-e2e-created.txt");
+  await expect(page.locator(".ae-file-tree")).toContainText(
+    "z-e2e-created.txt",
+  );
 });

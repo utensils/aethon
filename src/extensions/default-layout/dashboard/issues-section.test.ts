@@ -12,16 +12,15 @@ import { IssuesSection } from "./issues-section";
 import { buildIssueBranch, buildIssuePrompt } from "./issue-task";
 import type { GhIssue } from "../../../ghIssuesCache";
 
-const { getIssues, getIssueDetail, openUrl } = vi.hoisted(() => ({
-  getIssues: vi.fn(),
+const { getIssueDetail, refreshIssues, openUrl } = vi.hoisted(() => ({
   getIssueDetail: vi.fn(),
+  refreshIssues: vi.fn(),
   openUrl: vi.fn(),
 }));
 
 vi.mock("../../../ghIssuesCache", () => ({
-  getIssues: (...args: unknown[]) => getIssues(...args),
   getIssueDetail: (...args: unknown[]) => getIssueDetail(...args),
-  refreshIssues: vi.fn(),
+  refreshIssues: (...args: unknown[]) => refreshIssues(...args),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -45,7 +44,7 @@ const issue: GhIssue = {
 };
 
 function renderIssues(onEvent = vi.fn()) {
-  getIssues.mockResolvedValue([issue]);
+  refreshIssues.mockResolvedValue([issue]);
   getIssueDetail.mockResolvedValue({
     ...issue,
     body: "Rename should stay available.",
@@ -206,6 +205,13 @@ describe("issues-section task helpers", () => {
 });
 
 describe("IssuesSection", () => {
+  it("force-refreshes issues on first visible load", async () => {
+    renderIssues();
+
+    await screen.findByText(issue.title);
+    expect(refreshIssues).toHaveBeenCalledWith("/repo/aethon", 30);
+  });
+
   it("sends the hover action to a fresh worktree by default", async () => {
     const { onEvent } = renderIssues();
 

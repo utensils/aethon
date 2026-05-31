@@ -123,7 +123,7 @@ export interface UseProjectOpsActions {
    *  surfaces the error in the sidebar). */
   createWorktreeWithParams: (opts: {
     projectId: string;
-    branch: string;
+    branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;

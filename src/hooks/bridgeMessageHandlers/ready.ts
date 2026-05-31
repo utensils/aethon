@@ -421,20 +421,16 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     }
     return next;
   });
-  // Re-establish bridge sessions for any non-default local tabs the
-  // user created before the agent reloaded. The bridge starts fresh
-  // each spawn — without this, prompts on those tabs would hit a tab
-  // the bridge has never seen and fail. After the session is open,
-  // also restore the tab's previously-selected model so the user
-  // doesn't silently send the next prompt to pi's default.
+  // Re-establish or replay bridge sessions for any non-default local
+  // tabs the webview restored. A right-click / Vite reload keeps the
+  // bridge process alive, so ready may already list the tab; still send
+  // tab_open with restoreHistory so the durable transcript can repair a
+  // stale UI snapshot (for example image attachment metadata) after the
+  // webview reconstructs React state.
   const localTabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
-  const bridgeTabIds = new Set(
-    ((data.tabs as { id: string }[] | undefined) ?? []).map((t) => t.id),
-  );
   for (const t of localTabs) {
     if ((t.kind ?? "agent") !== "agent") continue;
     if (t.id === "default") continue;
-    if (bridgeTabIds.has(t.id)) continue;
     // Pass `model` so the new bridge session boots with the same model
     // the user previously selected — no race window. Track in
     // pendingTabOpens so a fast first chat on the restored tab waits

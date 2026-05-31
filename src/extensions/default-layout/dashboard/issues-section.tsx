@@ -33,7 +33,6 @@ import { resolvePointer } from "../../../utils/jsonPointer";
 import {
   type GhIssue,
   getIssueDetail,
-  getIssues,
   refreshIssues,
 } from "../../../ghIssuesCache";
 import { formatRelativeTime } from "../../../utils/time";
@@ -171,7 +170,7 @@ export function IssuesSection({
     if (loadedFor === project.path) return;
     let cancelled = false;
     void (async () => {
-      const fetched = await getIssues(project.path, limit);
+      const fetched = await refreshIssues(project.path, limit);
       if (cancelled) return;
       setIssues(fetched);
       setLoadedFor(project.path);
@@ -310,6 +309,7 @@ export function IssuesSection({
               try {
                 const fresh = await refreshIssues(project.path, limit);
                 setIssues(fresh);
+                setLoadedFor(project.path);
               } finally {
                 setRefreshing(false);
               }

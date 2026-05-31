@@ -22,7 +22,9 @@ async function tempRoot(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 });
 
 describe("parseSessionHistoryLines", () => {
@@ -259,7 +261,10 @@ describe("readSessionTranscript", () => {
       `${JSON.stringify({
         type: "message",
         id: "new",
-        message: { role: "assistant", content: [{ type: "text", text: "new" }] },
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "new" }],
+        },
       })}\n`,
     );
     await utimes(oldPath, new Date(1_000), new Date(1_000));
@@ -302,6 +307,126 @@ describe("readSessionTranscript", () => {
         role: "system",
         text: "## Context",
         createdAt: 2,
+      },
+    ]);
+  });
+
+  it("restores local image attachments from the durable chat log", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "image-only",
+      role: "user",
+      attachments: [
+        {
+          id: "img-1",
+          kind: "image",
+          path: "/tmp/aethon-pastes/one.png",
+          name: "one.png",
+          mimeType: "image/png",
+          sizeBytes: 12,
+        },
+      ],
+      createdAt: 1,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "image-only",
+        role: "user",
+        attachments: [
+          {
+            id: "img-1",
+            kind: "image",
+            path: "/tmp/aethon-pastes/one.png",
+            name: "one.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+          },
+        ],
+        createdAt: 1,
+      },
+    ]);
+  });
+
+  it("drops non-durable preview URLs from local attachment history", async () => {
+    const dir = await tempRoot();
+    const attachmentWithPreview = {
+      id: "img-1",
+      kind: "image" as const,
+      path: "/tmp/aethon-pastes/one.png",
+      name: "one.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+      previewUrl: "blob:temp",
+    };
+    await appendLocalChatMessage(dir, {
+      id: "image-with-preview",
+      role: "user",
+      text: "see this",
+      attachments: [attachmentWithPreview],
+      createdAt: 1,
+    });
+
+    const transcript = await readSessionTranscript(dir);
+    expect(transcript[0].attachments).toEqual([
+      {
+        id: "img-1",
+        kind: "image",
+        path: "/tmp/aethon-pastes/one.png",
+        name: "one.png",
+        mimeType: "image/png",
+        sizeBytes: 12,
+      },
+    ]);
+  });
+
+  it("merges local attachment metadata into matching pi user messages", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "pi-user",
+        timestamp: 1_500,
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "what is this?" }],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "local-user",
+      role: "user",
+      text: "what is this?",
+      attachments: [
+        {
+          id: "img-1",
+          kind: "image",
+          path: "/tmp/aethon-pastes/one.png",
+          name: "one.png",
+          mimeType: "image/png",
+          sizeBytes: 12,
+        },
+      ],
+      createdAt: 1_000,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "pi-user",
+        role: "user",
+        text: "what is this?",
+        createdAt: 1_500,
+        attachments: [
+          {
+            id: "img-1",
+            kind: "image",
+            path: "/tmp/aethon-pastes/one.png",
+            name: "one.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+          },
+        ],
       },
     ]);
   });
@@ -371,7 +496,8 @@ describe("readSessionTranscript", () => {
       {
         id: "pi-agent",
         role: "agent",
-        thinking: "**Earlier reasoning**\n\nstep one\n\n**Later reasoning**\n\nstep two",
+        thinking:
+          "**Earlier reasoning**\n\nstep one\n\n**Later reasoning**\n\nstep two",
         createdAt: 1779979121365,
       },
     ]);
@@ -536,31 +662,53 @@ describe("readSessionTranscript with expectedCwd", () => {
 
   it("returns the matching project's session, not the latest by mtime", async () => {
     const dir = await tempRoot();
-    await writeMiniSession(dir, "old.jsonl", "/tmp/target", "from target", 1_000);
-    await writeMiniSession(dir, "leak.jsonl", "/tmp/other", "from other", 9_000);
+    await writeMiniSession(
+      dir,
+      "old.jsonl",
+      "/tmp/target",
+      "from target",
+      1_000,
+    );
+    await writeMiniSession(
+      dir,
+      "leak.jsonl",
+      "/tmp/other",
+      "from other",
+      9_000,
+    );
     // Without the cwd filter the latest mtime ("leak.jsonl") wins.
     await expect(readSessionTranscript(dir)).resolves.toEqual([
       { id: "leak.jsonl-u", role: "user", text: "from other" },
     ]);
     // With the cwd filter, the older matching session is returned.
-    await expect(
-      readSessionTranscript(dir, "/tmp/target"),
-    ).resolves.toEqual([
+    await expect(readSessionTranscript(dir, "/tmp/target")).resolves.toEqual([
       { id: "old.jsonl-u", role: "user", text: "from target" },
     ]);
   });
 
   it("returns no messages when no session matches the requested cwd", async () => {
     const dir = await tempRoot();
-    await writeMiniSession(dir, "other.jsonl", "/tmp/other", "from other", 1_000);
-    await expect(
-      readSessionTranscript(dir, "/tmp/target"),
-    ).resolves.toEqual([]);
+    await writeMiniSession(
+      dir,
+      "other.jsonl",
+      "/tmp/other",
+      "from other",
+      1_000,
+    );
+    await expect(readSessionTranscript(dir, "/tmp/target")).resolves.toEqual(
+      [],
+    );
   });
 
   it("filters Aethon-local slash overlay by cwd when restoring a scoped session", async () => {
     const dir = await tempRoot();
-    await writeMiniSession(dir, "target.jsonl", "/tmp/target", "from target", 1_000);
+    await writeMiniSession(
+      dir,
+      "target.jsonl",
+      "/tmp/target",
+      "from target",
+      1_000,
+    );
     await appendLocalChatMessage(dir, {
       id: "target-local",
       role: "system",
@@ -576,9 +724,7 @@ describe("readSessionTranscript with expectedCwd", () => {
       createdAt: 2,
     });
 
-    await expect(
-      readSessionTranscript(dir, "/tmp/target"),
-    ).resolves.toEqual([
+    await expect(readSessionTranscript(dir, "/tmp/target")).resolves.toEqual([
       { id: "target.jsonl-u", role: "user", text: "from target" },
       {
         id: "target-local",
@@ -607,9 +753,7 @@ describe("readSessionTranscript with expectedCwd", () => {
       createdAt: 2,
     });
 
-    await expect(
-      readSessionTranscript(dir, "/tmp/target"),
-    ).resolves.toEqual([
+    await expect(readSessionTranscript(dir, "/tmp/target")).resolves.toEqual([
       {
         id: "target-local",
         role: "system",
@@ -630,11 +774,17 @@ describe("readSessionTranscript with expectedCwd", () => {
     // next prompt loses the displayed context. Caller in main.ts now
     // passes `process.cwd()` (not `undefined`) when no project is set.
     const dir = await tempRoot();
-    await writeMiniSession(dir, "other.jsonl", "/tmp/other", "from other", 9_000);
+    await writeMiniSession(
+      dir,
+      "other.jsonl",
+      "/tmp/other",
+      "from other",
+      9_000,
+    );
     // Caller's no-project fallback (== `activeProjectCwd ?? process.cwd()`).
-    await expect(
-      readSessionTranscript(dir, process.cwd()),
-    ).resolves.toEqual([]);
+    await expect(readSessionTranscript(dir, process.cwd())).resolves.toEqual(
+      [],
+    );
   });
 });
 
@@ -679,17 +829,17 @@ describe("findSessionFileMatchingCwd", () => {
     const newer = await writeSession(dir, "new.jsonl", "/tmp/target", 3_000);
     // A more recent session for a *different* cwd must not be picked.
     await writeSession(dir, "leak.jsonl", "/tmp/other-project", 9_000);
-    await expect(
-      findSessionFileMatchingCwd(dir, "/tmp/target"),
-    ).resolves.toBe(newer);
+    await expect(findSessionFileMatchingCwd(dir, "/tmp/target")).resolves.toBe(
+      newer,
+    );
   });
 
   it("ignores trailing slashes when comparing cwds", async () => {
     const dir = await tempRoot();
     const path = await writeSession(dir, "a.jsonl", "/tmp/project/", 1_000);
-    await expect(
-      findSessionFileMatchingCwd(dir, "/tmp/project"),
-    ).resolves.toBe(path);
+    await expect(findSessionFileMatchingCwd(dir, "/tmp/project")).resolves.toBe(
+      path,
+    );
   });
 
   it("skips legacy session files that have no cwd in the header", async () => {
@@ -698,9 +848,9 @@ describe("findSessionFileMatchingCwd", () => {
     await writeSession(dir, "legacy.jsonl", undefined, 5_000);
     await expect(findSessionFileMatchingCwd(dir, "")).resolves.toBeUndefined();
     const fresh = await writeSession(dir, "fresh.jsonl", "/tmp/target", 1_000);
-    await expect(
-      findSessionFileMatchingCwd(dir, "/tmp/target"),
-    ).resolves.toBe(fresh);
+    await expect(findSessionFileMatchingCwd(dir, "/tmp/target")).resolves.toBe(
+      fresh,
+    );
   });
 
   it("does not leak the most-recent session from another project (regression)", async () => {

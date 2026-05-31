@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload, ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import { activeProject, type ProjectsState } from "../projects";
+import { durableImageAttachments } from "../utils/imageAttachments";
 import type { SlashCommandContext } from "../slashCommands";
 import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { LayoutCatalogueEntry } from "../extensions/default-layout";
@@ -70,7 +71,8 @@ export function useAppSlashCommandContext({
 }: UseAppSlashCommandContextOptions): AppSlashCommandContextResult {
   const persistLocalChatMessage = useCallback(
     (msg: ChatMessage, tabId: string) => {
-      if (!msg.text && !msg.thinking) return;
+      const attachments = durableImageAttachments(msg.attachments);
+      if (!msg.text && !msg.thinking && attachments.length === 0) return;
       invoke("agent_command", {
         payload: JSON.stringify({
           type: "local_chat_message",
@@ -81,6 +83,7 @@ export function useAppSlashCommandContext({
             ...(msg.text ? { text: msg.text } : {}),
             ...(msg.thinking ? { thinking: msg.thinking } : {}),
             ...(msg.delivery ? { delivery: msg.delivery } : {}),
+            ...(attachments.length > 0 ? { attachments } : {}),
             createdAt: Date.now(),
           },
         }),

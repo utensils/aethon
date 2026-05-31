@@ -21,7 +21,7 @@ import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
 import { DashboardSessionRow } from "./session-row";
 import {
-  getRepoOverview,
+  refreshRepoOverview,
   type GhRepoOverview,
 } from "../../../ghRepoOverviewCache";
 
@@ -152,26 +152,21 @@ export function ProjectDashboard({
       : null,
   );
 
-  // Eager fetch on project activation. The cache handles dedupe. Drops
+  // Eager refresh on project activation. Drops
   // the stale entry whenever `project.path` changes so the visible card
   // doesn't lag a project switch.
   useEffect(() => {
-    if (!project) return;
-    if (overview?.path === project.path && overview.data?.repo) return;
+    const projectPath = project?.path;
+    if (!projectPath) return;
     let cancelled = false;
-    // Optimistic clear so the previous project's strip / description
-    // doesn't briefly render under the new project's title.
-    if (overview && overview.path !== project.path) {
-      setOverview(null);
-    }
     void (async () => {
-      const o = await getRepoOverview(project.path);
-      if (!cancelled) setOverview({ path: project.path, data: o });
+      const o = await refreshRepoOverview(projectPath);
+      if (!cancelled) setOverview({ path: projectPath, data: o });
     })();
     return () => {
       cancelled = true;
     };
-  }, [project, overview]);
+  }, [project?.path]);
   const overviewData = overview?.path === project?.path ? overview?.data : null;
 
   if (!project) return null;

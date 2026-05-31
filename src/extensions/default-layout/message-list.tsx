@@ -1,15 +1,9 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type {
   A2UIComponent,
+  ChatAttachment,
   ChatMessage,
   StringValue,
 } from "../../types/a2ui";
@@ -22,6 +16,9 @@ import {
   CHAT_MARKDOWN_COMPONENTS,
   MARKDOWN_REMARK_PLUGINS,
 } from "./markdown-adapter";
+import { isAtBottom as metricsAreAtBottom } from "../../utils/stickyScrollController";
+import { ImageAttachmentImage } from "./image-attachment-image";
+import { ImageLightbox } from "./image-lightbox";
 
 // Distance (px) from the bottom still treated as "at the bottom" for follow +
 // the scroll-to-bottom pill. Matches the old StickyScrollController default.
@@ -173,6 +170,32 @@ function MarkdownWithThinking({ text }: { text: string }) {
 
 const MemoMarkdownWithThinking = memo(MarkdownWithThinking);
 
+function AttachmentGallery({ attachments }: { attachments: ChatAttachment[] }) {
+  const [open, setOpen] = useState<ChatAttachment | null>(null);
+  if (attachments.length === 0) return null;
+  return (
+    <>
+      <div className="a2ui-message-attachments">
+        {attachments.map((attachment) => (
+          <button
+            key={attachment.id}
+            type="button"
+            className="a2ui-message-attachment"
+            onClick={() => setOpen(attachment)}
+            aria-label={`Open ${attachment.name}`}
+          >
+            <ImageAttachmentImage attachment={attachment} alt="" />
+            <span>{attachment.name}</span>
+          </button>
+        ))}
+      </div>
+      {open && (
+        <ImageLightbox attachment={open} onClose={() => setOpen(null)} />
+      )}
+    </>
+  );
+}
+
 const ChatMessageRow = memo(
   function ChatMessageRow({
     message,
@@ -242,6 +265,9 @@ const ChatMessageRow = memo(
           <div className={textClass}>
             <MemoMarkdownWithThinking text={message.text} />
           </div>
+        )}
+        {message.attachments && message.attachments.length > 0 && (
+          <AttachmentGallery attachments={message.attachments} />
         )}
         {message.a2ui && (
           <A2UIRenderer payload={message.a2ui} state={state} tabId={tabId} />
@@ -314,9 +340,87 @@ function VirtualMessageList({
 }: VirtualMessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [canScroll, setCanScroll] = useState(false);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
+  const followLatestRef = useRef(true);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
-  const queuedLabels = useMemo(() => queuedDeliveryLabels(messages), [messages]);
+  const queuedLabels = useMemo(
+    () => queuedDeliveryLabels(messages),
+    [messages],
+  );
+  const updateCanScroll = useCallback(() => {
+    const el = scrollerElRef.current;
+    setCanScroll(
+      Boolean(
+        el && el.scrollHeight - el.clientHeight > DEFAULT_AT_BOTTOM_THRESHOLD,
+      ),
+    );
+  }, []);
+
+  const updateFollowFromScroller = useCallback(() => {
+    const el = scrollerElRef.current;
+    if (!el) return;
+    const atBottom = metricsAreAtBottom(
+      {
+        scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+      },
+      DEFAULT_AT_BOTTOM_THRESHOLD,
+    );
+    followLatestRef.current = atBottom;
+    setIsAtBottom(atBottom);
+    updateCanScroll();
+  }, [updateCanScroll]);
+
+  const handleScrollerRef = useCallback(
+    (ref: HTMLElement | Window | null) => {
+      if (scrollerElRef.current) {
+        scrollerElRef.current.removeEventListener(
+          "scroll",
+          updateFollowFromScroller,
+        );
+      }
+      const el =
+        typeof HTMLElement !== "undefined" && ref instanceof HTMLElement
+          ? ref
+          : null;
+      scrollerElRef.current = el;
+      if (el) {
+        el.addEventListener("scroll", updateFollowFromScroller, {
+          passive: true,
+        });
+      }
+      updateCanScroll();
+    },
+    [updateCanScroll, updateFollowFromScroller],
+  );
+
+  const handleAtBottomStateChange = useCallback(
+    (atBottom: boolean) => {
+      updateCanScroll();
+      if (atBottom) {
+        followLatestRef.current = true;
+        setIsAtBottom(true);
+      } else if (!followLatestRef.current) {
+        setIsAtBottom(false);
+      }
+    },
+    [updateCanScroll],
+  );
+
+  useEffect(
+    () => () => {
+      if (scrollerElRef.current) {
+        scrollerElRef.current.removeEventListener(
+          "scroll",
+          updateFollowFromScroller,
+        );
+      }
+    },
+    [updateFollowFromScroller],
+  );
 
   // Jump to the newest message matching the search needle and flash it. Virtuoso
   // mounts the target row even when it's far offscreen, so no DOM walk is needed.
@@ -342,7 +446,11 @@ function VirtualMessageList({
       // through it. Virtuoso measures the wrapper, so the margins are counted —
       // bare margins on the row would escape measurement and drift the
       // follow-to-bottom / scrollToIndex offsets in long transcripts.
-      <div className="a2ui-msg-row">
+      <div
+        className={`a2ui-msg-row${index === 0 ? " a2ui-msg-row-first" : ""}${
+          index === messages.length - 1 ? " a2ui-msg-row-last" : ""
+        }`}
+      >
         <ChatMessageRow
           message={m}
           state={state}
@@ -396,19 +504,23 @@ function VirtualMessageList({
           index: Math.max(0, messages.length - 1),
           align: "end",
         }}
-        followOutput="auto"
+        followOutput={() => (followLatestRef.current ? "smooth" : false)}
         atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
-        atBottomStateChange={setIsAtBottom}
+        atBottomStateChange={handleAtBottomStateChange}
+        scrollerRef={handleScrollerRef}
+        totalListHeightChanged={updateCanScroll}
         {...footerProps}
       />
       <ScrollToBottomPill
-        visible={!isAtBottom && hasContent}
-        onClick={() =>
+        visible={!isAtBottom && canScroll && hasContent}
+        onClick={() => {
+          followLatestRef.current = true;
+          setIsAtBottom(true);
           // Scroll to the true bottom of the scroller, which includes the
           // Footer (live subtree / typing indicator) — scrollToIndex(last)
           // would stop at the last message, above a footer-only response.
-          virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER })
-        }
+          virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+        }}
       />
     </div>
   );

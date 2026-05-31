@@ -19,7 +19,11 @@ import { latestSessionLog } from "./metadata";
 import { findSessionFileMatchingCwd } from "./lookup";
 import { readLocalChatTranscript } from "./parse-local";
 import { parseSessionHistoryLines } from "./parse-pi";
-import { MAX_RESTORED_MESSAGES, type RestoredChatMessage } from "./shared";
+import {
+  MAX_RESTORED_MESSAGES,
+  type RestoredChatAttachment,
+  type RestoredChatMessage,
+} from "./shared";
 
 type ContentChannel = "text" | "thinking";
 
@@ -104,6 +108,91 @@ function dedupeLocalMessages(
   });
 }
 
+function attachmentKey(attachment: RestoredChatAttachment): string {
+  return [
+    attachment.kind,
+    attachment.id,
+    attachment.path,
+    attachment.name,
+    attachment.mimeType,
+    attachment.sizeBytes,
+  ].join("\0");
+}
+
+function mergeAttachments(
+  base: RestoredChatMessage,
+  additions: RestoredChatAttachment[],
+): RestoredChatMessage {
+  if (additions.length === 0) return base;
+  const merged = [...(base.attachments ?? [])];
+  const seen = new Set(merged.map(attachmentKey));
+  for (const attachment of additions) {
+    const key = attachmentKey(attachment);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(attachment);
+  }
+  return { ...base, attachments: merged };
+}
+
+function sameRestoredContent(
+  piMessage: RestoredChatMessage,
+  localMessage: RestoredChatMessage,
+): boolean {
+  if (piMessage.role !== localMessage.role) return false;
+  const localParts = messageContentParts(localMessage);
+  if (localParts.length === 0) return false;
+  const piParts = new Map(messageContentParts(piMessage));
+  return localParts.every(([channel, text]) => piParts.get(channel) === text);
+}
+
+function messageTimeDistance(
+  piMessage: RestoredChatMessage,
+  localMessage: RestoredChatMessage,
+): number {
+  if (
+    typeof piMessage.createdAt !== "number" ||
+    typeof localMessage.createdAt !== "number"
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(piMessage.createdAt - localMessage.createdAt);
+}
+
+function findPiMessageForLocalAttachments(
+  piMessages: RestoredChatMessage[],
+  localMessage: RestoredChatMessage,
+): number {
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < piMessages.length; index += 1) {
+    const candidate = piMessages[index];
+    if (!sameRestoredContent(candidate, localMessage)) continue;
+    const distance = messageTimeDistance(candidate, localMessage);
+    if (bestIndex < 0 || distance < bestDistance) {
+      bestIndex = index;
+      bestDistance = distance;
+    }
+  }
+  return bestIndex;
+}
+
+function mergeLocalAttachmentsIntoPiMessages(
+  piMessages: RestoredChatMessage[],
+  localMessages: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  let merged = piMessages;
+  for (const localMessage of localMessages) {
+    const attachments = localMessage.attachments ?? [];
+    if (attachments.length === 0) continue;
+    const index = findPiMessageForLocalAttachments(merged, localMessage);
+    if (index < 0) continue;
+    if (merged === piMessages) merged = [...piMessages];
+    merged[index] = mergeAttachments(merged[index], attachments);
+  }
+  return merged;
+}
+
 export async function readSessionTranscript(
   sessionDir: string,
   expectedCwd?: string,
@@ -126,6 +215,10 @@ export async function readSessionTranscript(
 
   const raw = await readFile(path, "utf8");
   const piMessages = parseSessionHistoryLines(raw.split(/\r?\n/));
-  const localOnly = dedupeLocalMessages(piMessages, localMessages);
-  return [...piMessages, ...localOnly].slice(-MAX_RESTORED_MESSAGES);
+  const mergedPiMessages = mergeLocalAttachmentsIntoPiMessages(
+    piMessages,
+    localMessages,
+  );
+  const localOnly = dedupeLocalMessages(mergedPiMessages, localMessages);
+  return [...mergedPiMessages, ...localOnly].slice(-MAX_RESTORED_MESSAGES);
 }

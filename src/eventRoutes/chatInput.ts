@@ -1,4 +1,5 @@
 import type { QueuedMessage, Tab } from "../types/tab";
+import type { ChatAttachment } from "../types/a2ui";
 import type { EventRouteHandler } from "./types";
 
 function newestQueuedMessage(
@@ -24,7 +25,14 @@ export const handleChatInput: EventRouteHandler = async (
   ctx,
 ) => {
   if (eventType === "submit") {
-    const value = (data as { value?: string } | undefined)?.value ?? "";
+    const payload =
+      (data as
+        | { value?: string; attachments?: unknown }
+        | undefined) ?? {};
+    const value = payload.value ?? "";
+    const attachments = Array.isArray(payload.attachments)
+      ? (payload.attachments as ChatAttachment[])
+      : [];
     const mode =
       (data as { mode?: unknown } | undefined)?.mode === "steer"
         ? "steer"
@@ -36,7 +44,34 @@ export const handleChatInput: EventRouteHandler = async (
       }
       return true;
     }
-    await ctx.sendChat(value, { mode });
+    await ctx.sendChat(value, {
+      mode,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
+    return true;
+  }
+  if (eventType === "attachments:add") {
+    const attachments: ChatAttachment[] = Array.isArray(
+      (data as { attachments?: unknown } | undefined)?.attachments,
+    )
+      ? ((data as { attachments: ChatAttachment[] }).attachments)
+      : [];
+    if (attachments.length > 0) {
+      ctx.updateActiveTab((tab) => ({
+        ...tab,
+        draftAttachments: [...(tab.draftAttachments ?? []), ...attachments],
+      }));
+    }
+    return true;
+  }
+  if (eventType === "attachment:remove") {
+    const id = (data as { id?: string } | undefined)?.id;
+    if (id) {
+      ctx.updateActiveTab((tab) => ({
+        ...tab,
+        draftAttachments: (tab.draftAttachments ?? []).filter((a) => a.id !== id),
+      }));
+    }
     return true;
   }
   if (eventType === "change") {

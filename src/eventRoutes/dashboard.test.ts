@@ -212,6 +212,26 @@ describe("handleProjectDashboard", () => {
       }),
     );
   });
+
+  it("forwards task-launcher paste failures emitted through the project dashboard", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "paste-image-failed",
+        data: { message: "payload exceeds 32 MiB" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Image paste failed",
+        message: "payload exceeds 32 MiB",
+        kind: "error",
+      }),
+    );
+  });
 });
 
 describe("handleTaskLauncher", () => {
@@ -292,6 +312,26 @@ describe("handleTaskLauncher", () => {
     );
     expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p2");
+  });
+
+  it("paste-image-failed notifies the user", async () => {
+    const { ctx } = buildRouteFixture();
+    const handled = await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "paste-image-failed",
+        data: { message: "payload exceeds 32 MiB" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.pushNotification).toHaveBeenCalledWith({
+      id: "ae-task-paste-image-failed",
+      title: "Image paste failed",
+      message: "payload exceeds 32 MiB",
+      kind: "error",
+      durationMs: 3000,
+    });
   });
 });
 

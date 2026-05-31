@@ -1,4 +1,4 @@
-import type { ChatMessage } from "./a2ui";
+import type { ChatAttachment, ChatMessage } from "./a2ui";
 import type { ShareMode } from "../utils/shareMode";
 
 // M6 P1: shell-tab metadata. Present iff Tab.kind === "shell".
@@ -65,6 +65,7 @@ export type TabKind = "agent" | "shell" | "editor";
 export interface QueuedMessage {
   id: string;
   content: string;
+  attachments?: ChatAttachment[];
 }
 
 export interface Tab {
@@ -75,6 +76,7 @@ export interface Tab {
   label: string;
   messages: ChatMessage[];
   draft: string;
+  draftAttachments?: ChatAttachment[];
   waiting: boolean;
   /** Derived: equals `queuedMessages.length`. Kept as a separate field so
    *  the existing `/queueCount` binding (badge in the composer) doesn't
@@ -195,6 +197,7 @@ export function makeEmptyTab(
     label,
     messages: [],
     draft: "",
+    draftAttachments: [],
     waiting: false,
     queueCount: 0,
     queuedMessages: [],

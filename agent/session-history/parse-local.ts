@@ -17,6 +17,7 @@ import {
   hasA2ui,
   isChatRole,
   normalizeCwd,
+  parseChatAttachments,
   trimText,
 } from "./shared";
 
@@ -50,8 +51,9 @@ export function parseLocalChatLines(
     const text = typeof record.text === "string" ? trimText(record.text) : "";
     const thinking =
       typeof record.thinking === "string" ? trimText(record.thinking) : "";
+    const attachments = parseChatAttachments(record.attachments);
     const a2ui = hasA2ui(record.a2ui) ? record.a2ui : undefined;
-    if (!text && !thinking && !a2ui) continue;
+    if (!text && !thinking && !a2ui && attachments.length === 0) continue;
     const id =
       typeof record.id === "string" && record.id.length > 0
         ? record.id
@@ -61,6 +63,7 @@ export function parseLocalChatLines(
       role: record.role,
       ...(text ? { text } : {}),
       ...(thinking ? { thinking } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
       ...(a2ui ? { a2ui } : {}),
       ...(typeof record.createdAt === "number"
         ? { createdAt: record.createdAt }

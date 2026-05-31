@@ -351,6 +351,67 @@ describe("handleChat", () => {
     expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-1" });
   });
 
+  it("passes image attachments to prompt, steer, and followUp", async () => {
+    const image = { mimeType: "image/png", data: "abc123" };
+    const f = makeFixture();
+    const calls: Record<string, unknown[][]> = {
+      prompt: [],
+      steer: [],
+      followUp: [],
+    };
+    const tab = fakeTabRecord({
+      session: {
+        prompt: (...args: unknown[]) => {
+          calls.prompt.push(args);
+          return new Promise<void>(() => {});
+        },
+        followUp: (...args: unknown[]) => {
+          calls.followUp.push(args);
+          return Promise.resolve();
+        },
+        steer: (...args: unknown[]) => {
+          calls.steer.push(args);
+          return Promise.resolve();
+        },
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "look",
+      tabId: "tab-1",
+      mode: "normal",
+      images: [image],
+    });
+
+    expect(calls.prompt).toEqual([
+      ["look", { images: [{ type: "image", mimeType: "image/png", data: "abc123" }] }],
+    ]);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "zoom",
+      tabId: "tab-1",
+      mode: "steer",
+      images: [image],
+    });
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "next",
+      tabId: "tab-1",
+      mode: "normal",
+      images: [image],
+    });
+
+    expect(calls.steer).toEqual([
+      ["zoom", [{ type: "image", mimeType: "image/png", data: "abc123" }]],
+    ]);
+    expect(calls.followUp).toEqual([
+      ["next", [{ type: "image", mimeType: "image/png", data: "abc123" }]],
+    ]);
+  });
+
   it("treats steer as a normal prompt when the tab is idle", async () => {
     const f = makeFixture();
     const promptCalls: unknown[][] = [];

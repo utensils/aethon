@@ -1,10 +1,12 @@
 import { useCallback, type MutableRefObject } from "react";
+import type { ChatAttachment } from "../types/a2ui";
 import type { ProjectsState } from "../projects";
 import type { NotificationInput } from "./useNotifications";
 
 export interface StartTaskOptions {
   projectId: string;
   prompt: string;
+  attachments?: ChatAttachment[];
   newWorktree?: boolean;
   branch?: string;
   baseBranch?: string;
@@ -17,7 +19,7 @@ export interface UseTaskLauncherOptions {
   setActiveProjectById: (id: string) => boolean;
   createWorktreeWithParams: (opts: {
     projectId: string;
-    branch: string;
+    branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
@@ -32,7 +34,10 @@ export interface UseTaskLauncherOptions {
     },
   ) => void;
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
-  sendChat: (text: string, options?: { tabId?: string }) => Promise<void>;
+  sendChat: (
+    text: string,
+    options?: { tabId?: string; attachments?: ChatAttachment[] },
+  ) => Promise<void>;
 }
 
 export function useTaskLauncher({
@@ -64,23 +69,17 @@ export function useTaskLauncher({
       let cwd = project.path;
       if (opts.newWorktree) {
         const branch = (opts.branch ?? "").trim();
-        if (!branch) {
-          pushNotificationRef.current({
-            title: "New worktree needs a branch name",
-            message: "Enter a branch name in the launcher before starting.",
-            kind: "warning",
-          });
-          return;
-        }
         const created = await createWorktreeWithParams({
           projectId: opts.projectId,
-          branch,
+          ...(branch ? { branch } : {}),
           baseBranch: opts.baseBranch,
         });
         if (!created) {
           pushNotificationRef.current({
             title: "Worktree create failed",
-            message: `Could not create '${branch}'. See the sidebar's pending row for details.`,
+            message: branch
+              ? `Could not create '${branch}'. See the sidebar's pending row for details.`
+              : "Could not create an automatic worktree. See the sidebar's pending row for details.",
             kind: "warning",
           });
           return;
@@ -111,7 +110,9 @@ export function useTaskLauncher({
         }
       }
       const trimmed = opts.prompt.trim();
-      if (trimmed) await sendChat(trimmed, { tabId });
+      if (trimmed || (opts.attachments?.length ?? 0) > 0) {
+        await sendChat(trimmed, { tabId, attachments: opts.attachments });
+      }
     },
     [
       activateWorktree,

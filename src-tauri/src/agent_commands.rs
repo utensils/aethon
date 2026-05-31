@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter, State};
+use base64::Engine;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::agent_process::{
     AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, ensure_global_agent,
@@ -14,6 +16,29 @@ use crate::agent_process::{
 /// tab the frontend just opened (but hasn't yet included in its reported live
 /// set) isn't killed mid-handshake.
 const RECONCILE_MIN_AGE: Duration = Duration::from_secs(10);
+const MAX_ATTACHMENT_BYTES: u64 = 32 * 1024 * 1024;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChatAttachmentInput {
+    id: String,
+    kind: String,
+    path: String,
+    name: String,
+    mime_type: String,
+    size_bytes: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SendMessageRequest {
+    message: String,
+    tab_id: Option<String>,
+    mode: Option<String>,
+    cwd: Option<String>,
+    model: Option<String>,
+    attachments: Option<Vec<ChatAttachmentInput>>,
+}
 
 #[tauri::command]
 pub(crate) fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> Result<(), String> {
@@ -22,35 +47,103 @@ pub(crate) fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> R
 
 #[tauri::command]
 pub(crate) fn send_message(
-    message: String,
-    tab_id: Option<String>,
-    mode: Option<String>,
-    cwd: Option<String>,
-    model: Option<String>,
+    request: SendMessageRequest,
     state: State<'_, AgentProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let tab_id = tab_id.unwrap_or_else(|| "default".to_string());
+    let tab_id = request.tab_id.unwrap_or_else(|| "default".to_string());
     let mut payload = serde_json::json!({
         "type": "chat",
-        "content": message,
-        "mode": mode.unwrap_or_else(|| "normal".to_string()),
+        "content": request.message,
+        "mode": request.mode.unwrap_or_else(|| "normal".to_string()),
         "tabId": tab_id,
     });
-    if let Some(cwd) = cwd
+    if let Some(cwd) = request.cwd
         && !cwd.is_empty()
     {
         payload["cwd"] = serde_json::Value::String(cwd);
     }
-    if let Some(model) = model
+    if let Some(model) = request.model
         && !model.is_empty()
     {
         payload["model"] = serde_json::Value::String(model);
+    }
+    let images = attachments_to_agent_images(&app, request.attachments.unwrap_or_default())?;
+    if !images.is_empty() {
+        payload["images"] = serde_json::Value::Array(images);
     }
 
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, true);
     write_agent_payload(&state, &app, key, payload, worker)
+}
+
+fn attachments_to_agent_images(
+    app: &AppHandle,
+    attachments: Vec<ChatAttachmentInput>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let paste_dir = paste_dir(app)?;
+    let mut images = Vec::new();
+    for attachment in attachments {
+        if attachment.kind != "image" {
+            continue;
+        }
+        if !attachment.mime_type.starts_with("image/") {
+            return Err(format!("attachment '{}' is not an image", attachment.name));
+        }
+        if attachment.size_bytes > MAX_ATTACHMENT_BYTES {
+            return Err(format!("attachment '{}' exceeds 32 MiB", attachment.name));
+        }
+        let path = PathBuf::from(&attachment.path);
+        let canonical = path
+            .canonicalize()
+            .map_err(|e| format!("attachment '{}': {e}", attachment.name))?;
+        if !canonical.starts_with(&paste_dir) {
+            return Err(format!(
+                "attachment '{}' is outside the paste directory",
+                attachment.name
+            ));
+        }
+        let metadata = std::fs::metadata(&canonical)
+            .map_err(|e| format!("attachment '{}': {e}", attachment.name))?;
+        if metadata.len() > MAX_ATTACHMENT_BYTES {
+            return Err(format!("attachment '{}' exceeds 32 MiB", attachment.name));
+        }
+        let bytes = std::fs::read(&canonical)
+            .map_err(|e| format!("attachment '{}': {e}", attachment.name))?;
+        images.push(serde_json::json!({
+            "id": attachment.id,
+            "name": attachment.name,
+            "mimeType": attachment.mime_type,
+            "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+        }));
+    }
+    Ok(images)
+}
+
+fn paste_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let dir = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?
+        .join("pastes");
+    canonicalize_existing_or_parent(&dir)
+}
+
+fn canonicalize_existing_or_parent(path: &Path) -> Result<PathBuf, String> {
+    if path.exists() {
+        return path.canonicalize().map_err(|e| e.to_string());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "paste directory has no parent".to_string())?;
+    let parent = parent.canonicalize().map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| "paste directory has no name".to_string())?;
+    Ok(parent.join(name))
 }
 
 /// Hard-kill the running agent child. Called by the frontend's hang-warn

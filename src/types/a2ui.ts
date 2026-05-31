@@ -292,11 +292,22 @@ export type TerminalProps = TerminalComponent["props"];
 export type ChatInputProps = ChatInputComponent["props"];
 export type MainCanvasProps = MainCanvasComponent["props"];
 
+export interface ChatAttachment {
+  id: string;
+  kind: "image";
+  path: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  previewUrl?: string;
+}
+
 // Message shape used by ChatHistory and MainCanvas — text or embedded A2UI subtree.
 export interface ChatMessage {
   id: string;
   role: "user" | "agent" | "system";
   text?: string;
+  attachments?: ChatAttachment[];
   thinking?: string;
   a2ui?: A2UIPayload;
   delivery?: "sent" | "queued" | "steered" | "failed";

@@ -1906,7 +1906,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-width: 100%;
   overflow-x: hidden;
   overscroll-behavior: none;
-  padding: 16px 20px 12px;
+  padding: 0;
   background: var(--bg);
 }
 
@@ -2364,10 +2364,11 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-canvas-message {
-  max-width: min(88%, 100%);
+  max-width: min(88%, calc(100% - 24px));
   min-width: 0;
   padding: 8px 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .a2ui-canvas-message.user {
@@ -2376,6 +2377,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   border: 1px solid var(--border);
   border-radius: 14px 14px 4px 14px;
   margin-left: 14%;
+  margin-right: 0;
   margin-top: 10px;
 }
 .a2ui-canvas-message.user.ae-msg-cont {
@@ -2501,6 +2503,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: 0.88em;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--syntax-keyword, var(--text));
+  overflow-wrap: anywhere;
 }
 .a2ui-markdown pre {
   margin: 0.35em 0;
@@ -2772,7 +2775,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-width: 100%;
   overflow-x: hidden;
   overscroll-behavior: none;
-  padding: 12px 12px 8px;
+  padding: 0;
   contain: layout style;
 }
 
@@ -2800,7 +2803,32 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-direction: column;
   min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.a2ui-canvas-scroller .a2ui-msg-row {
+  padding-inline: 20px;
+}
+
+.a2ui-chat-history .a2ui-msg-row {
+  padding-inline: 12px;
+}
+
+.a2ui-canvas-scroller .a2ui-msg-row-first {
+  padding-top: 16px;
+}
+
+.a2ui-chat-history .a2ui-msg-row-first {
+  padding-top: 12px;
+}
+
+.a2ui-canvas-scroller .a2ui-msg-row-last {
+  padding-bottom: 12px;
+}
+
+.a2ui-chat-history .a2ui-msg-row-last {
+  padding-bottom: 8px;
 }
 
 .a2ui-chat-load-older {
@@ -2825,9 +2853,10 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding: 8px 12px;
   font-size: var(--text-sm);
   min-width: 0;
-  max-width: 88%;
+  max-width: min(88%, calc(100% - 24px));
   line-height: 1.5;
   position: relative;
+  overflow-wrap: anywhere;
 }
 
 /* Continuation message — same sender, no top margin needed */
@@ -2842,6 +2871,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   border-radius: 14px 14px 4px 14px;
   align-self: flex-end;
   margin-left: 14%;
+  margin-right: 0;
   margin-top: 10px;
 }
 .a2ui-chat-message.user.ae-msg-cont {
@@ -3153,6 +3183,86 @@ body.ae-resizing-composer * {
   border-left: 1px solid var(--border);
 }
 
+.a2ui-chat-attachments,
+.a2ui-task-launcher-attachments,
+.a2ui-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.a2ui-chat-attachments {
+  margin: 0 0 8px;
+}
+
+.a2ui-chat-attachment,
+.a2ui-task-launcher-attachment {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: min(240px, 100%);
+  margin: 0;
+  padding: 5px 28px 5px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+}
+
+.a2ui-chat-attachment-thumb,
+.a2ui-task-launcher-attachment-thumb {
+  width: 46px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.a2ui-chat-attachment-thumb img,
+.a2ui-task-launcher-attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.a2ui-chat-attachment figcaption,
+.a2ui-task-launcher-attachment figcaption {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a2ui-chat-attachment-remove,
+.a2ui-task-launcher-attachment-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.a2ui-chat-attachment-remove:hover,
+.a2ui-task-launcher-attachment-remove:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 /* Slash command autocomplete — portal-rendered to document.body and
    anchored via inline `position: fixed` (see ChatInput). The default
    layout grid cell uses overflow: hidden, so the menu must escape the
@@ -3392,6 +3502,97 @@ body.ae-resizing-composer * {
 }
 .a2ui-chat-input-stop:hover {
   background: var(--accent-soft);
+}
+
+.a2ui-message-attachments {
+  margin-top: 8px;
+}
+
+.a2ui-message-attachment {
+  display: grid;
+  gap: 5px;
+  width: min(220px, 100%);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--text);
+  cursor: zoom-in;
+  overflow: hidden;
+  text-align: left;
+}
+
+.a2ui-message-attachment img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--bg);
+}
+
+.a2ui-message-attachment span {
+  min-width: 0;
+  padding: 0 8px 7px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a2ui-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.a2ui-image-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.72);
+  cursor: zoom-out;
+}
+
+.a2ui-image-lightbox-figure {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+  max-width: min(1100px, 94vw);
+  max-height: 90vh;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-2);
+}
+
+.a2ui-image-lightbox-figure img {
+  max-width: 100%;
+  max-height: calc(90vh - 70px);
+  object-fit: contain;
+}
+
+.a2ui-image-lightbox-figure figcaption {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+
+.a2ui-image-lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
 }
 
 .ae-voice-provider-list {

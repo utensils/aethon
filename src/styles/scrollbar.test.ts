@@ -62,15 +62,27 @@ describe("chat overflow containment CSS", () => {
     expect(canvasScroller).toMatch(/min-width:\s*0;/);
     expect(canvasScroller).toMatch(/max-width:\s*100%;/);
     expect(canvasScroller).toMatch(/overflow-x:\s*hidden;/);
+    expect(canvasScroller).toMatch(/padding:\s*0;/);
 
     const chatHistory = cssRuleBody(chromeCss, ".a2ui-chat-history");
     expect(chatHistory).toMatch(/min-width:\s*0;/);
     expect(chatHistory).toMatch(/max-width:\s*100%;/);
     expect(chatHistory).toMatch(/overflow-x:\s*hidden;/);
+    expect(chatHistory).toMatch(/padding:\s*0;/);
 
     const row = cssRuleBody(chromeCss, ".a2ui-msg-row");
     expect(row).toMatch(/min-width:\s*0;/);
     expect(row).toMatch(/max-width:\s*100%;/);
+    expect(row).toMatch(/box-sizing:\s*border-box;/);
+
+    const canvasRows = cssRuleBody(
+      chromeCss,
+      ".a2ui-canvas-scroller .a2ui-msg-row",
+    );
+    expect(canvasRows).toMatch(/padding-inline:\s*20px;/);
+
+    const chatRows = cssRuleBody(chromeCss, ".a2ui-chat-history .a2ui-msg-row");
+    expect(chatRows).toMatch(/padding-inline:\s*12px;/);
   });
 
   it("wraps prose while keeping code and tables constrained locally", () => {

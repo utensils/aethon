@@ -18,9 +18,19 @@ export interface RestoredChatMessage {
   role: "user" | "agent" | "system";
   text?: string;
   thinking?: string;
+  attachments?: RestoredChatAttachment[];
   a2ui?: { components: unknown[] };
   createdAt?: number;
   cwd?: string;
+}
+
+export interface RestoredChatAttachment {
+  id: string;
+  kind: "image";
+  path: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export interface LatestSessionLog {
@@ -50,6 +60,36 @@ export function hasA2ui(value: unknown): value is { components: unknown[] } {
     typeof value === "object" &&
     Array.isArray((value as { components?: unknown }).components)
   );
+}
+
+export function parseChatAttachments(value: unknown): RestoredChatAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      record.kind !== "image" ||
+      typeof record.path !== "string" ||
+      typeof record.name !== "string" ||
+      typeof record.mimeType !== "string" ||
+      !record.mimeType.startsWith("image/") ||
+      typeof record.sizeBytes !== "number" ||
+      !Number.isFinite(record.sizeBytes)
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: record.id,
+        kind: "image",
+        path: record.path,
+        name: record.name,
+        mimeType: record.mimeType,
+        sizeBytes: record.sizeBytes,
+      },
+    ];
+  });
 }
 
 export function trimText(text: string): string {

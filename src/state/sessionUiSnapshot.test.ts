@@ -70,6 +70,63 @@ describe("sessionUiSnapshot", () => {
     expect(loadSessionUiSnapshot()?.activeTabId).toBe("tab-a");
   });
 
+  it("strips transient image preview URLs from persisted snapshots", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [
+        {
+          id: "m1",
+          role: "user" as const,
+          attachments: [
+            {
+              id: "img-1",
+              kind: "image" as const,
+              path: "/tmp/aethon-pastes/one.png",
+              name: "one.png",
+              mimeType: "image/png",
+              sizeBytes: 12,
+              previewUrl: "blob:temp",
+            },
+          ],
+        },
+      ],
+      draftAttachments: [
+        {
+          id: "img-2",
+          kind: "image" as const,
+          path: "/tmp/aethon-pastes/two.png",
+          name: "two.png",
+          mimeType: "image/png",
+          sizeBytes: 13,
+          previewUrl: "blob:draft",
+        },
+      ],
+    };
+
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "tab-a",
+    });
+
+    const restored = loadSessionUiSnapshot();
+    expect(restored?.tabs[0].messages[0].attachments?.[0]).toEqual({
+      id: "img-1",
+      kind: "image",
+      path: "/tmp/aethon-pastes/one.png",
+      name: "one.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+    });
+    expect(restored?.tabs[0].draftAttachments?.[0]).toEqual({
+      id: "img-2",
+      kind: "image",
+      path: "/tmp/aethon-pastes/two.png",
+      name: "two.png",
+      mimeType: "image/png",
+      sizeBytes: 13,
+    });
+  });
+
   it("does not restore persistent localStorage snapshots synchronously", () => {
     const localStorage =
       window.localStorage ??

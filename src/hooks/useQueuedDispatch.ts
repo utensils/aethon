@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { ChatAttachment } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 
 /**
@@ -30,7 +31,11 @@ export interface UseQueuedDispatchParams {
   tabs: Tab[];
   sendChat: (
     text: string,
-    options?: { mode?: "normal" | "steer"; tabId?: string },
+    options?: {
+      mode?: "normal" | "steer";
+      tabId?: string;
+      attachments?: ChatAttachment[];
+    },
   ) => Promise<void>;
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
 }
@@ -78,7 +83,11 @@ export function useQueuedDispatch({
         };
       });
 
-      sendChat(head.content, { mode: "normal", tabId: tab.id }).finally(() => {
+      sendChat(head.content, {
+        mode: "normal",
+        tabId: tab.id,
+        attachments: head.attachments,
+      }).finally(() => {
         dispatchingRef.current.delete(tab.id);
       });
     }
