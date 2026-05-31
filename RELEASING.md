@@ -6,8 +6,8 @@ Aethon ships two channels:
   [release-please](https://github.com/googleapis/release-please) from
   Conventional Commits on `main`. The bot opens a release PR; merging
   it tags + builds + publishes the GitHub Release.
-- **Nightly** — rebuilt on every push to `main`. Always at the
-  `nightly` tag; previous nightly assets remain reachable for the
+- **Nightly** — rebuilt after every green CI run on `main`. Always at
+  the `nightly` tag; previous nightly assets remain reachable for the
   in-app updater until the new build promotes atomically.
 
 Both build on **macOS Apple Silicon only** today (the only platform
@@ -29,20 +29,32 @@ release X.Y.Z`. It bumps `package.json`, `package-lock.json`, and
    `bun run version:check` passes on the PR's CI.
 4. Merge the release PR. release-please creates the `vX.Y.Z` tag +
    GitHub Release (immediately marked draft).
-5. The build matrix builds + notarizes + signs the macOS bundle and
-   uploads to the draft release. The publish job synthesizes
-   `latest.json` and un-drafts.
+5. The embedded reusable CI (`_ci.yml`) runs against the release ref
+   first; only on green does the build matrix build + notarize + sign the
+   macOS bundle and upload to the draft release. The publish job
+   synthesizes `latest.json` and un-drafts. A broken tree never produces
+   a signed release artifact.
 
 To build/publish an existing tag manually, use **Actions → Release
 Please → Run workflow** with the tag input.
 
 ### Nightly
 
-Push to `main` → the `Nightly Build` workflow:
+Push to `main` → `CI` runs → on green, the `Nightly Build` workflow
+chains off it via `workflow_run` (so nightly never builds on a red tree,
+and CI is never duplicated):
 
-1. Computes a `dev`-suffixed version like `0.4.0-dev.46.g9153d99`
-   (next minor + commit-count + short SHA).
-2. Creates a fresh `nightly-staging` release.
+1. Derives the next version from release-please's open release PR — the
+   `X.Y.Z` in its `chore(main): release X.Y.Z` title, located via the
+   `autorelease: pending` label — so the nightly mirrors whatever
+   release-please will actually cut (patch / minor / major). If no release
+   PR is open, it falls back to a patch bump of the last released version
+   recorded in `.release-please-manifest.json` (e.g. `0.4.0` → `0.4.1`).
+   It then appends `-dev.<commits-since-last-tag>.g<short-sha>`, e.g.
+   `0.5.0-dev.46.g9153d99` (open feat PR) or `0.4.1-dev.46.g9153d99`
+   (fix PR or fallback).
+2. Creates a fresh `nightly-staging` release targeting the exact commit
+   CI validated (`workflow_run.head_sha`).
 3. Builds + notarizes + signs the macOS bundle into staging.
 4. Synthesizes `latest.json` using the future `nightly/` asset URLs.
 5. Atomically retags `nightly-staging` → `nightly` and un-drafts.
@@ -50,6 +62,10 @@ Push to `main` → the `Nightly Build` workflow:
 The previous nightly's `latest.json` stays live for the ~entire build
 duration; the actual swap window is ~1–2 s. The updater treats
 "manifest not found" as "no update," which covers that window.
+
+Nightly can also be run manually via **Actions → Nightly Build → Run
+workflow** (workflow_dispatch); it then resolves the SHA from the current
+`main` tip.
 
 ## One-time setup
 

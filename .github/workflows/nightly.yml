@@ -26,11 +26,13 @@ env:
 jobs:
   compute-version:
     name: Compute Version
-    # Only build when CI passed (workflow_run already filters branches:[main]),
-    # or when manually dispatched.
+    # Build only when CI passed on main (workflow_run already filters
+    # branches:[main]), or when manually dispatched from main. The explicit
+    # ref check keeps a `workflow_dispatch` from a feature branch from
+    # publishing a "nightly" built off a non-main ref.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -59,6 +61,7 @@ jobs:
       - id: v
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESOLVED_SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
 
@@ -89,7 +92,9 @@ jobs:
             COMMITS=$(git rev-list --count HEAD)
           fi
 
-          SHORT=$(git rev-parse --short=7 HEAD)
+          # Short SHA from the resolved tested commit directly, so the
+          # version label doesn't depend on the checkout landing on it.
+          SHORT="${RESOLVED_SHA:0:7}"
           VERSION="${NEXT}-dev.${COMMITS}.g${SHORT}"
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
