@@ -25,9 +25,11 @@ type AethonE2eState = {
   waiting?: boolean;
   queueCount?: number;
   model?: string;
+  defaultModel?: string;
   sidebar?: {
     models?: { id: string; active?: boolean }[];
   };
+  tabs?: { id: string; model?: string }[];
 };
 
 type TauriCallback = (event: unknown) => void;

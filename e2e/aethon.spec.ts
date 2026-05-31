@@ -504,9 +504,9 @@ test("a model picked with no active session is the default for the next new tab"
     .poll(() =>
       page.evaluate(() => {
         const state = window.__AETHON_STATE__?.();
-        const active = (
-          (state?.tabs as { id: string; model?: string }[] | undefined) ?? []
-        ).find((t) => t.id === state?.activeTabId);
+        const active = (state?.tabs ?? []).find(
+          (t) => t.id === state?.activeTabId,
+        );
         return active?.model;
       }),
     )
