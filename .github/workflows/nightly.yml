@@ -1,15 +1,16 @@
 name: Nightly Build
 
+# Chains off CI: a nightly only builds after the `CI` workflow reports
+# success on `main` (workflow_run), so a red tree never publishes a
+# nightly and CI is never duplicated. `workflow_run` carries no path
+# filter, so the old `paths-ignore` is dropped — nightly now runs after
+# every green main CI (doc-only / release-please merges are rare and
+# cheap relative to a broken nightly).
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - ".github/workflows/docs.yml"
-      - ".github/workflows/release-please.yml"
-      - ".github/workflows/copilot-review.yml"
-      - ".release-please-manifest.json"
-      - "CHANGELOG.md"
   workflow_dispatch: {}
 
 concurrency:
@@ -25,23 +26,61 @@ env:
 jobs:
   compute-version:
     name: Compute Version
-    if: github.ref == 'refs/heads/main'
+    # Only build when CI passed (workflow_run already filters branches:[main]),
+    # or when manually dispatched.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
       short_sha: ${{ steps.v.outputs.short_sha }}
       last_tag: ${{ steps.v.outputs.last_tag }}
+      sha: ${{ steps.sha.outputs.sha }}
     steps:
+      # Under workflow_run, github.sha / the default checkout point at the
+      # workflow file's ref, NOT the commit CI validated. Resolve the tested
+      # commit explicitly (head_sha), falling back to github.sha for dispatch
+      # (where the workflow_run context is empty). Every downstream job
+      # consumes this single resolved SHA.
+      - id: sha
+        run: |
+          set -euo pipefail
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          [ -z "$SHA" ] && SHA="${{ github.sha }}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "Resolved head SHA: ${SHA}"
+
       - uses: actions/checkout@v5
         with:
+          ref: ${{ steps.sha.outputs.sha }}
           fetch-depth: 0
 
       - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          CURRENT=$(jq -r '.version' package.json)
-          IFS='.' read -r MAJ MIN _ <<< "$CURRENT"
-          NEXT_MINOR="${MAJ}.$((MIN + 1)).0"
+
+          # The next version is whatever release-please will actually cut
+          # (patch / minor / major), read from its open release PR. The PR
+          # title is `chore(main): release X.Y.Z` and carries the
+          # `autorelease: pending` label. `|| true` so a no-match grep under
+          # `pipefail` doesn't kill the step.
+          NEXT=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" --json title \
+            --jq '.[0].title // ""' \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
+
+          # Fallback (no release PR open → no releasable commits pending):
+          # patch-bump the last *released* version. The manifest is the
+          # authoritative pointer — package.json can be transiently bumped on
+          # a release-merge HEAD, and the newest git tag can lag the manifest.
+          if [ -z "$NEXT" ]; then
+            CURRENT=$(jq -r '."."' .release-please-manifest.json)
+            IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"
+            NEXT="${MAJ}.${MIN}.$((PAT + 1))"
+          fi
 
           LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
           if [ -n "$LAST_TAG" ]; then
@@ -51,7 +90,7 @@ jobs:
           fi
 
           SHORT=$(git rev-parse --short=7 HEAD)
-          VERSION="${NEXT_MINOR}-dev.${COMMITS}.g${SHORT}"
+          VERSION="${NEXT}-dev.${COMMITS}.g${SHORT}"
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT}" >> "$GITHUB_OUTPUT"
@@ -64,6 +103,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.compute-version.outputs.sha }}
 
       # Build into a separate `nightly-staging` release so the live
       # `nightly` release (with the previous build's assets) stays
@@ -76,16 +117,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.compute-version.outputs.version }}
           LAST_TAG: ${{ needs.compute-version.outputs.last_tag }}
+          RESOLVED_SHA: ${{ needs.compute-version.outputs.sha }}
         run: |
           gh release delete nightly-staging --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
 
-          NOTES="Automated nightly build of \`${GITHUB_SHA}\`.
+          NOTES="Automated nightly build of \`${RESOLVED_SHA}\`.
 
           **Version:** \`${VERSION}\`
           **Built:** $(date -u +%FT%TZ)"
 
           if [ -n "$LAST_TAG" ]; then
-            DIFF_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...${GITHUB_SHA}"
+            DIFF_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...${RESOLVED_SHA}"
             NOTES="${NOTES}
           [Changes since ${LAST_TAG}](${DIFF_URL})"
           fi
@@ -96,7 +138,7 @@ jobs:
 
           gh release create nightly-staging \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --target "$RESOLVED_SHA" \
             --title "Nightly ${VERSION}" \
             --notes "$NOTES" \
             --prerelease \
@@ -109,6 +151,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.compute-version.outputs.sha }}
 
       # Stamp the nightly version into package.json, then let the
       # project's existing sync-version script propagate it to
