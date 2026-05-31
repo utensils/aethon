@@ -14,6 +14,12 @@ permissions:
   contents: write
   pull-requests: write
 
+# release-please mutates one long-lived PR branch for main; queue runs so
+# bursty merges cannot race while updating that shared ref.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
