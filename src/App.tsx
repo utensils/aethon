@@ -516,6 +516,7 @@ export default function App() {
     slashContext: () => slashContext(),
     persistLocalChatMessage,
     recordProjectModel,
+    piDefaultModelRef,
   });
 
   // All forward-ref slots — used by earlier hooks to call through to

@@ -1,3 +1,10 @@
+/** Sentinel item id for the header picker's "(pi default)" entry.
+ *  Selecting it clears the chosen default (`/defaultModel`) and writes
+ *  `[agent] model = null`, so new sessions fall back to pi's env-driven
+ *  default. `setModel` interprets this id specially rather than treating
+ *  it as a concrete model. */
+export const PI_DEFAULT_MODEL_SENTINEL = "__pi_default__";
+
 /** Recompute the global model picker's `active` flag against `model`.
  *  Called whenever the active tab changes (switch / new / close) so the
  *  sidebar highlight tracks the active session's chosen model. Returns

@@ -13,7 +13,10 @@ import {
   type SlashCommandContext,
 } from "../slashCommands";
 import type { NotificationInput } from "./useNotifications";
-import { recomputeModelPicker } from "../utils/modelPicker";
+import {
+  recomputeModelPicker,
+  PI_DEFAULT_MODEL_SENTINEL,
+} from "../utils/modelPicker";
 import { getConfig, clearConfigCache, type AethonConfig } from "../config";
 
 /** Patch `queuedMessages` and the derived `queueCount` together so the
@@ -48,6 +51,10 @@ export interface UseChatContext {
   slashContext: () => SlashCommandContext;
   persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
   recordProjectModel: (model: string, tabId?: string) => void;
+  /** pi's boot/default model, used as the new-tab fallback. Cleared when
+   *  the user resets to "(pi default)" so the next new session sends no
+   *  explicit model and the agent picks its env-driven default. */
+  piDefaultModelRef: MutableRefObject<string>;
 }
 
 export interface UseChatActions {
@@ -126,6 +133,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     slashContext,
     persistLocalChatMessage,
     recordProjectModel,
+    piDefaultModelRef,
   } = ctx;
 
   // Fallback id for text bubbles when the bridge doesn't supply one. The
@@ -524,6 +532,38 @@ export function useChat(ctx: UseChatContext): UseChatActions {
    *  would spin up a phantom "default" session — but the default pick above
    *  is enough for the next new session to inherit. */
   async function setModel(id: string) {
+    // "(pi default)" — fully reset to pi's env-driven default for new
+    // sessions. Clear every runtime fallback so the next new tab sends
+    // NO explicit model and the agent picks from env: the chosen default
+    // (/defaultModel), per-project memory (/projectModels), and pi's
+    // cached boot model (/piDefaultModel + piDefaultModelRef — which may
+    // itself be a stale configured value seeded at boot). Persist
+    // [agent] model = null. Does not retarget a running session — the
+    // reset governs new sessions only, matching the old Settings field.
+    if (id === PI_DEFAULT_MODEL_SENTINEL) {
+      const activeId = stateRef.current.activeTabId as string | undefined;
+      const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+      const activeTab = activeId
+        ? tabs.find((t) => t.id === activeId)
+        : undefined;
+      const hasActiveAgentTab = activeTab?.kind === "agent";
+      piDefaultModelRef.current = "";
+      setState((prev) => ({
+        ...prev,
+        defaultModel: "",
+        piDefaultModel: "",
+        projectModels: {},
+        // Blank the header display when no agent tab owns it so the picker
+        // shows "(pi default)"; a focused session keeps its own model.
+        ...(hasActiveAgentTab ? {} : { model: "" }),
+        sidebar: recomputeModelPicker(
+          prev.sidebar as Record<string, unknown> | undefined,
+          hasActiveAgentTab ? (activeTab?.model ?? "") : "",
+        ),
+      }));
+      persistDefaultModel(""); // writes [agent] model = null
+      return;
+    }
     const trimmed = id.trim();
     if (!trimmed) return;
     const activeId = stateRef.current.activeTabId as string | undefined;
