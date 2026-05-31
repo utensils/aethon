@@ -425,12 +425,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           : undefined;
     try {
       await invoke("send_message", {
-        message: bridgeText,
-        tabId,
-        mode,
-        ...(attachments.length > 0 ? { attachments } : {}),
-        ...(targetCwd ? { cwd: targetCwd } : {}),
-        ...(targetModel ? { model: targetModel } : {}),
+        request: {
+          message: bridgeText,
+          tabId,
+          mode,
+          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(targetCwd ? { cwd: targetCwd } : {}),
+          ...(targetModel ? { model: targetModel } : {}),
+        },
       });
     } catch (err) {
       updateTab(tabId, (tab) => ({

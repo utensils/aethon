@@ -231,6 +231,10 @@ export function TaskLauncher({
       .then((saved) => setAttachments((current) => [...current, ...saved]))
       .catch((err) => {
         console.warn("task-launcher paste image failed:", err);
+        onEvent("paste-image-failed", {
+          message:
+            err instanceof Error ? err.message : "Could not paste image.",
+        });
       });
   };
 
@@ -385,8 +389,7 @@ export function TaskLauncher({
           className="a2ui-task-launcher-submit"
           onClick={submit}
           disabled={
-            submitting ||
-            (!promptText.trim() && attachments.length === 0)
+            submitting || (!promptText.trim() && attachments.length === 0)
           }
         >
           {submitting ? "…" : "Start"}

@@ -29,6 +29,17 @@ pub(crate) struct ChatAttachmentInput {
     size_bytes: u64,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SendMessageRequest {
+    message: String,
+    tab_id: Option<String>,
+    mode: Option<String>,
+    cwd: Option<String>,
+    model: Option<String>,
+    attachments: Option<Vec<ChatAttachmentInput>>,
+}
+
 #[tauri::command]
 pub(crate) fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> Result<(), String> {
     ensure_global_agent(&state, &app)
@@ -36,33 +47,28 @@ pub(crate) fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> R
 
 #[tauri::command]
 pub(crate) fn send_message(
-    message: String,
-    tab_id: Option<String>,
-    mode: Option<String>,
-    cwd: Option<String>,
-    model: Option<String>,
-    attachments: Option<Vec<ChatAttachmentInput>>,
+    request: SendMessageRequest,
     state: State<'_, AgentProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let tab_id = tab_id.unwrap_or_else(|| "default".to_string());
+    let tab_id = request.tab_id.unwrap_or_else(|| "default".to_string());
     let mut payload = serde_json::json!({
         "type": "chat",
-        "content": message,
-        "mode": mode.unwrap_or_else(|| "normal".to_string()),
+        "content": request.message,
+        "mode": request.mode.unwrap_or_else(|| "normal".to_string()),
         "tabId": tab_id,
     });
-    if let Some(cwd) = cwd
+    if let Some(cwd) = request.cwd
         && !cwd.is_empty()
     {
         payload["cwd"] = serde_json::Value::String(cwd);
     }
-    if let Some(model) = model
+    if let Some(model) = request.model
         && !model.is_empty()
     {
         payload["model"] = serde_json::Value::String(model);
     }
-    let images = attachments_to_agent_images(&app, attachments.unwrap_or_default())?;
+    let images = attachments_to_agent_images(&app, request.attachments.unwrap_or_default())?;
     if !images.is_empty() {
         payload["images"] = serde_json::Value::Array(images);
     }

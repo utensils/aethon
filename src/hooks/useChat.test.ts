@@ -95,10 +95,12 @@ describe("useChat setModel", () => {
     });
 
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "hello",
-      tabId: "tab-1",
-      mode: "normal",
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "hello",
+        tabId: "tab-1",
+        mode: "normal",
+        model: "anthropic/claude-opus-4-7",
+      },
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       role: "user",
@@ -126,11 +128,13 @@ describe("useChat setModel", () => {
     });
 
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "what is this?",
-      tabId: "tab-1",
-      mode: "normal",
-      attachments: [attachment],
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "what is this?",
+        tabId: "tab-1",
+        mode: "normal",
+        attachments: [attachment],
+        model: "anthropic/claude-opus-4-7",
+      },
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
     expect(tab.messages.at(-1)).toMatchObject({
@@ -160,11 +164,13 @@ describe("useChat setModel", () => {
     });
 
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "work on issue",
-      tabId: "issue-tab",
-      mode: "normal",
-      cwd: "/projects/aethon-fix-86",
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "work on issue",
+        tabId: "issue-tab",
+        mode: "normal",
+        cwd: "/projects/aethon-fix-86",
+        model: "anthropic/claude-opus-4-7",
+      },
     });
     const tabs = stateRef.current.tabs as Tab[];
     expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
@@ -206,10 +212,12 @@ describe("useChat setModel", () => {
 
     expect(run).not.toHaveBeenCalled();
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "/clear",
-      tabId: "issue-tab",
-      mode: "normal",
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "/clear",
+        tabId: "issue-tab",
+        mode: "normal",
+        model: "anthropic/claude-opus-4-7",
+      },
     });
     const tabs = stateRef.current.tabs as Tab[];
     expect(tabs.find((t) => t.id === "main-tab")?.messages).toEqual([]);
@@ -243,10 +251,12 @@ describe("useChat setModel", () => {
     // queuedSteeringId clears after the dispatch settles.
     expect(finalTab.queuedSteeringId).toBeUndefined();
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "first",
-      tabId: "tab-1",
-      mode: "steer",
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "first",
+        tabId: "tab-1",
+        mode: "steer",
+        model: "anthropic/claude-opus-4-7",
+      },
     });
   });
 
@@ -317,7 +327,9 @@ describe("useChat setModel", () => {
 
     expect(invoke).not.toHaveBeenCalledWith(
       "send_message",
-      expect.objectContaining({ message: "after this" }),
+      expect.objectContaining({
+        request: expect.objectContaining({ message: "after this" }),
+      }),
     );
     const tab = (stateRef.current.tabs as Tab[])[0];
     expect(tab.queuedMessages.map((m) => m.content)).toEqual(["after this"]);
@@ -408,10 +420,12 @@ describe("useChat setModel", () => {
     });
 
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "drained",
-      tabId: "tab-1",
-      mode: "normal",
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "drained",
+        tabId: "tab-1",
+        mode: "normal",
+        model: "anthropic/claude-opus-4-7",
+      },
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
     expect(tab.queuedMessages).toEqual([]);
@@ -454,10 +468,12 @@ describe("useChat setModel", () => {
     });
 
     expect(invoke).toHaveBeenCalledWith("send_message", {
-      message: "look now",
-      tabId: "tab-1",
-      mode: "steer",
-      model: "anthropic/claude-opus-4-7",
+      request: {
+        message: "look now",
+        tabId: "tab-1",
+        mode: "steer",
+        model: "anthropic/claude-opus-4-7",
+      },
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       role: "user",

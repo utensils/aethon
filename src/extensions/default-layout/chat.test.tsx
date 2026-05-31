@@ -13,11 +13,9 @@ const { openUrl } = vi.hoisted(() => ({
   openUrl: vi.fn(),
 }));
 
-const virtuosoMockState = vi.hoisted(
-  (): { followOutput?: unknown } => ({
-    followOutput: undefined,
-  }),
-);
+const virtuosoMockState = vi.hoisted((): { followOutput?: unknown } => ({
+  followOutput: undefined,
+}));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrl(...args),
@@ -466,7 +464,9 @@ describe("ChatInput", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Open one.png" }));
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(
+      screen.getByRole("dialog", { name: "Image preview: one.png" }),
+    ).toBeTruthy();
     expect(screen.getAllByText("one.png").length).toBeGreaterThanOrEqual(2);
   });
 

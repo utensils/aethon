@@ -87,7 +87,7 @@ export const handleProjectDashboard: EventRouteHandler = (
       ctx,
     );
   }
-  if (eventType === "start-task") {
+  if (eventType === "start-task" || eventType === "paste-image-failed") {
     return handleTaskLauncher(
       { component: { id: "", type: "task-launcher" }, eventType, data },
       ctx,
@@ -134,6 +134,20 @@ export const handleTaskLauncher: EventRouteHandler = (
   { eventType, data },
   ctx,
 ) => {
+  if (eventType === "paste-image-failed") {
+    const sel = data as { message?: unknown } | undefined;
+    ctx.pushNotification({
+      id: "ae-task-paste-image-failed",
+      title: "Image paste failed",
+      message:
+        typeof sel?.message === "string"
+          ? sel.message
+          : "Could not paste image.",
+      kind: "error",
+      durationMs: 3000,
+    });
+    return true;
+  }
   if (eventType === "start-task") {
     const sel = data as
       | {

@@ -134,9 +134,8 @@ pub async fn git_worktree_add(
     if let Some(parent) = target.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            format!("create worktree parent {}: {e}", parent.display())
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create worktree parent {}: {e}", parent.display()))?;
     }
     // Detect whether the branch exists so we know whether to pass `-b`.
     let exists = env::command("git")
@@ -485,13 +484,9 @@ mod tests {
 
         assert_eq!(wt.branch.as_deref(), Some("feature-y"));
         assert!(target.exists());
-        git_worktree_remove(
-            project_path,
-            target.to_string_lossy().to_string(),
-            false,
-        )
-        .await
-        .expect("worktree remove");
+        git_worktree_remove(project_path, target.to_string_lossy().to_string(), false)
+            .await
+            .expect("worktree remove");
     }
 
     #[tokio::test]

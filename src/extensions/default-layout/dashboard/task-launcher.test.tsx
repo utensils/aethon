@@ -218,4 +218,38 @@ describe("TaskLauncher", () => {
       ),
     );
   });
+
+  it("emits an event when pasted image persistence fails", async () => {
+    invoke.mockRejectedValue(new Error("payload exceeds 32 MiB"));
+    const onEvent = vi.fn();
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+    const input = screen.getByLabelText("Task prompt");
+    const file = new File(["abc"], "huge.png", { type: "image/png" });
+    fireEvent.paste(input, {
+      clipboardData: {
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => file,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith("paste-image-failed", {
+        message: "payload exceeds 32 MiB",
+      }),
+    );
+    expect(screen.queryByText("huge.png")).toBeNull();
+  });
 });

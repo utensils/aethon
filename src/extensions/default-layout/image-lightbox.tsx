@@ -20,7 +20,12 @@ export function ImageLightbox({
   }, [onClose]);
 
   return (
-    <div className="a2ui-image-lightbox" role="dialog" aria-modal="true">
+    <div
+      className="a2ui-image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Image preview: ${attachment.name}`}
+    >
       <button
         type="button"
         className="a2ui-image-lightbox-backdrop"
