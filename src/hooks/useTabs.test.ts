@@ -84,23 +84,27 @@ describe("recentSessionItemFromClosedTab", () => {
 });
 
 describe("modelForNewProjectTab", () => {
-  it("prefers the active project's last model over the global active model", () => {
+  it("prefers the chosen default over per-project memory (global wins everywhere)", () => {
     expect(
       modelForNewProjectTab(
         {
-          model: "openai/gpt-5.5",
+          defaultModel: "openai/gpt-5.5",
           projectModels: { p1: "anthropic/claude-opus-4-7" },
         },
         "p1",
         "openai/gpt-5-mini",
       ),
-    ).toBe("anthropic/claude-opus-4-7");
+    ).toBe("openai/gpt-5.5");
   });
 
-  it("falls back to visible model and then pi default", () => {
+  it("falls back to per-project memory then pi default when no default is set", () => {
     expect(
-      modelForNewProjectTab({ model: "openai/gpt-5.5" }, "p1", "fallback"),
-    ).toBe("openai/gpt-5.5");
+      modelForNewProjectTab(
+        { projectModels: { p1: "anthropic/claude-opus-4-7" } },
+        "p1",
+        "fallback",
+      ),
+    ).toBe("anthropic/claude-opus-4-7");
     expect(modelForNewProjectTab({}, "p1", "fallback")).toBe("fallback");
   });
 });

@@ -116,6 +116,37 @@ export function TaskLauncher({
     [props?.prompt, state],
   );
 
+  // Model list + the resolved default for new sessions. The chip shows
+  // (and lets the user override per-launch) which model the task spawns
+  // with — `/defaultModel` is the header/Settings pick, `/piDefaultModel`
+  // is the pi boot fallback.
+  const models = useMemo<{ id: string; label: string }[]>(() => {
+    const raw = resolvePointer(state, "/sidebar/models");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (m): m is { id: unknown; label?: unknown } =>
+          typeof m === "object" && m !== null,
+      )
+      .map((m) => ({ id: String(m.id ?? ""), label: String(m.label ?? m.id ?? "") }))
+      .filter((m) => m.id.length > 0);
+  }, [state]);
+  const defaultModelId = useMemo(() => {
+    const chosen = resolvePointer(state, "/defaultModel");
+    if (typeof chosen === "string" && chosen.length > 0) return chosen;
+    const pi = resolvePointer(state, "/piDefaultModel");
+    return typeof pi === "string" ? pi : "";
+  }, [state]);
+  const [modelTouched, setModelTouched] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(defaultModelId);
+  // Track the live default until the user overrides — so the chip always
+  // reflects a header/Settings change made while the launcher is open.
+  useEffect(() => {
+    if (modelTouched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived-state resync on external default change
+    setSelectedModel(defaultModelId);
+  }, [defaultModelId, modelTouched]);
+
   const [promptText, setPromptText] = useState(initialPrompt);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [openAttachment, setOpenAttachment] = useState<ChatAttachment | null>(
@@ -185,13 +216,18 @@ export function TaskLauncher({
       // handler can activate it before spawning the tab.
       worktreeId:
         worktreeChoice.kind === "existing" ? worktreeChoice.id : undefined,
+      // Per-launch model. Falls back to the resolved default so the
+      // session always boots with a concrete model even before `ready`.
+      model: selectedModel || defaultModelId || undefined,
     });
     // Clear the input optimistically — if the start fails the dashboard
     // will surface the error via the notification stack. Reset `touched`
-    // so a fresh dashboard visit re-syncs to the active worktree.
+    // so a fresh dashboard visit re-syncs to the active worktree, and
+    // `modelTouched` so the chip re-seeds from the live default.
     setPromptText("");
     setAttachments([]);
     setTouched(false);
+    setModelTouched(false);
     setSubmitting(false);
   }, [
     submitting,
@@ -201,6 +237,8 @@ export function TaskLauncher({
     worktreeChoice,
     newBranch,
     baseBranch,
+    selectedModel,
+    defaultModelId,
     onEvent,
   ]);
 
@@ -246,6 +284,10 @@ export function TaskLauncher({
       : worktreeChoice.kind === "existing"
         ? worktreeChoice.label
         : "+ New worktree";
+  const modelLabel =
+    models.find((m) => m.id === selectedModel)?.label ||
+    selectedModel ||
+    "model";
 
   return (
     <div className="a2ui-task-launcher">
@@ -305,6 +347,24 @@ export function TaskLauncher({
         />
       )}
       <div className="a2ui-task-launcher-row">
+        {models.length > 0 && (
+          <ChipMenu
+            label={modelLabel}
+            icon="✦"
+            ariaLabel="Model"
+            searchable
+            searchPlaceholder="filter models — sonnet, gpt, qwen…"
+            items={models.map((m) => ({
+              id: m.id,
+              label: m.label,
+              current: m.id === selectedModel,
+            }))}
+            onSelect={(id) => {
+              setModelTouched(true);
+              setSelectedModel(id);
+            }}
+          />
+        )}
         <ChipMenu
           label={data.project.label}
           icon="◰"
@@ -411,15 +471,29 @@ function ChipMenu({
   ariaLabel,
   items,
   onSelect,
+  searchable = false,
+  searchPlaceholder,
 }: {
   label: string;
   icon?: string;
   ariaLabel: string;
   items: ChipMenuItem[];
   onSelect: (id: string) => void;
+  /** Render a filter input atop the menu — for long lists like models. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (it) =>
+        it.label.toLowerCase().includes(q) || it.id.toLowerCase().includes(q),
+    );
+  }, [items, query]);
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (e: MouseEvent) => {
@@ -452,7 +526,10 @@ function ChipMenu({
       <button
         type="button"
         className="a2ui-task-launcher-chip"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setQuery("");
+          setOpen((v) => !v);
+        }}
         aria-label={ariaLabel}
         aria-expanded={open}
       >
@@ -468,23 +545,41 @@ function ChipMenu({
       </button>
       {open && (
         <div className="a2ui-task-launcher-chip-menu" role="menu">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="menuitem"
-              className={
-                "a2ui-task-launcher-chip-menu-item" +
-                (item.current ? " is-current" : "")
-              }
-              onClick={() => {
-                onSelect(item.id);
-                setOpen(false);
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
+          {searchable && (
+            <input
+              type="text"
+              className="a2ui-task-launcher-chip-search"
+              placeholder={searchPlaceholder ?? "filter…"}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label={`Filter ${ariaLabel}`}
+              autoFocus
+              {...codeInputProps}
+            />
+          )}
+          {filtered.length === 0 ? (
+            <div className="a2ui-task-launcher-chip-menu-empty">
+              no matches
+            </div>
+          ) : (
+            filtered.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitem"
+                className={
+                  "a2ui-task-launcher-chip-menu-item" +
+                  (item.current ? " is-current" : "")
+                }
+                onClick={() => {
+                  onSelect(item.id);
+                  setOpen(false);
+                }}
+              >
+                {item.label}
+              </button>
+            ))
+          )}
         </div>
       )}
     </span>

@@ -34,20 +34,26 @@ export function sessionLabelFromMessages(
 }
 
 /** Resolve the model id a freshly-opened tab should inherit. Falls
- *  through: project-scoped override → globally-visible model → pi's
- *  ready-reported default. Trimmed because user-typed model ids
- *  occasionally carry trailing whitespace. */
+ *  through: explicit per-launch override → the user's chosen default
+ *  (`/defaultModel`, set by the header picker / Settings and persisted to
+ *  `[agent] model`) → legacy per-project memory → pi's ready-reported
+ *  default. `/defaultModel` deliberately wins over per-project memory so a
+ *  header pick is respected by *every* new session, not just sessions in
+ *  projects that have never run an agent. Trimmed because user-typed model
+ *  ids occasionally carry trailing whitespace. */
 export function modelForNewProjectTab(
   state: Record<string, unknown>,
   activeProjectId: string | null,
   fallbackModel: string,
+  explicitModel?: string,
 ): string {
   const projectModels =
     (state.projectModels as Record<string, string> | undefined) ?? {};
   const projectModel = activeProjectId ? projectModels[activeProjectId] : "";
   return (
+    (explicitModel ?? "") ||
+    (state.defaultModel as string | undefined) ||
     projectModel ||
-    (state.model as string | undefined) ||
     fallbackModel
   ).trim();
 }

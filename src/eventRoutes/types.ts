@@ -166,6 +166,8 @@ export interface EventRouteContext {
     /** Existing worktree to launch under. Ignored when newWorktree is
      *  true. When omitted, the project root is used. */
     worktreeId?: string;
+    /** Model the launched session should use (task-launcher model chip). */
+    model?: string;
   }) => Promise<void>;
   removeWorktreeById: (
     worktreeId: string,

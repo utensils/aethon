@@ -109,6 +109,39 @@ describe("useTaskLauncher", () => {
     expect(sendChat).toHaveBeenCalledWith("implement this", { tabId });
   });
 
+  it("threads the per-launch model through to the new tab", async () => {
+    const projectsRef = ref(makeProjects());
+    const newTab = vi.fn();
+    const sendChat = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() =>
+      useTaskLauncher({
+        projectsRef,
+        pushNotificationRef: ref((_: NotificationInput) => {}),
+        setActiveProjectById: vi.fn(() => true),
+        createWorktreeWithParams: vi.fn(),
+        activateWorktree: vi.fn(),
+        newTab,
+        pendingTabOpens: ref(new Map()),
+        sendChat,
+      }),
+    );
+
+    await act(async () => {
+      await result.current({
+        projectId: "p1",
+        prompt: "do the thing",
+        model: "openai/gpt-5.5",
+      });
+    });
+
+    const tabId = newTab.mock.calls[0]?.[0];
+    expect(newTab).toHaveBeenCalledWith(tabId, undefined, {
+      cwd: "/repo/aethon",
+      model: "openai/gpt-5.5",
+    });
+    expect(sendChat).toHaveBeenCalledWith("do the thing", { tabId });
+  });
+
   it("uses automatic worktree naming when the launcher branch is blank", async () => {
     const projects = makeProjects();
     projects.worktreesByProject.p1 = [

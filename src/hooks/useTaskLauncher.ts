@@ -11,6 +11,9 @@ export interface StartTaskOptions {
   branch?: string;
   baseBranch?: string;
   worktreeId?: string;
+  /** Model the launched session should use (task-launcher model chip).
+   *  Overrides the global default + per-project memory for this launch. */
+  model?: string;
 }
 
 export interface UseTaskLauncherOptions {
@@ -31,6 +34,7 @@ export interface UseTaskLauncherOptions {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      model?: string;
     },
   ) => void;
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
@@ -100,7 +104,10 @@ export function useTaskLauncher({
         }
       }
       const tabId = crypto.randomUUID();
-      newTab(tabId, undefined, { cwd });
+      newTab(tabId, undefined, {
+        cwd,
+        ...(opts.model ? { model: opts.model } : {}),
+      });
       const opening = pendingTabOpens.current.get(tabId);
       if (opening) {
         try {

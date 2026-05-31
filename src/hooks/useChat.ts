@@ -14,6 +14,7 @@ import {
 } from "../slashCommands";
 import type { NotificationInput } from "./useNotifications";
 import { recomputeModelPicker } from "../utils/modelPicker";
+import { getConfig, clearConfigCache, type AethonConfig } from "../config";
 
 /** Patch `queuedMessages` and the derived `queueCount` together so the
  *  composer badge can't drift out of sync with the popover list. */
@@ -137,6 +138,59 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   // on `response_end`. Used to compute turn duration for the OS
   // completion notification gate.
   const turnStartedAtRef = useRef<Map<string, number>>(new Map());
+
+  // Debounced persistence of the chosen default model to [agent] model.
+  // Clicking through several models in the header picker would otherwise
+  // do a disk read + full TOML rewrite per click; we coalesce to a single
+  // trailing write that captures the latest id.
+  const defaultModelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const pendingDefaultModelRef = useRef<string | null>(null);
+
+  async function flushDefaultModelWrite() {
+    const model = pendingDefaultModelRef.current;
+    if (model === null) return;
+    pendingDefaultModelRef.current = null;
+    let live: AethonConfig | null = null;
+    try {
+      live = await getConfig();
+    } catch {
+      /* fall through with nulls — write_config seeds a fresh document */
+    }
+    // write_config is whole-config destructive: it removes keys it does
+    // not see and always re-emits [shell] default_share_mode. Merge the
+    // full live config before writing, mirroring the Settings save path
+    // (uiOverlays/settings.ts) so unrelated sections survive the round-trip.
+    const merged = {
+      ui: { ...(live?.ui ?? {}) },
+      agent: { ...(live?.agent ?? {}), model: model || null },
+      shell: { ...(live?.shell ?? {}) },
+      shortcuts: { ...(live?.shortcuts ?? {}) },
+      voice: { ...(live?.voice ?? {}) },
+      updates: { ...(live?.updates ?? {}) },
+      devshell: { ...(live?.devshell ?? {}) },
+    };
+    try {
+      await invoke("write_config", { config: merged });
+      // Drop the read-once cache so an open Settings panel + the next
+      // getConfig() reflect the header-chosen model.
+      clearConfigCache();
+    } catch (err) {
+      console.warn("persist default model failed:", err);
+    }
+  }
+
+  function persistDefaultModel(model: string) {
+    pendingDefaultModelRef.current = model;
+    if (defaultModelTimerRef.current) {
+      clearTimeout(defaultModelTimerRef.current);
+    }
+    defaultModelTimerRef.current = setTimeout(() => {
+      defaultModelTimerRef.current = null;
+      void flushDefaultModelWrite();
+    }, 400);
+  }
 
   // Append a chat message, or replace in place if a message with the same
   // id already exists. This is what lets the bridge stream "running…" tool
@@ -457,39 +511,71 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
   }
 
+  /** Header / Settings model pick. Two responsibilities:
+   *
+   *  1. Set the user's default model for *new* sessions — `/defaultModel`,
+   *     persisted to `[agent] model`. This always sticks; it is intent,
+   *     independent of whether a live session accepts the switch, and wins
+   *     over per-project memory in `modelForNewProjectTab`.
+   *  2. Retarget the *active* session (when one is focused) via `set_model`.
+   *
+   *  With no active agent tab (e.g. on the dashboard) we skip the bridge
+   *  call entirely — there is nothing to switch and invoking `set_model`
+   *  would spin up a phantom "default" session — but the default pick above
+   *  is enough for the next new session to inherit. */
   async function setModel(id: string) {
-    const tabId =
-      (stateRef.current.activeTabId as string | undefined) ?? "default";
-    const previousModel = (stateRef.current.model as string | undefined) ?? "";
-    const canOptimisticallyMirror = stateRef.current.waiting !== true;
-    recordProjectModel(id, tabId);
-    if (canOptimisticallyMirror) {
-      updateTab(tabId, (tab) => ({ ...tab, model: id }));
-      setState((prev) => ({
-        ...prev,
-        model: id,
-        status: `switching to ${id}...`,
-        sidebar: recomputeModelPicker(
-          prev.sidebar as Record<string, unknown> | undefined,
-          id,
-        ),
-      }));
+    const trimmed = id.trim();
+    if (!trimmed) return;
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeTab = activeId
+      ? tabs.find((t) => t.id === activeId)
+      : undefined;
+    const hasActiveAgentTab = activeTab?.kind === "agent";
+    const previousTabModel = activeTab?.model ?? "";
+    // Only mirror onto a live session when an agent tab is focused and not
+    // mid-turn (the bridge rejects a switch while a prompt is in flight).
+    const canMirror = hasActiveAgentTab && stateRef.current.waiting !== true;
+
+    recordProjectModel(trimmed, activeId);
+    setState((prev) => ({
+      ...prev,
+      defaultModel: trimmed,
+      // Mirror onto /model for the header display when we're switching a
+      // live session OR when no agent tab owns the header (dashboard /
+      // shell focus) so the picker reflects the chosen default. When an
+      // agent tab is busy we leave /model alone — the switch is deferred.
+      ...(canMirror || !hasActiveAgentTab ? { model: trimmed } : {}),
+      ...(canMirror ? { status: `switching to ${trimmed}...` } : {}),
+      sidebar: recomputeModelPicker(
+        prev.sidebar as Record<string, unknown> | undefined,
+        trimmed,
+      ),
+    }));
+    if (canMirror && activeId) {
+      updateTab(activeId, (tab) => ({ ...tab, model: trimmed }));
     }
+    persistDefaultModel(trimmed);
+
+    // No live session to retarget — the default pick is all that's needed.
+    if (!hasActiveAgentTab || !activeId) return;
     try {
       await invoke("agent_command", {
-        payload: JSON.stringify({ type: "set_model", id, tabId }),
+        payload: JSON.stringify({
+          type: "set_model",
+          id: trimmed,
+          tabId: activeId,
+        }),
       });
     } catch (err) {
-      if (previousModel && canOptimisticallyMirror) {
-        updateTab(tabId, (tab) => ({ ...tab, model: previousModel }));
+      // Roll back ONLY the optimistic live-session mirror — the chosen
+      // default (/defaultModel + persisted config) is intent and stays.
+      if (canMirror && previousTabModel) {
+        updateTab(activeId, (tab) => ({ ...tab, model: previousTabModel }));
         setState((prev) => ({
           ...prev,
-          model: previousModel,
+          model: previousTabModel,
           status: "model switch failed",
-          sidebar: recomputeModelPicker(
-            prev.sidebar as Record<string, unknown> | undefined,
-            previousModel,
-          ),
         }));
       }
       appendMessage(
@@ -498,7 +584,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           role: "agent",
           text: `Failed to switch model: ${err}`,
         },
-        tabId,
+        activeId,
       );
     }
   }

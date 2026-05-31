@@ -77,6 +77,9 @@ export function buildTasksApi(
           ...(typeof input.baseBranch === "string"
             ? { baseBranch: input.baseBranch }
             : {}),
+          ...(typeof input.model === "string" && input.model
+            ? { model: input.model }
+            : {}),
         },
         // Worktree-create + tab-open + send can take several seconds on a
         // large repo. 30s is the same ceiling as the shell-write ack

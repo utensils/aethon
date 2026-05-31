@@ -107,6 +107,9 @@ export interface TasksApi {
     newWorktree?: boolean;
     branch?: string;
     baseBranch?: string;
+    /** Model the launched session should use. Mirrors the task-launcher
+     *  model chip; overrides the global default for this launch. */
+    model?: string;
   }): Promise<MutationResult>;
 }
 

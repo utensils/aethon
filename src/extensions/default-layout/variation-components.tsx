@@ -334,16 +334,20 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
   const items = asDropdownItems(sourceRaw);
 
   // Resolution chain: explicit `props.active` → active tab's model
-  // (`/model` mirror) → pi default (`/piDefaultModel`, seeded on
-  // `ready`). The default fallback covers the no-tab case so the
-  // header still shows the user's working model on a fresh boot.
+  // (`/model` mirror) → the user's chosen default for new sessions
+  // (`/defaultModel`) → pi default (`/piDefaultModel`, seeded on `ready`).
+  // With no agent tab focused, `/model` is absent so the header shows the
+  // chosen default rather than pi's boot default.
   const activeTabModel = resolvePointer(state, "/model") as string | undefined;
+  const defaultModel = resolvePointer(state, "/defaultModel") as
+    | string
+    | undefined;
   const piDefaultModel = resolvePointer(state, "/piDefaultModel") as
     | string
     | undefined;
   const activeId = props.active
     ? resolveString(props.active, state)
-    : (activeTabModel || piDefaultModel || "");
+    : (activeTabModel || defaultModel || piDefaultModel || "");
   const itemsWithActive = items.map((it) => ({
     ...it,
     active: it.id === activeId,

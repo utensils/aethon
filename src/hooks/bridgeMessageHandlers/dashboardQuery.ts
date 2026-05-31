@@ -50,6 +50,9 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
         newWorktree: args.newWorktree === true,
         branch: args.branch as string | undefined,
         baseBranch: args.baseBranch as string | undefined,
+        ...(typeof args.model === "string" && args.model.length > 0
+          ? { model: args.model }
+          : {}),
       });
       return { ok: true, projectId: project.id };
     }

@@ -7158,6 +7158,28 @@ button.a2ui-gh-stat:hover {
 .a2ui-task-launcher-chip-menu-item.is-current {
   color: var(--accent);
 }
+.a2ui-task-launcher-chip-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -4px 0 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  outline: none;
+}
+.a2ui-task-launcher-chip-search::placeholder {
+  color: var(--text-dim);
+}
+.a2ui-task-launcher-chip-menu-empty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
 
 .a2ui-task-launcher-branch-input,
 .a2ui-task-launcher-base-input {

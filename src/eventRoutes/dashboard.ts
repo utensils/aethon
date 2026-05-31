@@ -158,6 +158,7 @@ export const handleTaskLauncher: EventRouteHandler = (
           branch?: string;
           baseBranch?: string;
           worktreeId?: string;
+          model?: string;
         }
       | undefined;
     if (!sel?.projectId || !sel.prompt) return true;
@@ -169,6 +170,9 @@ export const handleTaskLauncher: EventRouteHandler = (
       branch: sel.branch,
       baseBranch: sel.baseBranch,
       worktreeId: sel.worktreeId,
+      ...(typeof sel.model === "string" && sel.model.length > 0
+        ? { model: sel.model }
+        : {}),
     });
     return true;
   }

@@ -43,6 +43,9 @@ export function useNewTab(deps: NewTabDeps) {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      /** Per-launch model override (task-launcher model chip). Wins over
+       *  the global default + per-project memory in modelForNewProjectTab. */
+      model?: string;
     },
   ): void {
     // restoreId lets the caller open a tab with a specific tabId so the
@@ -88,6 +91,7 @@ export function useNewTab(deps: NewTabDeps) {
       stateRef.current,
       projectId,
       piDefaultModelRef.current,
+      options?.model,
     );
     const existingSessionLabel = restoreId
       ? sessionLabelFromMessages(

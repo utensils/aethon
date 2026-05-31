@@ -34,7 +34,6 @@ import {
   useEffectiveConfig,
   useScrollToSection,
 } from "./hooks";
-import { ModelPicker } from "./model-picker";
 import { readSettingsState } from "./state";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { refreshDevshell, type DevshellEntry } from "../../../hooks/useDevshell";
@@ -174,15 +173,11 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
             </Section>
 
             <Section id="agent" title="Agent">
-              <Field label="Default model for new tabs">
-                <ModelPicker
-                  state={state}
-                  value={eff.agent.model ?? ""}
-                  onChange={(next) =>
-                    update({ agent: { ...eff.agent, model: next || null } })
-                  }
-                />
-              </Field>
+              {/* The default model for new sessions is set directly from
+                  the header model picker — it persists [agent] model and
+                  governs every new session. A separate Settings control
+                  here would edit the same value, so it's intentionally
+                  omitted. */}
               <Field label="System prompt override">
                 <button
                   type="button"

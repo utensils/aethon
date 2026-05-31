@@ -466,13 +466,51 @@ test("switches models through the real picker path and keeps active state aligne
         const state = window.__AETHON_STATE__?.();
         return {
           model: state?.model,
+          // A header pick is also the chosen default for new sessions.
+          defaultModel: state?.defaultModel,
           active: state?.sidebar?.models?.find(
             (m: { id: string }) => m.id === state?.model,
           )?.active,
         };
       }),
     )
-    .toEqual({ model: ALT_MODEL, active: true });
+    .toEqual({ model: ALT_MODEL, defaultModel: ALT_MODEL, active: true });
+});
+
+test("a model picked with no active session is the default for the next new tab", async ({
+  page,
+}) => {
+  await waitForAethonReady(page);
+
+  // Switch the header model on the empty/dashboard surface — no agent tab
+  // exists yet, so this only sets the default (no live session to retarget).
+  await page
+    .locator(".a2ui-dropdown-trigger")
+    .filter({ hasText: "GPT-5.5" })
+    .click();
+  await page
+    .getByRole("option", { name: /qwen3\.6:35b-a3b-coding-nvfp4/ })
+    .click();
+
+  await expect
+    .poll(() => page.evaluate(() => window.__AETHON_STATE__?.()?.defaultModel))
+    .toBe(ALT_MODEL);
+
+  // Now open a new tab; it must inherit the chosen default rather than
+  // pi's boot default — the core regression this fixes.
+  await page.getByRole("button", { name: "New Tab" }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window.__AETHON_STATE__?.();
+        const active = (
+          (state?.tabs as { id: string; model?: string }[] | undefined) ?? []
+        ).find((t) => t.id === state?.activeTabId);
+        return active?.model;
+      }),
+    )
+    .toBe(ALT_MODEL);
 });
 
 test("refreshes visible file-tree folders after fs-tree-changed events", async ({

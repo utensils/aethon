@@ -9,7 +9,9 @@
 //  - `constants.ts`        — theme list + ANSI preview keys
 //  - `hooks.ts`            — useConfigSnapshot / useEffectiveConfig /
 //                            useScrollToSection
-//  - `model-picker.tsx`    — ModelPicker dropdown / custom-mode input
 //  - `extensions-list.tsx` — ExtensionsList row renderer
+//
+// The default model for new sessions is set from the header model picker
+// (it persists [agent] model), so there is no model field here.
 
 export { SettingsPanel } from "./panel";

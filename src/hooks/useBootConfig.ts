@@ -123,6 +123,10 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
         ...prev,
         model: fresh.agent.model!,
         piDefaultModel: fresh.agent.model!,
+        // The persisted [agent] model is the chosen default for new
+        // sessions. Mirror it live so a Settings/header change without a
+        // reload immediately governs the next launch.
+        defaultModel: fresh.agent.model!,
       }));
     }
   }
@@ -219,6 +223,10 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
           // session is actually running.
           model: config.agent.model!,
           piDefaultModel: config.agent.model!,
+          // The chosen default for new sessions (`/defaultModel`), seeded
+          // from the durable [agent] model. The header picker writes both
+          // this and the config; `modelForNewProjectTab` reads it first.
+          defaultModel: config.agent.model!,
         }));
       }
       // Restore saved UI zoom (Cmd+/-). Stored as a string number on

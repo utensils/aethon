@@ -13,7 +13,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 afterEach(() => {
-  invoke.mockClear();
+  // Reset both call history AND any per-test implementation override
+  // (the live-switch-failure test installs a rejecting impl) so nothing
+  // leaks into the next test.
+  invoke.mockReset();
+  invoke.mockImplementation(() => Promise.resolve(undefined));
 });
 
 function buildContext(overrides: Record<string, unknown> = {}): {
@@ -535,6 +539,7 @@ describe("useChat setModel", () => {
     });
     expect(recordProjectModel).toHaveBeenCalledWith("openai/gpt-5.5", "tab-1");
     expect(stateRef.current.model).toBe("openai/gpt-5.5");
+    expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
     expect((stateRef.current.tabs as Tab[])[0].model).toBe("openai/gpt-5.5");
     expect(
       (
@@ -560,9 +565,83 @@ describe("useChat setModel", () => {
         tabId: "tab-1",
       }),
     });
+    // The live mirror is deferred, but the chosen default still sticks.
+    expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
     expect(stateRef.current.model).toBe("anthropic/claude-opus-4-7");
     expect((stateRef.current.tabs as Tab[])[0].model).toBe(
       "anthropic/claude-opus-4-7",
     );
+  });
+
+  it("sets the default without a phantom session when no agent tab is active", async () => {
+    const { ctx, stateRef } = buildContext({
+      activeTabId: undefined,
+      tabs: [],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setModel("openai/gpt-5.5");
+    });
+
+    // No live session → never invoke set_model (would spin up a phantom).
+    expect(invoke).not.toHaveBeenCalledWith(
+      "agent_command",
+      expect.anything(),
+    );
+    // …but the default is recorded + mirrored for the header display.
+    expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
+    expect(stateRef.current.model).toBe("openai/gpt-5.5");
+    expect(
+      (
+        stateRef.current.sidebar as {
+          models: { id: string; active?: boolean }[];
+        }
+      ).models.find((m) => m.id === "openai/gpt-5.5")?.active,
+    ).toBe(true);
+  });
+
+  it("keeps the chosen default even when the live switch fails", async () => {
+    const { ctx, stateRef } = buildContext();
+    invoke.mockImplementation((...args: unknown[]) =>
+      args[0] === "agent_command"
+        ? Promise.reject(new Error("agent busy"))
+        : Promise.resolve(undefined),
+    );
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setModel("openai/gpt-5.5");
+    });
+
+    // The live mirror rolls back to the previous model…
+    expect(stateRef.current.model).toBe("anthropic/claude-opus-4-7");
+    expect((stateRef.current.tabs as Tab[])[0].model).toBe(
+      "anthropic/claude-opus-4-7",
+    );
+    // …but the user's chosen default is intent and must survive.
+    expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
+  });
+
+  it("persists the chosen default to [agent] model (debounced)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx } = buildContext();
+      const { result } = renderHook(() => useChat(ctx));
+
+      await act(async () => {
+        await result.current.setModel("openai/gpt-5.5");
+      });
+      await vi.advanceTimersByTimeAsync(450);
+
+      const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+      expect(write).toBeTruthy();
+      expect(
+        (write?.[1] as { config: { agent: { model: string } } }).config.agent
+          .model,
+      ).toBe("openai/gpt-5.5");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
