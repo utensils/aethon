@@ -34,8 +34,23 @@ jobs:
       prs_created: ${{ steps.release.outputs.prs_created }}
       pr: ${{ steps.release.outputs.pr }}
     steps:
+      # release-please opens/updates the release PR. If we let it use the
+      # default GITHUB_TOKEN, GitHub's recursion guard suppresses the
+      # `pull_request` event, so ci.yml never runs and the required checks
+      # sit in "Expected — waiting for status" forever (unmergeable PR).
+      # Mint a short-lived GitHub App token instead so the PR is authored
+      # by a real identity and CI fires normally.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
       - id: release
         uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 
       # Immediately mark the release as draft so it's not visible until
       # all build artifacts have been uploaded successfully.
@@ -75,13 +90,26 @@ jobs:
           fi
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
+      # Same App token as the release job. This is load-bearing: the
+      # commit pushed below becomes the PR's HEAD, and required checks
+      # attach to the HEAD SHA. Pushing with the default GITHUB_TOKEN
+      # would not fire `pull_request: synchronize`, so CI would run on
+      # release-please's commit but never on this final HEAD — leaving
+      # the PR blocked. Pushing as the App fires synchronize → CI runs.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v5
         with:
           ref: ${{ steps.pr.outputs.branch }}
-          # release-please-action runs as github-actions[bot]; we push
-          # back to the PR branch as the same identity so the commit
-          # shows up as a sibling of release-please's own commits.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Push back to the PR branch as the App identity so the push
+          # triggers CI (the default GITHUB_TOKEN would be suppressed by
+          # GitHub's recursion guard).
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
