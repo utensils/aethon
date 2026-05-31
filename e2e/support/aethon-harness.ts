@@ -86,7 +86,10 @@ export async function installAethonHarness(page: Page): Promise<void> {
       let nextCallbackId = 1;
       let nextListenerId = 1;
       let model = defaultModel;
-      const promptStateByTab = new Map<string, { inFlight: boolean; queued: number }>();
+      const promptStateByTab = new Map<
+        string,
+        { inFlight: boolean; queued: number }
+      >();
       let failNextSend = false;
 
       const key = (root: string, path: string) => `${root}\u0000${path}`;
@@ -96,7 +99,13 @@ export async function installAethonHarness(page: Page): Promise<void> {
         name: string,
         path: string,
         kind: "file" | "dir",
-      ): Entry => ({ name, path, kind, size: kind === "file" ? 42 : 0, modified: 1 });
+      ): Entry => ({
+        name,
+        path,
+        kind,
+        size: kind === "file" ? 42 : 0,
+        modified: 1,
+      });
 
       files.set(key(projectRoot, projectRoot), [
         entry("agent", `${projectRoot}/agent`, "dir"),
@@ -369,8 +378,12 @@ export async function installAethonHarness(page: Page): Promise<void> {
               failNextSend = false;
               throw new Error("e2e send failure");
             }
-            const tabId = stringArg(args.tabId, "default");
-            const mode = stringArg(args.mode, "normal");
+            const request =
+              args.request && typeof args.request === "object"
+                ? (args.request as Record<string, unknown>)
+                : args;
+            const tabId = stringArg(request.tabId, "default");
+            const mode = stringArg(request.mode, "normal");
             const turn = promptState(tabId);
             if (mode === "steer" && turn.inFlight) {
               return undefined;
@@ -435,7 +448,12 @@ export async function installAethonHarness(page: Page): Promise<void> {
         },
       };
     },
-    { projectRoot: PROJECT_ROOT, aethonRoot: AETHON_ROOT, defaultModel: DEFAULT_MODEL, altModel: ALT_MODEL },
+    {
+      projectRoot: PROJECT_ROOT,
+      aethonRoot: AETHON_ROOT,
+      defaultModel: DEFAULT_MODEL,
+      altModel: ALT_MODEL,
+    },
   );
 }
 
