@@ -94,6 +94,10 @@ export function buildInitialAppStore({
       appVersion,
       tabs,
       activeTabId,
+      // Non-active workspace buckets restored from disk. Set synchronously
+      // here so a first persist (which reads state) can't wipe them before
+      // the seeding effect copies them into tabBucketsRef.
+      persistedTabBuckets: restored?.buckets ?? {},
       ...rootMirror,
       palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
       notifications: [],
@@ -130,11 +134,22 @@ export function useSessionPersistence({
     (snapshot: SessionUiSnapshot) => {
       appStore.setState((prev) => {
         const tabs = snapshot.tabs.length ? snapshot.tabs : [];
-        if (tabs.length === 0) return prev;
-        const activeTabId =
-          restoredActiveTabId(tabs, snapshot.activeTabId) ?? tabs[0].id;
-        const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-        const activeRecord = activeTab as unknown as Record<string, unknown>;
+        const buckets = snapshot.buckets ?? {};
+        const hasBuckets = Object.keys(buckets).length > 0;
+        // Nothing to restore only if BOTH the active workspace and every
+        // backgrounded workspace are empty. A buckets-only snapshot (the user
+        // closed on an overview while agents ran in worktrees) must still
+        // restore its buckets — otherwise the next persist wipes them.
+        if (tabs.length === 0 && !hasBuckets) return prev;
+        const hasActiveTabs = tabs.length > 0;
+        const activeTabId = hasActiveTabs
+          ? (restoredActiveTabId(tabs, snapshot.activeTabId) ?? tabs[0].id)
+          : OVERVIEW_TAB_ID;
+        const activeTab = hasActiveTabs
+          ? (tabs.find((t) => t.id === activeTabId) ?? tabs[0])
+          : undefined;
+        const activeRecord =
+          (activeTab as unknown as Record<string, unknown>) ?? {};
         const rootMirror = Object.fromEntries(
           TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
         );
@@ -167,8 +182,11 @@ export function useSessionPersistence({
             : {}),
           tabs,
           activeTabId,
-          empty: false,
-          hasTabs: true,
+          // Restored non-active workspace buckets — the seeding effect
+          // hydrates tabBucketsRef from this.
+          persistedTabBuckets: buckets,
+          empty: !hasActiveTabs,
+          hasTabs: hasActiveTabs,
           ...rootMirror,
         };
       });

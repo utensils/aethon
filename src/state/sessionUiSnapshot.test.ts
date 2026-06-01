@@ -35,6 +35,19 @@ describe("sessionUiSnapshot", () => {
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 240 },
       projectModels: { "project-1": "anthropic/claude-opus-4-7" },
+      // A backgrounded workspace's tabs ride along in persistedTabBuckets so
+      // a restart can restore them when the user switches to that workspace.
+      persistedTabBuckets: {
+        "project-2": {
+          tabs: [
+            {
+              ...makeEmptyTab("bt-1", "Bucket Tab", "project-2"),
+              messages: [{ id: "bm", role: "user" as const, text: "bg" }],
+            },
+          ],
+          activeTabId: "bt-1",
+        },
+      },
     });
 
     expect(loadSessionUiSnapshot()).toMatchObject({
@@ -54,7 +67,46 @@ describe("sessionUiSnapshot", () => {
       terminal: { open: true },
       terminalPanel: { activeSubId: "agent-bash", height: 240 },
       projectModels: { "project-1": "anthropic/claude-opus-4-7" },
+      buckets: {
+        "project-2": {
+          tabs: [{ id: "bt-1", label: "Bucket Tab", projectId: "project-2" }],
+          activeTabId: "bt-1",
+        },
+      },
     });
+  });
+
+  it("persists buckets-only when the active workspace has no sessions", () => {
+    // User sitting on a project overview while agents run in its worktrees:
+    // state.tabs is empty but a backgrounded bucket has a session.
+    saveSessionUiSnapshot({
+      tabs: [],
+      activeTabId: "__overview__",
+      persistedTabBuckets: {
+        "project-1::worktree::wt-1": {
+          tabs: [
+            {
+              ...makeEmptyTab("wt-tab", "WT Tab", "project-1"),
+              messages: [{ id: "m", role: "user" as const, text: "hi" }],
+            },
+          ],
+          activeTabId: "wt-tab",
+        },
+      },
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded).not.toBeNull();
+    expect(loaded?.activeTabId).toBe("__overview__");
+    expect(loaded?.tabs).toEqual([]);
+    expect(loaded?.buckets?.["project-1::worktree::wt-1"]?.activeTabId).toBe(
+      "wt-tab",
+    );
+  });
+
+  it("returns null when neither active tabs nor buckets have sessions", () => {
+    saveSessionUiSnapshot({ tabs: [], activeTabId: "__overview__" });
+    expect(loadSessionUiSnapshot()).toBeNull();
   });
 
   it("falls back to the first tab when the active id is stale", () => {

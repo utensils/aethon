@@ -15,6 +15,7 @@
 
 import { useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
 
 export interface WorktreeSidebarItem {
   id: string;
@@ -28,6 +29,10 @@ export interface WorktreeSidebarItem {
   pendingState?: "queued" | "starting" | "succeeded" | "failed";
   pendingError?: string;
   locked?: boolean;
+  /** Live agent-activity for this worktree's session scope. Only attached
+   *  to non-main rows (the main worktree shares the project path, so its
+   *  activity surfaces on the project line instead). */
+  agent?: AgentActivitySummary;
 }
 
 export interface WorktreeRowProps {
@@ -92,6 +97,25 @@ export function WorktreeRow({
             <circle cx="5" cy="5" r="3.5" fill="currentColor" />
           </svg>
         </span>
+      ) : null}
+      {item.agent && item.agent.status !== "none" ? (
+        <span
+          className={`ae-sb-agent-dot ae-sb-agent-dot--${
+            item.agent.status === "running" ? "running" : "idle"
+          }`}
+          aria-label={
+            item.agent.status === "running"
+              ? "Agent running"
+              : "Agent session idle"
+          }
+          title={
+            item.agent.status === "running"
+              ? `${item.agent.runningCount} agent turn${
+                  item.agent.runningCount === 1 ? "" : "s"
+                } running`
+              : "Idle agent session — awaiting your input"
+          }
+        />
       ) : null}
       <span className="a2ui-sidebar-item-label">{displayLabel}</span>
       {item.branch && item.branch !== displayLabel ? (

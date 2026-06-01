@@ -101,6 +101,38 @@ export function ItemRow({
   const ahead = git?.ahead ?? 0;
   const behind = git?.behind ?? 0;
 
+  // Agent-activity dot — leading status indicator distinct from the trailing
+  // git dirty dot. When the project row is collapsed, fall back to the
+  // rollup so a hidden active worktree still surfaces a dot; when expanded,
+  // show only this row's own (main-scope) activity since the worktree rows
+  // carry their own dots.
+  const agentRaw = item as {
+    agent?: { status?: string; runningCount?: number };
+    agentRollup?: { status?: string; runningCount?: number };
+  };
+  const agent =
+    disclosure === "collapsed"
+      ? (agentRaw.agentRollup ?? agentRaw.agent)
+      : agentRaw.agent;
+  const agentDotEl =
+    agent && agent.status && agent.status !== "none" ? (
+      <span
+        className={`ae-sb-agent-dot ae-sb-agent-dot--${
+          agent.status === "running" ? "running" : "idle"
+        }`}
+        aria-label={
+          agent.status === "running" ? "Agent running" : "Agent session idle"
+        }
+        title={
+          agent.status === "running"
+            ? `${agent.runningCount ?? 1} agent turn${
+                (agent.runningCount ?? 1) === 1 ? "" : "s"
+              } running`
+            : "Idle agent session — awaiting your input"
+        }
+      />
+    ) : null;
+
   // Disclosure caret (or a reserved spacer when alignSlots is set so
   // worktree-less rows align with their siblings). Shared by both the
   // flat and stacked layouts; lives in the row's left gutter.
@@ -200,7 +232,10 @@ export function ItemRow({
         {chevronEl}
         {iconEl}
         <span className="a2ui-sidebar-item-stack">
-          <span className="a2ui-sidebar-item-label">{item.label}</span>
+          <span className="a2ui-sidebar-item-name-row">
+            {agentDotEl}
+            <span className="a2ui-sidebar-item-label">{item.label}</span>
+          </span>
           {hasMeta && (
             <span className="a2ui-sidebar-item-meta">
               {git?.branch && (

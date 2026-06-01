@@ -3,7 +3,13 @@
 # Auto-starts the dev build if it is not running.
 #
 # Usage: debug-eval.sh 'return 1 + 1'
+#        debug-eval.sh --file snippet.js      # multi-line JS from a file
 #        echo 'return document.title' | debug-eval.sh
+#
+# NOTE: inline JS is read from the args verbatim. If you have a multi-line
+# snippet, pass it with --file (or pipe it on stdin) — do NOT pass a bare
+# file path as the JS, it would be eval'd as a string. As a safety net, a
+# single arg that is an existing file is auto-read (with a stderr note).
 #
 # Port discovery (in priority order):
 #   1. $AETHON_DEBUG_PORT — explicit override
@@ -170,16 +176,50 @@ sys.exit(1)
 }
 
 # ---------------------------------------------------------------------------
-# Read JS from args or stdin
+# Read JS from --file, args, or stdin
 # ---------------------------------------------------------------------------
-if [[ $# -gt 0 ]]; then
-  JS="$*"
+JS_FILE=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -f|--file)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --file requires a path argument" >&2
+        exit 1
+      fi
+      JS_FILE="$2"
+      shift 2
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -n "${JS_FILE}" ]]; then
+  if [[ ! -f "${JS_FILE}" ]]; then
+    echo "ERROR: --file path not found: ${JS_FILE}" >&2
+    exit 1
+  fi
+  JS="$(cat "${JS_FILE}")"
+elif [[ "${#ARGS[@]}" -gt 0 ]]; then
+  # Safety net: a lone arg that is an existing file is almost certainly a
+  # path the caller meant to read, not literal JS. Read it (with a note)
+  # instead of eval'ing the path string — which just hangs until timeout.
+  if [[ "${#ARGS[@]}" -eq 1 && -f "${ARGS[0]}" ]]; then
+    echo "INFO: '${ARGS[0]}' is a file — reading JS from it (use --file to silence)." >&2
+    JS="$(cat "${ARGS[0]}")"
+  else
+    JS="${ARGS[*]}"
+  fi
 else
   JS="$(cat)"
 fi
 
 if [[ -z "${JS}" ]]; then
   echo "Usage: debug-eval.sh <javascript>" >&2
+  echo "       debug-eval.sh --file snippet.js" >&2
   echo "       echo 'return ...' | debug-eval.sh" >&2
   exit 1
 fi

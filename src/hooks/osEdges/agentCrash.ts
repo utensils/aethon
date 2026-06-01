@@ -94,9 +94,23 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
             }
           : t,
       );
+      // Drop the crashed tab(s) from the bucket-independent running set so the
+      // sidebar activity dot can't stay stuck — a crash doesn't emit
+      // response_end. A whole-process crash (no crashedTabId) aborts every
+      // in-flight turn, including backgrounded ones.
+      const prevRunning =
+        (prev.agentRunningTabs as Record<string, true> | undefined) ?? {};
+      let agentRunningTabs: Record<string, true>;
+      if (crashedTabId) {
+        agentRunningTabs = { ...prevRunning };
+        delete agentRunningTabs[crashedTabId];
+      } else {
+        agentRunningTabs = {};
+      }
       return {
         ...prev,
         tabs,
+        agentRunningTabs,
         ...(!crashedTabId || prev.activeTabId === crashedTabId
           ? { waiting: false, queueCount: 0 }
           : {}),

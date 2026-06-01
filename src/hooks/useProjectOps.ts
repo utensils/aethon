@@ -50,6 +50,7 @@ export {
   projectScopeBucketKey,
   tabsForProjectBucket,
   worktreeIdForCwd,
+  worktreeIdFromBucketKey,
 } from "./projectOps/tabBuckets";
 
 /**

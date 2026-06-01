@@ -36,7 +36,15 @@ describe("handlePromptStarted", () => {
     const out = updater(seedTab);
     expect(out.waiting).toBe(true);
     expect(out.queueCount).toBe(2);
-    expect(mocks.setState).toHaveBeenCalledTimes(1);
+    // Two setState calls: the bucket-independent running set, then the
+    // active-tab status flip.
+    expect(mocks.setState).toHaveBeenCalledTimes(2);
+    const runningUpdater = mocks.setState.mock.calls[0][0] as (
+      prev: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    expect(runningUpdater({ agentRunningTabs: {} })).toMatchObject({
+      agentRunningTabs: { default: true },
+    });
   });
 
   it("derives queueCount from the client queue rather than the bridge's stale value", () => {

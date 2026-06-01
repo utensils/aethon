@@ -17,8 +17,14 @@ The server listens on **19433** by default (Claudette uses 19432; Aethon picks t
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return 1 + 1'
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return window.__AETHON_STATE__().model'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh --file snippet.js   # multi-line JS
 ${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh
 ```
+
+Inline JS is read from the args verbatim. For a multi-line snippet, pass it
+with `--file <path>` (or pipe it on stdin) — **do not** pass a bare file path
+as the JS string; it would be eval'd literally and hang until timeout. (A lone
+arg that happens to be an existing file is auto-read as a safety net.)
 
 Or via the slash-command form, which reads from `${CLAUDE_SKILL_DIR}/scripts/`:
 

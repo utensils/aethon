@@ -104,6 +104,31 @@ describe("handleNotifications", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("force_restart_agent");
   });
 
+  it("activate-tab:<tabId> jumps to the finished session and dismisses", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleNotifications(
+      {
+        component: { id: "notification-stack" },
+        eventType: "action",
+        data: {
+          id: "agent-complete:tab-done",
+          action: "activate-tab:tab-done",
+        },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.activateTabAnywhere).toHaveBeenCalledWith("tab-done");
+    expect(mocks.dismissNotification).toHaveBeenCalledWith(
+      "agent-complete:tab-done",
+    );
+    // It must NOT fall through to the generic bridge-forward path.
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "dispatch_a2ui_event",
+      expect.anything(),
+    );
+  });
+
   it("forwards an unknown action through dispatch_a2ui_event", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: { activeTabId: "tab-active" },

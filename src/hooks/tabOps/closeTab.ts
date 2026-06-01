@@ -238,6 +238,16 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
             }
           : {}),
       };
+      // Drop a closed tab from the bucket-independent agent-running set so a
+      // closed-mid-turn tab can't leave a stale entry behind.
+      const running = prev.agentRunningTabs as
+        | Record<string, true>
+        | undefined;
+      if (running && running[tabId]) {
+        const nextRunning = { ...running };
+        delete nextRunning[tabId];
+        result.agentRunningTabs = nextRunning;
+      }
       if (closing) {
         const closedSession = recentSessionItemFromClosedTab(
           closing,

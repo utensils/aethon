@@ -16,6 +16,15 @@ export function projectIdFromBucketKey(key: string): string | null {
   return key.split(WORKTREE_BUCKET_SEPARATOR, 1)[0] || null;
 }
 
+/** Worktree id encoded in a bucket key, or null for a project-main /
+ *  no-project bucket. Inverse of `projectScopeBucketKey`. */
+export function worktreeIdFromBucketKey(key: string): string | null {
+  if (key === NO_PROJECT_KEY) return null;
+  const idx = key.indexOf(WORKTREE_BUCKET_SEPARATOR);
+  if (idx < 0) return null;
+  return key.slice(idx + WORKTREE_BUCKET_SEPARATOR.length) || null;
+}
+
 export function projectScopeBucketKey(
   projectId: string | null | undefined,
   worktreeId: string | null | undefined,
@@ -129,11 +138,12 @@ export function switchProjectBucket(
       ),
     );
     const currentActive = prev.activeTabId as string | undefined;
+    const fromActiveTabId = currentTabs.some((t) => t.id === currentActive)
+      ? currentActive
+      : currentTabs[0]?.id;
     tabBucketsRef.current.set(fromKey, {
       tabs: currentTabs,
-      activeTabId: currentTabs.some((t) => t.id === currentActive)
-        ? currentActive
-        : currentTabs[0]?.id,
+      activeTabId: fromActiveTabId,
     });
 
     const savedNextRaw = tabBucketsRef.current.get(toKey);
@@ -155,10 +165,24 @@ export function switchProjectBucket(
     const activeTabId = hasOrphan ? next.tabs[0].id : next.activeTabId;
     nextActiveTabId = activeTabId;
 
+    // Mirror the non-active workspace buckets into state so a restart can
+    // restore each workspace's tabs (not just the active one's). The active
+    // workspace's tabs live in `state.tabs`, so exclude `toKey` (now active);
+    // `fromKey` was just snapshotted into tabBucketsRef above.
+    const persistedTabBuckets: Record<string, TabBucket> = {};
+    for (const [bucketKey, bucket] of tabBucketsRef.current.entries()) {
+      if (bucketKey === toKey) continue;
+      persistedTabBuckets[bucketKey] = {
+        tabs: bucket.tabs,
+        activeTabId: bucket.activeTabId,
+      };
+    }
+
     const result: Record<string, unknown> = {
       ...prev,
       tabs: next.tabs,
       activeTabId,
+      persistedTabBuckets,
     };
     const activeTab = next.tabs.find((t) => t.id === activeTabId);
     if (activeTab) {

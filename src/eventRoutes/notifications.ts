@@ -92,6 +92,13 @@ export const handleNotifications: EventRouteHandler = (
       }
       ctx.dismissNotification(id);
       return true;
+    } else if (action && action.startsWith("activate-tab:")) {
+      // Completion toast → jump to the finished session, switching
+      // workspaces first if it lives in a backgrounded bucket.
+      const targetTabId = action.slice("activate-tab:".length);
+      if (targetTabId) ctx.activateTabAnywhere(targetTabId);
+      ctx.dismissNotification(id);
+      return true;
     } else if (action) {
       const tabId = ctx.stateRef.current.activeTabId as string | undefined;
       ctx

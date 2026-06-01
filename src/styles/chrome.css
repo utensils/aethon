@@ -1068,6 +1068,44 @@ body.ae-resizing-sidebar .a2ui-layout {
   height: 6px;
 }
 
+/* Name row inside a stacked project card — holds the leading agent-activity
+   dot (optional) and the label on one line so the dot tracks the label's
+   vertical center and the label still ellipsizes. With no dot the gap
+   collapses (single child), so dot-less rows don't shift. */
+.a2ui-sidebar-item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Agent-activity dot — leading status indicator on project / worktree rows.
+   Deliberately the theme SUCCESS tone, not --accent: the trailing git dirty
+   dot already owns --accent, so "an agent is here" must never read as
+   "uncommitted changes". A filled, softly-haloed dot pulses while a turn is
+   in flight; a hollow ring marks an idle session waiting on the user. */
+.ae-sb-agent-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+.ae-sb-agent-dot--running {
+  background: var(--state-success-fg, var(--success));
+  box-shadow: 0 0 0 2px var(--state-success-border, transparent);
+  animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
+}
+.ae-sb-agent-dot--idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px
+    var(--state-success-border, var(--text-dim));
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-sb-agent-dot--running {
+    animation: none;
+  }
+}
+
 /* Branch label — quiet mono text on the right of a project row.
    No border / no chip — the row's own type weight differentiates. */
 .a2ui-sidebar-item-git-branch {
