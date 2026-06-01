@@ -216,6 +216,7 @@ fn ensure_sidecar(project_root: &Path, triple: &str) -> Result<(), String> {
                 "build",
                 "agent/main.ts",
                 "--compile",
+                "--sourcemap=none",
                 &format!("--target={bun_target}"),
                 "--outfile",
             ])

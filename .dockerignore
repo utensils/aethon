@@ -1,0 +1,23 @@
+# Keep Arch package verification contexts small.
+.git
+.aethon
+.claude
+.agents
+.direnv
+.secrets
+node_modules
+dist
+target
+src-tauri/target
+src-tauri/binaries
+coverage
+playwright-report
+test-results
+website/.vitepress/cache
+website/.vitepress/dist
+website/node_modules
+result
+result-*
+*.log
+*.png
+*.zip
