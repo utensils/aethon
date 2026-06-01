@@ -11,7 +11,7 @@
  * `extensionToggleState` live in `menuItems.ts` as pure data.
  */
 
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -98,6 +98,11 @@ export function Sidebar({
     onEvent,
     beginWorktreeRename: setRenamingWorktreeId,
   });
+  const handleRenameWorktreeEnd = useCallback((worktreeId: string) => {
+    setRenamingWorktreeId((current) =>
+      current === worktreeId ? null : current,
+    );
+  }, []);
   const { asideRef, onResizeStart } = useSidebarResize({
     onEvent,
     resizeFromLeft,
@@ -176,11 +181,7 @@ export function Sidebar({
         openItemContextMenu={menu.openItemContextMenu}
         openWorktreeContextMenu={menu.openWorktreeContextMenu}
         renamingWorktreeId={renamingWorktreeId}
-        onRenameWorktreeEnd={(worktreeId) => {
-          setRenamingWorktreeId((current) =>
-            current === worktreeId ? null : current,
-          );
-        }}
+        onRenameWorktreeEnd={handleRenameWorktreeEnd}
       />
     );
   };

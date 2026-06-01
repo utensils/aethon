@@ -62,6 +62,7 @@ export function WorktreeRow({
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
   const renameBlurCancelRef = useRef<number | null>(null);
+  const renameUnmountCancelRef = useRef<number | null>(null);
   const pending = item.pendingState;
   const isPendingActive = pending === "queued" || pending === "starting";
   const isFailed = pending === "failed";
@@ -91,6 +92,10 @@ export function WorktreeRow({
         window.clearTimeout(renameBlurCancelRef.current);
         renameBlurCancelRef.current = null;
       }
+      if (renameUnmountCancelRef.current !== null) {
+        window.clearTimeout(renameUnmountCancelRef.current);
+        renameUnmountCancelRef.current = null;
+      }
       const input = renameInputRef.current;
       if (!input) return;
       input.focus({ preventScroll: true });
@@ -110,13 +115,25 @@ export function WorktreeRow({
         window.clearTimeout(renameBlurCancelRef.current);
         renameBlurCancelRef.current = null;
       }
+      if (!renameEndingRef.current) {
+        renameUnmountCancelRef.current = window.setTimeout(() => {
+          renameUnmountCancelRef.current = null;
+          if (renameEndingRef.current) return;
+          renameEndingRef.current = true;
+          onRenameEnd?.(item.id);
+        }, 0);
+      }
     };
-  }, [canRenameInline]);
+  }, [canRenameInline, item.id, onRenameEnd]);
 
   const endRename = () => {
     if (renameBlurCancelRef.current !== null) {
       window.clearTimeout(renameBlurCancelRef.current);
       renameBlurCancelRef.current = null;
+    }
+    if (renameUnmountCancelRef.current !== null) {
+      window.clearTimeout(renameUnmountCancelRef.current);
+      renameUnmountCancelRef.current = null;
     }
     renameEndingRef.current = true;
     onRenameEnd?.(item.id);

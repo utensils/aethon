@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
@@ -227,6 +228,50 @@ describe("WorktreeRow", () => {
       expect.anything(),
     );
     expect(onRenameEnd).toHaveBeenCalledWith("wt-1");
+  });
+
+  it("ends inline rename when a blurred row unmounts", () => {
+    vi.useFakeTimers();
+    const { onRenameEnd, unmount } = harness(wt(), { renaming: true });
+    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBeTruthy();
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    const other = document.createElement("button");
+    document.body.appendChild(other);
+    other.focus();
+    unmount();
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    expect(onRenameEnd).toHaveBeenCalledWith("wt-1");
+  });
+
+  it("does not cancel rename during StrictMode effect replay", () => {
+    vi.useFakeTimers();
+    const onRenameEnd = vi.fn();
+    render(
+      <StrictMode>
+        <ul>
+          <WorktreeRow
+            item={wt()}
+            sectionId="projects"
+            onEvent={vi.fn()}
+            renaming
+            onRenameEnd={onRenameEnd}
+          />
+        </ul>
+      </StrictMode>,
+    );
+
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBeTruthy();
+    expect(onRenameEnd).not.toHaveBeenCalled();
   });
 
   it("does not interrupt typed rename text across parent re-renders", () => {
