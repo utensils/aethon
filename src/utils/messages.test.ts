@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_A2UI_BYTES,
   MAX_TEXT_BYTES,
   coerceChatMessages,
   stripImageDataUrls,
@@ -65,7 +66,9 @@ describe("trimMessage", () => {
       id: "1",
       role: "agent",
       a2ui: {
-        components: [{ type: "image", props: { src: "data:image/png;base64,AAA" } }],
+        components: [
+          { type: "image", props: { src: "data:image/png;base64,AAA" } },
+        ],
         rootId: "image",
       } as never,
     });
@@ -73,6 +76,45 @@ describe("trimMessage", () => {
       props: { src: string };
     }>;
     expect(comps[0].props.src).toBe("");
+  });
+
+  it("falls back to lightweight a2ui summaries when payloads exceed the durable budget", () => {
+    const out = trimMessage({
+      id: "1",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-1-call-1",
+            type: "tool-card",
+            props: {
+              title: "bash",
+              toolName: "bash",
+              description: "nix flake check",
+              startedAt: 1,
+            },
+            children: Array.from({ length: 16 }, (_, index) => ({
+              id: `tool-1-call-1-result-${index}`,
+              type: "code",
+              props: { content: "x".repeat(MAX_A2UI_BYTES * 2) },
+            })),
+          },
+        ],
+      },
+    });
+
+    expect(JSON.stringify(out.a2ui).length).toBeLessThan(MAX_A2UI_BYTES);
+    expect(out.a2ui?.components[0]).toMatchObject({
+      id: "tool-1-call-1",
+      type: "tool-card",
+      props: {
+        title: "bash",
+        toolName: "bash",
+        description: "nix flake check",
+        startedAt: 1,
+      },
+      children: [],
+    });
   });
 });
 

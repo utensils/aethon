@@ -4,10 +4,42 @@ import type { A2UIPayload, ChatAttachment, ChatMessage } from "../types/a2ui";
 // the full string; only the persisted snapshot is trimmed so localStorage
 // doesn't blow past quota.
 export const MAX_TEXT_BYTES = 8 * 1024;
+export const MAX_A2UI_STRING_BYTES = 8 * 1024;
+export const MAX_A2UI_BYTES = 64 * 1024;
 
-// Replace `image` component data URLs with a placeholder so persisted history
-// doesn't blow past the localStorage quota. The in-memory message keeps the
-// full data URL — only the persisted copy is slimmed.
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function serializedBytes(value: unknown): number {
+  try {
+    return utf8Bytes(JSON.stringify(value));
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function truncateString(value: string): string {
+  if (utf8Bytes(value) <= MAX_A2UI_STRING_BYTES) return value;
+  return `${value.slice(0, MAX_A2UI_STRING_BYTES - 1)}…`;
+}
+
+function slimA2uiValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (value.startsWith("data:"))
+      return "[embedded data dropped from history]";
+    return truncateString(value);
+  }
+  if (Array.isArray(value)) return value.map(slimA2uiValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, slimA2uiValue(child)]),
+  );
+}
+
+// Replace `image` component data URLs with a placeholder and truncate large
+// string props so persisted history doesn't blow past disk/quota budgets. The
+// in-memory message keeps the full payload — only the persisted copy is slimmed.
 export function stripImageDataUrls(component: unknown): unknown {
   if (!component || typeof component !== "object") return component;
   const c = component as {
@@ -15,18 +47,71 @@ export function stripImageDataUrls(component: unknown): unknown {
     props?: Record<string, unknown>;
     children?: unknown[];
   };
-  let next = c;
+  let next = {
+    ...c,
+    ...(c.props
+      ? { props: slimA2uiValue(c.props) as Record<string, unknown> }
+      : {}),
+  };
   if (
     c.type === "image" &&
     typeof c.props?.src === "string" &&
     c.props.src.startsWith("data:")
   ) {
-    next = { ...c, props: { ...c.props, src: "", caption: "[image dropped from history]" } };
+    next = {
+      ...next,
+      props: {
+        ...(next.props ?? {}),
+        src: "",
+        caption: "[image dropped from history]",
+      },
+    };
   }
   if (Array.isArray(c.children) && c.children.length > 0) {
     next = { ...next, children: c.children.map(stripImageDataUrls) };
   }
   return next;
+}
+
+function summarizedA2uiComponent(component: unknown): unknown {
+  if (!component || typeof component !== "object") return component;
+  const c = component as {
+    id?: unknown;
+    type?: unknown;
+    props?: Record<string, unknown>;
+  };
+  const props = c.props ?? {};
+  const keptProps = Object.fromEntries(
+    [
+      "title",
+      "toolName",
+      "description",
+      "status",
+      "isError",
+      "startedAt",
+      "endedAt",
+    ].flatMap((key) => (key in props ? [[key, props[key]]] : [])),
+  );
+  return {
+    ...(typeof c.id === "string" ? { id: c.id } : {}),
+    ...(typeof c.type === "string" ? { type: c.type } : {}),
+    ...(Object.keys(keptProps).length > 0
+      ? { props: slimA2uiValue(keptProps) }
+      : {}),
+    children: [],
+  };
+}
+
+function durableA2uiPayload(payload: A2UIPayload): A2UIPayload {
+  const slimmed = {
+    ...payload,
+    components: payload.components.map(stripImageDataUrls) as never,
+  };
+  if (serializedBytes(slimmed) <= MAX_A2UI_BYTES) return slimmed;
+  return {
+    ...payload,
+    components: payload.components.map(summarizedA2uiComponent) as never,
+  };
 }
 
 export function trimMessage(m: ChatMessage): ChatMessage {
@@ -37,7 +122,7 @@ export function trimMessage(m: ChatMessage): ChatMessage {
   if (m.a2ui && Array.isArray(m.a2ui.components)) {
     out = {
       ...out,
-      a2ui: { ...m.a2ui, components: m.a2ui.components.map(stripImageDataUrls) as never },
+      a2ui: durableA2uiPayload(m.a2ui),
     };
   }
   return out;
