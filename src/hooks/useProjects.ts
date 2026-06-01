@@ -4,6 +4,14 @@ import {
   loadCachedStatuses,
   persistStatusesDebounced,
 } from "../gitStatusCache";
+import {
+  loadGitFetchAttempts,
+  persistGitFetchAttemptsDebounced,
+} from "../gitFetchCache";
+import {
+  dueGitFetchPaths,
+  GIT_FETCH_INTERVAL_MS,
+} from "./gitFetchScheduler";
 
 export interface GitStatus {
   branch?: string;
@@ -50,14 +58,17 @@ export interface UseProjectsActions {
  * now — those are entangled with tab management and will move when
  * useTabs is extracted in a follow-up.
  *
- * The git poller ticks immediately on mount, every 30s, and on window
- * focus. A guard ref prevents two overlapping refreshes from running
- * (a long projects list could otherwise fork dozens of git processes
- * on rapid focus toggles).
+ * The git status poller ticks immediately on mount, every 30s, and on window
+ * focus. Remote-tracking refs are refreshed on a separate 10-minute cadence
+ * with persisted attempt timestamps so ahead/behind can catch up without
+ * hammering remotes after reloads or repeated focus toggles. Guard refs prevent
+ * overlapping refresh/fetch batches from forking redundant git processes.
  */
 export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
   const gitStatusRef = useRef<Map<string, GitStatus>>(new Map());
   const gitPollingRef = useRef(false);
+  const gitFetchAttemptsRef = useRef<Map<string, number>>(new Map());
+  const gitFetchInFlightRef = useRef<Set<string>>(new Set());
 
   async function refreshGitStatusFor(path: string): Promise<void> {
     try {
@@ -83,6 +94,44 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     // and the project list is capped at 16, so concurrency is bounded.
     // Sequential previously meant the slowest repo gated all the rest.
     await Promise.all(paths.map((p) => refreshGitStatusFor(p)));
+  }
+
+  async function fetchGitRemotesIfDue(
+    refreshStatusAfterFetch = refreshAllGitStatus,
+  ): Promise<void> {
+    if (document.hidden) return;
+    const due = dueGitFetchPaths(ctx.getProjectPaths(), {
+      lastAttemptedAt: gitFetchAttemptsRef.current,
+      inFlight: gitFetchInFlightRef.current,
+    });
+    if (due.length === 0) return;
+
+    const startedAt = Date.now();
+    for (const path of due) {
+      gitFetchInFlightRef.current.add(path);
+      gitFetchAttemptsRef.current.set(path, startedAt);
+    }
+    persistGitFetchAttemptsDebounced(gitFetchAttemptsRef.current);
+
+    const results = await Promise.all(
+      due.map(async (path) => {
+        try {
+          return await invoke<boolean>("git_fetch_all", { projectPath: path });
+        } catch {
+          return false;
+        } finally {
+          gitFetchInFlightRef.current.delete(path);
+        }
+      }),
+    );
+
+    // Fetches may mutate remote-tracking refs even when one remote exits
+    // nonzero. Once any fetch ran, run the existing status fan-out so every
+    // surface that reads cached git status (including duplicate worktree rows)
+    // gets refreshed from local metadata.
+    if (results.some(Boolean)) {
+      await refreshStatusAfterFetch();
+    }
   }
 
   function announceProjectToBridge(tabId: string, cwd: string | null) {
@@ -111,16 +160,25 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
 
   useEffect(() => {
     let cancelled = false;
+    let rerun = false;
     const tick = async () => {
       // Skip background git polling while the window is hidden — no chips are
       // visible to update, so it's pure wasted subprocess churn. The
       // visibilitychange listener below refreshes on the way back.
-      if (cancelled || gitPollingRef.current || document.hidden) return;
+      if (cancelled || document.hidden) return;
+      if (gitPollingRef.current) {
+        rerun = true;
+        return;
+      }
       gitPollingRef.current = true;
       try {
         await refreshAllGitStatus();
       } finally {
         gitPollingRef.current = false;
+        if (rerun && !cancelled) {
+          rerun = false;
+          void tick();
+        }
       }
     };
     // 1. Hydrate from the disk-backed cache so chips paint with the
@@ -137,27 +195,41 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
         }
         ctx.onGitStatusChanged();
       }
+      gitFetchAttemptsRef.current = await loadGitFetchAttempts();
+      if (cancelled) return;
       void tick();
+      void fetchGitRemotesIfDue(tick);
     };
     void bootstrap();
-    const onFocus = () => void tick();
+    const onFocus = () => {
+      void tick();
+      void fetchGitRemotesIfDue(tick);
+    };
     // Refresh when the window becomes visible again (covers restore-from-
     // minimized, which doesn't always fire `focus`), catching up on anything
     // that drifted while polling was paused.
     const onVisibility = () => {
-      if (!document.hidden) void tick();
+      if (!document.hidden) {
+        void tick();
+        void fetchGitRemotesIfDue(tick);
+      }
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     const interval = window.setInterval(tick, 30_000);
+    const fetchInterval = window.setInterval(
+      () => void fetchGitRemotesIfDue(tick),
+      GIT_FETCH_INTERVAL_MS,
+    );
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      window.clearInterval(fetchInterval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-    // ctx.getProjectPaths is read inside `tick`, so we deliberately
-    // capture the closure-time reference; the hook is mounted once with
+    // ctx.getProjectPaths is read inside `tick` / `fetchGitRemotesIfDue`,
+    // so we deliberately capture the closure-time reference; the hook is mounted once with
     // a stable ctx for App's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

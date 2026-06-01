@@ -16,4 +16,5 @@ pub(crate) mod test_support;
 pub mod watch;
 pub mod worktrees;
 
+pub use status::GitFetchState;
 pub use watch::GitWatchState;

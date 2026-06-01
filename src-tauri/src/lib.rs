@@ -128,6 +128,7 @@ pub fn run() {
         .manage(agent_process::AgentProcesses::new())
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
+        .manage(commands::git::GitFetchState::default())
         .manage(commands::git::GitWatchState::default())
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
@@ -193,6 +194,7 @@ pub fn run() {
             commands::fs::fs_open_in_file_manager,
             commands::fs::fs_open_in_default_app,
             commands::git::status::git_status,
+            commands::git::status::git_fetch_all,
             commands::git::status::git_file_status,
             commands::git::status::git_ignored_paths,
             commands::git::watch::git_watch_root,
@@ -380,6 +382,15 @@ mod tests {
         assert!(
             src.contains("commands::extensions::set_extension_menu_items"),
             "set_extension_menu_items must be registered in the invoke_handler list",
+        );
+    }
+
+    #[test]
+    fn git_fetch_all_is_wired_to_handler() {
+        let src = include_str!("lib.rs");
+        assert!(
+            src.contains("commands::git::status::git_fetch_all"),
+            "git_fetch_all must be registered in the invoke_handler list",
         );
     }
 

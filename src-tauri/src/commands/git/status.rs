@@ -1,6 +1,19 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use tauri::State;
 
 use crate::env;
+
+const FETCH_TIMEOUT: Duration = Duration::from_secs(120);
+const FETCH_DEDUP_WINDOW: Duration = Duration::from_secs(30);
+
+#[derive(Default)]
+pub struct GitFetchState {
+    attempts: Mutex<HashMap<PathBuf, Instant>>,
+}
 
 /// Read minimal git status for a project directory. Used by the
 /// sidebar to surface a branch chip + dirty dot per project. Returns
@@ -22,6 +35,92 @@ pub struct GitStatus {
     dirty: bool,
     ahead: u32,
     behind: u32,
+}
+
+/// Best-effort refresh of remote-tracking refs for a project. Returns `true`
+/// when a fetch command actually ran to completion (even if git exited nonzero
+/// after partially updating refs), `false` for non-repositories, missing `git`,
+/// duplicate worktree fetches that were recently attempted, or timeouts. The
+/// frontend treats this as a background maintenance task and must never blank
+/// existing status chips because it failed.
+#[tauri::command]
+pub async fn git_fetch_all(
+    project_path: String,
+    state: State<'_, GitFetchState>,
+) -> Result<bool, String> {
+    git_fetch_all_inner(project_path, state.inner()).await
+}
+
+async fn git_fetch_all_inner(project_path: String, state: &GitFetchState) -> Result<bool, String> {
+    let dir = PathBuf::from(&project_path);
+    if !dir.is_dir() {
+        return Ok(false);
+    }
+    if !is_inside_work_tree(&dir) {
+        return Ok(false);
+    }
+
+    let key = git_common_dir(&dir).unwrap_or_else(|| dir.canonicalize().unwrap_or(dir.clone()));
+    if !state.reserve_attempt(key) {
+        return Ok(false);
+    }
+
+    // `--prune` only removes stale remote-tracking refs; it does not delete
+    // local branches. Keeping those refs accurate makes ahead/behind chips
+    // reflect deleted/renamed upstream branches instead of preserving ghosts.
+    let mut cmd = env::tokio_command("git");
+    cmd.arg("-C")
+        .arg(&dir)
+        .args(["fetch", "--all", "--prune", "--quiet"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .kill_on_drop(true);
+    let out = tokio::time::timeout(FETCH_TIMEOUT, cmd.output()).await;
+    Ok(matches!(out, Ok(Ok(_))))
+}
+
+fn is_inside_work_tree(dir: &Path) -> bool {
+    let inside = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output();
+    match inside {
+        Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true",
+        Err(_) => false,
+    }
+}
+
+fn git_common_dir(dir: &Path) -> Option<PathBuf> {
+    let out = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(raw);
+    Some(path.canonicalize().unwrap_or(path))
+}
+
+impl GitFetchState {
+    fn reserve_attempt(&self, key: PathBuf) -> bool {
+        let now = Instant::now();
+        let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
+        attempts.retain(|_, last| now.duration_since(*last) < FETCH_DEDUP_WINDOW);
+        if attempts
+            .get(&key)
+            .is_some_and(|last| now.duration_since(*last) < FETCH_DEDUP_WINDOW)
+        {
+            return false;
+        }
+        attempts.insert(key, now);
+        true
+    }
 }
 
 /// One per-file worktree change as reported by `git status --porcelain`.
@@ -346,6 +445,57 @@ pub(crate) fn parse_git_file_status_porcelain_z(bytes: &[u8]) -> Vec<GitFileStat
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn git_fetch_all_returns_false_for_missing_directory() {
+        let missing = tempfile::tempdir().unwrap().path().join("missing");
+        let state = GitFetchState::default();
+        assert!(
+            !git_fetch_all_inner(missing.to_string_lossy().to_string(), &state)
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn git_fetch_all_returns_false_for_non_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = GitFetchState::default();
+        assert!(
+            !git_fetch_all_inner(tmp.path().to_string_lossy().to_string(), &state)
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn git_fetch_all_runs_for_repo_without_remotes() {
+        if env::resolve_program("git").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let init = env::command("git")
+            .arg("init")
+            .arg(tmp.path())
+            .output()
+            .unwrap();
+        assert!(init.status.success());
+
+        let state = GitFetchState::default();
+        assert!(
+            git_fetch_all_inner(tmp.path().to_string_lossy().to_string(), &state)
+                .await
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn fetch_attempt_reservation_dedupes_recent_repo_keys() {
+        let key = tempfile::tempdir().unwrap().path().join("repo.git");
+        let state = GitFetchState::default();
+        assert!(state.reserve_attempt(key.clone()));
+        assert!(!state.reserve_attempt(key));
+    }
 
     #[test]
     fn parses_git_file_status_porcelain_entries() {
