@@ -315,6 +315,7 @@ export function handleSessionEvent(
       deps.send({
         type: "notice",
         tabId,
+        busy: true,
         message: `Transient provider error; retrying ${
           ev.attempt ?? "?"
         }/${ev.maxAttempts ?? "?"} in ${Math.max(

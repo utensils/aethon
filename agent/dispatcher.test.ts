@@ -351,6 +351,75 @@ describe("handleChat", () => {
     expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-1" });
   });
 
+  it("steers retry-active sessions even when Aethon's in-flight flag is stale", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const steerCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      promptInFlight: false,
+      session: {
+        isStreaming: true,
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return Promise.resolve();
+        },
+        followUp: () => Promise.resolve(),
+        steer: (...args: unknown[]) => {
+          steerCalls.push(args);
+          return Promise.resolve();
+        },
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "status update?",
+      tabId: "tab-1",
+      mode: "steer",
+    });
+
+    expect(tab.promptInFlight).toBe(true);
+    expect(promptCalls).toEqual([]);
+    expect(steerCalls).toEqual([["status update?"]]);
+    expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-1" });
+  });
+
+  it("queues normal sends for retry-active sessions when Aethon's in-flight flag is stale", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const followUpCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      promptInFlight: false,
+      session: {
+        isStreaming: true,
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return Promise.resolve();
+        },
+        followUp: (...args: unknown[]) => {
+          followUpCalls.push(args);
+          return Promise.resolve();
+        },
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "update?",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+
+    expect(tab.promptInFlight).toBe(true);
+    expect(tab.queuedCount).toBe(1);
+    expect(promptCalls).toEqual([]);
+    expect(followUpCalls).toEqual([["update?"]]);
+    expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
+  });
+
   it("passes image attachments to prompt, steer, and followUp", async () => {
     const image = { mimeType: "image/png", data: "abc123" };
     const f = makeFixture();
@@ -410,6 +479,38 @@ describe("handleChat", () => {
     expect(calls.followUp).toEqual([
       ["next", [{ type: "image", mimeType: "image/png", data: "abc123" }]],
     ]);
+  });
+
+  it("keeps the turn busy if the SDK is still streaming when prompt() settles", async () => {
+    const f = makeFixture();
+    let resolvePrompt: (() => void) | undefined;
+    const session = {
+      isStreaming: false,
+      prompt: () =>
+        new Promise<void>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+      followUp: () => Promise.resolve(),
+      steer: () => Promise.resolve(),
+    };
+    const tab = fakeTabRecord({
+      session: session as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "start",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+    session.isStreaming = true;
+    resolvePrompt?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(tab.promptInFlight).toBe(true);
+    expect(f.sent).not.toContainEqual({ type: "response_end", tabId: "tab-1" });
   });
 
   it("treats steer as a normal prompt when the tab is idle", async () => {
