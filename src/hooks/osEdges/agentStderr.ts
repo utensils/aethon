@@ -5,6 +5,17 @@ export interface AgentStderrDeps {
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
 }
 
+export function tabIdFromAgentStderr(text: string): string | undefined {
+  return /\btabId=([A-Za-z0-9_-]+)/.exec(text)?.[1];
+}
+
+export function createdAtFromAgentStderr(text: string): number | undefined {
+  const raw = /^(\d{4}-\d{2}-\d{2}T[^\s]+)/.exec(text)?.[1];
+  if (!raw) return undefined;
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
 /** Mirror agent stderr into chat as a system message. When the bridge
  *  dies on startup this is the only signal we have.
  *
@@ -36,11 +47,15 @@ export function subscribeAgentStderr(deps: AgentStderrDeps): () => void {
       );
     const isExtensionNoise = /\b(WARN|INFO)\s+ext-state:/.test(text);
     if ((isLeveledFailure || isRawCrash) && !isExtensionNoise) {
-      appendMessage({
-        id: crypto.randomUUID(),
-        role: "system",
-        text: `[agent stderr] ${text}`,
-      });
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `[agent stderr] ${text}`,
+          createdAt: createdAtFromAgentStderr(text),
+        },
+        tabIdFromAgentStderr(text),
+      );
     }
     // Always log to webview console for debug skill access.
     console.warn("[agent stderr]", text);

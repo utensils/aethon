@@ -46,6 +46,6 @@ export {
 } from "./slash-commands";
 export { emitReady } from "./ready-handshake";
 export { handleSessionEvent } from "./events";
-export { installAethonRetryClassifier } from "./retry";
+export { cancelAethonRetry, installAethonRetryClassifier } from "./retry";
 export type { EnsureTabOptions } from "./lifecycle";
 export { ensureTab } from "./lifecycle";

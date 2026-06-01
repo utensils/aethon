@@ -32,14 +32,16 @@ import {
   toolCardPayload,
 } from "../tool-card";
 import { emitBashResult } from "./terminal";
+import { cancelAethonRetry, scheduleAethonRetry } from "./retry";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
 
 const turnLog = logger.scope("turn");
 
-function assistantEventMessageId(
-  ame: { id?: unknown; messageId?: unknown },
-): string | undefined {
+function assistantEventMessageId(ame: {
+  id?: unknown;
+  messageId?: unknown;
+}): string | undefined {
   if (typeof ame.messageId === "string" && ame.messageId.length > 0) {
     return ame.messageId;
   }
@@ -256,10 +258,13 @@ export function handleSessionEvent(
       const messages = (event as { messages?: unknown[] }).messages;
       const failedMessage = extractAgentEndError(messages);
       const retrying =
-        (rec.session as { isRetrying?: boolean } | undefined)?.isRetrying === true;
+        (rec.session as { isRetrying?: boolean } | undefined)?.isRetrying ===
+        true;
       const retryableFailure =
         failedMessage !== undefined && isRetryableAgentEndError(failedMessage);
-      const keepTurnOpenForRetry = retrying && retryableFailure;
+      const keepTurnOpenForRetry =
+        retryableFailure &&
+        (retrying || scheduleAethonRetry(state, deps, rec, tabId));
       if (failedMessage && !keepTurnOpenForRetry) {
         deps.send({ type: "error", tabId, message: failedMessage });
       }
@@ -285,6 +290,7 @@ export function handleSessionEvent(
         if (cached.endedAt !== undefined) rec.toolArgsCache.delete(toolCallId);
       }
       if (!keepTurnOpenForRetry) {
+        cancelAethonRetry(rec);
         rec.agentEndFired = true;
         rec.promptInFlight = false;
         if (state.currentAgentTabId === tabId) {
@@ -302,6 +308,7 @@ export function handleSessionEvent(
         delayMs?: number;
         errorMessage?: string;
       };
+      cancelAethonRetry(rec);
       rec.promptInFlight = true;
       rec.agentEndFired = false;
       state.currentAgentTabId = tabId;
@@ -319,6 +326,7 @@ export function handleSessionEvent(
     }
     case "auto_retry_end": {
       const ev = event as { success?: boolean; finalError?: string };
+      cancelAethonRetry(rec);
       if (!ev.success && ev.finalError) {
         deps.send({
           type: "error",

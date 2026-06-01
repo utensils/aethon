@@ -97,6 +97,31 @@ function buildContext(overrides: Record<string, unknown> = {}): {
 }
 
 describe("useChat setModel", () => {
+  it("inserts timestamped system messages inline for restored transcripts", () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      messages: [
+        { id: "u1", role: "user" as const, text: "hi", createdAt: 1_000 },
+        { id: "a1", role: "agent" as const, text: "done", createdAt: 3_000 },
+      ],
+    };
+    const { ctx, stateRef } = buildContext({ tabs: [tab] });
+    const { result } = renderHook(() => useChat(ctx));
+
+    act(() => {
+      result.current.appendMessage({
+        id: "stderr",
+        role: "system",
+        text: "[agent stderr] warning",
+        createdAt: 2_000,
+      });
+    });
+
+    expect(
+      (stateRef.current.tabs as Tab[])[0].messages.map((m) => m.id),
+    ).toEqual(["u1", "stderr", "a1"]);
+  });
+
   it("sends normal chat messages with normal mode", async () => {
     const { ctx, stateRef } = buildContext();
     const { result } = renderHook(() => useChat(ctx));
@@ -592,10 +617,7 @@ describe("useChat setModel", () => {
     });
 
     // No live session → never invoke set_model (would spin up a phantom).
-    expect(invoke).not.toHaveBeenCalledWith(
-      "agent_command",
-      expect.anything(),
-    );
+    expect(invoke).not.toHaveBeenCalledWith("agent_command", expect.anything());
     // …but the default is recorded + mirrored for the header display.
     expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
     expect(stateRef.current.model).toBe("openai/gpt-5.5");
