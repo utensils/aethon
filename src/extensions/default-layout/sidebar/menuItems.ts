@@ -37,6 +37,11 @@ export interface SidebarContextMenuState {
   worktree?: WorktreeSidebarItem;
 }
 
+export function canRenameWorktree(item: WorktreeSidebarItem | undefined): boolean {
+  const pending = item?.pendingState;
+  return pending !== "queued" && pending !== "starting" && pending !== "failed";
+}
+
 export interface SidebarMenuHandlers {
   // Project actions — clicking a row switches; menu only surfaces
   // verbs that aren't reachable from a plain click.
@@ -165,6 +170,7 @@ export function buildSidebarMenuItems(
         {
           id: "rename-worktree",
           label: "Rename worktree…",
+          disabled: !canRenameWorktree(state.worktree),
           onSelect: h.renameContextWorktree,
         },
         { type: "separator" },

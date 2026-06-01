@@ -17,20 +17,26 @@ function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
   };
 }
 
-function harness(item: WorktreeSidebarItem) {
+function harness(
+  item: WorktreeSidebarItem,
+  options: { renaming?: boolean } = {},
+) {
   const onEvent = vi.fn();
   const onItemContextMenu = vi.fn();
-  render(
+  const onRenameEnd = vi.fn();
+  const view = render(
     <ul>
       <WorktreeRow
         item={item}
         sectionId="projects"
         onEvent={onEvent}
         onItemContextMenu={onItemContextMenu}
+        renaming={options.renaming}
+        onRenameEnd={onRenameEnd}
       />
     </ul>,
   );
-  return { onEvent, onItemContextMenu };
+  return { onEvent, onItemContextMenu, onRenameEnd, ...view };
 }
 
 describe("WorktreeRow", () => {
@@ -141,5 +147,111 @@ describe("WorktreeRow", () => {
     const { onItemContextMenu } = harness(wt());
     fireEvent.contextMenu(screen.getByText("feature-x").closest("li")!);
     expect(onItemContextMenu).toHaveBeenCalled();
+  });
+
+  it("renders an inline rename input when rename mode begins", () => {
+    const { rerender } = harness(wt({ label: "Display name", branch: "feat/x" }));
+
+    rerender(
+      <ul>
+        <WorktreeRow
+          item={wt({ label: "Display name", branch: "feat/x" })}
+          sectionId="projects"
+          onEvent={vi.fn()}
+          renaming
+        />
+      </ul>,
+    );
+
+    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    expect((input as HTMLInputElement).value).toBe("Display name");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("saves inline rename on Enter", () => {
+    const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
+    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+
+    fireEvent.change(input, { target: { value: "Renamed worktree" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "rename-worktree",
+      expect.objectContaining({
+        sectionId: "projects",
+        worktreeId: "wt-1",
+        label: "Renamed worktree",
+      }),
+      "wt-1",
+    );
+    expect(onRenameEnd).toHaveBeenCalledWith("wt-1");
+  });
+
+  it("cancels inline rename on Escape", () => {
+    const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
+    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+
+    fireEvent.change(input, { target: { value: "Renamed worktree" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "rename-worktree",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(onRenameEnd).toHaveBeenCalledWith("wt-1");
+  });
+
+  it("cancels inline rename on blur", () => {
+    const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
+    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+
+    fireEvent.change(input, { target: { value: "Renamed worktree" } });
+    fireEvent.blur(input);
+
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "rename-worktree",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(onRenameEnd).toHaveBeenCalledWith("wt-1");
+  });
+
+  it("does not interrupt typed rename text across parent re-renders", () => {
+    const { onEvent, onRenameEnd, rerender } = harness(wt(), {
+      renaming: true,
+    });
+    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    fireEvent.change(input, { target: { value: "half typed" } });
+
+    rerender(
+      <ul>
+        <WorktreeRow
+          item={wt({ label: "fresh from parent" })}
+          sectionId="projects"
+          onEvent={onEvent}
+          renaming
+          onRenameEnd={onRenameEnd}
+        />
+      </ul>,
+    );
+
+    expect(
+      screen.getByRole<HTMLInputElement>("textbox", { name: /rename worktree/i })
+        .value,
+    ).toBe("half typed");
+  });
+
+  it("does not enter rename mode for pending or failed rows", () => {
+    harness(wt({ pendingState: "starting" }), { renaming: true });
+    expect(
+      screen.queryByRole("textbox", { name: /rename worktree/i }),
+    ).toBeNull();
+    cleanup();
+
+    harness(wt({ pendingState: "failed" }), { renaming: true });
+    expect(
+      screen.queryByRole("textbox", { name: /rename worktree/i }),
+    ).toBeNull();
   });
 });

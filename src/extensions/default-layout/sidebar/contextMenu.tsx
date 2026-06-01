@@ -17,9 +17,10 @@ import { canDeleteHistoryItem, extractSessionId } from "../../../utils/sidebarHi
 import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
 import type { ItemRowProps } from "./item-row";
 import type { WorktreeSidebarItem } from "./worktree-row";
-import type {
-  SidebarContextMenuState,
-  SidebarMenuHandlers,
+import {
+  canRenameWorktree,
+  type SidebarContextMenuState,
+  type SidebarMenuHandlers,
 } from "./menuItems";
 
 export interface SidebarContextMenuController {
@@ -37,12 +38,13 @@ export interface SidebarContextMenuController {
 export interface UseSidebarContextMenuDeps {
   state: Record<string, unknown>;
   onEvent: BuiltinComponentProps["onEvent"];
+  beginWorktreeRename: (worktreeId: string) => void;
 }
 
 export function useSidebarContextMenu(
   deps: UseSidebarContextMenuDeps,
 ): SidebarContextMenuController {
-  const { state, onEvent } = deps;
+  const { state, onEvent, beginWorktreeRename } = deps;
   const [contextMenu, setContextMenu] =
     useState<SidebarContextMenuState | null>(null);
 
@@ -244,20 +246,9 @@ export function useSidebarContextMenu(
   };
   const renameContextWorktree = () => {
     if (!contextMenu?.worktree) return;
-    const next = window.prompt(
-      "Rename worktree",
-      contextMenu.worktree.label || contextMenu.worktree.branch || "",
-    );
-    if (next === null) {
-      close();
-      return;
+    if (canRenameWorktree(contextMenu.worktree)) {
+      beginWorktreeRename(contextMenu.worktree.id);
     }
-    onEvent("rename-worktree", {
-      sectionId: contextMenu.sectionId,
-      itemId: contextMenu.itemId,
-      worktreeId: contextMenu.worktree.id,
-      label: next,
-    });
     close();
   };
   const removeContextWorktree = () => {
