@@ -115,6 +115,7 @@ export function useWorktreeOperations(
             closeTabNow: deps.closeTabNow,
             activateWorktree: activateWorktreeBound,
           },
+          worktreePrompts: deps.worktreePrompts,
         },
         worktreeId,
         opts,

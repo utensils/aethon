@@ -4,6 +4,7 @@ import type { ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import type { Worktree } from "../../worktrees";
 import type { GitStatus } from "../useProjects";
+import type { WorktreeRemovalPrompts } from "./worktreeOps/types";
 
 export interface RecentSessionItem {
   id: string;
@@ -68,6 +69,8 @@ export interface UseProjectOpsContext {
   /** From useTabs: create an interactive shell sub-tab when the project
    *  overview is already showing an open terminal panel. */
   newShellTab?: () => void;
+  /** Notification-backed prompts for destructive worktree removal flows. */
+  worktreePrompts: WorktreeRemovalPrompts;
 }
 
 export interface UseProjectOpsActions {

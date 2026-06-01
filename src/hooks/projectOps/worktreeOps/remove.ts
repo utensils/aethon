@@ -4,16 +4,13 @@ import {
   gitWorktreeRemove,
   gitWorktreeRemoveOrphan,
 } from "../../../worktrees";
-import {
-  alertCannotRemoveMain,
-  alertFailure,
-  confirmForceRemove,
-  confirmOrphanCleanup,
-  confirmRemoveWorktree,
-} from "./prompts";
 import { applyWorktreeRemoval } from "./state";
 import { closeTabsForRemovedWorktree } from "./tabCleanup";
-import type { ProjectLookups, WorktreeOperationDeps } from "./types";
+import type {
+  ProjectLookups,
+  WorktreeOperationDeps,
+  WorktreeRemovalPrompts,
+} from "./types";
 
 interface RemoveDeps {
   projectsRef: MutableRefObject<ProjectsState>;
@@ -27,6 +24,7 @@ interface RemoveDeps {
     closeTabNow: WorktreeOperationDeps["closeTabNow"];
     activateWorktree: (worktreeId: string | null) => void;
   };
+  worktreePrompts: WorktreeRemovalPrompts;
 }
 
 export async function removeWorktreeById(
@@ -38,12 +36,12 @@ export async function removeWorktreeById(
   if (!hit) return;
   const { project, worktree } = hit;
   if (worktree.isMain) {
-    alertCannotRemoveMain();
+    deps.worktreePrompts.notifyCannotRemoveMain();
     return;
   }
   const label = worktree.label ?? worktree.branch ?? "worktree";
   if (opts.confirmed !== true) {
-    if (!confirmRemoveWorktree(label)) return;
+    if (!(await deps.worktreePrompts.promptRemoveWorktree(label))) return;
   }
 
   const applyRemoval = (): void => {
@@ -75,7 +73,7 @@ export async function removeWorktreeById(
   } catch (err) {
     const msg = String(err);
     if (msg.includes("dirty") || msg.includes("modified")) {
-      if (!confirmForceRemove(msg)) return;
+      if (!(await deps.worktreePrompts.promptForceRemove(msg))) return;
       try {
         await gitWorktreeRemove({
           projectPath: project.path,
@@ -85,12 +83,12 @@ export async function removeWorktreeById(
         applyRemoval();
         return;
       } catch (e2) {
-        alertFailure(String(e2));
+        deps.worktreePrompts.notifyFailure(String(e2));
         return;
       }
     }
     if (msg.includes("worktree not tracked")) {
-      if (!confirmOrphanCleanup()) return;
+      if (!(await deps.worktreePrompts.promptOrphanCleanup())) return;
       try {
         await gitWorktreeRemoveOrphan({
           projectPath: project.path,
@@ -99,10 +97,10 @@ export async function removeWorktreeById(
         applyRemoval();
         return;
       } catch (e2) {
-        alertFailure(String(e2));
+        deps.worktreePrompts.notifyFailure(String(e2));
         return;
       }
     }
-    alertFailure(msg);
+    deps.worktreePrompts.notifyFailure(msg);
   }
 }

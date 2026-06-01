@@ -51,6 +51,8 @@ export interface EventRouteContext {
   hasPendingSessionDeleteConsent: (id: string) => boolean;
   resolveSessionDeleteConsent: (id: string, allowed: boolean) => void;
   promptDeleteSessionConfirmation: (label: string) => Promise<boolean>;
+  hasPendingWorktreePrompt: (id: string) => boolean;
+  resolveWorktreePrompt: (id: string, allowed: boolean) => void;
 
   // ─── Notifications ──────────────────────────────────────────────────
   pushNotification: (input: {
