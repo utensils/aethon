@@ -1,0 +1,80 @@
+# Maintainer: James Brink <brink.james@gmail.com>
+
+pkgname=aethon
+pkgver=0.4.0
+pkgrel=1
+pkgdesc='Pi with a face - agent-driven desktop shell with A2UI'
+arch=('x86_64' 'aarch64')
+url='https://github.com/utensils/aethon'
+license=('MIT')
+options=('!lto' '!debug')
+depends=(
+  'alsa-lib'
+  'cairo'
+  'gdk-pixbuf2'
+  'glib2'
+  'glib-networking'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libayatana-appindicator'
+  'libsoup3'
+  'openssl'
+  'pango'
+  'webkit2gtk-4.1'
+)
+makedepends=(
+  'bun'
+  'desktop-file-utils'
+  'dpkg'
+  'git'
+  'nodejs'
+  'pkgconf'
+  'rustup'
+)
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('112b64be7a7e71a0c14c848f78faf88488b326a5e3a8a4e04933983e490d82e8')
+
+prepare() {
+  cd "${pkgname}-${pkgver}"
+
+  # AUR builds are unsigned; Tauri updater artifacts require signing keys.
+  sed -i 's/"createUpdaterArtifacts": true/"createUpdaterArtifacts": false/' \
+    src-tauri/tauri.conf.json
+
+  # Avoid embedding build-host source paths in the compiled agent sidecar.
+  grep -q -- '--sourcemap=none' src-tauri/build.rs \
+    || sed -i '/"--compile",/a\                "--sourcemap=none",' src-tauri/build.rs
+
+  bun install --frozen-lockfile
+}
+
+build() {
+  cd "${pkgname}-${pkgver}"
+
+  # Match the repository's pinned Nix toolchain until upstream Rust/Tauri
+  # transitive dependencies are green on newer compilers.
+  export RUSTUP_TOOLCHAIN=1.92.0
+  rustup toolchain install "${RUSTUP_TOOLCHAIN}" --profile minimal --no-self-update
+
+  # Build Tauri's Debian bundle and repackage its native Linux layout below.
+  bun run tauri build --bundles deb
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+
+  local deb
+  deb="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+  if [[ -z "${deb}" ]]; then
+    printf 'error: Tauri did not produce a deb bundle\n' >&2
+    return 1
+  fi
+
+  local debdir="${srcdir}/deb-${pkgname}"
+  rm -rf "${debdir}"
+  mkdir -p "${debdir}"
+  bsdtar -xf "${deb}" -C "${debdir}"
+  bsdtar -xf "${debdir}"/data.tar.* -C "${pkgdir}"
+
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
