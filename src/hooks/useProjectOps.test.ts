@@ -82,6 +82,13 @@ function renderProjectOps(
       return { ...prev, tabs, activeTabId };
     });
   });
+  const worktreePrompts = {
+    promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+    promptForceRemove: vi.fn(() => Promise.resolve(true)),
+    promptOrphanCleanup: vi.fn(() => Promise.resolve(true)),
+    notifyCannotRemoveMain: vi.fn(),
+    notifyFailure: vi.fn(),
+  };
   const ctx: UseProjectOpsContext = {
     setState,
     stateRef,
@@ -96,11 +103,19 @@ function renderProjectOps(
     dispatchTerminalReplay: vi.fn(),
     autoRestoreDiscoveredSessions: vi.fn(),
     closeTabNow,
+    worktreePrompts,
     ...overrides,
   };
   const rendered = renderHook(() => useProjectOps(ctx));
   projectsRef.current = initialProjects;
-  return { ...rendered, projectsRef, stateRef, setState, closeTabNow };
+  return {
+    ...rendered,
+    projectsRef,
+    stateRef,
+    setState,
+    closeTabNow,
+    worktreePrompts: ctx.worktreePrompts,
+  };
 }
 
 describe("projectIdFromBucketKey", () => {
@@ -383,6 +398,13 @@ describe("useProjectOps session scoping", () => {
       dispatchTerminalReplay: vi.fn(),
       autoRestoreDiscoveredSessions: vi.fn(),
       closeTabNow: vi.fn(),
+      worktreePrompts: {
+        promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+        promptForceRemove: vi.fn(() => Promise.resolve(true)),
+        promptOrphanCleanup: vi.fn(() => Promise.resolve(true)),
+        notifyCannotRemoveMain: vi.fn(),
+        notifyFailure: vi.fn(),
+      },
     };
     const { result } = renderHook(() => useProjectOps(ctx));
     projectsRef.current = initial;
@@ -1133,56 +1155,47 @@ describe("useProjectOps worktree removal", () => {
       if (cmd === "git_worktree_remove_orphan") return Promise.resolve(undefined);
       return Promise.resolve(undefined);
     });
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockReturnValue(true);
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
-    try {
-      const initial = makeProjectsState({
-        activeId: "project-1",
-        activeWorktreeId: "wt-issue",
-        worktreesByProject: {
-          "project-1": [
-            {
-              id: "wt-main",
-              projectId: "project-1",
-              path: "/projects/aethon",
-              branch: "main",
-              isMain: true,
-            },
-            {
-              id: "wt-issue",
-              projectId: "project-1",
-              path: "/projects/aethon-fix-issue",
-              branch: "fix/issue",
-              isMain: false,
-            },
-          ],
-        },
-      });
-      const { result, projectsRef } = renderProjectOps(initial);
-      await act(async () => {
-        await Promise.resolve();
-      });
-      projectsRef.current = initial;
-      await act(async () => {
-        await result.current.removeWorktreeById("wt-issue", { confirmed: true });
-      });
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove_orphan", {
-        projectPath: "/projects/aethon",
-        worktreePath: "/projects/aethon-fix-issue",
-      });
-      expect(alertSpy).not.toHaveBeenCalled();
-      expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
-          (wt) => wt.id === "wt-issue",
-        ),
-      ).toBe(false);
-    } finally {
-      confirmSpy.mockRestore();
-      alertSpy.mockRestore();
-    }
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorktreeId: "wt-issue",
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          {
+            id: "wt-issue",
+            projectId: "project-1",
+            path: "/projects/aethon-fix-issue",
+            branch: "fix/issue",
+            isMain: false,
+          },
+        ],
+      },
+    });
+    const { result, projectsRef, worktreePrompts } = renderProjectOps(initial);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+    expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1);
+    expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove_orphan", {
+      projectPath: "/projects/aethon",
+      worktreePath: "/projects/aethon-fix-issue",
+    });
+    expect(worktreePrompts.notifyFailure).not.toHaveBeenCalled();
+    expect(
+      projectsRef.current.worktreesByProject["project-1"]?.some(
+        (wt) => wt.id === "wt-issue",
+      ),
+    ).toBe(false);
   });
 
   it("aborts cleanly if the user declines the orphan confirmation", async () => {
@@ -1194,55 +1207,56 @@ describe("useProjectOps worktree removal", () => {
         );
       return Promise.resolve(undefined);
     });
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockReturnValue(false);
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
-    try {
-      const initial = makeProjectsState({
-        activeId: "project-1",
-        worktreesByProject: {
-          "project-1": [
-            {
-              id: "wt-main",
-              projectId: "project-1",
-              path: "/projects/aethon",
-              branch: "main",
-              isMain: true,
-            },
-            {
-              id: "wt-issue",
-              projectId: "project-1",
-              path: "/projects/aethon-fix-issue",
-              branch: "fix/issue",
-              isMain: false,
-            },
-          ],
-        },
-      });
-      const { result, projectsRef } = renderProjectOps(initial);
-      await act(async () => {
-        await Promise.resolve();
-      });
-      projectsRef.current = initial;
-      await act(async () => {
-        await result.current.removeWorktreeById("wt-issue", { confirmed: true });
-      });
-      expect(harness.invoke).not.toHaveBeenCalledWith(
-        "git_worktree_remove_orphan",
-        expect.anything(),
-      );
-      expect(alertSpy).not.toHaveBeenCalled();
-      // Row remains visible so the user can try again later.
-      expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
-          (wt) => wt.id === "wt-issue",
-        ),
-      ).toBe(true);
-    } finally {
-      confirmSpy.mockRestore();
-      alertSpy.mockRestore();
-    }
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          {
+            id: "wt-issue",
+            projectId: "project-1",
+            path: "/projects/aethon-fix-issue",
+            branch: "fix/issue",
+            isMain: false,
+          },
+        ],
+      },
+    });
+    const promptOrphanCleanup = vi.fn(() => Promise.resolve(false));
+    const { result, projectsRef, worktreePrompts } = renderProjectOps(initial, {
+      worktreePrompts: {
+        promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+        promptForceRemove: vi.fn(() => Promise.resolve(true)),
+        promptOrphanCleanup,
+        notifyCannotRemoveMain: vi.fn(),
+        notifyFailure: vi.fn(),
+      },
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+    expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1);
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "git_worktree_remove_orphan",
+      expect.anything(),
+    );
+    expect(worktreePrompts.notifyFailure).not.toHaveBeenCalled();
+    // Row remains visible so the user can try again later.
+    expect(
+      projectsRef.current.worktreesByProject["project-1"]?.some(
+        (wt) => wt.id === "wt-issue",
+      ),
+    ).toBe(true);
   });
 
   it("alerts when the orphan command itself fails", async () => {
@@ -1254,50 +1268,43 @@ describe("useProjectOps worktree removal", () => {
         return Promise.reject(new Error("trash: permission denied"));
       return Promise.resolve(undefined);
     });
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockReturnValue(true);
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
-    try {
-      const initial = makeProjectsState({
-        activeId: "project-1",
-        worktreesByProject: {
-          "project-1": [
-            {
-              id: "wt-main",
-              projectId: "project-1",
-              path: "/projects/aethon",
-              branch: "main",
-              isMain: true,
-            },
-            {
-              id: "wt-issue",
-              projectId: "project-1",
-              path: "/projects/aethon-fix-issue",
-              branch: "fix/issue",
-              isMain: false,
-            },
-          ],
-        },
-      });
-      const { result, projectsRef } = renderProjectOps(initial);
-      await act(async () => {
-        await Promise.resolve();
-      });
-      projectsRef.current = initial;
-      await act(async () => {
-        await result.current.removeWorktreeById("wt-issue", { confirmed: true });
-      });
-      expect(alertSpy).toHaveBeenCalled();
-      // Row stays so a follow-up attempt is possible.
-      expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
-          (wt) => wt.id === "wt-issue",
-        ),
-      ).toBe(true);
-    } finally {
-      confirmSpy.mockRestore();
-      alertSpy.mockRestore();
-    }
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          {
+            id: "wt-issue",
+            projectId: "project-1",
+            path: "/projects/aethon-fix-issue",
+            branch: "fix/issue",
+            isMain: false,
+          },
+        ],
+      },
+    });
+    const { result, projectsRef, worktreePrompts } = renderProjectOps(initial);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+    expect(worktreePrompts.notifyFailure).toHaveBeenCalledWith(
+      "Error: trash: permission denied",
+    );
+    // Row stays so a follow-up attempt is possible.
+    expect(
+      projectsRef.current.worktreesByProject["project-1"]?.some(
+        (wt) => wt.id === "wt-issue",
+      ),
+    ).toBe(true);
   });
 });

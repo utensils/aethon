@@ -3,7 +3,7 @@ import { handleNotifications } from "./notifications";
 import { buildRouteFixture } from "./testFixtures";
 
 describe("handleNotifications", () => {
-  it("dismiss resolves all three consents defensively and dismisses", async () => {
+  it("dismiss resolves all consents defensively and dismisses", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await handleNotifications(
       {
@@ -20,6 +20,7 @@ describe("handleNotifications", () => {
       "ext-1",
       false,
     );
+    expect(mocks.resolveWorktreePrompt).toHaveBeenCalledWith("ext-1", false);
     expect(mocks.dismissNotification).toHaveBeenCalledWith("ext-1");
   });
 

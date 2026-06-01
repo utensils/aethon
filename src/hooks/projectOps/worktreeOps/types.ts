@@ -21,6 +21,15 @@ export interface WorktreeOperationDeps {
   watchProjectForBridge: (path: string) => void;
   unwatchProjectForBridge: (path: string) => void;
   closeTabNow: (tabId: string) => void;
+  worktreePrompts: WorktreeRemovalPrompts;
+}
+
+export interface WorktreeRemovalPrompts {
+  promptRemoveWorktree: (label: string) => Promise<boolean>;
+  promptForceRemove: (message: string) => Promise<boolean>;
+  promptOrphanCleanup: () => Promise<boolean>;
+  notifyCannotRemoveMain: () => void;
+  notifyFailure: (message: string) => void;
 }
 
 export interface WorktreeOperations {

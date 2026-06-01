@@ -11,8 +11,11 @@
  */
 export function resolvePointer(
   state: Record<string, unknown>,
-  pointer: string,
+  pointer: unknown,
 ): unknown {
+  if (typeof pointer !== "string") {
+    return undefined;
+  }
   if (!pointer || pointer === "") {
     return state;
   }

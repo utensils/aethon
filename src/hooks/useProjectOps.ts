@@ -78,6 +78,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     autoRestoreDiscoveredSessions,
     closeTabNow,
     newShellTab,
+    worktreePrompts,
   } = ctx;
 
   const projectsLoadedRef = useRef(false);
@@ -282,6 +283,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     watchProjectForBridge,
     unwatchProjectForBridge,
     closeTabNow,
+    worktreePrompts,
   });
 
   // Load projects once at boot. Mirrors into state on resolve so the

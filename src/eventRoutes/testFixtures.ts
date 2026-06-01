@@ -16,6 +16,7 @@ export interface FixtureOverrides {
   pendingShellWriteIds?: string[];
   pendingShellCloseIds?: string[];
   pendingSessionDeleteIds?: string[];
+  pendingWorktreePromptIds?: string[];
   promptDeleteAllow?: boolean;
 }
 
@@ -26,6 +27,7 @@ export interface RouteFixture {
     resolveShellWriteConsent: Mock;
     resolveShellCloseConsent: Mock;
     resolveSessionDeleteConsent: Mock;
+    resolveWorktreePrompt: Mock;
     promptDeleteSessionConfirmation: Mock;
     pushNotification: Mock;
     dismissNotification: Mock;
@@ -93,6 +95,7 @@ export function buildRouteFixture(
   const pendingWrite = new Set(overrides.pendingShellWriteIds ?? []);
   const pendingClose = new Set(overrides.pendingShellCloseIds ?? []);
   const pendingDelete = new Set(overrides.pendingSessionDeleteIds ?? []);
+  const pendingWorktree = new Set(overrides.pendingWorktreePromptIds ?? []);
 
   const resolveShellWriteConsent = vi.fn((id: string, _allowed: boolean) => {
     pendingWrite.delete(id);
@@ -102,6 +105,9 @@ export function buildRouteFixture(
   });
   const resolveSessionDeleteConsent = vi.fn((id: string, _allowed: boolean) => {
     pendingDelete.delete(id);
+  });
+  const resolveWorktreePrompt = vi.fn((id: string, _allowed: boolean) => {
+    pendingWorktree.delete(id);
   });
   const promptDeleteSessionConfirmation = vi.fn(() =>
     Promise.resolve(overrides.promptDeleteAllow ?? false),
@@ -165,6 +171,8 @@ export function buildRouteFixture(
     hasPendingSessionDeleteConsent: (id: string) => pendingDelete.has(id),
     resolveSessionDeleteConsent,
     promptDeleteSessionConfirmation,
+    hasPendingWorktreePrompt: (id: string) => pendingWorktree.has(id),
+    resolveWorktreePrompt,
     pushNotification,
     dismissNotification,
     sendChat,
@@ -242,6 +250,7 @@ export function buildRouteFixture(
       resolveShellWriteConsent,
       resolveShellCloseConsent,
       resolveSessionDeleteConsent,
+      resolveWorktreePrompt,
       promptDeleteSessionConfirmation,
       pushNotification,
       dismissNotification,

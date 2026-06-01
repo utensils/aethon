@@ -24,6 +24,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
 import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
+import { useWorktreePrompts } from "./hooks/useWorktreePrompts";
 import { useFocus } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
@@ -162,6 +163,10 @@ export default function App() {
   } = useShellConsent({
     pushNotification: (n) => pushNotificationRef.current(n),
     stateRef,
+  });
+
+  const worktreePrompts = useWorktreePrompts({
+    pushNotification: (n) => pushNotificationRef.current(n),
   });
 
   // ---------------------------------------------------------------------
@@ -407,6 +412,7 @@ export default function App() {
     autoRestoreDiscoveredSessions,
     closeTabNow,
     newShellTab,
+    worktreePrompts,
   });
   useProjectSyncEffects({
     state,
@@ -439,6 +445,7 @@ export default function App() {
     notifyMinDurationMsRef,
     resolveShellWriteConsent,
     resolveShellCloseConsent,
+    resolveWorktreePrompt: worktreePrompts.resolveWorktreePrompt,
   });
 
   // ---------------------------------------------------------------------
@@ -816,6 +823,8 @@ export default function App() {
     hasPendingSessionDeleteConsent,
     resolveSessionDeleteConsent,
     promptDeleteSessionConfirmation,
+    hasPendingWorktreePrompt: worktreePrompts.hasPendingWorktreePrompt,
+    resolveWorktreePrompt: worktreePrompts.resolveWorktreePrompt,
     pushNotification,
     dismissNotification,
     sendChat,

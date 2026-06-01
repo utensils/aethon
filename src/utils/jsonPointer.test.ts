@@ -40,6 +40,11 @@ describe("resolvePointer", () => {
   it("returns undefined when descending through a primitive", () => {
     expect(resolvePointer({ x: 5 }, "/x/y")).toBeUndefined();
   });
+
+  it("returns undefined for malformed non-string pointers", () => {
+    expect(resolvePointer(state, 42)).toBeUndefined();
+    expect(resolvePointer(state, { $ref: "/a/b/c" })).toBeUndefined();
+  });
 });
 
 describe("setPointer", () => {

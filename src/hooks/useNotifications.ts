@@ -30,6 +30,7 @@ export interface UseNotificationsContext {
    *  awaiting caller doesn't dangle. */
   resolveShellWriteConsent: (id: string, allowed: boolean) => void;
   resolveShellCloseConsent: (id: string, allowed: boolean) => void;
+  resolveWorktreePrompt: (id: string, allowed: boolean) => void;
 }
 
 export interface UseNotificationsActions {
@@ -65,6 +66,7 @@ export function useNotifications(
     notifyMinDurationMsRef,
     resolveShellWriteConsent,
     resolveShellCloseConsent,
+    resolveWorktreePrompt,
   } = ctx;
 
   function pushNotification(input: NotificationInput): string {
@@ -107,6 +109,7 @@ export function useNotifications(
         if (!survivedIds.has(n.id)) {
           resolveShellWriteConsent(n.id, false);
           resolveShellCloseConsent(n.id, false);
+          resolveWorktreePrompt(n.id, false);
         }
       }
       return { ...prev, notifications: trimmed };
