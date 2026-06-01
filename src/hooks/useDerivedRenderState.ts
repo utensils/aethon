@@ -164,6 +164,18 @@ export function useDerivedRenderState({
         (state.agentRunningTabs as Record<string, unknown> | undefined) ?? {},
       ),
     );
+    // The active workspace's tabs carry an authoritative `waiting` flag —
+    // EVERY turn-end path clears it (response_end, error, legacy response,
+    // native slash, agent crash, agent reload), whereas the bucket-independent
+    // running set is only cleared on response_end + crash/reload. Reconcile
+    // against `waiting` here so a crashed/errored ACTIVE tab can't leave its
+    // dot stuck "running". Backgrounded tabs (frozen `waiting`) keep relying
+    // on the running set.
+    for (const t of tabs) {
+      if (t.kind !== "agent") continue;
+      if (t.waiting) runningIds.add(t.id);
+      else runningIds.delete(t.id);
+    }
     const sidebarProjectsWithAgent = Array.isArray(sidebar.projects)
       ? attachAgentActivity(
           sidebar.projects as Array<{

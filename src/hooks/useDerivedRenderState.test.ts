@@ -273,4 +273,40 @@ describe("useDerivedRenderState", () => {
     const wtMain = projects[0].worktrees.find((w) => w.id === "wt-main");
     expect(wtMain && "agent" in wtMain).toBe(false);
   });
+
+  it("reconciles the running set against active tabs' waiting flag", () => {
+    // Stale running entry for an ACTIVE tab whose turn already ended (crash /
+    // error cleared `waiting` but not the running set) must read as idle, not
+    // running — the active tab's `waiting` is authoritative.
+    const idleActive = {
+      ...makeEmptyTab("m", "m", "p1", "agent"),
+      cwd: "/repo/app",
+      waiting: false,
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [idleActive],
+          activeTabId: "m",
+          agentRunningTabs: { m: true }, // stale — turn already ended
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                worktrees: [{ id: "wt-main", path: "/repo/app", isMain: true }],
+              },
+            ],
+          },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+    const projects = (
+      result.current.renderState.sidebar as {
+        projects: { agent: { status: string } }[];
+      }
+    ).projects;
+    expect(projects[0].agent.status).toBe("idle-with-session");
+  });
 });
