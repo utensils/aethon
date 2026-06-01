@@ -180,9 +180,15 @@ describe("prMeta", () => {
     expect(prMeta(null)).toBeNull();
   });
 
-  it("prefers merged state over everything", () => {
-    expect(prMeta(pr({ merged: true }))!.label).toBe("merged");
-    expect(prMeta(pr({ state: "MERGED" }))!.label).toBe("merged");
+  it("prefers merged state over everything and uses the merged tone", () => {
+    expect(prMeta(pr({ merged: true }))!).toMatchObject({
+      label: "merged",
+      tone: "merged",
+    });
+    expect(prMeta(pr({ state: "MERGED" }))!).toMatchObject({
+      label: "merged",
+      tone: "merged",
+    });
   });
 
   it("maps closed, draft, and open", () => {

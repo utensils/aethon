@@ -8,6 +8,7 @@ import type { GhCheckRun } from "../../../ghChecksCache";
 import type { VcsCi, VcsChanges, VcsPr } from "../../../hooks/useVcsStatus";
 
 export type Tone = "success" | "failure" | "pending" | "neutral" | "muted";
+export type PrTone = Tone | "merged";
 
 export interface CiMeta {
   icon: string;
@@ -106,7 +107,7 @@ export function sortChecks(runs: GhCheckRun[]): GhCheckRun[] {
 
 export interface PrMeta {
   label: string;
-  tone: Tone;
+  tone: PrTone;
   title: string;
 }
 
@@ -117,7 +118,7 @@ export function prMeta(pr: VcsPr | null): PrMeta | null {
   if (pr.merged || state === "MERGED") {
     return {
       label: "merged",
-      tone: "neutral",
+      tone: "merged",
       title: `PR #${pr.number} merged`,
     };
   }
