@@ -104,6 +104,7 @@ export function scheduleAethonRetry(
   deps.send({
     type: "notice",
     tabId,
+    busy: true,
     message: `Transient provider error; retrying ${attempt}/${settings.maxRetries} in ${Math.max(
       0,
       Math.round(delayMs / 1000),

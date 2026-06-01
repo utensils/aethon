@@ -1,5 +1,5 @@
 import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
-import type { AethonAgentState } from "./state";
+import type { AethonAgentState, TabRecord } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { maybeExitForReload } from "./dispatcherTypes";
 import {
@@ -39,7 +39,13 @@ export async function handleChat(
   );
   const wantsSteer = msg.mode === "steer";
   const images = normalizeImages(msg.images);
-  if (wantsSteer && tab.promptInFlight) {
+  const busyForTurn = tab.promptInFlight || isUnderlyingSessionBusy(tab);
+  if (busyForTurn && !tab.promptInFlight) {
+    tab.promptInFlight = true;
+    tab.agentEndFired = false;
+    state.currentAgentTabId = tabId;
+  }
+  if (wantsSteer && busyForTurn) {
     state.currentAgentTabId = tabId;
     const content = msg.content;
     state.tabContext
@@ -54,7 +60,7 @@ export async function handleChat(
       });
     return;
   }
-  const queued = tab.promptInFlight;
+  const queued = busyForTurn;
   if (queued) {
     tab.queuedCount += 1;
     const content = msg.content;
@@ -93,15 +99,28 @@ export async function handleChat(
       deps.send({ type: "error", tabId, message: `prompt: ${message}` });
     })
     .finally(() => {
-      if (!tab.agentEndFired && !tab.aethonRetryInFlight) {
+      const stillStreamingOrRetrying = isUnderlyingSessionBusy(tab);
+      if (!tab.agentEndFired && !stillStreamingOrRetrying) {
         tab.promptInFlight = false;
         deps.send({ type: "response_end", tabId });
       }
-      if (state.currentAgentTabId === tabId && !tab.aethonRetryInFlight) {
+      if (state.currentAgentTabId === tabId && !stillStreamingOrRetrying) {
         state.currentAgentTabId = undefined;
       }
       maybeExitForReload(state, deps);
     });
+}
+
+function isUnderlyingSessionBusy(tab: TabRecord): boolean {
+  const sessionFlags = tab.session as {
+    isStreaming?: unknown;
+    isRetrying?: unknown;
+  };
+  return (
+    tab.aethonRetryInFlight === true ||
+    sessionFlags.isStreaming === true ||
+    sessionFlags.isRetrying === true
+  );
 }
 
 function normalizeImages(images: InboundMessage["images"]): ImageContent[] {

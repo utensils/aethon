@@ -9,6 +9,16 @@ import type { BridgeMessageHandler } from "./types";
 export const handleNotice: BridgeMessageHandler = (data, ctx) => {
   const message = (data.message as string) ?? "";
   const tabId = (data.tabId as string | undefined) ?? "default";
+  if (data.busy === true) {
+    ctx.updateTab(tabId, (tab) => ({
+      ...tab,
+      waiting: true,
+      queueCount: (tab.queuedMessages ?? []).length,
+    }));
+    if (ctx.stateRef.current.activeTabId === tabId) {
+      ctx.setStatusFlags({ waiting: true, status: "thinking…" });
+    }
+  }
   if (message) {
     ctx.appendMessage(
       { id: crypto.randomUUID(), role: "system", text: message },

@@ -762,6 +762,7 @@ describe("handleSessionEvent", () => {
       expect(f.sent).toContainEqual({
         type: "notice",
         tabId: "tab-1",
+        busy: true,
         message: "Transient provider error; retrying 1/3 in 2s.",
       });
       expect(f.sent.some((m) => m.type === "error")).toBe(false);
@@ -826,6 +827,7 @@ describe("handleSessionEvent", () => {
     expect(f.sent[0]).toMatchObject({
       type: "notice",
       tabId: "tab-1",
+      busy: true,
       message: "Transient provider error; retrying 1/3 in 2s.",
     });
   });
