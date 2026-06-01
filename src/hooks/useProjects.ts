@@ -96,7 +96,9 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     await Promise.all(paths.map((p) => refreshGitStatusFor(p)));
   }
 
-  async function fetchGitRemotesIfDue(): Promise<void> {
+  async function fetchGitRemotesIfDue(
+    refreshStatusAfterFetch = refreshAllGitStatus,
+  ): Promise<void> {
     if (document.hidden) return;
     const due = dueGitFetchPaths(ctx.getProjectPaths(), {
       lastAttemptedAt: gitFetchAttemptsRef.current,
@@ -128,7 +130,7 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     // surface that reads cached git status (including duplicate worktree rows)
     // gets refreshed from local metadata.
     if (results.some(Boolean)) {
-      await refreshAllGitStatus();
+      await refreshStatusAfterFetch();
     }
   }
 
@@ -158,16 +160,25 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
 
   useEffect(() => {
     let cancelled = false;
+    let rerun = false;
     const tick = async () => {
       // Skip background git polling while the window is hidden — no chips are
       // visible to update, so it's pure wasted subprocess churn. The
       // visibilitychange listener below refreshes on the way back.
-      if (cancelled || gitPollingRef.current || document.hidden) return;
+      if (cancelled || document.hidden) return;
+      if (gitPollingRef.current) {
+        rerun = true;
+        return;
+      }
       gitPollingRef.current = true;
       try {
         await refreshAllGitStatus();
       } finally {
         gitPollingRef.current = false;
+        if (rerun && !cancelled) {
+          rerun = false;
+          void tick();
+        }
       }
     };
     // 1. Hydrate from the disk-backed cache so chips paint with the
@@ -187,12 +198,12 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
       gitFetchAttemptsRef.current = await loadGitFetchAttempts();
       if (cancelled) return;
       void tick();
-      void fetchGitRemotesIfDue();
+      void fetchGitRemotesIfDue(tick);
     };
     void bootstrap();
     const onFocus = () => {
       void tick();
-      void fetchGitRemotesIfDue();
+      void fetchGitRemotesIfDue(tick);
     };
     // Refresh when the window becomes visible again (covers restore-from-
     // minimized, which doesn't always fire `focus`), catching up on anything
@@ -200,14 +211,14 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     const onVisibility = () => {
       if (!document.hidden) {
         void tick();
-        void fetchGitRemotesIfDue();
+        void fetchGitRemotesIfDue(tick);
       }
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     const interval = window.setInterval(tick, 30_000);
     const fetchInterval = window.setInterval(
-      () => void fetchGitRemotesIfDue(),
+      () => void fetchGitRemotesIfDue(tick),
       GIT_FETCH_INTERVAL_MS,
     );
     return () => {

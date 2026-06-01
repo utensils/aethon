@@ -128,6 +128,7 @@ pub fn run() {
         .manage(agent_process::AgentProcesses::new())
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
+        .manage(commands::git::GitFetchState::default())
         .manage(commands::git::GitWatchState::default())
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())

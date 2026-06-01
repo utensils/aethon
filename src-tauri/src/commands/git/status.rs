@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use tauri::State;
 
 use crate::env;
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(120);
 const FETCH_DEDUP_WINDOW: Duration = Duration::from_secs(30);
 
-fn git_fetch_attempts() -> &'static Mutex<HashMap<PathBuf, Instant>> {
-    static ATTEMPTS: OnceLock<Mutex<HashMap<PathBuf, Instant>>> = OnceLock::new();
-    ATTEMPTS.get_or_init(|| Mutex::new(HashMap::new()))
+#[derive(Default)]
+pub struct GitFetchState {
+    attempts: Mutex<HashMap<PathBuf, Instant>>,
 }
 
 /// Read minimal git status for a project directory. Used by the
@@ -42,7 +44,14 @@ pub struct GitStatus {
 /// frontend treats this as a background maintenance task and must never blank
 /// existing status chips because it failed.
 #[tauri::command]
-pub async fn git_fetch_all(project_path: String) -> Result<bool, String> {
+pub async fn git_fetch_all(
+    project_path: String,
+    state: State<'_, GitFetchState>,
+) -> Result<bool, String> {
+    git_fetch_all_inner(project_path, state.inner()).await
+}
+
+async fn git_fetch_all_inner(project_path: String, state: &GitFetchState) -> Result<bool, String> {
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
         return Ok(false);
@@ -52,7 +61,7 @@ pub async fn git_fetch_all(project_path: String) -> Result<bool, String> {
     }
 
     let key = git_common_dir(&dir).unwrap_or_else(|| dir.canonicalize().unwrap_or(dir.clone()));
-    if !reserve_git_fetch_attempt(key) {
+    if !state.reserve_attempt(key) {
         return Ok(false);
     }
 
@@ -63,6 +72,8 @@ pub async fn git_fetch_all(project_path: String) -> Result<bool, String> {
     cmd.arg("-C")
         .arg(&dir)
         .args(["fetch", "--all", "--prune", "--quiet"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
         .kill_on_drop(true);
     let out = tokio::time::timeout(FETCH_TIMEOUT, cmd.output()).await;
     Ok(matches!(out, Ok(Ok(_))))
@@ -96,20 +107,20 @@ fn git_common_dir(dir: &Path) -> Option<PathBuf> {
     Some(path.canonicalize().unwrap_or(path))
 }
 
-fn reserve_git_fetch_attempt(key: PathBuf) -> bool {
-    let now = Instant::now();
-    let mut attempts = git_fetch_attempts()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    attempts.retain(|_, last| now.duration_since(*last) < FETCH_DEDUP_WINDOW);
-    if attempts
-        .get(&key)
-        .is_some_and(|last| now.duration_since(*last) < FETCH_DEDUP_WINDOW)
-    {
-        return false;
+impl GitFetchState {
+    fn reserve_attempt(&self, key: PathBuf) -> bool {
+        let now = Instant::now();
+        let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
+        attempts.retain(|_, last| now.duration_since(*last) < FETCH_DEDUP_WINDOW);
+        if attempts
+            .get(&key)
+            .is_some_and(|last| now.duration_since(*last) < FETCH_DEDUP_WINDOW)
+        {
+            return false;
+        }
+        attempts.insert(key, now);
+        true
     }
-    attempts.insert(key, now);
-    true
 }
 
 /// One per-file worktree change as reported by `git status --porcelain`.
@@ -438,8 +449,9 @@ mod tests {
     #[tokio::test]
     async fn git_fetch_all_returns_false_for_missing_directory() {
         let missing = tempfile::tempdir().unwrap().path().join("missing");
+        let state = GitFetchState::default();
         assert!(
-            !git_fetch_all(missing.to_string_lossy().to_string())
+            !git_fetch_all_inner(missing.to_string_lossy().to_string(), &state)
                 .await
                 .unwrap()
         );
@@ -448,8 +460,9 @@ mod tests {
     #[tokio::test]
     async fn git_fetch_all_returns_false_for_non_repo() {
         let tmp = tempfile::tempdir().unwrap();
+        let state = GitFetchState::default();
         assert!(
-            !git_fetch_all(tmp.path().to_string_lossy().to_string())
+            !git_fetch_all_inner(tmp.path().to_string_lossy().to_string(), &state)
                 .await
                 .unwrap()
         );
@@ -468,8 +481,9 @@ mod tests {
             .unwrap();
         assert!(init.status.success());
 
+        let state = GitFetchState::default();
         assert!(
-            git_fetch_all(tmp.path().to_string_lossy().to_string())
+            git_fetch_all_inner(tmp.path().to_string_lossy().to_string(), &state)
                 .await
                 .unwrap()
         );
@@ -478,8 +492,9 @@ mod tests {
     #[test]
     fn fetch_attempt_reservation_dedupes_recent_repo_keys() {
         let key = tempfile::tempdir().unwrap().path().join("repo.git");
-        assert!(reserve_git_fetch_attempt(key.clone()));
-        assert!(!reserve_git_fetch_attempt(key));
+        let state = GitFetchState::default();
+        assert!(state.reserve_attempt(key.clone()));
+        assert!(!state.reserve_attempt(key));
     }
 
     #[test]
