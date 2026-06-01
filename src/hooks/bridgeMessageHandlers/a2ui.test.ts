@@ -63,6 +63,36 @@ describe("handleA2ui", () => {
     ).toBeLessThan(mocks.appendMessage.mock.invocationCallOrder[0]);
   });
 
+  it("mirrors a2ui tool cards to the durable local chat log", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1" },
+    });
+    const payload = {
+      components: [
+        {
+          id: "tool-1-call-1",
+          type: "tool-card",
+          props: { toolName: "bash", startedAt: 1_000 },
+        },
+      ],
+    };
+
+    handleA2ui(
+      { type: "a2ui", payload, id: "tool-1-call-1", tabId: "tab-1" },
+      ctx,
+    );
+
+    expect(mocks.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "tool-1-call-1",
+        role: "agent",
+        a2ui: payload,
+        createdAt: 1_000,
+      }),
+      "tab-1",
+    );
+  });
+
   it("replaces a stale running terminal tool card when the final event has a sibling id", () => {
     const runningId =
       "tool-1-call_run-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59";

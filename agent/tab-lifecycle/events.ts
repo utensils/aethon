@@ -92,6 +92,34 @@ function rollResponseMessage(rec: TabRecord): void {
   rec.activeResponseCanonicalId = undefined;
 }
 
+function compactionNotice(
+  event: { type: string } & Record<string, unknown>,
+): { message: string; busy?: true } | undefined {
+  const type = event.type.toLowerCase();
+  if (!type.includes("compact")) return undefined;
+  if (type.includes("start") || type.includes("begin")) {
+    return { message: "Compacting context…", busy: true };
+  }
+  if (type.includes("fail") || type.includes("error")) {
+    const reason =
+      typeof event.error === "string"
+        ? event.error
+        : typeof event.message === "string"
+          ? event.message
+          : "unknown error";
+    return { message: `Context compaction failed: ${reason}` };
+  }
+  if (
+    type.includes("end") ||
+    type.includes("finish") ||
+    type.includes("complete") ||
+    type.includes("success")
+  ) {
+    return { message: "Context compaction complete." };
+  }
+  return undefined;
+}
+
 /** Per-tab pi session event subscriber. Extracted so tests can drive it
  *  directly with synthetic event payloads. */
 export function handleSessionEvent(
@@ -104,6 +132,16 @@ export function handleSessionEvent(
   // exhaustive shape.
   event: { type: string } & Record<string, unknown>,
 ): void {
+  const compacting = compactionNotice(event);
+  if (compacting) {
+    deps.send({
+      type: "notice",
+      tabId,
+      ...(compacting.busy ? { busy: true } : {}),
+      message: compacting.message,
+    });
+  }
+
   switch (event.type) {
     case "agent_start": {
       rollResponseMessage(rec);

@@ -1,4 +1,4 @@
-import type { A2UIPayload } from "../../types/a2ui";
+import type { A2UIComponent, A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { BridgeMessageHandler } from "./types";
@@ -14,6 +14,26 @@ function completedToolCardIdentity(payload: A2UIPayload): string | undefined {
   if (component.props?.startedAt === undefined) return undefined;
   if (component.props.endedAt === undefined) return undefined;
   return toolCardIdentityFromId(component.id);
+}
+
+function numericProp(
+  component: A2UIComponent,
+  key: string,
+): number | undefined {
+  const value = component.props?.[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function createdAtFromPayload(payload: A2UIPayload): number | undefined {
+  for (const component of payload.components ?? []) {
+    if (component?.type !== "tool-card") continue;
+    return (
+      numericProp(component, "startedAt") ?? numericProp(component, "endedAt")
+    );
+  }
+  return undefined;
 }
 
 function replacesRunningToolCard(
@@ -44,14 +64,21 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
   // so any pre-tool assistant text/thinking renders before the tool card.
   flushResponseDeltas(tabId);
   if (payload) {
+    const createdAt = createdAtFromPayload(payload);
+    const message: ChatMessage = {
+      id,
+      role: "agent",
+      a2ui: payload,
+      ...(createdAt !== undefined ? { createdAt } : {}),
+    };
     const tabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
     const tab = tabs.find((t) => t.id === tabId);
     const identity = completedToolCardIdentity(payload);
     if (replacesRunningToolCard(tab, id, identity)) {
       ctx.updateTab(tabId, (current) => ({
         ...current,
-        messages: current.messages.map((message) => {
-          const matches = (message.a2ui?.components ?? []).some(
+        messages: current.messages.map((currentMessage) => {
+          const matches = (currentMessage.a2ui?.components ?? []).some(
             (component) =>
               component?.type === "tool-card" &&
               typeof component.id === "string" &&
@@ -59,12 +86,13 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
               component.props.endedAt === undefined &&
               toolCardIdentityFromId(component.id) === identity,
           );
-          return matches ? { id, role: "agent", a2ui: payload } : message;
+          return matches ? message : currentMessage;
         }),
       }));
     } else {
-      ctx.appendMessage({ id, role: "agent", a2ui: payload }, tabId);
+      ctx.appendMessage(message, tabId);
     }
+    ctx.persistLocalChatMessage(message, tabId);
   }
   if (data.done) {
     ctx.updateTab(tabId, (tab) => ({ ...tab, waiting: false }));

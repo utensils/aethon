@@ -22,10 +22,13 @@ export const handleNotice: BridgeMessageHandler = (data, ctx) => {
     }
   }
   if (message) {
-    ctx.appendMessage(
-      { id: crypto.randomUUID(), role: "system", text: message },
-      tabId,
-    );
+    const chatMessage = {
+      id: crypto.randomUUID(),
+      role: "system" as const,
+      text: message,
+    };
+    ctx.appendMessage(chatMessage, tabId);
+    ctx.persistLocalChatMessage(chatMessage, tabId);
     ctx.pushNotification({ title: message, kind: "warning" });
   }
 };

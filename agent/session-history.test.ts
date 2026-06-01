@@ -111,6 +111,7 @@ describe("parseSessionHistoryLines", () => {
       {
         id: "restored-tool-call-read-1",
         role: "agent",
+        createdAt: 1_000,
         a2ui: {
           components: [
             {
@@ -206,6 +207,7 @@ describe("parseSessionHistoryLines", () => {
       {
         id: "restored-tool-call-grep-1",
         role: "agent",
+        createdAt: 7_000,
         a2ui: {
           components: [
             {
@@ -569,6 +571,90 @@ describe("readSessionTranscript", () => {
     await expect(readSessionTranscript(dir)).resolves.toEqual([
       { id: "pi-agent", role: "agent", text: "all done", createdAt: 1_000 },
       { id: "text-2", role: "agent", text: "done", createdAt: 2_000 },
+    ]);
+  });
+
+  it("orders pi tool activity after stale local streaming snapshots on restore", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        timestamp: 3_000,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-bash-after-restart",
+              name: "bash",
+              arguments: { command: "git push" },
+            },
+          ],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "text-stale-thinking",
+      role: "agent",
+      thinking: "Inspecting code status",
+      createdAt: 2_000,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "text-stale-thinking",
+      "restored-tool-call-bash-after-restart",
+    ]);
+    expect(restored.at(-1)?.a2ui?.components[0]).toMatchObject({
+      type: "tool-card",
+      props: { toolName: "bash", startedAt: 3_000 },
+    });
+  });
+
+  it("dedupes locally mirrored live tool cards once pi history has the same tool", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        timestamp: 3_000,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call_live_1|fc_abc",
+              name: "bash",
+              arguments: { command: "nix flake check" },
+            },
+          ],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "tool-7-call_live_1-fc_abc",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-7-call_live_1-fc_abc",
+            type: "tool-card",
+            props: {
+              toolName: "bash",
+              startedAt: 3_000,
+            },
+          },
+        ],
+      },
+      createdAt: 3_000,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "restored-tool-call_live_1-fc_abc",
     ]);
   });
 

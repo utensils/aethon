@@ -13,6 +13,10 @@ describe("handleNotice", () => {
       expect.objectContaining({ role: "system", text: "queued for follow-up" }),
       "default",
     );
+    expect(mocks.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "system", text: "queued for follow-up" }),
+      "default",
+    );
     expect(mocks.pushNotification).toHaveBeenCalledWith({
       title: "queued for follow-up",
       kind: "warning",

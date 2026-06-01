@@ -9,6 +9,7 @@ import type { A2UIPayload, ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import { activeProject, type ProjectsState } from "../projects";
 import { durableImageAttachments } from "../utils/imageAttachments";
+import { trimMessage } from "../utils/messages";
 import type { SlashCommandContext } from "../slashCommands";
 import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { LayoutCatalogueEntry } from "../extensions/default-layout";
@@ -71,20 +72,40 @@ export function useAppSlashCommandContext({
 }: UseAppSlashCommandContextOptions): AppSlashCommandContextResult {
   const persistLocalChatMessage = useCallback(
     (msg: ChatMessage, tabId: string) => {
-      const attachments = durableImageAttachments(msg.attachments);
-      if (!msg.text && !msg.thinking && attachments.length === 0) return;
+      const durableMessage = trimMessage(msg);
+      const attachments = durableImageAttachments(durableMessage.attachments);
+      const a2ui = Array.isArray(durableMessage.a2ui?.components)
+        ? durableMessage.a2ui
+        : undefined;
+      if (
+        !durableMessage.text &&
+        !durableMessage.thinking &&
+        !a2ui &&
+        attachments.length === 0
+      ) {
+        return;
+      }
       invoke("agent_command", {
         payload: JSON.stringify({
           type: "local_chat_message",
           tabId,
           payload: {
-            id: msg.id,
-            role: msg.role,
-            ...(msg.text ? { text: msg.text } : {}),
-            ...(msg.thinking ? { thinking: msg.thinking } : {}),
-            ...(msg.delivery ? { delivery: msg.delivery } : {}),
+            id: durableMessage.id,
+            role: durableMessage.role,
+            ...(durableMessage.text ? { text: durableMessage.text } : {}),
+            ...(durableMessage.thinking
+              ? { thinking: durableMessage.thinking }
+              : {}),
+            ...(durableMessage.delivery
+              ? { delivery: durableMessage.delivery }
+              : {}),
             ...(attachments.length > 0 ? { attachments } : {}),
-            createdAt: Date.now(),
+            ...(a2ui ? { a2ui } : {}),
+            createdAt:
+              typeof durableMessage.createdAt === "number" &&
+              Number.isFinite(durableMessage.createdAt)
+                ? durableMessage.createdAt
+                : Date.now(),
           },
         }),
       }).catch(() => {
