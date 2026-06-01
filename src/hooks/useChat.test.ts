@@ -5,6 +5,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { makeEmptyTab, type Tab } from "../types/tab";
 import { useChat, type UseChatContext } from "./useChat";
+import { PI_DEFAULT_MODEL_SENTINEL } from "../utils/modelPicker";
 
 const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(undefined));
 
@@ -24,6 +25,7 @@ function buildContext(overrides: Record<string, unknown> = {}): {
   ctx: UseChatContext;
   stateRef: MutableRefObject<Record<string, unknown>>;
   recordProjectModel: ReturnType<typeof vi.fn>;
+  piDefaultModelRef: MutableRefObject<string>;
 } {
   const tab = {
     ...makeEmptyTab("tab-1", "Tab 1"),
@@ -63,9 +65,13 @@ function buildContext(overrides: Record<string, unknown> = {}): {
     });
   };
   const recordProjectModel = vi.fn();
+  const piDefaultModelRef: MutableRefObject<string> = {
+    current: (overrides.piDefaultModel as string | undefined) ?? "",
+  };
   return {
     stateRef,
     recordProjectModel,
+    piDefaultModelRef,
     ctx: {
       setState,
       stateRef,
@@ -85,6 +91,7 @@ function buildContext(overrides: Record<string, unknown> = {}): {
         }) as unknown as ReturnType<UseChatContext["slashContext"]>,
       persistLocalChatMessage: vi.fn(),
       recordProjectModel,
+      piDefaultModelRef,
     },
   };
 }
@@ -621,6 +628,46 @@ describe("useChat setModel", () => {
     );
     // …but the user's chosen default is intent and must survive.
     expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
+  });
+
+  it("'(pi default)' clears every runtime fallback and persists null without retargeting", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx, stateRef, piDefaultModelRef } = buildContext({
+        activeTabId: undefined,
+        tabs: [],
+        defaultModel: "ollama/qwen",
+        piDefaultModel: "ollama/qwen",
+        projectModels: { p1: "ollama/qwen" },
+      });
+      const { result } = renderHook(() => useChat(ctx));
+
+      await act(async () => {
+        await result.current.setModel(PI_DEFAULT_MODEL_SENTINEL);
+      });
+
+      // Every fallback is cleared so the next new tab sends no model and
+      // the agent picks its env default; no live session retarget.
+      expect(stateRef.current.defaultModel).toBe("");
+      expect(stateRef.current.piDefaultModel).toBe("");
+      expect(stateRef.current.model).toBe("");
+      expect(stateRef.current.projectModels).toEqual({});
+      expect(piDefaultModelRef.current).toBe("");
+      expect(invoke).not.toHaveBeenCalledWith(
+        "agent_command",
+        expect.anything(),
+      );
+
+      await vi.advanceTimersByTimeAsync(450);
+      const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+      expect(write).toBeTruthy();
+      expect(
+        (write?.[1] as { config: { agent: { model: string | null } } }).config
+          .agent.model,
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("persists the chosen default to [agent] model (debounced)", async () => {

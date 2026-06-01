@@ -1743,6 +1743,28 @@ body.ae-resizing-sidebar .a2ui-layout {
   max-width: min(44ch, calc(var(--app-viewport-width) - 32px));
 }
 
+/* Custom-id input mode: styled to match the dropdown trigger pill so the
+   header doesn't jump when "Custom id…" swaps the button for an input. */
+.a2ui-model-picker-custom {
+  display: inline-flex;
+}
+.a2ui-model-picker-custom-input {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--chrome-text-compact);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  border: 1px solid var(--accent, #ff6a18);
+  border-radius: 6px;
+  outline: none;
+  width: min(34ch, calc(var(--app-viewport-width) - 32px));
+}
+.a2ui-model-picker-custom-input::placeholder {
+  color: var(--text-dim);
+}
+
 .a2ui-appearance-menu .a2ui-dropdown-trigger {
   max-width: min(46ch, calc(var(--app-viewport-width) - 32px));
 }

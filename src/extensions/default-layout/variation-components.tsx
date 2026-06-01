@@ -20,6 +20,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
+import { PI_DEFAULT_MODEL_SENTINEL } from "../../utils/modelPicker";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { VcsSlice } from "../../hooks/useVcsStatus";
 import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
@@ -315,6 +316,13 @@ function asDropdownItems(raw: unknown): DropdownItem[] {
 // event matching the sidebar shape so App routes to setModel.
 // ---------------------------------------------------------------------------
 
+// Sentinel that flips the picker into a free-text input for a model id
+// not on the loaded list. Local to the picker — custom ids resolve to a
+// real id before the `select` event fires, so nothing downstream needs
+// to know about it. `(pi default)` uses the shared
+// `PI_DEFAULT_MODEL_SENTINEL` instead, which `setModel` interprets.
+const CUSTOM_MODEL_SENTINEL = "__custom__";
+
 export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps) {
   const props = component.props as {
     source?: { $ref: string } | DropdownItem[];
@@ -324,6 +332,10 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
     visible?: BooleanValue;
   };
   const visible = props.visible === undefined ? true : resolveBoolean(props.visible, state);
+  // Custom-id mode: replaces the dropdown with a free-text input so a
+  // model not in the loaded registry can still be set as the default.
+  const [customMode, setCustomMode] = useState(false);
+  const [customValue, setCustomValue] = useState("");
   if (!visible) return null;
 
   const sourceRaw = Array.isArray(props.source)
@@ -348,19 +360,76 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
   const activeId = props.active
     ? resolveString(props.active, state)
     : (activeTabModel || defaultModel || piDefaultModel || "");
-  const itemsWithActive = items.map((it) => ({
-    ...it,
-    active: it.id === activeId,
-  }));
-  const activeItem = itemsWithActive.find((it) => it.id === activeId);
-
-  const buttonLabel = props.buttonLabel
-    ? resolveString(props.buttonLabel, state)
-    : activeItem?.label || activeId || "model";
 
   const placeholder = props.placeholder
     ? resolveString(props.placeholder, state)
     : "filter models — sonnet, gpt, qwen…";
+
+  if (customMode) {
+    const cancel = () => {
+      setCustomMode(false);
+      setCustomValue("");
+    };
+    const commit = () => {
+      const next = customValue.trim();
+      cancel();
+      if (next) onEvent("select", { sectionId: "models", itemId: next }, next);
+    };
+    return (
+      <span className="a2ui-model-picker-custom">
+        <input
+          type="text"
+          className="a2ui-model-picker-custom-input"
+          placeholder="provider/model-id"
+          value={customValue}
+          autoFocus
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-label="Custom model id"
+          onChange={(e) => setCustomValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+          // Blur cancels — only Enter commits. This also makes Escape's
+          // unmount-triggered blur a no-op instead of committing the
+          // typed value, and avoids accidental commits on click-away.
+          onBlur={cancel}
+        />
+      </span>
+    );
+  }
+
+  // Prepend "(pi default)" and append "Custom id…" so the header picker
+  // is a full superset of the model controls (no separate Settings field).
+  // "(pi default)" is active when no explicit default is set and the
+  // visible model is just pi's fallback; in that state no concrete model
+  // is marked active too, so the listbox never shows two selected items.
+  const piDefaultActive =
+    !defaultModel && (!activeTabModel || activeTabModel === piDefaultModel);
+  const sectionItems: DropdownItem[] = [
+    {
+      id: PI_DEFAULT_MODEL_SENTINEL,
+      label: "(pi default — picks from env vars)",
+      active: piDefaultActive,
+    },
+    ...items.map((it) => ({
+      ...it,
+      active: !piDefaultActive && it.id === activeId,
+    })),
+    { id: CUSTOM_MODEL_SENTINEL, label: "Custom id…" },
+  ];
+  const activeItem = sectionItems.find((it) => it.active);
+
+  const buttonLabel = props.buttonLabel
+    ? resolveString(props.buttonLabel, state)
+    : activeItem?.label || activeId || "model";
 
   return (
     <DropdownPickerCore
@@ -371,15 +440,22 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
         {
           id: "models",
           title: "models",
-          items: itemsWithActive,
+          items: sectionItems,
           searchable: true,
           searchPlaceholder: placeholder,
           emptyLabel: "no models match",
         },
       ]}
-      onSelect={(sectionId, itemId) =>
-        onEvent("select", { sectionId, itemId }, itemId)
-      }
+      onSelect={(sectionId, itemId) => {
+        if (itemId === CUSTOM_MODEL_SENTINEL) {
+          setCustomValue("");
+          setCustomMode(true);
+          return;
+        }
+        // PI_DEFAULT_MODEL_SENTINEL flows through unchanged — setModel
+        // interprets it as "reset to pi's env-driven default".
+        onEvent("select", { sectionId, itemId }, itemId);
+      }}
     />
   );
 }
