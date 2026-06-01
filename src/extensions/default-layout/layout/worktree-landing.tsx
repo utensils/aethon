@@ -155,6 +155,7 @@ function WorktreeLandingInner(props: {
   // gh just collapses to "Connect GitHub" in the UI.
   useEffect(() => {
     if (!branch || !path) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear stale GitHub status as soon as there is no branch to query.
       setGh(null);
       return;
     }

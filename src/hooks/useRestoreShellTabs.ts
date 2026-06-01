@@ -18,16 +18,16 @@ export function useRestoreShellTabs({
 }: UseRestoreShellTabsOptions): void {
   const attemptedRef = useRef(new Set<string>());
 
-  const markRestored = (tabId: string) => {
-    updateTab(tabId, (t) => {
-      if (!t.shell) return t;
-      const shell = { ...t.shell };
-      delete shell.restartOnMount;
-      return { ...t, shell: { ...shell, shellState: "running" } };
-    });
-  };
-
   useEffect(() => {
+    const markRestored = (tabId: string) => {
+      updateTab(tabId, (t) => {
+        if (!t.shell) return t;
+        const shell = { ...t.shell };
+        delete shell.restartOnMount;
+        return { ...t, shell: { ...shell, shellState: "running" } };
+      });
+    };
+
     for (const tab of tabs) {
       if (tab.kind !== "shell" || !tab.shell?.restartOnMount) continue;
       if (attemptedRef.current.has(tab.id)) continue;

@@ -50,6 +50,7 @@ export function usePersistEditorTabs(ctx: UsePersistEditorTabsContext): void {
       // save would be lost (and a later tick would persist the new project's
       // tabs). Flush the outgoing project's snapshot now so its edits
       // survive a switch-then-quit.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Cleanup intentionally reads the latest active project to detect switches.
       if (projectsRef.current.activeId !== projectId) {
         void saveEditorTabsForProject(projectId, snapshotTabs, snapshotActive);
       }
