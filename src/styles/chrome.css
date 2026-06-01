@@ -1325,6 +1325,24 @@ body.ae-resizing-sidebar .a2ui-layout {
 .ae-worktree-branch {
   margin-left: auto;
 }
+.ae-worktree-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+}
+.ae-worktree-rename-input:focus {
+  outline: none;
+}
+.ae-worktree-rename-input:focus-visible {
+  box-shadow: var(--focus-ring);
+}
 .ae-worktree-remove-slot {
   display: inline-flex;
   align-items: center;

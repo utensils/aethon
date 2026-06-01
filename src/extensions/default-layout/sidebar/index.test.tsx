@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 // Force the macOS branch so the brand-strip drag-region assertion is
 // deterministic under jsdom (navigator.platform is empty there).
 vi.mock("../../../utils/platform", () => ({ isMacOS: () => true }));
@@ -8,7 +8,11 @@ import { Sidebar } from ".";
 import type { A2UIComponent } from "../../../types/a2ui";
 import type { ComponentProps } from "react";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  cleanup();
+});
 
 type SidebarOnEvent = ComponentProps<typeof Sidebar>["onEvent"];
 type SidebarOnEventMock = ReturnType<typeof vi.fn<SidebarOnEvent>>;
@@ -318,6 +322,77 @@ describe("Sidebar extension controls", () => {
 });
 
 describe("Sidebar project menu", () => {
+  it("starts inline worktree rename from the context menu without prompt", () => {
+    vi.useFakeTimers();
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("prompt label");
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "projects",
+            title: "projects",
+            items: [
+              {
+                id: "project-1",
+                label: "aethon",
+                expanded: true,
+                worktrees: [
+                  {
+                    id: "main",
+                    label: "main",
+                    branch: "main",
+                    path: "/repo",
+                    active: false,
+                    isMain: true,
+                  },
+                  {
+                    id: "wt-1",
+                    label: "feature-x",
+                    branch: "feature-x",
+                    path: "/repo-feature-x",
+                    active: false,
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("feature-x").closest("li")!);
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Rename worktree/ }),
+    );
+
+    expect(prompt).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    expect((input as HTMLInputElement).value).toBe("feature-x");
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBe(
+      input,
+    );
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.change(input, { target: { value: "renamed feature" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "rename-worktree",
+      expect.objectContaining({
+        sectionId: "projects",
+        itemId: "wt-1",
+        worktreeId: "wt-1",
+        label: "renamed feature",
+      }),
+      "wt-1",
+    );
+  });
+
   it("emits the project worktree base event", () => {
     const { onEvent } = renderSidebar({
       props: {

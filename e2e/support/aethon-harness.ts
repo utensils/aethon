@@ -468,5 +468,20 @@ export async function waitForAethonReady(page: Page): Promise<void> {
 }
 
 export async function getInvokeCalls(page: Page): Promise<InvokeCall[]> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await page.evaluate(() => window.__AETHON_E2E__?.getCalls() ?? []);
+    } catch (err) {
+      const message = String(err);
+      if (
+        !message.includes("Execution context was destroyed") &&
+        !message.includes("navigation")
+      ) {
+        throw err;
+      }
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await page.waitForTimeout(50);
+    }
+  }
   return page.evaluate(() => window.__AETHON_E2E__?.getCalls() ?? []);
 }

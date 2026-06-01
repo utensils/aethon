@@ -13,7 +13,7 @@
  * joins the regular list.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
 
@@ -44,6 +44,10 @@ export interface WorktreeRowProps {
     item: WorktreeSidebarItem,
     sectionId: string,
   ) => void;
+  /** True when the parent sidebar has promoted this row into inline rename mode. */
+  renaming?: boolean;
+  /** Called after Enter/Escape/blur exits inline rename mode. */
+  onRenameEnd?: (worktreeId: string) => void;
 }
 
 export function WorktreeRow({
@@ -51,12 +55,20 @@ export function WorktreeRow({
   sectionId,
   onEvent,
   onItemContextMenu,
+  renaming = false,
+  onRenameEnd,
 }: WorktreeRowProps) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const renameEndingRef = useRef(false);
+  const renameBlurCancelRef = useRef<number | null>(null);
+  const renameUnmountCancelRef = useRef<number | null>(null);
   const pending = item.pendingState;
   const isPendingActive = pending === "queued" || pending === "starting";
   const isFailed = pending === "failed";
-  const canRemoveInline = !item.isMain && !isPendingActive && !isFailed;
+  const canRenameInline = renaming && !isPendingActive && !isFailed;
+  const canRemoveInline =
+    !item.isMain && !isPendingActive && !isFailed && !canRenameInline;
 
   const className = [
     "a2ui-sidebar-item",
@@ -72,17 +84,93 @@ export function WorktreeRow({
   const tooltip = isFailed && item.pendingError ? item.pendingError : item.path;
   const displayLabel = item.label || item.branch || "worktree";
 
+  useEffect(() => {
+    if (!canRenameInline) return;
+    renameEndingRef.current = false;
+    const focus = () => {
+      if (renameBlurCancelRef.current !== null) {
+        window.clearTimeout(renameBlurCancelRef.current);
+        renameBlurCancelRef.current = null;
+      }
+      if (renameUnmountCancelRef.current !== null) {
+        window.clearTimeout(renameUnmountCancelRef.current);
+        renameUnmountCancelRef.current = null;
+      }
+      const input = renameInputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.select();
+    };
+    focus();
+    // ContextMenu restores focus to its opener on close. Re-apply focus
+    // after that one-shot restore so the row editor owns typing.
+    let second: number | null = null;
+    const first = window.setTimeout(() => {
+      second = window.setTimeout(focus, 0);
+    }, 0);
+    return () => {
+      window.clearTimeout(first);
+      if (second !== null) window.clearTimeout(second);
+      if (renameBlurCancelRef.current !== null) {
+        window.clearTimeout(renameBlurCancelRef.current);
+        renameBlurCancelRef.current = null;
+      }
+      if (!renameEndingRef.current) {
+        renameUnmountCancelRef.current = window.setTimeout(() => {
+          renameUnmountCancelRef.current = null;
+          if (renameEndingRef.current) return;
+          renameEndingRef.current = true;
+          onRenameEnd?.(item.id);
+        }, 0);
+      }
+    };
+  }, [canRenameInline, item.id, onRenameEnd]);
+
+  const endRename = () => {
+    if (renameBlurCancelRef.current !== null) {
+      window.clearTimeout(renameBlurCancelRef.current);
+      renameBlurCancelRef.current = null;
+    }
+    if (renameUnmountCancelRef.current !== null) {
+      window.clearTimeout(renameUnmountCancelRef.current);
+      renameUnmountCancelRef.current = null;
+    }
+    renameEndingRef.current = true;
+    onRenameEnd?.(item.id);
+  };
+  const cancelRenameAfterBlur = () => {
+    if (renameBlurCancelRef.current !== null) {
+      window.clearTimeout(renameBlurCancelRef.current);
+    }
+    renameBlurCancelRef.current = window.setTimeout(() => {
+      renameBlurCancelRef.current = null;
+      if (renameEndingRef.current) return;
+      if (document.activeElement === renameInputRef.current) return;
+      endRename();
+    }, 10);
+  };
+  const commitRename = (label: string) => {
+    onEvent(
+      "rename-worktree",
+      { sectionId, itemId: item.id, worktreeId: item.id, label },
+      item.id,
+    );
+    endRename();
+  };
+
   return (
     <li
       className={className}
       title={tooltip}
       onMouseLeave={() => setConfirmingRemove(false)}
       onClick={() => {
-        if (isPendingActive || isFailed || confirmingRemove) return;
+        if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
+          return;
         onEvent("switch-worktree", { sectionId, worktreeId: item.id }, item.id);
       }}
       onDoubleClick={() => {
-        if (isPendingActive || isFailed || confirmingRemove) return;
+        if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
+          return;
         onEvent(
           "open-worktree-in-new-tab",
           { sectionId, worktreeId: item.id },
@@ -92,7 +180,10 @@ export function WorktreeRow({
       onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
       {item.isMain ? (
-        <span className="ae-worktree-glyph ae-worktree-glyph--main" aria-hidden="true">
+        <span
+          className="ae-worktree-glyph ae-worktree-glyph--main"
+          aria-hidden="true"
+        >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
             <circle cx="5" cy="5" r="3.5" fill="currentColor" />
           </svg>
@@ -117,8 +208,34 @@ export function WorktreeRow({
           }
         />
       ) : null}
-      <span className="a2ui-sidebar-item-label">{displayLabel}</span>
-      {item.branch && item.branch !== displayLabel ? (
+      {canRenameInline ? (
+        <input
+          ref={renameInputRef}
+          className="ae-worktree-rename-input"
+          aria-label={`Rename worktree ${displayLabel}`}
+          defaultValue={displayLabel}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              commitRename(e.currentTarget.value);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              endRename();
+            }
+          }}
+          onBlur={cancelRenameAfterBlur}
+        />
+      ) : (
+        <span className="a2ui-sidebar-item-label">{displayLabel}</span>
+      )}
+      {!canRenameInline && item.branch && item.branch !== displayLabel ? (
         <span className="a2ui-sidebar-item-git-branch ae-worktree-branch">
           {item.branch}
         </span>

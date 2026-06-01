@@ -11,7 +11,7 @@
  * `extensionToggleState` live in `menuItems.ts` as pure data.
  */
 
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -90,7 +90,19 @@ export function Sidebar({
     normalizedResizeEdge === "left" ? "left" : "right";
   const resizeFromLeft = resizeEdge === "left";
 
-  const menu = useSidebarContextMenu({ state, onEvent });
+  const [renamingWorktreeId, setRenamingWorktreeId] = useState<string | null>(
+    null,
+  );
+  const menu = useSidebarContextMenu({
+    state,
+    onEvent,
+    beginWorktreeRename: setRenamingWorktreeId,
+  });
+  const handleRenameWorktreeEnd = useCallback((worktreeId: string) => {
+    setRenamingWorktreeId((current) =>
+      current === worktreeId ? null : current,
+    );
+  }, []);
   const { asideRef, onResizeStart } = useSidebarResize({
     onEvent,
     resizeFromLeft,
@@ -168,6 +180,8 @@ export function Sidebar({
         renderChildWithState={renderChildWithState}
         openItemContextMenu={menu.openItemContextMenu}
         openWorktreeContextMenu={menu.openWorktreeContextMenu}
+        renamingWorktreeId={renamingWorktreeId}
+        onRenameWorktreeEnd={handleRenameWorktreeEnd}
       />
     );
   };
@@ -278,6 +292,8 @@ interface SidebarSectionBlockProps {
   openWorktreeContextMenu: ReturnType<
     typeof useSidebarContextMenu
   >["openWorktreeContextMenu"];
+  renamingWorktreeId: string | null;
+  onRenameWorktreeEnd: (worktreeId: string) => void;
 }
 
 /** Plain (non-searchable) section block. Renders the title, the row
@@ -294,6 +310,8 @@ function SidebarSectionBlock({
   renderChildWithState,
   openItemContextMenu,
   openWorktreeContextMenu,
+  renamingWorktreeId,
+  onRenameWorktreeEnd,
 }: SidebarSectionBlockProps) {
   const actions = section.actions ?? [];
   const isProjects = section.id === "projects";
@@ -421,6 +439,8 @@ function SidebarSectionBlock({
                         sectionId={section.id}
                         onEvent={onEvent}
                         onItemContextMenu={openWorktreeContextMenu}
+                        renaming={renamingWorktreeId === wt.id}
+                        onRenameEnd={onRenameWorktreeEnd}
                       />
                     ))
                   : null}
