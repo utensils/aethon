@@ -156,10 +156,24 @@ jobs:
             echo "tag=${{ needs.release-please.outputs.tag_name }}" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
-    name: Build (macos-aarch64)
+  # Re-run the full reusable CI before the signed macOS build, so a broken
+  # tree never produces a release artifact. Only fires when a release will
+  # actually build (resolve-tag succeeded), so ordinary non-release pushes
+  # do NOT trigger a second CI run — identical to the previous behavior.
+  ci:
+    name: CI gate
     needs: resolve-tag
     if: always() && needs.resolve-tag.result == 'success'
+    uses: ./.github/workflows/_ci.yml
+    # No secrets needed.
+
+  build:
+    name: Build (macos-aarch64)
+    needs: [resolve-tag, ci]
+    if: >-
+      always() &&
+      needs.resolve-tag.result == 'success' &&
+      needs.ci.result == 'success'
     runs-on: macos-15
     steps:
       - name: Checkout
