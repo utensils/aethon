@@ -183,7 +183,11 @@ ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -f|--file)
-      JS_FILE="${2:-}"
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --file requires a path argument" >&2
+        exit 1
+      fi
+      JS_FILE="$2"
       shift 2
       ;;
     *)
