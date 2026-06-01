@@ -660,6 +660,7 @@ describe("useChat setModel", () => {
 
       await vi.advanceTimersByTimeAsync(450);
       const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+      expect(write).toBeTruthy();
       expect(
         (write?.[1] as { config: { agent: { model: string | null } } }).config
           .agent.model,

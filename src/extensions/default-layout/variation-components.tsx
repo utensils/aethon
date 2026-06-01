@@ -366,10 +366,13 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
     : "filter models — sonnet, gpt, qwen…";
 
   if (customMode) {
-    const commit = () => {
-      const next = customValue.trim();
+    const cancel = () => {
       setCustomMode(false);
       setCustomValue("");
+    };
+    const commit = () => {
+      const next = customValue.trim();
+      cancel();
       if (next) onEvent("select", { sectionId: "models", itemId: next }, next);
     };
     return (
@@ -391,11 +394,13 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
               commit();
             } else if (e.key === "Escape") {
               e.preventDefault();
-              setCustomMode(false);
-              setCustomValue("");
+              cancel();
             }
           }}
-          onBlur={commit}
+          // Blur cancels — only Enter commits. This also makes Escape's
+          // unmount-triggered blur a no-op instead of committing the
+          // typed value, and avoids accidental commits on click-away.
+          onBlur={cancel}
         />
       </span>
     );
@@ -403,15 +408,21 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
 
   // Prepend "(pi default)" and append "Custom id…" so the header picker
   // is a full superset of the model controls (no separate Settings field).
+  // "(pi default)" is active when no explicit default is set and the
+  // visible model is just pi's fallback; in that state no concrete model
+  // is marked active too, so the listbox never shows two selected items.
+  const piDefaultActive =
+    !defaultModel && (!activeTabModel || activeTabModel === piDefaultModel);
   const sectionItems: DropdownItem[] = [
     {
       id: PI_DEFAULT_MODEL_SENTINEL,
       label: "(pi default — picks from env vars)",
-      // Highlight when no explicit default is set: the chosen default is
-      // empty AND the visible model is just pi's fallback.
-      active: !defaultModel && (!activeTabModel || activeTabModel === piDefaultModel),
+      active: piDefaultActive,
     },
-    ...items.map((it) => ({ ...it, active: it.id === activeId })),
+    ...items.map((it) => ({
+      ...it,
+      active: !piDefaultActive && it.id === activeId,
+    })),
     { id: CUSTOM_MODEL_SENTINEL, label: "Custom id…" },
   ];
   const activeItem = sectionItems.find((it) => it.active);
