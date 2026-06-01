@@ -38,7 +38,8 @@ export interface SidebarContextMenuState {
 }
 
 export function canRenameWorktree(item: WorktreeSidebarItem | undefined): boolean {
-  const pending = item?.pendingState;
+  if (!item) return false;
+  const pending = item.pendingState;
   return pending !== "queued" && pending !== "starting" && pending !== "failed";
 }
 

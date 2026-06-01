@@ -1336,10 +1336,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text);
   font: inherit;
   line-height: 1;
-  box-shadow: var(--focus-ring);
 }
 .ae-worktree-rename-input:focus {
   outline: none;
+}
+.ae-worktree-rename-input:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 .ae-worktree-remove-slot {
   display: inline-flex;
