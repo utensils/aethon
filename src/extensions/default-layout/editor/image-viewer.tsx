@@ -71,6 +71,7 @@ export function ImageViewer(props: BuiltinComponentProps) {
     if (!filePath) return;
     if (!projectPath) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear stale image state immediately when the backing file changes.
     setSrc("");
     setError("");
     void invoke<string>("fs_read_file_base64", {

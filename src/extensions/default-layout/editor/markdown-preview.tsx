@@ -51,6 +51,7 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
 
   useEffect(() => {
     if (!filePath || !projectPath) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Reflect the missing-file state before any async preview load can run.
       setError("no file");
       setLoading(false);
       return;
