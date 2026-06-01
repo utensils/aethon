@@ -12,6 +12,7 @@
  *
  * Edge cases mirrored from Claudette's MessageMarkdown:
  *   - GFM (tables, task lists, strikethrough) via remark-gfm.
+ *   - README-safe raw HTML (logos/headings/badges) via rehype-raw + sanitize.
  *   - Empty file: render a small inline hint rather than blank.
  *   - Read error: show inline error like ImageViewer does.
  *   - Live update: re-read when the Monaco buffer's last-saved
@@ -26,7 +27,7 @@ import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
-import { MARKDOWN_COMPONENTS } from "../markdown-adapter";
+import { MARKDOWN_PREVIEW_PROPS } from "../markdown-adapter";
 
 interface MarkdownPreviewProps {
   filePath: string;
@@ -85,10 +86,8 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
         ) : text.trim().length === 0 ? (
           <div className="ae-md-preview-empty">empty file</div>
         ) : (
-          <div className="ae-md-preview-doc a2ui-message-md">
-            <ReactMarkdown components={MARKDOWN_COMPONENTS}>
-              {text}
-            </ReactMarkdown>
+          <div className="ae-md-preview-doc a2ui-markdown">
+            <ReactMarkdown {...MARKDOWN_PREVIEW_PROPS}>{text}</ReactMarkdown>
           </div>
         )}
       </div>
