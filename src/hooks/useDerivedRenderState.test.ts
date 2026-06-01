@@ -213,4 +213,64 @@ describe("useDerivedRenderState", () => {
       widgets: [],
     });
   });
+
+  it("overlays agent-activity across the active tabs and stashed buckets", () => {
+    const mainTab = {
+      ...makeEmptyTab("m", "m", "p1", "agent"),
+      cwd: "/repo/app",
+    };
+    // Background worktree session lives in a stashed bucket (mirrored into
+    // state.persistedTabBuckets), not state.tabs.
+    const bgTab = {
+      ...makeEmptyTab("w", "w", "p1", "agent"),
+      cwd: "/repo/app-fix",
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [mainTab],
+          activeTabId: "m",
+          // bucket-independent running set: the backgrounded worktree turn.
+          agentRunningTabs: { w: true },
+          persistedTabBuckets: {
+            "p1::worktree::wt-1": { tabs: [bgTab], activeTabId: "w" },
+          },
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                worktrees: [
+                  { id: "wt-main", path: "/repo/app", isMain: true },
+                  { id: "wt-1", path: "/repo/app-fix" },
+                ],
+              },
+            ],
+          },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    const projects = (
+      result.current.renderState.sidebar as {
+        projects: {
+          agent: { status: string };
+          agentRollup: { status: string };
+          worktrees: { id: string; agent?: { status: string } }[];
+        }[];
+      }
+    ).projects;
+    // Main scope has an idle session (mainTab is not running).
+    expect(projects[0].agent.status).toBe("idle-with-session");
+    // The worktree row reports "running" even though its tab is stashed —
+    // liveness comes from the running set, not the bucket's stale waiting.
+    const wt1 = projects[0].worktrees.find((w) => w.id === "wt-1");
+    expect(wt1?.agent?.status).toBe("running");
+    // Rollup is running (a worktree turn is in flight).
+    expect(projects[0].agentRollup.status).toBe("running");
+    // The main worktree row stays dot-free (activity shown on project line).
+    const wtMain = projects[0].worktrees.find((w) => w.id === "wt-main");
+    expect(wtMain && "agent" in wtMain).toBe(false);
+  });
 });

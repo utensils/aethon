@@ -115,6 +115,11 @@ export interface EventRouteContext {
   closeEditorTabsForPath: (path: string, kind: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  /** Activate a tab by id no matter which workspace owns it. If the tab is
+   *  in the active workspace it selects it directly; otherwise it switches
+   *  to the owning project/worktree bucket first, then selects it. Backs
+   *  the completion toast's click-to-jump. */
+  activateTabAnywhere: (tabId: string) => void;
   setActiveSubTab: (subId: string) => void;
   applyShareModeToTab: (tabId: string, mode: ShareMode) => void;
 

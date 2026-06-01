@@ -34,13 +34,18 @@ import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
 import { UpdateBanner } from "./components/UpdateBanner";
 import type { AethonConfig } from "./config";
-import { useProjectOps } from "./hooks/useProjectOps";
+import {
+  useProjectOps,
+  projectIdFromBucketKey,
+  worktreeIdFromBucketKey,
+} from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import {
   buildInitialAppStore,
   useSessionPersistence,
 } from "./hooks/useSessionPersistence";
 import { useDerivedRenderState } from "./hooks/useDerivedRenderState";
+import { useTabBucketHydration } from "./hooks/useTabBucketHydration";
 import { useTaskLauncher } from "./hooks/useTaskLauncher";
 import { useAppEventRouting } from "./hooks/useAppEventRouting";
 import { useAppStateRefs } from "./hooks/useAppStateRefs";
@@ -428,6 +433,11 @@ export default function App() {
   // tabBucketsRef so the live set spans every project bucket, not just the
   // active one (tabs are project-scoped).
   useAgentWorkerReconcile(stateRef, tabBucketsRef);
+
+  // Hydrate per-workspace tab buckets restored from disk into tabBucketsRef so
+  // switching to a backgrounded workspace after a restart lands on its
+  // last-active tab rather than the empty landing card.
+  useTabBucketHydration(state.persistedTabBuckets, tabBucketsRef);
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.
@@ -843,6 +853,32 @@ export default function App() {
     closeEditorTabsForPath,
     closeTab,
     setActiveTab,
+    activateTabAnywhere: (tabId: string) => {
+      const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+      if (tabs.some((t) => t.id === tabId)) {
+        setActiveTab(tabId);
+        return;
+      }
+      // Not in the active workspace — find the bucket that owns it, switch
+      // into that project/worktree, then select. setState is synchronous so
+      // the bucket load lands before setActiveTab reads state.tabs.
+      for (const [key, bucket] of tabBucketsRef.current.entries()) {
+        if (!bucket.tabs.some((t) => t.id === tabId)) continue;
+        const projectId = projectIdFromBucketKey(key);
+        const currentProjectId =
+          (stateRef.current.activeProjectId as string | null | undefined) ??
+          null;
+        if (projectId !== currentProjectId) {
+          if (projectId) setActiveProjectById(projectId);
+          else clearActiveProject();
+        }
+        activateWorktree(worktreeIdFromBucketKey(key));
+        setActiveTab(tabId);
+        return;
+      }
+      // Unknown tab — best effort (no-op if it's truly gone).
+      setActiveTab(tabId);
+    },
     setActiveSubTab,
     applyShareModeToTab,
     closeSettings,

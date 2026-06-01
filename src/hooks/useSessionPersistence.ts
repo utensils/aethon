@@ -94,6 +94,10 @@ export function buildInitialAppStore({
       appVersion,
       tabs,
       activeTabId,
+      // Non-active workspace buckets restored from disk. Set synchronously
+      // here so a first persist (which reads state) can't wipe them before
+      // the seeding effect copies them into tabBucketsRef.
+      persistedTabBuckets: restored?.buckets ?? {},
       ...rootMirror,
       palette: { open: false, mode: "switcher", query: "", selectedIndex: 0 },
       notifications: [],
@@ -167,6 +171,9 @@ export function useSessionPersistence({
             : {}),
           tabs,
           activeTabId,
+          // Restored non-active workspace buckets — the seeding effect
+          // hydrates tabBucketsRef from this.
+          persistedTabBuckets: snapshot.buckets ?? {},
           empty: false,
           hasTabs: true,
           ...rootMirror,

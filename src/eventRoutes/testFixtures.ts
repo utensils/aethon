@@ -47,6 +47,7 @@ export interface RouteFixture {
     closeEditorTabsForPath: Mock;
     closeTab: Mock;
     setActiveTab: Mock;
+    activateTabAnywhere: Mock;
     setActiveSubTab: Mock;
     applyShareModeToTab: Mock;
     closeSettings: Mock;
@@ -130,6 +131,7 @@ export function buildRouteFixture(
   const closeEditorTabsForPath = vi.fn();
   const closeTab = vi.fn();
   const setActiveTab = vi.fn();
+  const activateTabAnywhere = vi.fn();
   const setActiveSubTab = vi.fn();
   const applyShareModeToTab = vi.fn();
   const closeSettings = vi.fn();
@@ -191,6 +193,7 @@ export function buildRouteFixture(
     closeEditorTabsForPath,
     closeTab,
     setActiveTab,
+    activateTabAnywhere,
     setActiveSubTab,
     applyShareModeToTab,
     closeSettings,
@@ -270,6 +273,7 @@ export function buildRouteFixture(
       closeEditorTabsForPath,
       closeTab,
       setActiveTab,
+      activateTabAnywhere,
       setActiveSubTab,
       applyShareModeToTab,
       closeSettings,

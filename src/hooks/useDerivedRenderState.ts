@@ -5,6 +5,7 @@ import {
   type Tab,
 } from "../types/tab";
 import type { UseHostInfo } from "./useHostInfo";
+import { attachAgentActivity } from "./projectOps/agentActivity";
 
 interface RecentSessionItem {
   id: string;
@@ -133,6 +134,47 @@ export function useDerivedRenderState({
     const activeHost =
       hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
 
+    // Overlay live agent-activity onto the sidebar project rows. The tab set
+    // must span every workspace: the active one in `state.tabs` plus the
+    // backgrounded ones mirrored into `state.persistedTabBuckets` (kept in
+    // state — not a ref — so this stays a pure render derivation). Liveness
+    // comes from the bucket-independent running set, since a backgrounded
+    // tab's own `waiting` flag is frozen at switch-away time.
+    const agentTabs: Tab[] = [];
+    const seenAgentIds = new Set<string>();
+    const collectAgents = (list: Tab[] | undefined) => {
+      for (const t of list ?? []) {
+        if (t.kind === "agent" && !seenAgentIds.has(t.id)) {
+          seenAgentIds.add(t.id);
+          agentTabs.push(t);
+        }
+      }
+    };
+    collectAgents(tabs);
+    const persistedBuckets = state.persistedTabBuckets as
+      | Record<string, { tabs?: Tab[] }>
+      | undefined;
+    if (persistedBuckets) {
+      for (const bucket of Object.values(persistedBuckets)) {
+        collectAgents(bucket?.tabs);
+      }
+    }
+    const runningIds = new Set(
+      Object.keys(
+        (state.agentRunningTabs as Record<string, unknown> | undefined) ?? {},
+      ),
+    );
+    const sidebarProjectsWithAgent = Array.isArray(sidebar.projects)
+      ? attachAgentActivity(
+          sidebar.projects as Array<{
+            id: string;
+            worktrees?: { path?: string; isMain?: boolean }[];
+          }>,
+          agentTabs,
+          runningIds,
+        )
+      : sidebar.projects;
+
     return {
       ...state,
       hasTabs,
@@ -148,6 +190,7 @@ export function useDerivedRenderState({
       landingVisible,
       sidebar: {
         ...sidebar,
+        projects: sidebarProjectsWithAgent,
         history,
         hosts: sidebarHosts,
       },

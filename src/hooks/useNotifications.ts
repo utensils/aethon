@@ -124,30 +124,54 @@ export function useNotifications(
     });
   }
 
-  /** P4: native OS notification on agent turn completion. Fires when:
-   *    1. `[ui] notify_on_completion` is true (default), AND
-   *    2. The turn ran at least `notify_min_duration_seconds` seconds, AND
-   *    3. The window is unfocused OR the originating tab isn't the
-   *       active one (i.e. the user is not looking at the result).
+  /** Agent turn-completion alert. Gated on `[ui] notify_on_completion` and
+   *  a minimum turn duration, then split by where the user's attention is:
    *
-   *  Click → focus the window + switch to that tab. Permission is
-   *  requested lazily on first call so the OS prompt only appears
-   *  when there's actually something to notify about (Tauri's
-   *  notification plugin handles the macOS / Linux / Windows backend).
-   */
+   *    • focused + originating tab active  → nothing (they see the result).
+   *    • focused + a different tab/workspace → in-app toast that deep-links
+   *      back to the finished session (less disruptive than an OS banner
+   *      while the window is up).
+   *    • window unfocused → native OS notification (shows even when the
+   *      app is hidden; permission requested lazily on first fire).
+   *
+   *  Both surfaces read "ready for your reply" so a completed-and-idle
+   *  agent is legible as "your turn", not just "done". The originating tab
+   *  may live in a stashed bucket (a background workspace), so its label
+   *  falls back to a generic when it isn't in `state.tabs`. */
   async function maybeFireCompletionNotification(input: {
     tabId: string;
     turnDurationMs: number;
   }) {
     if (!notifyOnCompletionRef.current) return;
     if (input.turnDurationMs < notifyMinDurationMsRef.current) return;
-    // Only fire when the user can't already see the result. Active-tab
-    // check: a focused window with the originating tab active means the
-    // user is looking at it; no notification needed.
     const windowFocused = typeof document !== "undefined" && document.hasFocus();
-    const isActiveTab =
-      stateRef.current.activeTabId === input.tabId;
+    const isActiveTab = stateRef.current.activeTabId === input.tabId;
     if (windowFocused && isActiveTab) return;
+
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const tab = tabs.find((t) => t.id === input.tabId);
+    const lastMsg = tab?.messages?.at(-1);
+    const snippet =
+      typeof lastMsg?.text === "string" && lastMsg.text.length > 0
+        ? lastMsg.text.slice(0, 120)
+        : "Turn complete.";
+
+    if (windowFocused) {
+      // The window is up but the user is elsewhere — an in-app toast that
+      // jumps to the finished session beats an OS banner here.
+      pushNotification({
+        id: `agent-complete:${input.tabId}`,
+        title: tab?.label
+          ? `${tab.label} — ready for your reply`
+          : "Agent ready for your reply",
+        message: snippet,
+        kind: "success",
+        durationMs: 6000,
+        actions: [{ label: "View", action: `activate-tab:${input.tabId}` }],
+      });
+      return;
+    }
+
     try {
       const notif = await import("@tauri-apps/plugin-notification");
       let granted = await notif.isPermissionGranted();
@@ -156,16 +180,9 @@ export function useNotifications(
         granted = perm === "granted";
       }
       if (!granted) return;
-      const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-      const tab = tabs.find((t) => t.id === input.tabId);
-      const lastMsg = tab?.messages?.at(-1);
-      const body =
-        typeof lastMsg?.text === "string" && lastMsg.text.length > 0
-          ? lastMsg.text.slice(0, 120)
-          : "Turn complete.";
       notif.sendNotification({
-        title: tab?.label ? `${tab.label} ✓` : "Aethon ✓",
-        body,
+        title: tab?.label ? `${tab.label} — ready` : "Aethon — ready",
+        body: snippet,
       });
     } catch (err) {
       console.warn("notification fire failed:", err);
