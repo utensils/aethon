@@ -12,12 +12,14 @@ const chromeCss = readFileSync(join(here, "chrome.css"), "utf8");
 function cssRuleBody(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = chromeCss.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`));
+  expect(match, `${selector} rule should exist`).not.toBeNull();
   return match?.[1] ?? "";
 }
 
-function cssProperty(body: string, name: string): string | undefined {
+function cssProperty(body: string, name: string): string {
   const match = body.match(new RegExp(`${name}:\\s*([^;]+);`));
-  return match?.[1]?.trim();
+  expect(match, `${name} property should exist`).not.toBeNull();
+  return match?.[1]?.trim() ?? "";
 }
 
 describe("VCS merged PR badge CSS", () => {
