@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  vi.useRealTimers();
+  cleanup();
+});
 
 function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
   return {
@@ -203,11 +206,20 @@ describe("WorktreeRow", () => {
   });
 
   it("cancels inline rename on blur", () => {
+    vi.useFakeTimers();
     const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
     const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    act(() => {
+      vi.runAllTimers();
+    });
 
     fireEvent.change(input, { target: { value: "Renamed worktree" } });
-    fireEvent.blur(input);
+    const other = document.createElement("button");
+    document.body.appendChild(other);
+    other.focus();
+    act(() => {
+      vi.runAllTimers();
+    });
 
     expect(onEvent).not.toHaveBeenCalledWith(
       "rename-worktree",

@@ -61,6 +61,7 @@ export function WorktreeRow({
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
+  const renameBlurCancelRef = useRef<number | null>(null);
   const pending = item.pendingState;
   const isPendingActive = pending === "queued" || pending === "starting";
   const isFailed = pending === "failed";
@@ -86,6 +87,10 @@ export function WorktreeRow({
     if (!canRenameInline) return;
     renameEndingRef.current = false;
     const focus = () => {
+      if (renameBlurCancelRef.current !== null) {
+        window.clearTimeout(renameBlurCancelRef.current);
+        renameBlurCancelRef.current = null;
+      }
       const input = renameInputRef.current;
       if (!input) return;
       input.focus({ preventScroll: true });
@@ -101,12 +106,31 @@ export function WorktreeRow({
     return () => {
       window.clearTimeout(first);
       if (second !== null) window.clearTimeout(second);
+      if (renameBlurCancelRef.current !== null) {
+        window.clearTimeout(renameBlurCancelRef.current);
+        renameBlurCancelRef.current = null;
+      }
     };
   }, [canRenameInline]);
 
   const endRename = () => {
+    if (renameBlurCancelRef.current !== null) {
+      window.clearTimeout(renameBlurCancelRef.current);
+      renameBlurCancelRef.current = null;
+    }
     renameEndingRef.current = true;
     onRenameEnd?.(item.id);
+  };
+  const cancelRenameAfterBlur = () => {
+    if (renameBlurCancelRef.current !== null) {
+      window.clearTimeout(renameBlurCancelRef.current);
+    }
+    renameBlurCancelRef.current = window.setTimeout(() => {
+      renameBlurCancelRef.current = null;
+      if (renameEndingRef.current) return;
+      if (document.activeElement === renameInputRef.current) return;
+      endRename();
+    }, 10);
   };
   const commitRename = (label: string) => {
     onEvent(
@@ -189,9 +213,7 @@ export function WorktreeRow({
               endRename();
             }
           }}
-          onBlur={() => {
-            if (!renameEndingRef.current) endRename();
-          }}
+          onBlur={cancelRenameAfterBlur}
         />
       ) : (
         <span className="a2ui-sidebar-item-label">{displayLabel}</span>

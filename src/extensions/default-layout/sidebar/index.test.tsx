@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 // Force the macOS branch so the brand-strip drag-region assertion is
 // deterministic under jsdom (navigator.platform is empty there).
 vi.mock("../../../utils/platform", () => ({ isMacOS: () => true }));
@@ -9,6 +9,7 @@ import type { A2UIComponent } from "../../../types/a2ui";
 import type { ComponentProps } from "react";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   cleanup();
 });
@@ -322,6 +323,7 @@ describe("Sidebar extension controls", () => {
 
 describe("Sidebar project menu", () => {
   it("starts inline worktree rename from the context menu without prompt", () => {
+    vi.useFakeTimers();
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("prompt label");
     const { onEvent } = renderSidebar({
       props: {
@@ -368,6 +370,13 @@ describe("Sidebar project menu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     const input = screen.getByRole("textbox", { name: /rename worktree/i });
     expect((input as HTMLInputElement).value).toBe("feature-x");
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBe(
+      input,
+    );
+    expect(document.activeElement).toBe(input);
 
     fireEvent.change(input, { target: { value: "renamed feature" } });
     fireEvent.keyDown(input, { key: "Enter" });
