@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AethonAgentState,
   type AethonAgentStateOptions,
@@ -718,6 +718,62 @@ describe("handleSessionEvent", () => {
     expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
   });
 
+  it("agent_end starts an Aethon retry when the SDK reports a retryable failure without auto-retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = makeFixture();
+      const rec = fakeRec();
+      const continueRun = vi.fn(() => Promise.resolve());
+      const failure = {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "WebSocket closed 1006 Connection ended",
+      };
+      rec.promptInFlight = true;
+      rec.session = {
+        ...rec.session,
+        agent: {
+          state: { messages: [{ role: "user" }, failure] },
+          continue: continueRun,
+        },
+        settingsManager: {
+          getRetrySettings: () => ({
+            enabled: true,
+            maxRetries: 3,
+            baseDelayMs: 2_000,
+          }),
+        },
+      } as TabRecord["session"];
+      f.state.currentAgentTabId = "tab-1";
+
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "agent_end",
+        messages: [failure],
+      });
+
+      expect(rec.promptInFlight).toBe(true);
+      expect(rec.agentEndFired).toBe(false);
+      expect(rec.aethonRetryInFlight).toBe(true);
+      expect(
+        (rec.session as never as { agent: { state: { messages: unknown[] } } })
+          .agent.state.messages,
+      ).toEqual([{ role: "user" }]);
+      expect(f.state.currentAgentTabId).toBe("tab-1");
+      expect(f.sent).toContainEqual({
+        type: "notice",
+        tabId: "tab-1",
+        message: "Transient provider error; retrying 1/3 in 2s.",
+      });
+      expect(f.sent.some((m) => m.type === "error")).toBe(false);
+      expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(continueRun).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("agent_end during auto-retry surfaces non-retryable failures and ends the turn", () => {
     const f = makeFixture();
     const rec = fakeRec();
@@ -743,7 +799,8 @@ describe("handleSessionEvent", () => {
     expect(f.sent[0]).toMatchObject({
       type: "error",
       tabId: "tab-1",
-      message: "Authentication failed for openai-codex. Run /login openai-codex.",
+      message:
+        "Authentication failed for openai-codex. Run /login openai-codex.",
     });
     expect(f.sent[1]).toMatchObject({ type: "response_end", tabId: "tab-1" });
     expect(rec.promptInFlight).toBe(false);

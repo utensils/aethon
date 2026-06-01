@@ -310,5 +310,6 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   thinking?: string;
   a2ui?: A2UIPayload;
+  createdAt?: number;
   delivery?: "sent" | "queued" | "steered" | "failed";
 }

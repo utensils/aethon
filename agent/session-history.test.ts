@@ -311,6 +311,48 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("restores Aethon-local system messages inline by creation time", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      [
+        JSON.stringify({
+          type: "message",
+          id: "pi-user",
+          timestamp: 1_000,
+          message: { role: "user", content: [{ type: "text", text: "hi" }] },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "pi-agent",
+          timestamp: 3_000,
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "done" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    await appendLocalChatMessage(dir, {
+      id: "stderr-warning",
+      role: "system",
+      text: "[agent stderr] transient provider error",
+      createdAt: 2_000,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
+      {
+        id: "stderr-warning",
+        role: "system",
+        text: "[agent stderr] transient provider error",
+        createdAt: 2_000,
+      },
+      { id: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
+    ]);
+  });
+
   it("restores local image attachments from the durable chat log", async () => {
     const dir = await tempRoot();
     await appendLocalChatMessage(dir, {

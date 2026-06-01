@@ -193,6 +193,32 @@ function mergeLocalAttachmentsIntoPiMessages(
   return merged;
 }
 
+function mergeRestoredMessagesChronologically(
+  piMessages: RestoredChatMessage[],
+  localMessages: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  return [
+    ...piMessages.map((message, order) => ({ message, order })),
+    ...localMessages.map((message, offset) => ({
+      message,
+      order: piMessages.length + offset,
+    })),
+  ]
+    .sort((a, b) => {
+      const aTime = a.message.createdAt;
+      const bTime = b.message.createdAt;
+      if (
+        typeof aTime === "number" &&
+        typeof bTime === "number" &&
+        aTime !== bTime
+      ) {
+        return aTime - bTime;
+      }
+      return a.order - b.order;
+    })
+    .map((entry) => entry.message);
+}
+
 export async function readSessionTranscript(
   sessionDir: string,
   expectedCwd?: string,
@@ -220,5 +246,8 @@ export async function readSessionTranscript(
     localMessages,
   );
   const localOnly = dedupeLocalMessages(mergedPiMessages, localMessages);
-  return [...mergedPiMessages, ...localOnly].slice(-MAX_RESTORED_MESSAGES);
+  return mergeRestoredMessagesChronologically(
+    mergedPiMessages,
+    localOnly,
+  ).slice(-MAX_RESTORED_MESSAGES);
 }

@@ -215,6 +215,16 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       const idx = messages.findIndex((m) => m.id === msg.id);
       if (idx >= 0) {
         messages[idx] = msg;
+      } else if (typeof msg.createdAt === "number") {
+        const insertAt = messages.findIndex(
+          (m) =>
+            typeof m.createdAt === "number" && m.createdAt > msg.createdAt!,
+        );
+        if (insertAt >= 0) {
+          messages.splice(insertAt, 0, msg);
+        } else {
+          messages.push(msg);
+        }
       } else {
         messages.push(msg);
       }

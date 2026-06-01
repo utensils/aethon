@@ -20,10 +20,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { BashTerminalStreamState } from "./terminal-stream";
-import type {
-  AuthProfileServices,
-  AuthProfilesState,
-} from "./auth-profiles";
+import type { AuthProfileServices, AuthProfilesState } from "./auth-profiles";
 
 // ---------------------------------------------------------------------------
 // Shared types — extracted from the original main.ts
@@ -247,6 +244,11 @@ export interface TabRecord {
    *  without trusting pi message_update timestamps (which can refer to an
    *  earlier transcript record during streaming). */
   responseMessageSeq: number;
+  /** Aethon-side retry fallback for retryable agent_end errors that the SDK
+   *  reports without driving its own auto-retry event sequence. */
+  aethonRetryAttempt?: number;
+  aethonRetryInFlight?: boolean;
+  aethonRetryTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface ProjectBaselineSnapshot {

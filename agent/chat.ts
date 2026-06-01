@@ -3,6 +3,7 @@ import type { AethonAgentState } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { maybeExitForReload } from "./dispatcherTypes";
 import {
+  cancelAethonRetry,
   cancelRunningToolCards,
   ensurePickerHasModel,
   ensureTab,
@@ -43,7 +44,9 @@ export async function handleChat(
     const content = msg.content;
     state.tabContext
       .run(tabId, () =>
-        images.length > 0 ? tab.session.steer(content, images) : tab.session.steer(content),
+        images.length > 0
+          ? tab.session.steer(content, images)
+          : tab.session.steer(content),
       )
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
@@ -90,11 +93,11 @@ export async function handleChat(
       deps.send({ type: "error", tabId, message: `prompt: ${message}` });
     })
     .finally(() => {
-      if (!tab.agentEndFired) {
+      if (!tab.agentEndFired && !tab.aethonRetryInFlight) {
         tab.promptInFlight = false;
         deps.send({ type: "response_end", tabId });
       }
-      if (state.currentAgentTabId === tabId) {
+      if (state.currentAgentTabId === tabId && !tab.aethonRetryInFlight) {
         state.currentAgentTabId = undefined;
       }
       maybeExitForReload(state, deps);
@@ -139,10 +142,7 @@ export async function handleSetModel(
   }
   const [provider, ...rest] = msg.id.split("/");
   const id = rest.join("/");
-  const next = modelRegistryForModelId(state, tabId, msg.id).find(
-    provider,
-    id,
-  );
+  const next = modelRegistryForModelId(state, tabId, msg.id).find(provider, id);
   if (!next) {
     deps.send({
       type: "error",
@@ -187,6 +187,7 @@ export function handleStop(
     }
   }
   tab.queuedCount = 0;
+  cancelAethonRetry(tab);
   deps.send({ type: "queue_reset", tabId });
   cancelRunningToolCards(deps, tab, tabId);
   if (
