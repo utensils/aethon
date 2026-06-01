@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SourceControlPanel } from "./source-control-panel";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { GhCheckRun } from "../../../ghChecksCache";
-import type { VcsCi, VcsSlice } from "../../../hooks/useVcsStatus";
+import type { VcsCi, VcsPr, VcsSlice } from "../../../hooks/useVcsStatus";
 
 afterEach(() => cleanup());
 
@@ -30,6 +30,19 @@ function ci(over: Partial<VcsCi> = {}): VcsCi {
     pending: 0,
     skipped: 0,
     checks: [],
+    ...over,
+  };
+}
+
+function pr(over: Partial<VcsPr> = {}): VcsPr {
+  return {
+    number: 185,
+    state: "OPEN",
+    title: "Add aurora",
+    url: "https://gh/pr/185",
+    isDraft: false,
+    merged: false,
+    baseRefName: "main",
     ...over,
   };
 }
@@ -77,6 +90,31 @@ function renderPanel(slice: VcsSlice, onEvent: OnEvent = vi.fn()) {
   );
   return { onEvent };
 }
+
+describe("SourceControlPanel — PR badge", () => {
+  it("renders merged PRs with the merged badge class, not neutral", () => {
+    renderPanel(vcs({ pr: pr({ merged: true }) }));
+
+    const badge = screen.getByText("merged");
+    expect(badge.classList.contains("is-merged")).toBe(true);
+    expect(badge.classList.contains("is-neutral")).toBe(false);
+  });
+
+  it("keeps open, closed, and draft badge tones unchanged", () => {
+    const cases: Array<[string, VcsPr, string]> = [
+      ["open", pr(), "is-success"],
+      ["closed", pr({ state: "CLOSED" }), "is-failure"],
+      ["draft", pr({ isDraft: true }), "is-muted"],
+    ];
+
+    for (const [label, value, className] of cases) {
+      cleanup();
+      renderPanel(vcs({ pr: value }));
+      const badge = screen.getByText(label);
+      expect(badge.classList.contains(className)).toBe(true);
+    }
+  });
+});
 
 describe("SourceControlPanel — CI jobs", () => {
   it("auto-expands the job list when CI is failing, failures first", () => {
@@ -183,15 +221,7 @@ describe("SourceControlPanel — CI jobs", () => {
     const onEvent = vi.fn();
     renderPanel(
       vcs({
-        pr: {
-          number: 7,
-          state: "OPEN",
-          title: "x",
-          url: "https://gh/pr/7",
-          isDraft: false,
-          merged: false,
-          baseRefName: "main",
-        },
+        pr: pr({ number: 7, title: "x", url: "https://gh/pr/7" }),
         ci: ci({ checks: [] }),
       }),
       onEvent,
