@@ -27,7 +27,7 @@ export type {
   RestoredChatMessage,
   SessionLogMetadata,
 } from "./shared";
-export { parseChatAttachments } from "./shared";
+export { hasA2ui, parseChatAttachments } from "./shared";
 export { parseSessionHistoryLines } from "./parse-pi";
 export {
   appendLocalChatMessage,

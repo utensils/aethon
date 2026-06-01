@@ -132,6 +132,59 @@ describe("useAppSlashCommandContext", () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it("persists a2ui payloads and honors their creation timestamp", () => {
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef: ref({}),
+        projectsRef: ref(makeProjects()),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage: vi.fn(),
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    const a2ui = {
+      components: [
+        {
+          id: "tool-1",
+          type: "tool-card",
+          props: { toolName: "bash", startedAt: 1_000 },
+        },
+      ],
+    };
+    act(() => {
+      result.current.persistLocalChatMessage(
+        { id: "tool-1", role: "agent", a2ui, createdAt: 1_000 },
+        "tab-1",
+      );
+    });
+
+    const payload = JSON.parse(invokeMock.mock.calls[0]?.[1]?.payload);
+    expect(payload.payload).toMatchObject({
+      id: "tool-1",
+      role: "agent",
+      a2ui,
+      createdAt: 1_000,
+    });
+  });
+
   it("persists image attachment metadata without blob preview URLs", () => {
     const { result } = renderHook(() =>
       useAppSlashCommandContext({

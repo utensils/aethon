@@ -6,6 +6,7 @@ import { emitGlobalReady } from "./dispatcherTypes";
 import { loadProjectAethonExtensions } from "./extension-loader";
 import {
   appendLocalChatMessage,
+  hasA2ui,
   parseChatAttachments,
   readSessionMetadata,
   readSessionTranscript,
@@ -182,6 +183,7 @@ export async function handleLocalChatMessage(
   const text = record.text;
   const thinking = record.thinking;
   const attachments = parseChatAttachments(record.attachments);
+  const a2ui = hasA2ui(record.a2ui) ? record.a2ui : undefined;
   if (role !== "user" && role !== "agent" && role !== "system") {
     deps.send({
       type: "notice",
@@ -192,7 +194,7 @@ export async function handleLocalChatMessage(
   }
   const hasText = typeof text === "string" && text.length > 0;
   const hasThinking = typeof thinking === "string" && thinking.length > 0;
-  if (!hasText && !hasThinking && attachments.length === 0) {
+  if (!hasText && !hasThinking && !a2ui && attachments.length === 0) {
     deps.send({
       type: "notice",
       tabId,
@@ -215,6 +217,7 @@ export async function handleLocalChatMessage(
       ...(hasText ? { text } : {}),
       ...(hasThinking ? { thinking } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(a2ui ? { a2ui } : {}),
       ...(localCwd ? { cwd: localCwd } : {}),
       ...(typeof record.createdAt === "number"
         ? { createdAt: record.createdAt }

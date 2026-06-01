@@ -72,7 +72,10 @@ export function useAppSlashCommandContext({
   const persistLocalChatMessage = useCallback(
     (msg: ChatMessage, tabId: string) => {
       const attachments = durableImageAttachments(msg.attachments);
-      if (!msg.text && !msg.thinking && attachments.length === 0) return;
+      const a2ui = Array.isArray(msg.a2ui?.components) ? msg.a2ui : undefined;
+      if (!msg.text && !msg.thinking && !a2ui && attachments.length === 0) {
+        return;
+      }
       invoke("agent_command", {
         payload: JSON.stringify({
           type: "local_chat_message",
@@ -84,7 +87,12 @@ export function useAppSlashCommandContext({
             ...(msg.thinking ? { thinking: msg.thinking } : {}),
             ...(msg.delivery ? { delivery: msg.delivery } : {}),
             ...(attachments.length > 0 ? { attachments } : {}),
-            createdAt: Date.now(),
+            ...(a2ui ? { a2ui } : {}),
+            createdAt:
+              typeof msg.createdAt === "number" &&
+              Number.isFinite(msg.createdAt)
+                ? msg.createdAt
+                : Date.now(),
           },
         }),
       }).catch(() => {

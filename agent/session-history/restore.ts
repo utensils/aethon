@@ -96,14 +96,64 @@ function isCoveredByPiContent(
   });
 }
 
+function normalizeToolCallId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96);
+}
+
+function toolCardIdentityFromId(id: string): string | undefined {
+  if (id.startsWith("restored-tool-")) {
+    return id.slice("restored-tool-".length);
+  }
+  const liveMatch = /^tool-\d+-(.+)$/.exec(id);
+  if (liveMatch) return normalizeToolCallId(liveMatch[1]);
+  return undefined;
+}
+
+function toolCardIdentities(message: RestoredChatMessage): string[] {
+  const components = message.a2ui?.components ?? [];
+  const identities: string[] = [];
+  for (const component of components) {
+    if (!component || typeof component !== "object") continue;
+    const record = component as Record<string, unknown>;
+    if (record.type !== "tool-card" || typeof record.id !== "string") {
+      continue;
+    }
+    const identity = toolCardIdentityFromId(record.id);
+    if (identity) identities.push(identity);
+  }
+  return identities;
+}
+
+function piToolCardIdentitySet(piMessages: RestoredChatMessage[]): Set<string> {
+  const identities = new Set<string>();
+  for (const message of piMessages) {
+    for (const identity of toolCardIdentities(message))
+      identities.add(identity);
+  }
+  return identities;
+}
+
+function isCoveredByPiToolCard(
+  message: RestoredChatMessage,
+  piToolCards: ReadonlySet<string>,
+): boolean {
+  const identities = toolCardIdentities(message);
+  return (
+    identities.length > 0 &&
+    identities.every((identity) => piToolCards.has(identity))
+  );
+}
+
 function dedupeLocalMessages(
   piMessages: RestoredChatMessage[],
   localMessages: RestoredChatMessage[],
 ): RestoredChatMessage[] {
   const seenIds = new Set(piMessages.map((message) => message.id));
   const contentIndex = piContentIndex(piMessages);
+  const piToolCards = piToolCardIdentitySet(piMessages);
   return localMessages.filter((message) => {
     if (seenIds.has(message.id)) return false;
+    if (isCoveredByPiToolCard(message, piToolCards)) return false;
     return !isCoveredByPiContent(message, contentIndex);
   });
 }

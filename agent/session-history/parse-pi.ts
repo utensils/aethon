@@ -54,6 +54,7 @@ function toolCardMessage(opts: {
   startedAt?: number;
   endedAt?: number;
 }): RestoredChatMessage {
+  const createdAt = opts.startedAt ?? opts.endedAt;
   return {
     id: opts.uiId,
     role: "agent",
@@ -66,6 +67,7 @@ function toolCardMessage(opts: {
       ...(opts.startedAt !== undefined ? { startedAt: opts.startedAt } : {}),
       ...(opts.endedAt !== undefined ? { endedAt: opts.endedAt } : {}),
     }),
+    ...(createdAt !== undefined ? { createdAt } : {}),
   };
 }
 
@@ -180,8 +182,7 @@ export function parseSessionHistoryLines(
         typeof toolCall.name === "string" && toolCall.name.length > 0
           ? toolCall.name
           : "tool";
-      const args =
-        "arguments" in toolCall ? toolCall.arguments : undefined;
+      const args = "arguments" in toolCall ? toolCall.arguments : undefined;
       const argsSummary = summarizeToolArgs(toolName, args);
       const startedAt = parseMessageTime(record, msg);
       const uiId = restoredToolUiId(toolCallId);

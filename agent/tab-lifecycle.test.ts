@@ -441,6 +441,22 @@ describe("handleSessionEvent", () => {
     });
   });
 
+  it("surfaces auto-compaction progress as an inline busy notice", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "auto_compaction_start",
+    });
+
+    expect(f.sent[0]).toEqual({
+      type: "notice",
+      tabId: "tab-1",
+      busy: true,
+      message: "Compacting context…",
+    });
+  });
+
   it("message_update with text_delta emits response_delta", () => {
     const f = makeFixture();
     const rec = fakeRec();
