@@ -12,10 +12,7 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
-import {
-  CHAT_MARKDOWN_COMPONENTS,
-  MARKDOWN_REMARK_PLUGINS,
-} from "./markdown-adapter";
+import { CHAT_MARKDOWN_PROPS } from "./markdown-adapter";
 import { isAtBottom as metricsAreAtBottom } from "../../utils/stickyScrollController";
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
@@ -131,12 +128,7 @@ function ThinkingBlock({
     <details className="a2ui-thinking-block" open={!complete}>
       <summary>{label}</summary>
       <div className="a2ui-thinking-content a2ui-markdown">
-        <ReactMarkdown
-          components={CHAT_MARKDOWN_COMPONENTS}
-          remarkPlugins={MARKDOWN_REMARK_PLUGINS}
-        >
-          {children}
-        </ReactMarkdown>
+        <ReactMarkdown {...CHAT_MARKDOWN_PROPS}>{children}</ReactMarkdown>
       </div>
     </details>
   );
@@ -155,11 +147,7 @@ function MarkdownWithThinking({ text }: { text: string }) {
           );
         }
         return (
-          <ReactMarkdown
-            key={index}
-            components={CHAT_MARKDOWN_COMPONENTS}
-            remarkPlugins={MARKDOWN_REMARK_PLUGINS}
-          >
+          <ReactMarkdown key={index} {...CHAT_MARKDOWN_PROPS}>
             {segment.content}
           </ReactMarkdown>
         );

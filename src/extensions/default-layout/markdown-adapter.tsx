@@ -13,7 +13,21 @@
  */
 
 import { openUrl } from "@tauri-apps/plugin-opener";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, {
+  defaultSchema,
+  type Options as RehypeSanitizeOptions,
+} from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
+import type { Options as ReactMarkdownOptions } from "react-markdown";
 import { HighlightedCode } from "../../components/HighlightedCode";
+
+type MarkdownRemarkPlugins = NonNullable<
+  ReactMarkdownOptions["remarkPlugins"]
+>;
+type MarkdownRehypePlugins = NonNullable<
+  ReactMarkdownOptions["rehypePlugins"]
+>;
 
 interface MarkdownNode {
   type?: string;
@@ -21,8 +35,6 @@ interface MarkdownNode {
   url?: string;
   children?: MarkdownNode[];
 }
-
-type MarkdownRemarkPlugin = () => (tree: MarkdownNode) => void;
 
 const BARE_HTTP_URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 const TRAILING_PUNCTUATION = new Set([".", ",", "!", "?", ":", ";"]);
@@ -146,9 +158,30 @@ function openExternalUrl(url: string): void {
   }
 }
 
+const MARKDOWN_PREVIEW_SANITIZE_SCHEMA: RehypeSanitizeOptions = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    img: [
+      ...(defaultSchema.attributes?.img ?? []),
+      "alt",
+      "height",
+      "title",
+      "width",
+    ],
+  },
+};
+
 // eslint-disable-next-line react-refresh/only-export-components -- remark plugin list consumed by ReactMarkdown callers
-export const MARKDOWN_REMARK_PLUGINS: MarkdownRemarkPlugin[] = [
+export const MARKDOWN_REMARK_PLUGINS: MarkdownRemarkPlugins = [
+  remarkGfm,
   remarkLinkBareUrls,
+];
+
+// eslint-disable-next-line react-refresh/only-export-components -- preview-specific raw HTML support for README/GFM rendering
+export const MARKDOWN_PREVIEW_REHYPE_PLUGINS: MarkdownRehypePlugins = [
+  rehypeRaw,
+  [rehypeSanitize, MARKDOWN_PREVIEW_SANITIZE_SCHEMA],
 ];
 
 // eslint-disable-next-line react-refresh/only-export-components -- helper consumed by the markdown-adapter map below
@@ -220,6 +253,22 @@ export const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
 };
+
+// eslint-disable-next-line react-refresh/only-export-components -- shared ReactMarkdown props for chat rendering
+export const CHAT_MARKDOWN_PROPS = {
+  components: CHAT_MARKDOWN_COMPONENTS,
+  remarkPlugins: MARKDOWN_REMARK_PLUGINS,
+} satisfies Pick<ReactMarkdownOptions, "components" | "remarkPlugins">;
+
+// eslint-disable-next-line react-refresh/only-export-components -- shared ReactMarkdown props for editor README previews
+export const MARKDOWN_PREVIEW_PROPS = {
+  components: MARKDOWN_COMPONENTS,
+  remarkPlugins: MARKDOWN_REMARK_PLUGINS,
+  rehypePlugins: MARKDOWN_PREVIEW_REHYPE_PLUGINS,
+} satisfies Pick<
+  ReactMarkdownOptions,
+  "components" | "remarkPlugins" | "rehypePlugins"
+>;
 
 // Wrapper that tags the rendered element with a data attribute so the
 // `pre` override above can detect "this is our fenced output" and
