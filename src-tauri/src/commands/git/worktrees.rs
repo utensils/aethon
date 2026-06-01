@@ -240,12 +240,29 @@ pub async fn git_worktree_remove_orphan(
             "worktree is still tracked by git; use git_worktree_remove instead".to_string(),
         );
     }
-    // Authorize the path: the `.git` marker must point into this
-    // project's `.git/worktrees/` directory. Anything else (a plain
-    // folder the user typed in by accident, an unrelated worktree
-    // from another repo) is refused.
+    // Canonicalize project so a symlinked tmpdir (macOS `/var` →
+    // `/private/var`) doesn't cause a false-negative. Normalize the
+    // marker target lexically before the prefix check so a crafted
+    // `.../.git/worktrees/../outside` marker cannot pass by string shape.
+    let project_canon =
+        std::fs::canonicalize(&project).map_err(|e| format!("resolve project path: {e}"))?;
+
+    // Authorize the path: normally the `.git` marker must point into
+    // this project's `.git/worktrees/` directory. If the leftover is
+    // already gone, return success so Aethon can forget the stale row.
+    // If a failed create left a markerless folder under one of our
+    // hidden worktree roots, allow trashing that managed leftover too.
     let marker = target.join(".git");
     if !marker.is_file() {
+        if !target.exists() {
+            prune_worktrees(&project);
+            return Ok(());
+        }
+        if is_managed_markerless_worktree(&project_canon, &target) {
+            prune_worktrees(&project);
+            trash::delete(&target).map_err(|e| format!("trash {worktree_path}: {e}"))?;
+            return Ok(());
+        }
         return Err(format!(
             "not an orphan worktree: {worktree_path} has no .git marker file"
         ));
@@ -257,12 +274,6 @@ pub async fn git_worktree_remove_orphan(
         .next()
         .and_then(|l| l.strip_prefix("gitdir:").map(str::trim))
         .ok_or_else(|| format!("not an orphan worktree: {worktree_path} has malformed .git"))?;
-    // Canonicalize project so a symlinked tmpdir (macOS `/var` →
-    // `/private/var`) doesn't cause a false-negative. Normalize the
-    // marker target lexically before the prefix check so a crafted
-    // `.../.git/worktrees/../outside` marker cannot pass by string shape.
-    let project_canon =
-        std::fs::canonicalize(&project).map_err(|e| format!("resolve project path: {e}"))?;
     let expected_prefix = project_canon.join(".git").join("worktrees");
     let gitdir_path = normalize_gitdir_path(&marker, gitdir)
         .ok_or_else(|| format!("not an orphan worktree: {worktree_path} has invalid .git path"))?;
@@ -274,17 +285,36 @@ pub async fn git_worktree_remove_orphan(
     }
     // `git worktree prune` clears any stale registry residue (the
     // gitdir target may or may not still exist).
-    let _ = env::command("git")
-        .arg("-C")
-        .arg(&project)
-        .args(["worktree", "prune"])
-        .output();
+    prune_worktrees(&project);
     // Send the dir to the OS trash. Mirrors `commands::fs::fs_delete`
     // — never `unlink`, never permanent.
     if target.exists() {
         trash::delete(&target).map_err(|e| format!("trash {worktree_path}: {e}"))?;
     }
     Ok(())
+}
+
+fn prune_worktrees(project: &Path) {
+    let _ = env::command("git")
+        .arg("-C")
+        .arg(project)
+        .args(["worktree", "prune"])
+        .output();
+}
+
+fn is_managed_markerless_worktree(project_canon: &Path, target: &Path) -> bool {
+    if !target.is_dir() {
+        return false;
+    }
+    let Ok(target_path) = std::fs::canonicalize(target) else {
+        return false;
+    };
+    [
+        project_canon.join(".claude").join("worktrees"),
+        project_canon.join(".aethon").join("worktrees"),
+    ]
+    .iter()
+    .any(|root| target_path != *root && target_path.starts_with(root))
 }
 
 fn normalize_gitdir_path(marker: &Path, gitdir: &str) -> Option<PathBuf> {
@@ -543,6 +573,91 @@ mod tests {
             !target.exists(),
             "orphan dir should be gone after remove_orphan"
         );
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_succeeds_when_target_is_already_gone() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let missing = dir
+            .path()
+            .join(".claude")
+            .join("worktrees")
+            .join("already-gone");
+
+        git_worktree_remove_orphan(project_path, missing.to_string_lossy().to_string())
+            .await
+            .expect("missing orphan path should be forgotten idempotently");
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_trashes_markerless_managed_leftover() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = dir
+            .path()
+            .join(".claude")
+            .join("worktrees")
+            .join("markerless");
+        std::fs::create_dir_all(&target).expect("create managed leftover");
+        std::fs::write(target.join("note.txt"), "leftover").expect("write leftover file");
+
+        git_worktree_remove_orphan(project_path, target.to_string_lossy().to_string())
+            .await
+            .expect("managed markerless leftover should be removed");
+
+        assert!(!target.exists(), "managed leftover should be gone");
+    }
+
+    #[tokio::test]
+    async fn remove_orphan_refuses_markerless_managed_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = dir
+            .path()
+            .join(".claude")
+            .join("worktrees")
+            .join("not-a-dir");
+        std::fs::create_dir_all(target.parent().expect("target parent"))
+            .expect("create managed root");
+        std::fs::write(&target, "leftover file").expect("write leftover file");
+
+        let err = git_worktree_remove_orphan(project_path, target.to_string_lossy().to_string())
+            .await
+            .expect_err("managed markerless file must be rejected");
+
+        assert!(err.contains("has no .git marker file"), "got: {err}");
+        assert!(target.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn remove_orphan_refuses_markerless_leftover_through_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let outside_worktrees = outside.path().join("worktrees");
+        let target = outside_worktrees.join("markerless");
+        std::fs::create_dir_all(&target).expect("create outside leftover");
+        symlink(outside.path(), dir.path().join(".claude")).expect("symlink .claude outside repo");
+
+        let requested = dir
+            .path()
+            .join(".claude")
+            .join("worktrees")
+            .join("markerless");
+        let err = git_worktree_remove_orphan(project_path, requested.to_string_lossy().to_string())
+            .await
+            .expect_err("symlinked managed root must be rejected");
+
+        assert!(err.contains("has no .git marker file"), "got: {err}");
+        assert!(target.exists());
     }
 
     #[tokio::test]
