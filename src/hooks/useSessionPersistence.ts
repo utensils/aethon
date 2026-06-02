@@ -11,7 +11,6 @@ import {
 } from "../state/sessionUiSnapshot";
 import { createAppStore, type AppStore } from "../state/appStore";
 import { readState, writeState } from "../persist";
-import { getConfig } from "../config";
 import {
   loadLayoutPrefsFromDisk,
   loadLayoutPrefsSync,
@@ -244,21 +243,15 @@ export function useSessionPersistence({
     if (hasSyncSessionSnapshot) {
       startPersistence();
     } else {
-      getConfig()
-        .then((config) => {
-          if (cancelled) return;
-          if (!config.ui.restoreTabs) {
-            startPersistence();
-            return;
-          }
-          return readState(SESSION_UI_SNAPSHOT_FILE);
-        })
+      readState(SESSION_UI_SNAPSHOT_FILE)
         .then((raw) => {
-          if (cancelled || raw === undefined) return;
-          const snapshot = parseSessionUiSnapshot(raw, {
-            restartShellTabs: false,
-          });
-          if (snapshot) restoreSessionUiSnapshot(snapshot);
+          if (cancelled) return;
+          if (raw !== undefined) {
+            const snapshot = parseSessionUiSnapshot(raw, {
+              restartShellTabs: false,
+            });
+            if (snapshot) restoreSessionUiSnapshot(snapshot);
+          }
           startPersistence();
         })
         .catch(() => {

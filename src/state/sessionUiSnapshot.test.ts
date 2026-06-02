@@ -104,6 +104,32 @@ describe("sessionUiSnapshot", () => {
     );
   });
 
+  it("persists empty agent tabs in the active workspace and background buckets", () => {
+    saveSessionUiSnapshot({
+      tabs: [makeEmptyTab("empty-active", "Empty Active", "project-1")],
+      activeTabId: "empty-active",
+      persistedTabBuckets: {
+        "project-1::worktree::wt-1": {
+          tabs: [
+            makeEmptyTab("empty-bucket", "Empty Bucket", "project-1"),
+          ],
+          activeTabId: "empty-bucket",
+        },
+      },
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded?.activeTabId).toBe("empty-active");
+    expect(loaded?.tabs).toMatchObject([
+      { id: "empty-active", label: "Empty Active", messages: [] },
+    ]);
+    expect(
+      loaded?.buckets?.["project-1::worktree::wt-1"]?.tabs,
+    ).toMatchObject([
+      { id: "empty-bucket", label: "Empty Bucket", messages: [] },
+    ]);
+  });
+
   it("returns null when neither active tabs nor buckets have sessions", () => {
     saveSessionUiSnapshot({ tabs: [], activeTabId: "__overview__" });
     expect(loadSessionUiSnapshot()).toBeNull();
@@ -468,7 +494,7 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
-  it("does not persist blank empty new tabs", () => {
+  it("persists blank empty new tabs and keeps them active", () => {
     saveSessionUiSnapshot({
       tabs: [
         makeEmptyTab("blank", "Tab 1"),
@@ -483,8 +509,11 @@ describe("sessionUiSnapshot", () => {
     });
 
     const restored = loadSessionUiSnapshot();
-    expect(restored?.tabs.map((t) => t.id)).toEqual(["active-chat"]);
-    expect(restored?.activeTabId).toBe("active-chat");
+    expect(restored?.tabs.map((t) => t.id)).toEqual([
+      "blank",
+      "active-chat",
+    ]);
+    expect(restored?.activeTabId).toBe("blank");
   });
 
   it("does not persist extension-added layout columns or areas", () => {

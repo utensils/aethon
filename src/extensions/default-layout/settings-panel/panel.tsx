@@ -129,15 +129,6 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                   }
                 />
               </Field>
-              <Field label="Restore tabs on launch">
-                <input
-                  type="checkbox"
-                  checked={eff.ui.restoreTabs}
-                  onChange={(e) =>
-                    update({ ui: { ...eff.ui, restoreTabs: e.target.checked } })
-                  }
-                />
-              </Field>
             </Section>
 
             <Section id="notifications" title="Notifications">

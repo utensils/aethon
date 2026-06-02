@@ -90,14 +90,7 @@ function shouldPersistTab(tab: Tab): boolean {
   // are intentionally not serialised (saving arbitrary in-memory edits
   // could surprise the user on next launch).
   if (tab.kind === "editor") return tab.editor?.filePath != null;
-  return (
-    tab.messages.length > 0 ||
-    tab.draft.trim().length > 0 ||
-    tab.waiting ||
-    tab.queueCount > 0 ||
-    tab.canvas !== null ||
-    tab.terminalBuffer.length > 0
-  );
+  return true;
 }
 
 function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
