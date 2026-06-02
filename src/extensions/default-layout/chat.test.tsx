@@ -739,3 +739,111 @@ describe("ChatHistory render isolation", () => {
     expect(spyRenders).toBe(baseline);
   });
 });
+
+describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => {
+  // Two completed tool-using turns plus a final live-ish turn; the bridge
+  // emits each tool call as its own role:"agent" message carrying a tool-card.
+  const toolMessages = [
+    { id: "u1", role: "user", text: "do the thing" },
+    { id: "a1", role: "agent", text: "reading files" },
+    {
+      id: "t1",
+      role: "agent",
+      a2ui: {
+        components: [
+          { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+        ],
+      },
+    },
+    {
+      id: "t2",
+      role: "agent",
+      a2ui: {
+        components: [
+          { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 1, endedAt: 2 } },
+        ],
+      },
+    },
+    { id: "a2", role: "agent", text: "done" },
+    { id: "u2", role: "user", text: "now this" },
+    {
+      id: "t3",
+      role: "agent",
+      a2ui: {
+        components: [
+          { id: "c3", type: "tool-card", props: { title: "edit", startedAt: 1, endedAt: 2 } },
+        ],
+      },
+    },
+  ];
+
+  // Single tool cards render through A2UIRenderer, which resolves the
+  // `tool-card` component from the registry — so wrap in a provider that has it.
+  function renderGroupedHistory(state: Record<string, unknown>) {
+    const registry = new ExtensionRegistry();
+    registry.register({
+      name: "test-tool-card",
+      components: { "tool-card": ToolCard },
+    });
+    return render(
+      <ExtensionRegistryProvider registry={registry}>
+        <ChatHistory
+          component={{
+            id: "chat-history",
+            type: "chat-history",
+            props: { messages: { $ref: "/messages" } },
+          }}
+          state={state}
+          onEvent={vi.fn()}
+        />
+      </ExtensionRegistryProvider>,
+    );
+  }
+
+  it("group-run folds the consecutive run into a '2 tool calls' cluster", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "group-run" },
+    });
+    expect(screen.getByText("2 tool calls")).toBeTruthy();
+  });
+
+  it("group-turn folds a turn's tools into one cluster with a name peek", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "group-turn" },
+    });
+    expect(screen.getByText("2 tool calls")).toBeTruthy();
+    expect(screen.getByText("read · bash")).toBeTruthy();
+  });
+
+  it("group-block folds the first completed turn into an 'Agent turn' block", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+    expect(screen.getByText("Agent turn")).toBeTruthy();
+    // The last turn stays expanded, so no group label wraps its single tool.
+    expect(screen.queryByText("1 tool call")).toBeNull();
+  });
+
+  it("hide drops tool cards and never renders a group label", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+    expect(screen.queryByText("2 tool calls")).toBeNull();
+    expect(screen.queryByText("Agent turn")).toBeNull();
+    // Narration stays.
+    expect(screen.getByText("reading files")).toBeTruthy();
+  });
+
+  it("show renders tool cards individually with no grouping chrome", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "show" },
+    });
+    expect(screen.queryByText("2 tool calls")).toBeNull();
+    expect(screen.queryByText("Agent turn")).toBeNull();
+  });
+});

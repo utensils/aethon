@@ -85,7 +85,7 @@ describe("sessionUiSnapshot", () => {
       ...makeEmptyTab("tab-vis", "Vis"),
       visibilityOverrides: {
         thinking: "hide" as const,
-        toolCalls: "collapse" as const,
+        toolCalls: "group-block" as const,
       },
       hardEnforceProjectRoot: true,
     };
@@ -94,7 +94,8 @@ describe("sessionUiSnapshot", () => {
       tabs: [
         {
           id: "tab-vis",
-          visibilityOverrides: { thinking: "hide", toolCalls: "collapse" },
+          // A grouping mode (not just the legacy tri-state) must survive intact.
+          visibilityOverrides: { thinking: "hide", toolCalls: "group-block" },
           hardEnforceProjectRoot: true,
         },
       ],

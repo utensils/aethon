@@ -209,6 +209,26 @@ pub fn normalize_visibility(input: Option<&str>) -> &'static str {
     }
 }
 
+/// Validate-and-normalize the tool-call visibility value
+/// (`[ui] tool_calls_visibility`). Tool calls support three *grouping* styles
+/// in place of thinking's single `collapse`: `group-turn` (one cluster per
+/// agent turn), `group-run` (one cluster per consecutive run), and
+/// `group-block` (the whole agent turn folded into one block). The legacy
+/// `"collapse"` value (written by PR #204) maps to `group-turn` so existing
+/// configs adopt the natural per-turn grouping. Unknown/missing → `"show"`.
+pub fn normalize_tool_visibility(input: Option<&str>) -> &'static str {
+    match input {
+        Some("group-turn") => "group-turn",
+        Some("group-run") => "group-run",
+        Some("group-block") => "group-block",
+        Some("hide") => "hide",
+        // Back-compat: the old tri-state "collapse" becomes per-turn grouping.
+        Some("collapse") => "group-turn",
+        // Includes Some("show"), Some(<unknown>), and None.
+        _ => "show",
+    }
+}
+
 /// Validate-and-normalize `[devshell] enabled`. Unknown values fall
 /// through to `"auto"` so a typo can't silently disable the feature.
 pub fn normalize_devshell_enabled(input: Option<&str>) -> &'static str {
@@ -319,7 +339,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .unwrap_or(8);
     let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
     let thinking_visibility = normalize_visibility(cfg.ui.thinking_visibility.as_deref());
-    let tool_calls_visibility = normalize_visibility(cfg.ui.tool_calls_visibility.as_deref());
+    let tool_calls_visibility = normalize_tool_visibility(cfg.ui.tool_calls_visibility.as_deref());
     let default_command = cfg
         .shell
         .default_command
@@ -856,6 +876,40 @@ enabled = "never"
         // Unknown clamps to show.
         let v = parse_config_toml("[ui]\nthinking_visibility = \"yolo\"\n");
         assert_eq!(v["ui"]["thinkingVisibility"], "show");
+    }
+
+    #[test]
+    fn normalize_tool_visibility_accepts_grouping_values() {
+        assert_eq!(normalize_tool_visibility(Some("show")), "show");
+        assert_eq!(normalize_tool_visibility(Some("group-turn")), "group-turn");
+        assert_eq!(normalize_tool_visibility(Some("group-run")), "group-run");
+        assert_eq!(
+            normalize_tool_visibility(Some("group-block")),
+            "group-block"
+        );
+        assert_eq!(normalize_tool_visibility(Some("hide")), "hide");
+    }
+
+    #[test]
+    fn normalize_tool_visibility_migrates_legacy_collapse() {
+        // PR #204 wrote "collapse"; it now means per-turn grouping.
+        assert_eq!(normalize_tool_visibility(Some("collapse")), "group-turn");
+    }
+
+    #[test]
+    fn normalize_tool_visibility_falls_back_to_show() {
+        assert_eq!(normalize_tool_visibility(None), "show");
+        assert_eq!(normalize_tool_visibility(Some("")), "show");
+        assert_eq!(normalize_tool_visibility(Some("group-yolo")), "show");
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_tool_grouping() {
+        let v = parse_config_toml("[ui]\ntool_calls_visibility = \"group-block\"\n");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "group-block");
+        // Legacy collapse migrates to per-turn grouping on read.
+        let v = parse_config_toml("[ui]\ntool_calls_visibility = \"collapse\"\n");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "group-turn");
     }
 
     // ── guardrails ─────────────────────────────────────────────────────────

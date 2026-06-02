@@ -5,9 +5,25 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ShareMode } from "./utils/shareMode";
 import { SHARE_MODES } from "./utils/shareMode";
 
-/** Tri-state visibility for transcript sections (thinking / tool calls):
- *  `show` (full), `collapse` (grouped/labelled), `hide` (removed). */
+/** Tri-state visibility for the model's thinking blocks:
+ *  `show` (full), `collapse` (closed "Thinking" label), `hide` (removed). */
 export type VisibilityMode = "show" | "collapse" | "hide";
+
+/** Tool-call visibility. Like thinking it can be `show`n or `hide`den, but the
+ *  middle is split into three chronological *grouping* styles the composer pill
+ *  cycles through:
+ *    - `group-turn`  — one collapsed cluster per agent turn (all of a turn's
+ *                      tool calls gathered into one group);
+ *    - `group-run`   — one collapsed cluster per consecutive run of tool calls;
+ *    - `group-block` — the whole agent turn (narration + tools) folded into one
+ *                      collapsed block.
+ *  The legacy `"collapse"` value (PR #204) migrates to `group-turn`. */
+export type ToolCallsMode =
+  | "show"
+  | "group-turn"
+  | "group-run"
+  | "group-block"
+  | "hide";
 
 export interface AethonConfig {
   ui: {
@@ -29,9 +45,10 @@ export interface AethonConfig {
     /** Global default visibility for the model's thinking blocks. Per-tab
      *  overridable via the composer pills; `show` by default. */
     thinkingVisibility: VisibilityMode;
-    /** Global default visibility for tool-call cards. `collapse` groups
-     *  consecutive cards into one cluster; `show` by default. */
-    toolCallsVisibility: VisibilityMode;
+    /** Global default visibility for tool-call cards. The grouped values
+     *  (`group-turn` / `group-run` / `group-block`) fold cards into collapsed
+     *  clusters; `show` by default. Per-tab overridable via the composer pills. */
+    toolCallsVisibility: ToolCallsMode;
   };
   agent: {
     model: string | null;
@@ -183,7 +200,9 @@ export function getConfig(): Promise<AethonConfig> {
               ? obj.ui.notifyMinDurationSeconds
               : 8,
           thinkingVisibility: normalizeVisibility(obj?.ui?.thinkingVisibility),
-          toolCallsVisibility: normalizeVisibility(obj?.ui?.toolCallsVisibility),
+          toolCallsVisibility: normalizeToolCallsVisibility(
+            obj?.ui?.toolCallsVisibility,
+          ),
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
@@ -271,6 +290,23 @@ function normalizeTheme(t: unknown): string | null {
 /** Mirrors `normalize_visibility` in helpers.rs — unknown/missing → "show". */
 export function normalizeVisibility(value: unknown): VisibilityMode {
   return value === "collapse" || value === "hide" ? value : "show";
+}
+
+/** Mirrors `normalize_tool_visibility` in helpers.rs. Accepts the three
+ *  grouping styles plus show/hide; legacy `"collapse"` → `"group-turn"`;
+ *  unknown/missing → `"show"`. */
+export function normalizeToolCallsVisibility(value: unknown): ToolCallsMode {
+  switch (value) {
+    case "group-turn":
+    case "group-run":
+    case "group-block":
+    case "hide":
+      return value;
+    case "collapse":
+      return "group-turn";
+    default:
+      return "show";
+  }
 }
 
 /** Mirrors `normalize_default_share_mode` in helpers.rs. Belt-and-braces:

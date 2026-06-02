@@ -79,6 +79,71 @@ describe("ChatHistory + real Virtuoso", () => {
     ).not.toThrow();
   });
 
+  // A transcript with two completed turns, each using multiple tools, plus a
+  // final live-ish turn. Exercises every grouped rendering path.
+  function toolTranscript() {
+    return [
+      { id: "u1", role: "user", text: "do the thing" },
+      { id: "a1", role: "agent", text: "reading files" },
+      {
+        id: "t1",
+        role: "agent",
+        a2ui: {
+          components: [
+            { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+          ],
+        },
+      },
+      {
+        id: "t2",
+        role: "agent",
+        a2ui: {
+          components: [
+            { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 1, endedAt: 2 } },
+          ],
+        },
+      },
+      { id: "a2", role: "agent", text: "done" },
+      { id: "u2", role: "user", text: "now this" },
+      {
+        id: "t3",
+        role: "agent",
+        a2ui: {
+          components: [
+            { id: "c3", type: "tool-card", props: { title: "edit", startedAt: 1, endedAt: 2 } },
+          ],
+        },
+      },
+    ];
+  }
+
+  function renderToolChat(mode: string) {
+    return render(
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages: toolTranscript(),
+          transcriptVisibility: { toolCalls: mode },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+  }
+
+  // Real Virtuoso virtualizes (no row mounts in jsdom), so this only guards
+  // that every grouped mode wires through Virtuoso without crashing
+  // computeItemKey. Rendered-content assertions live in chat.test.tsx, which
+  // mocks Virtuoso and actually mounts the rows.
+  it("mounts every tool-call visibility mode without crashing", () => {
+    for (const mode of ["show", "group-run", "group-turn", "group-block", "hide"]) {
+      expect(() => renderToolChat(mode)).not.toThrow();
+    }
+  });
+
   it("renders the empty-state hint without Virtuoso", () => {
     const { getByText } = render(
       <ChatHistory
