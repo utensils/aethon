@@ -4492,6 +4492,26 @@ body.ae-resizing-composer * {
   white-space: nowrap;
 }
 
+.ae-tab-rename-input {
+  flex: 1 1 auto;
+  min-width: 2.5rem;
+  max-width: 100%;
+  height: 22px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text);
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.ae-tab-rename-input::selection {
+  background: var(--accent-soft);
+}
+
 .a2ui-tab-close {
   background: transparent;
   border: none;
