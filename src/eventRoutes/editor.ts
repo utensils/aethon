@@ -8,6 +8,8 @@
  *   - `editor-loaded`  — file fully populated from disk; clears dirty.
  *   - `editor-save`    — Cmd+S; writes content via fs_write_file and
  *                        clears dirty on success.
+ *   - `markdown-link-open` — preview/Monaco markdown link resolved to a
+ *                            project file; opens it in an editor tab.
  *
  * The file-tree sidebar section (`type:file-tree`) emits a single
  * `file-tree-open` event to open / focus an editor tab.
@@ -76,6 +78,16 @@ export const handleEditorCanvas: EventRouteHandler = async (
       // "Edit file" affordance in the diff view: drop the diff flag so
       // this tab becomes the editable Monaco editor for the same path.
       ctx.updateEditorMeta(tabId, { diff: false });
+      return true;
+    }
+    case "markdown-link-open": {
+      const filePath =
+        typeof payload.filePath === "string" ? payload.filePath : "";
+      if (!filePath) return true;
+      const rootPath =
+        typeof payload.rootPath === "string" ? payload.rootPath : "";
+      if (rootPath) ctx.newEditorTab(filePath, { rootPath });
+      else ctx.newEditorTab(filePath);
       return true;
     }
     case "editor-close": {

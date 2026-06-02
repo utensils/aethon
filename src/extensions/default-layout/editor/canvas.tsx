@@ -30,6 +30,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import * as monaco from "monaco-editor";
 
 import type { StringValue } from "../../../types/a2ui";
@@ -52,6 +53,7 @@ import { createEditorActions, type EditorActions } from "./editorActions";
 import { useEditorViewSettings } from "./useEditorViewSettings";
 import { useEditorExternalChange } from "./useEditorExternalChange";
 import { monacoOptionsFor } from "./viewSettings";
+import { handleEditorLinkOpen } from "./link-openers";
 
 /** Read the shared `--scrollbar-size` token (px) so Monaco's scrollbar
  *  matches the terminal + WebKit scrollbars. Falls back to 4px. */
@@ -86,7 +88,11 @@ interface EditorTabLike {
   };
 }
 
-export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProps) {
+export function EditorCanvas({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     tabId?: StringValue;
   };
@@ -134,7 +140,10 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     isDiffRef.current = editorMeta?.diff === true;
   }, [editorMeta?.diff]);
   const [loadError, setLoadError] = useState<string>("");
-  const [cursorDisplay, setCursorDisplay] = useState<{ line: number; column: number }>({
+  const [cursorDisplay, setCursorDisplay] = useState<{
+    line: number;
+    column: number;
+  }>({
     line: 1,
     column: 1,
   });
@@ -234,6 +243,22 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     });
     editorRef.current = ed;
 
+    const linkOpenerDisposable = monaco.editor.registerLinkOpener({
+      open: (resource) =>
+        handleEditorLinkOpen(resource, {
+          currentTabId: currentTabIdRef.current,
+          projectPath: projectPathRef.current,
+          openExternalUrl: openUrl,
+          openMarkdownFile: ({ tabId, filePath, rootPath }) => {
+            onEventRef.current("markdown-link-open", {
+              tabId,
+              filePath,
+              rootPath,
+            });
+          },
+        }),
+    });
+
     // Build the menubar actions now that the editor exists. The closures
     // bind the stable refs, so this object stays valid across tab swaps.
     setActions(
@@ -249,7 +274,10 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     );
 
     const positionDisposable = ed.onDidChangeCursorPosition((e) => {
-      setCursorDisplay({ line: e.position.lineNumber, column: e.position.column });
+      setCursorDisplay({
+        line: e.position.lineNumber,
+        column: e.position.column,
+      });
       const tid = currentTabIdRef.current;
       if (!tid) return;
       onEventRef.current("editor-cursor", {
@@ -314,6 +342,7 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
         const buf = getEditorBuffer(tid);
         if (buf) buf.viewState = ed.saveViewState();
       }
+      linkOpenerDisposable.dispose();
       positionDisposable.dispose();
       contentDisposable.dispose();
       ed.dispose();
@@ -445,7 +474,10 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     const apply = () => applyMonacoTheme(root.dataset.theme);
     apply();
     const observer = new MutationObserver(apply);
-    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
     return () => observer.disconnect();
   }, []);
 
@@ -487,7 +519,8 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
     const ed = editorRef.current;
     if (!ed) return;
     const collection =
-      gutterRef.current ?? (gutterRef.current = ed.createDecorationsCollection());
+      gutterRef.current ??
+      (gutterRef.current = ed.createDecorationsCollection());
     if (!showMonaco || !tabId || !editorMeta?.filePath || !projectPath) {
       collection.clear();
       return;
@@ -600,7 +633,9 @@ export function EditorCanvas({ component, state, onEvent }: BuiltinComponentProp
         />
       )}
       {showMonaco && loadError && (
-        <div className="ae-editor-canvas-error">Failed to load file: {loadError}</div>
+        <div className="ae-editor-canvas-error">
+          Failed to load file: {loadError}
+        </div>
       )}
       {showMonaco && (
         <EditorStatusBar
@@ -637,7 +672,11 @@ function EditorStatusBar({
         {shortPath}
       </span>
       {isDirty && (
-        <span className="ae-editor-status-dirty" title="Unsaved changes" aria-label="Unsaved changes">
+        <span
+          className="ae-editor-status-dirty"
+          title="Unsaved changes"
+          aria-label="Unsaved changes"
+        >
           •
         </span>
       )}
@@ -645,7 +684,9 @@ function EditorStatusBar({
       <span className="ae-editor-status-pos">
         Ln {line}, Col {column}
       </span>
-      <span className="ae-editor-status-sep" aria-hidden="true">·</span>
+      <span className="ae-editor-status-sep" aria-hidden="true">
+        ·
+      </span>
       <span className="ae-editor-status-lang">{language}</span>
     </div>
   );

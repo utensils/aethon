@@ -22,12 +22,15 @@
  *     tab's editor metadata says clean).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import ReactMarkdown from "react-markdown";
+import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { MARKDOWN_PREVIEW_PROPS } from "../markdown-adapter";
+import { resolveMarkdownLinkPath, safeExternalHttpUrl } from "./markdown-links";
 
 interface MarkdownPreviewProps {
   filePath: string;
@@ -40,15 +43,70 @@ interface MarkdownPreviewProps {
   refreshKey?: number;
 }
 
+function openExternalUrl(url: string): void {
+  try {
+    void openUrl(url).catch(() => undefined);
+  } catch {
+    // Opener failures are not actionable from preview rendering.
+  }
+}
+
 export function MarkdownPreview(props: BuiltinComponentProps) {
-  const componentProps = (props.component.props as Partial<MarkdownPreviewProps>) ?? {};
+  const componentProps =
+    (props.component.props as Partial<MarkdownPreviewProps>) ?? {};
   const filePath = componentProps.filePath ?? "";
   const projectPath = componentProps.projectPath ?? "";
   const tabId = componentProps.tabId ?? "";
   const refreshKey = componentProps.refreshKey ?? 0;
+  const onEvent = props.onEvent;
   const [text, setText] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
+  const markdownProps = useMemo<ReactMarkdownOptions>(() => {
+    const components = {
+      ...MARKDOWN_PREVIEW_PROPS.components,
+      a({
+        children,
+        href,
+        node,
+        ...rest
+      }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
+        void node;
+        return (
+          <a
+            {...rest}
+            href={href}
+            onClick={(event) => {
+              const targetPath = resolveMarkdownLinkPath(
+                href,
+                filePath,
+                projectPath,
+              );
+              const externalUrl = safeExternalHttpUrl(href);
+              if (!targetPath) {
+                if (!externalUrl) return;
+                event.preventDefault();
+                event.stopPropagation();
+                openExternalUrl(externalUrl);
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              if (!tabId) return;
+              onEvent("markdown-link-open", {
+                tabId,
+                filePath: targetPath,
+                rootPath: projectPath,
+              });
+            }}
+          >
+            {children}
+          </a>
+        );
+      },
+    };
+    return { ...MARKDOWN_PREVIEW_PROPS, components };
+  }, [filePath, onEvent, projectPath, tabId]);
 
   useEffect(() => {
     if (!filePath || !projectPath) {
@@ -87,7 +145,7 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
           <div className="ae-md-preview-empty">empty file</div>
         ) : (
           <div className="ae-md-preview-doc a2ui-markdown">
-            <ReactMarkdown {...MARKDOWN_PREVIEW_PROPS}>{text}</ReactMarkdown>
+            <ReactMarkdown {...markdownProps}>{text}</ReactMarkdown>
           </div>
         )}
       </div>
