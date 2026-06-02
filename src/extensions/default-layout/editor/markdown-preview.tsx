@@ -22,7 +22,7 @@
  *     tab's editor metadata says clean).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ReactMarkdown from "react-markdown";
@@ -97,42 +97,45 @@ function PreviewMarkdownImage({
   node?: unknown;
 }) {
   void node;
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
+  const [resolvedLocalSrc, setResolvedLocalSrc] = useState<{
+    key: string;
+    src: string;
+  } | null>(null);
+  const safeDirectSrc = safeMarkdownImageSrc(src);
+  const imagePath = safeDirectSrc
+    ? null
+    : resolveMarkdownLinkPath(src, currentFilePath, projectPath);
+  const localImageKey =
+    imagePath && projectPath ? `${projectPath}\0${imagePath}` : "";
 
   useEffect(() => {
-    const safeDirectSrc = safeMarkdownImageSrc(src);
-    if (safeDirectSrc) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Keep remote/data images synchronous from the markdown source.
-      setResolvedSrc(safeDirectSrc);
-      return;
-    }
-
-    const imagePath = resolveMarkdownLinkPath(src, currentFilePath, projectPath);
-    if (!imagePath || !projectPath) {
-      setResolvedSrc(null);
-      return;
-    }
+    if (!imagePath || !projectPath || !localImageKey) return;
 
     let cancelled = false;
-    setResolvedSrc(null);
     void invoke<string>("fs_read_file_base64", {
       root: projectPath,
       path: imagePath,
     })
       .then((b64) => {
         if (cancelled) return;
-        setResolvedSrc(`data:${imageMimeFromPath(imagePath)};base64,${b64}`);
+        setResolvedLocalSrc({
+          key: localImageKey,
+          src: `data:${imageMimeFromPath(imagePath)};base64,${b64}`,
+        });
       })
       .catch(() => {
-        if (!cancelled) setResolvedSrc(null);
+        if (!cancelled) setResolvedLocalSrc({ key: localImageKey, src: "" });
       });
     return () => {
       cancelled = true;
     };
-  }, [currentFilePath, projectPath, src]);
+  }, [imagePath, localImageKey, projectPath]);
 
-  if (!resolvedSrc) return null;
-  return <img {...rest} src={resolvedSrc} alt={alt ?? ""} />;
+  const imageSrc =
+    safeDirectSrc ??
+    (resolvedLocalSrc?.key === localImageKey ? resolvedLocalSrc.src : null);
+  if (!imageSrc) return null;
+  return <img {...rest} src={imageSrc} alt={alt ?? ""} />;
 }
 
 export function MarkdownPreview(props: BuiltinComponentProps) {
@@ -143,81 +146,100 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
   const tabId = componentProps.tabId ?? "";
   const refreshKey = componentProps.refreshKey ?? 0;
   const onEvent = props.onEvent;
+  const linkEventContextRef = useRef({ tabId, onEvent });
+  const loadedPreviewTargetRef = useRef<string>("");
   const [text, setText] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
+  useEffect(() => {
+    linkEventContextRef.current = { tabId, onEvent };
+  }, [onEvent, tabId]);
+  const markdownLinkComponent = useMemo(() => {
+    function MarkdownPreviewLink({
+      children,
+      href,
+      node,
+      ...rest
+    }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
+      void node;
+      return (
+        <a
+          {...rest}
+          href={href}
+          onClick={(event) => {
+            const targetPath = resolveMarkdownLinkPath(
+              href,
+              filePath,
+              projectPath,
+            );
+            const externalUrl = safeExternalHttpUrl(href);
+            if (!targetPath) {
+              if (!externalUrl) return;
+              event.preventDefault();
+              event.stopPropagation();
+              openExternalUrl(externalUrl);
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            const context = linkEventContextRef.current;
+            if (!context.tabId) return;
+            context.onEvent("markdown-link-open", {
+              tabId: context.tabId,
+              filePath: targetPath,
+              rootPath: projectPath,
+            });
+          }}
+        >
+          {children}
+        </a>
+      );
+    }
+    return MarkdownPreviewLink;
+  }, [filePath, projectPath]);
+  const markdownImageComponent = useMemo(() => {
+    function MarkdownPreviewImage({
+      node,
+      ...rest
+    }: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
+      return (
+        <PreviewMarkdownImage
+          {...rest}
+          node={node}
+          currentFilePath={filePath}
+          projectPath={projectPath}
+        />
+      );
+    }
+    return MarkdownPreviewImage;
+  }, [filePath, projectPath]);
   const markdownProps = useMemo<ReactMarkdownOptions>(() => {
     const components = {
       ...MARKDOWN_PREVIEW_PROPS.components,
-      a({
-        children,
-        href,
-        node,
-        ...rest
-      }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
-        void node;
-        return (
-          <a
-            {...rest}
-            href={href}
-            onClick={(event) => {
-              const targetPath = resolveMarkdownLinkPath(
-                href,
-                filePath,
-                projectPath,
-              );
-              const externalUrl = safeExternalHttpUrl(href);
-              if (!targetPath) {
-                if (!externalUrl) return;
-                event.preventDefault();
-                event.stopPropagation();
-                openExternalUrl(externalUrl);
-                return;
-              }
-              event.preventDefault();
-              event.stopPropagation();
-              if (!tabId) return;
-              onEvent("markdown-link-open", {
-                tabId,
-                filePath: targetPath,
-                rootPath: projectPath,
-              });
-            }}
-          >
-            {children}
-          </a>
-        );
-      },
-      img({
-        node,
-        ...rest
-      }: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
-        return (
-          <PreviewMarkdownImage
-            {...rest}
-            node={node}
-            currentFilePath={filePath}
-            projectPath={projectPath}
-          />
-        );
-      },
+      a: markdownLinkComponent,
+      img: markdownImageComponent,
     };
     return { ...MARKDOWN_PREVIEW_PROPS, components };
-  }, [filePath, onEvent, projectPath, tabId]);
+  }, [markdownImageComponent, markdownLinkComponent]);
 
   useEffect(() => {
     if (!filePath || !projectPath) {
+      loadedPreviewTargetRef.current = "";
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Reflect the missing-file state before any async preview load can run.
       setError("no file");
       setLoading(false);
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    const previewTarget = `${projectPath}\0${filePath}`;
+    if (loadedPreviewTargetRef.current !== previewTarget) {
+      setLoading(true);
+    }
     setError("");
     void invoke<string>("fs_read_file", { root: projectPath, path: filePath })
       .then((value) => {
         if (cancelled) return;
+        loadedPreviewTargetRef.current = previewTarget;
         setText(value);
         setLoading(false);
       })
