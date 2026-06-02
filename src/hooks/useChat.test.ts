@@ -7,7 +7,9 @@ import { makeEmptyTab, type Tab } from "../types/tab";
 import { useChat, type UseChatContext } from "./useChat";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../utils/modelPicker";
 
-const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(undefined));
+const invoke = vi.fn<(...args: unknown[]) => Promise<unknown>>(() =>
+  Promise.resolve(undefined),
+);
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
@@ -431,7 +433,7 @@ describe("useChat setModel", () => {
   });
 
   it("stopPrompt reconciles confirmed stops so stale tool cards do not keep spinning", async () => {
-    invoke.mockImplementation((cmd: string) => {
+    invoke.mockImplementation((cmd: unknown) => {
       if (cmd === "agent_diagnostics") {
         return Promise.resolve([
           {

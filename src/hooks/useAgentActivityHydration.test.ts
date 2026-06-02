@@ -3,6 +3,7 @@
 import { act, renderHook } from "@testing-library/react";
 import type { Dispatch, SetStateAction } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { A2UIComponent } from "../types/a2ui";
 import { makeEmptyTab } from "../types/tab";
 import {
   AGENT_ACTIVITY_HYDRATION_RETRY_DELAYS_MS,
@@ -189,10 +190,14 @@ describe("hydrateAgentActivityState", () => {
     );
 
     expect(next.status).toBe("ready");
-    const toolCard = (
-      (next.tabs as typeof waitingTab[])[0].messages[0].a2ui?.components ?? []
-    )[0];
-    expect(toolCard.props).toMatchObject({
+    const components = (next.tabs as typeof waitingTab[])[0].messages[0].a2ui
+      ?.components as A2UIComponent[] | undefined;
+    const toolCard = components?.[0];
+    expect(toolCard).toBeDefined();
+    if (!toolCard) {
+      throw new Error("expected restored tool card to be preserved");
+    }
+    expect(toolCard?.props).toMatchObject({
       status: "cancelled",
       endedAt: 123_456,
     });
