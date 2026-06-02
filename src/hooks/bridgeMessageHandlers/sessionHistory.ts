@@ -95,6 +95,66 @@ function restoredAgentContentSignatures(restored: ChatMessage[]): Set<string> {
   return signatures;
 }
 
+function stderrMirrorSignature(message: ChatMessage): string | undefined {
+  if (message.role !== "system" || typeof message.text !== "string") {
+    return undefined;
+  }
+  const text = message.text.replace(/\s+/g, " ").trim();
+  if (!text.startsWith("[agent stderr] ")) return undefined;
+  const timestamp =
+    typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
+      ? String(message.createdAt)
+      : "";
+  return `stderr:${timestamp}:${text}`;
+}
+
+function restoredStderrMirrorSignatures(restored: ChatMessage[]): Set<string> {
+  const signatures = new Set<string>();
+  for (const message of restored) {
+    const signature = stderrMirrorSignature(message);
+    if (signature) signatures.add(signature);
+  }
+  return signatures;
+}
+
+function isCompactionMarker(message: ChatMessage): boolean {
+  if (message.role !== "system" || typeof message.text !== "string") {
+    return false;
+  }
+  const text = message.text.replace(/\s+/g, " ").trim().toLowerCase();
+  return (
+    text === "compacting context..." ||
+    text === "compacting context…" ||
+    text.startsWith("context compacted") ||
+    text.startsWith("context compaction complete") ||
+    text.startsWith("context compaction failed:")
+  );
+}
+
+function restoredCompactionMarkers(restored: ChatMessage[]): ChatMessage[] {
+  return restored.filter(
+    (message) => message.id.startsWith("compaction:") && isCompactionMarker(message),
+  );
+}
+
+function isDuplicateCompactionMarker(
+  message: ChatMessage,
+  restoredCompactions: readonly ChatMessage[],
+): boolean {
+  if (!isCompactionMarker(message) || restoredCompactions.length === 0) {
+    return false;
+  }
+  if (typeof message.createdAt !== "number") {
+    return restoredCompactions.some((candidate) => candidate.text === message.text);
+  }
+  const createdAt = message.createdAt;
+  return restoredCompactions.some(
+    (candidate) =>
+      typeof candidate.createdAt === "number" &&
+      Math.abs(candidate.createdAt - createdAt) <= 5 * 60 * 1000,
+  );
+}
+
 function isDuplicateRestoredAgentContent(
   message: ChatMessage,
   restoredAgentContent: ReadonlySet<string>,
@@ -119,6 +179,8 @@ function mergePendingLocalPrompts(
   const restoredIds = new Set(restored.map((m) => m.id));
   const completedTools = completedRestoredToolIdentities(restored);
   const restoredAgentContent = restoredAgentContentSignatures(restored);
+  const restoredStderr = restoredStderrMirrorSignatures(restored);
+  const restoredCompactions = restoredCompactionMarkers(restored);
   const restoredUserTexts = new Set(
     restored
       .filter((m) => m.role === "user" && typeof m.text === "string")
@@ -129,6 +191,9 @@ function mergePendingLocalPrompts(
     if (restoredIds.has(m.id)) return false;
     if (isDuplicateCompletedToolCard(m, completedTools)) return false;
     if (isDuplicateRestoredAgentContent(m, restoredAgentContent)) return false;
+    const stderrSignature = stderrMirrorSignature(m);
+    if (stderrSignature && restoredStderr.has(stderrSignature)) return false;
+    if (isDuplicateCompactionMarker(m, restoredCompactions)) return false;
     if (m.role === "user") {
       // A failed local user message is informational once history
       // catches up — the bridge will resend or the user will retry.

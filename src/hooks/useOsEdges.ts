@@ -67,7 +67,10 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         autoRestartAgentRef: ctx.autoRestartAgentRef,
         pushNotification: ctx.pushNotification,
       }),
-      subscribeAgentStderr({ appendMessage: ctx.appendMessage }),
+      subscribeAgentStderr({
+        appendMessage: ctx.appendMessage,
+        persistLocalChatMessage: ctx.persistLocalChatMessage,
+      }),
       subscribeMenu({
         stateRef: ctx.stateRef,
         newTab: ctx.newTab,

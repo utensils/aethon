@@ -104,7 +104,7 @@ function compactionNotice(
   const type = event.type.toLowerCase();
   if (!type.includes("compact")) return undefined;
   if (type.includes("start") || type.includes("begin")) {
-    return { message: "Compacting context…", busy: true };
+    return { message: "Compacting context...", busy: true };
   }
   if (type.includes("fail") || type.includes("error")) {
     const reason =
@@ -121,7 +121,11 @@ function compactionNotice(
     type.includes("complete") ||
     type.includes("success")
   ) {
-    return { message: "Context compaction complete." };
+    const tokensBefore =
+      typeof event.tokensBefore === "number" && Number.isFinite(event.tokensBefore)
+        ? ` · ${event.tokensBefore.toLocaleString("en-US")} tokens summarized`
+        : "";
+    return { message: `Context compacted${tokensBefore}` };
   }
   return undefined;
 }

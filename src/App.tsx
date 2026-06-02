@@ -801,6 +801,7 @@ export default function App() {
     closeTab,
     nextTab,
     appendMessage,
+    persistLocalChatMessage,
     appendSystem,
     setStatusFlags,
     clearChat,

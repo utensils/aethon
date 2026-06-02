@@ -138,6 +138,18 @@ describe("coerceChatMessages", () => {
     expect(out[0].id).toBe("abc");
   });
 
+  it("preserves finite creation timestamps", () => {
+    const out = coerceChatMessages([
+      { id: "abc", role: "system", text: "warning", createdAt: 1_234 },
+    ]);
+    expect(out[0]).toEqual({
+      id: "abc",
+      role: "system",
+      text: "warning",
+      createdAt: 1_234,
+    });
+  });
+
   it("generates a uuid when id missing", () => {
     const out = coerceChatMessages([{ role: "user", text: "hi" }]);
     expect(out[0].id).toMatch(/^[0-9a-f-]{36}$/i);

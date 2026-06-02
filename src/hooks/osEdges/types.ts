@@ -36,6 +36,7 @@ export interface UseOsEdgesContext {
 
   // Chat helpers (from useChat).
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
+  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
   appendSystem: (text: string) => void;
   setStatusFlags: (
     flags: Partial<{ waiting: boolean; status: string; connection: string }>,
