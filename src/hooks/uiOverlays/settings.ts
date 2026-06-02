@@ -179,8 +179,9 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
         ...(live?.shell ?? {}),
         ...((pendingSnapshot as { shell?: object }).shell ?? {}),
       },
-      // Always include `shortcuts` so `[shortcuts] new_tab_kind` survives
-      // any other Settings save. write_config drops sections it doesn't see.
+      // Keep deprecated `[shortcuts] new_tab_kind` round-tripping when
+      // users save unrelated settings. write_config drops sections it
+      // doesn't see.
       shortcuts: {
         ...(live?.shortcuts ?? {}),
         ...((pendingSnapshot as { shortcuts?: object }).shortcuts ?? {}),

@@ -219,8 +219,8 @@ pub fn normalize_default_share_mode(input: Option<&str>) -> &'static str {
     }
 }
 
-/// Validate-and-normalize the `[shortcuts] new_tab_kind` key. Unknown or
-/// missing values fall through to `"agent"` (the focus-aware default).
+/// Validate-and-normalize the deprecated `[shortcuts] new_tab_kind` key so
+/// older config files still parse and round-trip predictably.
 pub fn normalize_new_tab_kind(input: Option<&str>) -> &'static str {
     match input {
         Some("shell") => "shell",

@@ -25,7 +25,6 @@ function buildContext(
   return {
     stateRef: ref(state),
     extensionKeybindingsRef: ref(new Map()),
-    shortcutsNewTabKindRef: ref("agent"),
     toggleTerminalAndFocus: vi.fn(),
     toggleSidebar: vi.fn(),
     toggleFilesSidebar: vi.fn(),
@@ -275,6 +274,26 @@ describe("Cmd+T terminal focus retention", () => {
     expect(ctx.newShellTab).toHaveBeenCalledTimes(1);
     expect(ctx.newTab).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(panelInput);
+  });
+
+  it("opens an agent tab when the terminal is open but focus is outside it", () => {
+    const { elsewhere } = mountTerminalFocusDom();
+    elsewhere?.focus();
+    const ctx = buildContext({
+      activeTabId: "__overview__",
+      tabs: [
+        { id: "shell-1", kind: "shell", label: "Shell 1" },
+        { id: "shell-2", kind: "shell", label: "Shell 2" },
+      ],
+      terminal: { open: true },
+      terminalPanel: { activeSubId: "shell-2" },
+    });
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "t", metaKey: true });
+
+    expect(ctx.newTab).toHaveBeenCalledTimes(1);
+    expect(ctx.newShellTab).not.toHaveBeenCalled();
   });
 
   it("returns focus to the terminal after Cmd+Shift+T creates a shell sub-tab", () => {

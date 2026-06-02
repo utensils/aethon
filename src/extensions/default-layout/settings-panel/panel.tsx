@@ -272,26 +272,6 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                   }
                 />
               </Field>
-              <Field label="Cmd+T opens">
-                <select
-                  className="ae-settings-input"
-                  value={eff.shortcuts.newTabKind}
-                  onChange={(e) =>
-                    update({
-                      shortcuts: {
-                        ...eff.shortcuts,
-                        newTabKind:
-                          e.target.value === "shell" ? "shell" : "agent",
-                      },
-                    })
-                  }
-                >
-                  <option value="agent">
-                    Agent tab (focus-aware default)
-                  </option>
-                  <option value="shell">Always a shell tab</option>
-                </select>
-              </Field>
               <div className="ae-settings-ansi-preview">
                 <span className="ae-settings-field-label">
                   ANSI palette preview

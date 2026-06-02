@@ -37,9 +37,6 @@ export interface UseBootConfigActions {
   shellDefaultArgsRef: MutableRefObject<string[]>;
   shellInheritEnvRef: MutableRefObject<boolean>;
   shellPromptBeforeCloseRef: MutableRefObject<boolean>;
-  /** [shortcuts] new_tab_kind — controls Cmd+T routing when focus is
-   *  outside the bottom terminal panel. */
-  shortcutsNewTabKindRef: MutableRefObject<"agent" | "shell">;
   /** [updates] channel — initial value passed to `useUpdater` so the
    *  first background poll hits the right endpoint without a wasted
    *  round-trip against the default ("stable"). Settings save calls
@@ -64,7 +61,7 @@ export interface UseBootConfigActions {
  *
  * The refs are exposed so other hooks can mutate them (currently only
  * the settings save path) and read them (notify-on-completion gate,
- * shell tab defaults, agent-crashed auto-restart, Cmd+T routing).
+ * shell tab defaults, and agent-crashed auto-restart).
  *
  * Held in refs (not React state) so handlers that fire from the bridge
  * see the latest values without re-binding listeners on every config
@@ -81,7 +78,6 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
   const shellDefaultArgsRef = useRef<string[]>([]);
   const shellInheritEnvRef = useRef<boolean>(true);
   const shellPromptBeforeCloseRef = useRef<boolean>(true);
-  const shortcutsNewTabKindRef = useRef<"agent" | "shell">("agent");
   const updateChannelRef = useRef<"stable" | "nightly">("stable");
   const disableAutoCheckRef = useRef<boolean>(false);
 
@@ -106,7 +102,6 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
     shellDefaultArgsRef.current = fresh.shell.defaultArgs;
     shellInheritEnvRef.current = fresh.shell.inheritEnv;
     shellPromptBeforeCloseRef.current = fresh.shell.promptBeforeClose;
-    shortcutsNewTabKindRef.current = fresh.shortcuts.newTabKind;
     updateChannelRef.current = fresh.updates.channel;
     disableAutoCheckRef.current = fresh.updates.disableAutoCheck;
     setState((prev) => ({
@@ -193,8 +188,6 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
       shellDefaultArgsRef.current = config.shell.defaultArgs;
       shellInheritEnvRef.current = config.shell.inheritEnv;
       shellPromptBeforeCloseRef.current = config.shell.promptBeforeClose;
-      // [shortcuts] new_tab_kind.
-      shortcutsNewTabKindRef.current = config.shortcuts.newTabKind;
       // [updates] — seed the hook ref so the first poll fires against
       // the configured channel.
       updateChannelRef.current = config.updates.channel;
@@ -254,7 +247,6 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
     shellDefaultArgsRef,
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
-    shortcutsNewTabKindRef,
     updateChannelRef,
     disableAutoCheckRef,
     reapplyConfig,

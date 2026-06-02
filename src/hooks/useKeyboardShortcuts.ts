@@ -47,10 +47,6 @@ export interface UseKeyboardShortcutsContext {
   extensionKeybindingsRef: MutableRefObject<
     Map<string, { combo: string; action: string; description?: string }>
   >;
-  /** "shell" forces Cmd+T to always open a shell sub-tab; "agent"
-   *  (default) preserves focus-aware routing. From `[shortcuts]
-   *  new_tab_kind`. */
-  shortcutsNewTabKindRef: MutableRefObject<"agent" | "shell">;
 
   // Built-in actions, all hoisted from App or hook destructures.
   toggleTerminalAndFocus: () => void;
@@ -180,15 +176,12 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         focusTerminalPanelSoon();
         return;
       }
-      // Cmd+T: focus-aware new tab (shell when focus is in panel, else
-      // agent — or always shell when [shortcuts] new_tab_kind = "shell").
+      // Cmd+T: focus-aware new tab. Shell sub-tabs only own this when
+      // keyboard focus is actually inside the bottom terminal panel.
       if (e.key.toLowerCase() === "t" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        if (
-          isFocusInTerminalPanel() ||
-          ctx.shortcutsNewTabKindRef.current === "shell"
-        ) {
+        if (isFocusInTerminalPanel()) {
           ctx.newShellTab();
           focusTerminalPanelSoon();
         } else {

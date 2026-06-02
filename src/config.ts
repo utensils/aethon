@@ -46,10 +46,9 @@ export interface AethonConfig {
     promptBeforeClose: boolean;
   };
   shortcuts: {
-    /** What `Cmd+T` opens when focus is *outside* the bottom terminal
-     *  panel: `"agent"` (default — focus-aware behaviour) or `"shell"`
-     *  (Cmd+T always opens a shell sub-tab). Anything else falls
-     *  through to `"agent"`. */
+    /** Deprecated compatibility field. Older configs may contain
+     *  `[shortcuts] new_tab_kind`, so parse and round-trip it, but Cmd+T
+     *  is now strictly focus-aware in the keyboard handler. */
     newTabKind: "agent" | "shell";
   };
   voice: {
