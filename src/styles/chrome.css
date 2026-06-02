@@ -8332,7 +8332,7 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text);
 }
 
-/* ── Collapsed tool-call cluster (tool-call visibility = "collapse") ──── */
+/* ── Grouped tool-call cluster (tool visibility = "group-run" / "group-turn") ── */
 .ae-tool-group {
   border: 1px dashed var(--border);
   border-radius: 10px;

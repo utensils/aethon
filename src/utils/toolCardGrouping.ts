@@ -139,7 +139,11 @@ function groupBlock(messages: ChatMessage[]): MessageGroup[] {
   const out: MessageGroup[] = [];
   segments.forEach((segment, i) => {
     const hasTool = segment.some(isToolCardMessage);
-    if (i === lastIndex || !hasTool) {
+    // A still-running tool card means live progress — never fold it away, even
+    // in an earlier segment (e.g. a turn that errored mid-tool and was left
+    // without an `endedAt`). Matches this mode's "completed turns" contract.
+    const hasRunning = segment.some(isRunningToolCard);
+    if (i === lastIndex || !hasTool || hasRunning) {
       for (const m of segment) out.push(single(m));
       return;
     }

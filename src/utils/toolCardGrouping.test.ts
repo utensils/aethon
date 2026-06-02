@@ -168,6 +168,25 @@ describe("groupMessages — group-block (whole turn folded)", () => {
     expect(kinds(groups)).toEqual(["single", "single", "single", "single", "single"]);
   });
 
+  it("never folds a segment that still has a running tool card", () => {
+    const groups = groupMessages(
+      [
+        text("u1", "user"),
+        text("a1"),
+        tool("t1"),
+        tool("t2", { running: true }),
+        text("u2", "user"),
+        text("a2"),
+        tool("t3"),
+      ],
+      "group-block",
+    );
+    // Live progress (t2 running) must stay visible — the first turn is NOT
+    // folded despite having a tool card; only completed turns fold.
+    expect(kinds(groups).filter((k) => k === "turn-block")).toHaveLength(0);
+    expect(kinds(groups).every((k) => k === "single")).toBe(true);
+  });
+
   it("blocks a leading segment that has no user message", () => {
     const groups = groupMessages(
       [text("a0"), tool("t0"), text("u1", "user"), text("a1"), tool("t1")],
