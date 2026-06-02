@@ -19,6 +19,7 @@ import {
 import {
   groupMessages,
   groupKey,
+  isToolCardMessage,
   type MessageGroup,
 } from "../../utils/toolCardGrouping";
 import type { VisibilityMode } from "../../config";
@@ -359,9 +360,29 @@ function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
   );
 }
 
-/** Collapsed cluster of consecutive completed tool-call cards (visibility =
- *  "collapse"). One disclosure row labelled "N tool calls" that expands to
- *  the individual cards. Expansion is local UI state in VirtualMessageList. */
+/** Title shown on a tool-call card (e.g. "bash", "read"), used for the
+ *  collapsed-group peek. */
+function toolCardTitle(m: ChatMessage): string | undefined {
+  const comp = m.a2ui?.components?.find((c) => c?.type === "tool-card");
+  const title = comp?.props?.title;
+  return typeof title === "string" && title.length > 0 ? title : undefined;
+}
+
+/** A short "name · name · …" peek of the tools inside a collapsed group, so the
+ *  user can tell what's hidden without expanding. Caps at 4 names. */
+function toolPeek(messages: ChatMessage[]): string {
+  const names = messages
+    .map(toolCardTitle)
+    .filter((n): n is string => Boolean(n));
+  if (names.length === 0) return "";
+  const shown = names.slice(0, 4).join(" · ");
+  return names.length > 4 ? `${shown} · …` : shown;
+}
+
+/** Collapsed cluster of completed tool-call cards (tool visibility =
+ *  "group-run" / "group-turn"). One disclosure row labelled "N tool calls"
+ *  with a name peek, expanding to the individual cards. Expansion is local UI
+ *  state in VirtualMessageList. */
 function ToolGroupRow({
   group,
   state,
@@ -376,6 +397,7 @@ function ToolGroupRow({
   onToggle: () => void;
 }) {
   const count = group.messages.length;
+  const peek = toolPeek(group.messages);
   return (
     <div className="ae-tool-group" data-expanded={expanded ? "true" : "false"}>
       <button
@@ -388,6 +410,9 @@ function ToolGroupRow({
           {expanded ? "▾" : "▸"}
         </span>
         <span className="ae-tool-group-label">{count} tool calls</span>
+        {!expanded && peek && (
+          <span className="ae-tool-group-peek">{peek}</span>
+        )}
       </button>
       {expanded && (
         <div className="ae-tool-group-body">
@@ -401,6 +426,80 @@ function ToolGroupRow({
               />
             ) : null,
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Header label for a folded agent turn: "N replies · M tool calls". */
+function turnBlockLabel(messages: ChatMessage[]): string {
+  const tools = messages.filter(isToolCardMessage).length;
+  const replies = messages.filter(
+    (m) => !isToolCardMessage(m) && Boolean(m.text || m.thinking),
+  ).length;
+  const parts: string[] = [];
+  if (replies > 0) {
+    parts.push(`${replies} ${replies === 1 ? "reply" : "replies"}`);
+  }
+  parts.push(`${tools} ${tools === 1 ? "tool call" : "tool calls"}`);
+  return parts.join(" · ");
+}
+
+/** A whole completed agent turn folded into one collapsible block (tool
+ *  visibility = "group-block"). Expands to the turn's messages — narration and
+ *  tool cards — rendered in order via ChatMessageRow. */
+function TurnBlockRow({
+  group,
+  state,
+  tabId,
+  onEvent,
+  rowClassName,
+  thinkingVisibility,
+  expanded,
+  onToggle,
+}: {
+  group: Extract<MessageGroup, { type: "turn-block" }>;
+  state: Record<string, unknown>;
+  tabId?: string;
+  onEvent?: BuiltinComponentProps["onEvent"];
+  rowClassName: string;
+  thinkingVisibility: VisibilityMode;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const peek = toolPeek(group.messages);
+  return (
+    <div className="ae-turn-block" data-expanded={expanded ? "true" : "false"}>
+      <button
+        type="button"
+        className="ae-turn-block-summary"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="ae-turn-block-caret" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
+        </span>
+        <span className="ae-turn-block-label">Agent turn</span>
+        <span className="ae-turn-block-meta">{turnBlockLabel(group.messages)}</span>
+        {!expanded && peek && (
+          <span className="ae-turn-block-peek">{peek}</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="ae-turn-block-body">
+          {group.messages.map((m, i) => (
+            <ChatMessageRow
+              key={m.id}
+              message={m}
+              state={state}
+              tabId={tabId}
+              className={rowClassName}
+              prevRole={i > 0 ? group.messages[i - 1].role : undefined}
+              onEvent={onEvent}
+              thinkingVisibility={thinkingVisibility}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -448,9 +547,11 @@ function VirtualMessageList({
     [messages],
   );
   // Tool-call visibility transforms the flat list into render groups: `show`
-  // → one single per message, `hide` → tool cards dropped, `collapse` → runs
-  // of completed tool cards folded into expandable clusters. Virtuoso renders
-  // groups, so its data length / keys track groups, not raw messages.
+  // → one single per message, `hide` → tool cards dropped, and the grouped
+  // modes fold tool cards into expandable clusters (`group-run` / `group-turn`
+  // → tool-group rows) or whole turns into one block (`group-block` →
+  // turn-block rows). Virtuoso renders groups, so its data length / keys track
+  // groups, not raw messages.
   const groups = useMemo(
     () => groupMessages(messages, visibility.toolCalls),
     [messages, visibility.toolCalls],
@@ -577,6 +678,22 @@ function VirtualMessageList({
               group={group}
               state={state}
               tabId={tabId}
+              expanded={expandedGroups.has(group.id)}
+              onToggle={() => toggleGroup(group.id)}
+            />
+          </div>
+        );
+      }
+      if (group.type === "turn-block") {
+        return (
+          <div className={rowClass}>
+            <TurnBlockRow
+              group={group}
+              state={state}
+              tabId={tabId}
+              onEvent={onEvent}
+              rowClassName={rowClassName}
+              thinkingVisibility={visibility.thinking}
               expanded={expandedGroups.has(group.id)}
               onToggle={() => toggleGroup(group.id)}
             />
