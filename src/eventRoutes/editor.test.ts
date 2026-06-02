@@ -76,6 +76,36 @@ describe("handleEditorCanvas", () => {
     });
   });
 
+  it("opens markdown preview file links in an editor tab", async () => {
+    const fx = buildRouteFixture();
+    const claimed = await handleEditorCanvas(
+      editorEvent("markdown-link-open", {
+        tabId: "tab-1",
+        filePath: "/projects/aethon/docs/api.md",
+        rootPath: "/projects/aethon",
+      }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
+      "/projects/aethon/docs/api.md",
+      { rootPath: "/projects/aethon" },
+    );
+  });
+
+  it("claims empty markdown link events without opening a tab", async () => {
+    const fx = buildRouteFixture();
+    const claimed = await handleEditorCanvas(
+      editorEvent("markdown-link-open", {
+        tabId: "tab-1",
+        rootPath: "/projects/aethon",
+      }),
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).not.toHaveBeenCalled();
+  });
+
   it("invokes fs_write_file on editor-save and clears dirty", async () => {
     const fx = buildRouteFixture({
       state: { project: { path: "/projects/aethon" } },
@@ -210,8 +240,9 @@ describe("handleFileTree", () => {
     const next = fx.applySetState({
       layout: { columns: "220px minmax(0,1fr) 360px" },
     });
-    expect((next.layout as { columns: string; lastRightWidth: string }).columns)
-      .toBe("220px minmax(0,1fr) 640px");
+    expect(
+      (next.layout as { columns: string; lastRightWidth: string }).columns,
+    ).toBe("220px minmax(0,1fr) 640px");
     expect((next.layout as { lastRightWidth: string }).lastRightWidth).toBe(
       "640px",
     );

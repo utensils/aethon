@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { getCachedHighlight, highlightCode } from "../utils/highlight";
 
 interface HighlightedCodeProps {
@@ -14,6 +14,14 @@ interface HighlightedCodeProps {
 // bottom of every block.
 function trimSingleTrailingNewline(s: string): string {
   return s.endsWith("\n") ? s.slice(0, -1) : s;
+}
+
+function copyText(text: string): void {
+  try {
+    void navigator.clipboard?.writeText(text);
+  } catch {
+    // Clipboard availability is host/browser dependent; the block remains selectable.
+  }
 }
 
 // Worker-backed Shiki highlighter (same pattern as Claudette's chat).
@@ -32,7 +40,10 @@ export function HighlightedCode({
 }: HighlightedCodeProps) {
   const text = trimSingleTrailingNewline(code);
   const lang = (language ?? "").toLowerCase();
+  const displayLang = lang || "text";
   const cached = lang ? getCachedHighlight(text, lang) : null;
+  const copyResetTimer = useRef<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
@@ -49,6 +60,14 @@ export function HighlightedCode({
     // cache is reset between renders.
   }, [text, lang, cached]);
 
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current != null) {
+        window.clearTimeout(copyResetTimer.current);
+      }
+    };
+  }, []);
+
   if (inline) {
     if (cached != null) {
       return (
@@ -63,18 +82,54 @@ export function HighlightedCode({
     );
   }
 
+  const codeEl =
+    cached != null ? (
+      <code dangerouslySetInnerHTML={{ __html: cached }} />
+    ) : (
+      <code>{text}</code>
+    );
+
+  if (lang === "text" && !showLineNumbers) {
+    return (
+      <pre className={`a2ui-code ${className ?? ""}`} data-language="text">
+        {codeEl}
+      </pre>
+    );
+  }
+
   return (
-    <pre
-      className={`a2ui-code ${className ?? ""}`}
-      data-language={language ?? lang}
-      data-show-lineno={showLineNumbers ? "true" : undefined}
+    <div
+      className={`a2ui-code-frame ${className ?? ""}`}
+      data-language={lang || "plain"}
     >
-      {language && <span className="a2ui-code-lang">{language}</span>}
-      {cached != null ? (
-        <code dangerouslySetInnerHTML={{ __html: cached }} />
-      ) : (
-        <code>{text}</code>
-      )}
-    </pre>
+      <div className="a2ui-code-header">
+        <span className="a2ui-code-title">{displayLang}</span>
+        <button
+          type="button"
+          className="a2ui-code-copy"
+          data-copied={copied ? "true" : undefined}
+          aria-label={copied ? "Copied code" : "Copy code"}
+          title={copied ? "Copied" : "Copy code"}
+          onClick={() => {
+            copyText(text);
+            setCopied(true);
+            if (copyResetTimer.current != null) {
+              window.clearTimeout(copyResetTimer.current);
+            }
+            copyResetTimer.current = window.setTimeout(() => {
+              setCopied(false);
+              copyResetTimer.current = null;
+            }, 1200);
+          }}
+        />
+      </div>
+      <pre
+        className="a2ui-code"
+        data-language={lang || "plain"}
+        data-show-lineno={showLineNumbers ? "true" : undefined}
+      >
+        {codeEl}
+      </pre>
+    </div>
   );
 }

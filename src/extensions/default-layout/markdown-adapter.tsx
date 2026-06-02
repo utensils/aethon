@@ -13,6 +13,7 @@
  */
 
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Children, isValidElement } from "react";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, {
   defaultSchema,
@@ -22,12 +23,8 @@ import remarkGfm from "remark-gfm";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 import { HighlightedCode } from "../../components/HighlightedCode";
 
-type MarkdownRemarkPlugins = NonNullable<
-  ReactMarkdownOptions["remarkPlugins"]
->;
-type MarkdownRehypePlugins = NonNullable<
-  ReactMarkdownOptions["rehypePlugins"]
->;
+type MarkdownRemarkPlugins = NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+type MarkdownRehypePlugins = NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
 interface MarkdownNode {
   type?: string;
@@ -35,6 +32,20 @@ interface MarkdownNode {
   url?: string;
   children?: MarkdownNode[];
 }
+
+type CodeElementProps = {
+  className?: string;
+  children?: React.ReactNode;
+};
+
+type HastElementNode = {
+  tagName?: string;
+  properties?: {
+    className?: string | string[];
+  };
+  children?: HastElementNode[];
+  value?: string;
+};
 
 const BARE_HTTP_URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 const TRAILING_PUNCTUATION = new Set([".", ",", "!", "?", ":", ";"]);
@@ -186,16 +197,73 @@ export const MARKDOWN_PREVIEW_REHYPE_PLUGINS: MarkdownRehypePlugins = [
 
 // eslint-disable-next-line react-refresh/only-export-components -- helper consumed by the markdown-adapter map below
 export function isHighlightedFenceChild(node: React.ReactNode): boolean {
-  if (!node || typeof node !== "object") return false;
-  const el = node as React.ReactElement<{ "data-highlighted-fence"?: boolean }>;
-  return el.props?.["data-highlighted-fence"] === true;
+  const child = Children.toArray(node)[0];
+  if (!isValidElement<{ "data-highlighted-fence"?: boolean }>(child)) {
+    return false;
+  }
+  return child.props?.["data-highlighted-fence"] === true;
+}
+
+function codeChildFromPre(
+  node: React.ReactNode,
+): React.ReactElement<CodeElementProps> | null {
+  const children = Children.toArray(node);
+  if (children.length !== 1) return null;
+  const child = children[0];
+  if (!isValidElement<CodeElementProps>(child)) return null;
+  return child.type === "code" ? child : null;
+}
+
+function languageFromClassName(
+  className: string | undefined,
+): string | undefined {
+  return /language-([\w+-]+)/.exec(className ?? "")?.[1];
+}
+
+function classNameFromHast(
+  node: HastElementNode | undefined,
+): string | undefined {
+  const className = node?.properties?.className;
+  return Array.isArray(className) ? className.join(" ") : className;
+}
+
+function textFromHast(node: HastElementNode | undefined): string {
+  if (!node) return "";
+  if (typeof node.value === "string") return node.value;
+  return (node.children ?? []).map((child) => textFromHast(child)).join("");
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- adapter map for react-markdown; not a component module
 export const MARKDOWN_COMPONENTS = {
-  pre({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) {
+  pre({
+    children,
+    node,
+    ...rest
+  }: React.HTMLAttributes<HTMLPreElement> & { node?: HastElementNode }) {
     if (isHighlightedFenceChild(children)) {
       return <>{children}</>;
+    }
+    const hastCodeChild =
+      node?.children?.length === 1 && node.children[0]?.tagName === "code"
+        ? node.children[0]
+        : undefined;
+    if (hastCodeChild) {
+      return (
+        <HighlightedFence
+          code={textFromHast(hastCodeChild).replace(/\n$/, "")}
+          language={languageFromClassName(classNameFromHast(hastCodeChild))}
+        />
+      );
+    }
+    const codeChild = codeChildFromPre(children);
+    if (codeChild) {
+      const text = String(codeChild.props.children ?? "").replace(/\n$/, "");
+      return (
+        <HighlightedFence
+          code={text}
+          language={languageFromClassName(codeChild.props.className)}
+        />
+      );
     }
     return <pre {...rest}>{children}</pre>;
   },
@@ -213,13 +281,16 @@ export const MARKDOWN_COMPONENTS = {
   } & React.HTMLAttributes<HTMLElement>) {
     void node;
     const text = String(children ?? "").replace(/\n$/, "");
-    const langMatch = /language-([\w+-]+)/.exec(className ?? "");
-    if (inline || !langMatch) {
-      return <code className={className} {...rest}>{children}</code>;
+    const language = languageFromClassName(className);
+    const isFence = inline === false || Boolean(language);
+    if (!isFence) {
+      return (
+        <code className={className} {...rest}>
+          {children}
+        </code>
+      );
     }
-    return (
-      <HighlightedFence code={text} language={langMatch[1]} />
-    );
+    return <HighlightedFence code={text} language={language} />;
   },
 };
 
@@ -278,7 +349,7 @@ export function HighlightedFence({
   language,
 }: {
   code: string;
-  language: string;
+  language?: string;
 }) {
   return (
     <span data-highlighted-fence style={{ display: "block" }}>
