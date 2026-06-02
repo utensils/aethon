@@ -14,12 +14,27 @@ import { resolveMarkdownLinkPath } from "./markdown-links";
 import { MarkdownPreview } from "./markdown-preview";
 import type { A2UIComponent } from "../../../types/a2ui";
 
+const mermaidInitialize = vi.hoisted(() => vi.fn());
+const mermaidRender = vi.hoisted(() => vi.fn());
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
+}));
+
+vi.mock("../../../utils/highlight", () => ({
+  getCachedHighlight: vi.fn(() => null),
+  highlightCode: vi.fn(() => Promise.resolve(null)),
+}));
+
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: mermaidInitialize,
+    render: mermaidRender,
+  },
 }));
 
 const readmeMarkdown = `<p align="center"><img src="assets/logo.png" alt="Claudette" width="128" /></p>
@@ -50,8 +65,15 @@ function markdownPreviewComponent(
 function renderMarkdownPreview(
   markdown: string,
   props?: Record<string, unknown>,
+  options?: { imageBase64?: string },
 ) {
-  vi.mocked(invoke).mockResolvedValueOnce(markdown);
+  vi.mocked(invoke).mockImplementation((cmd, _args) => {
+    if (cmd === "fs_read_file") return Promise.resolve(markdown);
+    if (cmd === "fs_read_file_base64") {
+      return Promise.resolve(options?.imageBase64 ?? "aW1hZ2UtYnl0ZXM=");
+    }
+    return Promise.reject(new Error(`unexpected invoke ${cmd}`));
+  });
   const onEvent = vi.fn();
   return {
     ...render(
@@ -171,6 +193,11 @@ describe("MarkdownPreview", () => {
     vi.mocked(invoke).mockReset();
     vi.mocked(openUrl).mockReset();
     vi.mocked(openUrl).mockResolvedValue(undefined);
+    mermaidInitialize.mockReset();
+    mermaidRender.mockReset();
+    mermaidRender.mockResolvedValue({
+      svg: '<svg role="img" viewBox="0 0 10 10"><path d="M0 0h10v10H0z"></path></svg>',
+    });
   });
 
   afterEach(() => cleanup());
@@ -197,12 +224,110 @@ describe("MarkdownPreview", () => {
     expect(doc?.textContent).not.toContain("<p align");
     expect(doc?.textContent).not.toContain("<img");
 
+    await waitFor(() => {
+      const image = doc?.querySelector("img");
+      expect(image?.getAttribute("src")).toBe(
+        "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+      );
+    });
     const image = doc?.querySelector("img");
-    expect(image?.getAttribute("src")).toBe("assets/logo.png");
     expect(image?.getAttribute("alt")).toBe("Claudette");
     expect(image?.getAttribute("width")).toBe("128");
     expect(image?.closest("p")?.getAttribute("align")).toBe("center");
     expect(doc?.querySelector("h1")?.getAttribute("align")).toBe("center");
+    expect(invoke).toHaveBeenCalledWith("fs_read_file_base64", {
+      root: "/repo",
+      path: "/repo/assets/logo.png",
+    });
+  });
+
+  it("resolves relative markdown images through fs_read_file_base64", async () => {
+    renderMarkdownPreview('![Logo](assets/logo.png "Aethon")');
+
+    const image = await screen.findByRole("img", { name: "Logo" });
+    await waitFor(() =>
+      expect(image.getAttribute("src")).toBe(
+        "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+      ),
+    );
+
+    expect(image.getAttribute("title")).toBe("Aethon");
+    expect(invoke).toHaveBeenCalledWith("fs_read_file_base64", {
+      root: "/repo",
+      path: "/repo/assets/logo.png",
+    });
+  });
+
+  it("resolves nested markdown images from the current file directory", async () => {
+    renderMarkdownPreview("![Logo](../assets/logo.png)", {
+      filePath: "/repo/docs/guide.md",
+      projectPath: "/repo",
+    });
+
+    const image = await screen.findByRole("img", { name: "Logo" });
+    await waitFor(() =>
+      expect(image.getAttribute("src")).toBe(
+        "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+      ),
+    );
+
+    expect(invoke).toHaveBeenCalledWith("fs_read_file_base64", {
+      root: "/repo",
+      path: "/repo/assets/logo.png",
+    });
+  });
+
+  it("does not render or load local markdown images outside the project root", async () => {
+    const { container } = renderMarkdownPreview("![Secret](../../secret.png)", {
+      filePath: "/repo/docs/guide.md",
+      projectPath: "/repo",
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".ae-md-preview-doc")).not.toBeNull(),
+    );
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(invoke).not.toHaveBeenCalledWith(
+      "fs_read_file_base64",
+      expect.anything(),
+    );
+  });
+
+  it("leaves remote and safe data image sources intact", async () => {
+    const { container } = renderMarkdownPreview(
+      [
+        "![Remote](https://example.com/logo.png)",
+        "![Inline](data:image/png;base64,aW1hZ2U=)",
+      ].join("\n\n"),
+    );
+
+    const remote = await screen.findByRole("img", { name: "Remote" });
+    const inline = await screen.findByRole("img", { name: "Inline" });
+
+    expect(remote.getAttribute("src")).toBe("https://example.com/logo.png");
+    expect(inline.getAttribute("src")).toBe("data:image/png;base64,aW1hZ2U=");
+    expect(container.querySelectorAll("img")).toHaveLength(2);
+    expect(invoke).not.toHaveBeenCalledWith(
+      "fs_read_file_base64",
+      expect.anything(),
+    );
+  });
+
+  it("strips unsafe image sources", async () => {
+    const { container } = renderMarkdownPreview(
+      '![Bad](javascript:alert(1))\n\n<img src="javascript:alert(1)" alt="raw bad" />',
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector(".ae-md-preview-doc")).not.toBeNull(),
+    );
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(invoke).not.toHaveBeenCalledWith(
+      "fs_read_file_base64",
+      expect.anything(),
+    );
   });
 
   it("uses GFM plugins for tables and task lists", async () => {
@@ -240,6 +365,43 @@ describe("MarkdownPreview", () => {
     expect(frame?.querySelector("button.a2ui-code-copy")).not.toBeNull();
   });
 
+  it("renders mermaid fences as diagrams instead of highlighted code frames", async () => {
+    const { container } = renderMarkdownPreview(
+      "```mermaid\ngraph TD\n  A --> B\n```\n",
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector(".a2ui-mermaid-diagram svg")).not.toBeNull(),
+    );
+
+    expect(mermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({ startOnLoad: false }),
+    );
+    expect(mermaidRender).toHaveBeenCalledWith(
+      expect.stringMatching(/^aethon-mermaid-/),
+      "graph TD\n  A --> B",
+    );
+    expect(container.querySelector(".a2ui-code-frame")).toBeNull();
+  });
+
+  it("falls back to the original code block when mermaid render fails", async () => {
+    mermaidRender.mockRejectedValueOnce(new Error("bad diagram"));
+    const { container } = renderMarkdownPreview(
+      "```mermaid\ngraph TD\n  A -->\n```\n",
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector(".a2ui-code-frame")).not.toBeNull(),
+    );
+
+    const frame = container.querySelector(".a2ui-code-frame");
+    expect(frame?.getAttribute("data-language")).toBe("mermaid");
+    expect(frame?.querySelector("pre.a2ui-code")?.textContent).toContain(
+      "graph TD",
+    );
+    expect(container.querySelector(".a2ui-mermaid-diagram")).toBeNull();
+  });
+
   it("sanitizes unsafe raw HTML while preserving README-safe tags", async () => {
     const { container } = renderMarkdownPreview(
       `${readmeMarkdown}\n<script>alert("x")</script>\n<img src="javascript:alert(1)" alt="bad" />`,
@@ -249,9 +411,7 @@ describe("MarkdownPreview", () => {
 
     expect(container.querySelector("script")).toBeNull();
     expect(container.textContent).not.toContain('alert("x")');
-    expect(
-      container.querySelector('img[alt="bad"]')?.getAttribute("src"),
-    ).toBeNull();
+    expect(container.querySelector('img[alt="bad"]')).toBeNull();
   });
 
   it("opens relative markdown links in Monaco via the editor route", async () => {
