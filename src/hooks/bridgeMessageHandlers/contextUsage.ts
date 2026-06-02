@@ -24,6 +24,7 @@ export function contextUsageFromMessage(
     compactAtTokens: compactAtTokens ?? contextWindow,
     tokensUntilCompact: finiteNumber(data.tokensUntilCompact),
     ...(data.compacting === true ? { compacting: true } : {}),
+    ...(data.saturated === true ? { saturated: true } : {}),
   };
 }
 

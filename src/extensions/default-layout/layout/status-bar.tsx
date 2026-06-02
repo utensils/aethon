@@ -224,6 +224,7 @@ function contextUsageFromValue(value: unknown): ContextUsageState | null {
       finiteNumberOrNull(usage.compactAtTokens) ?? usage.contextWindow,
     tokensUntilCompact: finiteNumberOrNull(usage.tokensUntilCompact),
     ...(usage.compacting === true ? { compacting: true } : {}),
+    ...(usage.saturated === true ? { saturated: true } : {}),
   };
 }
 
@@ -251,14 +252,18 @@ function ContextMeter({ usage }: { usage: ContextUsageState }) {
     usage.percent ??
     (usage.tokens !== null ? (usage.tokens / usage.contextWindow) * 100 : null);
   const usageClass =
-    percentValue !== null && percentValue >= 90
+    usage.saturated || (percentValue !== null && percentValue >= 90)
       ? " is-danger"
       : percentValue !== null && percentValue >= 70
         ? " is-warning"
         : "";
+  const saturatedClass = usage.saturated ? " is-saturated" : "";
   const compactingClass = usage.compacting ? " is-compacting" : "";
-  const percentLabel =
-    percentValue === null ? "?" : `${Math.round(percentValue)}%`;
+  const percentLabel = usage.saturated
+    ? "FULL"
+    : percentValue === null
+      ? "?"
+      : `${Math.round(percentValue)}%`;
   const usedLabel =
     usage.tokens === null
       ? `?/${formatTokens(usage.contextWindow)}`
@@ -280,14 +285,19 @@ function ContextMeter({ usage }: { usage: ContextUsageState }) {
         )} tokens (${formatExactTokens(usage.tokensUntilCompact)} remaining)`
       : "Auto compaction: off",
     `Reserve: ${formatExactTokens(usage.reserveTokens)} tokens`,
+    usage.saturated
+      ? "Context full — older turns are being truncated (silent, lossy). Run /compact or /clear."
+      : null,
   ]
     .filter(Boolean)
     .join("\n");
   return (
     <span
-      className={`a2ui-status-context-chip${usageClass}${compactingClass}`}
+      className={`a2ui-status-context-chip${usageClass}${saturatedClass}${compactingClass}`}
       title={title}
-      aria-label={`Context ${percentLabel}`}
+      aria-label={
+        usage.saturated ? "Context full, truncating" : `Context ${percentLabel}`
+      }
     >
       <span className="a2ui-status-context-track" aria-hidden="true">
         <span

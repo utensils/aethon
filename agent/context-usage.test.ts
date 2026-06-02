@@ -66,6 +66,27 @@ describe("contextUsageSnapshot", () => {
     });
   });
 
+  it("flags saturated when authoritative tokens reach the window", () => {
+    const snapshot = contextUsageSnapshot(
+      stateWithCompaction(),
+      "tab-1",
+      recWithUsage({ tokens: 2_000, contextWindow: 2_000, percent: 100 }),
+    );
+
+    expect(snapshot?.saturated).toBe(true);
+    expect(snapshot?.tokensUntilCompact).toBe(0);
+  });
+
+  it("does not flag saturated below the window", () => {
+    const snapshot = contextUsageSnapshot(
+      stateWithCompaction(),
+      "tab-1",
+      recWithUsage({ tokens: 1_799, contextWindow: 2_000, percent: 89.95 }),
+    );
+
+    expect(snapshot?.saturated).toBeUndefined();
+  });
+
   it("keeps post-compaction usage unknown until pi reports fresh tokens", () => {
     const snapshot = contextUsageSnapshot(
       stateWithCompaction(),

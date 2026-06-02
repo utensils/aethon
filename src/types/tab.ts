@@ -78,6 +78,10 @@ export interface ContextUsageState {
   compactAtTokens: number;
   tokensUntilCompact: number | null;
   compacting?: boolean;
+  /** The model's authoritative usage has reached/exceeded the window. For
+   *  Ollama this means the server is silently truncating the oldest turns —
+   *  surfaced as a distinct "full" state rather than a calm 100%. */
+  saturated?: boolean;
 }
 
 export type TabKind = "agent" | "shell" | "editor";

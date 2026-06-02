@@ -76,4 +76,32 @@ describe("StatusBar context meter", () => {
     expect(screen.getByText("?/200k")).toBeTruthy();
     expect(screen.getByText("auto @184k")).toBeTruthy();
   });
+
+  it("surfaces a distinct FULL state when the window is saturated (Ollama truncating)", () => {
+    renderStatusBar({
+      status: "ready",
+      connection: "connected",
+      model: "ollama-localhost/qwen3.6:35b-a3b-coding-nvfp4",
+      contextUsage: {
+        model: "ollama-localhost/qwen3.6:35b-a3b-coding-nvfp4",
+        status: "known",
+        tokens: 262_144,
+        contextWindow: 262_144,
+        percent: 100,
+        autoCompactEnabled: true,
+        reserveTokens: 16_384,
+        compactAtTokens: 245_760,
+        tokensUntilCompact: 0,
+        saturated: true,
+      },
+    });
+
+    // Reads "FULL", not a calm "100%".
+    expect(screen.getByText("ctx FULL")).toBeTruthy();
+    const chip = screen.getByLabelText("Context full, truncating");
+    expect(chip).toBeTruthy();
+    expect(chip.className).toContain("is-saturated");
+    expect(chip.className).toContain("is-danger");
+    expect(chip.getAttribute("title")).toContain("truncated");
+  });
 });

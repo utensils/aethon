@@ -1,4 +1,8 @@
 import type { AethonAgentState, TabRecord } from "./state";
+import {
+  applyCachedOllamaContextWindow,
+  refreshOllamaContextWindow,
+} from "./ollama-context";
 import { modelKey } from "./tab-lifecycle/utils";
 
 const LIVE_CONTEXT_EMIT_INTERVAL_MS = 250;
@@ -15,6 +19,11 @@ export interface ContextUsageSnapshot {
   compactAtTokens: number;
   tokensUntilCompact: number | null;
   compacting?: boolean;
+  /** The model's own authoritative usage has reached/exceeded the context
+   *  window. For Ollama this means the server is silently truncating the
+   *  oldest turns and re-reporting the cap — a frozen "100%" that hides
+   *  data loss, distinct from a healthy near-full window. */
+  saturated?: boolean;
 }
 
 interface PiContextUsage {
@@ -61,6 +70,10 @@ export function contextUsageSnapshot(
   rec: TabRecord,
   options: { compacting?: boolean } = {},
 ): ContextUsageSnapshot | undefined {
+  // For Ollama-backed models the configured window is often a guess; if we've
+  // already probed the server's real window, write it onto the live model so
+  // pi's getContextUsage()/shouldCompact() below measure against the truth.
+  applyCachedOllamaContextWindow(rec.session.model);
   const usage = (
     rec.session as { getContextUsage?: () => PiContextUsage | undefined }
   ).getContextUsage?.();
@@ -76,6 +89,10 @@ export function contextUsageSnapshot(
   const transientTokens = Math.max(0, rec.contextUsageTransientTokens ?? 0);
   const tokens =
     baseTokens === null ? null : Math.min(baseTokens + transientTokens, contextWindow);
+  // The model's own authoritative count reached the window (Ollama pegs
+  // prompt_tokens at num_ctx and truncates). Key off baseTokens, not the
+  // transient-augmented/clamped tokens, so we only flag a real model report.
+  const saturated = baseTokens !== null && baseTokens >= contextWindow;
   const percent =
     (tokens !== baseTokens && tokens !== null
       ? (tokens / contextWindow) * 100
@@ -97,6 +114,7 @@ export function contextUsageSnapshot(
     tokensUntilCompact:
       tokens === null ? null : Math.max(compactAtTokens - tokens, 0),
     ...(options.compacting ? { compacting: true } : {}),
+    ...(saturated ? { saturated: true } : {}),
   };
 }
 
@@ -112,6 +130,13 @@ export function emitContextUsage(
   const snapshot = contextUsageSnapshot(state, tabId, rec, options);
   if (!snapshot) return;
   deps.send({ type: "context_usage", ...snapshot });
+  // Best-effort: probe the Ollama server's real window in the background. If it
+  // differs from the configured value, the model object is corrected and we
+  // re-emit with the truth. No-op (and no re-emit) for non-Ollama models or when
+  // the configured window already matches.
+  void refreshOllamaContextWindow(rec.session.model).then((changed) => {
+    if (changed) emitContextUsage(state, deps, tabId, rec, options);
+  });
 }
 
 export function emitContextUsageThrottled(
