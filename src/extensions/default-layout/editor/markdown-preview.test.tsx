@@ -314,6 +314,79 @@ describe("MarkdownPreview", () => {
     );
   });
 
+  it("keeps safe remote badge images mounted across preview rerenders", async () => {
+    const markdown =
+      "![Nix Flake](https://img.shields.io/badge/nix-flake-blue?logo=nixos)";
+    const { container, rerender } = renderMarkdownPreview(markdown, {
+      tabId: "editor-1",
+    });
+
+    await screen.findByRole("img", { name: "Nix Flake" });
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    const imageMutations: Array<{ added: number; removed: number }> = [];
+    const doc = container.querySelector(".ae-md-preview-doc");
+    expect(doc).not.toBeNull();
+    if (!doc) throw new Error("expected markdown preview document");
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        imageMutations.push({
+          added: Array.from(record.addedNodes).filter(
+            (node) =>
+              node instanceof HTMLImageElement ||
+              (node instanceof Element && node.querySelector("img")),
+          ).length,
+          removed: Array.from(record.removedNodes).filter(
+            (node) =>
+              node instanceof HTMLImageElement ||
+              (node instanceof Element && node.querySelector("img")),
+          ).length,
+        });
+      }
+    });
+    observer.observe(doc, { childList: true, subtree: true });
+
+    rerender(
+      <MarkdownPreview
+        component={markdownPreviewComponent({ tabId: "editor-2" })}
+        state={{}}
+        onEvent={vi.fn()}
+      />,
+    );
+    await Promise.resolve();
+    observer.disconnect();
+
+    const image = container.querySelector("img");
+    expect(image?.getAttribute("src")).toBe(
+      "https://img.shields.io/badge/nix-flake-blue?logo=nixos",
+    );
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(imageMutations.filter((mutation) => mutation.removed > 0)).toEqual(
+      [],
+    );
+
+    imageMutations.length = 0;
+    rerender(
+      <MarkdownPreview
+        component={markdownPreviewComponent({
+          refreshKey: 2,
+          tabId: "editor-2",
+        })}
+        state={{}}
+        onEvent={vi.fn()}
+      />,
+    );
+    await Promise.resolve();
+
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(imageMutations.filter((mutation) => mutation.removed > 0)).toEqual(
+      [],
+    );
+    expect(invoke).not.toHaveBeenCalledWith(
+      "fs_read_file_base64",
+      expect.anything(),
+    );
+  });
+
   it("strips unsafe image sources", async () => {
     const { container } = renderMarkdownPreview(
       '![Bad](javascript:alert(1))\n\n<img src="javascript:alert(1)" alt="raw bad" />',
