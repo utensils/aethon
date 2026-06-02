@@ -170,6 +170,14 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("notifyMinDurationSeconds"))
         .and_then(|v| v.as_u64())
         .map(|n| n.min(3600));
+    let thinking_visibility = ui
+        .and_then(|m| m.get("thinkingVisibility"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_visibility(Some(s)));
+    let tool_calls_visibility = ui
+        .and_then(|m| m.get("toolCallsVisibility"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_visibility(Some(s)));
 
     let model = agent
         .and_then(|m| m.get("model"))
@@ -281,6 +289,22 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             }
             None => {
                 ui_table.remove("notify_min_duration_seconds");
+            }
+        }
+        match thinking_visibility {
+            Some(v) => {
+                ui_table.insert("thinking_visibility", toml_edit::value(v));
+            }
+            None => {
+                ui_table.remove("thinking_visibility");
+            }
+        }
+        match tool_calls_visibility {
+            Some(v) => {
+                ui_table.insert("tool_calls_visibility", toml_edit::value(v));
+            }
+            None => {
+                ui_table.remove("tool_calls_visibility");
             }
         }
     }

@@ -30,6 +30,7 @@ import { handleShellConsent } from "./shellConsent";
 import { matchesExtensionRoute } from "./extensions";
 import { handleChatInput } from "./chatInput";
 import { handleChatMessages } from "./chatMessages";
+import { handleComposerPills } from "./composerPills";
 import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
 import { handleAuthProfiles } from "./authProfiles";
@@ -94,6 +95,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // input events (submit / change / cancel) still flow to
     // handleChatInput unchanged.
     ["type:chat-input", [handleQueuedMessages, handleChatInput]],
+    ["type:composer-visibility-pills", [handleComposerPills]],
     ["type:chat-history", [handleChatMessages]],
     ["type:main-canvas", [handleChatMessages]],
     ["type:queued-messages-popover", [handleQueuedMessages]],

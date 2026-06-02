@@ -26,6 +26,15 @@ pub struct UiConfig {
     /// Minimum turn duration (seconds) for the completion notification to
     /// fire. Sub-second turns rarely need a notification. Default 8.
     pub notify_min_duration_seconds: Option<u32>,
+    /// Global default visibility for the model's thinking blocks in the chat
+    /// transcript. Allowed: `"show"` (default), `"collapse"`, `"hide"`.
+    /// Unknown values fall back to `"show"`. Per-tab overridable at runtime
+    /// via the composer pills; this is the default new tabs inherit.
+    pub thinking_visibility: Option<String>,
+    /// Global default visibility for tool-call cards in the transcript.
+    /// Allowed: `"show"` (default), `"collapse"` (group consecutive cards),
+    /// `"hide"`. Unknown values fall back to `"show"`.
+    pub tool_calls_visibility: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -187,6 +196,19 @@ pub struct AethonConfig {
     pub guardrails: GuardrailsConfig,
 }
 
+/// Validate-and-normalize a tri-state transcript visibility value
+/// (`[ui] thinking_visibility` / `tool_calls_visibility`). Unknown strings,
+/// missing values, and parse failures all fall through to `"show"` so a typo
+/// can't silently hide the transcript.
+pub fn normalize_visibility(input: Option<&str>) -> &'static str {
+    match input {
+        Some("collapse") => "collapse",
+        Some("hide") => "hide",
+        // Includes Some("show"), Some(<unknown>), and None.
+        _ => "show",
+    }
+}
+
 /// Validate-and-normalize `[devshell] enabled`. Unknown values fall
 /// through to `"auto"` so a typo can't silently disable the feature.
 pub fn normalize_devshell_enabled(input: Option<&str>) -> &'static str {
@@ -296,6 +318,8 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .map(|n| n.min(3600))
         .unwrap_or(8);
     let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
+    let thinking_visibility = normalize_visibility(cfg.ui.thinking_visibility.as_deref());
+    let tool_calls_visibility = normalize_visibility(cfg.ui.tool_calls_visibility.as_deref());
     let default_command = cfg
         .shell
         .default_command
@@ -325,6 +349,8 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "restoreTabs": cfg.ui.restore_tabs,
             "notifyOnCompletion": notify_on_completion,
             "notifyMinDurationSeconds": notify_min_duration_seconds,
+            "thinkingVisibility": thinking_visibility,
+            "toolCallsVisibility": tool_calls_visibility,
         },
         "agent": {
             "model": cfg.agent.model,
@@ -795,6 +821,41 @@ enabled = "never"
         // Malformed TOML must never block a shell open — we just ignore it.
         let v = parse_project_devshell_override("=== broken ===");
         assert!(v.devshell.enabled.is_none());
+    }
+
+    // ── visibility (tri-state) ─────────────────────────────────────────────
+    #[test]
+    fn normalize_visibility_accepts_known_values() {
+        assert_eq!(normalize_visibility(Some("show")), "show");
+        assert_eq!(normalize_visibility(Some("collapse")), "collapse");
+        assert_eq!(normalize_visibility(Some("hide")), "hide");
+    }
+
+    #[test]
+    fn normalize_visibility_falls_back_to_show() {
+        assert_eq!(normalize_visibility(None), "show");
+        assert_eq!(normalize_visibility(Some("")), "show");
+        assert_eq!(normalize_visibility(Some("Hide")), "show");
+        assert_eq!(normalize_visibility(Some("gone")), "show");
+    }
+
+    #[test]
+    fn parse_config_toml_visibility_defaults_to_show() {
+        let v = parse_config_toml("");
+        assert_eq!(v["ui"]["thinkingVisibility"], "show");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "show");
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_visibility() {
+        let v = parse_config_toml(
+            "[ui]\nthinking_visibility = \"collapse\"\ntool_calls_visibility = \"hide\"\n",
+        );
+        assert_eq!(v["ui"]["thinkingVisibility"], "collapse");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "hide");
+        // Unknown clamps to show.
+        let v = parse_config_toml("[ui]\nthinking_visibility = \"yolo\"\n");
+        assert_eq!(v["ui"]["thinkingVisibility"], "show");
     }
 
     // ── guardrails ─────────────────────────────────────────────────────────

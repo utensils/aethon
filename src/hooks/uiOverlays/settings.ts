@@ -92,6 +92,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       voice: unknown;
       updates: unknown;
       devshell: unknown;
+      guardrails: unknown;
     }>,
   ) {
     setState((prev) => {
@@ -199,6 +200,13 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
       devshell: {
         ...(live?.devshell ?? {}),
         ...((pendingSnapshot as { devshell?: object }).devshell ?? {}),
+      },
+      // Preserve `[guardrails]` (soft anchor + hard-enforce default) across
+      // saves of unrelated sections — write_config drops any section it
+      // isn't handed, so omitting this would wipe the user's guardrails.
+      guardrails: {
+        ...(live?.guardrails ?? {}),
+        ...((pendingSnapshot as { guardrails?: object }).guardrails ?? {}),
       },
     };
     try {

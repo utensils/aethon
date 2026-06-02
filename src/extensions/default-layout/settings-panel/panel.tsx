@@ -131,6 +131,51 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
+            <Section id="view" title="View">
+              <Field label="Thinking blocks (global default)">
+                <select
+                  className="ae-settings-input"
+                  value={eff.ui.thinkingVisibility}
+                  onChange={(e) =>
+                    update({
+                      ui: {
+                        ...eff.ui,
+                        thinkingVisibility: e.target.value as
+                          | "show"
+                          | "collapse"
+                          | "hide",
+                      },
+                    })
+                  }
+                >
+                  <option value="show">Show</option>
+                  <option value="collapse">Collapse to a label</option>
+                  <option value="hide">Hide</option>
+                </select>
+              </Field>
+              <Field label="Tool calls (global default)">
+                <select
+                  className="ae-settings-input"
+                  value={eff.ui.toolCallsVisibility}
+                  onChange={(e) =>
+                    update({
+                      ui: {
+                        ...eff.ui,
+                        toolCallsVisibility: e.target.value as
+                          | "show"
+                          | "collapse"
+                          | "hide",
+                      },
+                    })
+                  }
+                >
+                  <option value="show">Show</option>
+                  <option value="collapse">Collapse &amp; group</option>
+                  <option value="hide">Hide</option>
+                </select>
+              </Field>
+            </Section>
+
             <Section id="notifications" title="Notifications">
               <Field label="Notify on agent completion (when unfocused)">
                 <input

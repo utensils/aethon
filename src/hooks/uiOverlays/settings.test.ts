@@ -24,6 +24,8 @@ const baseConfig: AethonConfig = {
     restoreTabs: false,
     notifyOnCompletion: true,
     notifyMinDurationSeconds: 8,
+    thinkingVisibility: "show",
+    toolCallsVisibility: "show",
   },
   agent: { model: "openai/gpt-5.5" },
   shell: {

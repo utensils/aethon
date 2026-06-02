@@ -36,6 +36,7 @@ import {
   VcsStatus,
 } from "./variation-components";
 import { SourceControlPanel } from "./sidebar/source-control-panel";
+import { ComposerVisibilityPills } from "./composer-visibility-pills";
 import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
 import { SettingsPanel } from "./settings-panel";
@@ -69,6 +70,9 @@ export const defaultLayoutExtension: A2UIExtension = {
     sidebar: Sidebar,
     "chat-history": ChatHistory,
     "chat-input": ChatInput,
+    // Composer-bar tri-state visibility pills (Thinking / Tool calls) with a
+    // "…" popover to promote the per-session choice to the global default.
+    "composer-visibility-pills": ComposerVisibilityPills,
     // Popover above the composer listing client-held queued messages
     // with per-row edit / steer / delete. Drained by `useQueuedDispatch`
     // on the next idle. Replaceable via

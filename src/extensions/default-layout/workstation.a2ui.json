@@ -191,18 +191,34 @@
           }
         },
         {
-          "id": "chat-input",
-          "type": "chat-input",
+          "id": "composer-area",
+          "type": "container",
           "props": {
             "area": "composer",
             "visible": { "$ref": "/agentTabActive" },
-            "value": { "$ref": "/draft" },
-            "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
-            "disabled": { "$ref": "/waiting" },
-            "queueCount": { "$ref": "/queueCount" },
-            "commands": { "$ref": "/slashCommands" },
-            "onSubmit": "chat:send"
-          }
+            "direction": "column",
+            "gap": 0,
+            "className": "ae-composer-area"
+          },
+          "children": [
+            {
+              "id": "composer-visibility-pills",
+              "type": "composer-visibility-pills",
+              "props": {}
+            },
+            {
+              "id": "chat-input",
+              "type": "chat-input",
+              "props": {
+                "value": { "$ref": "/draft" },
+                "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
+                "disabled": { "$ref": "/waiting" },
+                "queueCount": { "$ref": "/queueCount" },
+                "commands": { "$ref": "/slashCommands" },
+                "onSubmit": "chat:send"
+              }
+            }
+          ]
         },
         {
           "id": "status-bar",
