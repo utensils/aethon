@@ -11,12 +11,14 @@ import { resolveString } from "../../../utils/dataBinding";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { StringValue } from "../../../types/a2ui";
 import type { DevshellEntry } from "../../../hooks/useDevshell";
+import type { ContextUsageState } from "../../../types/tab";
 
 export function StatusBar({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
     left?: StringValue;
     center?: StringValue;
     right?: StringValue;
+    context?: { $ref: string };
     /** Optional segments rendered between `left` and `center`. Each is
      *  a small chip carrying project / worktree / branch context.
      *  Resolved by reading the active project + active worktree from
@@ -27,6 +29,9 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const left = props.left ? resolveString(props.left, state) : "";
   const center = props.center ? resolveString(props.center, state) : "";
   const right = props.right ? resolveString(props.right, state) : "";
+  const contextUsage = props.context
+    ? contextUsageFromValue(resolveValue(state, props.context.$ref))
+    : null;
 
   // Project / worktree / branch chip — derived from the live sidebar
   // projects list so a single source of truth drives both the sidebar
@@ -128,6 +133,7 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
           <span className="a2ui-status-devshell-label">{devshellLabel}</span>
         </span>
       ) : null}
+      {contextUsage ? <ContextMeter usage={contextUsage} /> : null}
       <span className="a2ui-status-center">{center}</span>
       <span className="a2ui-status-right">{right}</span>
     </footer>
@@ -194,4 +200,104 @@ function devshellChipTooltip(entry: DevshellEntry): string | null {
       break;
   }
   return lines.join("\n");
+}
+
+function contextUsageFromValue(value: unknown): ContextUsageState | null {
+  if (!value || typeof value !== "object") return null;
+  const usage = value as Partial<ContextUsageState>;
+  if (
+    typeof usage.contextWindow !== "number" ||
+    !Number.isFinite(usage.contextWindow) ||
+    usage.contextWindow <= 0
+  ) {
+    return null;
+  }
+  return {
+    model: typeof usage.model === "string" ? usage.model : "",
+    status: usage.status === "known" ? "known" : "unknown",
+    tokens: finiteNumberOrNull(usage.tokens),
+    contextWindow: usage.contextWindow,
+    percent: finiteNumberOrNull(usage.percent),
+    autoCompactEnabled: usage.autoCompactEnabled === true,
+    reserveTokens: finiteNumberOrNull(usage.reserveTokens) ?? 0,
+    compactAtTokens:
+      finiteNumberOrNull(usage.compactAtTokens) ?? usage.contextWindow,
+    tokensUntilCompact: finiteNumberOrNull(usage.tokensUntilCompact),
+    ...(usage.compacting === true ? { compacting: true } : {}),
+  };
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatTokens(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "?";
+  if (value < 1000) return value.toLocaleString("en-US");
+  if (value < 10_000) return `${(value / 1000).toFixed(1)}k`;
+  if (value < 1_000_000) return `${Math.round(value / 1000)}k`;
+  if (value < 10_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  return `${Math.round(value / 1_000_000)}M`;
+}
+
+function formatExactTokens(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString("en-US")
+    : "unknown";
+}
+
+function ContextMeter({ usage }: { usage: ContextUsageState }) {
+  const percentValue =
+    usage.percent ??
+    (usage.tokens !== null ? (usage.tokens / usage.contextWindow) * 100 : null);
+  const usageClass =
+    percentValue !== null && percentValue >= 90
+      ? " is-danger"
+      : percentValue !== null && percentValue >= 70
+        ? " is-warning"
+        : "";
+  const compactingClass = usage.compacting ? " is-compacting" : "";
+  const percentLabel =
+    percentValue === null ? "?" : `${Math.round(percentValue)}%`;
+  const usedLabel =
+    usage.tokens === null
+      ? `?/${formatTokens(usage.contextWindow)}`
+      : `${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)}`;
+  const autoLabel = usage.autoCompactEnabled
+    ? `auto @${formatTokens(usage.compactAtTokens)}`
+    : "auto off";
+  const title = [
+    usage.model ? `Model: ${usage.model}` : null,
+    `Context used: ${formatExactTokens(usage.tokens)} of ${formatExactTokens(
+      usage.contextWindow,
+    )} tokens`,
+    usage.percent === null
+      ? "Usage is unknown until the next assistant response."
+      : `Usage: ${usage.percent.toFixed(1)}%`,
+    usage.autoCompactEnabled
+      ? `Next auto compaction: ${formatExactTokens(
+          usage.compactAtTokens,
+        )} tokens (${formatExactTokens(usage.tokensUntilCompact)} remaining)`
+      : "Auto compaction: off",
+    `Reserve: ${formatExactTokens(usage.reserveTokens)} tokens`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <span
+      className={`a2ui-status-context-chip${usageClass}${compactingClass}`}
+      title={title}
+      aria-label={`Context ${percentLabel}`}
+    >
+      <span className="a2ui-status-context-track" aria-hidden="true">
+        <span
+          className="a2ui-status-context-fill"
+          style={{ width: `${Math.max(0, Math.min(percentValue ?? 0, 100))}%` }}
+        />
+      </span>
+      <span className="a2ui-status-context-label">ctx {percentLabel}</span>
+      <span className="a2ui-status-context-detail">{usedLabel}</span>
+      <span className="a2ui-status-context-auto">{autoLabel}</span>
+    </span>
+  );
 }

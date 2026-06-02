@@ -9,6 +9,7 @@ import {
   ensureTab,
 } from "./tab-lifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
+import { emitContextUsage } from "./context-usage";
 
 export async function handleChat(
   state: AethonAgentState,
@@ -185,6 +186,7 @@ export async function handleSetModel(
   deps.scheduleStateFileWrite();
   ensurePickerHasModel(state, deps, next);
   deps.send({ type: "model_changed", tabId, model: msg.id });
+  emitContextUsage(state, deps, tabId, tab);
 }
 
 export function handleStop(

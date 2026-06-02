@@ -211,7 +211,8 @@
             "area": "status",
             "left": { "$ref": "/status" },
             "center": { "$ref": "/connection" },
-            "right": { "$ref": "/model" }
+            "right": { "$ref": "/model" },
+            "context": { "$ref": "/contextUsage" }
           }
         }
       ]
@@ -221,6 +222,7 @@
     "status": "starting…",
     "connection": "disconnected",
     "model": "—",
+    "contextUsage": null,
     "draft": "",
     "waiting": false,
     "queueCount": 0,

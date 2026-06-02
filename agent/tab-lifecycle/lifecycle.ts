@@ -25,6 +25,7 @@ import { logger } from "../logger";
 import { authProfileServicesForTab } from "../auth-profiles";
 import { findSessionFileMatchingCwd } from "../session-history";
 import type { AethonAgentState, TabRecord } from "../state";
+import { contextUsageSnapshot, emitContextUsage } from "../context-usage";
 import { handleSessionEvent } from "./events";
 import { installAethonRetryClassifier } from "./retry";
 import {
@@ -159,7 +160,9 @@ export async function ensureTab(
     type: "tab_ready",
     tabId,
     model: session.model ? modelKey(session.model) : "",
+    contextUsage: contextUsageSnapshot(state, tabId, rec),
   });
+  emitContextUsage(state, deps, tabId, rec);
 
   return rec;
 }

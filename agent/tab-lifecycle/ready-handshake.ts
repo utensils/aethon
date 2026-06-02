@@ -12,6 +12,7 @@
 
 import type { AethonAgentState } from "../state";
 import { authProfilesSnapshot } from "../auth-profiles";
+import { contextUsageSnapshot } from "../context-usage";
 import { defaultModelKey } from "./models";
 import { refreshPiSlashCommands } from "./slash-commands";
 import type { TabLifecycleDeps } from "./utils";
@@ -39,6 +40,7 @@ export function emitReady(
       model: t.session.model ? modelKey(t.session.model) : "",
       cwd: state.tabProjectCwds.get(t.id),
       authProfileId: state.tabAuthProfileIds.get(t.id),
+      contextUsage: contextUsageSnapshot(state, t.id, t),
     })),
     extensionComponents: Object.fromEntries(state.extensionComponents),
     extensionState: state.extensionStateTree,

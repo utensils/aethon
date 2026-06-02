@@ -1,5 +1,6 @@
 import type { BridgeMessageHandler } from "./types";
 import { recomputeModelPicker } from "../../utils/modelPicker";
+import { contextUsageFromMessage } from "./contextUsage";
 
 /** Bridge confirms a per-tab pi session is up and tells us its chosen
  *  model. Update the tab record so the sidebar can reflect it on next
@@ -9,7 +10,14 @@ import { recomputeModelPicker } from "../../utils/modelPicker";
 export const handleTabReady: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
   const model = (data.model as string) ?? "";
-  ctx.updateTab(tabId, (tab) => ({ ...tab, model }));
+  const contextUsage = contextUsageFromMessage(
+    (data.contextUsage as Record<string, unknown> | undefined) ?? {},
+  );
+  ctx.updateTab(tabId, (tab) => ({
+    ...tab,
+    model,
+    ...(contextUsage ? { contextUsage } : {}),
+  }));
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({
       ...prev,
