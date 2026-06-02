@@ -177,7 +177,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let tool_calls_visibility = ui
         .and_then(|m| m.get("toolCallsVisibility"))
         .and_then(|v| v.as_str())
-        .map(|s| helpers::normalize_visibility(Some(s)));
+        .map(|s| helpers::normalize_tool_visibility(Some(s)));
 
     let model = agent
         .and_then(|m| m.get("model"))

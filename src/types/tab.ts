@@ -1,6 +1,6 @@
 import type { ChatAttachment, ChatMessage } from "./a2ui";
 import type { ShareMode } from "../utils/shareMode";
-import type { VisibilityMode } from "../config";
+import type { ToolCallsMode, VisibilityMode } from "../config";
 
 /**
  * Per-tab transcript visibility overrides. When a field is absent (or null)
@@ -11,7 +11,7 @@ import type { VisibilityMode } from "../config";
  */
 export interface TabVisibilityOverrides {
   thinking?: VisibilityMode | null;
-  toolCalls?: VisibilityMode | null;
+  toolCalls?: ToolCallsMode | null;
 }
 
 // M6 P1: shell-tab metadata. Present iff Tab.kind === "shell".

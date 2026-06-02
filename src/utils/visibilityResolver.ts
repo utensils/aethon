@@ -1,9 +1,14 @@
-import { normalizeVisibility, type VisibilityMode } from "../config";
+import {
+  normalizeToolCallsVisibility,
+  normalizeVisibility,
+  type ToolCallsMode,
+  type VisibilityMode,
+} from "../config";
 import type { Tab } from "../types/tab";
 
 export interface ResolvedVisibility {
   thinking: VisibilityMode;
-  toolCalls: VisibilityMode;
+  toolCalls: ToolCallsMode;
 }
 
 /**
@@ -23,12 +28,12 @@ export function resolveVisibility(
     toolCalls?: unknown;
   };
   const globalThinking = normalizeVisibility(global.thinking);
-  const globalTool = normalizeVisibility(global.toolCalls);
+  const globalTool = normalizeToolCallsVisibility(global.toolCalls);
 
   const overrides = findTabOverrides(state, tabId);
   return {
     thinking: pick(overrides?.thinking, globalThinking),
-    toolCalls: pick(overrides?.toolCalls, globalTool),
+    toolCalls: pickTool(overrides?.toolCalls, globalTool),
   };
 }
 
@@ -54,4 +59,23 @@ function pick(
     override === "hide"
     ? override
     : fallback;
+}
+
+/** Tool-call flavor of `pick`. Accepts the five tool modes; a legacy
+ *  `"collapse"` override (persisted by PR #204) migrates to `group-turn`;
+ *  null/undefined/unknown defer to the global default. Typed `unknown` because
+ *  the value can come from on-disk session snapshots that predate the enum. */
+function pickTool(override: unknown, fallback: ToolCallsMode): ToolCallsMode {
+  switch (override) {
+    case "show":
+    case "group-turn":
+    case "group-run":
+    case "group-block":
+    case "hide":
+      return override;
+    case "collapse":
+      return "group-turn";
+    default:
+      return fallback;
+  }
 }
