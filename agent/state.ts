@@ -363,6 +363,16 @@ export class AethonAgentState {
   readonly tabs = new Map<string, TabRecord>();
   readonly tabProjectCwds = new Map<string, string>();
   readonly tabAuthProfileIds = new Map<string, string>();
+  /** Per-tab hard project-root guardrail override. When unset for a tab, the
+   *  source guard falls back to {@link hardEnforceProjectRootDefault}. Set from
+   *  the `hardEnforce` field that rides each `chat` message (the frontend's
+   *  per-tab toggle), so it's always current before a turn's tool calls and
+   *  survives an agent respawn. Read live by the wrapWithSourceGuard closure. */
+  readonly tabHardEnforce = new Map<string, boolean>();
+  /** Global default for the hard project-root guardrail, from
+   *  `[guardrails] hard_enforce_project_root` via the
+   *  AETHON_HARD_ENFORCE_PROJECT_ROOT env at spawn. */
+  hardEnforceProjectRootDefault = false;
   /** Tab whose pi turn is currently running. Set when a chat / handler
    *  prompt is dispatched; cleared on agent_end. Used by setState so
    *  direct globalThis.aethon.setState calls from the agent or extensions

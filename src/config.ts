@@ -5,6 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ShareMode } from "./utils/shareMode";
 import { SHARE_MODES } from "./utils/shareMode";
 
+/** Tri-state visibility for transcript sections (thinking / tool calls):
+ *  `show` (full), `collapse` (grouped/labelled), `hide` (removed). */
+export type VisibilityMode = "show" | "collapse" | "hide";
+
 export interface AethonConfig {
   ui: {
     /** Theme id from `[ui] theme = "..."`. Built-ins are
@@ -22,6 +26,12 @@ export interface AethonConfig {
     /** Don't fire the completion notification for turns shorter than
      *  this many seconds. Default 8 — sub-second turns rarely need it. */
     notifyMinDurationSeconds: number;
+    /** Global default visibility for the model's thinking blocks. Per-tab
+     *  overridable via the composer pills; `show` by default. */
+    thinkingVisibility: VisibilityMode;
+    /** Global default visibility for tool-call cards. `collapse` groups
+     *  consecutive cards into one cluster; `show` by default. */
+    toolCallsVisibility: VisibilityMode;
   };
   agent: {
     model: string | null;
@@ -78,6 +88,15 @@ export interface AethonConfig {
     /** Re-resolve when watched lockfile / marker file mtime changes. */
     refreshOnLockfileChange: boolean;
   };
+  guardrails: {
+    /** Optional advisory text appended to the per-turn working-context the
+     *  agent injects. Reminds the model of project rules; never enforces.
+     *  Null/empty → no anchor. From `[guardrails] soft_prompt_anchor`. */
+    softPromptAnchor: string | null;
+    /** When true, the agent hard-blocks write/edit/bash tool calls outside
+     *  the active tab's project root. Default false. Per-tab overridable. */
+    hardEnforceProjectRoot: boolean;
+  };
 }
 
 const DEFAULTS: AethonConfig = {
@@ -87,6 +106,8 @@ const DEFAULTS: AethonConfig = {
     restoreTabs: false,
     notifyOnCompletion: true,
     notifyMinDurationSeconds: 8,
+    thinkingVisibility: "show",
+    toolCallsVisibility: "show",
   },
   agent: { model: null },
   shell: {
@@ -112,6 +133,10 @@ const DEFAULTS: AethonConfig = {
     mode: "auto",
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
+  },
+  guardrails: {
+    softPromptAnchor: null,
+    hardEnforceProjectRoot: false,
   },
 };
 
@@ -157,6 +182,8 @@ export function getConfig(): Promise<AethonConfig> {
             obj.ui.notifyMinDurationSeconds >= 0
               ? obj.ui.notifyMinDurationSeconds
               : 8,
+          thinkingVisibility: normalizeVisibility(obj?.ui?.thinkingVisibility),
+          toolCallsVisibility: normalizeVisibility(obj?.ui?.toolCallsVisibility),
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
@@ -220,6 +247,14 @@ export function getConfig(): Promise<AethonConfig> {
               ? obj.devshell.refreshOnLockfileChange
               : true,
         },
+        guardrails: {
+          softPromptAnchor:
+            typeof obj?.guardrails?.softPromptAnchor === "string" &&
+            obj.guardrails.softPromptAnchor.trim().length > 0
+              ? obj.guardrails.softPromptAnchor
+              : null,
+          hardEnforceProjectRoot: obj?.guardrails?.hardEnforceProjectRoot === true,
+        },
       };
     } catch (err) {
       console.warn("read_config failed:", err);
@@ -231,6 +266,11 @@ export function getConfig(): Promise<AethonConfig> {
 
 function normalizeTheme(t: unknown): string | null {
   return typeof t === "string" && t.length > 0 ? t : null;
+}
+
+/** Mirrors `normalize_visibility` in helpers.rs — unknown/missing → "show". */
+export function normalizeVisibility(value: unknown): VisibilityMode {
+  return value === "collapse" || value === "hide" ? value : "show";
 }
 
 /** Mirrors `normalize_default_share_mode` in helpers.rs. Belt-and-braces:

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   AethonAgentState,
   type AethonAgentStateOptions,
+  type TabRecord,
 } from "./state";
 import {
   getRuntimeSnapshot,
@@ -56,6 +57,25 @@ describe("getRuntimeSnapshot", () => {
     expect(snap.extensions).toEqual([{ name: "hello", source: "directory" }]);
     expect(snap.themes).toEqual([{ id: "twilight", label: "Twilight" }]);
     expect(snap.components).toEqual(["card-x"]);
+  });
+
+  it("annotates each tab with its per-tab working directory", () => {
+    const state = new AethonAgentState(makeOpts("/tmp/aethon-rs"));
+    state.tabProjectCwds.set("t1", "/work/repo");
+    state.tabs.set("t1", {
+      id: "t1",
+      session: { model: null, messages: [] },
+    } as unknown as TabRecord);
+    // A tab with no recorded cwd omits the field entirely (no `cwd: undefined`).
+    state.tabs.set("t2", {
+      id: "t2",
+      session: { model: null, messages: [] },
+    } as unknown as TabRecord);
+    const snap = getRuntimeSnapshot(state);
+    expect(snap.tabs).toEqual([
+      { id: "t1", model: "", messageCount: 0, cwd: "/work/repo" },
+      { id: "t2", model: "", messageCount: 0 },
+    ]);
   });
 
   it("includes layout structure when boot layout is loaded", () => {

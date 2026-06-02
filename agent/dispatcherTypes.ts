@@ -35,6 +35,8 @@ export interface InboundMessage {
   mode?: "normal" | "steer";
   cwd?: string;
   model?: string;
+  /** Per-tab hard project-root guardrail override, carried on `chat`. */
+  hardEnforce?: boolean;
   name?: string;
   args?: string;
   id?: string;

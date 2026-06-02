@@ -76,6 +76,31 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
+  it("round-trips per-tab visibilityOverrides across save + restore", () => {
+    // Per-session thinking/tool-call visibility must survive reload AND a
+    // full relaunch (both go through this snapshot). restoreTabRecord spreads
+    // `...t`, so the field carries through — this test is the tripwire if
+    // that ever regresses to a strict allowlist.
+    const tab = {
+      ...makeEmptyTab("tab-vis", "Vis"),
+      visibilityOverrides: {
+        thinking: "hide" as const,
+        toolCalls: "collapse" as const,
+      },
+      hardEnforceProjectRoot: true,
+    };
+    saveSessionUiSnapshot({ tabs: [tab], activeTabId: "tab-vis" });
+    expect(loadSessionUiSnapshot()).toMatchObject({
+      tabs: [
+        {
+          id: "tab-vis",
+          visibilityOverrides: { thinking: "hide", toolCalls: "collapse" },
+          hardEnforceProjectRoot: true,
+        },
+      ],
+    });
+  });
+
   it("persists buckets-only when the active workspace has no sessions", () => {
     // User sitting on a project overview while agents run in its worktrees:
     // state.tabs is empty but a backgrounded bucket has a session.

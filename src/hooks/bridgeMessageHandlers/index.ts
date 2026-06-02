@@ -47,6 +47,7 @@ import { handleSessionHistory } from "./sessionHistory";
 import { handleShellQuery } from "./shellQuery";
 import { handleDashboardQuery } from "./dashboardQuery";
 import { handleDevshellQuery } from "./devshellQuery";
+import { handleGitQuery } from "./gitQuery";
 import { handleStatePatch } from "./statePatch";
 import { handleTabClosed } from "./tabClosed";
 import { handleTabReady } from "./tabReady";
@@ -91,6 +92,7 @@ export const bridgeMessageHandlers: Readonly<
   shell_query: handleShellQuery,
   dashboard_query: handleDashboardQuery,
   devshell_query: handleDevshellQuery,
+  git_query: handleGitQuery,
   state_patch: handleStatePatch,
   tab_closed: handleTabClosed,
   tab_ready: handleTabReady,

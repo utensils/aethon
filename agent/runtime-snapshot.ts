@@ -66,6 +66,9 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       id: t.id,
       model: t.session.model ? modelKey(t.session.model) : "",
       messageCount: t.session.messages?.length ?? 0,
+      ...(state.tabProjectCwds.has(t.id)
+        ? { cwd: state.tabProjectCwds.get(t.id) }
+        : {}),
     })),
     eventHandlers: state.a2uiEventHandlers.map(({ match }) => ({
       ...(match.templateRootType

@@ -8141,3 +8141,169 @@ button.ae-vcs-chip:focus-visible {
     transition: none;
   }
 }
+
+/* ── Composer visibility pills (tri-state Thinking / Tool calls) ──────── */
+.ae-composer-area {
+  min-width: 0;
+}
+.ae-composer-pills {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 2px;
+  justify-content: flex-end;
+}
+.ae-vis-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+.ae-vis-pill:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.ae-vis-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot {
+  background: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.ae-vis-pill[data-mode="hide"] {
+  color: color-mix(in oklab, var(--text-dim) 70%, transparent);
+}
+.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+.ae-vis-pill-state {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+.ae-vis-more {
+  position: relative;
+  display: inline-flex;
+}
+.ae-vis-more-btn {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 8px;
+}
+.ae-vis-more-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.ae-vis-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.ae-vis-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 41;
+  min-width: 220px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  padding: 4px;
+}
+.ae-vis-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.ae-vis-menu-item:hover {
+  background: var(--bg-hover);
+}
+.ae-vis-menu-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ae-vis-menu-check {
+  display: inline-flex;
+  justify-content: center;
+  width: 12px;
+  color: var(--accent);
+  flex: none;
+}
+.ae-vis-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* ── Collapsed tool-call cluster (tool-call visibility = "collapse") ──── */
+.ae-tool-group {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+.ae-tool-group[data-expanded="true"] {
+  width: 100%;
+  border-style: solid;
+  background: var(--bg-elev);
+}
+.ae-tool-group-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.ae-tool-group-summary:hover {
+  color: var(--text);
+}
+.ae-tool-group-caret {
+  font-size: 10px;
+  opacity: 0.8;
+}
+.ae-tool-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 8px 8px;
+}

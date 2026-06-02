@@ -13,6 +13,16 @@ import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
 import {
+  resolveVisibility,
+  type ResolvedVisibility,
+} from "../../utils/visibilityResolver";
+import {
+  groupMessages,
+  groupKey,
+  type MessageGroup,
+} from "../../utils/toolCardGrouping";
+import type { VisibilityMode } from "../../config";
+import {
   CHAT_MARKDOWN_PROPS,
   CHAT_STREAMING_MARKDOWN_PROPS,
 } from "./markdown-adapter";
@@ -123,13 +133,17 @@ function queuedDeliveryLabels(messages: ChatMessage[]): Map<string, string> {
 function ThinkingBlock({
   children,
   complete = true,
+  collapsed = false,
 }: {
   children: string;
   complete?: boolean;
+  /** When true (visibility = "collapse") the block never auto-expands, even
+   *  while streaming — it stays a quiet "Thinking" label the user can open. */
+  collapsed?: boolean;
 }) {
   const label = complete ? "Thinking" : "Thinking...";
   return (
-    <details className="a2ui-thinking-block" open={!complete}>
+    <details className="a2ui-thinking-block" open={collapsed ? false : !complete}>
       <summary>{label}</summary>
       <div className="a2ui-thinking-content a2ui-markdown">
         <ReactMarkdown {...CHAT_MARKDOWN_PROPS}>{children}</ReactMarkdown>
@@ -145,9 +159,11 @@ function hasFencedCodeMarker(text: string | undefined): boolean {
 function MarkdownWithThinking({
   text,
   streamingFences = false,
+  thinkingVisibility = "show",
 }: {
   text: string;
   streamingFences?: boolean;
+  thinkingVisibility?: VisibilityMode;
 }) {
   const markdownProps = streamingFences
     ? CHAT_STREAMING_MARKDOWN_PROPS
@@ -157,8 +173,13 @@ function MarkdownWithThinking({
       {splitThinkingBlocks(text).map((segment, index) => {
         if (!segment.content) return null;
         if (segment.type === "thinking") {
+          if (thinkingVisibility === "hide") return null;
           return (
-            <ThinkingBlock key={index} complete={segment.closed !== false}>
+            <ThinkingBlock
+              key={index}
+              complete={segment.closed !== false}
+              collapsed={thinkingVisibility === "collapse"}
+            >
               {segment.content}
             </ThinkingBlock>
           );
@@ -211,6 +232,7 @@ const ChatMessageRow = memo(
     onEvent,
     deliveryText,
     isLatest,
+    thinkingVisibility = "show",
   }: {
     message: ChatMessage;
     state: Record<string, unknown>;
@@ -220,6 +242,7 @@ const ChatMessageRow = memo(
     onEvent?: BuiltinComponentProps["onEvent"];
     deliveryText?: string;
     isLatest?: boolean;
+    thinkingVisibility?: VisibilityMode;
   }) {
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -268,8 +291,11 @@ const ChatMessageRow = memo(
             )}
           </span>
         )}
-        {message.thinking && (
-          <ThinkingBlock complete={Boolean(message.text)}>
+        {message.thinking && thinkingVisibility !== "hide" && (
+          <ThinkingBlock
+            complete={Boolean(message.text)}
+            collapsed={thinkingVisibility === "collapse"}
+          >
             {message.thinking}
           </ThinkingBlock>
         )}
@@ -278,6 +304,7 @@ const ChatMessageRow = memo(
             <MemoMarkdownWithThinking
               text={message.text}
               streamingFences={streamingFences}
+              thinkingVisibility={thinkingVisibility}
             />
           </div>
         )}
@@ -297,6 +324,7 @@ const ChatMessageRow = memo(
     prev.prevRole === next.prevRole &&
     prev.onEvent === next.onEvent &&
     prev.deliveryText === next.deliveryText &&
+    prev.thinkingVisibility === next.thinkingVisibility &&
     (!next.message.text ||
       !next.isLatest ||
       prev.state.waiting === next.state.waiting) &&
@@ -331,6 +359,54 @@ function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
   );
 }
 
+/** Collapsed cluster of consecutive completed tool-call cards (visibility =
+ *  "collapse"). One disclosure row labelled "N tool calls" that expands to
+ *  the individual cards. Expansion is local UI state in VirtualMessageList. */
+function ToolGroupRow({
+  group,
+  state,
+  tabId,
+  expanded,
+  onToggle,
+}: {
+  group: Extract<MessageGroup, { type: "tool-group" }>;
+  state: Record<string, unknown>;
+  tabId?: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const count = group.messages.length;
+  return (
+    <div className="ae-tool-group" data-expanded={expanded ? "true" : "false"}>
+      <button
+        type="button"
+        className="ae-tool-group-summary"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="ae-tool-group-caret" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
+        </span>
+        <span className="ae-tool-group-label">{count} tool calls</span>
+      </button>
+      {expanded && (
+        <div className="ae-tool-group-body">
+          {group.messages.map((m) =>
+            m.a2ui ? (
+              <A2UIRenderer
+                key={m.id}
+                payload={m.a2ui}
+                state={state}
+                tabId={tabId}
+              />
+            ) : null,
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface VirtualMessageListProps {
   messages: ChatMessage[];
   state: Record<string, unknown>;
@@ -341,6 +417,8 @@ interface VirtualMessageListProps {
   className: string;
   scrollToMatch?: string;
   footerContext?: CanvasFooterContext;
+  /** Resolved per-tab transcript visibility (thinking + tool calls). */
+  visibility: ResolvedVisibility;
 }
 
 /** Virtualized chat feed. Replaces the old hand-rolled window + useStickyScroll:
@@ -356,6 +434,7 @@ function VirtualMessageList({
   className,
   scrollToMatch,
   footerContext,
+  visibility,
 }: VirtualMessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -368,6 +447,25 @@ function VirtualMessageList({
     () => queuedDeliveryLabels(messages),
     [messages],
   );
+  // Tool-call visibility transforms the flat list into render groups: `show`
+  // → one single per message, `hide` → tool cards dropped, `collapse` → runs
+  // of completed tool cards folded into expandable clusters. Virtuoso renders
+  // groups, so its data length / keys track groups, not raw messages.
+  const groups = useMemo(
+    () => groupMessages(messages, visibility.toolCalls),
+    [messages, visibility.toolCalls],
+  );
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleGroup = useCallback((id: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const updateCanScroll = useCallback(() => {
     const el = scrollerElRef.current;
     setCanScroll(
@@ -447,8 +545,12 @@ function VirtualMessageList({
     if (!scrollToMatch || scrollToMatch === prevScrollToMatch.current) return;
     prevScrollToMatch.current = scrollToMatch;
     const needle = scrollToMatch.toLowerCase();
-    const idx = messages.findIndex((m) =>
-      (m.text ?? "").toLowerCase().includes(needle),
+    // Search runs over groups so the scroll index matches Virtuoso's data.
+    // Only text-bearing single rows can match (tool clusters carry no text).
+    const idx = groups.findIndex(
+      (g) =>
+        g.type === "single" &&
+        (g.message.text ?? "").toLowerCase().includes(needle),
     );
     if (idx < 0) return;
     virtuosoRef.current?.scrollToIndex({ index: idx, align: "center" });
@@ -456,37 +558,73 @@ function VirtualMessageList({
     setFlashIndex(idx);
     const timer = window.setTimeout(() => setFlashIndex(null), 1200);
     return () => window.clearTimeout(timer);
-  }, [messages, scrollToMatch]);
+  }, [groups, scrollToMatch]);
 
   const itemContent = useCallback(
-    (index: number, m: ChatMessage) => (
+    (index: number, group: MessageGroup) => {
       // flow-root establishes a BFC so the row's vertical margins (role-change
       // spacing, etc.) are CONTAINED in this wrapper rather than collapsing
       // through it. Virtuoso measures the wrapper, so the margins are counted —
       // bare margins on the row would escape measurement and drift the
       // follow-to-bottom / scrollToIndex offsets in long transcripts.
-      <div
-        className={`a2ui-msg-row${index === 0 ? " a2ui-msg-row-first" : ""}${
-          index === messages.length - 1 ? " a2ui-msg-row-last" : ""
-        }`}
-      >
-        <ChatMessageRow
-          message={m}
-          state={state}
-          tabId={tabId}
-          className={
-            index === flashIndex
-              ? `${rowClassName} a2ui-chat-message-flash`
-              : rowClassName
-          }
-          prevRole={index > 0 ? messages[index - 1].role : undefined}
-          onEvent={onEvent}
-          deliveryText={queuedLabels.get(m.id)}
-          isLatest={index === messages.length - 1}
-        />
-      </div>
-    ),
-    [state, tabId, rowClassName, flashIndex, messages, onEvent, queuedLabels],
+      const rowClass = `a2ui-msg-row${index === 0 ? " a2ui-msg-row-first" : ""}${
+        index === groups.length - 1 ? " a2ui-msg-row-last" : ""
+      }`;
+      if (group.type === "tool-group") {
+        return (
+          <div className={rowClass}>
+            <ToolGroupRow
+              group={group}
+              state={state}
+              tabId={tabId}
+              expanded={expandedGroups.has(group.id)}
+              onToggle={() => toggleGroup(group.id)}
+            />
+          </div>
+        );
+      }
+      const m = group.message;
+      // prevRole drives role-badge suppression on consecutive same-role rows.
+      // A preceding tool cluster reads as an agent turn, so it counts as
+      // "agent" for that purpose.
+      const prev = groups[index - 1];
+      const prevRole = prev
+        ? prev.type === "single"
+          ? prev.message.role
+          : "agent"
+        : undefined;
+      return (
+        <div className={rowClass}>
+          <ChatMessageRow
+            message={m}
+            state={state}
+            tabId={tabId}
+            className={
+              index === flashIndex
+                ? `${rowClassName} a2ui-chat-message-flash`
+                : rowClassName
+            }
+            prevRole={prevRole}
+            onEvent={onEvent}
+            deliveryText={queuedLabels.get(m.id)}
+            isLatest={index === groups.length - 1}
+            thinkingVisibility={visibility.thinking}
+          />
+        </div>
+      );
+    },
+    [
+      groups,
+      state,
+      tabId,
+      rowClassName,
+      flashIndex,
+      onEvent,
+      queuedLabels,
+      visibility.thinking,
+      expandedGroups,
+      toggleGroup,
+    ],
   );
 
   // Only wire `context`/`components` when there's a footer. Passing
@@ -514,8 +652,8 @@ function VirtualMessageList({
         ref={virtuosoRef}
         className={className}
         style={{ flex: 1, minHeight: 0 }}
-        data={messages}
-        computeItemKey={(_index, m) => m.id}
+        data={groups}
+        computeItemKey={(index, g) => (g ? groupKey(g) : String(index))}
         itemContent={itemContent}
         // Open scrolled to the BOTTOM of the newest message. `align: "end"`
         // pins the last item's bottom to the viewport bottom — a bare index
@@ -526,7 +664,7 @@ function VirtualMessageList({
         // `undefined` into computeItemKey, crashing on m.id for any restored 2+
         // message chat (see message-list.virtuoso.test.tsx).
         initialTopMostItemIndex={{
-          index: Math.max(0, messages.length - 1),
+          index: Math.max(0, groups.length - 1),
           align: "end",
         }}
         followOutput={() =>
@@ -572,6 +710,10 @@ export function ChatHistory({
     () => (resolvePointer(state, props.messages.$ref) as ChatMessage[]) || [],
     [props.messages.$ref, state],
   );
+  const visibility = useMemo(
+    () => resolveVisibility(state, tabId),
+    [state, tabId],
+  );
   const emptyHint = props.emptyHint
     ? resolveString(props.emptyHint, state)
     : "Start a conversation.";
@@ -596,6 +738,7 @@ export function ChatHistory({
       tabId={tabId}
       onEvent={onEvent}
       scrollToMatch={scrollToMatch}
+      visibility={visibility}
     />
   );
 }
@@ -619,6 +762,11 @@ export function MainCanvas({
         ? (resolvePointer(state, props.messages!.$ref) as ChatMessage[]) || []
         : [],
     [chatMode, props.messages, state],
+  );
+
+  const visibility = useMemo(
+    () => resolveVisibility(state, tabId),
+    [state, tabId],
   );
 
   const live = props.slot ? resolvePointer(state, props.slot) : null;
@@ -670,6 +818,7 @@ export function MainCanvas({
         tabId={tabId}
         onEvent={onEvent}
         footerContext={footerContext}
+        visibility={visibility}
       />
     </main>
   );

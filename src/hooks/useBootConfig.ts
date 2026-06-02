@@ -111,6 +111,15 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
         toggleHotkey: fresh.voice.toggleHotkey,
         holdHotkey: fresh.voice.holdHotkey,
       },
+      // Global transcript-visibility defaults, mirrored into state so the
+      // renderer's resolver can read them via $ref. Per-tab overrides win.
+      transcriptVisibility: {
+        thinking: fresh.ui.thinkingVisibility,
+        toolCalls: fresh.ui.toolCallsVisibility,
+      },
+      guardrails: {
+        hardEnforceProjectRoot: fresh.guardrails.hardEnforceProjectRoot,
+      },
     }));
     if (fresh.agent.model) {
       piDefaultModelRef.current = fresh.agent.model;
@@ -198,6 +207,13 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
           ...(prev.voice as object | undefined),
           toggleHotkey: config.voice.toggleHotkey,
           holdHotkey: config.voice.holdHotkey,
+        },
+        transcriptVisibility: {
+          thinking: config.ui.thinkingVisibility,
+          toolCalls: config.ui.toolCallsVisibility,
+        },
+        guardrails: {
+          hardEnforceProjectRoot: config.guardrails.hardEnforceProjectRoot,
         },
       }));
 

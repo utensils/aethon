@@ -24,6 +24,8 @@ const baseConfig: AethonConfig = {
     restoreTabs: false,
     notifyOnCompletion: true,
     notifyMinDurationSeconds: 8,
+    thinkingVisibility: "show",
+    toolCallsVisibility: "show",
   },
   agent: { model: "openai/gpt-5.5" },
   shell: {
@@ -43,6 +45,7 @@ const baseConfig: AethonConfig = {
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
   },
+  guardrails: { softPromptAnchor: null, hardEnforceProjectRoot: false },
 };
 
 function buildContext(initialState: Record<string, unknown>): {

@@ -85,4 +85,26 @@ describe("buildRuntimeSection failedExtensions", () => {
     delete stale.failedExtensions;
     expect(() => buildRuntimeSection(stale as RuntimeSnapshot)).not.toThrow();
   });
+
+  it("labels the host dir and defers to the per-turn Working context section", () => {
+    const out = buildRuntimeSection(snapshot({ cwd: "/launch/dir" }));
+    expect(out).toContain("Agent host dir: `/launch/dir`");
+    expect(out).toContain("Working context");
+    // The old bare `cwd=...` phrasing is gone — it misled the model into
+    // treating the launch dir as the working dir.
+    expect(out).not.toContain("cwd=`/launch/dir`");
+  });
+
+  it("annotates open tabs with their cwd when present", () => {
+    const out = buildRuntimeSection(
+      snapshot({
+        tabs: [
+          { id: "default", model: "anthropic/x", messageCount: 2, cwd: "/repo/a" },
+          { id: "t2", model: "", messageCount: 0 },
+        ],
+      }),
+    );
+    expect(out).toContain("cwd `/repo/a`");
+    expect(out).toContain("`t2` — model `(none)`, 0 messages");
+  });
 });

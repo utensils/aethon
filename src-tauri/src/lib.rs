@@ -194,6 +194,7 @@ pub fn run() {
             commands::fs::fs_open_in_file_manager,
             commands::fs::fs_open_in_default_app,
             commands::git::status::git_status,
+            commands::git::status::git_working_context,
             commands::git::status::git_fetch_all,
             commands::git::status::git_file_status,
             commands::git::status::git_ignored_paths,

@@ -150,6 +150,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let voice = config.get("voice").and_then(|v| v.as_object());
     let updates = config.get("updates").and_then(|v| v.as_object());
     let devshell = config.get("devshell").and_then(|v| v.as_object());
+    let guardrails = config.get("guardrails").and_then(|v| v.as_object());
 
     let theme = ui
         .and_then(|m| m.get("theme"))
@@ -169,6 +170,14 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("notifyMinDurationSeconds"))
         .and_then(|v| v.as_u64())
         .map(|n| n.min(3600));
+    let thinking_visibility = ui
+        .and_then(|m| m.get("thinkingVisibility"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_visibility(Some(s)));
+    let tool_calls_visibility = ui
+        .and_then(|m| m.get("toolCallsVisibility"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_visibility(Some(s)));
 
     let model = agent
         .and_then(|m| m.get("model"))
@@ -235,6 +244,14 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let devshell_refresh_on_lockfile = devshell
         .and_then(|m| m.get("refreshOnLockfileChange"))
         .and_then(|v| v.as_bool());
+    let soft_prompt_anchor = guardrails
+        .and_then(|m| m.get("softPromptAnchor"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let hard_enforce_project_root = guardrails
+        .and_then(|m| m.get("hardEnforceProjectRoot"))
+        .and_then(|v| v.as_bool());
 
     // Load the existing file (or seed a fresh document with our header
     // banner) and edit the known keys. toml_edit preserves comments,
@@ -272,6 +289,22 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             }
             None => {
                 ui_table.remove("notify_min_duration_seconds");
+            }
+        }
+        match thinking_visibility {
+            Some(v) => {
+                ui_table.insert("thinking_visibility", toml_edit::value(v));
+            }
+            None => {
+                ui_table.remove("thinking_visibility");
+            }
+        }
+        match tool_calls_visibility {
+            Some(v) => {
+                ui_table.insert("tool_calls_visibility", toml_edit::value(v));
+            }
+            None => {
+                ui_table.remove("tool_calls_visibility");
             }
         }
     }
@@ -373,6 +406,17 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             devshell_table,
             "refresh_on_lockfile_change",
             devshell_refresh_on_lockfile,
+        );
+    }
+
+    // ── [guardrails] ──
+    {
+        let guardrails_table = ensure_table(&mut doc, "guardrails");
+        set_or_clear_str(guardrails_table, "soft_prompt_anchor", soft_prompt_anchor);
+        set_or_clear_bool(
+            guardrails_table,
+            "hard_enforce_project_root",
+            hard_enforce_project_root,
         );
     }
 

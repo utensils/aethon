@@ -1,5 +1,18 @@
 import type { ChatAttachment, ChatMessage } from "./a2ui";
 import type { ShareMode } from "../utils/shareMode";
+import type { VisibilityMode } from "../config";
+
+/**
+ * Per-tab transcript visibility overrides. When a field is absent (or null)
+ * the tab follows the global default (`[ui] thinking_visibility` /
+ * `tool_calls_visibility`); a concrete value overrides it for this session.
+ * Persisted with the tab (see `restoreTabRecord` in `state/sessionUiSnapshot`)
+ * so a per-session choice survives reloads and restarts.
+ */
+export interface TabVisibilityOverrides {
+  thinking?: VisibilityMode | null;
+  toolCalls?: VisibilityMode | null;
+}
 
 // M6 P1: shell-tab metadata. Present iff Tab.kind === "shell".
 // Carried as an optional sibling field (rather than refactoring Tab to a
@@ -129,6 +142,14 @@ export interface Tab {
   cwd?: string;
   /** Auth profile id selected for this agent session, if any. */
   authProfileId?: string;
+  /** Per-session transcript visibility overrides (thinking / tool calls).
+   *  Absent → follow the global `[ui]` defaults. Agent tabs only. */
+  visibilityOverrides?: TabVisibilityOverrides;
+  /** Per-session hard project-root guardrail override. `true`/`false`
+   *  overrides the global `[guardrails] hard_enforce_project_root` default;
+   *  absent → follow the global default. Rides each chat message to the
+   *  agent's source guard. Persisted with the tab. */
+  hardEnforceProjectRoot?: boolean;
   /** Present iff kind === "shell". */
   shell?: ShellMeta;
   /** Present iff kind === "editor". */

@@ -206,6 +206,23 @@ fn apply_user_env(app: &AppHandle, command: &mut Command) {
         .unwrap_or(512);
     command.env("AETHON_STATE_WARN_KB", warn_kb.to_string());
     command.env("AETHON_STATE_HARD_KB", hard_kb.to_string());
+
+    // Guardrails: the soft anchor is appended to the per-turn working-context
+    // the agent injects; the hard-enforce default is consumed by the agent's
+    // source-guard wrapper (per-tab overridable at runtime). Only emit the
+    // anchor when present so the agent can distinguish "unset" from "empty".
+    if let Some(anchor) = cfg_json["guardrails"]["softPromptAnchor"].as_str()
+        && !anchor.trim().is_empty()
+    {
+        command.env("AETHON_SOFT_GUARDRAIL_PROMPT", anchor);
+    }
+    let hard_enforce = cfg_json["guardrails"]["hardEnforceProjectRoot"]
+        .as_bool()
+        .unwrap_or(false);
+    command.env(
+        "AETHON_HARD_ENFORCE_PROJECT_ROOT",
+        if hard_enforce { "1" } else { "0" },
+    );
 }
 
 fn apply_worker_env(command: &mut Command, worker: Option<&AgentWorker>) {
