@@ -5,9 +5,12 @@ function dirname(path: string): string {
 }
 
 function normalizePath(path: string): string {
-  const absolute = path.startsWith("/");
+  const slashed = path.replace(/\\/g, "/");
+  const drive = /^[A-Za-z]:/.exec(slashed)?.[0] ?? "";
+  const body = drive ? slashed.slice(drive.length) : slashed;
+  const absolute = Boolean(drive) || body.startsWith("/");
   const parts: string[] = [];
-  for (const part of path.replace(/\\/g, "/").split("/")) {
+  for (const part of body.split("/")) {
     if (!part || part === ".") continue;
     if (part === "..") {
       parts.pop();
@@ -15,7 +18,8 @@ function normalizePath(path: string): string {
     }
     parts.push(part);
   }
-  return `${absolute ? "/" : ""}${parts.join("/")}`;
+  const prefix = drive ? `${drive}/` : absolute ? "/" : "";
+  return `${prefix}${parts.join("/")}`;
 }
 
 function stripHashAndQuery(href: string): string {
@@ -38,6 +42,20 @@ function decodeHrefPath(href: string): string | null {
   }
 }
 
+function isInsideRoot(path: string, root: string): boolean {
+  const normalizedPath = normalizePath(path).replace(/\/+$/, "");
+  const normalizedRoot = normalizePath(root).replace(/\/+$/, "");
+  if (!normalizedRoot) return true;
+  const caseInsensitive = /^[A-Za-z]:/.test(normalizedRoot);
+  const candidate = caseInsensitive
+    ? normalizedPath.toLowerCase()
+    : normalizedPath;
+  const boundary = caseInsensitive
+    ? normalizedRoot.toLowerCase()
+    : normalizedRoot;
+  return candidate === boundary || candidate.startsWith(`${boundary}/`);
+}
+
 export function resolveMarkdownLinkPath(
   href: string | undefined,
   currentFilePath: string,
@@ -50,7 +68,8 @@ export function resolveMarkdownLinkPath(
   if (!withoutFragment) return null;
 
   let linkPath = withoutFragment;
-  if (linkPath.startsWith("file://")) {
+  const fileUrl = linkPath.startsWith("file://");
+  if (fileUrl) {
     try {
       linkPath = new URL(linkPath).pathname;
     } catch {
@@ -61,17 +80,25 @@ export function resolveMarkdownLinkPath(
   const decoded = decodeHrefPath(linkPath);
   if (!decoded) return null;
 
-  const projectRoot = projectPath.replace(/\/+$/, "");
+  const projectRoot = normalizePath(projectPath).replace(/\/+$/, "");
+  let resolved: string;
   if (decoded.startsWith("/")) {
-    if (projectRoot && !decoded.startsWith(`${projectRoot}/`)) {
-      return normalizePath(`${projectRoot}${decoded}`);
+    const normalizedDecoded = normalizePath(decoded);
+    if (projectRoot && !isInsideRoot(normalizedDecoded, projectRoot)) {
+      if (fileUrl) return null;
+      resolved = normalizePath(`${projectRoot}${normalizedDecoded}`);
+    } else {
+      resolved = normalizedDecoded;
     }
-    return normalizePath(decoded);
+  } else {
+    const baseDir = dirname(currentFilePath) || projectRoot;
+    resolved = baseDir
+      ? normalizePath(`${baseDir.replace(/\/+$/, "")}/${decoded}`)
+      : normalizePath(decoded);
   }
 
-  const baseDir = dirname(currentFilePath) || projectPath;
-  if (!baseDir) return normalizePath(decoded);
-  return normalizePath(`${baseDir.replace(/\/+$/, "")}/${decoded}`);
+  if (projectRoot && !isInsideRoot(resolved, projectRoot)) return null;
+  return resolved;
 }
 
 export function safeExternalHttpUrl(value: string | undefined): string | null {

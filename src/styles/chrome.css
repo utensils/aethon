@@ -2688,6 +2688,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text);
 }
 
+.a2ui-code-copy:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .a2ui-code-copy:active {
   transform: translateY(1px);
 }

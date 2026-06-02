@@ -112,6 +112,46 @@ describe("resolveMarkdownLinkPath", () => {
     ).toBe("/repo/docs/My API.md");
   });
 
+  it("rejects relative links that escape the project root", () => {
+    expect(
+      resolveMarkdownLinkPath(
+        "../../../../etc/passwd",
+        "/repo/docs/guides/api.md",
+        "/repo",
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects file urls outside the project root", () => {
+    expect(
+      resolveMarkdownLinkPath("file:///etc/passwd", "/repo/README.md", "/repo"),
+    ).toBeNull();
+  });
+
+  it("handles Windows-style project roots", () => {
+    expect(
+      resolveMarkdownLinkPath(
+        "docs\\api.md",
+        "C:\\repo\\README.md",
+        "C:\\repo\\",
+      ),
+    ).toBe("C:/repo/docs/api.md");
+    expect(
+      resolveMarkdownLinkPath(
+        "..\\secrets.md",
+        "C:\\repo\\docs\\api.md",
+        "C:\\repo\\",
+      ),
+    ).toBe("C:/repo/secrets.md");
+    expect(
+      resolveMarkdownLinkPath(
+        "..\\..\\Windows\\win.ini",
+        "C:\\repo\\docs\\api.md",
+        "C:\\repo\\",
+      ),
+    ).toBeNull();
+  });
+
   it("declines hash-only and external links", () => {
     expect(
       resolveMarkdownLinkPath("#releases", "/repo/README.md", "/repo"),
@@ -232,6 +272,24 @@ describe("MarkdownPreview", () => {
       filePath: "/repo/docs/invoice-ninja-api.md",
       rootPath: "/repo",
     });
+  });
+
+  it("keeps local markdown links from navigating when no tab id is bound", async () => {
+    const { onEvent } = renderMarkdownPreview(
+      "See [API notes](docs/invoice-ninja-api.md).",
+      {
+        filePath: "/repo/README.md",
+        projectPath: "/repo",
+        tabId: "",
+      },
+    );
+
+    const link = await screen.findByRole("link", { name: "API notes" });
+    const allowed = fireEvent.click(link);
+
+    expect(allowed).toBe(false);
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
   });
 
   it("opens external markdown links through the system opener", async () => {

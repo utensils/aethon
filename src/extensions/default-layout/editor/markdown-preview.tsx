@@ -90,9 +90,9 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
                 openExternalUrl(externalUrl);
                 return;
               }
-              if (!tabId) return;
               event.preventDefault();
               event.stopPropagation();
+              if (!tabId) return;
               onEvent("markdown-link-open", {
                 tabId,
                 filePath: targetPath,
