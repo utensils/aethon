@@ -4,6 +4,7 @@ import {
 } from "../../utils/messages";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
+import type { Tab } from "../../types/tab";
 import type { BridgeMessageHandler } from "./types";
 
 function firstUserMessageLabel(messages: ChatMessage[]): string | undefined {
@@ -62,11 +63,24 @@ function isDuplicateCompletedToolCard(
   });
 }
 
-function isLivePendingMessage(message: ChatMessage): boolean {
+function isLivePendingMessage(
+  message: ChatMessage,
+  currentlyWaiting: boolean,
+  latestRestoredTime: number | undefined,
+): boolean {
   if (message.role === "user") {
     return message.delivery === "sent" || message.delivery === "steered";
   }
+  if (!currentlyWaiting) return false;
   if (message.role !== "agent") return false;
+  const createdAt = messageCreatedAt(message);
+  if (
+    typeof createdAt === "number" &&
+    typeof latestRestoredTime === "number" &&
+    createdAt < latestRestoredTime
+  ) {
+    return false;
+  }
   if (message.text || message.thinking) return true;
   return toolCardComponents(message).some(
     (component) =>
@@ -131,6 +145,14 @@ function isCompactionMarker(message: ChatMessage): boolean {
   );
 }
 
+function isStopNotice(message: ChatMessage): boolean {
+  return (
+    message.role === "system" &&
+    message.text?.replace(/\s+/g, " ").trim().toLowerCase() ===
+      "agent stopped."
+  );
+}
+
 function restoredCompactionMarkers(restored: ChatMessage[]): ChatMessage[] {
   return restored.filter(
     (message) => message.id.startsWith("compaction:") && isCompactionMarker(message),
@@ -166,9 +188,81 @@ function isDuplicateRestoredAgentContent(
   );
 }
 
+function messageCreatedAt(message: ChatMessage): number | undefined {
+  if (
+    typeof message.createdAt === "number" &&
+    Number.isFinite(message.createdAt)
+  ) {
+    return message.createdAt;
+  }
+  if (message.role !== "system" || typeof message.text !== "string") {
+    return undefined;
+  }
+  const raw = /^\[agent stderr\]\s+(\d{4}-\d{2}-\d{2}T[^\s]+)/.exec(
+    message.text,
+  )?.[1];
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isStaleUntimestampedSystemNotice(message: ChatMessage): boolean {
+  if (isStopNotice(message)) return true;
+  if (message.role !== "system" || messageCreatedAt(message) !== undefined) {
+    return false;
+  }
+  const text = message.text?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+  return (
+    text === "agent stopped." ||
+    text === "compacting context..." ||
+    text === "compacting context…" ||
+    text.startsWith("context compacted") ||
+    text.startsWith("context compaction complete") ||
+    text.startsWith("context compaction failed:")
+  );
+}
+
+function mergeTimestampedLocalMessages(
+  restored: ChatMessage[],
+  local: ChatMessage[],
+): ChatMessage[] {
+  if (local.length === 0) return restored;
+  return [
+    ...restored.map((message, order) => ({ message, order })),
+    ...local.map((message, offset) => ({
+      message,
+      order: restored.length + offset,
+    })),
+  ]
+    .sort((a, b) => {
+      const aTime = messageCreatedAt(a.message);
+      const bTime = messageCreatedAt(b.message);
+      if (
+        typeof aTime === "number" &&
+        typeof bTime === "number" &&
+        aTime !== bTime
+      ) {
+        return aTime - bTime;
+      }
+      return a.order - b.order;
+    })
+    .map((entry) => entry.message);
+}
+
+function latestMessageTime(messages: ChatMessage[]): number | undefined {
+  let latest: number | undefined;
+  for (const message of messages) {
+    const createdAt = messageCreatedAt(message);
+    if (createdAt === undefined) continue;
+    latest = latest === undefined ? createdAt : Math.max(latest, createdAt);
+  }
+  return latest;
+}
+
 function mergePendingLocalPrompts(
   restored: ChatMessage[],
   current: ChatMessage[],
+  currentlyWaiting: boolean,
 ): { messages: ChatMessage[]; hasLivePending: boolean } {
   // Carry pending local messages — both the optimistic user prompts
   // the user sent before the restored history arrived AND any
@@ -181,6 +275,7 @@ function mergePendingLocalPrompts(
   const restoredAgentContent = restoredAgentContentSignatures(restored);
   const restoredStderr = restoredStderrMirrorSignatures(restored);
   const restoredCompactions = restoredCompactionMarkers(restored);
+  const latestRestoredTime = latestMessageTime(restored);
   const restoredUserTexts = new Set(
     restored
       .filter((m) => m.role === "user" && typeof m.text === "string")
@@ -204,6 +299,13 @@ function mergePendingLocalPrompts(
       // recorded it canonically); otherwise keep it.
       return text.length > 0 && !restoredUserTexts.has(text);
     }
+    if (
+      restored.length > 0 &&
+      m.role === "system" &&
+      isStaleUntimestampedSystemNotice(m)
+    ) {
+      return false;
+    }
     // Keep system + agent messages that don't share an id with
     // anything in the restored set — those are typically streaming
     // assistant deltas, system notices about the in-flight turn, or
@@ -212,17 +314,30 @@ function mergePendingLocalPrompts(
     // user just watched land.
     return true;
   });
+  const timestampedLocal = pendingLocal.filter(
+    (message) =>
+      !isLivePendingMessage(message, currentlyWaiting, latestRestoredTime) &&
+      messageCreatedAt(message) !== undefined,
+  );
+  const appendLocal = pendingLocal.filter(
+    (message) =>
+      isLivePendingMessage(message, currentlyWaiting, latestRestoredTime) ||
+      messageCreatedAt(message) === undefined,
+  );
+  const mergedHistory = mergeTimestampedLocalMessages(restored, timestampedLocal);
   return {
     messages:
-      pendingLocal.length > 0 ? [...restored, ...pendingLocal] : restored,
-    hasLivePending: pendingLocal.some(isLivePendingMessage),
+      appendLocal.length > 0 ? [...mergedHistory, ...appendLocal] : mergedHistory,
+    hasLivePending: pendingLocal.some((message) =>
+      isLivePendingMessage(message, currentlyWaiting, latestRestoredTime),
+    ),
   };
 }
 
 export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
   const messages = dedupeToolResultTextMessages(
-    coerceChatMessages(data.messages),
+    coerceChatMessages(data.messages).filter((message) => !isStopNotice(message)),
   );
   const session = ctx.allDiscoveredSessionsRef.current.find(
     (s) => s.tabId === tabId,
@@ -232,21 +347,39 @@ export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
     (session?.firstUserMessage
       ? session.firstUserMessage.replace(/\s+/g, " ").trim()
       : undefined);
+  const activeTab =
+    ctx.stateRef.current.activeTabId === tabId
+      ? ((ctx.stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+          (tab) => tab.id === tabId,
+        )
+      : undefined;
+  const activeHydration = activeTab
+    ? mergePendingLocalPrompts(
+        messages,
+        dedupeToolResultTextMessages(activeTab.messages),
+        activeTab.waiting === true,
+      )
+    : undefined;
   ctx.updateTab(tabId, (tab) => {
     const merged = mergePendingLocalPrompts(
       messages,
       dedupeToolResultTextMessages(tab.messages),
+      tab.waiting === true,
     );
+    const nextWaiting = merged.hasLivePending ? tab.waiting : false;
     return {
       ...tab,
       messages: dedupeToolResultTextMessages(merged.messages),
-      waiting: merged.hasLivePending ? tab.waiting : false,
+      waiting: nextWaiting,
       ...(label
         ? { label }
         : shouldReplaceGenericLabel(tab.label)
           ? { label: firstUserMessageLabel(messages) ?? tab.label }
-          : {}),
+      : {}),
     };
   });
+  if (activeHydration && !activeHydration.hasLivePending) {
+    ctx.setStatusFlags({ waiting: false, status: "ready" });
+  }
   ctx.syncRecentSessionsToState();
 };

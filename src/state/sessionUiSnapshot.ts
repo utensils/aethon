@@ -11,6 +11,7 @@ const KEY = "aethon:session-ui-snapshot:v1";
 const MAX_MESSAGES_PER_TAB = 200;
 const MAX_TERMINAL_BUFFER = 256 * 1024;
 const MAX_TERMINAL_BUFFER_ENTRIES = 8;
+const AGENT_BASH_SUB_ID = "agent-bash";
 
 /** A stashed (non-active) workspace's tabs + its last-active tab, keyed in
  *  `SessionUiSnapshot.buckets` by `projectScopeBucketKey`. */
@@ -126,6 +127,93 @@ function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
 
 function tabCanOwnMainSurface(tab: Tab | undefined): boolean {
   return !!tab && tab.kind !== "shell";
+}
+
+function messageCreatedAt(message: ChatMessage): number | undefined {
+  if (
+    typeof message.createdAt === "number" &&
+    Number.isFinite(message.createdAt)
+  ) {
+    return message.createdAt;
+  }
+  if (message.role !== "system" || typeof message.text !== "string") {
+    return undefined;
+  }
+  const raw = /^\[agent stderr\]\s+(\d{4}-\d{2}-\d{2}T[^\s]+)/.exec(
+    message.text,
+  )?.[1];
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isStaleUntimestampedSystemNotice(message: ChatMessage): boolean {
+  const text = message.text?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+  if (message.role === "system" && text === "agent stopped.") {
+    return true;
+  }
+  if (message.role !== "system" || messageCreatedAt(message) !== undefined) {
+    return false;
+  }
+  return (
+    text === "compacting context..." ||
+    text === "compacting context…" ||
+    text.startsWith("context compacted") ||
+    text.startsWith("context compaction complete") ||
+    text.startsWith("context compaction failed:")
+  );
+}
+
+function normalizeRestoredMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages
+    .filter((message) => !isStaleUntimestampedSystemNotice(message))
+    .map((message) => {
+      const createdAt = messageCreatedAt(message);
+      return createdAt !== undefined && message.createdAt !== createdAt
+        ? { ...message, createdAt }
+        : message;
+    })
+    .map((message, order) => ({ message, order }))
+    .sort((a, b) => {
+      const aTime = messageCreatedAt(a.message);
+      const bTime = messageCreatedAt(b.message);
+      if (
+        typeof aTime === "number" &&
+        typeof bTime === "number" &&
+        aTime !== bTime
+      ) {
+        return aTime - bTime;
+      }
+      return a.order - b.order;
+    })
+    .map((entry) => entry.message);
+}
+
+function durableTerminalPanelSnapshot(
+  terminalPanel: unknown,
+  tabs: readonly Tab[],
+  activeTabId: string | undefined,
+): Record<string, unknown> | undefined {
+  if (!terminalPanel || typeof terminalPanel !== "object") return undefined;
+  const input = terminalPanel as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  if (typeof input.height === "number" && Number.isFinite(input.height)) {
+    next.height = input.height;
+  }
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  if (activeTab?.kind === "agent") {
+    next.activeSubId = AGENT_BASH_SUB_ID;
+  } else if (typeof input.activeSubId === "string") {
+    const activeShell = tabs.find(
+      (tab) => tab.id === input.activeSubId && tab.kind === "shell",
+    );
+    if (activeShell?.shell?.shellState !== "exited") {
+      next.activeSubId = input.activeSubId;
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 function durableLayoutSnapshot(
@@ -261,14 +349,15 @@ function restoreTabRecord(
   const base = {
     ...t,
     kind,
-    messages: dedupeToolResultTextMessages(t.messages).map(
-      (message): ChatMessage =>
+    messages: normalizeRestoredMessages(
+      dedupeToolResultTextMessages(t.messages).map((message): ChatMessage =>
         message.attachments && message.attachments.length > 0
           ? {
               ...message,
               attachments: durableImageAttachments(message.attachments),
             }
           : message,
+      ),
     ),
     draft: t.draft ?? "",
     draftAttachments: Array.isArray(t.draftAttachments)
@@ -391,14 +480,19 @@ export function parseSessionUiSnapshot(
               tabCanOwnMainSurface(parsedActiveTab))
           ? parsed.activeTabId
           : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
+    const restoredTabs = tabs.map((t) =>
+      restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
+    );
     return {
-      tabs: tabs.map((t) =>
-        restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
-      ),
+      tabs: restoredTabs,
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),
       terminal: durableTerminalSnapshot(parsed.terminal),
-      terminalPanel: parsed.terminalPanel,
+      terminalPanel: durableTerminalPanelSnapshot(
+        parsed.terminalPanel,
+        restoredTabs,
+        activeTabId,
+      ),
       scrollToMatchByTab: parsed.scrollToMatchByTab,
       closedSessionIds:
         closedSessionIds.length > 0 ? closedSessionIds : undefined,
@@ -447,7 +541,11 @@ export function serializeSessionUiSnapshot(
       activeTabId,
       layout: durableLayoutSnapshot(state.layout),
       terminal: durableTerminalSnapshot(state.terminal),
-      terminalPanel: state.terminalPanel,
+      terminalPanel: durableTerminalPanelSnapshot(
+        state.terminalPanel,
+        tabs,
+        activeTabId,
+      ),
       scrollToMatchByTab: state.scrollToMatchByTab,
       ...(closedSessionIds.length > 0 ? { closedSessionIds } : {}),
       projectModels:

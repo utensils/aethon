@@ -126,6 +126,84 @@ describe("sessionUiSnapshot", () => {
     ]);
   });
 
+  it("repairs timestamped message order and drops stale stop notices on restore", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("tab", "Tab"),
+            messages: [
+              {
+                id: "later-agent",
+                role: "agent",
+                text: "later",
+                createdAt: 3_000,
+              },
+              {
+                id: "stderr",
+                role: "system",
+                text: "[agent stderr] 2026-06-02T13:36:55.343Z WARN devshell: failed",
+                createdAt: 2_000,
+              },
+              {
+                id: "stopped",
+                role: "system",
+                text: "Agent stopped.",
+                createdAt: 2_500,
+              },
+              {
+                id: "earlier-user",
+                role: "user",
+                text: "earlier",
+                createdAt: 1_000,
+              },
+            ],
+          },
+        ],
+        activeTabId: "tab",
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.tabs[0].messages.map((message) => message.id)).toEqual([
+      "earlier-user",
+      "stderr",
+      "later-agent",
+    ]);
+  });
+
+  it("restores agent-owned terminal panel to agent bash instead of a shell sub-tab", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("agent", "Agent"),
+            messages: [{ id: "m", role: "user", text: "hi" }],
+          },
+          {
+            ...makeEmptyTab("shell", "Shell", null, "shell"),
+            shell: {
+              cwd: "/repo/app",
+              command: "",
+              args: [],
+              shareMode: "private",
+              shellState: "running",
+            },
+          },
+        ],
+        activeTabId: "agent",
+        terminalPanel: { activeSubId: "shell", height: 300 },
+        savedAt: 1,
+      }),
+      { restartShellTabs: true },
+    );
+
+    expect(parsed?.terminalPanel).toEqual({
+      activeSubId: "agent-bash",
+      height: 300,
+    });
+  });
+
   it("returns null when neither active tabs nor buckets have sessions", () => {
     saveSessionUiSnapshot({ tabs: [], activeTabId: "__overview__" });
     expect(loadSessionUiSnapshot()).toBeNull();
