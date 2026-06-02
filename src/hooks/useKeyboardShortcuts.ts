@@ -16,6 +16,20 @@ interface NotificationInput {
   durationMs?: number | null;
 }
 
+function activeAgentTabIsBusy(state: Record<string, unknown>): boolean {
+  const activeTabId = state.activeTabId as string | undefined;
+  const tabs = (state.tabs as Tab[] | undefined) ?? [];
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  if (!activeTab) return false;
+  if ((activeTab.kind ?? "agent") !== "agent") return false;
+  return (
+    activeTab?.waiting === true ||
+    (activeTab?.queueCount ?? 0) > 0 ||
+    state.waiting === true ||
+    ((state.queueCount as number | undefined) ?? 0) > 0
+  );
+}
+
 export interface UseKeyboardShortcutsContext {
   stateRef: MutableRefObject<Record<string, unknown>>;
   /** Map of canonical combo string ("meta+shift+p") to the registered
@@ -312,7 +326,8 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
       // Esc closes the active overlay, with palette taking precedence
       // because it can sit on top of Settings.
       if (e.key === "Escape") {
-        const palette = ctx.stateRef.current.palette as
+        const state = ctx.stateRef.current;
+        const palette = state.palette as
           | { open?: boolean }
           | undefined;
         if (palette?.open) {
@@ -321,13 +336,19 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           ctx.closePalette();
           return;
         }
-        const settings = ctx.stateRef.current.settings as
+        const settings = state.settings as
           | { open?: boolean }
           | undefined;
         if (settings?.open) {
           e.preventDefault();
           e.stopPropagation();
           ctx.closeSettings();
+          return;
+        }
+        if (activeAgentTabIsBusy(state)) {
+          e.preventDefault();
+          e.stopPropagation();
+          void ctx.stopPrompt();
           return;
         }
       }

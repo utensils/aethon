@@ -291,6 +291,62 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
+  it("preserves running agent activity for hot frontend reload snapshots", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      waiting: true,
+      queueCount: 1,
+      queuedMessages: [
+        {
+          id: "queued",
+          content: "follow up",
+          attachments: [
+            {
+              id: "img-queued",
+              kind: "image" as const,
+              path: "/tmp/aethon-pastes/queued.png",
+              name: "queued.png",
+              mimeType: "image/png",
+              sizeBytes: 14,
+              previewUrl: "blob:queued",
+            },
+          ],
+        },
+      ],
+      messages: [
+        { id: "m1", role: "user" as const, text: "fix it" },
+        { id: "m2", role: "agent" as const, thinking: "Working" },
+      ],
+    };
+
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "tab-a",
+    });
+
+    expect(loadSessionUiSnapshot()?.tabs[0]).toMatchObject({
+      id: "tab-a",
+      waiting: true,
+      queueCount: 1,
+      queuedMessages: [
+        {
+          id: "queued",
+          content: "follow up",
+          attachments: [
+            {
+              id: "img-queued",
+              kind: "image",
+              path: "/tmp/aethon-pastes/queued.png",
+              name: "queued.png",
+              mimeType: "image/png",
+              sizeBytes: 14,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("persists shell tabs for frontend reload and restores their PTY on mount", () => {
     saveSessionUiSnapshot({
       tabs: [

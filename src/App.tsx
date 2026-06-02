@@ -14,6 +14,7 @@ import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
 import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
 import { useAgentWorkerReconcile } from "./hooks/useAgentWorkerReconcile";
+import { useAgentActivityHydration } from "./hooks/useAgentActivityHydration";
 import { useVcsStatus } from "./hooks/useVcsStatus";
 import { useGitWatch } from "./hooks/useGitWatch";
 import { useTabNavigation } from "./hooks/useTabNavigation";
@@ -120,6 +121,7 @@ export default function App() {
   } = useAppStateRefs(appStore);
 
   useSessionPersistence({ appStore, hasSyncSessionSnapshot });
+  useAgentActivityHydration(setState);
 
   const recordProjectModel = useProjectModelRecorder(setState);
 
