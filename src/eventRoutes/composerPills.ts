@@ -37,6 +37,12 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
     return true;
   }
 
+  if (event.eventType === "toggle-guardrail") {
+    const next = (event.data as { next?: unknown } | undefined)?.next === true;
+    ctx.updateActiveTab((tab) => ({ ...tab, hardEnforceProjectRoot: next }));
+    return true;
+  }
+
   if (event.eventType === "set-default") {
     const eff = resolveVisibility(state, activeId);
     ctx.applySettingsPatch({

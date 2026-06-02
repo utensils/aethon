@@ -145,6 +145,11 @@ export interface Tab {
   /** Per-session transcript visibility overrides (thinking / tool calls).
    *  Absent → follow the global `[ui]` defaults. Agent tabs only. */
   visibilityOverrides?: TabVisibilityOverrides;
+  /** Per-session hard project-root guardrail override. `true`/`false`
+   *  overrides the global `[guardrails] hard_enforce_project_root` default;
+   *  absent → follow the global default. Rides each chat message to the
+   *  agent's source guard. Persisted with the tab. */
+  hardEnforceProjectRoot?: boolean;
   /** Present iff kind === "shell". */
   shell?: ShellMeta;
   /** Present iff kind === "editor". */

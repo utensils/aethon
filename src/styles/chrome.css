@@ -8250,6 +8250,23 @@ button.ae-vcs-chip:focus-visible {
 .ae-vis-menu-item:hover {
   background: var(--bg-hover);
 }
+.ae-vis-menu-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ae-vis-menu-check {
+  display: inline-flex;
+  justify-content: center;
+  width: 12px;
+  color: var(--accent);
+  flex: none;
+}
+.ae-vis-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
 
 /* ── Collapsed tool-call cluster (tool-call visibility = "collapse") ──── */
 .ae-tool-group {

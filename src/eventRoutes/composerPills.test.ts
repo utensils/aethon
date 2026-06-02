@@ -84,6 +84,19 @@ describe("handleComposerPills", () => {
     });
   });
 
+  it("toggles the per-session hard guardrail override", () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "t1", tabs: [makeEmptyTab("t1", "T1")] },
+    });
+    const handled = handleComposerPills(
+      pillEvent("toggle-guardrail", { next: true }),
+      ctx,
+    );
+    expect(handled).toBe(true);
+    const updater = mocks.updateActiveTab.mock.calls[0][0];
+    expect(updater(makeEmptyTab("t1", "T1")).hardEnforceProjectRoot).toBe(true);
+  });
+
   it("ignores a cycle with an unknown category but marks it handled", () => {
     const { ctx, mocks } = buildRouteFixture({
       state: { activeTabId: "t1", tabs: [makeEmptyTab("t1", "T1")] },

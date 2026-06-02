@@ -87,6 +87,7 @@ describe("sessionUiSnapshot", () => {
         thinking: "hide" as const,
         toolCalls: "collapse" as const,
       },
+      hardEnforceProjectRoot: true,
     };
     saveSessionUiSnapshot({ tabs: [tab], activeTabId: "tab-vis" });
     expect(loadSessionUiSnapshot()).toMatchObject({
@@ -94,6 +95,7 @@ describe("sessionUiSnapshot", () => {
         {
           id: "tab-vis",
           visibilityOverrides: { thinking: "hide", toolCalls: "collapse" },
+          hardEnforceProjectRoot: true,
         },
       ],
     });

@@ -176,6 +176,42 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               </Field>
             </Section>
 
+            <Section id="guardrails" title="Guardrails">
+              <Field label="Restrict agent tools to the project root (default for new sessions)">
+                <input
+                  type="checkbox"
+                  checked={eff.guardrails.hardEnforceProjectRoot}
+                  onChange={(e) =>
+                    update({
+                      guardrails: {
+                        ...eff.guardrails,
+                        hardEnforceProjectRoot: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Soft prompt anchor (advisory text injected every turn)">
+                <textarea
+                  className="ae-settings-input"
+                  rows={3}
+                  placeholder="e.g. Only modify files under src/. Never run destructive git commands."
+                  value={eff.guardrails.softPromptAnchor ?? ""}
+                  onChange={(e) =>
+                    update({
+                      guardrails: {
+                        ...eff.guardrails,
+                        softPromptAnchor:
+                          e.target.value.trim().length > 0
+                            ? e.target.value
+                            : null,
+                      },
+                    })
+                  }
+                />
+              </Field>
+            </Section>
+
             <Section id="notifications" title="Notifications">
               <Field label="Notify on agent completion (when unfocused)">
                 <input

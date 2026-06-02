@@ -126,7 +126,11 @@ export async function ensureTab(
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });
   installAethonRetryClassifier(session);
-  wrapWithSourceGuard(session.agent, state.projectRoot);
+  wrapWithSourceGuard(session.agent, state.projectRoot, {
+    tabRoot: resolvedCwd,
+    hardEnforce: () =>
+      state.tabHardEnforce.get(tabId) ?? state.hardEnforceProjectRootDefault,
+  });
 
   const rec: TabRecord = {
     id: tabId,

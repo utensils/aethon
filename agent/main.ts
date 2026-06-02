@@ -197,6 +197,8 @@ async function main(): Promise<void> {
   // persisted). This is how a local model keeps a correct picture of which
   // directory it's working in. See agent/git-context.ts for the git source.
   const softGuardrailPrompt = process.env.AETHON_SOFT_GUARDRAIL_PROMPT;
+  state.hardEnforceProjectRootDefault =
+    process.env.AETHON_HARD_ENFORCE_PROJECT_ROOT === "1";
   const workingContextExtension: ExtensionFactory = (pi) => {
     pi.on("before_agent_start", async (event) => {
       const tabId = state.tabContext.getStore() ?? state.currentAgentTabId;

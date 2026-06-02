@@ -21,6 +21,11 @@ export async function handleChat(
     return;
   }
   const tabId = msg.tabId ?? "default";
+  // Per-tab hard-guardrail override rides each chat so the source guard sees
+  // the current value before this turn's tool calls (and survives a respawn).
+  if (typeof msg.hardEnforce === "boolean") {
+    state.tabHardEnforce.set(tabId, msg.hardEnforce);
+  }
   const cwdOverride =
     typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
   let initialModel: Model<Api> | undefined;

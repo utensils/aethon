@@ -38,6 +38,11 @@ pub(crate) struct SendMessageRequest {
     cwd: Option<String>,
     model: Option<String>,
     attachments: Option<Vec<ChatAttachmentInput>>,
+    /// Per-tab hard project-root guardrail override. Forwarded to the agent's
+    /// `chat` message so the source guard sees the current value before the
+    /// turn's tool calls. `None` leaves the per-tab value untouched (the
+    /// agent falls back to the global default).
+    hard_enforce: Option<bool>,
 }
 
 #[tauri::command]
@@ -67,6 +72,9 @@ pub(crate) fn send_message(
         && !model.is_empty()
     {
         payload["model"] = serde_json::Value::String(model);
+    }
+    if let Some(hard_enforce) = request.hard_enforce {
+        payload["hardEnforce"] = serde_json::Value::Bool(hard_enforce);
     }
     let images = attachments_to_agent_images(&app, request.attachments.unwrap_or_default())?;
     if !images.is_empty() {

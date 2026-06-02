@@ -581,6 +581,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           ...(attachments.length > 0 ? { attachments } : {}),
           ...(targetCwd ? { cwd: targetCwd } : {}),
           ...(targetModel ? { model: targetModel } : {}),
+          ...(typeof targetTab?.hardEnforceProjectRoot === "boolean"
+            ? { hardEnforce: targetTab.hardEnforceProjectRoot }
+            : {}),
         },
       });
     } catch (err) {
