@@ -163,14 +163,18 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                         ...eff.ui,
                         toolCallsVisibility: e.target.value as
                           | "show"
-                          | "collapse"
+                          | "group-turn"
+                          | "group-run"
+                          | "group-block"
                           | "hide",
                       },
                     })
                   }
                 >
                   <option value="show">Show</option>
-                  <option value="collapse">Collapse &amp; group</option>
+                  <option value="group-turn">Group by turn</option>
+                  <option value="group-run">Group by run</option>
+                  <option value="group-block">Group whole turn</option>
                   <option value="hide">Hide</option>
                 </select>
               </Field>

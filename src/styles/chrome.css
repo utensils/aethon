@@ -8184,8 +8184,24 @@ button.ae-vcs-chip:focus-visible {
   background: var(--accent);
   flex: none;
 }
-.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot {
+.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
   background: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+/* Per-session override marker — a small accent tag after the state text. */
+.ae-vis-pill[data-scope="session"] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.ae-vis-pill-scope {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  color: var(--accent);
 }
 .ae-vis-pill[data-mode="hide"] {
   color: color-mix(in oklab, var(--text-dim) 70%, transparent);
@@ -8223,15 +8239,18 @@ button.ae-vcs-chip:focus-visible {
   z-index: 40;
 }
 .ae-vis-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
+  /* Fixed positioning so the popover escapes `.a2ui-layout-cell`'s
+     overflow:hidden clip (same trick as `.a2ui-dropdown-panel`). `bottom` /
+     `right` are set inline from the trigger's bounding rect so the menu floats
+     above the composer. */
+  position: fixed;
   z-index: 41;
-  min-width: 220px;
+  min-width: 248px;
+  max-width: calc(var(--app-viewport-width, 100vw) - 16px);
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
   padding: 4px;
 }
 .ae-vis-menu-item {
@@ -8267,6 +8286,51 @@ button.ae-vcs-chip:focus-visible {
   margin: 4px 6px;
   background: var(--border);
 }
+.ae-vis-menu-head {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ae-vis-menu-radios {
+  padding: 4px 10px 6px;
+}
+.ae-vis-menu-radios-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.ae-vis-menu-radio-row {
+  display: flex;
+  gap: 4px;
+}
+.ae-vis-menu-radio {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+.ae-vis-menu-radio:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ae-vis-menu-radio[data-checked="true"] {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--text);
+}
 
 /* ── Collapsed tool-call cluster (tool-call visibility = "collapse") ──── */
 .ae-tool-group {
@@ -8301,9 +8365,76 @@ button.ae-vcs-chip:focus-visible {
   font-size: 10px;
   opacity: 0.8;
 }
+.ae-tool-group-label {
+  font-weight: 500;
+}
+.ae-tool-group-peek {
+  min-width: 0;
+  color: var(--text-dim);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ae-tool-group-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 0 8px 8px;
+}
+
+/* ── Folded agent turn (tool-call visibility = "group-block") ─────────── */
+.ae-turn-block {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+.ae-turn-block[data-expanded="true"] {
+  width: 100%;
+  border-style: solid;
+  background: var(--bg-elev);
+}
+.ae-turn-block-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.ae-turn-block-summary:hover {
+  color: var(--text);
+}
+.ae-turn-block-caret {
+  font-size: 10px;
+  opacity: 0.8;
+}
+.ae-turn-block-label {
+  font-weight: 500;
+  color: var(--text);
+}
+.ae-turn-block-meta {
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+.ae-turn-block-peek {
+  min-width: 0;
+  color: var(--text-dim);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-turn-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 8px 10px;
 }
