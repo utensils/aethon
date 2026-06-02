@@ -113,9 +113,13 @@ export async function appendLocalChatMessage(
 async function pruneLocalChatFile(path: string): Promise<void> {
   try {
     const raw = await readFile(path, "utf8");
-    const kept = parseLocalChatLines(raw.split(/\r?\n/)).slice(
-      -MAX_LOCAL_CHAT_MESSAGES,
-    );
+    const lines = raw.split(/\r?\n/);
+    const lineCount =
+      lines.length > 0 && lines[lines.length - 1] === ""
+        ? lines.length - 1
+        : lines.length;
+    if (lineCount <= MAX_LOCAL_CHAT_MESSAGES) return;
+    const kept = parseLocalChatLines(lines).slice(-MAX_LOCAL_CHAT_MESSAGES);
     const next = kept
       .map((m) =>
         JSON.stringify({

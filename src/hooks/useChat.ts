@@ -18,6 +18,12 @@ import {
   PI_DEFAULT_MODEL_SENTINEL,
 } from "../utils/modelPicker";
 import { getConfig, clearConfigCache, type AethonConfig } from "../config";
+import {
+  hydrateAgentActivityState,
+  type AgentDiagnosticRow,
+} from "./useAgentActivityHydration";
+
+const STOP_CONFIRM_DELAYS_MS = [0, 150, 500, 1000, 2000] as const;
 
 /** Patch `queuedMessages` and the derived `queueCount` together so the
  *  composer badge can't drift out of sync with the popover list. */
@@ -311,6 +317,63 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     updateActiveTab((tab) => ({ ...tab, messages: [] }));
   }
 
+  function diagnosticMatchesTab(row: AgentDiagnosticRow, tabId: string) {
+    return (
+      row.tab_id === tabId ||
+      row.tabId === tabId ||
+      row.key === `tab:${tabId}` ||
+      (tabId === "default" && row.key === "__global__")
+    );
+  }
+
+  async function confirmPromptStopped(tabId: string) {
+    for (const delay of STOP_CONFIRM_DELAYS_MS) {
+      if (delay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+      let diagnostics: AgentDiagnosticRow[];
+      try {
+        const result = await invoke<AgentDiagnosticRow[]>("agent_diagnostics");
+        if (!Array.isArray(result)) return;
+        diagnostics = result;
+      } catch {
+        return;
+      }
+      const row = diagnostics.find((entry) => diagnosticMatchesTab(entry, tabId));
+      if (!row) continue;
+      const promptInFlight =
+        row.prompt_in_flight === true || row.promptInFlight === true;
+      if (row.alive !== false && promptInFlight) continue;
+      const stoppedMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "system",
+        text: "Agent stopped.",
+      };
+      setState((prev) => {
+        const hydrated = hydrateAgentActivityState(prev, diagnostics);
+        const tabs = (hydrated.tabs as Tab[] | undefined) ?? [];
+        const nextTabs = tabs.map((tab) =>
+          tab.id === tabId
+            ? { ...tab, messages: [...tab.messages, stoppedMessage] }
+            : tab,
+        );
+        return hydrated.activeTabId === tabId
+          ? {
+              ...hydrated,
+              status: "stopped",
+              messages: [
+                ...((hydrated.messages as ChatMessage[]) ?? []),
+                stoppedMessage,
+              ],
+              tabs: nextTabs,
+            }
+          : { ...hydrated, tabs: nextTabs };
+      });
+      persistLocalChatMessage(stoppedMessage, tabId);
+      return;
+    }
+  }
+
   async function stopPrompt(explicitTabId?: string) {
     const tabId =
       explicitTabId ??
@@ -328,6 +391,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         payload: JSON.stringify({ type: "stop", tabId }),
       });
       setStatusFlags({ status: "stopping…" });
+      await confirmPromptStopped(tabId);
     } catch (err) {
       appendMessage(
         {

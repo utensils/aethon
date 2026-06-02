@@ -82,6 +82,76 @@ describe("useKeyboardShortcuts Escape handling", () => {
     expect(ctx.closePalette).toHaveBeenCalledTimes(1);
     expect(ctx.closeSettings).not.toHaveBeenCalled();
   });
+
+  it("stops a busy active agent tab when no overlay is open", () => {
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      waiting: false,
+      palette: { open: false },
+      settings: { open: false },
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1", waiting: true }],
+    });
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(ctx.stopPrompt).toHaveBeenCalledTimes(1);
+    expect(ctx.closePalette).not.toHaveBeenCalled();
+    expect(ctx.closeSettings).not.toHaveBeenCalled();
+  });
+
+  it("stops when a running tool card is visible even if waiting drifted false", () => {
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      waiting: false,
+      palette: { open: false },
+      settings: { open: false },
+      tabs: [
+        {
+          id: "agent-1",
+          kind: "agent",
+          label: "Tab 1",
+          waiting: false,
+          queueCount: 0,
+          messages: [
+            {
+              id: "tool-message",
+              role: "agent",
+              a2ui: {
+                components: [
+                  {
+                    id: "restored-tool-call_1",
+                    type: "tool-card",
+                    props: { startedAt: 1_000 },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(ctx.stopPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not stop an idle active agent tab on Escape", () => {
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      waiting: false,
+      palette: { open: false },
+      settings: { open: false },
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1", waiting: false }],
+    });
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(ctx.stopPrompt).not.toHaveBeenCalled();
+  });
 });
 
 describe("Cmd+W is focus-aware", () => {

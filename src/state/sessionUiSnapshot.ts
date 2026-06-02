@@ -1,4 +1,4 @@
-import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
+import { OVERVIEW_TAB_ID, type QueuedMessage, type Tab } from "../types/tab";
 import type { ChatMessage } from "../types/a2ui";
 import { durableImageAttachments } from "../utils/imageAttachments";
 import { dedupeToolResultTextMessages } from "../utils/messages";
@@ -38,6 +38,11 @@ export interface ParseSessionUiSnapshotOptions {
   /** Hot webview reloads can reattach/reopen PTYs. Durable disk restore
    *  after an app restart must not silently run saved shell commands. */
   restartShellTabs?: boolean;
+  /** A webview reload keeps the Rust/Bun agent workers alive. Preserve
+   *  local busy/queue state so the user can still press Stop after the
+   *  React tree remounts. Durable disk restore leaves this false because
+   *  there is no attached prompt runner after a full app restart. */
+  preserveAgentActivity?: boolean;
 }
 
 function canUseSessionStorage(): boolean {
@@ -67,6 +72,15 @@ function trimTab(tab: Tab): Tab {
     draftAttachments: durableImageAttachments(tab.draftAttachments),
     terminalBuffer: tab.terminalBuffer.slice(-MAX_TERMINAL_BUFFER),
   };
+}
+
+function durableQueuedMessages(
+  queuedMessages: QueuedMessage[] | undefined,
+): QueuedMessage[] {
+  return (queuedMessages ?? []).map((message) => ({
+    ...message,
+    attachments: durableImageAttachments(message.attachments),
+  }));
 }
 
 function shouldPersistTab(tab: Tab): boolean {
@@ -225,10 +239,20 @@ function validTabsFrom(value: unknown): Tab[] {
  *  editor metadata, and re-arm or quiesce shell tabs. Shared by the main
  *  tab list and the stashed per-workspace buckets so both restore the same
  *  way. */
-function restoreTabRecord(t: Tab, restartShellTabs: boolean): Tab {
+function restoreTabRecord(
+  t: Tab,
+  restartShellTabs: boolean,
+  preserveAgentActivity: boolean,
+): Tab {
+  const kind = t.kind ?? "agent";
+  const preserveActivity = preserveAgentActivity && kind === "agent";
+  const queuedMessages =
+    preserveActivity && Array.isArray(t.queuedMessages)
+      ? durableQueuedMessages(t.queuedMessages)
+      : [];
   const base = {
     ...t,
-    kind: t.kind ?? "agent",
+    kind,
     messages: dedupeToolResultTextMessages(t.messages).map(
       (message): ChatMessage =>
         message.attachments && message.attachments.length > 0
@@ -242,16 +266,16 @@ function restoreTabRecord(t: Tab, restartShellTabs: boolean): Tab {
     draftAttachments: Array.isArray(t.draftAttachments)
       ? durableImageAttachments(t.draftAttachments)
       : [],
-    // Waiting is process-local state. After an app restart there is no
-    // still-attached prompt runner behind this tab, so restoring it as
-    // busy leaves the UI stuck in "thinking..." with a dead stop button.
-    waiting: false,
-    // Client-held queue is intentionally NOT restored: queued messages are
-    // ephemeral, and a user who closed the app while queue items were
-    // pending probably abandoned them. queueCount derives from
-    // queuedMessages.length, so zero it in lockstep.
-    queueCount: 0,
-    queuedMessages: [],
+    // Waiting is process-local state. Preserve it only for same-process
+    // webview reloads; after an app restart there is no still-attached
+    // prompt runner behind this tab, so restoring it as busy leaves the UI
+    // stuck in "thinking..." with a dead stop button.
+    waiting: preserveActivity ? t.waiting === true : false,
+    // Client-held queue is restored only for hot reload. Durable app-start
+    // restore treats queued messages as abandoned and zeroes the derived
+    // count in lockstep.
+    queueCount: preserveActivity ? queuedMessages.length : 0,
+    queuedMessages,
     canvas: t.canvas ?? null,
     model: t.model ?? "",
     terminalBuffer: t.terminalBuffer ?? "",
@@ -293,6 +317,7 @@ function restoreTabRecord(t: Tab, restartShellTabs: boolean): Tab {
 function parsePersistedBuckets(
   value: unknown,
   restartShellTabs: boolean,
+  preserveAgentActivity: boolean,
 ): Record<string, PersistedTabBucket> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -302,7 +327,7 @@ function parsePersistedBuckets(
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const bucket = raw as { tabs?: unknown; activeTabId?: unknown };
     const tabs = validTabsFrom(bucket.tabs).map((t) =>
-      restoreTabRecord(t, restartShellTabs),
+      restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
     );
     if (tabs.length === 0) continue;
     const activeTabId =
@@ -318,7 +343,11 @@ function parsePersistedBuckets(
 export function loadSessionUiSnapshot(): SessionUiSnapshot | null {
   if (canUseSessionStorage()) {
     const raw = window.sessionStorage.getItem(KEY);
-    if (raw) return parseSessionUiSnapshot(raw, { restartShellTabs: true });
+    if (raw)
+      return parseSessionUiSnapshot(raw, {
+        restartShellTabs: true,
+        preserveAgentActivity: true,
+      });
   }
   return null;
 }
@@ -332,7 +361,12 @@ export function parseSessionUiSnapshot(
     const parsed = JSON.parse(raw) as Partial<SessionUiSnapshot>;
     const tabs = validTabsFrom(parsed.tabs);
     const restartShellTabs = options.restartShellTabs === true;
-    const buckets = parsePersistedBuckets(parsed.buckets, restartShellTabs);
+    const preserveAgentActivity = options.preserveAgentActivity === true;
+    const buckets = parsePersistedBuckets(
+      parsed.buckets,
+      restartShellTabs,
+      preserveAgentActivity,
+    );
     // Nothing to restore if neither the active workspace nor any backgrounded
     // workspace had sessions.
     if (tabs.length === 0 && !buckets) return null;
@@ -350,7 +384,9 @@ export function parseSessionUiSnapshot(
           ? parsed.activeTabId
           : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
     return {
-      tabs: tabs.map((t) => restoreTabRecord(t, restartShellTabs)),
+      tabs: tabs.map((t) =>
+        restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
+      ),
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),
       terminal: durableTerminalSnapshot(parsed.terminal),

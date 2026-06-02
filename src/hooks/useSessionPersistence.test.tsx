@@ -89,6 +89,43 @@ describe("useSessionPersistence", () => {
     expect(appStore.getState().activeTabId).toBe("__overview__");
   });
 
+  it("mirrors restored hot-reload busy state onto the active root tab", () => {
+    window.sessionStorage.setItem(
+      "aethon:session-ui-snapshot:v1",
+      JSON.stringify({
+        tabs: [
+          {
+            id: "restored-tab",
+            kind: "agent",
+            label: "Restored",
+            messages: [{ id: "m1", role: "user", text: "running" }],
+            draft: "",
+            waiting: true,
+            queueCount: 0,
+            queuedMessages: [],
+            canvas: null,
+            model: "claude",
+            terminalBuffer: "",
+            projectId: null,
+          },
+        ],
+        activeTabId: "restored-tab",
+        savedAt: 1,
+      }),
+    );
+
+    const { appStore } = buildInitialAppStore({
+      bootLayout: { components: [], state: { terminalPanel: {} } },
+      logoUrl: "/logo.svg",
+      appVersion: "v0.0.0",
+    });
+
+    expect(appStore.getState()).toMatchObject({
+      activeTabId: "restored-tab",
+      waiting: true,
+    });
+  });
+
   it("does not restore durable session snapshots when restore_tabs is disabled", async () => {
     vi.mocked(getConfig).mockResolvedValue(defaultConfig);
     vi.mocked(readState).mockResolvedValue(

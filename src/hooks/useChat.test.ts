@@ -7,7 +7,9 @@ import { makeEmptyTab, type Tab } from "../types/tab";
 import { useChat, type UseChatContext } from "./useChat";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../utils/modelPicker";
 
-const invoke = vi.fn((..._args: unknown[]) => Promise.resolve(undefined));
+const invoke = vi.fn<(...args: unknown[]) => Promise<unknown>>(() =>
+  Promise.resolve(undefined),
+);
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
@@ -428,6 +430,76 @@ describe("useChat setModel", () => {
     expect(invoke).toHaveBeenCalledWith("agent_command", {
       payload: JSON.stringify({ type: "stop", tabId: "tab-1" }),
     });
+  });
+
+  it("stopPrompt reconciles confirmed stops so stale tool cards do not keep spinning", async () => {
+    invoke.mockImplementation((cmd: unknown) => {
+      if (cmd === "agent_diagnostics") {
+        return Promise.resolve([
+          {
+            key: "tab:tab-1",
+            tab_id: "tab-1",
+            alive: true,
+            prompt_in_flight: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const runningTool = {
+      id: "tool-message",
+      role: "agent" as const,
+      a2ui: {
+        components: [
+          {
+            id: "restored-tool-call_1",
+            type: "tool-card",
+            props: {
+              title: "bash",
+              description: "curl https://example.test",
+              startedAt: 1_000,
+            },
+            children: [],
+          },
+        ],
+      },
+    };
+    const { ctx, stateRef } = buildContext({
+      status: "thinking…",
+      waiting: true,
+      tabs: [
+        {
+          ...makeEmptyTab("tab-1", "Tab 1"),
+          waiting: true,
+          messages: [runningTool],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.stopPrompt("tab-1");
+    });
+
+    expect(stateRef.current.status).toBe("stopped");
+    expect(stateRef.current.waiting).toBe(false);
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    const toolCard = (tab.messages[0].a2ui?.components ?? [])[0];
+    expect(toolCard.props).toMatchObject({
+      status: "cancelled",
+      endedAt: expect.any(Number),
+    });
+    expect(toolCard.children?.[0].props?.content).toContain(
+      "No live prompt is running",
+    );
+    expect(tab.messages.at(-1)).toMatchObject({
+      role: "system",
+      text: "Agent stopped.",
+    });
+    expect(ctx.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "system", text: "Agent stopped." }),
+      "tab-1",
+    );
   });
 
   it("drained queued messages actually reach invoke('send_message') (regression: P1 from peer review)", async () => {
