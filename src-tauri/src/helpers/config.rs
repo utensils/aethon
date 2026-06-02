@@ -149,6 +149,21 @@ pub struct ExtensionsConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct GuardrailsConfig {
+    /// Optional free-text "soft anchor" appended to the per-turn working
+    /// context the agent injects into the model's system prompt. Use it to
+    /// remind the model of project rules ("only touch files under src/",
+    /// "never run destructive git commands", etc.). Empty/omitted → no
+    /// anchor. This never *enforces* anything — it's advisory prompt text.
+    pub soft_prompt_anchor: Option<String>,
+    /// Hard enforcement: when `true`, the agent blocks write/edit/bash tool
+    /// calls that touch paths outside the active tab's project root. Default
+    /// `false` (permissive). Deterministic backstop for a wandering model;
+    /// the per-tab composer toggle can override this default per session.
+    pub hard_enforce_project_root: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct AethonConfig {
     #[serde(default)]
     pub ui: UiConfig,
@@ -168,6 +183,8 @@ pub struct AethonConfig {
     pub devshell: DevshellConfig,
     #[serde(default)]
     pub server: ServerConfig,
+    #[serde(default)]
+    pub guardrails: GuardrailsConfig,
 }
 
 /// Validate-and-normalize `[devshell] enabled`. Unknown values fall
@@ -294,6 +311,13 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     let devshell_cache_ttl_hours = cfg.devshell.cache_ttl_hours.unwrap_or(720);
     let devshell_refresh_on_lockfile_change =
         cfg.devshell.refresh_on_lockfile_change.unwrap_or(true);
+    let soft_prompt_anchor = cfg
+        .guardrails
+        .soft_prompt_anchor
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let hard_enforce_project_root = cfg.guardrails.hard_enforce_project_root.unwrap_or(false);
     serde_json::json!({
         "ui": {
             "theme": cfg.ui.theme,
@@ -337,6 +361,10 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "server": {
             "enabled": cfg.server.enabled.unwrap_or(true),
+        },
+        "guardrails": {
+            "softPromptAnchor": soft_prompt_anchor,
+            "hardEnforceProjectRoot": hard_enforce_project_root,
         },
     })
 }
@@ -767,6 +795,36 @@ enabled = "never"
         // Malformed TOML must never block a shell open — we just ignore it.
         let v = parse_project_devshell_override("=== broken ===");
         assert!(v.devshell.enabled.is_none());
+    }
+
+    // ── guardrails ─────────────────────────────────────────────────────────
+    #[test]
+    fn parse_config_toml_guardrails_defaults() {
+        let v = parse_config_toml("");
+        assert_eq!(v["guardrails"]["softPromptAnchor"], serde_json::Value::Null);
+        assert_eq!(v["guardrails"]["hardEnforceProjectRoot"], false);
+    }
+
+    #[test]
+    fn parse_config_toml_extracts_guardrails_section() {
+        let v = parse_config_toml(
+            r#"[guardrails]
+soft_prompt_anchor = "Only edit files under src/."
+hard_enforce_project_root = true
+"#,
+        );
+        assert_eq!(
+            v["guardrails"]["softPromptAnchor"],
+            "Only edit files under src/."
+        );
+        assert_eq!(v["guardrails"]["hardEnforceProjectRoot"], true);
+    }
+
+    #[test]
+    fn parse_config_toml_guardrails_blank_anchor_is_null() {
+        // Whitespace-only anchor is treated as "no anchor".
+        let v = parse_config_toml("[guardrails]\nsoft_prompt_anchor = \"   \"\n");
+        assert_eq!(v["guardrails"]["softPromptAnchor"], serde_json::Value::Null);
     }
 
     // ── clamp_font_size ────────────────────────────────────────────────────

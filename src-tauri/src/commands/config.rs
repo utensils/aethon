@@ -150,6 +150,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let voice = config.get("voice").and_then(|v| v.as_object());
     let updates = config.get("updates").and_then(|v| v.as_object());
     let devshell = config.get("devshell").and_then(|v| v.as_object());
+    let guardrails = config.get("guardrails").and_then(|v| v.as_object());
 
     let theme = ui
         .and_then(|m| m.get("theme"))
@@ -234,6 +235,14 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .map(|n| n.min(u32::MAX as u64));
     let devshell_refresh_on_lockfile = devshell
         .and_then(|m| m.get("refreshOnLockfileChange"))
+        .and_then(|v| v.as_bool());
+    let soft_prompt_anchor = guardrails
+        .and_then(|m| m.get("softPromptAnchor"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let hard_enforce_project_root = guardrails
+        .and_then(|m| m.get("hardEnforceProjectRoot"))
         .and_then(|v| v.as_bool());
 
     // Load the existing file (or seed a fresh document with our header
@@ -373,6 +382,17 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             devshell_table,
             "refresh_on_lockfile_change",
             devshell_refresh_on_lockfile,
+        );
+    }
+
+    // ── [guardrails] ──
+    {
+        let guardrails_table = ensure_table(&mut doc, "guardrails");
+        set_or_clear_str(guardrails_table, "soft_prompt_anchor", soft_prompt_anchor);
+        set_or_clear_bool(
+            guardrails_table,
+            "hard_enforce_project_root",
+            hard_enforce_project_root,
         );
     }
 

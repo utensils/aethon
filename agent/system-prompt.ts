@@ -33,7 +33,10 @@ export type { RuntimeSnapshot };
 export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
   const lines: string[] = ["# Current runtime snapshot"];
   lines.push(
-    `Build: ${snapshot.release ? "release" : "dev"}; cwd=\`${snapshot.cwd}\`.`,
+    `Build: ${snapshot.release ? "release" : "dev"}. Agent host dir: \`${snapshot.cwd}\` — ` +
+      "this is where the bridge process launched, NOT necessarily where any tab " +
+      'operates. Each turn\'s authoritative working directory + git state arrives in the ' +
+      '"Working context" section appended below; trust that over this line.',
   );
   if (snapshot.projectRoot) {
     lines.push(
@@ -218,8 +221,9 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
     lines.push("");
     lines.push("Open tabs:");
     for (const t of snapshot.tabs) {
+      const cwdNote = t.cwd ? `, cwd \`${t.cwd}\`` : "";
       lines.push(
-        `- \`${t.id}\` — model \`${t.model || "(none)"}\`, ${t.messageCount} messages`,
+        `- \`${t.id}\` — model \`${t.model || "(none)"}\`, ${t.messageCount} messages${cwdNote}`,
       );
     }
   }

@@ -47,6 +47,7 @@ import { homedir } from "node:os";
 import {
   AuthStorage,
   DefaultResourceLoader,
+  type ExtensionFactory,
   ModelRegistry,
   SessionManager,
   SettingsManager,
@@ -56,6 +57,8 @@ import {
 import { logger } from "./logger";
 import { resolveStateLimits } from "./state-limits";
 import { resolveAethonSystemPrompt } from "./system-prompt";
+import { buildWorkingContextSection } from "./system-prompt/working-context";
+import { getWorkingContext } from "./git-context";
 import { readSessionTranscript } from "./session-history";
 import { readActiveProjectCwd, resolveStartupCwd } from "./active-project-cwd";
 import {
@@ -183,11 +186,45 @@ async function main(): Promise<void> {
   (globalThis as { aethon?: typeof aethonApi }).aethon = aethonApi;
   const extensionApi = aethonApi;
 
+  // -- Per-turn working-context injection --------------------------------
+  // The appended system prompt is cached at resourceLoader.reload() (pi's
+  // ResourceLoader.getAppendSystemPrompt returns a memoized string), so it
+  // can't carry per-tab or per-turn-fresh data. The `before_agent_start`
+  // hook, by contrast, fires synchronously inside every session.prompt()
+  // — which chat.ts wraps in `state.tabContext.run(tabId, …)` — so reading
+  // `tabContext.getStore()` here yields the active tab, and its result
+  // `systemPrompt` overrides the prompt for that turn only (never
+  // persisted). This is how a local model keeps a correct picture of which
+  // directory it's working in. See agent/git-context.ts for the git source.
+  const softGuardrailPrompt = process.env.AETHON_SOFT_GUARDRAIL_PROMPT;
+  const workingContextExtension: ExtensionFactory = (pi) => {
+    pi.on("before_agent_start", async (event) => {
+      const tabId = state.tabContext.getStore() ?? state.currentAgentTabId;
+      const resolvedCwd =
+        (tabId ? state.tabProjectCwds.get(tabId) : undefined) ??
+        state.currentProjectCwd ??
+        process.cwd();
+      // getWorkingContext degrades to null internally; .catch is a
+      // belt-and-braces guard so a never-expected rejection can't abort
+      // the user's turn.
+      const git = await getWorkingContext(state, { send }, resolvedCwd).catch(
+        () => null,
+      );
+      const section = buildWorkingContextSection({
+        cwd: resolvedCwd,
+        git,
+        softAnchor: softGuardrailPrompt,
+      });
+      return { systemPrompt: `${event.systemPrompt}\n\n${section}` };
+    });
+  };
+
   // -- pi resource loader (system prompt, tools, memory) ------------------
   state.resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir: getAgentDir(),
     settingsManager: state.settingsManager,
+    extensionFactories: [workingContextExtension],
     appendSystemPromptOverride: (base) => [
       ...base,
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),

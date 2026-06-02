@@ -43,6 +43,7 @@ const baseConfig: AethonConfig = {
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
   },
+  guardrails: { softPromptAnchor: null, hardEnforceProjectRoot: false },
 };
 
 function buildContext(initialState: Record<string, unknown>): {

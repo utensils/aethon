@@ -40,7 +40,12 @@ export interface RuntimeSnapshot {
   themes: { id: string; label: string }[];
   components: string[];
   layoutSummary: string;
-  tabs: { id: string; model: string; messageCount: number }[];
+  // `cwd` is the per-tab working directory (from `state.tabProjectCwds`).
+  // Distinct from the top-level `cwd` (the agent process launch dir), which
+  // is shared across tabs and does NOT reflect where any given tab works.
+  // The authoritative per-turn working dir is injected separately by the
+  // `before_agent_start` hook; this list is the at-a-glance map.
+  tabs: { id: string; model: string; messageCount: number; cwd?: string }[];
   // Active aethon.onEvent registrations (match shape only — handler bodies
   // are intentionally omitted so the snapshot stays small + serializable).
   // Lets the agent answer "what handlers are wired?" without invoking JS.

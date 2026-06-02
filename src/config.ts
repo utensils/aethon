@@ -78,6 +78,15 @@ export interface AethonConfig {
     /** Re-resolve when watched lockfile / marker file mtime changes. */
     refreshOnLockfileChange: boolean;
   };
+  guardrails: {
+    /** Optional advisory text appended to the per-turn working-context the
+     *  agent injects. Reminds the model of project rules; never enforces.
+     *  Null/empty → no anchor. From `[guardrails] soft_prompt_anchor`. */
+    softPromptAnchor: string | null;
+    /** When true, the agent hard-blocks write/edit/bash tool calls outside
+     *  the active tab's project root. Default false. Per-tab overridable. */
+    hardEnforceProjectRoot: boolean;
+  };
 }
 
 const DEFAULTS: AethonConfig = {
@@ -112,6 +121,10 @@ const DEFAULTS: AethonConfig = {
     mode: "auto",
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
+  },
+  guardrails: {
+    softPromptAnchor: null,
+    hardEnforceProjectRoot: false,
   },
 };
 
@@ -219,6 +232,14 @@ export function getConfig(): Promise<AethonConfig> {
             typeof obj?.devshell?.refreshOnLockfileChange === "boolean"
               ? obj.devshell.refreshOnLockfileChange
               : true,
+        },
+        guardrails: {
+          softPromptAnchor:
+            typeof obj?.guardrails?.softPromptAnchor === "string" &&
+            obj.guardrails.softPromptAnchor.trim().length > 0
+              ? obj.guardrails.softPromptAnchor
+              : null,
+          hardEnforceProjectRoot: obj?.guardrails?.hardEnforceProjectRoot === true,
         },
       };
     } catch (err) {

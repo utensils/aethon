@@ -226,6 +226,152 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
     }))
 }
 
+/// Richer working-directory context for a single cwd, used by the agent
+/// bridge to inject "where am I working" into the model's per-turn system
+/// prompt (a local Ollama model otherwise loses track of the active tab's
+/// directory). Reuses the same `git` shell-outs as [`git_status`] plus a
+/// worktree check and a changed-file count. Returns `None` when `cwd` isn't
+/// inside a git work tree so the caller still reports the bare directory.
+#[derive(serde::Serialize, Default, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorkingContext {
+    pub repo_root: Option<String>,
+    pub branch: Option<String>,
+    pub is_worktree: bool,
+    pub changed_files: u32,
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+#[tauri::command]
+pub async fn git_working_context(cwd: String) -> Result<Option<GitWorkingContext>, String> {
+    let dir = PathBuf::from(&cwd);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    if !is_inside_work_tree(&dir) {
+        return Ok(None);
+    }
+    let repo_root = env::command("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // A linked worktree has a per-checkout git-dir (`.git/worktrees/<name>`)
+    // distinct from the shared common dir (the main repo's `.git`); they're
+    // equal in the primary worktree. Surfacing this lets the model know it's
+    // on a worktree branch, not the canonical checkout.
+    let is_worktree = match (
+        git_rev_parse_abs_path(&dir, "--git-dir"),
+        git_rev_parse_abs_path(&dir, "--git-common-dir"),
+    ) {
+        (Some(git_dir), Some(common_dir)) => git_dir != common_dir,
+        _ => false,
+    };
+
+    let branch = read_head_branch(&dir);
+    let (changed_files, ahead, behind) = read_branch_porcelain_counts(&dir);
+
+    Ok(Some(GitWorkingContext {
+        repo_root,
+        branch,
+        is_worktree,
+        changed_files,
+        ahead,
+        behind,
+    }))
+}
+
+/// Resolve an absolute git path for `flag` (e.g. `--git-dir`,
+/// `--git-common-dir`), canonicalized so the worktree comparison is stable.
+fn git_rev_parse_abs_path(dir: &Path, flag: &str) -> Option<PathBuf> {
+    let out = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--path-format=absolute", flag])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(raw);
+    Some(path.canonicalize().unwrap_or(path))
+}
+
+/// Symbolic branch name, falling back to a short SHA on detached HEAD so the
+/// prompt still says something useful. Mirrors [`git_status`]'s branch read.
+fn read_head_branch(dir: &Path) -> Option<String> {
+    let symbolic = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output()
+        .ok();
+    match symbolic {
+        Some(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).trim().to_string()),
+        _ => env::command("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()),
+    }
+}
+
+/// Parse `git status --porcelain=v1 --branch` into `(changed, ahead, behind)`.
+/// The `## ` header carries the optional `[ahead N, behind M]` tail; every
+/// other non-empty line is a tracked/untracked change.
+fn read_branch_porcelain_counts(dir: &Path) -> (u32, u32, u32) {
+    let porcelain = env::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["status", "--porcelain=v1", "--branch"])
+        .output();
+    let Ok(out) = porcelain else {
+        return (0, 0, 0);
+    };
+    if !out.status.success() {
+        return (0, 0, 0);
+    }
+    parse_branch_porcelain_counts(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Pure parse half of [`read_branch_porcelain_counts`], split out for tests.
+pub(crate) fn parse_branch_porcelain_counts(text: &str) -> (u32, u32, u32) {
+    let mut changed = 0u32;
+    let mut ahead = 0u32;
+    let mut behind = 0u32;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("## ") {
+            if let Some(start) = rest.find('[')
+                && let Some(end) = rest[start..].find(']')
+            {
+                let inner = &rest[start + 1..start + end];
+                for part in inner.split(',') {
+                    let part = part.trim();
+                    if let Some(n) = part.strip_prefix("ahead ") {
+                        ahead = n.trim().parse().unwrap_or(0);
+                    } else if let Some(n) = part.strip_prefix("behind ") {
+                        behind = n.trim().parse().unwrap_or(0);
+                    }
+                }
+            }
+        } else if !line.is_empty() {
+            changed += 1;
+        }
+    }
+    (changed, ahead, behind)
+}
+
 /// Return per-file Git decorations for the active file tree root. `None`
 /// means the directory is not inside a Git worktree; callers should render
 /// the plain filesystem tree in that case.
@@ -528,6 +674,80 @@ mod tests {
         let out = parse_nul_paths(text);
         assert_eq!(out, vec!["node_modules/", ".env", "build/cache file.txt"]);
         assert!(parse_nul_paths(b"").is_empty());
+    }
+
+    #[test]
+    fn parse_branch_porcelain_counts_reads_ahead_behind_and_changes() {
+        let text = "## main...origin/main [ahead 2, behind 1]\n M src/a.ts\n?? src/b.ts\n";
+        assert_eq!(parse_branch_porcelain_counts(text), (2, 2, 1));
+    }
+
+    #[test]
+    fn parse_branch_porcelain_counts_clean_repo_is_zeroes() {
+        assert_eq!(parse_branch_porcelain_counts("## main...origin/main\n"), (0, 0, 0));
+        // No upstream configured — header has no bracket tail.
+        assert_eq!(parse_branch_porcelain_counts("## main\n"), (0, 0, 0));
+    }
+
+    #[test]
+    fn parse_branch_porcelain_counts_handles_ahead_only() {
+        let text = "## feat...origin/feat [ahead 5]\n";
+        assert_eq!(parse_branch_porcelain_counts(text), (0, 5, 0));
+    }
+
+    #[tokio::test]
+    async fn git_working_context_returns_none_for_missing_dir() {
+        let missing = tempfile::tempdir().unwrap().path().join("missing");
+        assert_eq!(
+            git_working_context(missing.to_string_lossy().to_string())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn git_working_context_returns_none_for_non_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            git_working_context(tmp.path().to_string_lossy().to_string())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn git_working_context_reports_branch_and_changes_for_repo() {
+        if env::resolve_program("git").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            env::command("git")
+                .arg("-C")
+                .arg(tmp.path())
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        assert!(run(&["init", "--initial-branch=trunk"]).status.success());
+        run(&["config", "user.email", "t@t.io"]);
+        run(&["config", "user.name", "Test"]);
+        std::fs::write(tmp.path().join("a.txt"), "hi").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-m", "init"]);
+        // Dirty the tree with an untracked file.
+        std::fs::write(tmp.path().join("b.txt"), "new").unwrap();
+
+        let ctx = git_working_context(tmp.path().to_string_lossy().to_string())
+            .await
+            .unwrap()
+            .expect("inside a work tree");
+        assert_eq!(ctx.branch.as_deref(), Some("trunk"));
+        assert!(!ctx.is_worktree);
+        assert_eq!(ctx.changed_files, 1);
+        assert!(ctx.repo_root.is_some());
     }
 
     #[test]

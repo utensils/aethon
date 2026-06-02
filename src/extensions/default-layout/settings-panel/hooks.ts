@@ -45,6 +45,7 @@ export function useEffectiveConfig(
       voice: { ...snapshot.voice, ...(p.voice ?? {}) },
       updates: { ...snapshot.updates, ...(p.updates ?? {}) },
       devshell: { ...snapshot.devshell, ...(p.devshell ?? {}) },
+      guardrails: { ...snapshot.guardrails, ...(p.guardrails ?? {}) },
     };
   }, [snapshot, pending]);
 }
