@@ -29,7 +29,10 @@ import ReactMarkdown from "react-markdown";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
-import { MARKDOWN_PREVIEW_PROPS } from "../markdown-adapter";
+import {
+  MARKDOWN_PREVIEW_PROPS,
+  safeMarkdownImageSrc,
+} from "../markdown-adapter";
 import { resolveMarkdownLinkPath, safeExternalHttpUrl } from "./markdown-links";
 
 interface MarkdownPreviewProps {
@@ -49,6 +52,87 @@ function openExternalUrl(url: string): void {
   } catch {
     // Opener failures are not actionable from preview rendering.
   }
+}
+
+function imageMimeFromPath(filePath: string): string {
+  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  const base = slash >= 0 ? filePath.slice(slash + 1) : filePath;
+  const dot = base.lastIndexOf(".");
+  if (dot < 0) return "application/octet-stream";
+  switch (base.slice(dot + 1).toLowerCase()) {
+    case "apng":
+      return "image/apng";
+    case "avif":
+      return "image/avif";
+    case "bmp":
+      return "image/bmp";
+    case "gif":
+      return "image/gif";
+    case "ico":
+      return "image/x-icon";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "svg":
+      return "image/svg+xml";
+    case "webp":
+      return "image/webp";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function PreviewMarkdownImage({
+  src,
+  alt,
+  node,
+  currentFilePath,
+  projectPath,
+  ...rest
+}: React.ImgHTMLAttributes<HTMLImageElement> & {
+  currentFilePath: string;
+  projectPath: string;
+  node?: unknown;
+}) {
+  void node;
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    const safeDirectSrc = safeMarkdownImageSrc(src);
+    if (safeDirectSrc) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Keep remote/data images synchronous from the markdown source.
+      setResolvedSrc(safeDirectSrc);
+      return;
+    }
+
+    const imagePath = resolveMarkdownLinkPath(src, currentFilePath, projectPath);
+    if (!imagePath || !projectPath) {
+      setResolvedSrc(null);
+      return;
+    }
+
+    let cancelled = false;
+    setResolvedSrc(null);
+    void invoke<string>("fs_read_file_base64", {
+      root: projectPath,
+      path: imagePath,
+    })
+      .then((b64) => {
+        if (cancelled) return;
+        setResolvedSrc(`data:${imageMimeFromPath(imagePath)};base64,${b64}`);
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedSrc(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFilePath, projectPath, src]);
+
+  if (!resolvedSrc) return null;
+  return <img {...rest} src={resolvedSrc} alt={alt ?? ""} />;
 }
 
 export function MarkdownPreview(props: BuiltinComponentProps) {
@@ -102,6 +186,19 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
           >
             {children}
           </a>
+        );
+      },
+      img({
+        node,
+        ...rest
+      }: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) {
+        return (
+          <PreviewMarkdownImage
+            {...rest}
+            node={node}
+            currentFilePath={filePath}
+            projectPath={projectPath}
+          />
         );
       },
     };

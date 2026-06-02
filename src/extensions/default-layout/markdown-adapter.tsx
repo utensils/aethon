@@ -13,14 +13,16 @@
  */
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Children, isValidElement } from "react";
+import { Children, isValidElement, useEffect, useId, useState } from "react";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, {
   defaultSchema,
   type Options as RehypeSanitizeOptions,
 } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import { defaultUrlTransform } from "react-markdown";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
+import type { Element as HastElement } from "hast";
 import { HighlightedCode } from "../../components/HighlightedCode";
 
 type MarkdownRemarkPlugins = NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
@@ -98,6 +100,24 @@ function safeHttpUrl(value: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+function safeDataImageUrl(value: string | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return null;
+  if (
+    !/^data:image\/(?:apng|avif|bmp|gif|jpe?g|png|svg\+xml|webp|x-icon|vnd\.microsoft\.icon)(?:;[a-z0-9.+-]+=[^;,]+)*;base64,[a-z0-9+/=]+$/i.test(
+      trimmed,
+    )
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- shared by preview image renderers
+export function safeMarkdownImageSrc(value: string | undefined): string | null {
+  return safeHttpUrl(value) ?? safeDataImageUrl(value);
 }
 
 function linkifyTextNode(node: MarkdownNode): MarkdownNode[] {
@@ -181,7 +201,23 @@ const MARKDOWN_PREVIEW_SANITIZE_SCHEMA: RehypeSanitizeOptions = {
       "width",
     ],
   },
+  protocols: {
+    ...defaultSchema.protocols,
+    src: Array.from(new Set([...(defaultSchema.protocols?.src ?? []), "data"])),
+  },
 };
+
+function markdownPreviewUrlTransform(
+  value: string,
+  key: string,
+  node: Readonly<HastElement>,
+): string | null | undefined {
+  if (key === "src" && node.tagName === "img") {
+    const safeImageSrc = safeMarkdownImageSrc(value);
+    if (safeImageSrc) return safeImageSrc;
+  }
+  return defaultUrlTransform(value);
+}
 
 // eslint-disable-next-line react-refresh/only-export-components -- remark plugin list consumed by ReactMarkdown callers
 export const MARKDOWN_REMARK_PLUGINS: MarkdownRemarkPlugins = [
@@ -233,8 +269,12 @@ function textFromHast(node: HastElementNode | undefined): string {
   return (node.children ?? []).map((child) => textFromHast(child)).join("");
 }
 
-// eslint-disable-next-line react-refresh/only-export-components -- adapter map for react-markdown; not a component module
-export const MARKDOWN_COMPONENTS = {
+function createMarkdownComponents({
+  renderMermaid,
+}: {
+  renderMermaid: boolean;
+}) {
+  return {
   pre({
     children,
     node,
@@ -248,20 +288,29 @@ export const MARKDOWN_COMPONENTS = {
         ? node.children[0]
         : undefined;
     if (hastCodeChild) {
+      const code = textFromHast(hastCodeChild).replace(/\n$/, "");
+      const language = languageFromClassName(classNameFromHast(hastCodeChild));
+      if (renderMermaid && language?.toLowerCase() === "mermaid") {
+        return <MermaidDiagram code={code} />;
+      }
       return (
         <HighlightedFence
-          code={textFromHast(hastCodeChild).replace(/\n$/, "")}
-          language={languageFromClassName(classNameFromHast(hastCodeChild))}
+          code={code}
+          language={language}
         />
       );
     }
     const codeChild = codeChildFromPre(children);
     if (codeChild) {
       const text = String(codeChild.props.children ?? "").replace(/\n$/, "");
+      const language = languageFromClassName(codeChild.props.className);
+      if (renderMermaid && language?.toLowerCase() === "mermaid") {
+        return <MermaidDiagram code={text} />;
+      }
       return (
         <HighlightedFence
           code={text}
-          language={languageFromClassName(codeChild.props.className)}
+          language={language}
         />
       );
     }
@@ -290,9 +339,22 @@ export const MARKDOWN_COMPONENTS = {
         </code>
       );
     }
+    if (renderMermaid && language?.toLowerCase() === "mermaid") {
+      return <MermaidDiagram code={text} />;
+    }
     return <HighlightedFence code={text} language={language} />;
   },
-};
+  };
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- adapter map for react-markdown; not a component module
+export const MARKDOWN_COMPONENTS = createMarkdownComponents({
+  renderMermaid: false,
+});
+
+const MARKDOWN_PREVIEW_COMPONENTS = createMarkdownComponents({
+  renderMermaid: true,
+});
 
 // eslint-disable-next-line react-refresh/only-export-components -- chat-specific adapter map for react-markdown; not a component module
 export const CHAT_MARKDOWN_COMPONENTS = {
@@ -333,12 +395,13 @@ export const CHAT_MARKDOWN_PROPS = {
 
 // eslint-disable-next-line react-refresh/only-export-components -- shared ReactMarkdown props for editor README previews
 export const MARKDOWN_PREVIEW_PROPS = {
-  components: MARKDOWN_COMPONENTS,
+  components: MARKDOWN_PREVIEW_COMPONENTS,
   remarkPlugins: MARKDOWN_REMARK_PLUGINS,
   rehypePlugins: MARKDOWN_PREVIEW_REHYPE_PLUGINS,
+  urlTransform: markdownPreviewUrlTransform,
 } satisfies Pick<
   ReactMarkdownOptions,
-  "components" | "remarkPlugins" | "rehypePlugins"
+  "components" | "remarkPlugins" | "rehypePlugins" | "urlTransform"
 >;
 
 // Wrapper that tags the rendered element with a data attribute so the
@@ -354,6 +417,89 @@ export function HighlightedFence({
   return (
     <span data-highlighted-fence style={{ display: "block" }}>
       <HighlightedCode code={code} language={language} />
+    </span>
+  );
+}
+
+function sanitizeMermaidSvg(svg: string): string {
+  if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") {
+    return svg;
+  }
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (doc.querySelector("parsererror")) {
+    throw new Error("mermaid returned invalid SVG");
+  }
+  const root = doc.documentElement;
+  if (root.tagName.toLowerCase() !== "svg") {
+    throw new Error("mermaid returned non-SVG content");
+  }
+  for (const unsafe of Array.from(doc.querySelectorAll("script, foreignObject"))) {
+    unsafe.remove();
+  }
+  for (const element of Array.from(doc.querySelectorAll("*"))) {
+    for (const attr of Array.from(element.attributes)) {
+      const name = attr.name.toLowerCase();
+      const value = attr.value.trim().toLowerCase();
+      if (name.startsWith("on") || value.startsWith("javascript:")) {
+        element.removeAttribute(attr.name);
+      }
+    }
+  }
+  return new XMLSerializer().serializeToString(root);
+}
+
+export function MermaidDiagram({ code }: { code: string }) {
+  const reactId = useId();
+  const diagramId = `aethon-mermaid-${reactId.replace(/[^A-Za-z0-9_-]/g, "")}`;
+  const [renderResult, setRenderResult] = useState<{
+    code: string;
+    failed: boolean;
+    svg: string;
+  }>({ code: "", failed: false, svg: "" });
+
+  useEffect(() => {
+    let cancelled = false;
+    void import("mermaid")
+      .then(({ default: mermaid }) => {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "default",
+        });
+        return mermaid.render(diagramId, code);
+      })
+      .then(({ svg: renderedSvg }) => {
+        if (cancelled) return;
+        setRenderResult({
+          code,
+          failed: false,
+          svg: sanitizeMermaidSvg(renderedSvg),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setRenderResult({ code, failed: true, svg: "" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, diagramId]);
+
+  const svg = renderResult.code === code ? renderResult.svg : "";
+  const failed = renderResult.code === code ? renderResult.failed : false;
+
+  return (
+    <span data-highlighted-fence style={{ display: "block" }}>
+      {svg && !failed ? (
+        <div className="a2ui-mermaid-frame">
+          <div className="a2ui-mermaid-header">mermaid</div>
+          <div
+            className="a2ui-mermaid-diagram"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        </div>
+      ) : (
+        <HighlightedCode code={code} language="mermaid" />
+      )}
     </span>
   );
 }
