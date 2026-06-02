@@ -270,80 +270,81 @@ function textFromHast(node: HastElementNode | undefined): string {
 }
 
 function createMarkdownComponents({
+  highlightFences = true,
   renderMermaid,
 }: {
+  highlightFences?: boolean;
   renderMermaid: boolean;
 }) {
+  const renderFence = (code: string, language?: string) =>
+    highlightFences ? (
+      <HighlightedFence code={code} language={language} />
+    ) : (
+      <PlainFence code={code} language={language} />
+    );
+
   return {
-  pre({
-    children,
-    node,
-    ...rest
-  }: React.HTMLAttributes<HTMLPreElement> & { node?: HastElementNode }) {
-    if (isHighlightedFenceChild(children)) {
-      return <>{children}</>;
-    }
-    const hastCodeChild =
-      node?.children?.length === 1 && node.children[0]?.tagName === "code"
-        ? node.children[0]
-        : undefined;
-    if (hastCodeChild) {
-      const code = textFromHast(hastCodeChild).replace(/\n$/, "");
-      const language = languageFromClassName(classNameFromHast(hastCodeChild));
-      if (renderMermaid && language?.toLowerCase() === "mermaid") {
-        return <MermaidDiagram code={code} />;
+    pre({
+      children,
+      node,
+      ...rest
+    }: React.HTMLAttributes<HTMLPreElement> & { node?: HastElementNode }) {
+      if (isHighlightedFenceChild(children)) {
+        return <>{children}</>;
       }
-      return (
-        <HighlightedFence
-          code={code}
-          language={language}
-        />
-      );
-    }
-    const codeChild = codeChildFromPre(children);
-    if (codeChild) {
-      const text = String(codeChild.props.children ?? "").replace(/\n$/, "");
-      const language = languageFromClassName(codeChild.props.className);
+      const hastCodeChild =
+        node?.children?.length === 1 && node.children[0]?.tagName === "code"
+          ? node.children[0]
+          : undefined;
+      if (hastCodeChild) {
+        const code = textFromHast(hastCodeChild).replace(/\n$/, "");
+        const language = languageFromClassName(
+          classNameFromHast(hastCodeChild),
+        );
+        if (renderMermaid && language?.toLowerCase() === "mermaid") {
+          return <MermaidDiagram code={code} />;
+        }
+        return renderFence(code, language);
+      }
+      const codeChild = codeChildFromPre(children);
+      if (codeChild) {
+        const text = String(codeChild.props.children ?? "").replace(/\n$/, "");
+        const language = languageFromClassName(codeChild.props.className);
+        if (renderMermaid && language?.toLowerCase() === "mermaid") {
+          return <MermaidDiagram code={text} />;
+        }
+        return renderFence(text, language);
+      }
+      return <pre {...rest}>{children}</pre>;
+    },
+    code({
+      inline,
+      className,
+      children,
+      node,
+      ...rest
+    }: {
+      inline?: boolean;
+      className?: string;
+      children?: React.ReactNode;
+      node?: { tagName?: string };
+    } & React.HTMLAttributes<HTMLElement>) {
+      void node;
+      const text = String(children ?? "").replace(/\n$/, "");
+      const language = languageFromClassName(className);
+      const isFence = inline === false || Boolean(language);
+      if (!isFence) {
+        return (
+          <code className={className} {...rest}>
+            {children}
+          </code>
+        );
+      }
       if (renderMermaid && language?.toLowerCase() === "mermaid") {
         return <MermaidDiagram code={text} />;
       }
-      return (
-        <HighlightedFence
-          code={text}
-          language={language}
-        />
-      );
-    }
-    return <pre {...rest}>{children}</pre>;
-  },
-  code({
-    inline,
-    className,
-    children,
-    node,
-    ...rest
-  }: {
-    inline?: boolean;
-    className?: string;
-    children?: React.ReactNode;
-    node?: { tagName?: string };
-  } & React.HTMLAttributes<HTMLElement>) {
-    void node;
-    const text = String(children ?? "").replace(/\n$/, "");
-    const language = languageFromClassName(className);
-    const isFence = inline === false || Boolean(language);
-    if (!isFence) {
-      return (
-        <code className={className} {...rest}>
-          {children}
-        </code>
-      );
-    }
-    if (renderMermaid && language?.toLowerCase() === "mermaid") {
-      return <MermaidDiagram code={text} />;
-    }
-    return <HighlightedFence code={text} language={language} />;
-  },
+      return renderFence(text, language);
+    },
   };
 }
 
@@ -356,40 +357,56 @@ const MARKDOWN_PREVIEW_COMPONENTS = createMarkdownComponents({
   renderMermaid: true,
 });
 
+function ChatAnchor({
+  children,
+  href,
+  node,
+  ...rest
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
+  void node;
+  const safeHref = safeHttpUrl(href);
+  if (!safeHref) return <span>{children}</span>;
+
+  return (
+    <a
+      {...rest}
+      href={safeHref}
+      rel="noopener noreferrer"
+      target="_blank"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openExternalUrl(safeHref);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 // eslint-disable-next-line react-refresh/only-export-components -- chat-specific adapter map for react-markdown; not a component module
 export const CHAT_MARKDOWN_COMPONENTS = {
   ...MARKDOWN_COMPONENTS,
-  a({
-    children,
-    href,
-    node,
-    ...rest
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) {
-    void node;
-    const safeHref = safeHttpUrl(href);
-    if (!safeHref) return <span>{children}</span>;
-
-    return (
-      <a
-        {...rest}
-        href={safeHref}
-        rel="noopener noreferrer"
-        target="_blank"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openExternalUrl(safeHref);
-        }}
-      >
-        {children}
-      </a>
-    );
-  },
+  a: ChatAnchor,
 };
 
 // eslint-disable-next-line react-refresh/only-export-components -- shared ReactMarkdown props for chat rendering
 export const CHAT_MARKDOWN_PROPS = {
   components: CHAT_MARKDOWN_COMPONENTS,
+  remarkPlugins: MARKDOWN_REMARK_PLUGINS,
+} satisfies Pick<ReactMarkdownOptions, "components" | "remarkPlugins">;
+
+const CHAT_STREAMING_MARKDOWN_COMPONENTS = {
+  ...createMarkdownComponents({
+    highlightFences: false,
+    renderMermaid: false,
+  }),
+  a: ChatAnchor,
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- shared ReactMarkdown props for active streaming code blocks
+export const CHAT_STREAMING_MARKDOWN_PROPS = {
+  components: CHAT_STREAMING_MARKDOWN_COMPONENTS,
   remarkPlugins: MARKDOWN_REMARK_PLUGINS,
 } satisfies Pick<ReactMarkdownOptions, "components" | "remarkPlugins">;
 
@@ -415,14 +432,41 @@ export function HighlightedFence({
   language?: string;
 }) {
   return (
-    <span data-highlighted-fence style={{ display: "block" }}>
+    <div data-highlighted-fence>
       <HighlightedCode code={code} language={language} />
-    </span>
+    </div>
+  );
+}
+
+export function PlainFence({
+  code,
+  language,
+}: {
+  code: string;
+  language?: string;
+}) {
+  const text = code.endsWith("\n") ? code.slice(0, -1) : code;
+  const lang = (language ?? "").toLowerCase();
+  const displayLang = lang || "text";
+  return (
+    <div data-highlighted-fence>
+      <div className="a2ui-code-frame" data-language={lang || "plain"}>
+        <div className="a2ui-code-header">
+          <span className="a2ui-code-title">{displayLang}</span>
+        </div>
+        <pre className="a2ui-code" data-language={lang || "plain"}>
+          <code>{text}</code>
+        </pre>
+      </div>
+    </div>
   );
 }
 
 function sanitizeMermaidSvg(svg: string): string {
-  if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") {
+  if (
+    typeof DOMParser === "undefined" ||
+    typeof XMLSerializer === "undefined"
+  ) {
     return svg;
   }
   const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
@@ -433,7 +477,9 @@ function sanitizeMermaidSvg(svg: string): string {
   if (root.tagName.toLowerCase() !== "svg") {
     throw new Error("mermaid returned non-SVG content");
   }
-  for (const unsafe of Array.from(doc.querySelectorAll("script, foreignObject"))) {
+  for (const unsafe of Array.from(
+    doc.querySelectorAll("script, foreignObject"),
+  )) {
     unsafe.remove();
   }
   for (const element of Array.from(doc.querySelectorAll("*"))) {
@@ -488,7 +534,7 @@ export function MermaidDiagram({ code }: { code: string }) {
   const failed = renderResult.code === code ? renderResult.failed : false;
 
   return (
-    <span data-highlighted-fence style={{ display: "block" }}>
+    <div data-highlighted-fence>
       {svg && !failed ? (
         <div className="a2ui-mermaid-frame">
           <div className="a2ui-mermaid-header">mermaid</div>
@@ -500,6 +546,6 @@ export function MermaidDiagram({ code }: { code: string }) {
       ) : (
         <HighlightedCode code={code} language="mermaid" />
       )}
-    </span>
+    </div>
   );
 }

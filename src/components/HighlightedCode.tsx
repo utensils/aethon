@@ -92,7 +92,7 @@ export function HighlightedCode({
       <code>{text}</code>
     );
 
-  if (lang === "text" && !showLineNumbers) {
+  if (lang === "text" && !showLineNumbers && !text.includes("\n")) {
     return (
       <pre className={`a2ui-code ${className ?? ""}`} data-language="text">
         {codeEl}

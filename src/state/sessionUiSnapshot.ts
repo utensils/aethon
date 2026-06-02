@@ -4,6 +4,8 @@ import { durableImageAttachments } from "../utils/imageAttachments";
 import { dedupeToolResultTextMessages } from "../utils/messages";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
+export const SESSION_UI_SNAPSHOT_FLUSH_EVENT =
+  "aethon:flush-session-ui-snapshot";
 
 const KEY = "aethon:session-ui-snapshot:v1";
 const MAX_MESSAGES_PER_TAB = 200;
@@ -25,6 +27,7 @@ export interface SessionUiSnapshot {
   terminalPanel?: unknown;
   scrollToMatchByTab?: unknown;
   projectModels?: Record<string, string>;
+  closedSessionIds?: string[];
   /** Non-active workspace tab buckets, keyed by `projectScopeBucketKey`.
    *  The ACTIVE workspace's tabs live in `tabs`; every other workspace the
    *  user had open is stashed here so a restart can restore the tab they
@@ -227,6 +230,18 @@ function validTabsFrom(value: unknown): Tab[] {
     : [];
 }
 
+function validSessionIdsFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value.filter(
+        (candidate): candidate is string =>
+          typeof candidate === "string" && candidate.length > 0,
+      ),
+    ),
+  ).slice(-200);
+}
+
 /** Normalise a persisted tab back into a live Tab: dedupe + durable-ify
  *  attachments, reset process-local fields (waiting / queue), preserve
  *  editor metadata, and re-arm or quiesce shell tabs. Shared by the main
@@ -276,9 +291,7 @@ function restoreTabRecord(
     // Preserve editor metadata so a persisted editor tab reopens pointing at
     // the same file. Validate minimally — `filePath` is what EditorCanvas
     // requires; the rest fall back to safe defaults on the next render.
-    ...(t.kind === "editor" &&
-    t.editor &&
-    typeof t.editor.filePath === "string"
+    ...(t.kind === "editor" && t.editor && typeof t.editor.filePath === "string"
       ? {
           editor: {
             filePath: t.editor.filePath,
@@ -300,9 +313,7 @@ function restoreTabRecord(
         }
       : {}),
   };
-  return base.kind === "shell"
-    ? restoreShellTab(base, restartShellTabs)
-    : base;
+  return base.kind === "shell" ? restoreShellTab(base, restartShellTabs) : base;
 }
 
 /** Validate + restore the non-active workspace buckets. Each bucket's tabs
@@ -353,6 +364,7 @@ export function parseSessionUiSnapshot(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SessionUiSnapshot>;
     const tabs = validTabsFrom(parsed.tabs);
+    const closedSessionIds = validSessionIdsFrom(parsed.closedSessionIds);
     const restartShellTabs = options.restartShellTabs === true;
     const preserveAgentActivity = options.preserveAgentActivity === true;
     const buckets = parsePersistedBuckets(
@@ -361,8 +373,11 @@ export function parseSessionUiSnapshot(
       preserveAgentActivity,
     );
     // Nothing to restore if neither the active workspace nor any backgrounded
-    // workspace had sessions.
-    if (tabs.length === 0 && !buckets) return null;
+    // workspace had sessions, and no closed-session suppressions need to
+    // survive to keep discovered sessions from auto-opening on reload.
+    if (tabs.length === 0 && !buckets && closedSessionIds.length === 0) {
+      return null;
+    }
     // OVERVIEW_TAB_ID is a valid persisted value (the user closed the
     // app while the overview pseudo-tab owned the canvas with sessions
     // open) — keep it as-is. Other ids must still match a real tab. With no
@@ -385,6 +400,8 @@ export function parseSessionUiSnapshot(
       terminal: durableTerminalSnapshot(parsed.terminal),
       terminalPanel: parsed.terminalPanel,
       scrollToMatchByTab: parsed.scrollToMatchByTab,
+      closedSessionIds:
+        closedSessionIds.length > 0 ? closedSessionIds : undefined,
       projectModels:
         parsed.projectModels &&
         typeof parsed.projectModels === "object" &&
@@ -412,10 +429,11 @@ export function serializeSessionUiSnapshot(
       ? (state.tabs as Tab[]).filter(shouldPersistTab).map(trimTab)
       : [];
     const buckets = serializePersistedBuckets(state.persistedTabBuckets);
+    const closedSessionIds = validSessionIdsFrom(state.closedSessionIds);
     // Persist when the active workspace OR any backgrounded workspace has
     // sessions worth keeping. A user sitting on a project's overview while
     // agents run in its worktrees still has state to restore.
-    if (tabs.length === 0 && !buckets) {
+    if (tabs.length === 0 && !buckets && closedSessionIds.length === 0) {
       return null;
     }
     const activeTab = tabs.find((t) => t.id === state.activeTabId);
@@ -431,6 +449,7 @@ export function serializeSessionUiSnapshot(
       terminal: durableTerminalSnapshot(state.terminal),
       terminalPanel: state.terminalPanel,
       scrollToMatchByTab: state.scrollToMatchByTab,
+      ...(closedSessionIds.length > 0 ? { closedSessionIds } : {}),
       projectModels:
         state.projectModels &&
         typeof state.projectModels === "object" &&

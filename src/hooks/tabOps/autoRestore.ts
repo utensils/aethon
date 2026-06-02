@@ -30,8 +30,14 @@ export function useAutoRestoreDiscoveredSessions(deps: AutoRestoreDeps) {
       ...knownIds,
       ...((stateRef.current.tabs as Tab[] | undefined) ?? []).map((t) => t.id),
     ]);
+    const closedSessionIds = new Set(
+      Array.isArray(stateRef.current.closedSessionIds)
+        ? (stateRef.current.closedSessionIds as string[])
+        : [],
+    );
     const toRestore = discovered
       .filter((d) => !liveIds.has(d.tabId))
+      .filter((d) => !closedSessionIds.has(d.tabId))
       .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
       .slice(0, 8);
     if (toRestore.length === 0) return;

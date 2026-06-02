@@ -12,7 +12,10 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
-import { CHAT_MARKDOWN_PROPS } from "./markdown-adapter";
+import {
+  CHAT_MARKDOWN_PROPS,
+  CHAT_STREAMING_MARKDOWN_PROPS,
+} from "./markdown-adapter";
 import { isAtBottom as metricsAreAtBottom } from "../../utils/stickyScrollController";
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
@@ -20,6 +23,7 @@ import { ImageLightbox } from "./image-lightbox";
 // Distance (px) from the bottom still treated as "at the bottom" for follow +
 // the scroll-to-bottom pill. Matches the old StickyScrollController default.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
+const FENCED_CODE_MARKER_RE = /(^|\n)(```|~~~)/;
 
 // Top-level state keys that change identity on every streamed token — the
 // active tab's `messages` array and the `tabs` array that nests it (both
@@ -134,7 +138,20 @@ function ThinkingBlock({
   );
 }
 
-function MarkdownWithThinking({ text }: { text: string }) {
+function hasFencedCodeMarker(text: string | undefined): boolean {
+  return FENCED_CODE_MARKER_RE.test(text ?? "");
+}
+
+function MarkdownWithThinking({
+  text,
+  streamingFences = false,
+}: {
+  text: string;
+  streamingFences?: boolean;
+}) {
+  const markdownProps = streamingFences
+    ? CHAT_STREAMING_MARKDOWN_PROPS
+    : CHAT_MARKDOWN_PROPS;
   return (
     <>
       {splitThinkingBlocks(text).map((segment, index) => {
@@ -147,7 +164,7 @@ function MarkdownWithThinking({ text }: { text: string }) {
           );
         }
         return (
-          <ReactMarkdown key={index} {...CHAT_MARKDOWN_PROPS}>
+          <ReactMarkdown key={index} {...markdownProps}>
             {segment.content}
           </ReactMarkdown>
         );
@@ -193,6 +210,7 @@ const ChatMessageRow = memo(
     prevRole,
     onEvent,
     deliveryText,
+    isLatest,
   }: {
     message: ChatMessage;
     state: Record<string, unknown>;
@@ -201,6 +219,7 @@ const ChatMessageRow = memo(
     prevRole?: string;
     onEvent?: BuiltinComponentProps["onEvent"];
     deliveryText?: string;
+    isLatest?: boolean;
   }) {
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -212,6 +231,11 @@ const ChatMessageRow = memo(
       message.role === "user"
         ? (deliveryText ?? deliveryLabel(message.delivery))
         : null;
+    const streamingFences =
+      isLatest &&
+      message.role === "agent" &&
+      state.waiting === true &&
+      hasFencedCodeMarker(message.text);
     return (
       <div
         className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}
@@ -251,7 +275,10 @@ const ChatMessageRow = memo(
         )}
         {message.text && (
           <div className={textClass}>
-            <MemoMarkdownWithThinking text={message.text} />
+            <MemoMarkdownWithThinking
+              text={message.text}
+              streamingFences={streamingFences}
+            />
           </div>
         )}
         {message.attachments && message.attachments.length > 0 && (
@@ -270,6 +297,7 @@ const ChatMessageRow = memo(
     prev.prevRole === next.prevRole &&
     prev.onEvent === next.onEvent &&
     prev.deliveryText === next.deliveryText &&
+    (!next.message.text || prev.isLatest === next.isLatest) &&
     (!next.message.a2ui ||
       shallowEqualExcept(prev.state, next.state, VOLATILE_ROW_STATE_KEYS)),
 );
@@ -451,6 +479,7 @@ function VirtualMessageList({
           prevRole={index > 0 ? messages[index - 1].role : undefined}
           onEvent={onEvent}
           deliveryText={queuedLabels.get(m.id)}
+          isLatest={index === messages.length - 1}
         />
       </div>
     ),
@@ -470,6 +499,11 @@ function VirtualMessageList({
     footerContext && (footerContext.liveSubtree || footerContext.showTyping),
   );
   const hasContent = messages.length > 0 || hasFooterContent;
+  const latestMessage = messages.at(-1);
+  const latestStreamingFences =
+    latestMessage?.role === "agent" &&
+    state.waiting === true &&
+    hasFencedCodeMarker(latestMessage.text);
 
   return (
     <div className="a2ui-msg-list-shell">
@@ -492,7 +526,13 @@ function VirtualMessageList({
           index: Math.max(0, messages.length - 1),
           align: "end",
         }}
-        followOutput={() => (followLatestRef.current ? "smooth" : false)}
+        followOutput={() =>
+          followLatestRef.current
+            ? latestStreamingFences
+              ? "auto"
+              : "smooth"
+            : false
+        }
         atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
         atBottomStateChange={handleAtBottomStateChange}
         scrollerRef={handleScrollerRef}

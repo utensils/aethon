@@ -117,6 +117,16 @@ export function useNewTab(deps: NewTabDeps) {
         empty: false,
         hasTabs: true,
       };
+      if (restoreId) {
+        const closedIds = Array.isArray(prev.closedSessionIds)
+          ? (prev.closedSessionIds as string[])
+          : [];
+        if (closedIds.includes(restoreId)) {
+          result.closedSessionIds = closedIds.filter(
+            (item) => item !== restoreId,
+          );
+        }
+      }
       const tabRec = tab as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = tabRec[key as string];

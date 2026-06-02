@@ -4,6 +4,7 @@ import { TAB_MIRROR_KEYS } from "./useTabs";
 import { WORKSTATION_AREAS, workstationRows } from "./useFocus";
 import {
   SESSION_UI_SNAPSHOT_FILE,
+  SESSION_UI_SNAPSHOT_FLUSH_EVENT,
   loadSessionUiSnapshot,
   parseSessionUiSnapshot,
   saveSessionUiSnapshot,
@@ -89,6 +90,7 @@ export function buildInitialAppStore({
       ...(restored?.projectModels
         ? { projectModels: restored.projectModels }
         : {}),
+      closedSessionIds: restored?.closedSessionIds ?? [],
       logoUrl,
       appVersion,
       tabs,
@@ -135,11 +137,16 @@ export function useSessionPersistence({
         const tabs = snapshot.tabs.length ? snapshot.tabs : [];
         const buckets = snapshot.buckets ?? {};
         const hasBuckets = Object.keys(buckets).length > 0;
+        const closedSessionIds = snapshot.closedSessionIds ?? [];
         // Nothing to restore only if BOTH the active workspace and every
         // backgrounded workspace are empty. A buckets-only snapshot (the user
         // closed on an overview while agents ran in worktrees) must still
-        // restore its buckets — otherwise the next persist wipes them.
-        if (tabs.length === 0 && !hasBuckets) return prev;
+        // restore its buckets — otherwise the next persist wipes them. A
+        // closed-ids-only snapshot still matters too: it suppresses
+        // auto-restore for sessions the user explicitly closed.
+        if (tabs.length === 0 && !hasBuckets && closedSessionIds.length === 0) {
+          return prev;
+        }
         const hasActiveTabs = tabs.length > 0;
         const activeTabId = hasActiveTabs
           ? (restoredActiveTabId(tabs, snapshot.activeTabId) ?? tabs[0].id)
@@ -170,6 +177,7 @@ export function useSessionPersistence({
           ...(snapshot.projectModels
             ? { projectModels: snapshot.projectModels }
             : {}),
+          closedSessionIds,
           ...(Object.keys(restoredLayout).length > 0
             ? {
                 layout: {
@@ -226,6 +234,7 @@ export function useSessionPersistence({
       persistNow();
       unsubscribe = appStore.subscribe(schedulePersist);
       window.addEventListener("beforeunload", persistNow);
+      window.addEventListener(SESSION_UI_SNAPSHOT_FLUSH_EVENT, persistNow);
     };
     const hot = import.meta.hot;
     let hmrReloadQueued = false;
@@ -267,6 +276,7 @@ export function useSessionPersistence({
         sessionSnapshotPersistTimerRef.current = null;
       }
       window.removeEventListener("beforeunload", persistNow);
+      window.removeEventListener(SESSION_UI_SNAPSHOT_FLUSH_EVENT, persistNow);
       hot?.off("vite:beforeUpdate", reloadOnJsUpdate);
       hot?.off("vite:beforeFullReload", persistNow);
     };

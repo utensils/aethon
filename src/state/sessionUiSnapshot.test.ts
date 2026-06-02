@@ -110,9 +110,7 @@ describe("sessionUiSnapshot", () => {
       activeTabId: "empty-active",
       persistedTabBuckets: {
         "project-1::worktree::wt-1": {
-          tabs: [
-            makeEmptyTab("empty-bucket", "Empty Bucket", "project-1"),
-          ],
+          tabs: [makeEmptyTab("empty-bucket", "Empty Bucket", "project-1")],
           activeTabId: "empty-bucket",
         },
       },
@@ -123,9 +121,7 @@ describe("sessionUiSnapshot", () => {
     expect(loaded?.tabs).toMatchObject([
       { id: "empty-active", label: "Empty Active", messages: [] },
     ]);
-    expect(
-      loaded?.buckets?.["project-1::worktree::wt-1"]?.tabs,
-    ).toMatchObject([
+    expect(loaded?.buckets?.["project-1::worktree::wt-1"]?.tabs).toMatchObject([
       { id: "empty-bucket", label: "Empty Bucket", messages: [] },
     ]);
   });
@@ -133,6 +129,20 @@ describe("sessionUiSnapshot", () => {
   it("returns null when neither active tabs nor buckets have sessions", () => {
     saveSessionUiSnapshot({ tabs: [], activeTabId: "__overview__" });
     expect(loadSessionUiSnapshot()).toBeNull();
+  });
+
+  it("persists closed session ids even when no tabs are open", () => {
+    saveSessionUiSnapshot({
+      tabs: [],
+      activeTabId: "__overview__",
+      closedSessionIds: ["closed-a", "closed-b", "closed-a"],
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded).not.toBeNull();
+    expect(loaded?.tabs).toEqual([]);
+    expect(loaded?.activeTabId).toBe("__overview__");
+    expect(loaded?.closedSessionIds).toEqual(["closed-a", "closed-b"]);
   });
 
   it("falls back to the first tab when the active id is stale", () => {
@@ -509,10 +519,7 @@ describe("sessionUiSnapshot", () => {
     });
 
     const restored = loadSessionUiSnapshot();
-    expect(restored?.tabs.map((t) => t.id)).toEqual([
-      "blank",
-      "active-chat",
-    ]);
+    expect(restored?.tabs.map((t) => t.id)).toEqual(["blank", "active-chat"]);
     expect(restored?.activeTabId).toBe("blank");
   });
 
