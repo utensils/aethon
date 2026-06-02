@@ -823,6 +823,8 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "group-block" },
     });
     expect(screen.getByText("Agent turn")).toBeTruthy();
+    // Meta counts only text-bearing replies (a1 "reading files" + a2 "done").
+    expect(screen.getByText("2 replies · 2 tool calls")).toBeTruthy();
     // The last turn stays expanded, so no group label wraps its single tool.
     expect(screen.queryByText("1 tool call")).toBeNull();
   });

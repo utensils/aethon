@@ -432,11 +432,14 @@ function ToolGroupRow({
   );
 }
 
-/** Header label for a folded agent turn: "N replies · M tool calls". */
+/** Header label for a folded agent turn: "N replies · M tool calls". Counts
+ *  only text-bearing non-tool messages as replies — a thinking-only message
+ *  may render nothing when thinking is hidden, so it shouldn't inflate the
+ *  count. */
 function turnBlockLabel(messages: ChatMessage[]): string {
   const tools = messages.filter(isToolCardMessage).length;
   const replies = messages.filter(
-    (m) => !isToolCardMessage(m) && Boolean(m.text || m.thinking),
+    (m) => !isToolCardMessage(m) && Boolean(m.text),
   ).length;
   const parts: string[] = [];
   if (replies > 0) {
