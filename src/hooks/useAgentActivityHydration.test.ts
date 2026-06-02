@@ -144,6 +144,63 @@ describe("hydrateAgentActivityState", () => {
     expect(next.status).toBe("ready");
   });
 
+  it("marks stale running tool cards stopped when diagnostics show no live prompt", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(123_456);
+    const waitingTab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [
+        {
+          id: "tool-message",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "restored-tool-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "curl https://example.test",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const next = hydrateAgentActivityState(
+      {
+        activeTabId: "tab-a",
+        waiting: false,
+        status: "stopping…",
+        tabs: [waitingTab],
+      },
+      [
+        {
+          key: "tab:tab-a",
+          tab_id: "tab-a",
+          alive: true,
+          prompt_in_flight: false,
+        },
+      ],
+    );
+
+    expect(next.status).toBe("ready");
+    const toolCard = (
+      (next.tabs as typeof waitingTab[])[0].messages[0].a2ui?.components ?? []
+    )[0];
+    expect(toolCard.props).toMatchObject({
+      status: "cancelled",
+      endedAt: 123_456,
+    });
+    expect(toolCard.children?.[0].props?.content).toContain(
+      "No live prompt is running",
+    );
+  });
+
   it("clears stale restored waiting state when there are no live diagnostics", () => {
     const waitingTab = { ...makeEmptyTab("tab-a", "A"), waiting: true };
     const next = hydrateAgentActivityState(

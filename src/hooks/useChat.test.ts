@@ -430,6 +430,76 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("stopPrompt reconciles confirmed stops so stale tool cards do not keep spinning", async () => {
+    invoke.mockImplementation((cmd: string) => {
+      if (cmd === "agent_diagnostics") {
+        return Promise.resolve([
+          {
+            key: "tab:tab-1",
+            tab_id: "tab-1",
+            alive: true,
+            prompt_in_flight: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const runningTool = {
+      id: "tool-message",
+      role: "agent" as const,
+      a2ui: {
+        components: [
+          {
+            id: "restored-tool-call_1",
+            type: "tool-card",
+            props: {
+              title: "bash",
+              description: "curl https://example.test",
+              startedAt: 1_000,
+            },
+            children: [],
+          },
+        ],
+      },
+    };
+    const { ctx, stateRef } = buildContext({
+      status: "thinking…",
+      waiting: true,
+      tabs: [
+        {
+          ...makeEmptyTab("tab-1", "Tab 1"),
+          waiting: true,
+          messages: [runningTool],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.stopPrompt("tab-1");
+    });
+
+    expect(stateRef.current.status).toBe("stopped");
+    expect(stateRef.current.waiting).toBe(false);
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    const toolCard = (tab.messages[0].a2ui?.components ?? [])[0];
+    expect(toolCard.props).toMatchObject({
+      status: "cancelled",
+      endedAt: expect.any(Number),
+    });
+    expect(toolCard.children?.[0].props?.content).toContain(
+      "No live prompt is running",
+    );
+    expect(tab.messages.at(-1)).toMatchObject({
+      role: "system",
+      text: "Agent stopped.",
+    });
+    expect(ctx.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "system", text: "Agent stopped." }),
+      "tab-1",
+    );
+  });
+
   it("drained queued messages actually reach invoke('send_message') (regression: P1 from peer review)", async () => {
     // Reproduces the bug Codex flagged: useQueuedDispatch previously
     // flipped waiting=true *before* calling sendChat. Because the

@@ -25,6 +25,14 @@ function activeAgentTabIsBusy(state: Record<string, unknown>): boolean {
   return (
     activeTab?.waiting === true ||
     (activeTab?.queueCount ?? 0) > 0 ||
+    (activeTab.messages ?? []).some((message) =>
+      (message.a2ui?.components ?? []).some(
+        (component) =>
+          component.type === "tool-card" &&
+          component.props?.startedAt !== undefined &&
+          component.props.endedAt === undefined,
+      ),
+    ) ||
     state.waiting === true ||
     ((state.queueCount as number | undefined) ?? 0) > 0
   );
