@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveMarkdownLinkPath } from "./markdown-links";
 import { MarkdownPreview } from "./markdown-preview";
@@ -128,6 +129,8 @@ describe("resolveMarkdownLinkPath", () => {
 describe("MarkdownPreview", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
+    vi.mocked(openUrl).mockReset();
+    vi.mocked(openUrl).mockResolvedValue(undefined);
   });
 
   afterEach(() => cleanup());
@@ -231,7 +234,7 @@ describe("MarkdownPreview", () => {
     });
   });
 
-  it("leaves external markdown links as normal links", async () => {
+  it("opens external markdown links through the system opener", async () => {
     const { onEvent } = renderMarkdownPreview(
       "See [release-plz](https://release-plz.dev).",
       {
@@ -242,11 +245,9 @@ describe("MarkdownPreview", () => {
     );
 
     const link = await screen.findByRole("link", { name: "release-plz" });
-    link.addEventListener("click", (event) => event.preventDefault(), {
-      once: true,
-    });
     fireEvent.click(link);
 
+    expect(openUrl).toHaveBeenCalledWith("https://release-plz.dev/");
     expect(onEvent).not.toHaveBeenCalled();
   });
 });

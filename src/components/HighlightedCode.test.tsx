@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HighlightedCode } from "./HighlightedCode";
 
@@ -22,7 +28,7 @@ describe("HighlightedCode", () => {
 
   afterEach(() => cleanup());
 
-  it("renders syntax blocks as framed, copyable code", () => {
+  it("renders syntax blocks as framed, copyable code", async () => {
     const { container } = render(
       <HighlightedCode code={"koban --help\n"} language="bash" />,
     );
@@ -38,8 +44,23 @@ describe("HighlightedCode", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
 
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Copied code" }),
+      ).not.toBeNull(),
+    );
     expect(writeText).toHaveBeenCalledWith("koban --help");
-    expect(screen.getByRole("button", { name: "Copied code" })).not.toBeNull();
+  });
+
+  it("does not claim copied when the clipboard write rejects", async () => {
+    writeText.mockRejectedValueOnce(new Error("denied"));
+    render(<HighlightedCode code={"koban --help\n"} language="bash" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("koban --help"));
+    expect(screen.queryByRole("button", { name: "Copied code" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Copy code" })).not.toBeNull();
   });
 
   it("labels unlabeled fenced blocks as text without using the compact text chip", () => {

@@ -24,12 +24,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import ReactMarkdown from "react-markdown";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { MARKDOWN_PREVIEW_PROPS } from "../markdown-adapter";
-import { resolveMarkdownLinkPath } from "./markdown-links";
+import { resolveMarkdownLinkPath, safeExternalHttpUrl } from "./markdown-links";
 
 interface MarkdownPreviewProps {
   filePath: string;
@@ -40,6 +41,14 @@ interface MarkdownPreviewProps {
   /** Bumps whenever the user saves the file — forces the preview to
    *  re-read fresh content. */
   refreshKey?: number;
+}
+
+function openExternalUrl(url: string): void {
+  try {
+    void openUrl(url).catch(() => undefined);
+  } catch {
+    // Opener failures are not actionable from preview rendering.
+  }
 }
 
 export function MarkdownPreview(props: BuiltinComponentProps) {
@@ -73,7 +82,15 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
                 filePath,
                 projectPath,
               );
-              if (!targetPath || !tabId) return;
+              const externalUrl = safeExternalHttpUrl(href);
+              if (!targetPath) {
+                if (!externalUrl) return;
+                event.preventDefault();
+                event.stopPropagation();
+                openExternalUrl(externalUrl);
+                return;
+              }
+              if (!tabId) return;
               event.preventDefault();
               event.stopPropagation();
               onEvent("markdown-link-open", {

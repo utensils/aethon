@@ -16,11 +16,14 @@ function trimSingleTrailingNewline(s: string): string {
   return s.endsWith("\n") ? s.slice(0, -1) : s;
 }
 
-function copyText(text: string): void {
+async function copyText(text: string): Promise<boolean> {
+  if (!navigator.clipboard?.writeText) return false;
   try {
-    void navigator.clipboard?.writeText(text);
+    await navigator.clipboard.writeText(text);
+    return true;
   } catch {
     // Clipboard availability is host/browser dependent; the block remains selectable.
+    return false;
   }
 }
 
@@ -111,15 +114,17 @@ export function HighlightedCode({
           aria-label={copied ? "Copied code" : "Copy code"}
           title={copied ? "Copied" : "Copy code"}
           onClick={() => {
-            copyText(text);
-            setCopied(true);
-            if (copyResetTimer.current != null) {
-              window.clearTimeout(copyResetTimer.current);
-            }
-            copyResetTimer.current = window.setTimeout(() => {
-              setCopied(false);
-              copyResetTimer.current = null;
-            }, 1200);
+            void copyText(text).then((ok) => {
+              if (!ok) return;
+              setCopied(true);
+              if (copyResetTimer.current != null) {
+                window.clearTimeout(copyResetTimer.current);
+              }
+              copyResetTimer.current = window.setTimeout(() => {
+                setCopied(false);
+                copyResetTimer.current = null;
+              }, 1200);
+            });
           }}
         />
       </div>
