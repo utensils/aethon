@@ -63,6 +63,7 @@ function compactionMessage(record: Record<string, unknown>): RestoredChatMessage
     typeof record.tokensBefore === "number" && Number.isFinite(record.tokensBefore)
       ? record.tokensBefore
       : undefined;
+  const createdAt = parseRecordTime(record);
   return {
     id: `compaction:${id}`,
     role: "system",
@@ -70,9 +71,7 @@ function compactionMessage(record: Record<string, unknown>): RestoredChatMessage
       tokensBefore !== undefined
         ? `Context compacted · ${formatInt(tokensBefore)} tokens summarized`
         : "Context compacted",
-    ...(parseRecordTime(record) !== undefined
-      ? { createdAt: parseRecordTime(record) }
-      : {}),
+    ...(createdAt !== undefined ? { createdAt } : {}),
   };
 }
 

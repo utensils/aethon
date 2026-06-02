@@ -167,6 +167,27 @@ describe("closeTabNow → overview fallback", () => {
     window.removeEventListener(SESSION_UI_SNAPSHOT_FLUSH_EVENT, flushSpy);
   });
 
+  it("bounds closed agent session suppression to the most recent entries", () => {
+    const closedSessionIds = Array.from(
+      { length: 200 },
+      (_, index) => `closed-${index}`,
+    );
+    const agent = makeTab("agent-1", "agent");
+    const { deps, apply } = buildDeps({
+      tabs: [agent],
+      activeTabId: "agent-1",
+      closedSessionIds,
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("agent-1");
+
+    const next = apply();
+    expect(next.closedSessionIds).toHaveLength(200);
+    expect((next.closedSessionIds as string[])[0]).toBe("closed-1");
+    expect((next.closedSessionIds as string[]).at(-1)).toBe("agent-1");
+  });
+
   it("does not suppress shell sessions when closing shell sub-tabs", () => {
     const agent = makeTab("agent-1", "agent");
     const shell = makeTab("shell-1", "shell");

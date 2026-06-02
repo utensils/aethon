@@ -34,7 +34,7 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
-function clearPendingEmit(rec: TabRecord): void {
+export function clearPendingContextUsageEmit(rec: TabRecord): void {
   if (rec.contextUsageEmitTimer !== undefined) {
     clearTimeout(rec.contextUsageEmitTimer);
     rec.contextUsageEmitTimer = undefined;
@@ -107,7 +107,7 @@ export function emitContextUsage(
   rec: TabRecord,
   options: { compacting?: boolean } = {},
 ): void {
-  clearPendingEmit(rec);
+  clearPendingContextUsageEmit(rec);
   rec.contextUsageLastEmitMs = Date.now();
   const snapshot = contextUsageSnapshot(state, tabId, rec, options);
   if (!snapshot) return;

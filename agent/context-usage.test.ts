@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AethonAgentState, TabRecord } from "./state";
 import {
+  clearPendingContextUsageEmit,
   contextUsageSnapshot,
   emitContextUsage,
 } from "./context-usage";
@@ -83,6 +84,27 @@ describe("contextUsageSnapshot", () => {
 });
 
 describe("live context updates", () => {
+  it("cancels pending throttled context emits when a tab record is discarded", () => {
+    vi.useFakeTimers();
+    try {
+      const rec = recWithUsage({
+        tokens: 1_000,
+        contextWindow: 2_000,
+        percent: 50,
+      });
+      const fired = vi.fn();
+      rec.contextUsageEmitTimer = setTimeout(fired, 100);
+
+      clearPendingContextUsageEmit(rec);
+      vi.advanceTimersByTime(100);
+
+      expect(fired).not.toHaveBeenCalled();
+      expect(rec.contextUsageEmitTimer).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("emits a realtime estimated context snapshot while text is streaming", () => {
     const state = stateWithCompaction();
     const rec = recWithUsage({

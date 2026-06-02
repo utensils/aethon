@@ -297,6 +297,9 @@ const ChatMessageRow = memo(
     prev.prevRole === next.prevRole &&
     prev.onEvent === next.onEvent &&
     prev.deliveryText === next.deliveryText &&
+    (!next.message.text ||
+      !next.isLatest ||
+      prev.state.waiting === next.state.waiting) &&
     (!next.message.text || prev.isLatest === next.isLatest) &&
     (!next.message.a2ui ||
       shallowEqualExcept(prev.state, next.state, VOLATILE_ROW_STATE_KEYS)),

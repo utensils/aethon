@@ -9,6 +9,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "../state";
 import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
 import { emitGlobalReady } from "../dispatcherTypes";
+import { clearPendingContextUsageEmit } from "../context-usage";
 import { ensureTab } from "../tab-lifecycle";
 import {
   authProfileAuthPath,
@@ -398,6 +399,7 @@ async function handleUseForTab(
   }
   const previousModel = existing?.session.model;
   const cwd = state.tabProjectCwds.get(tabId);
+  if (existing) clearPendingContextUsageEmit(existing);
   state.tabs.delete(tabId);
   state.tabAuthProfileIds.set(tabId, profile.id);
   const services = servicesForProfile(state, profile.id);
