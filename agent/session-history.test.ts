@@ -227,6 +227,43 @@ describe("parseSessionHistoryLines", () => {
     ]);
   });
 
+  it("restores pi compaction entries as durable timeline markers", () => {
+    const parsed = parseSessionHistoryLines([
+      JSON.stringify({
+        type: "message",
+        id: "before",
+        timestamp: "2026-06-02T13:23:02.101Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "before compaction" }],
+        },
+      }),
+      JSON.stringify({
+        type: "compaction",
+        id: "cmp-1",
+        parentId: "before",
+        timestamp: "2026-06-02T13:28:04.875Z",
+        summary: "Older work was summarized.",
+        tokensBefore: 13_005,
+      }),
+    ]);
+
+    expect(parsed).toEqual([
+      {
+        id: "before",
+        role: "agent",
+        text: "before compaction",
+        createdAt: Date.parse("2026-06-02T13:23:02.101Z"),
+      },
+      {
+        id: "compaction:cmp-1",
+        role: "system",
+        text: "Context compacted · 13,005 tokens summarized",
+        createdAt: Date.parse("2026-06-02T13:28:04.875Z"),
+      },
+    ]);
+  });
+
   it("keeps the most recent bounded set of restored messages", () => {
     const lines = Array.from({ length: 205 }, (_, index) =>
       JSON.stringify({
@@ -349,6 +386,61 @@ describe("readSessionTranscript", () => {
         id: "stderr-warning",
         role: "system",
         text: "[agent stderr] transient provider error",
+        createdAt: 2_000,
+      },
+      { id: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
+    ]);
+  });
+
+  it("dedupes live compaction notices when pi restored the compaction entry", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      [
+        JSON.stringify({
+          type: "message",
+          id: "pi-user",
+          timestamp: 1_000,
+          message: { role: "user", content: [{ type: "text", text: "hi" }] },
+        }),
+        JSON.stringify({
+          type: "compaction",
+          id: "cmp-1",
+          timestamp: 2_000,
+          summary: "Older work was summarized.",
+          tokensBefore: 13_005,
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "pi-agent",
+          timestamp: 3_000,
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "done" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    await appendLocalChatMessage(dir, {
+      id: "compact-start",
+      role: "system",
+      text: "Compacting context...",
+      createdAt: 1_990,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "compact-done",
+      role: "system",
+      text: "Context compacted · 13,005 tokens summarized",
+      createdAt: 2_010,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      { id: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
+      {
+        id: "compaction:cmp-1",
+        role: "system",
+        text: "Context compacted · 13,005 tokens summarized",
         createdAt: 2_000,
       },
       { id: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },

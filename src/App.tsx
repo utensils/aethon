@@ -139,7 +139,6 @@ export default function App() {
     shellDefaultArgsRef,
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
-    shortcutsNewTabKindRef,
     reapplyConfig,
   } = useBootConfig({ setState, piDefaultModelRef });
 
@@ -717,7 +716,6 @@ export default function App() {
   useKeyboardShortcuts({
     stateRef,
     extensionKeybindingsRef,
-    shortcutsNewTabKindRef,
     toggleTerminalAndFocus,
     toggleSidebar,
     toggleFilesSidebar,
@@ -803,6 +801,7 @@ export default function App() {
     closeTab,
     nextTab,
     appendMessage,
+    persistLocalChatMessage,
     appendSystem,
     setStatusFlags,
     clearChat,

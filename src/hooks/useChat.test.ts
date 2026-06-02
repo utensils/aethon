@@ -496,9 +496,9 @@ describe("useChat setModel", () => {
       role: "system",
       text: "Agent stopped.",
     });
-    expect(ctx.persistLocalChatMessage).toHaveBeenCalledWith(
+    expect(ctx.persistLocalChatMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ role: "system", text: "Agent stopped." }),
-      "tab-1",
+      expect.any(String),
     );
   });
 
@@ -612,6 +612,7 @@ describe("useChat setModel", () => {
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       id: "agent-1",
       role: "agent",
+      createdAt: expect.any(Number),
       thinking: "Inspecting",
       text: "\nDone",
     });
@@ -619,6 +620,7 @@ describe("useChat setModel", () => {
       expect.objectContaining({
         id: "agent-1",
         role: "agent",
+        createdAt: expect.any(Number),
         thinking: "Inspecting",
         text: "\nDone",
       }),

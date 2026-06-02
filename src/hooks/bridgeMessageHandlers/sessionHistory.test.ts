@@ -256,6 +256,314 @@ describe("handleSessionHistory", () => {
     expect(out.waiting).toBe(true);
   });
 
+  it("does not append a persisted stderr mirror below restored history", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    const stderrText =
+      "[agent stderr] 2026-06-02T13:36:55.343Z WARN devshell: env_for_path(/repo) failed: timeout tabId=tab-1";
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "old-user",
+            role: "user",
+            text: "previous prompt",
+            createdAt: 1_000,
+          },
+          {
+            id: "restored-stderr",
+            role: "system",
+            text: stderrText,
+            createdAt: 2_000,
+          },
+          {
+            id: "old-agent",
+            role: "agent",
+            text: "previous answer",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      waiting: true,
+      messages: [
+        {
+          id: "local-stderr",
+          role: "system",
+          text: stderrText,
+          createdAt: 2_000,
+        },
+        {
+          id: "streaming-agent",
+          role: "agent",
+          text: "new answer is streaming",
+        },
+      ],
+    });
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "old-user",
+      "restored-stderr",
+      "old-agent",
+      "streaming-agent",
+    ]);
+    expect(out.waiting).toBe(true);
+  });
+
+  it("orders timestamped local stderr by its original time during hydrate", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "old-user",
+            role: "user",
+            text: "previous prompt",
+            createdAt: 1_000,
+          },
+          {
+            id: "old-agent",
+            role: "agent",
+            text: "previous answer",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      messages: [
+        {
+          id: "local-stderr",
+          role: "system",
+          text: "[agent stderr] 2026-06-02T13:36:55.343Z WARN devshell: failed",
+          createdAt: 2_000,
+        },
+        {
+          id: "streaming-agent",
+          role: "agent",
+          text: "new answer is streaming",
+        },
+      ],
+    });
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "old-user",
+      "local-stderr",
+      "old-agent",
+      "streaming-agent",
+    ]);
+  });
+
+  it("orders stale local assistant snapshots by timestamp when the tab is idle", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "old-user",
+            role: "user",
+            text: "previous prompt",
+            createdAt: 1_000,
+          },
+          {
+            id: "newer-agent",
+            role: "agent",
+            text: "newer restored answer",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      waiting: false,
+      messages: [
+        {
+          id: "stale-stream",
+          role: "agent",
+          text: "old streamed answer",
+          createdAt: 2_000,
+        },
+      ],
+    });
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "old-user",
+      "stale-stream",
+      "newer-agent",
+    ]);
+    expect(out.waiting).toBe(false);
+  });
+
+  it("clears active thinking status when hydration proves the tab is idle", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-1",
+        waiting: true,
+        status: "thinking…",
+        tabs: [
+          {
+            ...makeEmptyTab("tab-1", "Tab 1"),
+            waiting: true,
+            messages: [
+              {
+                id: "stale-stream",
+                role: "agent",
+                text: "old streamed answer",
+                createdAt: 2_000,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "old-user",
+            role: "user",
+            text: "previous prompt",
+            createdAt: 1_000,
+          },
+          {
+            id: "newer-agent",
+            role: "agent",
+            text: "newer restored answer",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(mocks.setStatusFlags).toHaveBeenCalledWith({
+      waiting: false,
+      status: "ready",
+    });
+  });
+
+  it("does not restore durable stop notices as the latest chat message", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "old-user",
+            role: "user",
+            text: "previous prompt",
+            createdAt: 1_000,
+          },
+          {
+            id: "stopped",
+            role: "system",
+            text: "Agent stopped.",
+            createdAt: 2_000,
+          },
+          {
+            id: "old-agent",
+            role: "agent",
+            text: "previous answer",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(makeEmptyTab("tab-1", "Tab 1"));
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "old-user",
+      "old-agent",
+    ]);
+  });
+
+  it("does not append live compaction notices below restored compaction markers", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "old-user",
+            role: "user",
+            text: "previous prompt",
+            createdAt: 1_000,
+          },
+          {
+            id: "compaction:cmp-1",
+            role: "system",
+            text: "Context compacted · 13,005 tokens summarized",
+            createdAt: 2_000,
+          },
+          {
+            id: "old-agent",
+            role: "agent",
+            text: "previous answer",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      waiting: true,
+      messages: [
+        {
+          id: "local-compact-start",
+          role: "system",
+          text: "Compacting context...",
+          createdAt: 1_990,
+        },
+        {
+          id: "local-compact-end",
+          role: "system",
+          text: "Context compacted · 13,005 tokens summarized",
+          createdAt: 2_010,
+        },
+        {
+          id: "streaming-agent",
+          role: "agent",
+          text: "new answer is streaming",
+        },
+      ],
+    });
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "old-user",
+      "compaction:cmp-1",
+      "old-agent",
+      "streaming-agent",
+    ]);
+    expect(out.waiting).toBe(true);
+  });
+
   it("drops stale running tool cards when restored history has the completed tool result", () => {
     const { ctx, mocks } = buildHandlerFixture();
     const toolCallId =

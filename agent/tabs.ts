@@ -15,6 +15,7 @@ import {
 import { ensureTab, tabSessionDir } from "./tab-lifecycle";
 import { unloadProjectExtensions } from "./projectLifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
+import { clearPendingContextUsageEmit } from "./context-usage";
 
 export async function handleTabOpen(
   state: AethonAgentState,
@@ -117,6 +118,7 @@ export function handleTabClose(
       /* fire-and-forget - we're tearing down anyway */
     });
   }
+  clearPendingContextUsageEmit(tab);
   state.tabs.delete(tabId);
   state.tabProjectCwds.delete(tabId);
   state.tabAuthProfileIds.delete(tabId);

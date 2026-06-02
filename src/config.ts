@@ -13,8 +13,8 @@ export interface AethonConfig {
      *  `aethon.registerTheme`. */
     theme: string | null;
     fontSize: number | null;
-    /** When true, discovered per-tab sessions are reopened automatically
-     *  on app launch instead of only appearing in the empty-state list. */
+    /** Deprecated compatibility field. Session tabs are restored
+     *  unconditionally; keep this so older configs round-trip. */
     restoreTabs: boolean;
     /** Fire a native OS notification when an agent turn finishes while
      *  the originating tab/window is unfocused. Default true. */
@@ -46,10 +46,9 @@ export interface AethonConfig {
     promptBeforeClose: boolean;
   };
   shortcuts: {
-    /** What `Cmd+T` opens when focus is *outside* the bottom terminal
-     *  panel: `"agent"` (default — focus-aware behaviour) or `"shell"`
-     *  (Cmd+T always opens a shell sub-tab). Anything else falls
-     *  through to `"agent"`. */
+    /** Deprecated compatibility field. Older configs may contain
+     *  `[shortcuts] new_tab_kind`, so parse and round-trip it, but Cmd+T
+     *  is now strictly focus-aware in the keyboard handler. */
     newTabKind: "agent" | "shell";
   };
   voice: {

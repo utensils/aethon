@@ -18,7 +18,14 @@
  *   ("new")                 click on the "+" button
  */
 
-import { useMemo, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import type { StringValue } from "../../../types/a2ui";
 import { OVERVIEW_TAB_ID } from "../../../types/tab";
 import { resolveString } from "../../../utils/dataBinding";
@@ -79,10 +86,62 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     y: number;
     tab: TabStripItem;
   } | null>(null);
+  const [renamingTab, setRenamingTab] = useState<{
+    id: string;
+    value: string;
+  } | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const renameEndingRef = useRef(false);
+  const renamingTabId = renamingTab?.id;
   const openTabMenu = (event: MouseEvent, tab: TabStripItem) => {
     event.preventDefault();
     event.stopPropagation();
     setContextMenu({ x: event.clientX, y: event.clientY, tab });
+  };
+
+  useEffect(() => {
+    if (!renamingTabId) return;
+    renameEndingRef.current = false;
+    const focus = () => {
+      const input = renameInputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.select();
+    };
+    focus();
+    const first = window.setTimeout(focus, 0);
+    return () => window.clearTimeout(first);
+  }, [renamingTabId]);
+
+  const beginRename = (tab: TabStripItem) => {
+    setContextMenu(null);
+    setRenamingTab({ id: tab.id, value: tab.label });
+  };
+
+  const finishRename = (tab: TabStripItem, mode: "save" | "cancel") => {
+    if (!renamingTab || renamingTab.id !== tab.id) return;
+    if (renameEndingRef.current) return;
+    renameEndingRef.current = true;
+    const label = renamingTab.value.trim();
+    setRenamingTab(null);
+    if (mode === "save" && label && label !== tab.label) {
+      onEvent("rename", { tabId: tab.id, label });
+    }
+  };
+
+  const onRenameKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+    tab: TabStripItem,
+  ) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finishRename(tab, "save");
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      finishRename(tab, "cancel");
+    }
   };
 
   const projectPath =
@@ -149,12 +208,9 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     // Agent (and any other) tabs keep the rename + close menu.
     return [
       {
-        type: "input",
         id: "rename-session",
-        label: "Session name",
-        defaultValue: tab.label,
-        submitLabel: "Rename",
-        onSubmit: (label) => onEvent("rename", { tabId: tab.id, label }),
+        label: "Rename Session",
+        onSelect: () => beginRename(tab),
       },
       { type: "separator" },
       ...closeFamily,
@@ -202,15 +258,15 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
             key={t.id}
             role="tab"
             aria-selected={isActive}
-            className={
-              isActive ? "a2ui-tab a2ui-tab-active" : "a2ui-tab"
-            }
+            className={isActive ? "a2ui-tab a2ui-tab-active" : "a2ui-tab"}
             onMouseDown={(e) => {
               // mousedown not click so focus doesn't shift away from the
               // chat input first (avoids a stray blur that could submit
               // a draft). The select handler swaps the active tab.
               if (e.button !== 0) return;
               if ((e.target as HTMLElement).closest(".a2ui-tab-close")) return;
+              if ((e.target as HTMLElement).closest(".ae-tab-rename-input"))
+                return;
               e.preventDefault();
               onEvent("select", { tabId: t.id });
             }}
@@ -230,12 +286,28 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
                 className="a2ui-tab-icon"
               />
             ) : null}
-            <span className="a2ui-tab-label">{t.label}</span>
+            {renamingTab?.id === t.id ? (
+              <input
+                ref={renameInputRef}
+                className="ae-tab-rename-input"
+                aria-label={`Rename session ${t.label}`}
+                value={renamingTab.value}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setRenamingTab((current) =>
+                    current?.id === t.id ? { ...current, value } : current,
+                  );
+                }}
+                onKeyDown={(event) => onRenameKeyDown(event, t)}
+                onBlur={() => finishRename(t, "save")}
+              />
+            ) : (
+              <span className="a2ui-tab-label">{t.label}</span>
+            )}
             {typeof t.queueCount === "number" && t.queueCount > 0 ? (
-              <span
-                className="a2ui-tab-queue"
-                title={`${t.queueCount} queued`}
-              >
+              <span className="a2ui-tab-queue" title={`${t.queueCount} queued`}>
                 +{t.queueCount}
               </span>
             ) : null}
@@ -272,8 +344,8 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
         items={menuItems}
         onClose={() => setContextMenu(null)}
         ariaLabel="Tab actions"
-        estimatedWidth={320}
-        estimatedHeight={176}
+        estimatedWidth={220}
+        estimatedHeight={156}
       />
     </div>
   );

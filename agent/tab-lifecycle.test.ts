@@ -453,7 +453,23 @@ describe("handleSessionEvent", () => {
       type: "notice",
       tabId: "tab-1",
       busy: true,
-      message: "Compacting context…",
+      message: "Compacting context...",
+    });
+  });
+
+  it("surfaces completed compaction as a timeline notice with token count", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "auto_compaction_end",
+      tokensBefore: 13_005,
+    });
+
+    expect(f.sent[0]).toEqual({
+      type: "notice",
+      tabId: "tab-1",
+      message: "Context compacted · 13,005 tokens summarized",
     });
   });
 

@@ -230,6 +230,10 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
         ? record.delivery
         : undefined;
     const attachments = coerceChatAttachments(record.attachments);
+    const createdAt =
+      typeof record.createdAt === "number" && Number.isFinite(record.createdAt)
+        ? record.createdAt
+        : undefined;
     if (!text && !thinking && !a2ui && attachments.length === 0) continue;
     messages.push(
       trimMessage({
@@ -243,6 +247,7 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(a2ui ? { a2ui } : {}),
         ...(delivery ? { delivery } : {}),
+        ...(createdAt !== undefined ? { createdAt } : {}),
       }),
     );
   }

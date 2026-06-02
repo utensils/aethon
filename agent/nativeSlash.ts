@@ -207,13 +207,13 @@ export async function handleNativeSlashCommand(
         const result = await tab.session.compact(customInstructions);
         const tokensBefore =
           typeof result?.tokensBefore === "number"
-            ? ` ${formatInt(result.tokensBefore)} tokens were summarized.`
+            ? ` · ${formatInt(result.tokensBefore)} tokens summarized`
             : "";
         deps.send({
           type: "native_slash_result",
           tabId,
           command,
-          message: `Context compacted.${tokensBefore}`,
+          message: `Context compacted${tokensBefore}`,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

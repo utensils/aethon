@@ -21,6 +21,7 @@ import type {
   DiscoveredSession,
   ModelDescriptor,
 } from "./types";
+import { contextUsageFromMessage } from "./contextUsage";
 
 function isWorkstationBootLayout(layout: A2UIPayload): boolean {
   const state = layout.state as
@@ -318,7 +319,13 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
       const bridgeTabs =
         (data.tabs as
-          | { id: string; model: string; cwd?: string; authProfileId?: string }[]
+          | {
+              id: string;
+              model: string;
+              cwd?: string;
+              authProfileId?: string;
+              contextUsage?: Record<string, unknown>;
+            }[]
           | undefined) ?? [];
       const tabReplay =
         (data.extensionTabState as
@@ -347,6 +354,12 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
         }
         if (bt?.authProfileId) {
           localTabs[i] = { ...localTabs[i], authProfileId: bt.authProfileId };
+        }
+        const contextUsage = bt?.contextUsage
+          ? contextUsageFromMessage(bt.contextUsage)
+          : null;
+        if (contextUsage) {
+          localTabs[i] = { ...localTabs[i], contextUsage };
         }
       }
       // Apply the bridge's per-tab replay over each tab record. prev

@@ -41,7 +41,7 @@ describe("handleNativeSlashResult", () => {
         type: "native_slash_result",
         command: "compact",
         tabId: "default",
-        message: "Context compacted. 159,747 tokens were summarized.",
+        message: "Context compacted · 159,747 tokens summarized",
       },
       ctx,
     );

@@ -104,9 +104,123 @@ describe("sessionUiSnapshot", () => {
     );
   });
 
+  it("persists empty agent tabs in the active workspace and background buckets", () => {
+    saveSessionUiSnapshot({
+      tabs: [makeEmptyTab("empty-active", "Empty Active", "project-1")],
+      activeTabId: "empty-active",
+      persistedTabBuckets: {
+        "project-1::worktree::wt-1": {
+          tabs: [makeEmptyTab("empty-bucket", "Empty Bucket", "project-1")],
+          activeTabId: "empty-bucket",
+        },
+      },
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded?.activeTabId).toBe("empty-active");
+    expect(loaded?.tabs).toMatchObject([
+      { id: "empty-active", label: "Empty Active", messages: [] },
+    ]);
+    expect(loaded?.buckets?.["project-1::worktree::wt-1"]?.tabs).toMatchObject([
+      { id: "empty-bucket", label: "Empty Bucket", messages: [] },
+    ]);
+  });
+
+  it("repairs timestamped message order and drops stale stop notices on restore", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("tab", "Tab"),
+            messages: [
+              {
+                id: "later-agent",
+                role: "agent",
+                text: "later",
+                createdAt: 3_000,
+              },
+              {
+                id: "stderr",
+                role: "system",
+                text: "[agent stderr] 2026-06-02T13:36:55.343Z WARN devshell: failed",
+                createdAt: 2_000,
+              },
+              {
+                id: "stopped",
+                role: "system",
+                text: "Agent stopped.",
+                createdAt: 2_500,
+              },
+              {
+                id: "earlier-user",
+                role: "user",
+                text: "earlier",
+                createdAt: 1_000,
+              },
+            ],
+          },
+        ],
+        activeTabId: "tab",
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.tabs[0].messages.map((message) => message.id)).toEqual([
+      "earlier-user",
+      "stderr",
+      "later-agent",
+    ]);
+  });
+
+  it("restores agent-owned terminal panel to agent bash instead of a shell sub-tab", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("agent", "Agent"),
+            messages: [{ id: "m", role: "user", text: "hi" }],
+          },
+          {
+            ...makeEmptyTab("shell", "Shell", null, "shell"),
+            shell: {
+              cwd: "/repo/app",
+              command: "",
+              args: [],
+              shareMode: "private",
+              shellState: "running",
+            },
+          },
+        ],
+        activeTabId: "agent",
+        terminalPanel: { activeSubId: "shell", height: 300 },
+        savedAt: 1,
+      }),
+      { restartShellTabs: true },
+    );
+
+    expect(parsed?.terminalPanel).toEqual({
+      activeSubId: "agent-bash",
+      height: 300,
+    });
+  });
+
   it("returns null when neither active tabs nor buckets have sessions", () => {
     saveSessionUiSnapshot({ tabs: [], activeTabId: "__overview__" });
     expect(loadSessionUiSnapshot()).toBeNull();
+  });
+
+  it("persists closed session ids even when no tabs are open", () => {
+    saveSessionUiSnapshot({
+      tabs: [],
+      activeTabId: "__overview__",
+      closedSessionIds: ["closed-a", "closed-b", "closed-a"],
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded).not.toBeNull();
+    expect(loaded?.tabs).toEqual([]);
+    expect(loaded?.activeTabId).toBe("__overview__");
+    expect(loaded?.closedSessionIds).toEqual(["closed-a", "closed-b"]);
   });
 
   it("falls back to the first tab when the active id is stale", () => {
@@ -468,7 +582,7 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
-  it("does not persist blank empty new tabs", () => {
+  it("persists blank empty new tabs and keeps them active", () => {
     saveSessionUiSnapshot({
       tabs: [
         makeEmptyTab("blank", "Tab 1"),
@@ -483,8 +597,8 @@ describe("sessionUiSnapshot", () => {
     });
 
     const restored = loadSessionUiSnapshot();
-    expect(restored?.tabs.map((t) => t.id)).toEqual(["active-chat"]);
-    expect(restored?.activeTabId).toBe("active-chat");
+    expect(restored?.tabs.map((t) => t.id)).toEqual(["blank", "active-chat"]);
+    expect(restored?.activeTabId).toBe("blank");
   });
 
   it("does not persist extension-added layout columns or areas", () => {

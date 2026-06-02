@@ -249,6 +249,11 @@ export interface TabRecord {
   aethonRetryAttempt?: number;
   aethonRetryInFlight?: boolean;
   aethonRetryTimer?: ReturnType<typeof setTimeout>;
+  /** Live context-meter estimate for text/tool output that has streamed
+   *  in this turn but has not yet landed in pi's authoritative usage. */
+  contextUsageTransientTokens?: number;
+  contextUsageLastEmitMs?: number;
+  contextUsageEmitTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface ProjectBaselineSnapshot {

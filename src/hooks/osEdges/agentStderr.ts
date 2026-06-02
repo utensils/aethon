@@ -3,6 +3,7 @@ import type { ChatMessage } from "../../types/a2ui";
 
 export interface AgentStderrDeps {
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
+  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
 }
 
 export function tabIdFromAgentStderr(text: string): string | undefined {
@@ -32,7 +33,7 @@ export function createdAtFromAgentStderr(text: string): number | undefined {
  *  etc.) and stay in bridge logs only; surfacing them to chat would
  *  spam when an extension misbehaves on a setInterval. */
 export function subscribeAgentStderr(deps: AgentStderrDeps): () => void {
-  const { appendMessage } = deps;
+  const { appendMessage, persistLocalChatMessage } = deps;
 
   const unlistenStderr = listen<string>("agent-stderr", (event) => {
     const text = event.payload?.toString().trim();
@@ -47,15 +48,15 @@ export function subscribeAgentStderr(deps: AgentStderrDeps): () => void {
       );
     const isExtensionNoise = /\b(WARN|INFO)\s+ext-state:/.test(text);
     if ((isLeveledFailure || isRawCrash) && !isExtensionNoise) {
-      appendMessage(
-        {
-          id: crypto.randomUUID(),
-          role: "system",
-          text: `[agent stderr] ${text}`,
-          createdAt: createdAtFromAgentStderr(text),
-        },
-        tabIdFromAgentStderr(text),
-      );
+      const tabId = tabIdFromAgentStderr(text) ?? "default";
+      const chatMessage = {
+        id: crypto.randomUUID(),
+        role: "system" as const,
+        text: `[agent stderr] ${text}`,
+        createdAt: createdAtFromAgentStderr(text),
+      };
+      appendMessage(chatMessage, tabId);
+      persistLocalChatMessage(chatMessage, tabId);
     }
     // Always log to webview console for debug skill access.
     console.warn("[agent stderr]", text);

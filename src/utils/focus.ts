@@ -8,7 +8,10 @@ export function isFocusInTerminalPanel(): boolean {
   const focused = document.activeElement;
   if (!focused) return false;
   const panel = document.querySelector(".ae-terminal-panel");
-  return !!panel?.contains(focused);
+  if (!panel) return false;
+  if (panel.classList.contains("is-closed")) return false;
+  if (panel.getAttribute("aria-hidden") === "true") return false;
+  return panel.contains(focused);
 }
 
 export function focusTerminalPanel(): void {

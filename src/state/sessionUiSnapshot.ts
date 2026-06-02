@@ -4,11 +4,14 @@ import { durableImageAttachments } from "../utils/imageAttachments";
 import { dedupeToolResultTextMessages } from "../utils/messages";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
+export const SESSION_UI_SNAPSHOT_FLUSH_EVENT =
+  "aethon:flush-session-ui-snapshot";
 
 const KEY = "aethon:session-ui-snapshot:v1";
 const MAX_MESSAGES_PER_TAB = 200;
 const MAX_TERMINAL_BUFFER = 256 * 1024;
 const MAX_TERMINAL_BUFFER_ENTRIES = 8;
+const AGENT_BASH_SUB_ID = "agent-bash";
 
 /** A stashed (non-active) workspace's tabs + its last-active tab, keyed in
  *  `SessionUiSnapshot.buckets` by `projectScopeBucketKey`. */
@@ -25,6 +28,7 @@ export interface SessionUiSnapshot {
   terminalPanel?: unknown;
   scrollToMatchByTab?: unknown;
   projectModels?: Record<string, string>;
+  closedSessionIds?: string[];
   /** Non-active workspace tab buckets, keyed by `projectScopeBucketKey`.
    *  The ACTIVE workspace's tabs live in `tabs`; every other workspace the
    *  user had open is stashed here so a restart can restore the tab they
@@ -90,14 +94,7 @@ function shouldPersistTab(tab: Tab): boolean {
   // are intentionally not serialised (saving arbitrary in-memory edits
   // could surprise the user on next launch).
   if (tab.kind === "editor") return tab.editor?.filePath != null;
-  return (
-    tab.messages.length > 0 ||
-    tab.draft.trim().length > 0 ||
-    tab.waiting ||
-    tab.queueCount > 0 ||
-    tab.canvas !== null ||
-    tab.terminalBuffer.length > 0
-  );
+  return true;
 }
 
 function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
@@ -130,6 +127,93 @@ function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
 
 function tabCanOwnMainSurface(tab: Tab | undefined): boolean {
   return !!tab && tab.kind !== "shell";
+}
+
+function messageCreatedAt(message: ChatMessage): number | undefined {
+  if (
+    typeof message.createdAt === "number" &&
+    Number.isFinite(message.createdAt)
+  ) {
+    return message.createdAt;
+  }
+  if (message.role !== "system" || typeof message.text !== "string") {
+    return undefined;
+  }
+  const raw = /^\[agent stderr\]\s+(\d{4}-\d{2}-\d{2}T[^\s]+)/.exec(
+    message.text,
+  )?.[1];
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isStaleUntimestampedSystemNotice(message: ChatMessage): boolean {
+  const text = message.text?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+  if (message.role === "system" && text === "agent stopped.") {
+    return true;
+  }
+  if (message.role !== "system" || messageCreatedAt(message) !== undefined) {
+    return false;
+  }
+  return (
+    text === "compacting context..." ||
+    text === "compacting context…" ||
+    text.startsWith("context compacted") ||
+    text.startsWith("context compaction complete") ||
+    text.startsWith("context compaction failed:")
+  );
+}
+
+function normalizeRestoredMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages
+    .filter((message) => !isStaleUntimestampedSystemNotice(message))
+    .map((message) => {
+      const createdAt = messageCreatedAt(message);
+      return createdAt !== undefined && message.createdAt !== createdAt
+        ? { ...message, createdAt }
+        : message;
+    })
+    .map((message, order) => ({ message, order }))
+    .sort((a, b) => {
+      const aTime = messageCreatedAt(a.message);
+      const bTime = messageCreatedAt(b.message);
+      if (
+        typeof aTime === "number" &&
+        typeof bTime === "number" &&
+        aTime !== bTime
+      ) {
+        return aTime - bTime;
+      }
+      return a.order - b.order;
+    })
+    .map((entry) => entry.message);
+}
+
+function durableTerminalPanelSnapshot(
+  terminalPanel: unknown,
+  tabs: readonly Tab[],
+  activeTabId: string | undefined,
+): Record<string, unknown> | undefined {
+  if (!terminalPanel || typeof terminalPanel !== "object") return undefined;
+  const input = terminalPanel as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  if (typeof input.height === "number" && Number.isFinite(input.height)) {
+    next.height = input.height;
+  }
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  if (activeTab?.kind === "agent") {
+    next.activeSubId = AGENT_BASH_SUB_ID;
+  } else if (typeof input.activeSubId === "string") {
+    const activeShell = tabs.find(
+      (tab) => tab.id === input.activeSubId && tab.kind === "shell",
+    );
+    if (activeShell?.shell?.shellState !== "exited") {
+      next.activeSubId = input.activeSubId;
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 function durableLayoutSnapshot(
@@ -234,6 +318,18 @@ function validTabsFrom(value: unknown): Tab[] {
     : [];
 }
 
+function validSessionIdsFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value.filter(
+        (candidate): candidate is string =>
+          typeof candidate === "string" && candidate.length > 0,
+      ),
+    ),
+  ).slice(-200);
+}
+
 /** Normalise a persisted tab back into a live Tab: dedupe + durable-ify
  *  attachments, reset process-local fields (waiting / queue), preserve
  *  editor metadata, and re-arm or quiesce shell tabs. Shared by the main
@@ -253,14 +349,15 @@ function restoreTabRecord(
   const base = {
     ...t,
     kind,
-    messages: dedupeToolResultTextMessages(t.messages).map(
-      (message): ChatMessage =>
+    messages: normalizeRestoredMessages(
+      dedupeToolResultTextMessages(t.messages).map((message): ChatMessage =>
         message.attachments && message.attachments.length > 0
           ? {
               ...message,
               attachments: durableImageAttachments(message.attachments),
             }
           : message,
+      ),
     ),
     draft: t.draft ?? "",
     draftAttachments: Array.isArray(t.draftAttachments)
@@ -283,9 +380,7 @@ function restoreTabRecord(
     // Preserve editor metadata so a persisted editor tab reopens pointing at
     // the same file. Validate minimally — `filePath` is what EditorCanvas
     // requires; the rest fall back to safe defaults on the next render.
-    ...(t.kind === "editor" &&
-    t.editor &&
-    typeof t.editor.filePath === "string"
+    ...(t.kind === "editor" && t.editor && typeof t.editor.filePath === "string"
       ? {
           editor: {
             filePath: t.editor.filePath,
@@ -307,9 +402,7 @@ function restoreTabRecord(
         }
       : {}),
   };
-  return base.kind === "shell"
-    ? restoreShellTab(base, restartShellTabs)
-    : base;
+  return base.kind === "shell" ? restoreShellTab(base, restartShellTabs) : base;
 }
 
 /** Validate + restore the non-active workspace buckets. Each bucket's tabs
@@ -360,6 +453,7 @@ export function parseSessionUiSnapshot(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SessionUiSnapshot>;
     const tabs = validTabsFrom(parsed.tabs);
+    const closedSessionIds = validSessionIdsFrom(parsed.closedSessionIds);
     const restartShellTabs = options.restartShellTabs === true;
     const preserveAgentActivity = options.preserveAgentActivity === true;
     const buckets = parsePersistedBuckets(
@@ -368,8 +462,11 @@ export function parseSessionUiSnapshot(
       preserveAgentActivity,
     );
     // Nothing to restore if neither the active workspace nor any backgrounded
-    // workspace had sessions.
-    if (tabs.length === 0 && !buckets) return null;
+    // workspace had sessions, and no closed-session suppressions need to
+    // survive to keep discovered sessions from auto-opening on reload.
+    if (tabs.length === 0 && !buckets && closedSessionIds.length === 0) {
+      return null;
+    }
     // OVERVIEW_TAB_ID is a valid persisted value (the user closed the
     // app while the overview pseudo-tab owned the canvas with sessions
     // open) — keep it as-is. Other ids must still match a real tab. With no
@@ -383,15 +480,22 @@ export function parseSessionUiSnapshot(
               tabCanOwnMainSurface(parsedActiveTab))
           ? parsed.activeTabId
           : (tabs.find(tabCanOwnMainSurface)?.id ?? OVERVIEW_TAB_ID);
+    const restoredTabs = tabs.map((t) =>
+      restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
+    );
     return {
-      tabs: tabs.map((t) =>
-        restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
-      ),
+      tabs: restoredTabs,
       activeTabId,
       layout: durableLayoutSnapshot(parsed.layout),
       terminal: durableTerminalSnapshot(parsed.terminal),
-      terminalPanel: parsed.terminalPanel,
+      terminalPanel: durableTerminalPanelSnapshot(
+        parsed.terminalPanel,
+        restoredTabs,
+        activeTabId,
+      ),
       scrollToMatchByTab: parsed.scrollToMatchByTab,
+      closedSessionIds:
+        closedSessionIds.length > 0 ? closedSessionIds : undefined,
       projectModels:
         parsed.projectModels &&
         typeof parsed.projectModels === "object" &&
@@ -419,10 +523,11 @@ export function serializeSessionUiSnapshot(
       ? (state.tabs as Tab[]).filter(shouldPersistTab).map(trimTab)
       : [];
     const buckets = serializePersistedBuckets(state.persistedTabBuckets);
+    const closedSessionIds = validSessionIdsFrom(state.closedSessionIds);
     // Persist when the active workspace OR any backgrounded workspace has
     // sessions worth keeping. A user sitting on a project's overview while
     // agents run in its worktrees still has state to restore.
-    if (tabs.length === 0 && !buckets) {
+    if (tabs.length === 0 && !buckets && closedSessionIds.length === 0) {
       return null;
     }
     const activeTab = tabs.find((t) => t.id === state.activeTabId);
@@ -436,8 +541,13 @@ export function serializeSessionUiSnapshot(
       activeTabId,
       layout: durableLayoutSnapshot(state.layout),
       terminal: durableTerminalSnapshot(state.terminal),
-      terminalPanel: state.terminalPanel,
+      terminalPanel: durableTerminalPanelSnapshot(
+        state.terminalPanel,
+        tabs,
+        activeTabId,
+      ),
       scrollToMatchByTab: state.scrollToMatchByTab,
+      ...(closedSessionIds.length > 0 ? { closedSessionIds } : {}),
       projectModels:
         state.projectModels &&
         typeof state.projectModels === "object" &&

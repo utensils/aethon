@@ -35,6 +35,12 @@ import { emitBashResult } from "./terminal";
 import { cancelAethonRetry, scheduleAethonRetry } from "./retry";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
+import {
+  addLiveContextUsageEstimate,
+  clearLiveContextUsageEstimate,
+  emitContextUsage,
+  emitContextUsageThrottled,
+} from "../context-usage";
 
 const turnLog = logger.scope("turn");
 
@@ -98,7 +104,7 @@ function compactionNotice(
   const type = event.type.toLowerCase();
   if (!type.includes("compact")) return undefined;
   if (type.includes("start") || type.includes("begin")) {
-    return { message: "Compacting context…", busy: true };
+    return { message: "Compacting context...", busy: true };
   }
   if (type.includes("fail") || type.includes("error")) {
     const reason =
@@ -115,7 +121,11 @@ function compactionNotice(
     type.includes("complete") ||
     type.includes("success")
   ) {
-    return { message: "Context compaction complete." };
+    const tokensBefore =
+      typeof event.tokensBefore === "number" && Number.isFinite(event.tokensBefore)
+        ? ` · ${event.tokensBefore.toLocaleString("en-US")} tokens summarized`
+        : "";
+    return { message: `Context compacted${tokensBefore}` };
   }
   return undefined;
 }
@@ -134,19 +144,27 @@ export function handleSessionEvent(
 ): void {
   const compacting = compactionNotice(event);
   if (compacting) {
+    if (!compacting.busy) {
+      clearLiveContextUsageEstimate(rec);
+    }
     deps.send({
       type: "notice",
       tabId,
       ...(compacting.busy ? { busy: true } : {}),
       message: compacting.message,
     });
+    emitContextUsage(state, deps, tabId, rec, {
+      compacting: compacting.busy === true,
+    });
   }
 
   switch (event.type) {
     case "agent_start": {
       rollResponseMessage(rec);
+      clearLiveContextUsageEstimate(rec);
       state.currentAgentTabId = tabId;
       state.turnStartTimes.set(tabId, Date.now());
+      emitContextUsage(state, deps, tabId, rec);
       const model = rec.session.model ? modelKey(rec.session.model) : "unknown";
       turnLog.info(`start model=${model} tabId=${tabId}`);
       if (rec.queuedCount > 0) {
@@ -188,6 +206,8 @@ export function handleSessionEvent(
             content: delta,
             channel,
           });
+          addLiveContextUsageEstimate(rec, delta);
+          emitContextUsageThrottled(state, deps, tabId, rec);
         }
       }
       break;
@@ -214,6 +234,8 @@ export function handleSessionEvent(
         startedAt,
       });
       deps.send({ type: "a2ui", tabId, id: uiId, payload });
+      addLiveContextUsageEstimate(rec, `${ev.toolName} ${summary}`);
+      emitContextUsageThrottled(state, deps, tabId, rec);
       rollResponseMessage(rec);
       if (ev.toolName === "bash") {
         const cmd = String(
@@ -252,6 +274,8 @@ export function handleSessionEvent(
         );
         cached.bashStream = streamed.state;
         emitBashResult(deps, streamed.delta, tabId);
+        addLiveContextUsageEstimate(rec, streamed.delta);
+        emitContextUsageThrottled(state, deps, tabId, rec);
       }
       break;
     }
@@ -286,10 +310,14 @@ export function handleSessionEvent(
           cached?.bashStream,
         );
         emitBashResult(deps, streamed.delta, tabId);
+        addLiveContextUsageEstimate(rec, streamed.delta);
         deps.send({ type: "terminal_output", tabId, content: "\r\n" });
+      } else {
+        addLiveContextUsageEstimate(rec, summarizeToolResult(ev.result));
       }
       rec.toolArgsCache.delete(ev.toolCallId);
       rollResponseMessage(rec);
+      emitContextUsageThrottled(state, deps, tabId, rec);
       break;
     }
     case "agent_end": {
@@ -335,6 +363,8 @@ export function handleSessionEvent(
           state.currentAgentTabId = undefined;
         }
         rollResponseMessage(rec);
+        clearLiveContextUsageEstimate(rec);
+        emitContextUsage(state, deps, tabId, rec);
         deps.send({ type: "response_end", tabId });
       }
       break;
@@ -382,5 +412,14 @@ export function handleSessionEvent(
       }
       break;
     }
+  }
+}
+
+function summarizeToolResult(result: unknown): string {
+  if (typeof result === "string") return result.slice(0, 16_384);
+  try {
+    return JSON.stringify(result).slice(0, 16_384);
+  } catch {
+    return String(result).slice(0, 16_384);
   }
 }

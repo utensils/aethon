@@ -5,6 +5,7 @@ import { useCloseTabActions, type CloseTabDeps } from "./closeTab";
 import { OVERVIEW_TAB_ID, makeEmptyTab, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { focusTerminalPanelSoon } from "../../utils/focus";
+import { SESSION_UI_SNAPSHOT_FLUSH_EVENT } from "../../state/sessionUiSnapshot";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(() => Promise.resolve(null)),
@@ -22,7 +23,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-const ref = <T,>(value: T): MutableRefObject<T> => ({ current: value });
+const ref = <T>(value: T): MutableRefObject<T> => ({ current: value });
 
 function buildDeps(
   initial: Record<string, unknown>,
@@ -143,6 +144,64 @@ describe("closeTabNow → overview fallback", () => {
     closeTabNow("agent-2");
     const next = apply();
     expect(next.activeTabId).toBe("agent-1");
+  });
+
+  it("marks closed agent sessions so reload auto-restore keeps them closed", () => {
+    const t1 = makeTab("agent-1", "agent");
+    const t2 = makeTab("agent-2", "agent");
+    const flushSpy = vi.fn();
+    window.addEventListener(SESSION_UI_SNAPSHOT_FLUSH_EVENT, flushSpy);
+    const { deps, apply } = buildDeps({
+      tabs: [t1, t2],
+      activeTabId: "agent-1",
+      closedSessionIds: ["already-closed"],
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("agent-2");
+
+    const next = apply();
+    expect((next.tabs as Tab[]).map((t) => t.id)).toEqual(["agent-1"]);
+    expect(next.closedSessionIds).toEqual(["already-closed", "agent-2"]);
+    expect(flushSpy).toHaveBeenCalledTimes(1);
+    window.removeEventListener(SESSION_UI_SNAPSHOT_FLUSH_EVENT, flushSpy);
+  });
+
+  it("bounds closed agent session suppression to the most recent entries", () => {
+    const closedSessionIds = Array.from(
+      { length: 200 },
+      (_, index) => `closed-${index}`,
+    );
+    const agent = makeTab("agent-1", "agent");
+    const { deps, apply } = buildDeps({
+      tabs: [agent],
+      activeTabId: "agent-1",
+      closedSessionIds,
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("agent-1");
+
+    const next = apply();
+    expect(next.closedSessionIds).toHaveLength(200);
+    expect((next.closedSessionIds as string[])[0]).toBe("closed-1");
+    expect((next.closedSessionIds as string[]).at(-1)).toBe("agent-1");
+  });
+
+  it("does not suppress shell sessions when closing shell sub-tabs", () => {
+    const agent = makeTab("agent-1", "agent");
+    const shell = makeTab("shell-1", "shell");
+    const { deps, apply } = buildDeps({
+      tabs: [agent, shell],
+      activeTabId: "agent-1",
+      terminalPanel: { activeSubId: "shell-1" },
+      closedSessionIds: ["agent-old"],
+    });
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("shell-1");
+
+    expect(apply().closedSessionIds).toEqual(["agent-old"]);
   });
 
   it("activates an editor tab if it's the only remaining session kind", () => {
@@ -273,9 +332,7 @@ describe("closeTab — idle-shell guard", () => {
   it("falls back to prompting when isShellBusy throws (assume busy)", async () => {
     const shell = makeTab("sh-1", "shell");
     const promptFn = vi.fn(() => Promise.resolve(true));
-    const isShellBusy = vi.fn(() =>
-      Promise.reject(new Error("ipc lost")),
-    );
+    const isShellBusy = vi.fn(() => Promise.reject(new Error("ipc lost")));
     const { deps } = buildDeps(
       { tabs: [shell], activeTabId: "sh-1" },
       {

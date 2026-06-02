@@ -144,6 +144,43 @@ function isCoveredByPiToolCard(
   );
 }
 
+function isCompactionMarker(message: RestoredChatMessage): boolean {
+  if (message.role !== "system" || typeof message.text !== "string") {
+    return false;
+  }
+  const text = message.text.replace(/\s+/g, " ").trim().toLowerCase();
+  return (
+    text === "compacting context..." ||
+    text === "compacting context…" ||
+    text.startsWith("context compacted") ||
+    text.startsWith("context compaction complete") ||
+    text.startsWith("context compaction failed:")
+  );
+}
+
+function piCompactionMarkers(
+  piMessages: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  return piMessages.filter(
+    (message) => message.id.startsWith("compaction:") && isCompactionMarker(message),
+  );
+}
+
+function isCoveredByPiCompaction(
+  message: RestoredChatMessage,
+  piCompactions: readonly RestoredChatMessage[],
+): boolean {
+  if (!isCompactionMarker(message) || piCompactions.length === 0) return false;
+  if (typeof message.createdAt !== "number") {
+    return piCompactions.some((candidate) => candidate.text === message.text);
+  }
+  return piCompactions.some(
+    (candidate) =>
+      typeof candidate.createdAt === "number" &&
+      Math.abs(candidate.createdAt - message.createdAt) <= 5 * 60 * 1000,
+  );
+}
+
 function dedupeLocalMessages(
   piMessages: RestoredChatMessage[],
   localMessages: RestoredChatMessage[],
@@ -151,8 +188,10 @@ function dedupeLocalMessages(
   const seenIds = new Set(piMessages.map((message) => message.id));
   const contentIndex = piContentIndex(piMessages);
   const piToolCards = piToolCardIdentitySet(piMessages);
+  const piCompactions = piCompactionMarkers(piMessages);
   return localMessages.filter((message) => {
     if (seenIds.has(message.id)) return false;
+    if (isCoveredByPiCompaction(message, piCompactions)) return false;
     if (isCoveredByPiToolCard(message, piToolCards)) return false;
     return !isCoveredByPiContent(message, contentIndex);
   });

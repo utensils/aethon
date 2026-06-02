@@ -215,6 +215,7 @@ export interface StatusBarComponent extends A2UIComponent {
     left?: StringValue;
     center?: StringValue;
     right?: StringValue;
+    context?: { $ref: string };
   };
 }
 

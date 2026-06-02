@@ -49,3 +49,8 @@ export { handleSessionEvent } from "./events";
 export { cancelAethonRetry, installAethonRetryClassifier } from "./retry";
 export type { EnsureTabOptions } from "./lifecycle";
 export { ensureTab } from "./lifecycle";
+export {
+  contextUsageSnapshot,
+  emitContextUsage,
+  type ContextUsageSnapshot,
+} from "../context-usage";

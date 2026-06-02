@@ -39,14 +39,25 @@ function renderTabStrip(onEvent = vi.fn<TabStripOnEvent>()) {
 }
 
 describe("TabStrip", () => {
-  it("opens tab actions on right-click and emits a rename event", () => {
+  it("starts inline session rename from the tab context menu", () => {
     const { onEvent } = renderTabStrip();
     fireEvent.contextMenu(screen.getByText("Tab 1").closest('[role="tab"]')!);
 
-    fireEvent.change(screen.getByLabelText("Session name"), {
+    expect(screen.queryByLabelText("Session name")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename Session" }));
+
+    const input = screen.getByRole("textbox", {
+      name: "Rename session Tab 1",
+    });
+    fireEvent.change(input, {
       target: { value: "Planning" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    expect(input).toHaveProperty("value", "Planning");
+    expect(
+      screen.queryByRole("menuitem", { name: "Rename Session" }),
+    ).toBeNull();
+
+    fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onEvent).toHaveBeenCalledWith("rename", {
       tabId: "tab-1",
@@ -67,7 +78,10 @@ describe("TabStrip", () => {
       />,
     );
     fireEvent.contextMenu(screen.getByText("Tab 1").closest('[role="tab"]')!);
-    const input = screen.getByLabelText("Session name");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename Session" }));
+    const input = screen.getByRole("textbox", {
+      name: "Rename session Tab 1",
+    });
     input.focus();
     fireEvent.change(input, { target: { value: "Planning" } });
 
@@ -134,9 +148,7 @@ describe("TabStrip", () => {
     const tabs = screen.getAllByRole("tab");
     expect(tabs[0].textContent).toContain("overview");
     // No close button on the overview pill.
-    expect(
-      tabs[0].querySelector(".a2ui-tab-close"),
-    ).toBeNull();
+    expect(tabs[0].querySelector(".a2ui-tab-close")).toBeNull();
     // Real tabs do have one.
     expect(
       screen

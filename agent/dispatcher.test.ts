@@ -120,6 +120,63 @@ describe("dispatchInboundMessage", () => {
     expect(f.writes()).toBe(1);
   });
 
+  it("cancels pending context usage emits when closing a tab", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = makeFixture();
+      const delayedSend = vi.fn(() => {
+        f.sent.push({ type: "context_usage", tabId: "tab-1" });
+      });
+      const tab = fakeTabRecord({
+        contextUsageEmitTimer: setTimeout(delayedSend, 100),
+      });
+      f.state.tabs.set("tab-1", tab);
+
+      await dispatchInboundMessage(
+        f.state,
+        f.deps,
+        fakeAethonApi(),
+        fakeExtensionApi,
+        {
+          type: "tab_close",
+          tabId: "tab-1",
+        },
+      );
+      vi.advanceTimersByTime(100);
+
+      expect(delayedSend).not.toHaveBeenCalled();
+      expect(tab.contextUsageEmitTimer).toBeUndefined();
+      expect(f.state.tabs.has("tab-1")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("formats native compact results as timeline markers", async () => {
+    const f = makeFixture();
+    f.state.tabs.set(
+      "tab-1",
+      fakeTabRecord({
+        session: {
+          compact: vi.fn(() => Promise.resolve({ tokensBefore: 159_747 })),
+        } as unknown as TabRecord["session"],
+      }),
+    );
+
+    await dispatchInboundMessage(f.state, f.deps, fakeAethonApi(), fakeExtensionApi, {
+      type: "native_slash_command",
+      name: "compact",
+      tabId: "tab-1",
+    });
+
+    expect(f.sent).toContainEqual({
+      type: "native_slash_result",
+      tabId: "tab-1",
+      command: "compact",
+      message: "Context compacted · 159,747 tokens summarized",
+    });
+  });
+
   it("contains handler failures and reports them as bridge errors", async () => {
     const f = makeFixture();
     const api = fakeAethonApi({

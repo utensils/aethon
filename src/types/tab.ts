@@ -53,6 +53,20 @@ export interface EditorMeta {
   diff?: boolean;
 }
 
+export interface ContextUsageState {
+  tabId?: string;
+  model: string;
+  status: "known" | "unknown";
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+  autoCompactEnabled: boolean;
+  reserveTokens: number;
+  compactAtTokens: number;
+  tokensUntilCompact: number | null;
+  compacting?: boolean;
+}
+
 export type TabKind = "agent" | "shell" | "editor";
 
 /**
@@ -98,6 +112,7 @@ export interface Tab {
   queuedSteeringId?: string;
   canvas: unknown;
   model: string;
+  contextUsage?: ContextUsageState;
   // Rolling buffer of bash output for this tab. The Terminal component
   // writes to xterm directly for the active tab; this buffer survives
   // tab switches so the panel can replay it when the user comes back.

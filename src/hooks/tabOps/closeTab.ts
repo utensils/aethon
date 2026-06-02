@@ -1,12 +1,17 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { OVERVIEW_TAB_ID, type ClosedTabEntry, type Tab } from "../../types/tab";
+import {
+  OVERVIEW_TAB_ID,
+  type ClosedTabEntry,
+  type Tab,
+} from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { disposeEditorBuffer } from "../../monaco/editor-buffers";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { focusTerminalPanelSoon } from "../../utils/focus";
 import { CLOSED_TAB_STACK_MAX, TAB_MIRROR_KEYS } from "./constants";
 import { recentSessionItemFromClosedTab } from "./helpers";
+import { SESSION_UI_SNAPSHOT_FLUSH_EVENT } from "../../state/sessionUiSnapshot";
 
 export interface CloseTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -238,11 +243,17 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
             }
           : {}),
       };
+      if (closedKind === "agent") {
+        const closedIds = Array.isArray(prev.closedSessionIds)
+          ? (prev.closedSessionIds as string[])
+          : [];
+        result.closedSessionIds = Array.from(new Set([...closedIds, tabId])).slice(
+          -200,
+        );
+      }
       // Drop a closed tab from the bucket-independent agent-running set so a
       // closed-mid-turn tab can't leave a stale entry behind.
-      const running = prev.agentRunningTabs as
-        | Record<string, true>
-        | undefined;
+      const running = prev.agentRunningTabs as Record<string, true> | undefined;
       if (running && running[tabId]) {
         const nextRunning = { ...running };
         delete nextRunning[tabId];
@@ -316,6 +327,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     if (closedKind === "editor") {
       disposeEditorBuffer(tabId);
     }
+    window.dispatchEvent(new Event(SESSION_UI_SNAPSHOT_FLUSH_EVENT));
   }
 
   /** Close every editor tab whose filePath matches `path` (or is a

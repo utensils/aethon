@@ -147,7 +147,7 @@ function renderInput(
 
 function renderHistory(state: Record<string, unknown>) {
   const onEvent = vi.fn();
-  render(
+  const result = render(
     <ChatHistory
       component={{
         id: "chat-history",
@@ -158,7 +158,7 @@ function renderHistory(state: Record<string, unknown>) {
       onEvent={onEvent}
     />,
   );
-  return { onEvent };
+  return { onEvent, ...result };
 }
 
 function renderToolCard(props: Record<string, unknown>) {
@@ -438,6 +438,70 @@ describe("ChatInput", () => {
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();
+    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
+    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
+  });
+
+  it("uses stable non-animated follow only while the latest agent text streams a fenced block", () => {
+    renderHistory({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "show code" },
+        {
+          id: "2",
+          role: "agent",
+          text: ["```text", "hello", "```"].join("\n"),
+        },
+      ],
+    });
+
+    expect(document.querySelector(".a2ui-code-frame")).toBeTruthy();
+    expect(screen.queryByText("```text")).toBeNull();
+    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
+    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("auto");
+  });
+
+  it("rerenders the latest fenced message when streaming finishes", () => {
+    const messages = [
+      { id: "1", role: "user", text: "show code" },
+      {
+        id: "2",
+        role: "agent",
+        text: ["```text", "hello", "```"].join("\n"),
+      },
+    ];
+    const { onEvent, rerender } = renderHistory({
+      waiting: true,
+      messages,
+    });
+
+    expect(document.querySelector(".a2ui-code-frame")).toBeTruthy();
+
+    rerender(
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{ waiting: false, messages }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(document.querySelector(".a2ui-code-frame")).toBeNull();
+  });
+
+  it("keeps smooth follow for normal streaming prose", () => {
+    renderHistory({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "go" },
+        { id: "2", role: "agent", text: "ordinary streaming answer" },
+      ],
+    });
+
+    expect(document.querySelector(".a2ui-code-frame")).toBeNull();
     expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
     expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
   });

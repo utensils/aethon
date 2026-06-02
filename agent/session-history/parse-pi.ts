@@ -37,6 +37,44 @@ function restoredToolUiId(toolCallId: string): string {
   return `restored-tool-${safe || "unknown"}`;
 }
 
+function formatInt(value: number): string {
+  return new Intl.NumberFormat("en-US").format(Math.round(value));
+}
+
+function parseRecordTime(record: Record<string, unknown>): number | undefined {
+  const timestamp = record.timestamp;
+  if (typeof timestamp === "number" && Number.isFinite(timestamp)) {
+    return timestamp;
+  }
+  if (typeof timestamp === "string") {
+    const parsed = Date.parse(timestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function compactionMessage(record: Record<string, unknown>): RestoredChatMessage | undefined {
+  const id =
+    typeof record.id === "string" && record.id.length > 0
+      ? record.id
+      : undefined;
+  if (!id) return undefined;
+  const tokensBefore =
+    typeof record.tokensBefore === "number" && Number.isFinite(record.tokensBefore)
+      ? record.tokensBefore
+      : undefined;
+  const createdAt = parseRecordTime(record);
+  return {
+    id: `compaction:${id}`,
+    role: "system",
+    text:
+      tokensBefore !== undefined
+        ? `Context compacted · ${formatInt(tokensBefore)} tokens summarized`
+        : "Context compacted",
+    ...(createdAt !== undefined ? { createdAt } : {}),
+  };
+}
+
 interface RestoredToolCall {
   messageIndex: number;
   uiId: string;
@@ -90,6 +128,14 @@ export function parseSessionHistoryLines(
     }
     if (!entry || typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
+    if (record.type === "compaction") {
+      const message = compactionMessage(record);
+      if (message && !seen.has(message.id)) {
+        seen.add(message.id);
+        messages.push(message);
+      }
+      continue;
+    }
     if (record.type !== "message") continue;
 
     const message = record.message;

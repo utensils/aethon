@@ -262,11 +262,17 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         if (idx >= 0) {
           nextMessage = {
             ...messages[idx],
+            createdAt: messages[idx].createdAt ?? Date.now(),
             [channel]: (messages[idx][channel] ?? "") + delta,
           };
           messages[idx] = nextMessage;
         } else {
-          nextMessage = { id: messageId, role: "agent", [channel]: delta };
+          nextMessage = {
+            id: messageId,
+            role: "agent",
+            createdAt: Date.now(),
+            [channel]: delta,
+          };
           messages.push(nextMessage);
         }
         activeResponseIdRef.current = messageId;
@@ -278,6 +284,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       if (activeId && last && last.id === activeId && last.role === "agent") {
         const nextMessage = {
           ...last,
+          createdAt: last.createdAt ?? Date.now(),
           [channel]: (last[channel] ?? "") + delta,
         };
         messages[messages.length - 1] = nextMessage;
@@ -288,6 +295,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         const nextMessage = {
           id: newId,
           role: "agent" as const,
+          createdAt: Date.now(),
           [channel]: delta,
         };
         messages.push(nextMessage);
@@ -304,7 +312,12 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   }
 
   function appendSystem(text: string) {
-    appendMessage({ id: crypto.randomUUID(), role: "system", text });
+    appendMessage({
+      id: crypto.randomUUID(),
+      role: "system",
+      text,
+      createdAt: Date.now(),
+    });
   }
 
   function clearChat() {
@@ -348,6 +361,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         id: crypto.randomUUID(),
         role: "system",
         text: "Agent stopped.",
+        createdAt: Date.now(),
       };
       setState((prev) => {
         const hydrated = hydrateAgentActivityState(prev, diagnostics);
@@ -369,7 +383,6 @@ export function useChat(ctx: UseChatContext): UseChatActions {
             }
           : { ...hydrated, tabs: nextTabs };
       });
-      persistLocalChatMessage(stoppedMessage, tabId);
       return;
     }
   }

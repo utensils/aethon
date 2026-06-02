@@ -4153,10 +4153,7 @@ body.ae-resizing-composer * {
 /* ---- Status bar --------------------------------------------------------- */
 
 .a2ui-status-bar {
-  display: grid;
-  grid-template-columns:
-    minmax(0, auto) minmax(0, auto) minmax(10rem, 1fr)
-    minmax(0, auto);
+  display: flex;
   align-items: center;
   gap: var(--space-3);
   height: 22px;
@@ -4165,7 +4162,7 @@ body.ae-resizing-composer * {
   border-top: 1px solid var(--border);
   font-size: var(--chrome-text-compact);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--text-dim);
   width: 100%;
   min-width: 0;
@@ -4263,6 +4260,82 @@ body.ae-resizing-composer * {
   color: var(--text);
   font-family: var(--font-ui);
 }
+
+.a2ui-status-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 300px;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.a2ui-status-context-track {
+  position: relative;
+  width: 28px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text-dim) 18%, transparent);
+  flex: 0 0 auto;
+}
+.a2ui-status-context-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.a2ui-status-context-chip.is-warning .a2ui-status-context-fill,
+.a2ui-status-context-chip.is-warning .a2ui-status-context-track {
+  background: var(--warn);
+}
+.a2ui-status-context-chip.is-warning .a2ui-status-context-label {
+  color: var(--warn);
+}
+.a2ui-status-context-chip.is-danger .a2ui-status-context-fill,
+.a2ui-status-context-chip.is-danger .a2ui-status-context-track {
+  background: var(--err, #c0392b);
+}
+.a2ui-status-context-chip.is-danger .a2ui-status-context-label {
+  color: var(--err, #c0392b);
+}
+.a2ui-status-context-chip.is-compacting .a2ui-status-context-track {
+  animation: ae-context-compact-pulse 1.1s ease-in-out infinite;
+}
+.a2ui-status-context-label {
+  color: var(--text);
+  font-family: var(--font-ui);
+  flex: 0 0 auto;
+}
+.a2ui-status-context-detail,
+.a2ui-status-context-auto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-status-context-detail {
+  color: var(--text-dim);
+  max-width: 90px;
+}
+.a2ui-status-context-auto {
+  color: var(--accent);
+  max-width: 110px;
+}
+@keyframes ae-context-compact-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
 @keyframes ae-devshell-pulse {
   0%,
   100% {
@@ -4289,6 +4362,7 @@ body.ae-resizing-composer * {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4307,6 +4381,7 @@ body.ae-resizing-composer * {
 .a2ui-status-center {
   text-align: center;
   color: var(--text);
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4315,6 +4390,7 @@ body.ae-resizing-composer * {
 
 .a2ui-status-right {
   text-align: right;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4490,6 +4566,26 @@ body.ae-resizing-composer * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ae-tab-rename-input {
+  flex: 1 1 auto;
+  min-width: 2.5rem;
+  max-width: 100%;
+  height: 22px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text);
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.ae-tab-rename-input::selection {
+  background: var(--accent-soft);
 }
 
 .a2ui-tab-close {
