@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,8 +15,10 @@ import {
   defaultProfileIdForTab,
   handleAuthProfileMessage,
   modelRegistryForModelId,
+  refreshAuthServicesForTab,
 } from "./manager";
 import {
+  authProfileAuthPath,
   createProfileMeta,
   loadAuthProfilesState,
   upsertProfileMeta,
@@ -134,6 +136,71 @@ describe("auth profile manager", () => {
     expect(modelRegistryForModelId(state, "tab-1", "anthropic/claude")).toBe(
       state.modelRegistry,
     );
+  });
+
+  it("reloads cached profile auth services when the profile auth file changes", () => {
+    const userDir = tempUserDir();
+    const state = makeState(userDir);
+    const profileId = addProfile(state, "openai-codex", "Codex Work");
+
+    const services = authProfileServicesForTab(state, "default");
+    const reload = vi.spyOn(services.authStorage, "reload");
+    const refresh = vi.spyOn(services.modelRegistry, "refresh");
+    const authPath = authProfileAuthPath(userDir, profileId);
+    writeFileSync(
+      authPath,
+      JSON.stringify({ "openai-codex": { type: "api_key", key: "new" } }),
+    );
+    const future = new Date(Date.now() + 10_000);
+    utimesSync(authPath, future, future);
+
+    const refreshed = refreshAuthServicesForTab(state, "default");
+
+    expect(refreshed).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(authProfileServicesForTab(state, "default")).toBe(services);
+  });
+
+  it("force-refreshes profile services even when the auth file mtime is unchanged", () => {
+    const state = makeState();
+    addProfile(state, "openai-codex", "Codex Work");
+    const services = authProfileServicesForTab(state, "default");
+    const reload = vi.spyOn(services.authStorage, "reload");
+    const refresh = vi.spyOn(services.modelRegistry, "refresh");
+
+    const refreshed = refreshAuthServicesForTab(state, "default", {
+      forceRefresh: true,
+    });
+
+    expect(refreshed).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes cached default profile services before a new tab uses that provider", () => {
+    const userDir = tempUserDir();
+    const state = makeState(userDir);
+    const profileId = addProfile(state, "openai-codex", "Codex Work");
+    const services = authProfileServicesForTab(state, "existing-tab");
+    const reload = vi.spyOn(services.authStorage, "reload");
+    const refresh = vi.spyOn(services.modelRegistry, "refresh");
+    const authPath = authProfileAuthPath(userDir, profileId);
+    writeFileSync(
+      authPath,
+      JSON.stringify({ "openai-codex": { type: "api_key", key: "new" } }),
+    );
+    const future = new Date(Date.now() + 10_000);
+    utimesSync(authPath, future, future);
+
+    const refreshed = refreshAuthServicesForTab(state, "new-tab", {
+      modelId: "openai-codex/gpt-5.1-codex",
+    });
+
+    expect(state.tabAuthProfileIds.has("new-tab")).toBe(false);
+    expect(refreshed).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
   });
 
   it("rejects deleting unknown or unsafe profile ids before removing files", async () => {

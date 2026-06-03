@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import { mkdirSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  AuthStorage,
+  getAgentDir,
+  ModelRegistry,
+} from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "../state";
 import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
@@ -22,6 +26,8 @@ import {
 export interface AuthProfileServices {
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
+  authPath?: string;
+  authMtimeMs?: number;
 }
 
 export interface AuthProfileProvider {
@@ -43,10 +49,12 @@ interface PendingOAuth {
   profileId: string;
   providerId: string;
   controller: AbortController;
+  isReauth: boolean;
   resolvePrompt?: (value: string) => void;
 }
 
 const pendingOAuth = new Map<string, PendingOAuth>();
+const globalAuthMtimes = new WeakMap<AethonAgentState, number | undefined>();
 
 export function loadAuthProfiles(userDir: string): AuthProfilesState {
   return loadAuthProfilesState(userDir);
@@ -132,6 +140,73 @@ export function modelRegistryForModelId(
     : state.modelRegistry;
 }
 
+export function refreshAuthServicesForTab(
+  state: AethonAgentState,
+  tabId: string,
+  options: {
+    forceRefresh?: boolean;
+    initialModel?: Model<Api>;
+    modelId?: string;
+  } = {},
+): boolean {
+  const profileId =
+    state.tabAuthProfileIds.get(tabId) ??
+    defaultProfileIdForTab(
+      state,
+      options.initialModel ?? modelStubFromId(options.modelId),
+    );
+  if (profileId && findProfile(state, profileId)) {
+    return servicesForProfileWithStatus(state, profileId, {
+      forceRefresh: options.forceRefresh,
+    }).refreshed;
+  }
+  return refreshGlobalAuthServicesIfChanged(state, options);
+}
+
+function modelStubFromId(modelId: string | undefined): Model<Api> | undefined {
+  if (!modelId) return undefined;
+  const [provider] = modelId.split("/");
+  if (!provider) return undefined;
+  return { provider, id: "" } as Model<Api>;
+}
+
+export function refreshGlobalAuthServicesIfChanged(
+  state: AethonAgentState,
+  options: { forceRefresh?: boolean } = {},
+): boolean {
+  if (!state.authStorage || !state.modelRegistry) return false;
+
+  const authPath = join(getAgentDir(), "auth.json");
+  const authMtimeMs = fileMtimeMs(authPath);
+  const previous = globalAuthMtimes.get(state);
+  const refreshed = options.forceRefresh === true || previous !== authMtimeMs;
+  if (refreshed) {
+    state.authStorage.reload();
+    state.modelRegistry.refresh();
+    globalAuthMtimes.set(state, authMtimeMs);
+  }
+  return refreshed;
+}
+
+export function refreshTabSessionModelFromAuthServices(
+  state: AethonAgentState,
+  tabId: string,
+): void {
+  const tab = state.tabs.get(tabId);
+  const current = tab?.session.model;
+  if (!tab || !current) return;
+  const refreshed = modelRegistryForModelId(
+    state,
+    tabId,
+    `${current.provider}/${current.id}`,
+  ).find(current.provider, current.id);
+  if (!refreshed) return;
+  const mutableSession = tab.session as {
+    state?: { model?: Model<Api> };
+  };
+  if (mutableSession.state) mutableSession.state.model = refreshed;
+}
+
 /**
  * Resolve the auth + model services for a *provider's* default profile,
  * independent of any tab. Unlike {@link modelRegistryForModelId} this ignores
@@ -202,19 +277,56 @@ export function emitAuthProfiles(
 function servicesForProfile(
   state: AethonAgentState,
   profileId: string,
+  options: { forceRefresh?: boolean } = {},
 ): AuthProfileServices {
+  return servicesForProfileWithStatus(state, profileId, options).services;
+}
+
+function servicesForProfileWithStatus(
+  state: AethonAgentState,
+  profileId: string,
+  options: { forceRefresh?: boolean } = {},
+): { services: AuthProfileServices; refreshed: boolean } {
   if (!isSafeProfileId(profileId)) {
     throw new Error(`Invalid auth profile id: ${profileId}`);
   }
-  const cached = state.authProfileServices.get(profileId);
-  if (cached) return cached;
   const authPath = authProfileAuthPath(state.userDir, profileId);
+  const cached = state.authProfileServices.get(profileId);
+  if (cached) {
+    const authMtimeMs = fileMtimeMs(authPath);
+    const changed = cached.authMtimeMs !== authMtimeMs;
+    const refreshed = options.forceRefresh === true || changed;
+    if (refreshed) {
+      refreshServicePair(cached);
+      cached.authPath = authPath;
+      cached.authMtimeMs = authMtimeMs;
+    }
+    return { services: cached, refreshed };
+  }
   mkdirSync(dirname(authPath), { recursive: true });
   const authStorage = AuthStorage.create(authPath);
   const modelRegistry = ModelRegistry.create(authStorage);
-  const services = { authStorage, modelRegistry };
+  const services = {
+    authStorage,
+    modelRegistry,
+    authPath,
+    authMtimeMs: fileMtimeMs(authPath),
+  };
   state.authProfileServices.set(profileId, services);
-  return services;
+  return { services, refreshed: false };
+}
+
+function refreshServicePair(services: AuthProfileServices): void {
+  services.authStorage.reload();
+  services.modelRegistry.refresh();
+}
+
+function fileMtimeMs(path: string): number | undefined {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 
 function authProfileProviders(state: AethonAgentState): AuthProfileProvider[] {
@@ -250,22 +362,54 @@ function handleApiKeySave(
   const key = stringField(msg.key);
   if (!providerId || !key)
     throw new Error("auth_profile_api_key_save: providerId and key required");
-  const meta = createProfileMeta(state.authProfiles, {
-    providerId,
-    label: stringField(msg.label) || providerId,
-    kind: "api_key",
-  });
-  const services = servicesForProfile(state, meta.id);
+  const requestedProfileId = stringField(msg.profileId);
+  const existing = requestedProfileId
+    ? findProfile(state, requestedProfileId)
+    : undefined;
+  if (requestedProfileId && !existing) {
+    throw new Error("auth_profile_api_key_save: unknown profileId");
+  }
+  if (existing && existing.providerId !== providerId) {
+    throw new Error("auth_profile_api_key_save: providerId mismatch");
+  }
+  if (existing && existing.kind !== "api_key") {
+    throw new Error("auth_profile_api_key_save: profile is not api_key");
+  }
+  const meta =
+    existing ??
+    createProfileMeta(state.authProfiles, {
+      providerId,
+      label: stringField(msg.label) || providerId,
+      kind: "api_key",
+    });
+  const services = servicesForProfile(state, meta.id, { forceRefresh: true });
   services.authStorage.set(providerId, { type: "api_key", key });
-  state.authProfiles = {
-    ...state.authProfiles,
-    profiles: [...state.authProfiles.profiles, meta],
-  };
+  const now = Date.now();
+  state.authProfiles = existing
+    ? {
+        ...state.authProfiles,
+        profiles: state.authProfiles.profiles.map((p) =>
+          p.id === meta.id ? { ...p, updatedAt: now, lastUsedAt: now } : p,
+        ),
+      }
+    : {
+        ...state.authProfiles,
+        profiles: [...state.authProfiles.profiles, meta],
+      };
   if (!state.authProfiles.defaultByProvider[providerId]) {
     state.authProfiles.defaultByProvider[providerId] = meta.id;
   }
   saveAuthProfiles(state);
-  state.authProfileServices.delete(meta.id);
+  servicesForProfile(state, meta.id, { forceRefresh: true });
+  void recreateIdleTabsUsingProfile(state, deps, meta.id).catch(
+    (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({
+        type: "error",
+        message: `auth_profile_api_key_save: ${message}`,
+      });
+    },
+  );
   emitAuthProfiles(state, deps);
 }
 
@@ -277,22 +421,41 @@ function handleOAuthStart(
   const providerId = stringField(msg.providerId);
   if (!providerId)
     throw new Error("auth_profile_login_start: providerId required");
-  const meta = createProfileMeta(state.authProfiles, {
-    providerId,
-    label: stringField(msg.label) || providerId,
-    kind: "oauth",
-  });
-  state.authProfiles = {
-    ...state.authProfiles,
-    profiles: [...state.authProfiles.profiles, meta],
-  };
-  saveAuthProfiles(state);
-  const services = servicesForProfile(state, meta.id);
+  const requestedProfileId = stringField(msg.profileId);
+  const existing = requestedProfileId
+    ? findProfile(state, requestedProfileId)
+    : undefined;
+  if (requestedProfileId && !existing) {
+    throw new Error("auth_profile_login_start: unknown profileId");
+  }
+  if (existing && existing.providerId !== providerId) {
+    throw new Error("auth_profile_login_start: providerId mismatch");
+  }
+  if (existing && existing.kind !== "oauth") {
+    throw new Error("auth_profile_login_start: profile is not oauth");
+  }
+  const isReauth = Boolean(existing);
+  const meta =
+    existing ??
+    createProfileMeta(state.authProfiles, {
+      providerId,
+      label: stringField(msg.label) || providerId,
+      kind: "oauth",
+    });
+  if (!existing) {
+    state.authProfiles = {
+      ...state.authProfiles,
+      profiles: [...state.authProfiles.profiles, meta],
+    };
+    saveAuthProfiles(state);
+  }
+  const services = servicesForProfile(state, meta.id, { forceRefresh: true });
   const challengeId = randomUUID();
   const pending: PendingOAuth = {
     profileId: meta.id,
     providerId,
     controller: new AbortController(),
+    isReauth,
   };
   pendingOAuth.set(challengeId, pending);
   deps.send({
@@ -359,7 +522,7 @@ function handleOAuthStart(
           });
         }),
     })
-    .then(() => {
+    .then(async () => {
       pendingOAuth.delete(challengeId);
       const now = Date.now();
       state.authProfiles = {
@@ -372,7 +535,8 @@ function handleOAuthStart(
         state.authProfiles.defaultByProvider[providerId] = meta.id;
       }
       saveAuthProfiles(state);
-      state.authProfileServices.delete(meta.id);
+      servicesForProfile(state, meta.id, { forceRefresh: true });
+      await recreateIdleTabsUsingProfile(state, deps, meta.id);
       deps.send({
         type: "auth_profile_login_event",
         event: {
@@ -387,7 +551,7 @@ function handleOAuthStart(
     })
     .catch((err: unknown) => {
       pendingOAuth.delete(challengeId);
-      removeProfile(state, meta.id);
+      if (!isReauth) removeProfile(state, meta.id);
       saveAuthProfiles(state);
       const message = err instanceof Error ? err.message : String(err);
       deps.send({
@@ -424,9 +588,44 @@ function handleOAuthCancel(
   if (!pending) return;
   pending.controller.abort();
   pendingOAuth.delete(challengeId);
-  removeProfile(state, pending.profileId);
+  if (!pending.isReauth) removeProfile(state, pending.profileId);
   saveAuthProfiles(state);
   emitAuthProfiles(state, deps);
+}
+
+async function recreateIdleTabsUsingProfile(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  profileId: string,
+): Promise<void> {
+  for (const [tabId, activeProfileId] of state.tabAuthProfileIds) {
+    if (activeProfileId !== profileId) continue;
+    const existing = state.tabs.get(tabId);
+    if (!existing || existing.promptInFlight) continue;
+    await recreateTabSession(state, deps, tabId, profileId);
+  }
+}
+
+async function recreateTabSession(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  tabId: string,
+  profileId: string,
+): Promise<void> {
+  const existing = state.tabs.get(tabId);
+  const previousModel = existing?.session.model;
+  const cwd = state.tabProjectCwds.get(tabId);
+  if (existing) clearPendingContextUsageEmit(existing);
+  state.tabs.delete(tabId);
+  state.tabAuthProfileIds.set(tabId, profileId);
+  const services = servicesForProfile(state, profileId, { forceRefresh: true });
+  const nextModel =
+    previousModel &&
+    services.modelRegistry.find(previousModel.provider, previousModel.id);
+  await ensureTab(state, deps, tabId, {
+    cwdOverride: cwd,
+    initialModel: nextModel || previousModel,
+  });
 }
 
 async function handleUseForTab(
@@ -454,7 +653,7 @@ async function handleUseForTab(
   if (existing) clearPendingContextUsageEmit(existing);
   state.tabs.delete(tabId);
   state.tabAuthProfileIds.set(tabId, profile.id);
-  const services = servicesForProfile(state, profile.id);
+  const services = servicesForProfile(state, profile.id, { forceRefresh: true });
   const nextModel =
     previousModel &&
     services.modelRegistry.find(previousModel.provider, previousModel.id);
