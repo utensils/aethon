@@ -32,8 +32,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --output) OUT="$2"; shift 2 ;;
     --full) FULL=1; shift ;;
-    --pid) PID_OVERRIDE="$2"; shift 2 ;;
-    --width) SCALE_WIDTH="$2"; shift 2 ;;
+    --pid)
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "ERROR: --pid must be a number" >&2; exit 2; }
+      PID_OVERRIDE="$2"; shift 2 ;;
+    --width)
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "ERROR: --width must be a number" >&2; exit 2; }
+      SCALE_WIDTH="$2"; shift 2 ;;
     -h|--help)
       echo "Usage: debug-screenshot.sh [--output PATH] [--full] [--pid N] [--width N]"
       exit 0
