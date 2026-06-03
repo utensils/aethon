@@ -172,6 +172,9 @@ pub fn run() {
             commands::session::search_sessions,
             commands::session::delete_session,
             commands::session::export_chat_markdown,
+            commands::subagents::subagents_list,
+            commands::subagents::subagents_write,
+            commands::subagents::subagents_delete,
             commands::extensions::set_extension_menu_items,
             commands::extensions::install_aethon_extension,
             commands::extensions::watch_project_extensions,
@@ -393,6 +396,21 @@ mod tests {
             src.contains("commands::git::status::git_fetch_all"),
             "git_fetch_all must be registered in the invoke_handler list",
         );
+    }
+
+    #[test]
+    fn subagents_commands_are_wired_to_handler() {
+        let src = include_str!("lib.rs");
+        for command in [
+            "commands::subagents::subagents_list",
+            "commands::subagents::subagents_write",
+            "commands::subagents::subagents_delete",
+        ] {
+            assert!(
+                src.contains(command),
+                "{command} must stay registered in the invoke_handler list",
+            );
+        }
     }
 
     #[test]
