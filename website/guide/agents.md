@@ -155,16 +155,16 @@ Two accounts: a personal Claude account and a work OpenAI account.
 # 2. List what you have. Profiles are created with sanitized ids.
 /login list
 # Stored accounts:
-# - `openai-codex-account` (Work OpenAI; openai-codex, oauth, default)
-# - `anthropic-claude-personal` (Claude Home; anthropic, oauth, default)
+# - `anthropic-claude-home` (Claude Home; anthropic, oauth, default)
+# - `openai-codex-work` (Work OpenAI; openai-codex, oauth, default)
 
 # 3. Switch the current tab to the home Claude account.
 #    Its session is recreated in that profile's registry.
-/login use claude-home
+/login use anthropic-claude-home
 
-# 4. Make the personal OpenAI profile the default for the OpenAI provider.
+# 4. Make the work OpenAI profile the default for the OpenAI provider.
 #    Future tabs opening on an OpenAI model use it.
-/login default openai-codex-personal
+/login default openai-codex-work
 
 # 5. A bad lookup is reported, not silently ignored.
 /login use nonexistent
