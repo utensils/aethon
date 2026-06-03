@@ -4,6 +4,13 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.7.0](https://github.com/utensils/aethon/compare/v0.6.0...v0.7.0) (2026-06-03)
+
+
+### Features
+
+* **agent:** support [@file](https://github.com/file) prompt references ([#219](https://github.com/utensils/aethon/issues/219)) ([a636304](https://github.com/utensils/aethon/commit/a636304c5809128e70c38d06565ab4c996a14a78))
+
 ## [0.6.0](https://github.com/utensils/aethon/compare/v0.5.0...v0.6.0) (2026-06-03)
 
 
