@@ -260,8 +260,10 @@ export function IssuesSection({
             newWorktree: task.newWorktree,
             branch: task.branch,
             worktreeId,
-            // Tag the payload so the route handler / tests can spot
-            // an issue-originated launch.
+            // Tag the payload so tests (and future telemetry) can spot
+            // an issue-originated launch. The start-task route handler
+            // forwards only its known keys, so these extra fields are
+            // observational and intentionally not consumed there yet.
             source: "github-issue",
             issueNumber: issue.number,
             issueUrl: issue.url,
@@ -306,10 +308,7 @@ export function IssuesSection({
     : [];
   const showTemplateChoices = menuTemplates.length > 1;
   return (
-    <section
-      className="a2ui-dashboard-issues"
-      ref={containerRef}
-    >
+    <section className="a2ui-dashboard-issues" ref={containerRef}>
       <header className="a2ui-dashboard-issues-head">
         <h2>
           Open issues
@@ -396,8 +395,7 @@ export function IssuesSection({
                   )}
                   {issue.updatedAt && (
                     <span className="a2ui-dashboard-issue-updated">
-                      updated{" "}
-                      {formatRelativeTime(Date.parse(issue.updatedAt))}
+                      updated {formatRelativeTime(Date.parse(issue.updatedAt))}
                     </span>
                   )}
                   {issue.comments > 0 && (

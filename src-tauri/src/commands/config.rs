@@ -161,8 +161,23 @@ pub fn read_issue_templates(project_path: String) -> Result<IssueTemplatesConfig
         return Err(format!("not a directory: {project_path}"));
     }
     let path = root.join(".aethon").join("issues.toml");
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
+    // Cap the read so a runaway templates file can't pull an unbounded amount
+    // of data into memory on the command thread (mirrors `read_config`). This
+    // file is user-editable and holds multi-line prompts, so we buffer then parse.
+    const MAX_BYTES: u64 = 64 * 1024;
+    let mut text = String::new();
+    match std::fs::File::open(&path) {
+        Ok(file) => {
+            if let Err(e) = file.take(MAX_BYTES).read_to_string(&mut text) {
+                return Ok(IssueTemplatesConfig {
+                    templates: Vec::new(),
+                    warning: Some(format!(
+                        "Could not read {}; using built-in issue prompt. {e}",
+                        path.display()
+                    )),
+                });
+            }
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Ok(IssueTemplatesConfig {
                 templates: Vec::new(),
@@ -178,7 +193,7 @@ pub fn read_issue_templates(project_path: String) -> Result<IssueTemplatesConfig
                 )),
             });
         }
-    };
+    }
     Ok(parse_issue_templates_toml(&text))
 }
 

@@ -53,8 +53,7 @@ export function buildIssueTask(
   const existingBranches = options.existingBranches ?? new Set<string>();
   const fallbackBranch = buildIssueBranch(issue, existingBranches);
   const template = options.template ?? null;
-  const newWorktree =
-    options.forceNewWorktree ?? template?.newWorktree ?? true;
+  const newWorktree = options.forceNewWorktree ?? template?.newWorktree ?? true;
   if (!template) {
     return {
       prompt: buildIssuePrompt(detail),
@@ -64,12 +63,24 @@ export function buildIssueTask(
   }
 
   const vars = issueTemplateVariables(detail, issue, project, fallbackBranch);
-  const branchPrefix = template.branchPrefix
-    ? interpolateIssueTemplate(template.branchPrefix, vars).trim()
-    : vars.branchPrefix;
+  // Fall back to the derived prefix when an override interpolates to empty,
+  // so `{branchPrefix}` can't collapse into a leading slash (e.g. `/issue-12`).
+  const branchPrefix =
+    (template.branchPrefix
+      ? interpolateIssueTemplate(template.branchPrefix, vars).trim()
+      : "") || vars.branchPrefix;
   const scopedVars = { ...vars, branchPrefix };
-  const branch = template.branch
+  const interpolatedBranch = template.branch
     ? interpolateIssueTemplate(template.branch, scopedVars).trim()
+    : "";
+  // Compact template-generated branches to the same ceiling as the built-in
+  // path so a long {slug} can't blow past OS path limits via the worktree dir.
+  const branch = interpolatedBranch
+    ? compactIssueBranch(
+        interpolatedBranch,
+        branchPrefix.length,
+        MAX_ISSUE_BRANCH_LENGTH,
+      )
     : fallbackBranch;
   return {
     prompt: interpolateIssueTemplate(template.prompt, scopedVars).trim(),
@@ -177,7 +188,10 @@ function compactIssueBranch(
   if (branch.length <= maxLength) return branch;
   const rawClipped = branch.slice(0, maxLength);
   const clipped = rawClipped.replace(/-+$/g, "");
-  if (rawClipped.length !== clipped.length || branch.charAt(maxLength) === "-") {
+  if (
+    rawClipped.length !== clipped.length ||
+    branch.charAt(maxLength) === "-"
+  ) {
     return clipped;
   }
   const wordBoundary = clipped.lastIndexOf("-");

@@ -260,6 +260,36 @@ describe("issues-section task helpers", () => {
     expect(task.branch).toBe("docs/issue-213-api-explain-templates");
   });
 
+  it("falls back to the derived prefix when a branchPrefix override is empty", () => {
+    const template: IssueTemplate = {
+      id: "empty-prefix",
+      label: "Empty prefix",
+      prompt: "Work on #{number}",
+      newWorktree: true,
+      // Interpolates to an empty string for an issue with no labels — must
+      // not collapse `{branchPrefix}` into a leading slash (`/issue-...`).
+      branch: "{branchPrefix}/issue-{number}-{slug}",
+      branchPrefix: "{labels}",
+      whenLabels: [],
+    };
+
+    const task = buildIssueTask(
+      {
+        number: 99,
+        title: "Investigate flaky import",
+        url: "https://github.com/utensils/aethon/issues/99",
+        body: "",
+        author: "octo",
+      },
+      { ...issue, number: 99, title: "Investigate flaky import", labels: [] },
+      { id: "p1", label: "aethon", path: "/repo/aethon" },
+      { template },
+    );
+
+    expect(task.branch).toBe("fix/issue-99-investigate-flaky-import");
+    expect(task.branch?.startsWith("/")).toBe(false);
+  });
+
   it("matches label-specific templates before catch-all templates", () => {
     const templates: IssueTemplate[] = [
       {
@@ -384,7 +414,9 @@ describe("IssuesSection", () => {
         "start-task",
         expect.objectContaining({
           prompt: expect.stringContaining("CUSTOM #85"),
-          branch: "feat/issue-85-cannot-rename-session-tab-while-agent-is-running",
+          // Template-generated branches are compacted to the same ceiling as
+          // the built-in path so long slugs can't blow past OS path limits.
+          branch: "feat/issue-85-cannot-rename-session-tab",
           issueTemplateId: "default",
         }),
         "issue-85",
