@@ -22,6 +22,9 @@ export {
   handleAuthProfileMessage,
   loadAuthProfiles,
   modelRegistryForModelId,
+  refreshAuthServicesForTab,
+  refreshGlobalAuthServicesIfChanged,
+  refreshTabSessionModelFromAuthServices,
   saveAuthProfiles,
   servicesForProvider,
 } from "./manager";

@@ -78,6 +78,18 @@ export function AuthProfilePanel({
   const setDefault = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_set_default", profileId });
 
+  const reauthProfile = (profile: {
+    id: string;
+    providerId: string;
+    label: string;
+  }) =>
+    sendAuthProfileCommand({
+      type: "auth_profile_login_start",
+      providerId: profile.providerId,
+      profileId: profile.id,
+      label: profile.label,
+    });
+
   const deleteProfile = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_delete", profileId });
 
@@ -204,6 +216,15 @@ export function AuthProfilePanel({
                         >
                           Default
                         </button>
+                        {profile.kind === "oauth" && (
+                          <button
+                            type="button"
+                            className="ae-settings-secondary"
+                            onClick={() => void reauthProfile(profile)}
+                          >
+                            Re-auth
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="ae-settings-secondary"
