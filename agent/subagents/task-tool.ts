@@ -254,11 +254,11 @@ async function runInlineSubagent(
     (event: { type: string } & Record<string, unknown>) => {
       handleSubagentEvent(event, {
         onText: (delta) => {
-          finalText += delta;
+          // Keep only the trailing MAX_RESULT_CHARS so a verbose subagent can't
+          // grow this buffer without bound (the result we return is the tail).
+          finalText = (finalText + delta).slice(-MAX_RESULT_CHARS);
           onUpdate?.({
-            content: [
-              { type: "text", text: finalText.slice(-MAX_RESULT_CHARS) },
-            ],
+            content: [{ type: "text", text: finalText }],
             details,
           });
           emitProgress(deps, parentTabId, callId, details, {
@@ -285,7 +285,10 @@ async function runInlineSubagent(
           }),
         onEnd: (messages) => {
           errorMessage = extractAgentEndError(messages);
-          if (!finalText.trim()) finalText = extractLastAssistantText(messages);
+          if (!finalText.trim()) {
+            finalText =
+              extractLastAssistantText(messages).slice(-MAX_RESULT_CHARS);
+          }
         },
       });
     },

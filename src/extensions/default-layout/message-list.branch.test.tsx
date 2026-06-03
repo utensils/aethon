@@ -37,6 +37,12 @@ describe("ChatMessageRow rollback/fork affordance", () => {
     expect(screen.queryByText("↶ Rollback")).toBeNull();
   });
 
+  it("shows the affordance on a thinking-only turn", () => {
+    row({ id: "1", entryId: "e1", role: "agent", thinking: "let me reason" });
+    expect(screen.getByText("↶ Rollback")).toBeTruthy();
+    expect(screen.getByText("⑂ Fork")).toBeTruthy();
+  });
+
   it("fork fires fork-to-tab immediately", () => {
     const onEvent = row({ id: "1", entryId: "e1", role: "user", text: "hi" });
     fireEvent.click(screen.getByText("⑂ Fork"));

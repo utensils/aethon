@@ -51,6 +51,11 @@ fn is_safe_subagent_name(name: &str) -> bool {
 
 fn read_capped(path: &Path) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
+    // Skip (not truncate) oversized files — a partial read would feed broken
+    // YAML/frontmatter to the parser. Matches the bridge loader's size cap.
+    if file.metadata().ok()?.len() > MAX_SUBAGENT_BYTES {
+        return None;
+    }
     let mut buf = String::new();
     file.take(MAX_SUBAGENT_BYTES)
         .read_to_string(&mut buf)
@@ -183,30 +188,11 @@ fn assert_inside_project(
     if resolve_inside_root(&root, target).is_none() {
         return Err("refusing to touch a path outside the project root".to_string());
     }
+    // Symlink-aware second pass: canonicalize the deepest existing ancestor and
+    // verify it stays under the canonical project root (shared fs helper).
     let canonical_root =
         std::fs::canonicalize(&root).map_err(|e| format!("canonicalize project root: {e}"))?;
-    // Walk up to the deepest component that already exists on disk (the target
-    // file usually doesn't yet), then canonicalize it to resolve any symlinks.
-    let mut probe: &Path = target;
-    let existing = loop {
-        if probe.exists() {
-            break Some(probe);
-        }
-        match probe.parent() {
-            Some(parent) => probe = parent,
-            None => break None,
-        }
-    };
-    if let Some(existing) = existing {
-        let canonical = std::fs::canonicalize(existing)
-            .map_err(|e| format!("canonicalize {}: {e}", existing.display()))?;
-        if !canonical.starts_with(&canonical_root) {
-            return Err(
-                "refusing to touch a path that escapes the project root via a symlink".to_string(),
-            );
-        }
-    }
-    Ok(())
+    crate::commands::fs::ensure_symlink_safe(target, &canonical_root)
 }
 
 /// Nudge every running bridge to re-merge its subagent registry. Best-effort —
@@ -355,6 +341,19 @@ mod tests {
         fs::write(dir.join("notes.txt"), "x").unwrap();
         fs::write(dir.join(".hidden.md"), "x").unwrap();
         let listed = list_in_dir(&dir, "user");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "good");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn list_skips_oversized_file_without_truncating() {
+        let dir = tmpdir();
+        fs::write(dir.join("good.md"), "---\ndescription: d\n---\nbody").unwrap();
+        let big = format!("---\ndescription: big\n---\n{}", "x".repeat(70 * 1024));
+        fs::write(dir.join("big.md"), big).unwrap();
+        let listed = list_in_dir(&dir, "user");
+        // The oversized file is omitted entirely (not truncated into the list).
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].name, "good");
         fs::remove_dir_all(&dir).ok();

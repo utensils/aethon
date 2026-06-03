@@ -144,7 +144,10 @@ function ThinkingBlock({
 }) {
   const label = complete ? "Thinking" : "Thinking...";
   return (
-    <details className="a2ui-thinking-block" open={collapsed ? false : !complete}>
+    <details
+      className="a2ui-thinking-block"
+      open={collapsed ? false : !complete}
+    >
       <summary>{label}</summary>
       <div className="a2ui-thinking-content a2ui-markdown">
         <ReactMarkdown {...CHAT_MARKDOWN_PROPS}>{children}</ReactMarkdown>
@@ -247,11 +250,12 @@ export const ChatMessageRow = memo(
   }) {
     const [confirmingRollback, setConfirmingRollback] = useState(false);
     // Rollback / fork are offered on real user/assistant turns that carry a pi
-    // entry id (tool-card and system rows are not branch targets).
+    // entry id (tool-card and system rows are not branch targets). Thinking-only
+    // turns count too — they're valid branch points.
     const canBranch =
       Boolean(message.entryId) &&
       (message.role === "user" || message.role === "agent") &&
-      Boolean(message.text) &&
+      (Boolean(message.text) || Boolean(message.thinking)) &&
       Boolean(onEvent);
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -541,7 +545,9 @@ function TurnBlockRow({
           {expanded ? "▾" : "▸"}
         </span>
         <span className="ae-turn-block-label">Agent turn</span>
-        <span className="ae-turn-block-meta">{turnBlockLabel(group.messages)}</span>
+        <span className="ae-turn-block-meta">
+          {turnBlockLabel(group.messages)}
+        </span>
         {!expanded && peek && (
           <span className="ae-turn-block-peek">{peek}</span>
         )}

@@ -71,6 +71,21 @@ describe("handleEntryIds", () => {
     ]);
   });
 
+  it("back-fills thinking-only turns", () => {
+    const messages: ChatMessage[] = [
+      { id: "u", role: "user", text: "hi" },
+      { id: "a", role: "agent", thinking: "reasoning, no text" },
+    ];
+    const { result } = applyUpdater(
+      [
+        { entryId: "E_u", role: "user" },
+        { entryId: "E_a", role: "agent" },
+      ],
+      messages,
+    );
+    expect(result.messages.map((m) => m.entryId)).toEqual(["E_u", "E_a"]);
+  });
+
   it("does nothing when there are no entries", () => {
     const { called } = applyUpdater(
       [],

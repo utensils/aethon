@@ -216,6 +216,9 @@ fn copy_session_into_tab(
     let dest_dir = canonical_root.join(dest_tab_id);
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| format!("create_dir_all {}: {e}", dest_dir.display()))?;
+    // Symlink-aware: if `<sessions>/<dest_tab_id>` is (or resolves through) a
+    // symlink out of the sessions tree, reject before writing into it.
+    crate::commands::fs::ensure_symlink_safe(&dest_dir, &canonical_root)?;
     let dest_path = dest_dir.join(file_name);
     if resolve_inside_root(&dest_dir, &dest_path).is_none() {
         return Err("refusing to copy: dest escapes the tab dir".to_string());
@@ -485,6 +488,26 @@ mod tests {
 
         let err = copy_session_into_tab(&outside, &sessions, "tab-b").unwrap_err();
         assert!(err.contains("escapes the sessions root"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_session_into_tab_rejects_symlinked_dest_dir() {
+        use std::os::unix::fs::symlink;
+        let root = copy_test_root();
+        let sessions = root.join("sessions");
+        let src_dir = sessions.join("tab-a");
+        std::fs::create_dir_all(&src_dir).expect("create src tab dir");
+        let src = src_dir.join("x.jsonl");
+        std::fs::write(&src, "{}\n").expect("write source");
+        // A pre-existing dest tab dir that's a symlink pointing outside sessions.
+        let evil = root.join("evil");
+        std::fs::create_dir_all(&evil).expect("create evil dir");
+        symlink(&evil, sessions.join("tabb")).expect("symlink dest");
+
+        let err = copy_session_into_tab(&src, &sessions, "tabb").unwrap_err();
+        assert!(err.contains("symlink escapes"), "got: {err}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

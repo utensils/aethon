@@ -45,11 +45,14 @@ export const handleEntryIds: BridgeMessageHandler = (data, ctx) => {
     let changed = false;
     const messages = tab.messages.map((message) => {
       if (entryIdx >= ordered.length) return message;
-      const isTextRow =
+      // A branch target is a user/assistant turn with visible content — text
+      // OR thinking (thinking-only turns are valid branch points too).
+      const isTurnRow =
         (message.role === "user" || message.role === "agent") &&
-        typeof message.text === "string" &&
-        message.text.length > 0;
-      if (!isTextRow) return message;
+        ((typeof message.text === "string" && message.text.length > 0) ||
+          (typeof message.thinking === "string" &&
+            message.thinking.length > 0));
+      if (!isTurnRow) return message;
       const next = ordered[entryIdx];
       // Role mismatch: this row belongs to a later/earlier turn segment than
       // the current entry expects (e.g. a second agent text segment). Skip it

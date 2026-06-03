@@ -27,6 +27,9 @@
 
 mod security;
 
+/// Symlink-escape guard reused by the subagent + session-branch commands.
+pub(crate) use security::ensure_symlink_safe;
+
 pub mod icons;
 pub mod io;
 pub mod listing;

@@ -9,8 +9,9 @@
 //!   path inside `root` resolves through a symlink to somewhere outside
 //!   (e.g. a malicious `node_modules/foo/bar` -> `/etc/passwd`).
 //!
-//! Helpers stay `pub(super)` so sibling submodules can use them; nothing
-//! here is part of the crate-wide API.
+//! Most helpers stay `pub(super)` so sibling submodules can use them.
+//! `ensure_symlink_safe` is `pub(crate)` because the subagent + session-branch
+//! commands reuse the same symlink-escape guard (re-exported via `fs::`).
 
 use std::path::{Path, PathBuf};
 
@@ -58,7 +59,7 @@ fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, String> {
 /// Verify the canonicalised existing prefix of `path` stays under
 /// `root_canon`. Catches the symlink-escape case where a path inside
 /// `root` resolves to a target outside of it.
-pub(super) fn ensure_symlink_safe(path: &Path, root_canon: &Path) -> Result<(), String> {
+pub(crate) fn ensure_symlink_safe(path: &Path, root_canon: &Path) -> Result<(), String> {
     let prefix = canonicalize_existing_prefix(path)?;
     if prefix == root_canon || prefix.starts_with(root_canon) {
         Ok(())
