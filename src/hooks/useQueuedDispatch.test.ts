@@ -109,6 +109,7 @@ describe("useQueuedDispatch", () => {
     expect(updateTab).not.toHaveBeenCalled();
   });
 
+
   it("does nothing while a queued steer is in flight", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();

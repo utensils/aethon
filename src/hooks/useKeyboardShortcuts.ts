@@ -19,6 +19,7 @@ interface NotificationInput {
 
 function activeAgentTabIsBusy(state: Record<string, unknown>): boolean {
   const activeTabId = state.activeTabId as string | undefined;
+  if (!activeTabId) return false;
   const tabs = (state.tabs as Tab[] | undefined) ?? [];
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   if (!activeTab) return false;

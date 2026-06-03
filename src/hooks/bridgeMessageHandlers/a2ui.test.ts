@@ -93,6 +93,68 @@ describe("handleA2ui", () => {
     );
   });
 
+  it("replaces a stale cancelled terminal tool card when the final event has a sibling id", () => {
+    const runningId =
+      "restored-tool-call_run-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59";
+    const finalId =
+      "tool-2-call_run-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59";
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      messages: [
+        {
+          id: runningId,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: runningId,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "sleep 60",
+                  startedAt: 1_000,
+                  endedAt: 1_500,
+                  status: "cancelled",
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    const payload = {
+      components: [
+        {
+          id: finalId,
+          type: "tool-card",
+          props: {
+            title: "bash",
+            toolName: "bash",
+            description: "sleep 60",
+            startedAt: 1_000,
+            endedAt: 2_000,
+          },
+        },
+      ],
+    };
+
+    handleA2ui({ type: "a2ui", payload, id: finalId, tabId: "tab-1" }, ctx);
+
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(tab);
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0]).toMatchObject({
+      id: finalId,
+      role: "agent",
+      a2ui: payload,
+    });
+  });
+
   it("replaces a stale running terminal tool card when the final event has a sibling id", () => {
     const runningId =
       "tool-1-call_run-fc_01a0cf101a3d1343016a14d6465b9c819b8b75c60642c6bd59";

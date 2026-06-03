@@ -1,3 +1,4 @@
+import { closeRunningToolCards } from "../../utils/agentBusy";
 import type { BridgeMessageHandler } from "./types";
 
 /** Legacy single-shot response (kept so old bridge builds still render). */
@@ -11,7 +12,14 @@ export const handleResponse: BridgeMessageHandler = (data, ctx) => {
     );
   }
   if (data.done) {
-    ctx.updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+    ctx.updateTab(tabId, (tab) => {
+      const closedTools = closeRunningToolCards(tab.messages);
+      return {
+        ...tab,
+        waiting: false,
+        ...(closedTools.changed ? { messages: closedTools.messages } : {}),
+      };
+    });
     if (ctx.stateRef.current.activeTabId === tabId) {
       ctx.setStatusFlags({ status: "ready" });
     }

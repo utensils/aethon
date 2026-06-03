@@ -1,3 +1,4 @@
+import { closeRunningToolCards } from "../../utils/agentBusy";
 import type { BridgeMessageHandler } from "./types";
 
 export const handleError: BridgeMessageHandler = (data, ctx) => {
@@ -8,7 +9,16 @@ export const handleError: BridgeMessageHandler = (data, ctx) => {
     { id: crypto.randomUUID(), role: "agent", text: `Error: ${message}` },
     tabId,
   );
-  ctx.updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+  ctx.updateTab(tabId, (tab) => {
+    const closedTools = closeRunningToolCards(tab.messages, {
+      notice: "Tool call did not finish before the turn errored.",
+    });
+    return {
+      ...tab,
+      waiting: false,
+      ...(closedTools.changed ? { messages: closedTools.messages } : {}),
+    };
+  });
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setStatusFlags({ status: "error" });
   }

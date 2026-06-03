@@ -418,6 +418,7 @@ describe("useChat setModel", () => {
     expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
   });
 
+
   it("holds attachments with queued normal messages while the prompt is busy", async () => {
     const attachment = {
       id: "img-queued",

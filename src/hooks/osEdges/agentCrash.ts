@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Tab } from "../../types/tab";
+import { closeRunningToolCards } from "../../utils/agentBusy";
 import type { NotificationInput } from "../useNotifications";
 
 export interface AgentCrashDeps {
@@ -85,15 +86,18 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
       hangWarnActiveRef.current.clear();
     }
     setState((prev) => {
-      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) =>
-        !crashedTabId || t.id === crashedTabId
-          ? {
-              ...t,
-              waiting: false,
-              queueCount: 0,
-            }
-          : t,
-      );
+      const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => {
+        if (crashedTabId && t.id !== crashedTabId) return t;
+        const closedTools = closeRunningToolCards(t.messages, {
+          notice: "Tool call did not finish before the agent crashed.",
+        });
+        return {
+          ...t,
+          waiting: false,
+          queueCount: 0,
+          ...(closedTools.changed ? { messages: closedTools.messages } : {}),
+        };
+      });
       // Drop the crashed tab(s) from the bucket-independent running set so the
       // sidebar activity dot can't stay stuck — a crash doesn't emit
       // response_end. A whole-process crash (no crashedTabId) aborts every

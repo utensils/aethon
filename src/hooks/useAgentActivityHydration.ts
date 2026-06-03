@@ -1,7 +1,7 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { A2UIComponent, ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
+import { closeRunningToolCards } from "../utils/agentBusy";
 import { TAB_MIRROR_KEYS } from "./useTabs";
 
 export const AGENT_ACTIVITY_HYDRATION_RETRY_DELAYS_MS = [
@@ -33,60 +33,6 @@ function diagnosticPromptInFlight(row: AgentDiagnosticRow): boolean {
   return row.prompt_in_flight === true || row.promptInFlight === true;
 }
 
-function stoppedToolCardNotice(componentId: string): A2UIComponent {
-  return {
-    id: `${componentId}-stopped-notice`,
-    type: "code",
-    props: {
-      content:
-        "No live prompt is running. This tool was marked stopped after reload.",
-      language: "text",
-    },
-  };
-}
-
-function closeStoppedToolCards(
-  messages: ChatMessage[],
-  endedAt: number,
-): { messages: ChatMessage[]; changed: boolean } {
-  let changed = false;
-  const nextMessages = messages.map((message): ChatMessage => {
-    const components = message.a2ui?.components;
-    if (!components) return message;
-    let messageChanged = false;
-    const nextComponents = components.map((component): A2UIComponent => {
-      if (
-        component?.type !== "tool-card" ||
-        component.props?.startedAt === undefined ||
-        component.props.endedAt !== undefined
-      ) {
-        return component;
-      }
-      messageChanged = true;
-      const children = component.children ?? [];
-      return {
-        ...component,
-        props: {
-          ...(component.props ?? {}),
-          status: "cancelled",
-          endedAt,
-        },
-        children: [...children, stoppedToolCardNotice(component.id)],
-      };
-    });
-    if (!messageChanged) return message;
-    changed = true;
-    return {
-      ...message,
-      a2ui: {
-        ...message.a2ui,
-        components: nextComponents,
-      },
-    };
-  });
-  return { messages: nextMessages, changed };
-}
-
 export function hydrateAgentActivityState(
   state: Record<string, unknown>,
   diagnostics: AgentDiagnosticRow[],
@@ -115,7 +61,11 @@ export function hydrateAgentActivityState(
       : false;
     const stoppedTools = nextWaiting
       ? { messages: tab.messages, changed: false }
-      : closeStoppedToolCards(tab.messages, endedAt);
+      : closeRunningToolCards(tab.messages, {
+          endedAt,
+          notice:
+            "No live prompt is running. This tool was marked stopped after reload.",
+        });
     if (tab.waiting === nextWaiting && !stoppedTools.changed) return tab;
     tabChanged = true;
     return { ...tab, waiting: nextWaiting, messages: stoppedTools.messages };
