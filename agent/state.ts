@@ -79,6 +79,8 @@ export interface MutationResult {
 import type { AethonApi } from "./aethon-api";
 export type AethonExtensionApi = AethonApi;
 
+import type { Subagent, SubagentLoadIssue } from "./subagents/types";
+
 export interface AethonExtensionModule {
   register?: (api: AethonExtensionApi) => void | Promise<void>;
   default?: { register?: (api: AethonExtensionApi) => void | Promise<void> };
@@ -387,6 +389,15 @@ export class AethonAgentState {
   readonly turnStartTimes = new Map<string, number>();
   /** Cached model picker. First populated when the default tab is created. */
   cachedModels: ModelDescriptor[] = [];
+
+  // -- Subagents -----------------------------------------------------------
+  /** Merged effective subagent registry (user scope + active project scope,
+   *  project-wins-by-name). Re-merged at boot, on project change, and when the
+   *  UI edits a definition. Read live by the `task` tool and the runtime
+   *  snapshot, so it only needs to be current — not pushed into open sessions. */
+  readonly subagents = new Map<string, Subagent>();
+  /** Definitions that failed to load/parse, surfaced to the UI. */
+  subagentIssues: SubagentLoadIssue[] = [];
   /** Persisted per-tab session directories discovered at boot. Shipped
    *  in `ready` so the frontend can offer "Recent sessions". */
   discoveredTabs: DiscoveredTab[] = [];
