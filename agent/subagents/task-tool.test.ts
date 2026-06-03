@@ -94,7 +94,9 @@ function makeState(sub: Partial<Subagent> & { name: string }): {
   };
   const findSpy = vi.fn((_provider: string, _id: string) => fakeModel);
   const state = {
-    subagents: new Map([[full.name, full]]),
+    subagentsByCwd: new Map([
+      ["/proj", { byName: new Map([[full.name, full]]), issues: [] }],
+    ]),
     tabProjectCwds: new Map<string, string>(),
     tabAuthProfileIds: new Map<string, string>(),
     currentProjectCwd: "/proj",

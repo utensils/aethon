@@ -1,4 +1,5 @@
 export type {
+  LoadSubagentsResult,
   Subagent,
   SubagentLoadIssue,
   SubagentScope,
@@ -12,12 +13,12 @@ export {
 } from "./parse";
 export type { ParseSubagentResult } from "./parse";
 export {
+  getSubagentsForCwd,
   loadSubagents,
   projectAgentsDir,
   refreshSubagents,
   userAgentsDir,
 } from "./loader";
-export type { LoadSubagentsResult } from "./loader";
 export { buildSubagentTaskTool } from "./task-tool";
 export type { SubagentTaskDeps } from "./task-tool";
 export { buildExplicitSubagentSteer, detectSubagentMention } from "./steer";

@@ -15,16 +15,17 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AethonAgentState } from "../state";
 import { isSafeSubagentName, parseSubagentMarkdown } from "./parse";
-import type { Subagent, SubagentLoadIssue, SubagentScope } from "./types";
+import type {
+  LoadSubagentsResult,
+  Subagent,
+  SubagentLoadIssue,
+  SubagentScope,
+} from "./types";
+
+export type { LoadSubagentsResult } from "./types";
 
 /** Hard cap on a single definition file, matching the config.toml convention. */
 const MAX_SUBAGENT_BYTES = 64 * 1024;
-
-export interface LoadSubagentsResult {
-  /** Merged effective registry, project-wins-by-name. */
-  byName: Map<string, Subagent>;
-  issues: SubagentLoadIssue[];
-}
 
 export function userAgentsDir(userDir: string): string {
   return join(userDir, "agents");
@@ -108,16 +109,31 @@ function loadScopeInto(
 }
 
 /**
- * Re-merge the subagent registry into shared state from the current user dir
- * and active project cwd. Called at boot, on project change, and when the UI
- * edits a definition. Cheap and synchronous (a handful of small file reads).
+ * Resolve the merged subagent registry for a specific cwd, memoized on
+ * `state.subagentsByCwd`. Keying by cwd (rather than a single global registry)
+ * keeps subagents correct when tabs on different projects are open at once: a
+ * tab on project A always sees project A's subagents even after project B is
+ * opened. The `task` tool, `@name` detection, and the per-turn advertisement
+ * all resolve through here using the relevant tab's cwd.
+ */
+export function getSubagentsForCwd(
+  state: AethonAgentState,
+  cwd: string | null | undefined,
+): LoadSubagentsResult {
+  const key = cwd ?? "";
+  const cached = state.subagentsByCwd.get(key);
+  if (cached) return cached;
+  const result = loadSubagents({ userDir: state.userDir, projectCwd: cwd });
+  state.subagentsByCwd.set(key, result);
+  return result;
+}
+
+/**
+ * Invalidate the per-cwd registry cache so the next resolve re-reads from disk.
+ * Called when the UI creates / edits / deletes a definition (the affected cwd
+ * isn't known, so clear all). Project switches need no invalidation — the cache
+ * is already cwd-keyed.
  */
 export function refreshSubagents(state: AethonAgentState): void {
-  const { byName, issues } = loadSubagents({
-    userDir: state.userDir,
-    projectCwd: state.currentProjectCwd,
-  });
-  state.subagents.clear();
-  for (const [name, sub] of byName) state.subagents.set(name, sub);
-  state.subagentIssues = issues;
+  state.subagentsByCwd.clear();
 }

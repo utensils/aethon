@@ -59,22 +59,35 @@ describe("getRuntimeSnapshot", () => {
 
   it("includes configured subagents", () => {
     const state = new AethonAgentState(makeOpts("/tmp/aethon-sa"));
-    state.subagents.set("reviewer", {
-      name: "reviewer",
-      description: "Reviews diffs",
-      model: "ollama/llama3.3",
-      surface: "inline",
-      systemPrompt: "You review.",
-      scope: "user",
-      filePath: "/agents/reviewer.md",
-    });
-    state.subagents.set("builder", {
-      name: "builder",
-      description: "Builds features",
-      surface: "tab",
-      systemPrompt: "You build.",
-      scope: "project",
-      filePath: "/proj/.aethon/agents/builder.md",
+    // The snapshot reads the active project's cwd cache (currentProjectCwd is
+    // null here, so the resolver keys on ""). Seed it directly.
+    state.subagentsByCwd.set("", {
+      byName: new Map([
+        [
+          "reviewer",
+          {
+            name: "reviewer",
+            description: "Reviews diffs",
+            model: "ollama/llama3.3",
+            surface: "inline",
+            systemPrompt: "You review.",
+            scope: "user",
+            filePath: "/agents/reviewer.md",
+          },
+        ],
+        [
+          "builder",
+          {
+            name: "builder",
+            description: "Builds features",
+            surface: "tab",
+            systemPrompt: "You build.",
+            scope: "project",
+            filePath: "/proj/.aethon/agents/builder.md",
+          },
+        ],
+      ]),
+      issues: [],
     });
     const snap = getRuntimeSnapshot(state);
     expect(snap.subagents).toEqual([

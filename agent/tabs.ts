@@ -13,7 +13,6 @@ import {
   writeSessionLabel,
 } from "./session-history";
 import { ensureTab, tabSessionDir } from "./tab-lifecycle";
-import { refreshSubagents } from "./subagents";
 import { unloadProjectExtensions } from "./projectLifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
 import { clearPendingContextUsageEmit } from "./context-usage";
@@ -62,8 +61,6 @@ export async function handleTabOpen(
       deps.loadHooks,
     );
     state.currentProjectCwd = cwdOverride;
-    // Re-merge subagents so project-scoped definitions follow the active cwd.
-    if (projectChanged) refreshSubagents(state);
     if (
       result.loaded > 0 ||
       result.failed > 0 ||

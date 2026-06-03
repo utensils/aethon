@@ -162,7 +162,7 @@ describe("SubagentsConfig", () => {
     );
   });
 
-  it("renames by deleting the old file then writing the new", async () => {
+  it("renames by writing the new file before deleting the old", async () => {
     render(
       <SubagentsConfig
         component={comp({ scope: "user" })}
@@ -186,5 +186,15 @@ describe("SubagentsConfig", () => {
       "subagents_write",
       expect.objectContaining({ name: "auditor" }),
     );
+    // Write must land before the delete so a failed write can't lose the
+    // original definition.
+    const writeIdx = invoke.mock.calls.findIndex(
+      (c) => c[0] === "subagents_write",
+    );
+    const deleteIdx = invoke.mock.calls.findIndex(
+      (c) => c[0] === "subagents_delete",
+    );
+    expect(writeIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeLessThan(deleteIdx);
   });
 });

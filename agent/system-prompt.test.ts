@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildRuntimeSection, type RuntimeSnapshot } from "./system-prompt";
+import {
+  buildRuntimeSection,
+  buildSubagentsSection,
+  type RuntimeSnapshot,
+} from "./system-prompt";
 
 function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
   return {
@@ -118,27 +122,21 @@ describe("buildRuntimeSection failedExtensions", () => {
   });
 });
 
-describe("buildRuntimeSection subagents", () => {
-  it("renders nothing when there are no subagents", () => {
-    expect(buildRuntimeSection(snapshot())).not.toContain(
-      "Available subagents",
-    );
+describe("buildSubagentsSection", () => {
+  it("returns empty when there are no subagents", () => {
+    expect(buildSubagentsSection([])).toBe("");
   });
 
   it("lists subagents with model, surface, and delegation guidance", () => {
-    const out = buildRuntimeSection(
-      snapshot({
-        subagents: [
-          {
-            name: "reviewer",
-            description: "Reviews diffs",
-            model: "ollama/llama3.3",
-            surface: "inline",
-          },
-          { name: "builder", description: "Builds features", surface: "tab" },
-        ],
-      }),
-    );
+    const out = buildSubagentsSection([
+      {
+        name: "reviewer",
+        description: "Reviews diffs",
+        model: "ollama/llama3.3",
+        surface: "inline",
+      },
+      { name: "builder", description: "Builds features", surface: "tab" },
+    ]);
     expect(out).toContain("Available subagents");
     expect(out).toContain("`task`");
     expect(out).toContain("@<name>");
@@ -146,5 +144,11 @@ describe("buildRuntimeSection subagents", () => {
     expect(out).toContain("ollama/llama3.3");
     expect(out).toContain("Reviews diffs");
     expect(out).toContain("opens its own tab");
+  });
+
+  it("is not rendered by buildRuntimeSection (advertisement is per-turn)", () => {
+    expect(buildRuntimeSection(snapshot())).not.toContain(
+      "Available subagents",
+    );
   });
 });

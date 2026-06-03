@@ -79,7 +79,7 @@ export interface MutationResult {
 import type { AethonApi } from "./aethon-api";
 export type AethonExtensionApi = AethonApi;
 
-import type { Subagent, SubagentLoadIssue } from "./subagents/types";
+import type { LoadSubagentsResult } from "./subagents/types";
 
 export interface AethonExtensionModule {
   register?: (api: AethonExtensionApi) => void | Promise<void>;
@@ -391,13 +391,12 @@ export class AethonAgentState {
   cachedModels: ModelDescriptor[] = [];
 
   // -- Subagents -----------------------------------------------------------
-  /** Merged effective subagent registry (user scope + active project scope,
-   *  project-wins-by-name). Re-merged at boot, on project change, and when the
-   *  UI edits a definition. Read live by the `task` tool and the runtime
-   *  snapshot, so it only needs to be current — not pushed into open sessions. */
-  readonly subagents = new Map<string, Subagent>();
-  /** Definitions that failed to load/parse, surfaced to the UI. */
-  subagentIssues: SubagentLoadIssue[] = [];
+  /** Per-cwd subagent registry cache (user scope + that project's scope,
+   *  merged project-wins-by-name), keyed by project cwd ("" = user-only).
+   *  Lazily populated by `getSubagentsForCwd` and cleared by `refreshSubagents`
+   *  when the UI edits a definition. Keying by cwd keeps subagents correct when
+   *  tabs on different projects are open simultaneously. */
+  readonly subagentsByCwd = new Map<string, LoadSubagentsResult>();
   /** One-shot per-tab steer: when the user opens a message with `@<name>`
    *  matching a known subagent, the tabId → name is recorded here and the
    *  `before_agent_start` hook consumes (and clears) it to strongly steer the

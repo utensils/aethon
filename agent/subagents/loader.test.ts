@@ -3,13 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  getSubagentsForCwd,
   loadSubagents,
   projectAgentsDir,
   refreshSubagents,
   userAgentsDir,
 } from "./loader";
 import type { AethonAgentState } from "../state";
-import type { Subagent, SubagentLoadIssue } from "./types";
+import type { LoadSubagentsResult } from "./types";
 
 let root: string;
 let userDir: string;
@@ -125,30 +126,50 @@ describe("loadSubagents", () => {
   });
 });
 
-describe("refreshSubagents", () => {
-  /** Minimal state stub — refreshSubagents only reads userDir +
-   *  currentProjectCwd and writes the subagents map + issues. */
+describe("getSubagentsForCwd / refreshSubagents", () => {
+  /** Minimal state stub — the cwd resolver only reads userDir + the cwd cache. */
   function stubState(): AethonAgentState {
     return {
       userDir,
-      currentProjectCwd: projectCwd,
-      subagents: new Map<string, Subagent>(),
-      subagentIssues: [] as SubagentLoadIssue[],
+      subagentsByCwd: new Map<string, LoadSubagentsResult>(),
     } as unknown as AethonAgentState;
   }
 
-  it("populates state and replaces stale entries on re-run", () => {
+  it("caches per cwd and project wins by name", () => {
+    writeAgent(userAgentsDir(userDir), "reviewer.md", def("User reviewer"));
+    writeAgent(
+      projectAgentsDir(projectCwd),
+      "reviewer.md",
+      def("Project reviewer"),
+    );
+    const state = stubState();
+
+    const forProject = getSubagentsForCwd(state, projectCwd);
+    expect(forProject.byName.get("reviewer")?.description).toBe(
+      "Project reviewer",
+    );
+    // User-only scope (no project cwd) sees the user definition.
+    expect(
+      getSubagentsForCwd(state, null).byName.get("reviewer")?.description,
+    ).toBe("User reviewer");
+
+    // Second resolve returns the cached object (no re-read).
+    expect(getSubagentsForCwd(state, projectCwd)).toBe(forProject);
+  });
+
+  it("refreshSubagents invalidates the cache so the next resolve re-reads", () => {
     writeAgent(userAgentsDir(userDir), "reviewer.md", def("Reviews"));
     const state = stubState();
-    refreshSubagents(state);
-    expect(state.subagents.get("reviewer")?.description).toBe("Reviews");
+    expect(getSubagentsForCwd(state, null).byName.has("reviewer")).toBe(true);
 
-    // Stale entry must be dropped after the source file is removed.
     rmSync(join(userAgentsDir(userDir), "reviewer.md"));
     writeAgent(userAgentsDir(userDir), "planner.md", def("Plans"));
+    // Still cached until invalidated.
+    expect(getSubagentsForCwd(state, null).byName.has("reviewer")).toBe(true);
+
     refreshSubagents(state);
-    expect(state.subagents.has("reviewer")).toBe(false);
-    expect(state.subagents.get("planner")?.description).toBe("Plans");
-    expect(state.subagentIssues).toEqual([]);
+    const fresh = getSubagentsForCwd(state, null);
+    expect(fresh.byName.has("reviewer")).toBe(false);
+    expect(fresh.byName.get("planner")?.description).toBe("Plans");
   });
 });

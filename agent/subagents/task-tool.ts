@@ -36,6 +36,7 @@ import { buildDevshellSpawnHook } from "../devshell";
 import { extractAgentEndError } from "../agent-errors";
 import { summarizeToolArgs } from "../tool-card";
 import { logger } from "../logger";
+import { getSubagentsForCwd } from "./loader";
 import { resolveSubagentTools } from "./parse";
 import type { Subagent, SubagentSurface } from "./types";
 
@@ -122,19 +123,22 @@ async function runSubagentTask(
   signal: AbortSignal | undefined,
   onUpdate: UpdateFn | undefined,
 ): Promise<SubagentToolResult> {
-  const name = params.subagent_type.trim().toLowerCase();
-  const sub = state.subagents.get(name);
-  if (!sub) {
-    const available =
-      [...state.subagents.keys()].join(", ") || "(none configured)";
-    throw new Error(
-      `unknown subagent "${params.subagent_type}". Available subagents: ${available}.`,
-    );
-  }
   const cwd =
     state.tabProjectCwds.get(parentTabId) ??
     state.currentProjectCwd ??
     process.cwd();
+  const name = params.subagent_type.trim().toLowerCase();
+  // Resolve against the *parent tab's* cwd, not a global registry, so a tab on
+  // project A always delegates to project A's subagents.
+  const registry = getSubagentsForCwd(state, cwd);
+  const sub = registry.byName.get(name);
+  if (!sub) {
+    const available =
+      [...registry.byName.keys()].join(", ") || "(none configured)";
+    throw new Error(
+      `unknown subagent "${params.subagent_type}". Available subagents: ${available}.`,
+    );
+  }
   const composedPrompt = composePrompt(sub, params);
 
   if (sub.surface === "tab") {

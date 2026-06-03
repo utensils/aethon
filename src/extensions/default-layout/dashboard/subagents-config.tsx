@@ -177,6 +177,15 @@ export function SubagentsConfig({ component, state }: BuiltinComponentProps) {
     setBusy(true);
     try {
       const content = serializeSubagent(editorToFields({ ...editor, name }));
+      // Write the new definition first; only remove the old name once the new
+      // file is safely on disk. A failed write then can't lose the original
+      // (worst case leaves a recoverable duplicate, never a gap).
+      await invoke("subagents_write", {
+        scope,
+        name,
+        content,
+        projectRoot: projectPath ?? null,
+      });
       if (editor.original && editor.original !== name) {
         await invoke("subagents_delete", {
           scope,
@@ -184,12 +193,6 @@ export function SubagentsConfig({ component, state }: BuiltinComponentProps) {
           projectRoot: projectPath ?? null,
         });
       }
-      await invoke("subagents_write", {
-        scope,
-        name,
-        content,
-        projectRoot: projectPath ?? null,
-      });
       setEditor(null);
       setError(null);
       await reload();

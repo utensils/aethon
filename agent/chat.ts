@@ -10,6 +10,7 @@ import {
 } from "./tab-lifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
 import { detectSubagentMention } from "./subagents/steer";
+import { getSubagentsForCwd } from "./subagents";
 import { emitContextUsage } from "./context-usage";
 
 export async function handleChat(
@@ -29,9 +30,13 @@ export async function handleChat(
   }
   // Explicit `@name` subagent invocation: record a one-shot steer consumed by
   // the before_agent_start hook so this turn delegates to that subagent.
+  // Resolve against this tab's cwd so the mention matches the tab's project.
   const mention = detectSubagentMention(msg.content);
-  if (mention && state.subagents.has(mention)) {
-    state.pendingExplicitSubagent.set(tabId, mention);
+  if (mention) {
+    const tabCwd = state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd;
+    if (getSubagentsForCwd(state, tabCwd).byName.has(mention)) {
+      state.pendingExplicitSubagent.set(tabId, mention);
+    }
   }
   const cwdOverride =
     typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;

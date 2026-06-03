@@ -165,8 +165,12 @@ fn scope_agents_dir(
     }
 }
 
-/// Belt-and-suspenders: for project scope, refuse a target that lexically
-/// escapes the project root (the safe-name check already blocks separators).
+/// For project scope, refuse a target that escapes the project root — both
+/// lexically (the safe-name check already blocks separators) AND via symlinks:
+/// if `.aethon` / `.aethon/agents` is a symlink to a directory outside the
+/// project, the lexical check passes but the file op would follow it. So we
+/// also canonicalize the deepest existing ancestor and verify it still lives
+/// under the canonical project root (same defence as the fs commands).
 fn assert_inside_project(
     scope: &str,
     project_root: Option<&str>,
@@ -178,6 +182,29 @@ fn assert_inside_project(
     let root = PathBuf::from(project_root.ok_or_else(|| "project_root required".to_string())?);
     if resolve_inside_root(&root, target).is_none() {
         return Err("refusing to touch a path outside the project root".to_string());
+    }
+    let canonical_root =
+        std::fs::canonicalize(&root).map_err(|e| format!("canonicalize project root: {e}"))?;
+    // Walk up to the deepest component that already exists on disk (the target
+    // file usually doesn't yet), then canonicalize it to resolve any symlinks.
+    let mut probe: &Path = target;
+    let existing = loop {
+        if probe.exists() {
+            break Some(probe);
+        }
+        match probe.parent() {
+            Some(parent) => probe = parent,
+            None => break None,
+        }
+    };
+    if let Some(existing) = existing {
+        let canonical = std::fs::canonicalize(existing)
+            .map_err(|e| format!("canonicalize {}: {e}", existing.display()))?;
+        if !canonical.starts_with(&canonical_root) {
+            return Err(
+                "refusing to touch a path that escapes the project root via a symlink".to_string(),
+            );
+        }
     }
     Ok(())
 }
@@ -340,15 +367,39 @@ mod tests {
     }
 
     #[test]
-    fn assert_inside_project_rejects_escape() {
-        // A safe name can never escape, but the guard must reject a crafted
-        // target that lexically leaves the root.
-        let root = "/projects/aethon";
-        let inside = PathBuf::from("/projects/aethon/.aethon/agents/reviewer.md");
-        assert!(assert_inside_project("project", Some(root), &inside).is_ok());
-        let outside = PathBuf::from("/projects/other/.aethon/agents/x.md");
-        assert!(assert_inside_project("project", Some(root), &outside).is_err());
+    fn assert_inside_project_accepts_inside_and_rejects_lexical_escape() {
+        let base = tmpdir();
+        let root = base.join("project");
+        fs::create_dir_all(&root).unwrap();
+        let root_str = root.to_str().unwrap();
+
+        let inside = root.join(".aethon").join("agents").join("reviewer.md");
+        assert!(assert_inside_project("project", Some(root_str), &inside).is_ok());
+
+        let outside = base.join("other").join("x.md");
+        assert!(assert_inside_project("project", Some(root_str), &outside).is_err());
+
         // User scope is never project-guarded.
         assert!(assert_inside_project("user", None, &outside).is_ok());
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn assert_inside_project_rejects_symlinked_aethon_dir() {
+        use std::os::unix::fs::symlink;
+        let base = tmpdir();
+        let root = base.join("project");
+        fs::create_dir_all(&root).unwrap();
+        // An attacker-controlled `.aethon` symlink pointing outside the project.
+        let evil = base.join("evil");
+        fs::create_dir_all(&evil).unwrap();
+        symlink(&evil, root.join(".aethon")).unwrap();
+
+        // The lexical check passes, but canonicalizing the existing `.aethon`
+        // symlink resolves outside the root, so the guard must reject it.
+        let target = root.join(".aethon").join("agents").join("x.md");
+        assert!(assert_inside_project("project", Some(root.to_str().unwrap()), &target).is_err());
+        fs::remove_dir_all(&base).ok();
     }
 }

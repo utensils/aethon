@@ -59,3 +59,10 @@ export interface SubagentLoadIssue {
   scope: SubagentScope;
   error: string;
 }
+
+/** Merged effective registry for one cwd (user scope + that project scope,
+ *  project-wins-by-name) plus any load issues. */
+export interface LoadSubagentsResult {
+  byName: Map<string, Subagent>;
+  issues: SubagentLoadIssue[];
+}
