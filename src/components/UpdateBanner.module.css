@@ -61,7 +61,7 @@
 .btnPrimary {
   background: var(--accent, #6189ff);
   border-color: var(--accent, #6189ff);
-  color: var(--accent-fg, #fff);
+  color: var(--accent-fg, var(--text-on-accent, var(--btn-text, #fff)));
 }
 
 .btn:hover,
