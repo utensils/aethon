@@ -10,9 +10,10 @@
  *                   on the row hover state).
  *
  * The "send to agent" paths fetch the full issue body and emit
- * `start-task` with a markdown-formatted prompt that includes title,
- * url, author, and body. The default row action asks the shared task
- * path to create a fresh worktree so each issue starts isolated.
+ * `start-task` with a prompt built from the project's optional
+ * `.aethon/issues.toml` templates. The built-in markdown prompt remains
+ * the fallback. The default row action asks the shared task path to
+ * create a fresh worktree so each issue starts isolated.
  *
  * Registered as the dashboard component type `issues-section` so
  * extensions can swap it with `aethon.registerComponent`. All data
@@ -36,7 +37,12 @@ import {
   refreshIssues,
 } from "../../../ghIssuesCache";
 import { formatRelativeTime } from "../../../utils/time";
-import { buildIssueBranch, buildIssuePrompt } from "./issue-task";
+import { buildIssueTask } from "./issue-task";
+import {
+  loadIssueTemplates,
+  matchingIssueTemplates,
+  type IssueTemplate,
+} from "./issue-templates";
 
 interface ProjectInfo {
   id: string;
@@ -136,6 +142,8 @@ export function IssuesSection({
   const [refreshing, setRefreshing] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [sending, setSending] = useState<number | null>(null);
+  const [issueTemplates, setIssueTemplates] = useState<IssueTemplate[]>([]);
+  const [templateWarning, setTemplateWarning] = useState<string | null>(null);
   const containerRef = useRef<HTMLElement | null>(null);
 
   // Lazy fetch: defer until the section scrolls into view. Avoids
@@ -170,9 +178,17 @@ export function IssuesSection({
     if (loadedFor === project.path) return;
     let cancelled = false;
     void (async () => {
-      const fetched = await refreshIssues(project.path, limit);
+      const [fetched, templateConfig] = await Promise.all([
+        refreshIssues(project.path, limit),
+        loadIssueTemplates(project.path),
+      ]);
       if (cancelled) return;
       setIssues(fetched);
+      setIssueTemplates(templateConfig.templates);
+      setTemplateWarning(templateConfig.warning);
+      if (templateConfig.warning) {
+        console.warn("issue template config warning:", templateConfig.warning);
+      }
       setLoadedFor(project.path);
     })();
     return () => {
@@ -208,13 +224,31 @@ export function IssuesSection({
     );
   }, []);
 
-  const sendIssueToNewWorktree = useCallback(
-    async (issue: GhIssue) => {
+  const sendIssueToAgent = useCallback(
+    async (
+      issue: GhIssue,
+      options: {
+        forceNewWorktree?: boolean;
+        template?: IssueTemplate | null;
+      } = {},
+    ) => {
       if (!project) return;
       setSending(issue.number);
       try {
         const detail = await getIssueDetail(project.path, issue.number);
-        const prompt = buildIssuePrompt(detail);
+        const matching = matchingIssueTemplates(issueTemplates, issue);
+        const selectedTemplate =
+          options.template === null
+            ? null
+            : (options.template ?? matching[0] ?? null);
+        const task = buildIssueTask(detail, issue, project, {
+          template: selectedTemplate,
+          forceNewWorktree: options.forceNewWorktree,
+          existingBranches: projectWorktreeBranches(state, project.id),
+        });
+        const worktreeId = task.newWorktree
+          ? undefined
+          : currentProjectWorktreeId(state, project.id);
         // Route through the dashboard's start-task event so the
         // launcher + start-task path stays the single source of
         // truth (UI / pi tool parity).
@@ -222,17 +256,17 @@ export function IssuesSection({
           "start-task",
           {
             projectId: project.id,
-            prompt,
-            newWorktree: true,
-            branch: buildIssueBranch(
-              issue,
-              projectWorktreeBranches(state, project.id),
-            ),
+            prompt: task.prompt,
+            newWorktree: task.newWorktree,
+            branch: task.branch,
+            worktreeId,
             // Tag the payload so the route handler / tests can spot
             // an issue-originated launch.
             source: "github-issue",
             issueNumber: issue.number,
             issueUrl: issue.url,
+            issueTemplateId: task.templateId,
+            issueTemplateLabel: task.templateLabel,
           },
           `issue-${issue.number}`,
         );
@@ -242,37 +276,21 @@ export function IssuesSection({
         setSending(null);
       }
     },
-    [project, onEvent, state],
+    [project, onEvent, state, issueTemplates],
+  );
+
+  const sendIssueToNewWorktree = useCallback(
+    async (issue: GhIssue, template?: IssueTemplate | null) => {
+      await sendIssueToAgent(issue, { forceNewWorktree: true, template });
+    },
+    [sendIssueToAgent],
   );
 
   const sendIssueToCurrentWorktree = useCallback(
-    async (issue: GhIssue) => {
-      if (!project) return;
-      setSending(issue.number);
-      try {
-        const detail = await getIssueDetail(project.path, issue.number);
-        const prompt = buildIssuePrompt(detail);
-        const worktreeId = currentProjectWorktreeId(state, project.id);
-        onEvent(
-          "start-task",
-          {
-            projectId: project.id,
-            prompt,
-            newWorktree: false,
-            worktreeId,
-            source: "github-issue",
-            issueNumber: issue.number,
-            issueUrl: issue.url,
-          },
-          `issue-${issue.number}`,
-        );
-      } catch (err) {
-        console.warn("send-to-agent failed:", err);
-      } finally {
-        setSending(null);
-      }
+    async (issue: GhIssue, template?: IssueTemplate | null) => {
+      await sendIssueToAgent(issue, { forceNewWorktree: false, template });
     },
-    [project, onEvent, state],
+    [sendIssueToAgent],
   );
 
   const onRowContextMenu = (e: React.MouseEvent, issue: GhIssue) => {
@@ -283,6 +301,10 @@ export function IssuesSection({
   if (!project) return null;
 
   const total = issues?.length ?? 0;
+  const menuTemplates = menu
+    ? matchingIssueTemplates(issueTemplates, menu.issue)
+    : [];
+  const showTemplateChoices = menuTemplates.length > 1;
   return (
     <section
       className="a2ui-dashboard-issues"
@@ -307,8 +329,19 @@ export function IssuesSection({
             setRefreshing(true);
             void (async () => {
               try {
-                const fresh = await refreshIssues(project.path, limit);
+                const [fresh, templateConfig] = await Promise.all([
+                  refreshIssues(project.path, limit),
+                  loadIssueTemplates(project.path),
+                ]);
                 setIssues(fresh);
+                setIssueTemplates(templateConfig.templates);
+                setTemplateWarning(templateConfig.warning);
+                if (templateConfig.warning) {
+                  console.warn(
+                    "issue template config warning:",
+                    templateConfig.warning,
+                  );
+                }
                 setLoadedFor(project.path);
               } finally {
                 setRefreshing(false);
@@ -320,6 +353,10 @@ export function IssuesSection({
           {refreshing ? "Refreshing…" : "↻"}
         </button>
       </header>
+
+      {templateWarning ? (
+        <p className="a2ui-dashboard-issues-warning">{templateWarning}</p>
+      ) : null}
 
       {!visible ? (
         <p className="a2ui-dashboard-issues-empty">Scroll to load…</p>
@@ -450,6 +487,23 @@ export function IssuesSection({
           >
             Send to agent (current worktree/branch)
           </button>
+          {showTemplateChoices
+            ? menuTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  role="menuitem"
+                  className="a2ui-dashboard-issue-menu-item"
+                  onClick={() => {
+                    const m = menu;
+                    setMenu(null);
+                    void sendIssueToAgent(m.issue, { template });
+                  }}
+                >
+                  Use template: {template.label}
+                </button>
+              ))
+            : null}
           <button
             type="button"
             role="menuitem"

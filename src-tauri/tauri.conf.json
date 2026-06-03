@@ -42,6 +42,7 @@
       "../docs/aethon-agent/api.md": "docs/aethon-agent/api.md",
       "../docs/aethon-agent/components.md": "docs/aethon-agent/components.md",
       "../docs/aethon-agent/extensions.md": "docs/aethon-agent/extensions.md",
+      "../docs/aethon-agent/project-config.md": "docs/aethon-agent/project-config.md",
       "../src/extensions/default-layout/workstation.a2ui.json": "extensions/default-layout/workstation.a2ui.json",
       "../src/extensions/default-layout/slots.json": "extensions/default-layout/slots.json"
     },

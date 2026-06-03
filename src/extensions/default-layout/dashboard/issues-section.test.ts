@@ -9,13 +9,24 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IssuesSection } from "./issues-section";
-import { buildIssueBranch, buildIssuePrompt } from "./issue-task";
+import {
+  buildIssueBranch,
+  buildIssuePrompt,
+  buildIssueTask,
+  interpolateIssueTemplate,
+} from "./issue-task";
+import {
+  loadIssueTemplates,
+  matchingIssueTemplates,
+  type IssueTemplate,
+} from "./issue-templates";
 import type { GhIssue } from "../../../ghIssuesCache";
 
-const { getIssueDetail, refreshIssues, openUrl } = vi.hoisted(() => ({
+const { getIssueDetail, refreshIssues, openUrl, invoke } = vi.hoisted(() => ({
   getIssueDetail: vi.fn(),
   refreshIssues: vi.fn(),
   openUrl: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("../../../ghIssuesCache", () => ({
@@ -25,6 +36,10 @@ vi.mock("../../../ghIssuesCache", () => ({
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrl(...args),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invoke(...args),
 }));
 
 afterEach(() => {
@@ -43,12 +58,16 @@ const issue: GhIssue = {
   comments: 0,
 };
 
-function renderIssues(onEvent = vi.fn()) {
+function renderIssues(
+  onEvent = vi.fn(),
+  templateConfig: unknown = { templates: [], warning: null },
+) {
   refreshIssues.mockResolvedValue([issue]);
   getIssueDetail.mockResolvedValue({
     ...issue,
     body: "Rename should stay available.",
   });
+  invoke.mockResolvedValue(templateConfig);
   render(
     createElement(IssuesSection, {
       component: {
@@ -202,6 +221,114 @@ describe("issues-section task helpers", () => {
       }),
     ).toContain("Please work on GitHub issue #7");
   });
+
+  it("interpolates configured issue templates with issue and project variables", () => {
+    const template: IssueTemplate = {
+      id: "docs",
+      label: "Docs issue",
+      prompt:
+        "Work on #{number}: {title}\nLabels: {labels}\nSlug: {slug}\nProject: {projectLabel}",
+      newWorktree: true,
+      branch: "{branchPrefix}/issue-{number}-{slug}",
+      branchPrefix: "docs",
+      whenLabels: ["documentation"],
+    };
+
+    const task = buildIssueTask(
+      {
+        number: 213,
+        title: "docs(api): Explain templates",
+        url: "https://github.com/utensils/aethon/issues/213",
+        body: "Add docs.",
+        author: "octo",
+      },
+      {
+        ...issue,
+        number: 213,
+        title: "docs(api): Explain templates",
+        labels: [{ name: "documentation", color: null }],
+        comments: 2,
+      },
+      { id: "p1", label: "aethon", path: "/repo/aethon" },
+      { template },
+    );
+
+    expect(task.prompt).toContain("Work on #213: docs(api): Explain templates");
+    expect(task.prompt).toContain("Labels: documentation");
+    expect(task.prompt).toContain("Slug: api-explain-templates");
+    expect(task.prompt).toContain("Project: aethon");
+    expect(task.branch).toBe("docs/issue-213-api-explain-templates");
+  });
+
+  it("matches label-specific templates before catch-all templates", () => {
+    const templates: IssueTemplate[] = [
+      {
+        id: "default",
+        label: "Default",
+        prompt: "Default {title}",
+        newWorktree: null,
+        branch: null,
+        branchPrefix: null,
+        whenLabels: [],
+      },
+      {
+        id: "docs",
+        label: "Docs",
+        prompt: "Docs {title}",
+        newWorktree: null,
+        branch: null,
+        branchPrefix: null,
+        whenLabels: ["Documentation"],
+      },
+    ];
+
+    expect(
+      matchingIssueTemplates(templates, {
+        ...issue,
+        labels: [{ name: "documentation", color: null }],
+      }).map((t) => t.id),
+    ).toEqual(["docs", "default"]);
+  });
+
+  it("loads issue templates from the project config command", async () => {
+    invoke.mockResolvedValueOnce({
+      templates: [
+        {
+          id: "default",
+          label: "Default",
+          prompt: "Work on {title}",
+          newWorktree: true,
+          branch: null,
+          branchPrefix: null,
+          whenLabels: [],
+        },
+      ],
+      warning: null,
+    });
+
+    await expect(loadIssueTemplates("/repo/aethon")).resolves.toMatchObject({
+      templates: [expect.objectContaining({ id: "default" })],
+      warning: null,
+    });
+    expect(invoke).toHaveBeenCalledWith("read_issue_templates", {
+      projectPath: "/repo/aethon",
+    });
+  });
+
+  it("falls back when issue template loading fails", async () => {
+    invoke.mockRejectedValueOnce(new Error("bad toml"));
+
+    await expect(loadIssueTemplates("/repo/aethon")).resolves.toMatchObject({
+      templates: [],
+      warning: expect.stringContaining("using built-in issue prompt"),
+    });
+  });
+
+  it("replaces unknown template variables with an empty string", () => {
+    expect(interpolateIssueTemplate("Known {title} missing {nope}", {
+      title: "Crash",
+    })).toBe("Known Crash missing ");
+  });
 });
 
 describe("IssuesSection", () => {
@@ -227,6 +354,38 @@ describe("IssuesSection", () => {
           branch: expect.stringMatching(/^fix\/issue-85-/),
           source: "github-issue",
           issueNumber: 85,
+        }),
+        "issue-85",
+      ),
+    );
+  });
+
+  it("uses a configured template for issue launches", async () => {
+    const { onEvent } = renderIssues(vi.fn(), {
+      templates: [
+        {
+          id: "default",
+          label: "Default implementation task",
+          prompt: "CUSTOM #{number}: {title}\n{body}",
+          newWorktree: true,
+          branch: "feat/issue-{number}-{slug}",
+          branchPrefix: null,
+          whenLabels: [],
+        },
+      ],
+      warning: null,
+    });
+
+    await screen.findByText(issue.title);
+    fireEvent.click(screen.getByRole("button", { name: /send issue #85/i }));
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          prompt: expect.stringContaining("CUSTOM #85"),
+          branch: "feat/issue-85-cannot-rename-session-tab-while-agent-is-running",
+          issueTemplateId: "default",
         }),
         "issue-85",
       ),
@@ -273,5 +432,64 @@ describe("IssuesSection", () => {
         "issue-85",
       ),
     );
+  });
+
+  it("lets the context menu choose between multiple matching templates", async () => {
+    const { onEvent } = renderIssues(vi.fn(), {
+      templates: [
+        {
+          id: "default",
+          label: "Default",
+          prompt: "DEFAULT {title}",
+          newWorktree: true,
+          branch: null,
+          branchPrefix: null,
+          whenLabels: [],
+        },
+        {
+          id: "bug",
+          label: "Bug fix handoff",
+          prompt: "BUGFIX {title}",
+          newWorktree: false,
+          branch: null,
+          branchPrefix: null,
+          whenLabels: ["bug"],
+        },
+      ],
+      warning: null,
+    });
+
+    await screen.findByText(issue.title);
+    fireEvent.contextMenu(screen.getByText(issue.title).closest("li")!);
+
+    expect(
+      screen.getByRole("menuitem", { name: "Use template: Bug fix handoff" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Use template: Bug fix handoff" }),
+    );
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          prompt: expect.stringContaining("BUGFIX"),
+          newWorktree: false,
+          worktreeId: "wt-current",
+          issueTemplateId: "bug",
+        }),
+        "issue-85",
+      ),
+    );
+  });
+
+  it("surfaces malformed template warnings without blocking fallback", async () => {
+    renderIssues(vi.fn(), {
+      templates: [],
+      warning: "Malformed .aethon/issues.toml; using built-in issue prompt.",
+    });
+
+    await screen.findByText(issue.title);
+    expect(screen.getByText(/Malformed \.aethon\/issues\.toml/)).toBeTruthy();
   });
 });

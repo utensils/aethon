@@ -1,4 +1,19 @@
-import type { GhIssue } from "../../../ghIssuesCache";
+import type { GhIssue, GhIssueDetail } from "../../../ghIssuesCache";
+import type { IssueTemplate } from "./issue-templates";
+
+export interface IssueTemplateProjectContext {
+  id: string;
+  label: string;
+  path: string;
+}
+
+export interface IssueTaskPayload {
+  prompt: string;
+  newWorktree: boolean;
+  branch?: string;
+  templateId?: string;
+  templateLabel?: string;
+}
 
 export function buildIssuePrompt(detail: {
   number: number;
@@ -24,6 +39,86 @@ export function buildIssuePrompt(detail: {
 }
 
 const MAX_ISSUE_BRANCH_LENGTH = 44;
+
+export function buildIssueTask(
+  detail: GhIssueDetail,
+  issue: GhIssue,
+  project: IssueTemplateProjectContext,
+  options: {
+    template?: IssueTemplate | null;
+    forceNewWorktree?: boolean;
+    existingBranches?: ReadonlySet<string>;
+  } = {},
+): IssueTaskPayload {
+  const existingBranches = options.existingBranches ?? new Set<string>();
+  const fallbackBranch = buildIssueBranch(issue, existingBranches);
+  const template = options.template ?? null;
+  const newWorktree =
+    options.forceNewWorktree ?? template?.newWorktree ?? true;
+  if (!template) {
+    return {
+      prompt: buildIssuePrompt(detail),
+      newWorktree,
+      branch: newWorktree ? fallbackBranch : undefined,
+    };
+  }
+
+  const vars = issueTemplateVariables(detail, issue, project, fallbackBranch);
+  const branchPrefix = template.branchPrefix
+    ? interpolateIssueTemplate(template.branchPrefix, vars).trim()
+    : vars.branchPrefix;
+  const scopedVars = { ...vars, branchPrefix };
+  const branch = template.branch
+    ? interpolateIssueTemplate(template.branch, scopedVars).trim()
+    : fallbackBranch;
+  return {
+    prompt: interpolateIssueTemplate(template.prompt, scopedVars).trim(),
+    newWorktree,
+    branch: newWorktree
+      ? uniquifyIssueBranch(branch || fallbackBranch, existingBranches)
+      : undefined,
+    templateId: template.id,
+    templateLabel: template.label,
+  };
+}
+
+export function interpolateIssueTemplate(
+  template: string,
+  variables: Record<string, string>,
+): string {
+  return template.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, key) => {
+    const value = variables[String(key)];
+    return value ?? "";
+  });
+}
+
+export function issueTemplateVariables(
+  detail: GhIssueDetail,
+  issue: GhIssue,
+  project: IssueTemplateProjectContext,
+  branch: string = buildIssueBranch(issue),
+): Record<string, string> {
+  const classification = classifyIssueBranch(issue);
+  const slug = slugifyIssueTitle(classification.title);
+  const labels = issue.labels.map((label) => label.name).join(", ");
+  return {
+    number: String(detail.number),
+    title: detail.title,
+    url: detail.url,
+    author: detail.author ? `@${detail.author}` : "",
+    authorLogin: detail.author ?? "",
+    body: detail.body.trim() || "_(no body provided)_",
+    labels,
+    comments: String(issue.comments ?? 0),
+    updatedAt: issue.updatedAt ?? "",
+    slug,
+    branch,
+    branchPrefix: classification.prefix,
+    projectId: project.id,
+    projectLabel: project.label,
+    projectPath: project.path,
+  };
+}
 
 export function buildIssueBranch(
   issue: Pick<GhIssue, "number" | "title"> & Partial<Pick<GhIssue, "labels">>,
@@ -53,6 +148,18 @@ export function buildIssueBranch(
     branchPrefix.length,
     MAX_ISSUE_BRANCH_LENGTH - suffix.length,
   )}${suffix}`;
+}
+
+function uniquifyIssueBranch(
+  branch: string,
+  existingBranches: ReadonlySet<string>,
+): string {
+  if (!existingBranches.has(branch)) return branch;
+  for (let i = 2; i < 100; i += 1) {
+    const candidate = `${branch}-${i}`;
+    if (!existingBranches.has(candidate)) return candidate;
+  }
+  return `${branch}-${Date.now()}`;
 }
 
 function slugifyIssueTitle(title: string): string {

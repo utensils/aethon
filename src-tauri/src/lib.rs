@@ -169,6 +169,7 @@ pub fn run() {
             commands::config::write_state,
             commands::config::read_config,
             commands::config::write_config,
+            commands::config::read_issue_templates,
             commands::config::aethon_home_dir,
             commands::session::search_sessions,
             commands::session::delete_session,

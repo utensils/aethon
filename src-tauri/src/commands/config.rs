@@ -7,6 +7,7 @@
 //! any user-introduced keys outside the Settings UI's surface survive a
 //! Save click.
 
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -113,6 +114,134 @@ pub fn aethon_home_dir(app: AppHandle) -> Result<String, String> {
         .ok_or_else(|| "aethon dir unresolved".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
     Ok(dir.to_string_lossy().into_owned())
+}
+
+#[derive(serde::Deserialize, Default)]
+struct RawIssueTemplatesConfig {
+    issue_templates: Option<BTreeMap<String, RawIssueTemplate>>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct RawIssueTemplate {
+    label: Option<String>,
+    prompt: Option<String>,
+    new_worktree: Option<bool>,
+    branch: Option<String>,
+    branch_prefix: Option<String>,
+    when_labels: Option<Vec<String>>,
+}
+
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueTemplatesConfig {
+    templates: Vec<IssueTemplate>,
+    warning: Option<String>,
+}
+
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueTemplate {
+    id: String,
+    label: String,
+    prompt: String,
+    new_worktree: Option<bool>,
+    branch: Option<String>,
+    branch_prefix: Option<String>,
+    when_labels: Vec<String>,
+}
+
+/// Read `<project>/.aethon/issues.toml` and return normalized issue-to-agent
+/// templates. Missing config is not an error; malformed config returns an
+/// empty template list plus a warning so the dashboard can fall back to its
+/// built-in prompt without blocking issue launches.
+#[tauri::command]
+pub fn read_issue_templates(project_path: String) -> Result<IssueTemplatesConfig, String> {
+    let root = PathBuf::from(&project_path);
+    if !root.is_dir() {
+        return Err(format!("not a directory: {project_path}"));
+    }
+    let path = root.join(".aethon").join("issues.toml");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(IssueTemplatesConfig {
+                templates: Vec::new(),
+                warning: None,
+            });
+        }
+        Err(e) => {
+            return Ok(IssueTemplatesConfig {
+                templates: Vec::new(),
+                warning: Some(format!(
+                    "Could not read {}; using built-in issue prompt. {e}",
+                    path.display()
+                )),
+            });
+        }
+    };
+    Ok(parse_issue_templates_toml(&text))
+}
+
+pub(crate) fn parse_issue_templates_toml(input: &str) -> IssueTemplatesConfig {
+    let parsed = match toml::from_str::<RawIssueTemplatesConfig>(input) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            return IssueTemplatesConfig {
+                templates: Vec::new(),
+                warning: Some(format!(
+                    "Malformed .aethon/issues.toml; using built-in issue prompt. {e}"
+                )),
+            };
+        }
+    };
+    let mut warnings = Vec::new();
+    let templates = parsed
+        .issue_templates
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(id, raw)| {
+            let id = id.trim().to_string();
+            if id.is_empty() {
+                warnings.push("Skipped issue template with an empty id".to_string());
+                return None;
+            }
+            let prompt = raw.prompt.unwrap_or_default();
+            if prompt.trim().is_empty() {
+                warnings.push(format!(
+                    "Skipped issue template `{id}` because prompt is missing or empty"
+                ));
+                return None;
+            }
+            let label = raw
+                .label
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| id.clone());
+            Some(IssueTemplate {
+                id,
+                label,
+                prompt,
+                new_worktree: raw.new_worktree,
+                branch: raw.branch.filter(|s| !s.trim().is_empty()),
+                branch_prefix: raw.branch_prefix.filter(|s| !s.trim().is_empty()),
+                when_labels: raw
+                    .when_labels
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+            })
+        })
+        .collect();
+    IssueTemplatesConfig {
+        templates,
+        warning: if warnings.is_empty() {
+            None
+        } else {
+            Some(warnings.join("; "))
+        },
+    }
 }
 
 /// Write a JSON-shaped config object back to `~/.aethon/config.toml`.
@@ -507,5 +636,71 @@ fn set_or_clear_int(table: &mut toml_edit::Table, key: &str, value: Option<u32>)
         None => {
             table.remove(key);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_issue_templates_toml_extracts_templates() {
+        let parsed = parse_issue_templates_toml(
+            r#"
+[issue_templates.default]
+label = "Default implementation task"
+new_worktree = true
+branch = "{branchPrefix}/issue-{number}-{slug}"
+prompt = """
+Work on #{number}: {title}
+Labels: {labels}
+"""
+
+[issue_templates.docs]
+label = "Docs issue"
+when_labels = ["documentation"]
+prompt = "Document {title}"
+"#,
+        );
+
+        assert!(parsed.warning.is_none());
+        assert_eq!(parsed.templates.len(), 2);
+        assert_eq!(parsed.templates[0].id, "default");
+        assert_eq!(parsed.templates[0].new_worktree, Some(true));
+        assert_eq!(
+            parsed.templates[0].branch.as_deref(),
+            Some("{branchPrefix}/issue-{number}-{slug}")
+        );
+        assert_eq!(parsed.templates[1].when_labels, vec!["documentation"]);
+    }
+
+    #[test]
+    fn parse_issue_templates_toml_skips_templates_without_prompt() {
+        let parsed = parse_issue_templates_toml(
+            r#"
+[issue_templates.bad]
+label = "Bad"
+
+[issue_templates.good]
+prompt = "Work on {title}"
+"#,
+        );
+
+        assert_eq!(parsed.templates.len(), 1);
+        assert_eq!(parsed.templates[0].id, "good");
+        assert!(parsed.warning.unwrap().contains("bad"));
+    }
+
+    #[test]
+    fn parse_issue_templates_toml_malformed_falls_back() {
+        let parsed = parse_issue_templates_toml("=== broken ===");
+
+        assert!(parsed.templates.is_empty());
+        assert!(
+            parsed
+                .warning
+                .unwrap()
+                .contains("Malformed .aethon/issues.toml")
+        );
     }
 }

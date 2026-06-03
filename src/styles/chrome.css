@@ -7389,6 +7389,11 @@ button.a2ui-gh-stat:hover {
 .a2ui-dashboard-issue-menu-item:hover {
   background: var(--bg-hover);
 }
+.a2ui-dashboard-issues-warning {
+  margin: var(--space-1) 0 var(--space-2) 0;
+  color: var(--warning, var(--text-muted));
+  font-size: var(--text-sm, var(--chrome-text));
+}
 .a2ui-project-dashboard-widget {
   background: var(--bg);
   border: 1px solid var(--border);
