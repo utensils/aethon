@@ -110,6 +110,8 @@ export interface TasksApi {
     /** Model the launched session should use. Mirrors the task-launcher
      *  model chip; overrides the global default for this launch. */
     model?: string;
+    /** Optional hidden bridge prompt; `prompt` remains the visible tab text. */
+    bridgePrompt?: string;
   }): Promise<MutationResult>;
 }
 

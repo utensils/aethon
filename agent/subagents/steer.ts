@@ -10,7 +10,8 @@
 
 /** A leading `@name` mention. Case-insensitive on input; the captured name is
  *  lower-cased by the caller to match the canonical registry key. */
-const MENTION_RE = /^@([A-Za-z0-9][A-Za-z0-9_-]{0,63})\b/;
+const MENTION_RE =
+  /^@([A-Za-z0-9][A-Za-z0-9_-]{0,63})(?=$|\s|[,;:!?)}\]]|\.(?:\s|$))/;
 
 /**
  * Detect a leading `@name` mention in a chat message. Returns the lowercased

@@ -90,6 +90,7 @@ export interface UseChatActions {
       mode?: "normal" | "steer";
       tabId?: string;
       attachments?: ChatAttachment[];
+      bridgeText?: string;
     },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
@@ -423,6 +424,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       mode?: "normal" | "steer";
       tabId?: string;
       attachments?: ChatAttachment[];
+      bridgeText?: string;
     },
   ) {
     const trimmed = text.trim();
@@ -475,12 +477,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
-    const bridgeText =
+    const displayText =
       sendText.length > 0
         ? sendText
         : attachments.length === 1
           ? "Please inspect the attached image."
           : "Please inspect the attached images.";
+    const bridgeText = options?.bridgeText?.trim() || displayText;
     const mode = options?.mode === "steer" ? "steer" : "normal";
     const tabId = explicitTabId ?? activeTabId ?? "default";
     const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
@@ -527,7 +530,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const userMessage = {
       id: userMessageId,
       role: "user" as const,
-      text: bridgeText,
+      text: displayText,
       ...(attachments.length > 0 ? { attachments } : {}),
       delivery,
     };

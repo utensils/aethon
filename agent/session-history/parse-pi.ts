@@ -6,6 +6,7 @@
  * tool-card by message index so the result lands on the same UI id.
  */
 
+import { stripExpandedFileReferences } from "../file-references";
 import { summarizeToolArgs, toolCardPayload } from "../tool-card";
 import {
   MAX_RESTORED_MESSAGES,
@@ -195,7 +196,9 @@ export function parseSessionHistoryLines(
           : null;
     if (!role) continue;
 
-    const text = textFromContent(msg.content);
+    const rawText = textFromContent(msg.content);
+    const text =
+      role === "user" ? stripExpandedFileReferences(rawText) : rawText;
     const thinking = role === "agent" ? thinkingFromContent(msg.content) : "";
 
     const hasRealId = typeof record.id === "string" && record.id.length > 0;

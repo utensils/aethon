@@ -211,7 +211,7 @@
               "type": "chat-input",
               "props": {
                 "value": { "$ref": "/draft" },
-                "placeholder": "Message Aethon… (Enter to send, Shift+Enter for newline, / for commands)",
+                "placeholder": "Message Aethon… (@file for file context, / for commands)",
                 "disabled": { "$ref": "/waiting" },
                 "queueCount": { "$ref": "/queueCount" },
                 "commands": { "$ref": "/slashCommands" },

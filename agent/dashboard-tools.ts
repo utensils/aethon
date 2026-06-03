@@ -63,7 +63,7 @@ const StartTaskParams = Type.Object({
   }),
   prompt: Type.String({
     description:
-      "The first chat message to send into the new tab. Same content the user would type into the task launcher.",
+      "The first chat message to send into the new tab. Same content the user would type into the task launcher; @file references are resolved in the launched tab's cwd.",
   }),
   newWorktree: Type.Optional(
     Type.Boolean({

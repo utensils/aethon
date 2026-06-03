@@ -40,6 +40,11 @@ import { getSubagentsForCwd } from "./loader";
 import { resolveSubagentTools } from "./parse";
 import type { Subagent, SubagentSurface } from "./types";
 import { timeoutMsFromSeconds } from "../runtime-config";
+import {
+  expandFileReferencesInPrompt,
+  parseFileReferences,
+  stripExpandedFileReferences,
+} from "../file-references";
 /** Cap on the text returned to the parent (and streamed partials). */
 const MAX_RESULT_CHARS = 100_000;
 
@@ -65,12 +70,12 @@ const TaskParams = Type.Object({
   }),
   prompt: Type.String({
     description:
-      "The full, self-contained task for the subagent. It runs in a fresh isolated session and only sees this text — include all context it needs.",
+      "The full, self-contained task for the subagent. It runs in a fresh isolated session and only sees this text — include all context it needs. @file references are resolved relative to the parent tab's cwd and expanded before delegation.",
   }),
   context: Type.Optional(
     Type.String({
       description:
-        "Optional extra context (file paths, constraints) prepended to the task.",
+        "Optional extra context (file paths, constraints) prepended to the task. @file references are resolved like prompt references.",
     }),
   ),
 });
@@ -136,11 +141,15 @@ async function runSubagentTask(
       `unknown subagent "${params.subagent_type}". Available subagents: ${available}.`,
     );
   }
-  const composedPrompt = composePrompt(sub, params);
-
+  const expandedParams = hasTaskFileReferences(params)
+    ? await expandTaskFileReferences(params, cwd)
+    : params;
   if (sub.surface === "tab") {
+    const composedPrompt = composePrompt(sub, expandedParams);
     return launchSubagentTab(sub, cwd, composedPrompt);
   }
+
+  const composedPrompt = composePrompt(sub, expandedParams);
   return runInlineSubagent(
     state,
     deps,
@@ -162,6 +171,28 @@ function composePrompt(sub: Subagent, params: TaskParamsT): string {
     ? `${sub.systemPrompt.trim()}\n\n---\n`
     : "";
   return `${preamble}Task:\n${extra}${params.prompt}`;
+}
+
+function hasTaskFileReferences(params: TaskParamsT): boolean {
+  return (
+    parseFileReferences(params.prompt).length > 0 ||
+    (params.context ? parseFileReferences(params.context).length > 0 : false)
+  );
+}
+
+async function expandTaskFileReferences(
+  params: TaskParamsT,
+  cwd: string,
+): Promise<TaskParamsT> {
+  const prompt = await expandFileReferencesInPrompt(params.prompt, { cwd });
+  const context = params.context
+    ? await expandFileReferencesInPrompt(params.context, { cwd })
+    : null;
+  return {
+    ...params,
+    prompt: prompt.prompt,
+    ...(context ? { context: context.prompt } : {}),
+  };
 }
 
 interface ResolvedModelServices {
@@ -349,6 +380,7 @@ interface TasksApi {
     projectPath: string;
     prompt: string;
     model?: string;
+    bridgePrompt?: string;
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
@@ -367,9 +399,11 @@ async function launchSubagentTab(
     throw new Error(
       "subagent tab launch unavailable (aethon.tasks API missing)",
     );
+  const displayPrompt = stripExpandedFileReferences(composedPrompt);
   const result = await api.start({
     projectPath: cwd,
-    prompt: composedPrompt,
+    prompt: displayPrompt,
+    ...(displayPrompt !== composedPrompt ? { bridgePrompt: composedPrompt } : {}),
     ...(sub.model ? { model: sub.model } : {}),
   });
   if (!result.ok) {

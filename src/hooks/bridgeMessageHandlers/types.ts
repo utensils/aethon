@@ -171,6 +171,8 @@ export interface BridgeMessageContext {
     newWorktree?: boolean;
     branch?: string;
     baseBranch?: string;
+    model?: string;
+    bridgePrompt?: string;
   }) => Promise<void>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────
