@@ -57,6 +57,16 @@ function nonEmptyAgentTab(
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function renderProjectOps(
   initialProjects: ProjectsState,
   overrides: Partial<UseProjectOpsContext> = {},
@@ -1131,18 +1141,203 @@ describe("useProjectOps worktree removal", () => {
       worktreePath: "/projects/aethon-fix-issue",
       force: false,
     });
-    expect(closeTabNow).toHaveBeenCalledWith("issue-tab");
+    await waitFor(() =>
+      expect(closeTabNow).toHaveBeenCalledWith("issue-tab"),
+    );
     expect(
       result.current.tabBucketsRef.current.has(
         projectScopeBucketKey("project-1", "wt-issue"),
       ),
     ).toBe(false);
     expect(projectsRef.current.activeWorktreeId).toBeNull();
+    await waitFor(() =>
+      expect(
+        projectsRef.current.worktreesByProject["project-1"]?.some(
+          (wt) => wt.id === "wt-issue",
+        ),
+      ).toBe(false),
+    );
+  });
+
+  it("marks the row as removing before a delayed git removal resolves", async () => {
+    const harness = installTauriMocks();
+    const removal = deferred<void>();
+    harness.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_worktree_remove") return removal.promise;
+      return Promise.resolve(undefined);
+    });
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorktreeId: "wt-issue",
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          {
+            id: "wt-issue",
+            projectId: "project-1",
+            path: "/projects/aethon-fix-issue",
+            branch: "fix/issue",
+            isMain: false,
+          },
+          {
+            id: "wt-other",
+            projectId: "project-1",
+            path: "/projects/aethon-other",
+            branch: "other",
+            isMain: false,
+          },
+        ],
+      },
+    });
+    const { result, projectsRef } = renderProjectOps(initial);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+
+    expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove", {
+      projectPath: "/projects/aethon",
+      worktreePath: "/projects/aethon-fix-issue",
+      force: false,
+    });
     expect(
-      projectsRef.current.worktreesByProject["project-1"]?.some(
+      projectsRef.current.worktreesByProject["project-1"]?.find(
         (wt) => wt.id === "wt-issue",
+      )?.pendingState,
+    ).toBe("removing");
+
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+    expect(
+      harness.invoke.mock.calls.filter(
+        ([cmd]) => cmd === "git_worktree_remove",
       ),
-    ).toBe(false);
+    ).toHaveLength(1);
+
+    projectsRef.current = {
+      ...projectsRef.current,
+      activeWorktreeId: "wt-other",
+    };
+
+    await act(async () => {
+      removal.resolve();
+      await removal.promise;
+    });
+    await waitFor(() =>
+      expect(
+        projectsRef.current.worktreesByProject["project-1"]?.some(
+          (wt) => wt.id === "wt-issue",
+        ),
+      ).toBe(false),
+    );
+    expect(projectsRef.current.activeWorktreeId).toBe("wt-other");
+  });
+
+  it("restores the row if dirty removal is not forced", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation(
+      (cmd: string, args?: { force?: boolean }) => {
+        if (cmd === "git_worktree_remove" && args?.force === true) {
+          return Promise.resolve(undefined);
+        }
+        if (cmd === "git_worktree_remove") {
+          return Promise.reject(new Error("worktree contains modified files"));
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+    const forcePrompt = deferred<boolean>();
+    const promptForceRemove = vi.fn(() => forcePrompt.promise);
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorktreeId: "wt-issue",
+      worktreesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          {
+            id: "wt-issue",
+            projectId: "project-1",
+            path: "/projects/aethon-fix-issue",
+            branch: "fix/issue",
+            isMain: false,
+          },
+        ],
+      },
+    });
+    const { result, projectsRef, stateRef, closeTabNow } = renderProjectOps(
+      initial,
+      {
+        worktreePrompts: {
+          promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+          promptForceRemove,
+          promptOrphanCleanup: vi.fn(() => Promise.resolve(true)),
+          notifyCannotRemoveMain: vi.fn(),
+          notifyFailure: vi.fn(),
+        },
+      },
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+    stateRef.current = {
+      activeTabId: "issue-tab",
+      tabs: [
+        {
+          ...makeEmptyTab("issue-tab", "Issue"),
+          messages: [],
+          projectId: "project-1",
+          cwd: "/projects/aethon-fix-issue",
+        },
+      ],
+    };
+
+    await act(async () => {
+      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+    });
+    await waitFor(() => expect(promptForceRemove).toHaveBeenCalledTimes(1));
+    expect(
+      projectsRef.current.worktreesByProject["project-1"]?.find(
+        (wt) => wt.id === "wt-issue",
+      )?.pendingState,
+    ).toBe("removing");
+    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect(closeTabNow).not.toHaveBeenCalled();
+
+    await act(async () => {
+      forcePrompt.resolve(false);
+      await forcePrompt.promise;
+    });
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "git_worktree_remove",
+      expect.objectContaining({ force: true }),
+    );
+    await waitFor(() =>
+      expect(
+        projectsRef.current.worktreesByProject["project-1"]?.some(
+          (wt) => wt.id === "wt-issue",
+        ),
+      ).toBe(true),
+    );
+    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect(closeTabNow).not.toHaveBeenCalled();
   });
 
   it("falls through to the orphan command when git reports 'worktree not tracked'", async () => {
@@ -1185,17 +1380,21 @@ describe("useProjectOps worktree removal", () => {
     await act(async () => {
       await result.current.removeWorktreeById("wt-issue", { confirmed: true });
     });
-    expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1),
+    );
     expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove_orphan", {
       projectPath: "/projects/aethon",
       worktreePath: "/projects/aethon-fix-issue",
     });
     expect(worktreePrompts.notifyFailure).not.toHaveBeenCalled();
-    expect(
-      projectsRef.current.worktreesByProject["project-1"]?.some(
-        (wt) => wt.id === "wt-issue",
-      ),
-    ).toBe(false);
+    await waitFor(() =>
+      expect(
+        projectsRef.current.worktreesByProject["project-1"]?.some(
+          (wt) => wt.id === "wt-issue",
+        ),
+      ).toBe(false),
+    );
   });
 
   it("aborts cleanly if the user declines the orphan confirmation", async () => {
@@ -1245,18 +1444,22 @@ describe("useProjectOps worktree removal", () => {
     await act(async () => {
       await result.current.removeWorktreeById("wt-issue", { confirmed: true });
     });
-    expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1),
+    );
     expect(harness.invoke).not.toHaveBeenCalledWith(
       "git_worktree_remove_orphan",
       expect.anything(),
     );
     expect(worktreePrompts.notifyFailure).not.toHaveBeenCalled();
-    // Row remains visible so the user can try again later.
-    expect(
-      projectsRef.current.worktreesByProject["project-1"]?.some(
-        (wt) => wt.id === "wt-issue",
-      ),
-    ).toBe(true);
+    // Row is restored so the user can try again later.
+    await waitFor(() =>
+      expect(
+        projectsRef.current.worktreesByProject["project-1"]?.some(
+          (wt) => wt.id === "wt-issue",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("alerts when the orphan command itself fails", async () => {
@@ -1297,10 +1500,12 @@ describe("useProjectOps worktree removal", () => {
     await act(async () => {
       await result.current.removeWorktreeById("wt-issue", { confirmed: true });
     });
-    expect(worktreePrompts.notifyFailure).toHaveBeenCalledWith(
-      "Error: trash: permission denied",
+    await waitFor(() =>
+      expect(worktreePrompts.notifyFailure).toHaveBeenCalledWith(
+        "Error: trash: permission denied",
+      ),
     );
-    // Row stays so a follow-up attempt is possible.
+    // Row is restored so a follow-up attempt is possible.
     expect(
       projectsRef.current.worktreesByProject["project-1"]?.some(
         (wt) => wt.id === "wt-issue",
