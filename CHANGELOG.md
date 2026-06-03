@@ -4,6 +4,38 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.5.0](https://github.com/utensils/aethon/compare/v0.4.0...v0.5.0) (2026-06-03)
+
+
+### Features
+
+* configurable subagents + session rollback & fork ([#208](https://github.com/utensils/aethon/issues/208)) ([1c2af35](https://github.com/utensils/aethon/commit/1c2af35855aa39fa40ed1fb230103620aead48dd))
+* **context:** self-correct Ollama context window + surface saturated state ([dc0ab6d](https://github.com/utensils/aethon/commit/dc0ab6defe7d14862a73293ace484acd86439a21))
+* **git:** periodically fetch project remotes ([9dc03be](https://github.com/utensils/aethon/commit/9dc03be3e12a8d6f2987e42c09d5a02a6032f4b3)), closes [#196](https://github.com/utensils/aethon/issues/196)
+* improve markdown preview parity ([83c67d8](https://github.com/utensils/aethon/commit/83c67d8d96363bafddc0d0b6c5dfe26b47404f70))
+* **model:** make the header picker the default model for new sessions ([b921987](https://github.com/utensils/aethon/commit/b9219871e529090081b0374a3244d1453250bb45))
+* **model:** restore pi-default + custom-id options in the header picker ([#178](https://github.com/utensils/aethon/issues/178)) ([68dde64](https://github.com/utensils/aethon/commit/68dde640808735b6cbab680c6883e7be8074442d))
+* **packaging:** add Arch AUR package verification ([#185](https://github.com/utensils/aethon/issues/185)) ([539e606](https://github.com/utensils/aethon/commit/539e60643fa972b4bdc208fc8400e56d6f95d4bd))
+* **transcript:** cycle tool-call grouping (turn/run/block) + fix visibility-scope popover ([#205](https://github.com/utensils/aethon/issues/205)) ([40b8c7f](https://github.com/utensils/aethon/commit/40b8c7fa30a83fe86f5734deac5ec4b8fdee6932))
+* **ui:** agent-activity indicators + completion alerts + per-workspace tab restore ([#191](https://github.com/utensils/aethon/issues/191)) ([88ac453](https://github.com/utensils/aethon/commit/88ac453cb8976621da254abb6b3ced6a6a4bcfd0))
+* working-context injection, tri-state transcript controls, project-root guardrail ([#204](https://github.com/utensils/aethon/issues/204)) ([d40c8cc](https://github.com/utensils/aethon/commit/d40c8cc45b78510c90c19b8ba41cb19f25024d8b))
+
+
+### Bug Fixes
+
+* **agent:** guard retry-active tabs from bare prompts ([#188](https://github.com/utensils/aethon/issues/188)) ([fb1f016](https://github.com/utensils/aethon/commit/fb1f016d7af14a68bd7e9df4fb721494289dde37)), closes [#186](https://github.com/utensils/aethon/issues/186)
+* forget stale worktree leftovers ([305240f](https://github.com/utensils/aethon/commit/305240f891bff92ab13e6a17b55a3997cdbd63c0))
+* harden refs and worktree prompts ([be25e68](https://github.com/utensils/aethon/commit/be25e689586e8b92071c61ff52ab99e44e27d9eb))
+* **markdown:** polish code blocks and editor links ([cf6df74](https://github.com/utensils/aethon/commit/cf6df74263784dd4838c84cc07e787258f511dfd))
+* **markdown:** prevent preview badge flicker ([#202](https://github.com/utensils/aethon/issues/202)) ([0de46bc](https://github.com/utensils/aethon/commit/0de46bcd967af7e222d2a95bbc67d7a288edea20))
+* **markdown:** render README HTML in editor preview ([#197](https://github.com/utensils/aethon/issues/197)) ([8e53d61](https://github.com/utensils/aethon/commit/8e53d616e4a93cb95d5dd6543a13aef393c8b9e1))
+* preserve agent stop after frontend reload ([#201](https://github.com/utensils/aethon/issues/201)) ([2eee9ca](https://github.com/utensils/aethon/commit/2eee9ca78bd472e159e2e43d5def364a2dff25ed))
+* restore stderr messages inline and retry transient failures ([efa5d59](https://github.com/utensils/aethon/commit/efa5d59bb6913ef1518a94b7ca50db7d0e922868))
+* **session:** restored live turns stay visible when chat falls behind pi transcript ([#194](https://github.com/utensils/aethon/issues/194)) ([6f40932](https://github.com/utensils/aethon/commit/6f409326edad9834e6493eb009233cdee95de454))
+* **sidebar:** replace worktree rename prompt with inline edit ([#192](https://github.com/utensils/aethon/issues/192)) ([e80967e](https://github.com/utensils/aethon/commit/e80967edda833aac0d783fcde1876d2fd510ad56))
+* **transcript:** address Copilot review on tool-call grouping ([#206](https://github.com/utensils/aethon/issues/206)) ([aae55af](https://github.com/utensils/aethon/commit/aae55afb9bdf6cd489d7e333068a085fad9c7dca))
+* **vcs:** merge PR badges should use purple, not neutral gray ([#193](https://github.com/utensils/aethon/issues/193)) ([15972f1](https://github.com/utensils/aethon/commit/15972f1590e84f677336eff508ef5edcb6eff5a8))
+
 ## [0.4.0](https://github.com/utensils/aethon/compare/v0.3.3...v0.4.0) (2026-05-31)
 
 
