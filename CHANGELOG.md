@@ -4,6 +4,20 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.6.0](https://github.com/utensils/aethon/compare/v0.5.0...v0.6.0) (2026-06-03)
+
+
+### Features
+
+* **dashboard:** support issue prompt templates ([#217](https://github.com/utensils/aethon/issues/217)) ([956cfaf](https://github.com/utensils/aethon/commit/956cfaf709edff74c627223cf271a69446f76406))
+* make agent timeouts configurable ([36ec943](https://github.com/utensils/aethon/commit/36ec94305529cdee2059d75093a3b5e0e9fbda70))
+
+
+### Bug Fixes
+
+* **auth:** refresh Codex auth profile state without restart ([#218](https://github.com/utensils/aethon/issues/218)) ([52b1560](https://github.com/utensils/aethon/commit/52b156091c676aa29fdb711cd36b7c578d49809e))
+* **tabs:** show Aethon menu for overview tab ([#216](https://github.com/utensils/aethon/issues/216)) ([fa501cf](https://github.com/utensils/aethon/commit/fa501cf20b8c861a23cd1145585e3bb6724a42fb))
+
 ## [0.5.0](https://github.com/utensils/aethon/compare/v0.4.0...v0.5.0) (2026-06-03)
 
 
