@@ -70,17 +70,28 @@ export interface ContextUsageState {
   tabId?: string;
   model: string;
   status: "known" | "unknown";
+  /** Provider/persisted usage, without live current-turn estimates. */
   tokens: number | null;
   contextWindow: number;
+  /** Percent for provider/persisted usage only. */
   percent: number | null;
+  /** Provider/persisted usage plus live current-turn/tool-output estimate. */
+  estimatedTokens: number | null;
+  estimatedPercent: number | null;
+  transientTokens: number;
   autoCompactEnabled: boolean;
   reserveTokens: number;
   compactAtTokens: number;
   tokensUntilCompact: number | null;
+  estimatedTokensUntilCompact: number | null;
   compacting?: boolean;
   /** The model's authoritative usage has reached/exceeded the window. For
    *  Ollama this means the server is silently truncating the oldest turns —
    *  surfaced as a distinct "full" state rather than a calm 100%. */
+  saturatedByProvider?: boolean;
+  /** Only the live current-turn/tool-output estimate reached the window. */
+  saturatedByEstimate?: boolean;
+  /** Back-compat alias for saturatedByProvider. */
   saturated?: boolean;
 }
 

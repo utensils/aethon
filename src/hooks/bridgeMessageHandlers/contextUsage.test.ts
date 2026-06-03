@@ -36,10 +36,14 @@ describe("handleContextUsage", () => {
       tokens: 12_000,
       contextWindow: 200_000,
       percent: 6,
+      estimatedTokens: 12_000,
+      estimatedPercent: null,
+      transientTokens: 0,
       autoCompactEnabled: true,
       reserveTokens: 16_384,
       compactAtTokens: 183_616,
       tokensUntilCompact: 171_616,
+      estimatedTokensUntilCompact: null,
     });
   });
 

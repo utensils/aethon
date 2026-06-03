@@ -11,18 +11,34 @@ export interface ContextUsageSnapshot {
   tabId: string;
   model: string;
   status: "known" | "unknown";
+  /** Provider/persisted usage from pi, without Aethon's current-turn
+   *  transient estimate. This is the value pi uses for threshold compaction. */
   tokens: number | null;
   contextWindow: number;
+  /** Percent for provider/persisted usage only. */
   percent: number | null;
+  /** Provider/persisted usage plus Aethon's current-turn streaming/tool-output
+   *  estimate. This may exceed the context window; the UI must render it as an
+   *  estimate, not as the authoritative compaction state. */
+  estimatedTokens: number | null;
+  estimatedPercent: number | null;
+  transientTokens: number;
   autoCompactEnabled: boolean;
   reserveTokens: number;
   compactAtTokens: number;
   tokensUntilCompact: number | null;
+  estimatedTokensUntilCompact: number | null;
   compacting?: boolean;
-  /** The model's own authoritative usage has reached/exceeded the context
-   *  window. For Ollama this means the server is silently truncating the
-   *  oldest turns and re-reporting the cap — a frozen "100%" that hides
-   *  data loss, distinct from a healthy near-full window. */
+  /** The provider/persisted usage has reached/exceeded the context window. For
+   *  Ollama this means the server is silently truncating the oldest turns and
+   *  re-reporting the cap — a frozen "100%" that hides data loss, distinct
+   *  from a healthy near-full window. */
+  saturatedByProvider?: boolean;
+  /** Only Aethon's current-turn streaming/tool-output estimate reached the
+   *  context window; pi has not yet had a response boundary or overflow event
+   *  at which it can compact/recover. */
+  saturatedByEstimate?: boolean;
+  /** Back-compat alias for saturatedByProvider. */
   saturated?: boolean;
 }
 
@@ -85,21 +101,27 @@ export function contextUsageSnapshot(
   const settings = state.settingsManager.getCompactionSettings();
   const reserveTokens = Math.max(0, settings.reserveTokens);
   const compactAtTokens = Math.max(contextWindow - reserveTokens, 0);
-  const baseTokens = finiteNumber(usage?.tokens) ?? null;
+  const tokens = finiteNumber(usage?.tokens) ?? null;
   const transientTokens = Math.max(0, rec.contextUsageTransientTokens ?? 0);
-  const tokens =
-    baseTokens === null ? null : Math.min(baseTokens + transientTokens, contextWindow);
+  const estimatedTokens =
+    tokens === null ? null : Math.max(tokens + transientTokens, tokens);
   // The model's own authoritative count reached the window (Ollama pegs
-  // prompt_tokens at num_ctx and truncates). Key off baseTokens, not the
-  // transient-augmented/clamped tokens, so we only flag a real model report.
-  const saturated = baseTokens !== null && baseTokens >= contextWindow;
+  // prompt_tokens at num_ctx and truncates). Key off provider tokens, not the
+  // transient estimate, so we only flag a real model report.
+  const saturatedByProvider = tokens !== null && tokens >= contextWindow;
+  const saturatedByEstimate =
+    !saturatedByProvider &&
+    estimatedTokens !== null &&
+    estimatedTokens >= contextWindow;
   const percent =
-    (tokens !== baseTokens && tokens !== null
-      ? (tokens / contextWindow) * 100
-      : finiteNumber(usage?.percent)) ??
+    finiteNumber(usage?.percent) ??
     (tokens !== null && contextWindow > 0
       ? (tokens / contextWindow) * 100
       : null);
+  const estimatedPercent =
+    estimatedTokens !== null && contextWindow > 0
+      ? (estimatedTokens / contextWindow) * 100
+      : null;
 
   return {
     tabId,
@@ -108,13 +130,21 @@ export function contextUsageSnapshot(
     tokens,
     contextWindow,
     percent,
+    estimatedTokens,
+    estimatedPercent,
+    transientTokens,
     autoCompactEnabled: settings.enabled,
     reserveTokens,
     compactAtTokens,
     tokensUntilCompact:
       tokens === null ? null : Math.max(compactAtTokens - tokens, 0),
+    estimatedTokensUntilCompact:
+      estimatedTokens === null
+        ? null
+        : Math.max(compactAtTokens - estimatedTokens, 0),
     ...(options.compacting ? { compacting: true } : {}),
-    ...(saturated ? { saturated: true } : {}),
+    ...(saturatedByProvider ? { saturatedByProvider: true, saturated: true } : {}),
+    ...(saturatedByEstimate ? { saturatedByEstimate: true } : {}),
   };
 }
 
