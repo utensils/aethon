@@ -51,7 +51,7 @@ export function isAgentTabBusy(
   if (!tab) return false;
   if (isAgentTabInFlight(tab)) return true;
   if (options.includeQueue !== true) return false;
-  return (tab.queueCount ?? tab.queuedMessages?.length ?? 0) > 0;
+  return (tab.queuedMessages?.length ?? tab.queueCount ?? 0) > 0;
 }
 
 export interface CloseRunningToolCardsOptions {
