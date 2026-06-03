@@ -427,6 +427,13 @@ Tauri sets these when spawning `agent/main.ts`:
 | `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` — pi `SessionManager.continueRecent` per tab.               |
 | `AETHON_RELEASE_MODE` | `"1"`/`"0"`. System prompt branches on this to avoid pointing at source paths in release. |
 | `AETHON_PROJECT_ROOT` | Source tree path in dev only.                                                             |
+| `AETHON_PROVIDER_TIMEOUT_SECONDS` | Optional provider/SDK request timeout override from `[agent] provider_timeout_seconds`; omitted leaves pi retry settings unchanged. |
+| `AETHON_BASH_TIMEOUT_FLOOR_SECONDS` | Floor applied to model-supplied bash tool timeouts from `[agent] bash_timeout_floor_seconds`. |
+| `AETHON_SUBAGENT_TIMEOUT_SECONDS` | Default inline subagent ceiling from `[agent] subagent_timeout_seconds`; subagent frontmatter can override with `timeout: <seconds>`. |
+
+Timeout policy should flow through named config fields/constants rather than
+inline numeric literals. Settings, Rust TOML parsing/env wiring, bridge runtime
+state, and subagent frontmatter parsing all need to move together.
 
 `agent/system-prompt.ts` composes the static template from
 `agent/system-prompt/prompt-template.ts` → optional

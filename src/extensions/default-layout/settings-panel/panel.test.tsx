@@ -17,6 +17,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 vi.mock("../../../config", () => ({
+  DEFAULT_AGENT_TIMEOUT_SECONDS: 300,
+  MAX_AGENT_TIMEOUT_SECONDS: 24 * 60 * 60,
   getConfig: vi.fn(() =>
     Promise.resolve({
       ui: {

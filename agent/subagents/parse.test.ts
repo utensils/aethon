@@ -51,6 +51,7 @@ describe("parseSubagentMarkdown", () => {
       "model: ollama/llama3.3",
       "tools: [read, grep, bash]",
       "surface: inline",
+      "timeout: 900",
       "---",
       "You are a meticulous code reviewer.",
       "Focus on edge cases.",
@@ -63,6 +64,7 @@ describe("parseSubagentMarkdown", () => {
       model: "ollama/llama3.3",
       tools: ["read", "grep", "bash"],
       surface: "inline",
+      timeoutSeconds: 900,
       systemPrompt: "You are a meticulous code reviewer.\nFocus on edge cases.",
       scope: "user",
       filePath: "/agents/reviewer.md",
@@ -100,11 +102,29 @@ describe("parseSubagentMarkdown", () => {
     expect(subagent?.surface).toBe("inline");
     expect(subagent?.tools).toBeUndefined();
     expect(subagent?.model).toBeUndefined();
+    expect(subagent?.timeoutSeconds).toBeUndefined();
   });
 
   it("honors surface: tab", () => {
     const raw = "---\ndescription: d\nsurface: tab\n---\nbody";
     expect(parseSubagentMarkdown(raw, ctx).subagent?.surface).toBe("tab");
+  });
+
+  it("rejects invalid timeout frontmatter", () => {
+    const raw = "---\ndescription: d\ntimeout: nope\n---\nbody";
+    expect(parseSubagentMarkdown(raw, ctx).error).toMatch(/timeout/);
+  });
+
+  it("floors fractional timeout frontmatter to at least one second", () => {
+    const raw = "---\ndescription: d\ntimeout: 0.5\n---\nbody";
+    expect(parseSubagentMarkdown(raw, ctx).subagent?.timeoutSeconds).toBe(1);
+  });
+
+  it("clamps timeout frontmatter to the maximum", () => {
+    const raw = "---\ndescription: d\ntimeout: 999999\n---\nbody";
+    expect(parseSubagentMarkdown(raw, ctx).subagent?.timeoutSeconds).toBe(
+      86400,
+    );
   });
 
   it("treats an unknown surface as inline", () => {

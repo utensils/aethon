@@ -40,6 +40,16 @@ pub struct UiConfig {
 #[derive(Default, Deserialize)]
 pub struct AgentConfig {
     pub model: Option<String>,
+    /// Optional Aethon-owned override for the provider/SDK request timeout,
+    /// in seconds. Omitted leaves pi's own `retry.provider.timeoutMs` behavior
+    /// unchanged. Exposed to the bridge as seconds; the bridge converts to ms.
+    pub provider_timeout_seconds: Option<u32>,
+    /// Floor applied to model-supplied bash tool timeouts, in seconds. Missing
+    /// or invalid values use the historical 5 minute default.
+    pub bash_timeout_floor_seconds: Option<u32>,
+    /// Default inline subagent wall-clock ceiling, in seconds. Individual
+    /// subagent frontmatter may override this.
+    pub subagent_timeout_seconds: Option<u32>,
     /// Minutes a per-tab agent worker may sit idle (no prompt in flight, no
     /// traffic) before the background sweep retires it; it respawns lazily from
     /// the persisted session on the next message. `0` disables retirement.
@@ -306,6 +316,8 @@ pub fn default_voice_hold_hotkey() -> Option<&'static str> {
 pub const EXT_STATE_MAX_KB: u32 = 8 * 1024;
 pub const EXT_STATE_WARN_KB_DEFAULT: u32 = 64;
 pub const EXT_STATE_HARD_KB_DEFAULT: u32 = 512;
+pub const AGENT_TIMEOUT_SECONDS_DEFAULT: u32 = 300;
+pub const AGENT_TIMEOUT_SECONDS_MAX: u32 = 24 * 60 * 60;
 
 /// Resolve the (warn, hard) state-size limits in KB. Applies defaults for
 /// missing values, clamps each to [1, EXT_STATE_MAX_KB], then guarantees
@@ -318,6 +330,20 @@ pub fn resolve_ext_state_limits(warn: Option<u32>, hard: Option<u32>) -> (u32, u
     let hard_kb_raw = clamp(hard.unwrap_or(EXT_STATE_HARD_KB_DEFAULT));
     let hard_kb = hard_kb_raw.max(warn_kb);
     (warn_kb, hard_kb)
+}
+
+pub fn normalize_optional_timeout_seconds(value: Option<u32>) -> Option<u32> {
+    value.and_then(|n| {
+        if n == 0 {
+            None
+        } else {
+            Some(n.min(AGENT_TIMEOUT_SECONDS_MAX))
+        }
+    })
+}
+
+pub fn normalize_timeout_seconds(value: Option<u32>) -> u32 {
+    normalize_optional_timeout_seconds(value).unwrap_or(AGENT_TIMEOUT_SECONDS_DEFAULT)
 }
 
 /// Parse a TOML config string into the canonical JSON shape the frontend
@@ -340,6 +366,11 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
     let thinking_visibility = normalize_visibility(cfg.ui.thinking_visibility.as_deref());
     let tool_calls_visibility = normalize_tool_visibility(cfg.ui.tool_calls_visibility.as_deref());
+    let provider_timeout_seconds =
+        normalize_optional_timeout_seconds(cfg.agent.provider_timeout_seconds);
+    let bash_timeout_floor_seconds =
+        normalize_timeout_seconds(cfg.agent.bash_timeout_floor_seconds);
+    let subagent_timeout_seconds = normalize_timeout_seconds(cfg.agent.subagent_timeout_seconds);
     let default_command = cfg
         .shell
         .default_command
@@ -374,6 +405,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "agent": {
             "model": cfg.agent.model,
+            "providerTimeoutSeconds": provider_timeout_seconds,
+            "bashTimeoutFloorSeconds": bash_timeout_floor_seconds,
+            "subagentTimeoutSeconds": subagent_timeout_seconds,
             "idleRetireMinutes": cfg.agent.idle_retire_minutes.map(|n| n.min(1440)).unwrap_or(15),
         },
         "shell": {
@@ -461,6 +495,18 @@ mod tests {
         assert_eq!(v["ui"]["fontSize"], serde_json::Value::Null);
         assert_eq!(v["ui"]["restoreTabs"], serde_json::Value::Null);
         assert_eq!(v["agent"]["model"], serde_json::Value::Null);
+        assert_eq!(
+            v["agent"]["providerTimeoutSeconds"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            v["agent"]["bashTimeoutFloorSeconds"],
+            AGENT_TIMEOUT_SECONDS_DEFAULT
+        );
+        assert_eq!(
+            v["agent"]["subagentTimeoutSeconds"],
+            AGENT_TIMEOUT_SECONDS_DEFAULT
+        );
     }
 
     #[test]
@@ -480,9 +526,49 @@ mod tests {
 
     #[test]
     fn parse_config_toml_extracts_agent_section() {
-        let v = parse_config_toml("[agent]\nmodel = \"anthropic/claude-sonnet-4-6\"\n");
+        let v = parse_config_toml(
+            "[agent]\nmodel = \"anthropic/claude-sonnet-4-6\"\nprovider_timeout_seconds = 120\nbash_timeout_floor_seconds = 45\nsubagent_timeout_seconds = 900\n",
+        );
         assert_eq!(v["agent"]["model"], "anthropic/claude-sonnet-4-6");
+        assert_eq!(v["agent"]["providerTimeoutSeconds"], 120);
+        assert_eq!(v["agent"]["bashTimeoutFloorSeconds"], 45);
+        assert_eq!(v["agent"]["subagentTimeoutSeconds"], 900);
         assert_eq!(v["ui"]["theme"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn agent_timeout_seconds_normalize_and_clamp() {
+        let disabled = parse_config_toml(
+            "[agent]\nprovider_timeout_seconds = 0\nbash_timeout_floor_seconds = 0\nsubagent_timeout_seconds = 0\n",
+        );
+        assert_eq!(
+            disabled["agent"]["providerTimeoutSeconds"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            disabled["agent"]["bashTimeoutFloorSeconds"],
+            AGENT_TIMEOUT_SECONDS_DEFAULT
+        );
+        assert_eq!(
+            disabled["agent"]["subagentTimeoutSeconds"],
+            AGENT_TIMEOUT_SECONDS_DEFAULT
+        );
+
+        let clamped = parse_config_toml(
+            "[agent]\nprovider_timeout_seconds = 999999\nbash_timeout_floor_seconds = 999999\nsubagent_timeout_seconds = 999999\n",
+        );
+        assert_eq!(
+            clamped["agent"]["providerTimeoutSeconds"],
+            AGENT_TIMEOUT_SECONDS_MAX
+        );
+        assert_eq!(
+            clamped["agent"]["bashTimeoutFloorSeconds"],
+            AGENT_TIMEOUT_SECONDS_MAX
+        );
+        assert_eq!(
+            clamped["agent"]["subagentTimeoutSeconds"],
+            AGENT_TIMEOUT_SECONDS_MAX
+        );
     }
 
     #[test]
@@ -654,6 +740,24 @@ prompt_before_close = false
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
             assert!(v["agent"].as_object().unwrap().contains_key("model"));
+            assert!(
+                v["agent"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("providerTimeoutSeconds")
+            );
+            assert!(
+                v["agent"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("bashTimeoutFloorSeconds")
+            );
+            assert!(
+                v["agent"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("subagentTimeoutSeconds")
+            );
             assert!(
                 v["extensions"]
                     .as_object()

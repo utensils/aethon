@@ -11,6 +11,7 @@
  */
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { MAX_AGENT_TIMEOUT_SECONDS } from "../config";
 
 export type SubagentScope = "user" | "project";
 export type SubagentSurface = "inline" | "tab";
@@ -23,6 +24,8 @@ export interface SubagentFields {
   /** undefined = inherit all tools; [] = none; [...] = allowlist. */
   tools?: string[];
   surface: SubagentSurface;
+  /** Inline run timeout override, in seconds. Undefined uses global config. */
+  timeoutSeconds?: number;
   systemPrompt: string;
 }
 
@@ -89,6 +92,8 @@ export function parseSubagentContent(raw: string): ParseSubagentResult {
     typeof fields.model === "string" && fields.model.trim()
       ? fields.model.trim()
       : undefined;
+  const timeoutSeconds = parseTimeoutField(fields.timeout);
+  if (timeoutSeconds.error) return { error: timeoutSeconds.error };
 
   return {
     fields: {
@@ -96,6 +101,7 @@ export function parseSubagentContent(raw: string): ParseSubagentResult {
       model,
       tools: parseToolsField(fields.tools),
       surface: fields.surface === "tab" ? "tab" : "inline",
+      timeoutSeconds: timeoutSeconds.value,
       systemPrompt: body.trim(),
     },
   };
@@ -114,6 +120,24 @@ function parseToolsField(value: unknown): string[] | undefined {
   return [...new Set(tools)];
 }
 
+function parseTimeoutField(value: unknown): {
+  value?: number;
+  error?: string;
+} {
+  if (value === undefined || value === null || value === "") return {};
+  if (typeof value === "string" && value.trim()) {
+    return parseTimeoutField(Number(value));
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return {
+      error: "frontmatter `timeout` must be a positive number of seconds",
+    };
+  }
+  return {
+    value: Math.min(Math.max(Math.floor(value), 1), MAX_AGENT_TIMEOUT_SECONDS),
+  };
+}
+
 /** Serialize editor fields back to a markdown+frontmatter file body. Default
  *  fields (inline surface, inherited tools) are omitted to keep files clean. */
 export function serializeSubagent(fields: SubagentFields): string {
@@ -123,6 +147,9 @@ export function serializeSubagent(fields: SubagentFields): string {
   if (fields.model?.trim()) frontmatter.model = fields.model.trim();
   if (fields.tools !== undefined) frontmatter.tools = fields.tools;
   if (fields.surface === "tab") frontmatter.surface = "tab";
+  if (fields.timeoutSeconds !== undefined) {
+    frontmatter.timeout = fields.timeoutSeconds;
+  }
   const yaml = stringifyYaml(frontmatter).trimEnd();
   const body = fields.systemPrompt.trim();
   return `---\n${yaml}\n---\n${body ? `${body}\n` : ""}`;

@@ -55,6 +55,10 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 import { logger } from "./logger";
+import {
+  applyProviderTimeoutOverride,
+  runtimeConfigFromEnv,
+} from "./runtime-config";
 import { resolveStateLimits } from "./state-limits";
 import {
   buildSubagentsSection,
@@ -113,6 +117,7 @@ async function main(): Promise<void> {
     process.env.AETHON_STATE_WARN_KB,
     process.env.AETHON_STATE_HARD_KB,
   );
+  const runtimeConfig = runtimeConfigFromEnv();
 
   const state = new AethonAgentState({
     userDir,
@@ -127,12 +132,14 @@ async function main(): Promise<void> {
     statePayloadHardKb: hardKb,
     statePayloadWarnBytes: warnKb * 1024,
     statePayloadHardBytes: hardKb * 1024,
+    ...runtimeConfig,
   });
 
   // -- Pi service singletons ----------------------------------------------
   state.authStorage = AuthStorage.create();
   state.modelRegistry = ModelRegistry.create(state.authStorage);
   state.settingsManager = SettingsManager.create(process.cwd());
+  applyProviderTimeoutOverride(state);
   state.authProfiles = loadAuthProfiles(state.userDir);
 
   // -- User's persisted "disabled extensions" list -----------------------

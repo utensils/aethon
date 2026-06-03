@@ -206,6 +206,26 @@ fn apply_user_env(app: &AppHandle, command: &mut Command) {
         .unwrap_or(512);
     command.env("AETHON_STATE_WARN_KB", warn_kb.to_string());
     command.env("AETHON_STATE_HARD_KB", hard_kb.to_string());
+    if let Some(provider_timeout) = cfg_json["agent"]["providerTimeoutSeconds"].as_u64() {
+        command.env(
+            "AETHON_PROVIDER_TIMEOUT_SECONDS",
+            provider_timeout.to_string(),
+        );
+    }
+    let bash_timeout_floor = cfg_json["agent"]["bashTimeoutFloorSeconds"]
+        .as_u64()
+        .unwrap_or(crate::helpers::AGENT_TIMEOUT_SECONDS_DEFAULT as u64);
+    let subagent_timeout = cfg_json["agent"]["subagentTimeoutSeconds"]
+        .as_u64()
+        .unwrap_or(crate::helpers::AGENT_TIMEOUT_SECONDS_DEFAULT as u64);
+    command.env(
+        "AETHON_BASH_TIMEOUT_FLOOR_SECONDS",
+        bash_timeout_floor.to_string(),
+    );
+    command.env(
+        "AETHON_SUBAGENT_TIMEOUT_SECONDS",
+        subagent_timeout.to_string(),
+    );
 
     // Guardrails: the soft anchor is appended to the per-turn working-context
     // the agent injects; the hard-enforce default is consumed by the agent's

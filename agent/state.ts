@@ -80,6 +80,7 @@ import type { AethonApi } from "./aethon-api";
 export type AethonExtensionApi = AethonApi;
 
 import type { LoadSubagentsResult } from "./subagents/types";
+import { DEFAULT_AGENT_TIMEOUT_SECONDS } from "./runtime-config";
 
 export interface AethonExtensionModule {
   register?: (api: AethonExtensionApi) => void | Promise<void>;
@@ -313,6 +314,9 @@ export interface AethonAgentStateOptions {
   statePayloadWarnBytes: number;
   statePayloadWarnKb: number;
   statePayloadHardKb: number;
+  providerTimeoutMs?: number;
+  bashTimeoutFloorSeconds?: number;
+  subagentTimeoutSeconds?: number;
 }
 
 /**
@@ -344,6 +348,12 @@ export class AethonAgentState {
   readonly statePayloadHardBytes: number;
   readonly statePayloadWarnKb: number;
   readonly statePayloadHardKb: number;
+  /** Optional Aethon-owned provider request timeout override, in ms. */
+  providerTimeoutMs: number | undefined;
+  /** Floor applied to model-supplied bash tool timeouts, in seconds. */
+  bashTimeoutFloorSeconds: number;
+  /** Default wall-clock ceiling for inline subagent runs, in seconds. */
+  subagentTimeoutSeconds: number;
 
   // -- Service singletons (set by main() once pi is up) --------------------
   authStorage!: AuthStorage;
@@ -550,6 +560,11 @@ export class AethonAgentState {
     this.statePayloadHardBytes = opts.statePayloadHardBytes;
     this.statePayloadWarnKb = opts.statePayloadWarnKb;
     this.statePayloadHardKb = opts.statePayloadHardKb;
+    this.providerTimeoutMs = opts.providerTimeoutMs;
+    this.bashTimeoutFloorSeconds =
+      opts.bashTimeoutFloorSeconds ?? DEFAULT_AGENT_TIMEOUT_SECONDS;
+    this.subagentTimeoutSeconds =
+      opts.subagentTimeoutSeconds ?? DEFAULT_AGENT_TIMEOUT_SECONDS;
 
     this.frontendReadyPromise = new Promise((resolve) => {
       this.frontendReadyResolvers.push(resolve);

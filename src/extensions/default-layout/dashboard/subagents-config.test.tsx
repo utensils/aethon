@@ -121,6 +121,39 @@ describe("SubagentsConfig", () => {
     expect(writeCall?.[1].content).toContain("description: Builds features");
   });
 
+  it("clamps editor timeout values to the global maximum", async () => {
+    render(
+      <SubagentsConfig
+        component={comp({ scope: "user" })}
+        state={state}
+        onEvent={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("reviewer")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("+ New subagent"));
+    fireEvent.change(screen.getByPlaceholderText("reviewer"), {
+      target: { value: "builder" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/Reviews diffs for correctness/),
+      { target: { value: "Builds features" } },
+    );
+    const timeoutInput = screen.getByLabelText("Timeout (seconds)");
+    expect(timeoutInput.getAttribute("max")).toBe("86400");
+    fireEvent.change(timeoutInput, { target: { value: "999999" } });
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(
+        "subagents_write",
+        expect.objectContaining({ name: "builder" }),
+      ),
+    );
+    const writeCall = invoke.mock.calls.find((c) => c[0] === "subagents_write");
+    expect(writeCall?.[1].content).toContain("timeout: 86400");
+  });
+
   it("blocks save when the description is empty", async () => {
     render(
       <SubagentsConfig

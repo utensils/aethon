@@ -14,10 +14,10 @@ import { mkdirSync } from "node:fs";
 import {
   SessionManager,
   createAgentSession,
-  createBashToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "../shell-tools";
+import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildSubagentTaskTool } from "../subagents/task-tool";
 import {
@@ -104,7 +104,7 @@ export async function ensureTab(
   // baseline built-in. The hook receives pi's BashSpawnContext and
   // mutates `env` to layer the project's Nix devshell over the host
   // env — same source of truth as the Rust PTY intercept.
-  const devshellBashTool = createBashToolDefinition(resolvedCwd, {
+  const devshellBashTool = createAethonBashToolDefinition(state, resolvedCwd, {
     spawnHook: buildDevshellSpawnHook(state, deps),
   });
   const authServices = authProfileServicesForTab(

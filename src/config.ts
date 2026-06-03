@@ -52,6 +52,12 @@ export interface AethonConfig {
   };
   agent: {
     model: string | null;
+    /** Optional Aethon-owned provider/SDK request timeout override. */
+    providerTimeoutSeconds: number | null;
+    /** Floor applied to model-supplied bash tool timeouts. */
+    bashTimeoutFloorSeconds: number;
+    /** Default inline subagent wall-clock ceiling. */
+    subagentTimeoutSeconds: number;
   };
   shell: {
     /** Initial share mode for new shell tabs. Defaults to `private` —
@@ -116,6 +122,9 @@ export interface AethonConfig {
   };
 }
 
+export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300;
+export const MAX_AGENT_TIMEOUT_SECONDS = 24 * 60 * 60;
+
 const DEFAULTS: AethonConfig = {
   ui: {
     theme: null,
@@ -126,7 +135,12 @@ const DEFAULTS: AethonConfig = {
     thinkingVisibility: "show",
     toolCallsVisibility: "show",
   },
-  agent: { model: null },
+  agent: {
+    model: null,
+    providerTimeoutSeconds: null,
+    bashTimeoutFloorSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
+    subagentTimeoutSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
+  },
   shell: {
     defaultShareMode: "private",
     autoRestartAgent: true,
@@ -206,6 +220,15 @@ export function getConfig(): Promise<AethonConfig> {
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
+          providerTimeoutSeconds: normalizeOptionalTimeoutSeconds(
+            obj?.agent?.providerTimeoutSeconds,
+          ),
+          bashTimeoutFloorSeconds: normalizeTimeoutSeconds(
+            obj?.agent?.bashTimeoutFloorSeconds,
+          ),
+          subagentTimeoutSeconds: normalizeTimeoutSeconds(
+            obj?.agent?.subagentTimeoutSeconds,
+          ),
         },
         shell: {
           defaultShareMode: normalizeShareMode(obj?.shell?.defaultShareMode),
@@ -334,4 +357,16 @@ function normalizeDevshellMode(
     return value;
   }
   return "auto";
+}
+
+function normalizeOptionalTimeoutSeconds(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.min(Math.max(Math.floor(value), 1), MAX_AGENT_TIMEOUT_SECONDS);
+}
+
+function normalizeTimeoutSeconds(value: unknown): number {
+  return normalizeOptionalTimeoutSeconds(value) ?? DEFAULT_AGENT_TIMEOUT_SECONDS;
 }

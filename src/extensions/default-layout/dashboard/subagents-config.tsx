@@ -25,6 +25,7 @@ import {
   type SubagentScope,
   type SubagentSurface,
 } from "../../../subagents";
+import { MAX_AGENT_TIMEOUT_SECONDS } from "../../../config";
 
 /** Built-in pi tools offered as checkboxes when restricting a subagent. */
 const BUILTIN_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"];
@@ -47,6 +48,7 @@ interface EditorState {
   toolsMode: ToolsMode;
   tools: string[];
   surface: SubagentSurface;
+  timeoutSeconds: string;
   systemPrompt: string;
 }
 
@@ -59,6 +61,7 @@ function blankEditor(): EditorState {
     toolsMode: "inherit",
     tools: [],
     surface: "inline",
+    timeoutSeconds: "",
     systemPrompt: "",
   };
 }
@@ -79,6 +82,8 @@ function editorFromRow(row: Row): EditorState {
     toolsMode,
     tools: f?.tools ?? [],
     surface: f?.surface ?? "inline",
+    timeoutSeconds:
+      typeof f?.timeoutSeconds === "number" ? String(f.timeoutSeconds) : "",
     systemPrompt: f?.systemPrompt ?? "",
   };
 }
@@ -95,8 +100,16 @@ function editorToFields(editor: EditorState): SubagentFields {
     model: editor.model.trim() || undefined,
     tools,
     surface: editor.surface,
+    timeoutSeconds: parseEditorTimeout(editor.timeoutSeconds),
     systemPrompt: editor.systemPrompt,
   };
+}
+
+function parseEditorTimeout(value: string): number | undefined {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.min(parsed, MAX_AGENT_TIMEOUT_SECONDS)
+    : undefined;
 }
 
 function errMessage(err: unknown): string {
@@ -292,6 +305,11 @@ export function SubagentsConfig({ component, state }: BuiltinComponentProps) {
                     tab
                   </span>
                 )}
+                {typeof row.fields?.timeoutSeconds === "number" && (
+                  <span className="ae-subagents-badge">
+                    {row.fields.timeoutSeconds}s
+                  </span>
+                )}
               </div>
               <div className="ae-subagents-row-actions">
                 <button
@@ -440,6 +458,19 @@ function SubagentEditor({
           <option value="inline">Inline (nested card in the turn)</option>
           <option value="tab">Tab (its own agent tab)</option>
         </select>
+      </label>
+
+      <label className="ae-subagents-field">
+        <span className="ae-subagents-label">Timeout (seconds)</span>
+        <input
+          type="number"
+          className="ae-subagents-input"
+          min={1}
+          max={MAX_AGENT_TIMEOUT_SECONDS}
+          value={editor.timeoutSeconds}
+          placeholder="Use global default"
+          onChange={(e) => set("timeoutSeconds", e.target.value)}
+        />
       </label>
 
       <label className="ae-subagents-field">

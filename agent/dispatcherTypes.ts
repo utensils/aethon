@@ -48,6 +48,7 @@ export interface InboundMessage {
   path?: string;
   value?: unknown;
   payload?: unknown;
+  config?: unknown;
   theme?: unknown;
   mutationId?: string;
   success?: boolean;

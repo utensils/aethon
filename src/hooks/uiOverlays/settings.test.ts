@@ -27,7 +27,12 @@ const baseConfig: AethonConfig = {
     thinkingVisibility: "show",
     toolCallsVisibility: "show",
   },
-  agent: { model: "openai/gpt-5.5" },
+  agent: {
+    model: "openai/gpt-5.5",
+    providerTimeoutSeconds: null,
+    bashTimeoutFloorSeconds: 300,
+    subagentTimeoutSeconds: 300,
+  },
   shell: {
     defaultShareMode: "private",
     autoRestartAgent: true,
@@ -128,7 +133,10 @@ describe("useSettingsOverlay", () => {
 
     await vi.advanceTimersByTimeAsync(1);
 
-    expect(invoke).toHaveBeenCalledTimes(1);
+    const writeCalls = vi
+      .mocked(invoke)
+      .mock.calls.filter((call) => call[0] === "write_config");
+    expect(writeCalls).toHaveLength(1);
     expect(invoke).toHaveBeenCalledWith("write_config", {
       config: expect.objectContaining({
         ui: expect.objectContaining({ theme: "aether", fontSize: 18 }),
@@ -137,6 +145,9 @@ describe("useSettingsOverlay", () => {
         voice: baseConfig.voice,
         devshell: baseConfig.devshell,
       }),
+    });
+    expect(invoke).toHaveBeenCalledWith("agent_broadcast_command", {
+      payload: expect.stringContaining("runtime_config_changed"),
     });
   });
 
@@ -241,6 +252,7 @@ describe("useSettingsOverlay", () => {
             resolveFirst = () => resolve(undefined);
           }),
       )
+      .mockResolvedValueOnce(undefined)
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -275,8 +287,11 @@ describe("useSettingsOverlay", () => {
       await Promise.resolve();
     });
 
-    expect(invoke).toHaveBeenCalledTimes(2);
-    expect(invoke).toHaveBeenNthCalledWith(2, "write_config", {
+    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(invoke).toHaveBeenNthCalledWith(2, "agent_broadcast_command", {
+      payload: expect.stringContaining("runtime_config_changed"),
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "write_config", {
       config: expect.objectContaining({
         ui: expect.objectContaining({ theme: "brink" }),
       }),

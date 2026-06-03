@@ -14,6 +14,11 @@ import { handleSetExtensionDisabled } from "./extensionControl";
 import { ackMutation, markFrontendReady } from "./mutation-ack";
 import { onDevshellEvent } from "./devshell";
 import { handleSubagentsChanged } from "./subagents/changed";
+import {
+  applyProviderTimeoutOverride,
+  applyRuntimeConfig,
+  runtimeConfigFromConfig,
+} from "./runtime-config";
 import { handleForkSession, handleRollbackSession } from "./session-branch";
 import { handleNativeSlashCommand } from "./nativeSlash";
 import { handleSetProject } from "./projectLifecycle";
@@ -196,6 +201,10 @@ export async function dispatchInboundMessage(
         break;
       case "subagents_changed":
         await handleSubagentsChanged(state, deps);
+        break;
+      case "runtime_config_changed":
+        applyRuntimeConfig(state, runtimeConfigFromConfig(msg.config));
+        applyProviderTimeoutOverride(state);
         break;
       case "rollback_session":
         await handleRollbackSession(state, deps, msg);

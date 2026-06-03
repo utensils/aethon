@@ -16,7 +16,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
-import type { AethonConfig } from "../../../config";
+import {
+  DEFAULT_AGENT_TIMEOUT_SECONDS,
+  MAX_AGENT_TIMEOUT_SECONDS,
+  type AethonConfig,
+} from "../../../config";
 import {
   listVoiceProviders,
   prepareVoiceProvider,
@@ -263,6 +267,69 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                 >
                   Open system-prompt.md
                 </button>
+              </Field>
+              <Field label="Provider request timeout (seconds)">
+                <input
+                  type="number"
+                  className="ae-settings-input"
+                  min={0}
+                  max={MAX_AGENT_TIMEOUT_SECONDS}
+                  placeholder="Use provider default"
+                  value={eff.agent.providerTimeoutSeconds ?? ""}
+                  onChange={(e) =>
+                    update({
+                      agent: {
+                        ...eff.agent,
+                        providerTimeoutSeconds:
+                          e.target.value === ""
+                            ? null
+                            : clampTimeoutInput(e.target.value, null),
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Bash timeout floor (seconds)">
+                <input
+                  type="number"
+                  className="ae-settings-input"
+                  min={1}
+                  max={MAX_AGENT_TIMEOUT_SECONDS}
+                  value={eff.agent.bashTimeoutFloorSeconds}
+                  onChange={(e) =>
+                    update({
+                      agent: {
+                        ...eff.agent,
+                        bashTimeoutFloorSeconds:
+                          clampTimeoutInput(
+                            e.target.value,
+                            DEFAULT_AGENT_TIMEOUT_SECONDS,
+                          ) ?? DEFAULT_AGENT_TIMEOUT_SECONDS,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Inline subagent timeout (seconds)">
+                <input
+                  type="number"
+                  className="ae-settings-input"
+                  min={1}
+                  max={MAX_AGENT_TIMEOUT_SECONDS}
+                  value={eff.agent.subagentTimeoutSeconds}
+                  onChange={(e) =>
+                    update({
+                      agent: {
+                        ...eff.agent,
+                        subagentTimeoutSeconds:
+                          clampTimeoutInput(
+                            e.target.value,
+                            DEFAULT_AGENT_TIMEOUT_SECONDS,
+                          ) ?? DEFAULT_AGENT_TIMEOUT_SECONDS,
+                      },
+                    })
+                  }
+                />
               </Field>
             </Section>
 
@@ -612,6 +679,15 @@ function Field(props: { label: string; children: React.ReactNode }) {
       <span className="ae-settings-field-control">{props.children}</span>
     </label>
   );
+}
+
+function clampTimeoutInput(
+  value: string,
+  fallback: number | null,
+): number | null {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, MAX_AGENT_TIMEOUT_SECONDS);
 }
 
 function VoiceProviders() {

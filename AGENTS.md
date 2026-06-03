@@ -479,6 +479,15 @@ The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 | `AETHON_SESSIONS_DIR` | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts.                                                                                                                                    |
 | `AETHON_RELEASE_MODE` | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
 | `AETHON_PROJECT_ROOT` | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
+| `AETHON_PROVIDER_TIMEOUT_SECONDS` | Optional Aethon-owned provider/SDK request timeout override from `[agent] provider_timeout_seconds`; omitted leaves pi's provider retry settings unchanged.                                                                                       |
+| `AETHON_BASH_TIMEOUT_FLOOR_SECONDS` | Floor applied to model-supplied bash tool timeouts from `[agent] bash_timeout_floor_seconds`.                                                                                                                                                     |
+| `AETHON_SUBAGENT_TIMEOUT_SECONDS` | Default inline subagent wall-clock ceiling from `[agent] subagent_timeout_seconds`; individual subagent frontmatter may override it with `timeout: <seconds>`.                                                                                   |
+
+Timeouts must be named config fields or constants, never inline numeric
+literals. Keep the Settings UI, `helpers::parse_config_toml`, bridge env
+wiring, and agent runtime constants in sync when changing timeout policy.
+Subagent definitions use seconds in frontmatter (`timeout: 900`), while the
+provider override is converted to milliseconds only at the bridge boundary.
 
 The bridge's `agent/system-prompt.ts` composes a layered prompt using the
 static template in `agent/system-prompt/prompt-template.ts` and the
