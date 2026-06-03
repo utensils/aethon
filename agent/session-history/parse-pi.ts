@@ -198,15 +198,18 @@ export function parseSessionHistoryLines(
     const text = textFromContent(msg.content);
     const thinking = role === "agent" ? thinkingFromContent(msg.content) : "";
 
-    const id =
-      typeof record.id === "string" && record.id.length > 0
-        ? record.id
-        : `restored-${messages.length}`;
+    const hasRealId = typeof record.id === "string" && record.id.length > 0;
+    const id = hasRealId
+      ? (record.id as string)
+      : `restored-${messages.length}`;
     if ((text || thinking) && !seen.has(id)) {
       seen.add(id);
       const createdAt = parseMessageTime(record, msg);
       messages.push({
         id,
+        // The pi entry id is the rollback/fork handle. Only carry it when it's
+        // a real session id (not the positional `restored-N` fallback).
+        ...(hasRealId ? { entryId: id } : {}),
         role,
         ...(text ? { text: trimText(text) } : {}),
         ...(thinking ? { thinking: trimText(thinking) } : {}),

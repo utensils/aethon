@@ -365,6 +365,9 @@ export function handleSessionEvent(
         rollResponseMessage(rec);
         clearLiveContextUsageEstimate(rec);
         emitContextUsage(state, deps, tabId, rec);
+        // Back-fill pi entry ids onto the just-streamed messages so the
+        // rollback / fork affordances work without a reload.
+        emitEntryIds(deps, rec, tabId);
         deps.send({ type: "response_end", tabId });
       }
       break;
@@ -421,5 +424,39 @@ function summarizeToolResult(result: unknown): string {
     return JSON.stringify(result).slice(0, 16_384);
   } catch {
     return String(result).slice(0, 16_384);
+  }
+}
+
+/** Emit the current branch's user/assistant message entry ids, in order, so
+ *  the frontend can back-fill `entryId` onto its live transcript and offer
+ *  rollback / fork before a reload. Best-effort: branching is the user's escape
+ *  hatch, never a turn-critical path, so any failure is swallowed. */
+function emitEntryIds(
+  deps: TabLifecycleDeps,
+  rec: TabRecord,
+  tabId: string,
+): void {
+  let branch: ReadonlyArray<unknown>;
+  try {
+    branch = rec.session.sessionManager.getBranch();
+  } catch {
+    return;
+  }
+  const entries: { entryId: string; role: "user" | "agent" }[] = [];
+  for (const raw of branch) {
+    const entry = raw as {
+      type?: string;
+      id?: unknown;
+      message?: { role?: unknown };
+    };
+    if (entry.type !== "message" || typeof entry.id !== "string") continue;
+    const role = entry.message?.role;
+    if (role === "user") entries.push({ entryId: entry.id, role: "user" });
+    else if (role === "assistant") {
+      entries.push({ entryId: entry.id, role: "agent" });
+    }
+  }
+  if (entries.length > 0) {
+    deps.send({ type: "entry_ids", tabId, entries });
   }
 }

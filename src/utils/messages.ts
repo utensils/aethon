@@ -234,6 +234,10 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
       typeof record.createdAt === "number" && Number.isFinite(record.createdAt)
         ? record.createdAt
         : undefined;
+    const entryId =
+      typeof record.entryId === "string" && record.entryId.length > 0
+        ? record.entryId
+        : undefined;
     if (!text && !thinking && !a2ui && attachments.length === 0) continue;
     messages.push(
       trimMessage({
@@ -241,6 +245,7 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
           typeof record.id === "string" && record.id.length > 0
             ? record.id
             : crypto.randomUUID(),
+        ...(entryId ? { entryId } : {}),
         role,
         ...(text ? { text } : {}),
         ...(thinking ? { thinking } : {}),

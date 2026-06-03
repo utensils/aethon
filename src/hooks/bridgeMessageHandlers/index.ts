@@ -16,6 +16,7 @@ import {
 } from "./authProfiles";
 import { handleA2ui } from "./a2ui";
 import { handleContextUsage } from "./contextUsage";
+import { handleEntryIds } from "./entryIds";
 import { handleError } from "./error";
 import { handleExtensionComponents } from "./extensionComponents";
 import { handleExtensionEventRoutes } from "./extensionEventRoutes";
@@ -61,6 +62,7 @@ export const bridgeMessageHandlers: Readonly<
   auth_profile_login_event: handleAuthProfileLoginEvent,
   auth_profiles: handleAuthProfiles,
   context_usage: handleContextUsage,
+  entry_ids: handleEntryIds,
   error: handleError,
   extension_components: handleExtensionComponents,
   extension_event_routes: handleExtensionEventRoutes,

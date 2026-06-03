@@ -138,6 +138,18 @@ describe("coerceChatMessages", () => {
     expect(out[0].id).toBe("abc");
   });
 
+  it("threads the pi entry id when present", () => {
+    const out = coerceChatMessages([
+      { id: "abc", entryId: "e1f2", role: "user", text: "hi" },
+    ]);
+    expect(out[0].entryId).toBe("e1f2");
+  });
+
+  it("omits entryId when absent", () => {
+    const out = coerceChatMessages([{ id: "abc", role: "user", text: "hi" }]);
+    expect(out[0].entryId).toBeUndefined();
+  });
+
   it("preserves finite creation timestamps", () => {
     const out = coerceChatMessages([
       { id: "abc", role: "system", text: "warning", createdAt: 1_234 },
