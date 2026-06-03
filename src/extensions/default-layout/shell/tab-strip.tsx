@@ -99,6 +99,10 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     setContextMenu({ x: event.clientX, y: event.clientY, tab });
   };
 
+  const openOverviewMenu = (event: MouseEvent) => {
+    openTabMenu(event, { id: OVERVIEW_TAB_ID, label: "overview" });
+  };
+
   useEffect(() => {
     if (!renamingTabId) return;
     renameEndingRef.current = false;
@@ -150,6 +154,31 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
   const buildMenuItems = (): ContextMenuItem[] => {
     if (!contextMenu) return [];
     const tab = contextMenu.tab;
+
+    if (tab.id === OVERVIEW_TAB_ID) {
+      const hasTopStripTabs = tabs.length > 0;
+      return [
+        {
+          id: "new-tab",
+          label: "New Tab",
+          onSelect: () => onEvent("new"),
+        },
+        { type: "separator" },
+        {
+          id: "close-others",
+          label: "Close Others",
+          disabled: !hasTopStripTabs,
+          onSelect: () => onEvent("close-others", { tabId: OVERVIEW_TAB_ID }),
+        },
+        {
+          id: "close-all",
+          label: "Close All Sessions",
+          disabled: !hasTopStripTabs,
+          onSelect: () => onEvent("close-all", { tabId: OVERVIEW_TAB_ID }),
+        },
+      ];
+    }
+
     const closeFamily: ContextMenuItem[] = [
       {
         id: "close-tab",
@@ -241,6 +270,7 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
           e.preventDefault();
           onEvent("select", { tabId: OVERVIEW_TAB_ID });
         }}
+        onContextMenu={openOverviewMenu}
       >
         <span className="a2ui-tab-overview-glyph" aria-hidden="true">
           Æ

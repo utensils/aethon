@@ -8,7 +8,11 @@ import {
   ensurePickerHasModel,
   ensureTab,
 } from "./tab-lifecycle";
-import { modelRegistryForModelId } from "./auth-profiles";
+import {
+  modelRegistryForModelId,
+  refreshAuthServicesForTab,
+  refreshTabSessionModelFromAuthServices,
+} from "./auth-profiles";
 import { detectSubagentMention } from "./subagents/steer";
 import { getSubagentsForCwd } from "./subagents";
 import { emitContextUsage } from "./context-usage";
@@ -47,11 +51,18 @@ export async function handleChat(
   if (explicitSubagent) {
     state.pendingExplicitSubagent.set(tabId, explicitSubagent);
   }
+  const modelId =
+    typeof msg.model === "string" && msg.model.length > 0
+      ? msg.model
+      : undefined;
+  const authServicesRefreshed = refreshAuthServicesForTab(state, tabId, {
+    modelId,
+  });
   let initialModel: Model<Api> | undefined;
-  if (typeof msg.model === "string" && msg.model.length > 0) {
-    const [provider, ...rest] = msg.model.split("/");
+  if (modelId) {
+    const [provider, ...rest] = modelId.split("/");
     initialModel =
-      modelRegistryForModelId(state, tabId, msg.model).find(
+      modelRegistryForModelId(state, tabId, modelId).find(
         provider,
         rest.join("/"),
       ) ?? undefined;
@@ -62,6 +73,9 @@ export async function handleChat(
     tabId,
     cwdOverride || initialModel ? { cwdOverride, initialModel } : {},
   );
+  if (authServicesRefreshed) {
+    refreshTabSessionModelFromAuthServices(state, tabId);
+  }
   const wantsSteer = msg.mode === "steer";
   const images = normalizeImages(msg.images);
   let content: string;
@@ -198,7 +212,13 @@ export async function handleSetModel(
     deps.send({ type: "error", tabId, message: "set_model: missing id" });
     return;
   }
+  const authServicesRefreshed = refreshAuthServicesForTab(state, tabId, {
+    modelId: msg.id,
+  });
   const tab = await ensureTab(state, deps, tabId);
+  if (authServicesRefreshed) {
+    refreshTabSessionModelFromAuthServices(state, tabId);
+  }
   if (tab.promptInFlight) {
     deps.send({
       type: "notice",
