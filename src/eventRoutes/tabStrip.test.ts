@@ -96,6 +96,29 @@ describe("handleTabStrip", () => {
     expect(mocks.closeTab).not.toHaveBeenCalledWith("sh-1");
   });
 
+  it("close-others from overview closes every non-shell tab", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "ed-1", kind: "editor" },
+          { id: "ag-1", kind: "agent" },
+          { id: "sh-1", kind: "shell" },
+        ],
+      },
+    });
+    await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "close-others",
+        data: { tabId: OVERVIEW_TAB_ID },
+      },
+      ctx,
+    );
+    expect(mocks.closeTab).toHaveBeenCalledWith("ed-1");
+    expect(mocks.closeTab).toHaveBeenCalledWith("ag-1");
+    expect(mocks.closeTab).not.toHaveBeenCalledWith("sh-1");
+  });
+
   it("close-all closes every non-shell tab", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {

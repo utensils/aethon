@@ -167,6 +167,34 @@ describe("TabStrip", () => {
     expect(onEvent).toHaveBeenCalledWith("select", { tabId: OVERVIEW_TAB_ID });
   });
 
+  it("opens the Aethon context menu for the overview pill and suppresses the native menu", () => {
+    const { onEvent } = renderTabStrip();
+    const overviewPill = screen
+      .getAllByRole("tab")
+      .find((el) => el.textContent?.includes("overview"))!;
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 12,
+      clientY: 16,
+    });
+
+    fireEvent(overviewPill, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.getByRole("menu", { name: "Tab actions" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "New Tab" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Close Others" })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: "Close All Sessions" }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close Others" }));
+    expect(onEvent).toHaveBeenCalledWith("close-others", {
+      tabId: OVERVIEW_TAB_ID,
+    });
+  });
+
   it("marks the overview pill active when no tab id is set", () => {
     render(
       <TabStrip
