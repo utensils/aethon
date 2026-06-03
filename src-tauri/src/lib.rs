@@ -172,6 +172,7 @@ pub fn run() {
             commands::session::search_sessions,
             commands::session::delete_session,
             commands::session::export_chat_markdown,
+            commands::session::copy_session_file,
             commands::subagents::subagents_list,
             commands::subagents::subagents_write,
             commands::subagents::subagents_delete,
@@ -399,12 +400,13 @@ mod tests {
     }
 
     #[test]
-    fn subagents_commands_are_wired_to_handler() {
+    fn subagents_and_session_branch_commands_are_wired_to_handler() {
         let src = include_str!("lib.rs");
         for command in [
             "commands::subagents::subagents_list",
             "commands::subagents::subagents_write",
             "commands::subagents::subagents_delete",
+            "commands::session::copy_session_file",
         ] {
             assert!(
                 src.contains(command),
