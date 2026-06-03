@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-03T15:42:31Z",
+  "title": "Design System: Aethon",
+  "extensions": {
+    "colorMeta": {
+      "brand-flame": {
+        "role": "primary",
+        "displayName": "Ember Brass (brand flame)",
+        "canonical": "oklch(0.71 0.19 47)",
+        "tonalRamp": [
+          "oklch(0.20 0.06 48)",
+          "oklch(0.32 0.10 48)",
+          "oklch(0.44 0.14 48)",
+          "oklch(0.56 0.17 48)",
+          "oklch(0.68 0.19 48)",
+          "oklch(0.76 0.18 50)",
+          "oklch(0.86 0.11 55)",
+          "oklch(0.95 0.04 62)"
+        ]
+      },
+      "teal-ember": {
+        "role": "secondary",
+        "displayName": "Teal Ember",
+        "canonical": "oklch(0.79 0.10 187)",
+        "tonalRamp": [
+          "oklch(0.20 0.03 187)",
+          "oklch(0.32 0.05 187)",
+          "oklch(0.44 0.07 187)",
+          "oklch(0.56 0.09 187)",
+          "oklch(0.68 0.10 187)",
+          "oklch(0.79 0.10 187)",
+          "oklch(0.88 0.06 187)",
+          "oklch(0.95 0.03 187)"
+        ]
+      },
+      "inkblue-paper": {
+        "role": "secondary",
+        "displayName": "Ink-Blue Paper",
+        "canonical": "oklch(0.45 0.10 260)",
+        "tonalRamp": [
+          "oklch(0.20 0.04 260)",
+          "oklch(0.30 0.07 260)",
+          "oklch(0.40 0.09 260)",
+          "oklch(0.50 0.11 260)",
+          "oklch(0.60 0.10 260)",
+          "oklch(0.72 0.08 260)",
+          "oklch(0.85 0.05 260)",
+          "oklch(0.94 0.02 260)"
+        ]
+      },
+      "gold-ember": {
+        "role": "tertiary",
+        "displayName": "Gold Ember",
+        "canonical": "oklch(0.84 0.15 78)",
+        "tonalRamp": [
+          "oklch(0.24 0.05 78)",
+          "oklch(0.36 0.08 78)",
+          "oklch(0.48 0.11 78)",
+          "oklch(0.60 0.13 78)",
+          "oklch(0.72 0.15 78)",
+          "oklch(0.84 0.15 78)",
+          "oklch(0.91 0.09 80)",
+          "oklch(0.96 0.04 82)"
+        ]
+      },
+      "surface-ember-bg": {
+        "role": "neutral",
+        "displayName": "Warm Near-Black (Ember ground)",
+        "canonical": "oklch(0.18 0.006 50)",
+        "tonalRamp": [
+          "oklch(0.14 0.006 50)",
+          "oklch(0.18 0.007 50)",
+          "oklch(0.23 0.008 50)",
+          "oklch(0.29 0.008 50)",
+          "oklch(0.38 0.009 50)",
+          "oklch(0.52 0.010 52)",
+          "oklch(0.72 0.012 56)",
+          "oklch(0.93 0.020 62)"
+        ]
+      },
+      "ink-cream": {
+        "role": "neutral",
+        "displayName": "Cream Ink",
+        "canonical": "oklch(0.94 0.02 70)",
+        "tonalRamp": [
+          "oklch(0.30 0.012 60)",
+          "oklch(0.42 0.014 62)",
+          "oklch(0.54 0.016 64)",
+          "oklch(0.66 0.018 66)",
+          "oklch(0.76 0.020 68)",
+          "oklch(0.85 0.020 70)",
+          "oklch(0.92 0.020 72)",
+          "oklch(0.97 0.012 74)"
+        ]
+      },
+      "surface-paper-bg": {
+        "role": "neutral",
+        "displayName": "Paper Stock (light ground)",
+        "canonical": "oklch(0.965 0.004 80)",
+        "tonalRamp": [
+          "oklch(0.22 0.004 80)",
+          "oklch(0.34 0.004 80)",
+          "oklch(0.46 0.004 80)",
+          "oklch(0.58 0.004 80)",
+          "oklch(0.72 0.004 82)",
+          "oklch(0.86 0.005 84)",
+          "oklch(0.94 0.005 86)",
+          "oklch(0.975 0.004 90)"
+        ]
+      },
+      "ink-paper": {
+        "role": "neutral",
+        "displayName": "Paper Ink",
+        "canonical": "oklch(0.22 0.006 70)",
+        "tonalRamp": [
+          "oklch(0.18 0.006 70)",
+          "oklch(0.28 0.008 70)",
+          "oklch(0.40 0.009 72)",
+          "oklch(0.52 0.010 74)",
+          "oklch(0.64 0.010 76)",
+          "oklch(0.76 0.008 78)",
+          "oklch(0.88 0.006 80)",
+          "oklch(0.95 0.004 82)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "In-app hero numerals and splash titles; the docs landing hero scales the same Geist family up on a fluid clamp." },
+      "title": { "displayName": "Title", "purpose": "Section headings, panel titles, tab labels." },
+      "body": { "displayName": "Body", "purpose": "Primary running text and chat; cap measure at 65-75ch in prose." },
+      "caption": { "displayName": "Caption", "purpose": "Helper text, metadata, timestamps." },
+      "code": { "displayName": "Code", "purpose": "Inline + block code, terminal lines, agent tool I/O. The only permitted second family (Geist Mono)." }
+    },
+    "shadows": [
+      { "name": "shadow-1", "value": "0 1px 2px var(--elev-1-color)", "purpose": "Cards, inline chips. Tight hugging shadow. Color tint is per-theme." },
+      { "name": "shadow-2", "value": "0 4px 12px var(--elev-2-color)", "purpose": "Agent messages, sidebars, settled panels; default card shadow in dark themes." },
+      { "name": "shadow-3", "value": "0 12px 32px var(--elev-3-color)", "purpose": "Popovers, dropdowns." },
+      { "name": "shadow-4", "value": "0 20px 56px var(--elev-4-color)", "purpose": "Command palette, settings overlay; also the overlay shadow." },
+      { "name": "shadow-5", "value": "0 32px 80px var(--elev-5-color)", "purpose": "Toasts and raised modals. Most dramatic." },
+      { "name": "inner-highlight", "value": "inset 0 1px 0 rgba(255,180,120,0.06)", "purpose": "Top-edge sheen on elevated panels (per-theme); reads as ambient light catching the edge." }
+    ],
+    "motion": [
+      { "name": "motion-fast", "value": "120ms", "purpose": "Hover/active state changes, button feedback." },
+      { "name": "motion-base", "value": "160ms", "purpose": "Default state transitions." },
+      { "name": "motion-slow", "value": "240ms", "purpose": "Larger reveals." },
+      { "name": "motion-panel", "value": "300ms", "purpose": "Drawer slides, panel reflow." },
+      { "name": "ease-out", "value": "cubic-bezier(0.2, 0.7, 0.2, 1)", "purpose": "Default ease-out." },
+      { "name": "ease-out-strong", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Decisive panel/drawer motion." },
+      { "name": "ease-spring", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "purpose": "Springy overshoot for toasts and popovers entering." },
+      { "name": "ease-emphasis", "value": "cubic-bezier(0.2, 0, 0, 1)", "purpose": "Emphasis curve for layout shifts that should feel decisive." },
+      { "name": "reduced-motion", "value": "fast/base/panel -> 0ms, slow -> 60ms", "purpose": "prefers-reduced-motion collapses motion tokens and freezes signature spinners/glows." }
+    ],
+    "breakpoints": [
+      { "name": "vp-mobile", "value": "640px" },
+      { "name": "vp-tablet", "value": "768px" },
+      { "name": "vp-desktop", "value": "960px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single voice of emphasis: solid accent fill, one per view.",
+      "html": "<button class=\"ds-btn-primary\">Get started</button>",
+      "css": ".ds-btn-primary { background: var(--accent); color: var(--btn-text); border: none; border-radius: var(--radius-md, 8px); padding: 10px 24px; font: 600 var(--text-md, 0.95rem)/1 var(--font-ui); cursor: pointer; transition: background var(--motion-fast, 120ms) ease, opacity var(--motion-fast, 120ms) ease; } .ds-btn-primary:hover { opacity: 0.88; } .ds-btn-primary:active { opacity: 0.78; } .ds-btn-primary:focus-visible { outline: none; box-shadow: var(--focus-ring); } .ds-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary / alt CTA: transparent with a hairline border; warms to an accent tint on interaction.",
+      "html": "<button class=\"ds-btn-ghost\">Open project</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md, 8px); padding: 10px 20px; font: 500 var(--text-md, 0.95rem)/1 var(--font-ui); cursor: pointer; transition: background var(--motion-fast, 120ms) ease, border-color var(--motion-fast, 120ms) ease, color var(--motion-fast, 120ms) ease; } .ds-btn-ghost:hover { background: var(--accent-hover-tint); } .ds-btn-ghost:active { background: var(--accent-active-tint); color: var(--accent); border-color: var(--accent); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Bounded surface, flat at rest. Pure-white in Paper, warm-black in Ember. Never nested.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Agent-rendered UI</h3><p class=\"ds-card-body\">The interface is a canvas the agent populates.</p></div>",
+      "css": ".ds-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-lg, 12px); box-shadow: var(--card-shadow); padding: 16px; } .ds-card-title { margin: 0 0 6px; font: 600 var(--text-lg, 1.08rem)/1.3 var(--font-ui); letter-spacing: -0.005em; color: var(--text); } .ds-card-body { margin: 0; font: 400 var(--text-md, 0.95rem)/1.5 var(--font-ui); color: var(--text-secondary); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Field on the input surface; border warms toward accent and the focus glow appears with no layout shift.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search…\" />",
+      "css": ".ds-input { background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md, 8px); padding: 8px 12px; font: 400 var(--text-md, 0.95rem)/1.4 var(--font-ui); transition: border-color var(--motion-fast, 120ms) ease, box-shadow var(--motion-fast, 120ms) ease; } .ds-input::placeholder { color: var(--text-dim); } .ds-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }"
+    },
+    {
+      "name": "Chip / Pill",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Metadata and filter tag. Accent mixed a few percent into the elevated surface; selected state goes accent-soft.",
+      "html": "<span class=\"ds-pill\">read-write</span> <span class=\"ds-pill ds-pill-selected\">selected</span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; background: var(--pill-bg); color: var(--pill-text); border: 1px solid var(--pill-border); border-radius: var(--radius-pill, 999px); padding: 2px 10px; font: 500 var(--text-xs, 0.78rem)/1.4 var(--font-ui); } .ds-pill-selected { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }"
+    },
+    {
+      "name": "Callout",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Tip/warning/danger block. No colored side-stripe: full tinted background + state-tinted text, borderless.",
+      "html": "<div class=\"ds-callout ds-callout-warning\"><strong>Early development.</strong> The API surface is still settling.</div>",
+      "css": ".ds-callout { border-radius: var(--radius-md, 8px); padding: 12px 16px; font: 400 var(--text-sm, 0.86rem)/1.55 var(--font-ui); border: 1px solid transparent; } .ds-callout strong { font-weight: 600; } .ds-callout-warning { background: var(--state-warning-bg); color: var(--state-warning-fg); border-color: var(--state-warning-border); } .ds-callout-info { background: var(--state-info-bg); color: var(--state-info-fg); border-color: var(--state-info-border); } .ds-callout-danger { background: var(--state-error-bg); color: var(--state-error-fg); border-color: var(--state-error-border); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Sun Chariot",
+    "overview": "Aethon is named for the blazing horse that pulled Helios's sun chariot. The visual system answers to that image: a warm near-black field shaped by a single moving source of warm light, the brass-orange accent the agent uses to mark what matters. The agent is the light; the chrome is the dark sky it crosses. Nothing glows by default; heat appears where the agent or the user's own action puts it. The system is calm at rest and warm on contact: surfaces sit flat and quiet until a hover tint, a focus ring, or a popover lifting on a spring. Depth in the dark themes comes from layered warm-black surface tiers and a faint radial glow from the top of the window, not from heavy shadows. The accent is rationed; its rarity is what lets it read as illumination rather than branding. It is not a generic VitePress install, not an overwrought field of gradients and glass, and not a sterile personality-free API reference.",
+    "keyCharacteristics": [
+      "Warm near-black or crisp near-white ground, never gray-neutral SaaS.",
+      "One rationed brass-orange accent as the system's only voice of emphasis.",
+      "Flat at rest; warmth, glow, and lift are state responses, not decoration.",
+      "Geist throughout for human text, Geist Mono for everything literal/machine-spoken.",
+      "Seven shipped themes from one token contract, light and dark as equals."
+    ],
+    "rules": [
+      { "name": "The One Flame Rule", "body": "The accent marks at most one primary action per view. If two things on screen are both brass, neither reads as the thing to do next. Demote one to ghost or text.", "section": "colors" },
+      { "name": "The Warm-Black Rule", "body": "Dark grounds are warm near-black (hue pulled toward the accent), never #000 and never blue-gray-neutral. Light grounds are warm or cool near-white per theme, never the cream/sand/parchment band. The ground's temperature always relates to the theme's accent.", "section": "colors" },
+      { "name": "The Seven-Theme Contract", "body": "The palette is a token contract filled by seven shipped themes (Ember, Paper, Aether, Brink, Daylight, Mist, Nocturne). Any new surface must read correctly in all of them by consuming tokens, never hardcoded hex.", "section": "colors" },
+      { "name": "The One-Family Rule", "body": "Geist does display and body; do not introduce a second display face for personality. Personality comes from weight, size, and the brass accent. Mono is the only permitted second family, and only for literal machine text.", "section": "typography" },
+      { "name": "The Caps-Label Rule", "body": "Uppercase is reserved for short eyebrow labels (<=4 words) at 0.04em tracking in --text-dim. Never set a sentence, a heading, or body copy in all caps.", "section": "typography" },
+      { "name": "The Glow-Is-Earned Rule", "body": "Surfaces are flat at rest. Glow, lift, and shadow appear only as a response to state: hover, focus, elevation, or the ambient backdrop. A card that glows while sitting still is wrong.", "section": "elevation" },
+      { "name": "The Tonal-First Rule", "body": "Before reaching for a shadow, move the surface up a tier (--surface-2 to --surface-3). Shadow is the second tool for depth, not the first.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do consume tokens, never hardcoded hex; every surface must read correctly across all seven themes.",
+      "Do ration the accent to one primary action per view (The One Flame Rule).",
+      "Do keep surfaces flat at rest and let warmth, glow, and lift be state responses (The Glow-Is-Earned Rule).",
+      "Do build depth from surface tiers first, shadow second (The Tonal-First Rule).",
+      "Do verify body text >=4.5:1 and large text >=3:1 in both Paper (light) and Ember (dark) before shipping.",
+      "Do pair color with text, weight, or shape for status; never let the accent be the only signal of state.",
+      "Do honor prefers-reduced-motion: motion tokens collapse to 0ms and signature spinners/glows freeze.",
+      "Do use Geist for everything human and Geist Mono for everything literal."
+    ],
+    "donts": [
+      "Don't ship the generic VitePress default: stock brand color, untouched hero, unconfigured-template look. (PRODUCT.md anti-reference.)",
+      "Don't go overwrought / loud: no decorative gradients, no glassmorphism, no animation on everything. (PRODUCT.md anti-reference.)",
+      "Don't go sterile / personality-free: don't scrub the mythological warmth and authorial voice into a cold API-reference look. (PRODUCT.md anti-reference.)",
+      "Don't use a border-left/right colored stripe greater than 1px as an accent; use a full hairline, a tinted background, or a leading icon.",
+      "Don't use gradient text (background-clip: text on a gradient); emphasis comes from weight, size, and the solid accent. The current docs hero inherits VitePress's gradient name-fill; treat it as a known exception to revisit, not a pattern to copy.",
+      "Don't set body copy or headings in all caps; reserve caps for <=4-word eyebrow labels.",
+      "Don't scatter same-sized icon + heading + text cards in an endless grid, or nest cards inside cards.",
+      "Don't use #000 dark grounds or gray-neutral SaaS surfaces (The Warm-Black Rule).",
+      "Don't introduce a second display typeface for personality (The One-Family Rule)."
+    ]
+  }
+}
