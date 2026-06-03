@@ -95,7 +95,13 @@ export type TabKind = "agent" | "shell" | "editor";
  */
 export interface QueuedMessage {
   id: string;
+  /** Visible message body — what the popover renders and the user edits, and
+   *  what enters chat history when the entry drains. */
   content: string;
+  /** Hidden prompt actually dispatched to the bridge when it differs from
+   *  `content` (e.g. an `@file`-expanded task prompt). Omitted when identical;
+   *  cleared on edit, since a user-rewritten body supersedes the expansion. */
+  bridgeText?: string;
   attachments?: ChatAttachment[];
 }
 

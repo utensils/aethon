@@ -212,6 +212,36 @@ describe("buildSubagentTaskTool", () => {
     }
   });
 
+  it("expands prompt and context in a single deduped file-references block", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "aethon-task-file-ref-dedup-"));
+    try {
+      await writeFile(join(cwd, "foo.ts"), "export const foo = 1;\n");
+      const { state } = makeState({
+        name: "reviewer",
+        model: "ollama/llama3.3",
+      });
+      const registry = state.subagentsByCwd.get("/proj");
+      state.currentProjectCwd = cwd;
+      state.subagentsByCwd = new Map([[cwd, registry]]);
+      const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+
+      await execOf(tool)("c", {
+        subagent_type: "reviewer",
+        prompt: "check @foo.ts",
+        context: "Background: @foo.ts matters.",
+      });
+
+      // The same file referenced in both prompt and context must yield ONE
+      // <aethon_file_references> block, not one per field.
+      const blocks =
+        (h.lastPrompt ?? "").split("<aethon_file_references").length - 1;
+      expect(blocks).toBe(1);
+      expect(h.lastPrompt).toContain("export const foo = 1");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("passes a tools allowlist through to the session", async () => {
     const { state } = makeState({
       name: "reviewer",

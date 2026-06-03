@@ -353,7 +353,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       } catch {
         return;
       }
-      const row = diagnostics.find((entry) => diagnosticMatchesTab(entry, tabId));
+      const row = diagnostics.find((entry) =>
+        diagnosticMatchesTab(entry, tabId),
+      );
       if (!row) continue;
       const promptInFlight =
         row.prompt_in_flight === true || row.promptInFlight === true;
@@ -509,7 +511,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     ) {
       const entry: QueuedMessage = {
         id: crypto.randomUUID(),
-        content: bridgeText,
+        // Store the visible body for the popover/history; carry the hidden
+        // dispatch text separately so expanded @file context never surfaces
+        // in the queue UI or becomes editable.
+        content: displayText,
+        ...(bridgeText !== displayText ? { bridgeText } : {}),
         attachments,
       };
       updateTab(tabId, (tab) => withQueue(tab, [...queueOf(tab), entry]));
@@ -797,7 +803,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       const idx = current.findIndex((m) => m.id === messageId);
       if (idx < 0) return tab;
       const next = current.slice();
-      next[idx] = { ...next[idx], content };
+      // Drop any hidden bridge text: a user-rewritten body supersedes the
+      // original @file expansion, so dispatch exactly what they now see.
+      next[idx] = { ...next[idx], content, bridgeText: undefined };
       return withQueue(tab, next);
     });
   }
@@ -841,6 +849,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         mode: "steer",
         tabId,
         attachments: entry.attachments,
+        ...(entry.bridgeText ? { bridgeText: entry.bridgeText } : {}),
       });
     } finally {
       updateTab(tabId, (t) =>

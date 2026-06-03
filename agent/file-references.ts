@@ -94,7 +94,10 @@ export function hasExpandedFileReferences(content: string): boolean {
 
 export function stripExpandedFileReferences(content: string): string {
   return content
-    .replace(/\n\n<aethon_file_references\b[\s\S]*?<\/aethon_file_references>/g, "")
+    .replace(
+      /\n\n<aethon_file_references\b[\s\S]*?<\/aethon_file_references>/g,
+      "",
+    )
     .trimEnd();
 }
 
@@ -170,9 +173,7 @@ export async function expandFileReferencesInPrompt(
 }
 
 function isReferenceBoundary(prev: string | undefined): boolean {
-  return (
-    prev === undefined || /\s/.test(prev) || "([{<'\"`".includes(prev)
-  );
+  return prev === undefined || /\s/.test(prev) || "([{<'\"`".includes(prev);
 }
 
 function readQuoted(
@@ -253,7 +254,8 @@ async function resolveReferenceTarget(
   realRoot: string,
 ): Promise<ResolveResult> {
   const candidates = candidateValues(ref.value);
-  const likely = ref.quoted || isLikelyPathReference(stripReferencePunctuation(ref.value));
+  const likely =
+    ref.quoted || isLikelyPathReference(stripReferencePunctuation(ref.value));
   const errors: string[] = [];
 
   for (const requested of candidates) {
@@ -261,7 +263,9 @@ async function resolveReferenceTarget(
     for (const candidate of paths) {
       const resolved = resolve(candidate);
       if (!isInsidePath(root, resolved) && !requested.startsWith("/")) {
-        errors.push(`${refLabel(ref)} resolves outside the project/worktree root`);
+        errors.push(
+          `${refLabel(ref)} resolves outside the project/worktree root`,
+        );
         continue;
       }
       let stat;
@@ -277,7 +281,7 @@ async function resolveReferenceTarget(
       if (!isInsidePath(realRoot, realPath)) {
         return {
           kind: "error",
-          message: `${refLabel(ref)} points through a symlink outside the project/worktree root`,
+          message: `${refLabel(ref)} resolves outside the project/worktree root after resolving symlinks`,
         };
       }
       if (stat.isDirectory()) {
@@ -297,7 +301,9 @@ async function resolveReferenceTarget(
     if (requested.startsWith("/")) {
       const absolute = resolve(requested);
       if (!isInsidePath(root, absolute) && (await exists(absolute))) {
-        errors.push(`${refLabel(ref)} resolves outside the project/worktree root`);
+        errors.push(
+          `${refLabel(ref)} resolves outside the project/worktree root`,
+        );
       }
     }
   }
@@ -435,9 +441,13 @@ function formatFileReferenceContext(
     if (ref.binary) {
       parts.push(`[binary file omitted; ${ref.sizeBytes} bytes]`);
     } else if (ref.content.length === 0 && ref.truncated) {
-      parts.push("[file content omitted because the file-reference context size limit was reached]");
+      parts.push(
+        "[file content omitted because the file-reference context size limit was reached]",
+      );
     } else {
-      parts.push(`${codeFenceFor(ref.content)}${languageForPath(ref.displayPath)}`);
+      parts.push(
+        `${codeFenceFor(ref.content)}${languageForPath(ref.displayPath)}`,
+      );
       parts.push(ref.content);
       parts.push(codeFenceFor(ref.content));
       if (ref.truncated) parts.push("[truncated]");

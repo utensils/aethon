@@ -35,6 +35,7 @@ export interface UseQueuedDispatchParams {
       mode?: "normal" | "steer";
       tabId?: string;
       attachments?: ChatAttachment[];
+      bridgeText?: string;
     },
   ) => Promise<void>;
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
@@ -87,6 +88,7 @@ export function useQueuedDispatch({
         mode: "normal",
         tabId: tab.id,
         attachments: head.attachments,
+        ...(head.bridgeText ? { bridgeText: head.bridgeText } : {}),
       }).finally(() => {
         dispatchingRef.current.delete(tab.id);
       });

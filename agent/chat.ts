@@ -67,10 +67,11 @@ export async function handleChat(
   let content: string;
   try {
     const expanded = await expandFileReferencesInPrompt(msg.content, {
-      cwd:
-        state.tabProjectCwds.get(tabId) ??
-        state.currentProjectCwd ??
-        process.cwd(),
+      // Same precedence as subagent-mention resolution: honor this turn's
+      // cwdOverride first. ensureTab returns early for an existing tab without
+      // refreshing tabProjectCwds, so falling back to it alone resolves @file
+      // refs against a stale cwd when the caller passed a fresh cwd.
+      cwd: tabCwdForMention ?? process.cwd(),
       leadingSubagentName: explicitSubagent,
     });
     content = expanded.prompt;
