@@ -1,5 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
+import { reorderTabByDirection } from "../utils/tabReorder";
 
 export interface UseTabNavigationContext {
   stateRef: MutableRefObject<Record<string, unknown>>;
@@ -24,7 +25,7 @@ export interface UseTabNavigationActions {
    *  agent and editor tabs in left-to-right order. Out-of-range is
    *  silent (Cmd+5 with only 3 top-strip tabs is a no-op). */
   jumpToTab: (idx: number) => void;
-  /** Reorder the active tab one slot left (-1) or right (+1). Wraps. */
+  /** Reorder the active top-strip tab one slot left (-1) or right (+1). Wraps. */
   moveActiveTab: (direction: 1 | -1) => void;
   /** Cycle the active sub-tab in the bottom panel. Order is
    *  agent-bash first, then shells in /tabs order. Wraps. */
@@ -32,7 +33,7 @@ export interface UseTabNavigationActions {
   /** Idx 0 selects agent-bash; idx 1+ selects the corresponding shell
    *  sub-tab. Out-of-range is silent. */
   jumpToShellSubTab: (idx: number) => void;
-  /** Reorder the active shell sub-tab within /tabs (agent-bash is
+  /** Reorder the active shell sub-tab within the shell surface (agent-bash is
    *  pinned first; trying to move it is a no-op). */
   moveActiveShellSubTab: (direction: 1 | -1) => void;
 }
@@ -123,22 +124,14 @@ export function useTabNavigation(
         | undefined)?.activeSubId;
       if (!activeSub || activeSub === "agent-bash") return;
       setState((prev) => {
-        const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-        const shellPositions = tabs
-          .map((t, i) => (t.kind === "shell" ? i : -1))
-          .filter((i) => i >= 0);
-        if (shellPositions.length <= 1) return prev;
-        const idx = tabs.findIndex((t) => t.id === activeSub);
-        if (idx < 0) return prev;
-        const subPos = shellPositions.indexOf(idx);
-        if (subPos < 0) return prev;
-        const swapSubPos =
-          (subPos + direction + shellPositions.length) % shellPositions.length;
-        const swapIdx = shellPositions[swapSubPos];
-        const tmp = tabs[idx];
-        tabs[idx] = tabs[swapIdx];
-        tabs[swapIdx] = tmp;
-        return { ...prev, tabs };
+        const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+        const reordered = reorderTabByDirection(
+          tabs,
+          "shell",
+          activeSub,
+          direction,
+        );
+        return reordered ? { ...prev, tabs: reordered } : prev;
       });
     },
     [stateRef, setState],
@@ -149,14 +142,14 @@ export function useTabNavigation(
       const activeId = stateRef.current.activeTabId as string | undefined;
       if (!activeId) return;
       setState((prev) => {
-        const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
-        if (tabs.length <= 1) return prev;
-        const idx = tabs.findIndex((t) => t.id === activeId);
-        if (idx < 0) return prev;
-        const nextIdx = (idx + direction + tabs.length) % tabs.length;
-        const [moved] = tabs.splice(idx, 1);
-        tabs.splice(nextIdx, 0, moved);
-        return { ...prev, tabs };
+        const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+        const reordered = reorderTabByDirection(
+          tabs,
+          "top",
+          activeId,
+          direction,
+        );
+        return reordered ? { ...prev, tabs: reordered } : prev;
       });
     },
     [stateRef, setState],

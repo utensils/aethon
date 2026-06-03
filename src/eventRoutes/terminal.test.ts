@@ -57,6 +57,65 @@ describe("handleTerminalPanel", () => {
     expect(mocks.newShellTab).toHaveBeenCalledTimes(1);
   });
 
+  it("reorder-sub-tab rearranges only shell tabs and keeps active sub-tab", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        terminalPanel: { activeSubId: "sh-2" },
+        tabs: [
+          { id: "ag-1", kind: "agent" },
+          { id: "sh-1", kind: "shell" },
+          { id: "ed-1", kind: "editor" },
+          { id: "sh-2", kind: "shell" },
+          { id: "sh-3", kind: "shell" },
+        ],
+      },
+    });
+    const handled = await handleTerminalPanel(
+      {
+        component: { id: "tp", type: "terminal-panel" },
+        eventType: "reorder-sub-tab",
+        data: { subTabId: "sh-3", toIndex: 0 },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    const next = applySetState();
+    expect((next.tabs as Array<{ id: string }>).map((tab) => tab.id)).toEqual([
+      "ag-1",
+      "sh-3",
+      "ed-1",
+      "sh-1",
+      "sh-2",
+    ]);
+    expect((next.terminalPanel as { activeSubId?: string }).activeSubId).toBe(
+      "sh-2",
+    );
+  });
+
+  it("reorder-sub-tab ignores the pinned agent-bash tab", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "sh-1", kind: "shell" },
+          { id: "sh-2", kind: "shell" },
+        ],
+      },
+    });
+    await handleTerminalPanel(
+      {
+        component: { id: "tp", type: "terminal-panel" },
+        eventType: "reorder-sub-tab",
+        data: { subTabId: "agent-bash", toIndex: 0 },
+      },
+      ctx,
+    );
+    const next = applySetState();
+    expect((next.tabs as Array<{ id: string }>).map((tab) => tab.id)).toEqual([
+      "sh-1",
+      "sh-2",
+    ]);
+  });
+
   it("resize stores the terminal panel height and updates the open row track", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: {

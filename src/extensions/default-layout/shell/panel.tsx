@@ -15,9 +15,12 @@
  * "agent-bash" when an agent session is live, otherwise the first shell.
  * Switching sub-tabs unmounts/remounts the inner xterm so per-sub-tab
  * scrollback isolation is automatic.
+ *
+ * Events:
+ *   ("reorder-sub-tab", { subTabId, toIndex }) drag an interactive shell tab
  */
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import type {
   BooleanValue,
   NumberValue,
@@ -77,6 +80,8 @@ export function TerminalPanel({
     "agent";
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const panelRef = useRef<HTMLDivElement>(null);
+  const [draggingSubTabId, setDraggingSubTabId] = useState<string | null>(null);
+  const draggedSubTabIdRef = useRef<string | null>(null);
   // Resolve via the shared helper so the focus-aware Cmd+W path in
   // useKeyboardShortcuts sees the same active sub-tab the user does.
   const activeSubId = useMemo<string | null>(
@@ -88,6 +93,49 @@ export function TerminalPanel({
       }),
     [requestedActiveId, shellTabs, showAgentBash],
   );
+
+  const dragPayloadType = "application/x-aethon-shell-sub-tab-id";
+  const startSubTabDrag = (
+    event: DragEvent<HTMLElement>,
+    subTab: ShellSubTabItem,
+  ) => {
+    if ((event.target as HTMLElement).closest(".ae-sub-tab-close")) {
+      event.preventDefault();
+      return;
+    }
+    draggedSubTabIdRef.current = subTab.id;
+    setDraggingSubTabId(subTab.id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(dragPayloadType, subTab.id);
+  };
+
+  const finishSubTabDrag = () => {
+    draggedSubTabIdRef.current = null;
+    setDraggingSubTabId(null);
+  };
+
+  const getDraggedSubTabId = (event: DragEvent<HTMLElement>) =>
+    event.dataTransfer.getData(dragPayloadType) || draggedSubTabIdRef.current;
+
+  const dropSubTabOnTarget = (
+    event: DragEvent<HTMLElement>,
+    target: ShellSubTabItem,
+  ) => {
+    const subTabId = getDraggedSubTabId(event);
+    if (!subTabId || subTabId === target.id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const remaining = shellTabs.filter((tab) => tab.id !== subTabId);
+    const targetIndex = remaining.findIndex((tab) => tab.id === target.id);
+    if (targetIndex < 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const after = event.clientX > rect.left + rect.width / 2;
+    onEvent("reorder-sub-tab", {
+      subTabId,
+      toIndex: targetIndex + (after ? 1 : 0),
+    });
+    finishSubTabDrag();
+  };
 
   const onResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -150,8 +198,18 @@ export function TerminalPanel({
             hint={s.shellState === "exited" ? "exited" : undefined}
             active={activeSubId === s.id}
             closable
+            dragging={draggingSubTabId === s.id}
             onSelect={() => onEvent("select-sub-tab", { subTabId: s.id })}
             onClose={() => onEvent("close-sub-tab", { subTabId: s.id })}
+            onDragStart={(e) => startSubTabDrag(e, s)}
+            onDragOver={(e) => {
+              const subTabId = draggedSubTabIdRef.current;
+              if (!subTabId || subTabId === s.id) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(e) => dropSubTabOnTarget(e, s)}
+            onDragEnd={finishSubTabDrag}
           />
         ))}
         <button
@@ -208,20 +266,45 @@ function SubTabPill(props: {
   hint?: string;
   active: boolean;
   closable?: boolean;
+  dragging?: boolean;
   onSelect: () => void;
   onClose?: () => void;
+  onDragStart?: (event: DragEvent<HTMLElement>) => void;
+  onDragOver?: (event: DragEvent<HTMLElement>) => void;
+  onDrop?: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
 }) {
-  const { label, hint, active, closable, onSelect, onClose } = props;
+  const {
+    label,
+    hint,
+    active,
+    closable,
+    dragging,
+    onSelect,
+    onClose,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+  } = props;
   return (
     <div
       role="tab"
       aria-selected={active}
-      className={
-        active ? "ae-sub-tab ae-sub-tab-active" : "ae-sub-tab"
-      }
+      className={[
+        "ae-sub-tab",
+        active ? "ae-sub-tab-active" : "",
+        dragging ? "ae-sub-tab-dragging" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       onMouseDown={(e) => {
         if ((e.target as HTMLElement).closest(".ae-sub-tab-close")) return;
-        e.preventDefault();
         onSelect();
       }}
     >

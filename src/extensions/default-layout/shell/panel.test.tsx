@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OVERVIEW_TAB_ID } from "../../../types/tab";
 import type { A2UIComponent } from "../../../types/a2ui";
@@ -21,7 +21,10 @@ vi.mock("./canvas", () => ({
 import { TerminalPanel } from "./panel";
 import { resolveActiveSubId, resolveActiveSubIdFromState } from "./panel-helpers";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("resolveActiveSubId", () => {
   it("returns the requested shell when it still exists", () => {
@@ -113,6 +116,30 @@ describe("resolveActiveSubIdFromState", () => {
     expect(resolveActiveSubIdFromState(state)).toBe("agent-bash");
   });
 });
+
+function createDataTransfer() {
+  const values = new Map<string, string>();
+  return {
+    effectAllowed: "",
+    dropEffect: "",
+    setData: vi.fn((type: string, value: string) => values.set(type, value)),
+    getData: vi.fn((type: string) => values.get(type) ?? ""),
+  };
+}
+
+function setRect(element: Element, rect: Partial<DOMRect>) {
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    left: rect.left ?? 0,
+    top: rect.top ?? 0,
+    right: rect.right ?? 100,
+    bottom: rect.bottom ?? 20,
+    width: rect.width ?? 100,
+    height: rect.height ?? 20,
+    x: rect.left ?? 0,
+    y: rect.top ?? 0,
+    toJSON: () => ({}),
+  });
+}
 
 function panelComponent(): A2UIComponent {
   return {
@@ -228,6 +255,59 @@ describe("TerminalPanel", () => {
     );
     const shell = screen.getByTestId("stub-shell");
     expect(shell.getAttribute("data-tab-id")).toBe("sh-2");
+  });
+
+  it("emits reorder-sub-tab when an interactive shell tab is dragged", () => {
+    const onEvent = vi.fn();
+    render(
+      <TerminalPanel
+        component={panelComponent()}
+        state={{
+          activeTabId: OVERVIEW_TAB_ID,
+          tabs: [
+            { id: "sh-1", kind: "shell", label: "Shell 1" },
+            { id: "sh-2", kind: "shell", label: "Shell 2" },
+          ],
+          terminalPanel: { activeSubId: "sh-1" },
+        }}
+        onEvent={onEvent}
+      />,
+    );
+    const shell1 = screen.getByText("Shell 1").closest('[role="tab"]')!;
+    const shell2 = screen.getByText("Shell 2").closest('[role="tab"]')!;
+    setRect(shell1, { left: 0, width: 100 });
+    const dataTransfer = createDataTransfer();
+
+    fireEvent.dragStart(shell2, { dataTransfer });
+    fireEvent.dragOver(shell1, { clientX: 10, dataTransfer });
+    fireEvent.drop(shell1, { clientX: 10, dataTransfer });
+
+    expect(onEvent).toHaveBeenCalledWith("reorder-sub-tab", {
+      subTabId: "sh-2",
+      toIndex: 0,
+    });
+  });
+
+  it("keeps Agent bash pinned and only shell tabs draggable", () => {
+    render(
+      <TerminalPanel
+        component={panelComponent()}
+        state={{
+          activeTabId: "tab-1",
+          tabs: [
+            { id: "tab-1", kind: "agent", label: "Tab 1" },
+            { id: "sh-1", kind: "shell", label: "Shell 1" },
+          ],
+          terminalPanel: { activeSubId: "agent-bash" },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+    const agentBash = screen.getByText("Agent bash").closest('[role="tab"]')!;
+    const shell = screen.getByText("Shell 1").closest('[role="tab"]')!;
+
+    expect(agentBash.getAttribute("draggable")).toBe("false");
+    expect(shell.getAttribute("draggable")).toBe("true");
   });
 
   it("always renders the + new-shell button", () => {

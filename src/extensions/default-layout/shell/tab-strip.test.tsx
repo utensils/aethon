@@ -6,7 +6,10 @@ import { TabStrip } from "./tab-strip";
 import type { A2UIComponent } from "../../../types/a2ui";
 import { OVERVIEW_TAB_ID } from "../../../types/tab";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 type TabStripOnEvent = ComponentProps<typeof TabStrip>["onEvent"];
 
@@ -19,6 +22,30 @@ function tabStripComponent(): A2UIComponent {
       activeId: { $ref: "/activeTabId" },
     },
   };
+}
+
+function createDataTransfer() {
+  const values = new Map<string, string>();
+  return {
+    effectAllowed: "",
+    dropEffect: "",
+    setData: vi.fn((type: string, value: string) => values.set(type, value)),
+    getData: vi.fn((type: string) => values.get(type) ?? ""),
+  };
+}
+
+function setRect(element: Element, rect: Partial<DOMRect>) {
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    left: rect.left ?? 0,
+    top: rect.top ?? 0,
+    right: rect.right ?? 100,
+    bottom: rect.bottom ?? 20,
+    width: rect.width ?? 100,
+    height: rect.height ?? 20,
+    x: rect.left ?? 0,
+    y: rect.top ?? 0,
+    toJSON: () => ({}),
+  });
 }
 
 function renderTabStrip(onEvent = vi.fn<TabStripOnEvent>()) {
@@ -270,6 +297,55 @@ describe("TabStrip", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Close Others" }));
     expect(onEvent).toHaveBeenCalledWith("close-others", { tabId: "ed-1" });
+  });
+
+  it("emits a reorder event when a top tab is dragged before another tab", () => {
+    const onEvent = vi.fn<TabStripOnEvent>();
+    render(
+      <TabStrip
+        component={tabStripComponent()}
+        state={{
+          activeTabId: "ag-1",
+          tabs: [
+            { id: "ag-1", label: "Chat", kind: "agent" },
+            { id: "sh-1", label: "Shell", kind: "shell" },
+            {
+              id: "ed-1",
+              label: "App.tsx",
+              kind: "editor",
+              editor: { filePath: "/repo/App.tsx" },
+            },
+          ],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+    const chat = screen.getByText("Chat").closest('[role="tab"]')!;
+    const editor = screen.getByText("App.tsx").closest('[role="tab"]')!;
+    setRect(chat, { left: 0, width: 100 });
+    const dataTransfer = createDataTransfer();
+
+    fireEvent.dragStart(editor, { dataTransfer });
+    fireEvent.dragOver(chat, { clientX: 10, dataTransfer });
+    fireEvent.drop(chat, { clientX: 10, dataTransfer });
+
+    expect(onEvent).toHaveBeenCalledWith("reorder", {
+      tabId: "ed-1",
+      toIndex: 0,
+    });
+  });
+
+  it("keeps the overview and new-tab controls out of drag reordering", () => {
+    renderTabStrip();
+    const overviewPill = screen
+      .getAllByRole("tab")
+      .find((el) => el.textContent?.includes("overview"))!;
+    const realTab = screen.getByText("Tab 1").closest('[role="tab"]')!;
+    const newButton = screen.getByRole("button", { name: "New Tab" });
+
+    expect(realTab.getAttribute("draggable")).toBe("true");
+    expect(overviewPill.getAttribute("draggable")).not.toBe("true");
+    expect(newButton.getAttribute("draggable")).not.toBe("true");
   });
 
   it("renders a file-type icon for editor tabs but not agent tabs", () => {

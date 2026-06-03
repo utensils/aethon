@@ -20,7 +20,7 @@ function setup(fx: Fixture) {
   const { result } = renderHook(() =>
     useTabNavigation({ stateRef, setState, setActiveTab, setActiveSubTab }),
   );
-  return { stateRef, setActiveTab, actions: result.current };
+  return { stateRef, setState, setActiveTab, actions: result.current };
 }
 
 describe("nextTab includes editor tabs", () => {
@@ -102,6 +102,32 @@ describe("nextTab includes editor tabs", () => {
     });
     actions.nextTab(-1);
     expect(setActiveTab).toHaveBeenLastCalledWith("editor-1");
+  });
+});
+
+describe("moveActiveTab", () => {
+  it("reorders top-strip tabs without moving shell slots", () => {
+    const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
+    const shell = makeEmptyTab("shell-1", "Shell", null, "shell");
+    const editor = makeEmptyTab("editor-1", "App.tsx", null, "editor");
+    const agentB = makeEmptyTab("agent-b", "Agent B", null, "agent");
+    const { actions, setState } = setup({
+      tabs: [agentA, shell, editor, agentB],
+      activeTabId: "agent-b",
+    });
+
+    actions.moveActiveTab(-1);
+
+    const reducer = setState.mock.calls[0][0] as (state: {
+      tabs: Tab[];
+    }) => { tabs: Tab[] };
+    const next = reducer({ tabs: [agentA, shell, editor, agentB] });
+    expect(next.tabs.map((t) => t.id)).toEqual([
+      "agent-a",
+      "shell-1",
+      "agent-b",
+      "editor-1",
+    ]);
   });
 });
 
