@@ -315,7 +315,9 @@ fn read_head_branch(dir: &Path) -> Option<String> {
         .output()
         .ok();
     match symbolic {
-        Some(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).trim().to_string()),
+        Some(o) if o.status.success() => {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        }
         _ => env::command("git")
             .arg("-C")
             .arg(dir)
@@ -684,7 +686,10 @@ mod tests {
 
     #[test]
     fn parse_branch_porcelain_counts_clean_repo_is_zeroes() {
-        assert_eq!(parse_branch_porcelain_counts("## main...origin/main\n"), (0, 0, 0));
+        assert_eq!(
+            parse_branch_porcelain_counts("## main...origin/main\n"),
+            (0, 0, 0)
+        );
         // No upstream configured — header has no bracket tail.
         assert_eq!(parse_branch_porcelain_counts("## main\n"), (0, 0, 0));
     }
