@@ -39,7 +39,7 @@ describe("reconcileWorktrees", () => {
     expect(next[0].head).toBe("abc");
   });
 
-  it("clears pendingState when the worktree appears in listing", () => {
+  it("clears creation pendingState when the worktree appears in listing", () => {
     const prior: Worktree[] = [
       wt({ id: "p", path: "/repo-feat", pendingState: "starting" }),
     ];
@@ -54,6 +54,25 @@ describe("reconcileWorktrees", () => {
     ]);
     expect(next).toHaveLength(1);
     expect(next[0].pendingState).toBeUndefined();
+  });
+
+  it("preserves removing state while git still lists the worktree", () => {
+    const prior: Worktree[] = [
+      wt({ id: "p", path: "/repo-feat", pendingState: "removing" }),
+    ];
+    const next = reconcileWorktrees("p1", prior, [
+      {
+        path: "/repo-feat",
+        branch: "feat",
+        head: "def",
+        isMain: false,
+        locked: false,
+      },
+    ]);
+    expect(next).toHaveLength(1);
+    expect(next[0].id).toBe("p");
+    expect(next[0].pendingState).toBe("removing");
+    expect(next[0].head).toBe("def");
   });
 
   it("drops in-flight pending rows that disappeared from listing", () => {
@@ -117,12 +136,13 @@ describe("updateWorktreePendingState", () => {
 });
 
 describe("worktreesForPersist", () => {
-  it("drops queued + starting pending rows", () => {
+  it("drops in-flight pending rows", () => {
     const list: Worktree[] = [
       wt({ id: "a" }),
       wt({ id: "b", pendingState: "queued" }),
       wt({ id: "c", pendingState: "starting" }),
       wt({ id: "d", pendingState: "failed" }),
+      wt({ id: "e", pendingState: "removing" }),
     ];
     const out = worktreesForPersist(list);
     expect(out.map((w) => w.id)).toEqual(["a", "d"]);

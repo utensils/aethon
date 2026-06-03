@@ -7,10 +7,10 @@
  * The non-main rows therefore render *no* per-row glyph — the guide
  * does the work.
  *
- * Pending worktrees (during `git worktree add`) get a distinct visual
- * treatment + a small Cancel / Retry / Dismiss button cluster. Once
- * `git worktree add` resolves, the pending state clears and the row
- * joins the regular list.
+ * Pending worktrees (during `git worktree add` or remove) get a distinct
+ * visual treatment + a small Cancel / Retry / Dismiss button cluster. Once
+ * `git worktree add` resolves, the pending state clears and the row joins
+ * the regular list.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -26,7 +26,7 @@ export interface WorktreeSidebarItem {
   path: string;
   active: boolean;
   isMain: boolean;
-  pendingState?: "queued" | "starting" | "succeeded" | "failed";
+  pendingState?: "queued" | "starting" | "removing" | "succeeded" | "failed";
   pendingError?: string;
   locked?: boolean;
   /** Live agent-activity for this worktree's session scope. Only attached
@@ -64,7 +64,8 @@ export function WorktreeRow({
   const renameBlurCancelRef = useRef<number | null>(null);
   const renameUnmountCancelRef = useRef<number | null>(null);
   const pending = item.pendingState;
-  const isPendingActive = pending === "queued" || pending === "starting";
+  const isPendingActive =
+    pending === "queued" || pending === "starting" || pending === "removing";
   const isFailed = pending === "failed";
   const canRenameInline = renaming && !isPendingActive && !isFailed;
   const canRemoveInline =
@@ -242,22 +243,28 @@ export function WorktreeRow({
       ) : null}
       {isPendingActive ? (
         <span className="ae-worktree-pending-status">
-          {pending === "queued" ? "queued…" : "creating…"}
-          <button
-            type="button"
-            className="ae-worktree-action"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEvent(
-                "cancel-pending-worktree",
-                { sectionId, worktreeId: item.id },
-                item.id,
-              );
-            }}
-            aria-label="Cancel"
-          >
-            ×
-          </button>
+          {pending === "queued"
+            ? "queued…"
+            : pending === "removing"
+              ? "removing…"
+              : "creating…"}
+          {pending !== "removing" ? (
+            <button
+              type="button"
+              className="ae-worktree-action"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEvent(
+                  "cancel-pending-worktree",
+                  { sectionId, worktreeId: item.id },
+                  item.id,
+                );
+              }}
+              aria-label="Cancel"
+            >
+              ×
+            </button>
+          ) : null}
         </span>
       ) : null}
       {isFailed ? (

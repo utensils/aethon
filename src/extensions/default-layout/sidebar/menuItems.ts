@@ -37,10 +37,20 @@ export interface SidebarContextMenuState {
   worktree?: WorktreeSidebarItem;
 }
 
-export function canRenameWorktree(item: WorktreeSidebarItem | undefined): boolean {
+export function canRenameWorktree(
+  item: WorktreeSidebarItem | undefined,
+): boolean {
   if (!item) return false;
   const pending = item.pendingState;
-  return pending !== "queued" && pending !== "starting" && pending !== "failed";
+  return !pending || pending === "succeeded";
+}
+
+export function canRemoveWorktree(
+  item: WorktreeSidebarItem | undefined,
+): boolean {
+  if (!item || item.isMain) return false;
+  const pending = item.pendingState;
+  return !pending || pending === "succeeded";
 }
 
 export interface SidebarMenuHandlers {
@@ -157,6 +167,7 @@ export function buildSidebarMenuItems(
       ];
     case "worktree": {
       const isMain = state.worktree?.isMain === true;
+      const canRemove = canRemoveWorktree(state.worktree);
       return [
         {
           id: "open-finder",
@@ -179,7 +190,7 @@ export function buildSidebarMenuItems(
           id: "remove-worktree",
           label: "Remove worktree",
           danger: true,
-          disabled: isMain,
+          disabled: !canRemove,
           onSelect: h.removeContextWorktree,
         },
         isMain

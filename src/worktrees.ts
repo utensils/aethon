@@ -18,16 +18,18 @@
 //     }
 //   }
 //
-// Pending worktrees (`pendingState in {queued, starting}`) are filtered
-// out at save time — they only live in memory while git is doing the
-// async `worktree add`. Failed worktrees stay until the user dismisses
-// them (the row carries Retry / Dismiss actions in the sidebar UI).
+// Pending worktrees (`pendingState in {queued, starting, removing}`) are
+// filtered out at save time — they only live in memory while git is doing
+// the async `worktree add` or `worktree remove`. Failed worktrees stay
+// until the user dismisses them (the row carries Retry / Dismiss actions
+// in the sidebar UI).
 
 import { invoke } from "@tauri-apps/api/core";
 
 export type WorktreePendingState =
   | "queued"
   | "starting"
+  | "removing"
   | "succeeded"
   | "failed";
 
@@ -71,8 +73,9 @@ export interface GitBranchInfo {
  * Reconcile a fresh `git_worktrees` listing against the in-memory store
  * for a single project. The on-disk listing wins for path / branch /
  * head / isMain; existing in-memory entries keep their id, label, and
- * pending state when paths match. Pending entries whose target path now
- * appears in the listing collapse into the matching live row.
+ * pending state when paths match. Creation-pending entries whose target
+ * path now appears in the listing collapse into the matching live row;
+ * removing entries stay pending until the background remove finalizes.
  */
 export function reconcileWorktrees(
   projectId: string,
@@ -86,23 +89,35 @@ export function reconcileWorktrees(
   const out: Worktree[] = [];
   for (const rec of listing) {
     const existing = byPath.get(rec.path);
-    out.push({
-      id: existing?.id ?? crypto.randomUUID(),
-      projectId,
-      path: rec.path,
-      branch: rec.branch,
-      isMain: rec.isMain,
-      head: rec.head ?? undefined,
-      locked: rec.locked || undefined,
-      label: existing?.label,
-      // Live row — pendingState always clears on reconcile.
-    });
+    if (existing?.pendingState === "removing") {
+      out.push({
+        ...existing,
+        projectId,
+        path: rec.path,
+        branch: rec.branch,
+        isMain: rec.isMain,
+        head: rec.head ?? undefined,
+        locked: rec.locked || undefined,
+      });
+    } else {
+      out.push({
+        id: existing?.id ?? crypto.randomUUID(),
+        projectId,
+        path: rec.path,
+        branch: rec.branch,
+        isMain: rec.isMain,
+        head: rec.head ?? undefined,
+        locked: rec.locked || undefined,
+        label: existing?.label,
+        // Live row — creation pendingState clears on reconcile.
+      });
+    }
     byPath.delete(rec.path);
   }
   // Preserve unresolved pending rows + any prior worktrees that didn't
   // surface this poll (rare: stale fs cache, external delete). We keep
   // failed pending entries so the user can Dismiss them; queued/starting
-  // entries are still in-flight on the bridge.
+  // and removing entries are still in-flight on the bridge.
   for (const w of byPath.values()) {
     if (w.pendingState && w.pendingState !== "succeeded") {
       out.push(w);

@@ -81,6 +81,16 @@ describe("WorktreeRow", () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
+  it("renders removing status without actions", () => {
+    const { onEvent } = harness(
+      wt({ pendingState: "removing", label: "wip" }),
+    );
+    expect(screen.getByText(/removing/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
+    fireEvent.click(screen.getByText("wip").closest("li")!);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("renders retry + dismiss for failed pending entries", () => {
     const { onEvent } = harness(
       wt({ pendingState: "failed", pendingError: "boom", label: "wip" }),
@@ -301,6 +311,12 @@ describe("WorktreeRow", () => {
 
   it("does not enter rename mode for pending or failed rows", () => {
     harness(wt({ pendingState: "starting" }), { renaming: true });
+    expect(
+      screen.queryByRole("textbox", { name: /rename worktree/i }),
+    ).toBeNull();
+    cleanup();
+
+    harness(wt({ pendingState: "removing" }), { renaming: true });
     expect(
       screen.queryByRole("textbox", { name: /rename worktree/i }),
     ).toBeNull();
