@@ -56,10 +56,13 @@ interface DashboardWidget {
 }
 
 function isRef(v: unknown): v is { $ref: string } {
-  return typeof v === "object" && v !== null && "$ref" in (v);
+  return typeof v === "object" && v !== null && "$ref" in v;
 }
 
-function resolveOrInline<T>(v: unknown, state: Record<string, unknown>): T | null {
+function resolveOrInline<T>(
+  v: unknown,
+  state: Record<string, unknown>,
+): T | null {
   if (!v) return null;
   if (isRef(v)) {
     const r = resolvePointer(state, v.$ref);
@@ -170,7 +173,8 @@ export function ProjectDashboard({
   const overviewData = overview?.path === project?.path ? overview?.data : null;
 
   if (!project) return null;
-  const iconUrl = projectIconUrlFromSidebar(state, project.id) ?? project.iconUrl;
+  const iconUrl =
+    projectIconUrlFromSidebar(state, project.id) ?? project.iconUrl;
 
   return (
     <div className="a2ui-project-dashboard">
@@ -237,6 +241,17 @@ export function ProjectDashboard({
               project,
               activeWorktreeIdRef: { $ref: "/activeWorktreeId" },
             }}
+          />
+        </section>
+
+        <section className="a2ui-project-dashboard-section">
+          <RegistryComponent
+            type="subagents-config"
+            state={state}
+            onEvent={(_component, eventType, data) =>
+              onEvent(eventType, data, "subagents-config")
+            }
+            componentProps={{ scope: "project", projectPath: project.path }}
           />
         </section>
 
