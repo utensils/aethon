@@ -85,9 +85,9 @@ export interface ContextUsageState {
   tokensUntilCompact: number | null;
   estimatedTokensUntilCompact: number | null;
   compacting?: boolean;
-  /** The model's authoritative usage has reached/exceeded the window. For
-   *  Ollama this means the server is silently truncating the oldest turns —
-   *  surfaced as a distinct "full" state rather than a calm 100%. */
+  /** Provider/persisted usage has reached/exceeded the window. For Ollama,
+   *  this means the server is silently truncating the oldest turns — surfaced
+   *  as a distinct "full" state rather than a calm 100%. */
   saturatedByProvider?: boolean;
   /** Only the live current-turn/tool-output estimate reached the window. */
   saturatedByEstimate?: boolean;
