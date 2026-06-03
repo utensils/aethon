@@ -53,6 +53,9 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
         ...(typeof args.model === "string" && args.model.length > 0
           ? { model: args.model }
           : {}),
+        ...(typeof args.bridgePrompt === "string" && args.bridgePrompt.length > 0
+          ? { bridgePrompt: args.bridgePrompt }
+          : {}),
       });
       return { ok: true, projectId: project.id };
     }

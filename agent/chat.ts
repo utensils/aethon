@@ -16,6 +16,10 @@ import {
 import { detectSubagentMention } from "./subagents/steer";
 import { getSubagentsForCwd } from "./subagents";
 import { emitContextUsage } from "./context-usage";
+import {
+  FileReferenceError,
+  expandFileReferencesInPrompt,
+} from "./file-references";
 
 export async function handleChat(
   state: AethonAgentState,
@@ -32,15 +36,20 @@ export async function handleChat(
   if (typeof msg.hardEnforce === "boolean") {
     state.tabHardEnforce.set(tabId, msg.hardEnforce);
   }
+  const cwdOverride =
+    typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
   // Explicit `@name` subagent invocation: record a one-shot steer consumed by
   // the before_agent_start hook so this turn delegates to that subagent.
   // Resolve against this tab's cwd so the mention matches the tab's project.
+  const tabCwdForMention =
+    cwdOverride ?? state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd;
   const mention = detectSubagentMention(msg.content);
-  if (mention) {
-    const tabCwd = state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd;
-    if (getSubagentsForCwd(state, tabCwd).byName.has(mention)) {
-      state.pendingExplicitSubagent.set(tabId, mention);
-    }
+  const explicitSubagent =
+    mention && getSubagentsForCwd(state, tabCwdForMention).byName.has(mention)
+      ? mention
+      : null;
+  if (explicitSubagent) {
+    state.pendingExplicitSubagent.set(tabId, explicitSubagent);
   }
   const modelId =
     typeof msg.model === "string" && msg.model.length > 0
@@ -49,8 +58,6 @@ export async function handleChat(
   const authServicesRefreshed = refreshAuthServicesForTab(state, tabId, {
     modelId,
   });
-  const cwdOverride =
-    typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
   let initialModel: Model<Api> | undefined;
   if (modelId) {
     const [provider, ...rest] = modelId.split("/");
@@ -71,6 +78,32 @@ export async function handleChat(
   }
   const wantsSteer = msg.mode === "steer";
   const images = normalizeImages(msg.images);
+  let content: string;
+  try {
+    const expanded = await expandFileReferencesInPrompt(msg.content, {
+      // Same precedence as subagent-mention resolution: honor this turn's
+      // cwdOverride first. ensureTab returns early for an existing tab without
+      // refreshing tabProjectCwds, so falling back to it alone resolves @file
+      // refs against a stale cwd when the caller passed a fresh cwd.
+      cwd: tabCwdForMention ?? process.cwd(),
+      leadingSubagentName: explicitSubagent,
+    });
+    content = expanded.prompt;
+  } catch (err) {
+    if (explicitSubagent) state.pendingExplicitSubagent.delete(tabId);
+    const message =
+      err instanceof FileReferenceError
+        ? err.issues.join("\n")
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    deps.send({
+      type: "error",
+      tabId,
+      message: `file references: ${message}`,
+    });
+    return;
+  }
   const busyForTurn = tab.promptInFlight || isUnderlyingSessionBusy(tab);
   if (busyForTurn && !tab.promptInFlight) {
     tab.promptInFlight = true;
@@ -79,7 +112,6 @@ export async function handleChat(
   }
   if (wantsSteer && busyForTurn) {
     state.currentAgentTabId = tabId;
-    const content = msg.content;
     state.tabContext
       .run(tabId, () =>
         images.length > 0
@@ -95,7 +127,6 @@ export async function handleChat(
   const queued = busyForTurn;
   if (queued) {
     tab.queuedCount += 1;
-    const content = msg.content;
     state.tabContext
       .run(tabId, () =>
         images.length > 0
@@ -119,7 +150,6 @@ export async function handleChat(
   tab.promptInFlight = true;
   tab.agentEndFired = false;
   state.currentAgentTabId = tabId;
-  const content = msg.content;
   state.tabContext
     .run(tabId, () =>
       images.length > 0

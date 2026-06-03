@@ -20,9 +20,11 @@ describe("detectSubagentMention", () => {
     expect(detectSubagentMention("@ bad")).toBeNull();
     expect(detectSubagentMention("")).toBeNull();
   });
-  it("stops at a word boundary", () => {
+  it("stops at subagent punctuation but not path-like suffixes", () => {
     expect(detectSubagentMention("@reviewer, please")).toBe("reviewer");
     expect(detectSubagentMention("@reviewer.")).toBe("reviewer");
+    expect(detectSubagentMention("@reviewer.md please")).toBeNull();
+    expect(detectSubagentMention("@reviewer/check this")).toBeNull();
   });
 });
 

@@ -21,7 +21,10 @@ describe("useQueuedDispatch", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();
 
-    const idleTab = tabWithQueue({ waiting: false }, { id: "q1", content: "go" });
+    const idleTab = tabWithQueue(
+      { waiting: false },
+      { id: "q1", content: "go" },
+    );
     renderHook(() =>
       useQueuedDispatch({ tabs: [idleTab], sendChat, updateTab }),
     );
@@ -45,13 +48,34 @@ describe("useQueuedDispatch", () => {
     });
   });
 
+  it("forwards a queued entry's hidden bridgeText to sendChat on drain", () => {
+    const sendChat = vi.fn(() => Promise.resolve());
+    const updateTab = vi.fn();
+    const tab = tabWithQueue({ waiting: false });
+    tab.queuedMessages = [
+      {
+        id: "q1",
+        content: "review the diff",
+        bridgeText: "review the diff\n<expanded>",
+      },
+    ];
+    tab.queueCount = 1;
+    renderHook(() => useQueuedDispatch({ tabs: [tab], sendChat, updateTab }));
+
+    // Visible body drives history (first arg); hidden bridge text is what
+    // actually reaches the bridge so the expansion isn't lost on drain.
+    expect(sendChat).toHaveBeenCalledWith("review the diff", {
+      mode: "normal",
+      tabId: "tab-1",
+      bridgeText: "review the diff\n<expanded>",
+    });
+  });
+
   it("does nothing while the tab is still waiting", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();
     const busy = tabWithQueue({ waiting: true }, { id: "q1", content: "wait" });
-    renderHook(() =>
-      useQueuedDispatch({ tabs: [busy], sendChat, updateTab }),
-    );
+    renderHook(() => useQueuedDispatch({ tabs: [busy], sendChat, updateTab }));
     expect(sendChat).not.toHaveBeenCalled();
     expect(updateTab).not.toHaveBeenCalled();
   });
@@ -63,9 +87,7 @@ describe("useQueuedDispatch", () => {
       { waiting: false, queuedSteeringId: "q1" },
       { id: "q1", content: "steered" },
     );
-    renderHook(() =>
-      useQueuedDispatch({ tabs: [tab], sendChat, updateTab }),
-    );
+    renderHook(() => useQueuedDispatch({ tabs: [tab], sendChat, updateTab }));
     expect(sendChat).not.toHaveBeenCalled();
     expect(updateTab).not.toHaveBeenCalled();
   });
@@ -87,9 +109,7 @@ describe("useQueuedDispatch", () => {
       },
       { id: "q1", content: "x" },
     );
-    renderHook(() =>
-      useQueuedDispatch({ tabs: [shell], sendChat, updateTab }),
-    );
+    renderHook(() => useQueuedDispatch({ tabs: [shell], sendChat, updateTab }));
     expect(sendChat).not.toHaveBeenCalled();
   });
 
@@ -132,10 +152,7 @@ describe("useQueuedDispatch", () => {
     // Second pass: simulate the agent finishing its turn (waiting flips
     // back to false) with a new head in the queue. The guard must not
     // block the second drain.
-    const tabB = tabWithQueue(
-      { waiting: false },
-      { id: "q2", content: "two" },
-    );
+    const tabB = tabWithQueue({ waiting: false }, { id: "q2", content: "two" });
     rerender({ tabs: [tabB] });
     expect(sendChat).toHaveBeenLastCalledWith("two", {
       mode: "normal",

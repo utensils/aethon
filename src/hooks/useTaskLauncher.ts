@@ -14,6 +14,10 @@ export interface StartTaskOptions {
   /** Model the launched session should use (task-launcher model chip).
    *  Overrides the global default + per-project memory for this launch. */
   model?: string;
+  /** Optional hidden prompt sent to the bridge while `prompt` remains the
+   *  visible/local-history text. Used when agent-side launchers need to pass
+   *  deterministic context without polluting the chat transcript. */
+  bridgePrompt?: string;
 }
 
 export interface UseTaskLauncherOptions {
@@ -40,7 +44,11 @@ export interface UseTaskLauncherOptions {
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
   sendChat: (
     text: string,
-    options?: { tabId?: string; attachments?: ChatAttachment[] },
+    options?: {
+      tabId?: string;
+      attachments?: ChatAttachment[];
+      bridgeText?: string;
+    },
   ) => Promise<void>;
 }
 
@@ -118,7 +126,11 @@ export function useTaskLauncher({
       }
       const trimmed = opts.prompt.trim();
       if (trimmed || (opts.attachments?.length ?? 0) > 0) {
-        await sendChat(trimmed, { tabId, attachments: opts.attachments });
+        await sendChat(trimmed, {
+          tabId,
+          ...(opts.attachments ? { attachments: opts.attachments } : {}),
+          ...(opts.bridgePrompt ? { bridgeText: opts.bridgePrompt } : {}),
+        });
       }
     },
     [

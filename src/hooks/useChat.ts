@@ -90,6 +90,7 @@ export interface UseChatActions {
       mode?: "normal" | "steer";
       tabId?: string;
       attachments?: ChatAttachment[];
+      bridgeText?: string;
     },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
@@ -352,7 +353,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       } catch {
         return;
       }
-      const row = diagnostics.find((entry) => diagnosticMatchesTab(entry, tabId));
+      const row = diagnostics.find((entry) =>
+        diagnosticMatchesTab(entry, tabId),
+      );
       if (!row) continue;
       const promptInFlight =
         row.prompt_in_flight === true || row.promptInFlight === true;
@@ -423,6 +426,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       mode?: "normal" | "steer";
       tabId?: string;
       attachments?: ChatAttachment[];
+      bridgeText?: string;
     },
   ) {
     const trimmed = text.trim();
@@ -475,12 +479,13 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     }
 
     const sendText = trimmed.startsWith("//") ? trimmed.slice(1) : trimmed;
-    const bridgeText =
+    const displayText =
       sendText.length > 0
         ? sendText
         : attachments.length === 1
           ? "Please inspect the attached image."
           : "Please inspect the attached images.";
+    const bridgeText = options?.bridgeText?.trim() || displayText;
     const mode = options?.mode === "steer" ? "steer" : "normal";
     const tabId = explicitTabId ?? activeTabId ?? "default";
     const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
@@ -506,7 +511,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     ) {
       const entry: QueuedMessage = {
         id: crypto.randomUUID(),
-        content: bridgeText,
+        // Store the visible body for the popover/history; carry the hidden
+        // dispatch text separately so expanded @file context never surfaces
+        // in the queue UI or becomes editable.
+        content: displayText,
+        ...(bridgeText !== displayText ? { bridgeText } : {}),
         attachments,
       };
       updateTab(tabId, (tab) => withQueue(tab, [...queueOf(tab), entry]));
@@ -527,7 +536,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const userMessage = {
       id: userMessageId,
       role: "user" as const,
-      text: bridgeText,
+      text: displayText,
       ...(attachments.length > 0 ? { attachments } : {}),
       delivery,
     };
@@ -794,7 +803,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       const idx = current.findIndex((m) => m.id === messageId);
       if (idx < 0) return tab;
       const next = current.slice();
-      next[idx] = { ...next[idx], content };
+      // Drop any hidden bridge text: a user-rewritten body supersedes the
+      // original @file expansion, so dispatch exactly what they now see.
+      next[idx] = { ...next[idx], content, bridgeText: undefined };
       return withQueue(tab, next);
     });
   }
@@ -838,6 +849,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         mode: "steer",
         tabId,
         attachments: entry.attachments,
+        ...(entry.bridgeText ? { bridgeText: entry.bridgeText } : {}),
       });
     } finally {
       updateTab(tabId, (t) =>

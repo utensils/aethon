@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { AethonAgentState } from "../state";
@@ -13,6 +16,7 @@ interface MockHandle {
   scriptedEvents: Array<Record<string, unknown>>;
   promptImpl: null | (() => Promise<void>);
   lastConfig: Record<string, unknown> | undefined;
+  lastPrompt: string | undefined;
   createAgentSession: ReturnType<typeof vi.fn>;
   disposeSpy: ReturnType<typeof vi.fn>;
   abortSpy: ReturnType<typeof vi.fn>;
@@ -23,6 +27,7 @@ const h = vi.hoisted<MockHandle>(() => ({
   scriptedEvents: [],
   promptImpl: null,
   lastConfig: undefined,
+  lastPrompt: undefined,
   createAgentSession: vi.fn(),
   disposeSpy: vi.fn(),
   abortSpy: vi.fn(),
@@ -42,7 +47,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => {
           if (i >= 0) h.subscribers.splice(i, 1);
         };
       },
-      prompt(): Promise<void> {
+      prompt(prompt: string): Promise<void> {
+        h.lastPrompt = prompt;
         if (h.promptImpl) return h.promptImpl();
         for (const ev of h.scriptedEvents) {
           for (const s of [...h.subscribers]) s(ev);
@@ -136,6 +142,7 @@ beforeEach(() => {
   h.scriptedEvents = [...successEvents];
   h.promptImpl = null;
   h.lastConfig = undefined;
+  h.lastPrompt = undefined;
   h.createAgentSession.mockClear();
 });
 
@@ -178,6 +185,61 @@ describe("buildSubagentTaskTool", () => {
     expect(phases).toContain("text");
     expect(phases).toContain("done");
     expect(h.disposeSpy).toHaveBeenCalled();
+  });
+
+  it("expands @file references before sending the task to an inline subagent", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "aethon-task-file-ref-"));
+    try {
+      await writeFile(join(cwd, "foo.ts"), "export const foo = 1;\n");
+      const { state } = makeState({
+        name: "reviewer",
+        model: "ollama/llama3.3",
+      });
+      const registry = state.subagentsByCwd.get("/proj");
+      state.currentProjectCwd = cwd;
+      state.subagentsByCwd = new Map([[cwd, registry]]);
+      const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+
+      await execOf(tool)("c", {
+        subagent_type: "reviewer",
+        prompt: "check @foo.ts",
+      });
+
+      expect(h.lastPrompt).toContain("<aethon_file_references");
+      expect(h.lastPrompt).toContain("export const foo = 1");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("expands prompt and context in a single deduped file-references block", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "aethon-task-file-ref-dedup-"));
+    try {
+      await writeFile(join(cwd, "foo.ts"), "export const foo = 1;\n");
+      const { state } = makeState({
+        name: "reviewer",
+        model: "ollama/llama3.3",
+      });
+      const registry = state.subagentsByCwd.get("/proj");
+      state.currentProjectCwd = cwd;
+      state.subagentsByCwd = new Map([[cwd, registry]]);
+      const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+
+      await execOf(tool)("c", {
+        subagent_type: "reviewer",
+        prompt: "check @foo.ts",
+        context: "Background: @foo.ts matters.",
+      });
+
+      // The same file referenced in both prompt and context must yield ONE
+      // <aethon_file_references> block, not one per field.
+      const blocks =
+        (h.lastPrompt ?? "").split("<aethon_file_references").length - 1;
+      expect(blocks).toBe(1);
+      expect(h.lastPrompt).toContain("export const foo = 1");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   it("passes a tools allowlist through to the session", async () => {
@@ -330,5 +392,40 @@ describe("buildSubagentTaskTool", () => {
     expect(result.content[0].text).toMatch(/Launched subagent/);
     // No isolated session created for the tab surface.
     expect(h.createAgentSession).not.toHaveBeenCalled();
+  });
+
+  it("passes expanded context as a hidden bridge prompt for tab-surface subagents", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "aethon-task-file-ref-tab-"));
+    try {
+      await writeFile(join(cwd, "foo.ts"), "export const foo = 1;\n");
+      const start = vi.fn(() => Promise.resolve({ ok: true }));
+      (globalThis as { aethon?: unknown }).aethon = { tasks: { start } };
+      const { state } = makeState({
+        name: "builder",
+        surface: "tab",
+      });
+      const registry = state.subagentsByCwd.get("/proj");
+      state.currentProjectCwd = cwd;
+      state.subagentsByCwd = new Map([[cwd, registry]]);
+      const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+
+      await execOf(tool)("c", {
+        subagent_type: "builder",
+        prompt: "inspect @foo.ts",
+        context: "Use @foo.ts as context.",
+      });
+
+      expect(start).toHaveBeenCalledWith({
+        projectPath: cwd,
+        prompt: expect.stringContaining("inspect @foo.ts"),
+        bridgePrompt: expect.stringContaining("<aethon_file_references"),
+      });
+      expect(start.mock.calls[0]?.[0].prompt).not.toContain(
+        "<aethon_file_references",
+      );
+      expect(h.createAgentSession).not.toHaveBeenCalled();
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 });

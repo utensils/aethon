@@ -295,7 +295,8 @@ export function TaskLauncher({
         ref={textareaRef}
         className="a2ui-task-launcher-input"
         placeholder={
-          props?.placeholder ?? `Start a task in ${data.project.label}…`
+          props?.placeholder ??
+          `Start a task in ${data.project.label}… use @path for file context`
         }
         value={promptText}
         rows={3}

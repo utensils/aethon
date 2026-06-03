@@ -40,6 +40,11 @@ import { getSubagentsForCwd } from "./loader";
 import { resolveSubagentTools } from "./parse";
 import type { Subagent, SubagentSurface } from "./types";
 import { timeoutMsFromSeconds } from "../runtime-config";
+import {
+  expandFileReferencesInPrompt,
+  parseFileReferences,
+  stripExpandedFileReferences,
+} from "../file-references";
 /** Cap on the text returned to the parent (and streamed partials). */
 const MAX_RESULT_CHARS = 100_000;
 
@@ -65,12 +70,12 @@ const TaskParams = Type.Object({
   }),
   prompt: Type.String({
     description:
-      "The full, self-contained task for the subagent. It runs in a fresh isolated session and only sees this text — include all context it needs.",
+      "The full, self-contained task for the subagent. It runs in a fresh isolated session and only sees this text — include all context it needs. @file references are resolved relative to the parent tab's cwd and expanded before delegation.",
   }),
   context: Type.Optional(
     Type.String({
       description:
-        "Optional extra context (file paths, constraints) prepended to the task.",
+        "Optional extra context (file paths, constraints) prepended to the task. @file references are resolved like prompt references.",
     }),
   ),
 });
@@ -136,11 +141,19 @@ async function runSubagentTask(
       `unknown subagent "${params.subagent_type}". Available subagents: ${available}.`,
     );
   }
-  const composedPrompt = composePrompt(sub, params);
-
+  const taskBody = composeTaskBody(params);
+  // Expand @file refs over the combined prompt + context in a single pass so a
+  // file referenced in both dedupes into one <aethon_file_references> block and
+  // the total-byte cap applies once. Skip the await entirely when there are no
+  // refs so non-expanding delegations keep their original microtask timing.
+  const expandedBody = hasTaskFileReferences(params)
+    ? (await expandFileReferencesInPrompt(taskBody, { cwd })).prompt
+    : taskBody;
+  const composedPrompt = composePrompt(sub, expandedBody);
   if (sub.surface === "tab") {
     return launchSubagentTab(sub, cwd, composedPrompt);
   }
+
   return runInlineSubagent(
     state,
     deps,
@@ -154,14 +167,29 @@ async function runSubagentTask(
   );
 }
 
-/** Compose the subagent's instructions (its markdown body) with the delegated
- *  task into a single self-contained prompt. */
-function composePrompt(sub: Subagent, params: TaskParamsT): string {
+/** The delegated task body: an optional context block followed by the prompt.
+ *  Kept separate from the subagent preamble so `@file` expansion runs over the
+ *  user-provided text only (the subagent's own system prompt is excluded,
+ *  matching prior behavior). */
+function composeTaskBody(params: TaskParamsT): string {
   const extra = params.context?.trim() ? `${params.context.trim()}\n\n` : "";
+  return `${extra}${params.prompt}`;
+}
+
+/** Prepend the subagent's instructions to the (already `@file`-expanded) task
+ *  body to form the single self-contained prompt. */
+function composePrompt(sub: Subagent, body: string): string {
   const preamble = sub.systemPrompt.trim()
     ? `${sub.systemPrompt.trim()}\n\n---\n`
     : "";
-  return `${preamble}Task:\n${extra}${params.prompt}`;
+  return `${preamble}Task:\n${body}`;
+}
+
+function hasTaskFileReferences(params: TaskParamsT): boolean {
+  return (
+    parseFileReferences(params.prompt).length > 0 ||
+    (params.context ? parseFileReferences(params.context).length > 0 : false)
+  );
 }
 
 interface ResolvedModelServices {
@@ -349,6 +377,7 @@ interface TasksApi {
     projectPath: string;
     prompt: string;
     model?: string;
+    bridgePrompt?: string;
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
@@ -367,9 +396,13 @@ async function launchSubagentTab(
     throw new Error(
       "subagent tab launch unavailable (aethon.tasks API missing)",
     );
+  const displayPrompt = stripExpandedFileReferences(composedPrompt);
   const result = await api.start({
     projectPath: cwd,
-    prompt: composedPrompt,
+    prompt: displayPrompt,
+    ...(displayPrompt !== composedPrompt
+      ? { bridgePrompt: composedPrompt }
+      : {}),
     ...(sub.model ? { model: sub.model } : {}),
   });
   if (!result.ok) {

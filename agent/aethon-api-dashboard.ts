@@ -80,6 +80,9 @@ export function buildTasksApi(
           ...(typeof input.model === "string" && input.model
             ? { model: input.model }
             : {}),
+          ...(typeof input.bridgePrompt === "string" && input.bridgePrompt
+            ? { bridgePrompt: input.bridgePrompt }
+            : {}),
         },
         // Worktree-create + tab-open + send can take several seconds on a
         // large repo. 30s is the same ceiling as the shell-write ack

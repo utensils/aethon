@@ -24,6 +24,14 @@ export interface DragDropDeps {
  *  Position hit-test uses `document.elementFromPoint` against
  *  physical-to-CSS-pixel-converted drop coordinates so the user can
  *  drop directly onto the panel they want to receive the path. */
+export function fileReferenceToken(path: string): string {
+  return `@${quoteFileReferencePath(path)}`;
+}
+
+function quoteFileReferencePath(path: string): string {
+  return `"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 export function subscribeDragDrop(deps: DragDropDeps): () => void {
   const { stateRef, updateTab } = deps;
 
@@ -81,7 +89,7 @@ export function subscribeDragDrop(deps: DragDropDeps): () => void {
         }
 
         if (tab.kind !== "agent") return;
-        const tokens = paths.map((p) => `@${p}`).join(" ");
+        const tokens = paths.map(fileReferenceToken).join(" ");
         updateTab(activeId, (t) => ({
           ...t,
           draft: t.draft.length > 0 ? `${t.draft} ${tokens}` : tokens,
