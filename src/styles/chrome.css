@@ -8637,3 +8637,45 @@ button.ae-vcs-chip:focus-visible {
   display: flex;
   gap: 8px;
 }
+
+/* --------------------------------------------------------------------------
+ * Per-message rollback / fork hover toolbar (chat + canvas transcripts).
+ * ------------------------------------------------------------------------ */
+.a2ui-canvas-message {
+  position: relative;
+}
+.ae-msg-branch-actions {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+  pointer-events: none;
+}
+.a2ui-chat-message:hover .ae-msg-branch-actions,
+.a2ui-canvas-message:hover .ae-msg-branch-actions,
+.ae-msg-branch-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ae-msg-branch-btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  line-height: 1.4;
+}
+.ae-msg-branch-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ae-msg-branch-confirm {
+  color: var(--danger);
+  border-color: var(--danger);
+}

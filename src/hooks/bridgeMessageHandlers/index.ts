@@ -44,7 +44,9 @@ import { handleRegisterHighlightGrammar } from "./registerHighlightGrammar";
 import { handleResponse } from "./response";
 import { handleResponseDelta } from "./responseDelta";
 import { handleResponseEnd } from "./responseEnd";
+import { handleSessionForked } from "./sessionForked";
 import { handleSessionHistory } from "./sessionHistory";
+import { handleSessionRolledBack } from "./sessionRolledBack";
 import { handleShellQuery } from "./shellQuery";
 import { handleDashboardQuery } from "./dashboardQuery";
 import { handleDevshellQuery } from "./devshellQuery";
@@ -90,7 +92,9 @@ export const bridgeMessageHandlers: Readonly<
   response: handleResponse,
   response_delta: handleResponseDelta,
   response_end: handleResponseEnd,
+  session_forked: handleSessionForked,
   session_history: handleSessionHistory,
+  session_rolled_back: handleSessionRolledBack,
   shell_query: handleShellQuery,
   dashboard_query: handleDashboardQuery,
   devshell_query: handleDevshellQuery,

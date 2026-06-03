@@ -223,7 +223,7 @@ function AttachmentGallery({ attachments }: { attachments: ChatAttachment[] }) {
   );
 }
 
-const ChatMessageRow = memo(
+export const ChatMessageRow = memo(
   function ChatMessageRow({
     message,
     state,
@@ -245,6 +245,14 @@ const ChatMessageRow = memo(
     isLatest?: boolean;
     thinkingVisibility?: VisibilityMode;
   }) {
+    const [confirmingRollback, setConfirmingRollback] = useState(false);
+    // Rollback / fork are offered on real user/assistant turns that carry a pi
+    // entry id (tool-card and system rows are not branch targets).
+    const canBranch =
+      Boolean(message.entryId) &&
+      (message.role === "user" || message.role === "agent") &&
+      Boolean(message.text) &&
+      Boolean(onEvent);
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
     const textClass = isCanvas
@@ -314,6 +322,55 @@ const ChatMessageRow = memo(
         )}
         {message.a2ui && (
           <A2UIRenderer payload={message.a2ui} state={state} tabId={tabId} />
+        )}
+        {canBranch && (
+          <div
+            className="ae-msg-branch-actions"
+            onMouseLeave={() => setConfirmingRollback(false)}
+          >
+            {confirmingRollback ? (
+              <>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn ae-msg-branch-confirm"
+                  onClick={() => {
+                    setConfirmingRollback(false);
+                    onEvent?.("rollback-to-here", { entryId: message.entryId });
+                  }}
+                >
+                  Confirm rollback
+                </button>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn"
+                  onClick={() => setConfirmingRollback(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn"
+                  title="Rewind the conversation to this message"
+                  onClick={() => setConfirmingRollback(true)}
+                >
+                  ↶ Rollback
+                </button>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn"
+                  title="Fork the conversation into a new tab from here"
+                  onClick={() =>
+                    onEvent?.("fork-to-tab", { entryId: message.entryId })
+                  }
+                >
+                  ⑂ Fork
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
     );

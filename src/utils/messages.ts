@@ -200,6 +200,22 @@ function coerceChatAttachments(value: unknown): ChatAttachment[] {
   });
 }
 
+/**
+ * Keep the transcript prefix up to and INCLUDING the row whose `entryId`
+ * matches; drop everything after. Used by rollback to rewind the rendered
+ * transcript to a chosen message. Returns the input array unchanged (same
+ * reference) when no row matches — the rollback target isn't on the live
+ * transcript, so the authoritative truncate will land on the next reload.
+ */
+export function truncateToEntry(
+  messages: ChatMessage[],
+  entryId: string,
+): ChatMessage[] {
+  const idx = messages.findIndex((m) => m.entryId === entryId);
+  if (idx === -1) return messages;
+  return messages.slice(0, idx + 1);
+}
+
 export function coerceChatMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value)) return [];
   const messages: ChatMessage[] = [];

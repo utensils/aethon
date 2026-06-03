@@ -684,6 +684,7 @@ export default function App() {
     pendingTabOpens,
     updateTab,
     updateActiveTab,
+    newTab,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     hydrateThemes,
