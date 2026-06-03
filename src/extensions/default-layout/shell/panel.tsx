@@ -304,7 +304,10 @@ function SubTabPill(props: {
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       onMouseDown={(e) => {
-        if ((e.target as HTMLElement).closest(".ae-sub-tab-close")) return;
+        if ((e.target as HTMLElement).closest(".ae-sub-tab-close")) {
+          e.preventDefault();
+          return;
+        }
         onSelect();
       }}
     >

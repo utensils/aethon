@@ -359,9 +359,13 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
               // not preventDefault here: native draggable tabs need the
               // browser's default mouse gesture to fire dragstart.
               if (e.button !== 0) return;
-              if ((e.target as HTMLElement).closest(".a2ui-tab-close")) return;
-              if ((e.target as HTMLElement).closest(".ae-tab-rename-input"))
+              if (
+                (e.target as HTMLElement).closest(".a2ui-tab-close") ||
+                (e.target as HTMLElement).closest(".ae-tab-rename-input")
+              ) {
+                e.preventDefault();
                 return;
+              }
               onEvent("select", { tabId: t.id });
             }}
             onContextMenu={(e) => openTabMenu(e, t)}
