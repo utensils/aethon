@@ -12,19 +12,29 @@ export function contextUsageFromMessage(
   if (contextWindow === null || contextWindow <= 0) return null;
   const compactAtTokens = finiteNumber(data.compactAtTokens);
   const reserveTokens = finiteNumber(data.reserveTokens);
+  const tokens = finiteNumber(data.tokens);
+  const estimatedTokens = finiteNumber(data.estimatedTokens) ?? tokens;
+  const transientTokens = finiteNumber(data.transientTokens) ?? 0;
+  const saturatedByProvider =
+    data.saturatedByProvider === true || data.saturated === true;
   return {
     tabId: typeof data.tabId === "string" ? data.tabId : undefined,
     model: typeof data.model === "string" ? data.model : "",
     status: data.status === "known" ? "known" : "unknown",
-    tokens: finiteNumber(data.tokens),
+    tokens,
     contextWindow,
     percent: finiteNumber(data.percent),
+    estimatedTokens,
+    estimatedPercent: finiteNumber(data.estimatedPercent),
+    transientTokens,
     autoCompactEnabled: data.autoCompactEnabled === true,
     reserveTokens: reserveTokens ?? 0,
     compactAtTokens: compactAtTokens ?? contextWindow,
     tokensUntilCompact: finiteNumber(data.tokensUntilCompact),
+    estimatedTokensUntilCompact: finiteNumber(data.estimatedTokensUntilCompact),
     ...(data.compacting === true ? { compacting: true } : {}),
-    ...(data.saturated === true ? { saturated: true } : {}),
+    ...(saturatedByProvider ? { saturatedByProvider: true, saturated: true } : {}),
+    ...(data.saturatedByEstimate === true ? { saturatedByEstimate: true } : {}),
   };
 }
 

@@ -77,6 +77,44 @@ describe("StatusBar context meter", () => {
     expect(screen.getByText("auto @184k")).toBeTruthy();
   });
 
+  it("renders live tool-output saturation as an estimate, not authoritative 100%", () => {
+    renderStatusBar({
+      status: "ready",
+      connection: "connected",
+      model: "anthropic/claude",
+      contextUsage: {
+        model: "anthropic/claude",
+        status: "known",
+        tokens: 199_999,
+        contextWindow: 272_000,
+        percent: 73.5,
+        estimatedTokens: 280_000,
+        estimatedPercent: 102.9,
+        transientTokens: 80_001,
+        autoCompactEnabled: true,
+        reserveTokens: 16_384,
+        compactAtTokens: 255_616,
+        tokensUntilCompact: 55_617,
+        estimatedTokensUntilCompact: 0,
+        saturatedByEstimate: true,
+      },
+    });
+
+    expect(screen.getByText("ctx 74%")).toBeTruthy();
+    expect(screen.getByText("200k/272k")).toBeTruthy();
+    expect(screen.getByText("est 272k+")).toBeTruthy();
+    expect(screen.getByText("pending turn")).toBeTruthy();
+    const chip = screen.getByLabelText(
+      "Context 74%, tool-output estimate pending compaction",
+    );
+    expect(chip.getAttribute("title")).toContain(
+      "Live estimate including current turn/tool output",
+    );
+    expect(chip.getAttribute("title")).toContain(
+      "compaction is pending the current turn",
+    );
+  });
+
   it("surfaces a distinct FULL state when the window is saturated (Ollama truncating)", () => {
     renderStatusBar({
       status: "ready",

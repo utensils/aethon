@@ -153,10 +153,60 @@ describe("live context updates", () => {
     expect(context).toMatchObject({
       type: "context_usage",
       tabId: "tab-1",
-      tokens: expect.any(Number),
+      tokens: 1_000,
+      estimatedTokens: expect.any(Number),
+      transientTokens: expect.any(Number),
+      tokensUntilCompact: 800,
     });
-    expect(context?.tokens).toBeGreaterThan(1_000);
-    expect(context?.tokensUntilCompact).toBeLessThan(800);
+    expect(context?.estimatedTokens).toBeGreaterThan(1_000);
+    expect(context?.estimatedTokensUntilCompact).toBeLessThan(800);
+  });
+
+  it("marks live bash-output saturation without changing provider usage", () => {
+    const state = stateWithCompaction({
+      settingsManager: {
+        getCompactionSettings: () => ({
+          enabled: true,
+          reserveTokens: 16_384,
+          keepRecentTokens: 100,
+        }),
+      },
+    });
+    const rec = recWithUsage({
+      tokens: 199_999,
+      contextWindow: 272_000,
+      percent: 73.5,
+    });
+    const sent: Record<string, unknown>[] = [];
+
+    handleSessionEvent(
+      state,
+      { send: (msg) => sent.push(msg) },
+      rec,
+      "tab-1",
+      {
+        type: "tool_execution_update",
+        toolCallId: "bash-1",
+        toolName: "bash",
+        args: { command: "yes" },
+        partialResult: {
+          content: [{ type: "text", text: "x".repeat(320_000) }],
+        },
+      },
+    );
+
+    const context = sent.find((msg) => msg.type === "context_usage");
+    expect(context).toMatchObject({
+      tokens: 199_999,
+      percent: 73.5,
+      compactAtTokens: 255_616,
+      tokensUntilCompact: 55_617,
+      saturatedByEstimate: true,
+    });
+    expect(context?.estimatedTokens).toBeGreaterThan(272_000);
+    expect(context?.estimatedTokensUntilCompact).toBe(0);
+    expect(context?.saturatedByProvider).toBeUndefined();
+    expect(context?.saturated).toBeUndefined();
   });
 
   it("clears transient estimates for authoritative turn-end usage", () => {

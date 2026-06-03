@@ -212,19 +212,31 @@ function contextUsageFromValue(value: unknown): ContextUsageState | null {
   ) {
     return null;
   }
+  const tokens = finiteNumberOrNull(usage.tokens);
+  const estimatedTokens = finiteNumberOrNull(usage.estimatedTokens) ?? tokens;
+  const transientTokens = finiteNumberOrNull(usage.transientTokens) ?? 0;
+  const saturatedByProvider =
+    usage.saturatedByProvider === true || usage.saturated === true;
   return {
     model: typeof usage.model === "string" ? usage.model : "",
     status: usage.status === "known" ? "known" : "unknown",
-    tokens: finiteNumberOrNull(usage.tokens),
+    tokens,
     contextWindow: usage.contextWindow,
     percent: finiteNumberOrNull(usage.percent),
+    estimatedTokens,
+    estimatedPercent: finiteNumberOrNull(usage.estimatedPercent),
+    transientTokens,
     autoCompactEnabled: usage.autoCompactEnabled === true,
     reserveTokens: finiteNumberOrNull(usage.reserveTokens) ?? 0,
     compactAtTokens:
       finiteNumberOrNull(usage.compactAtTokens) ?? usage.contextWindow,
     tokensUntilCompact: finiteNumberOrNull(usage.tokensUntilCompact),
+    estimatedTokensUntilCompact: finiteNumberOrNull(
+      usage.estimatedTokensUntilCompact,
+    ),
     ...(usage.compacting === true ? { compacting: true } : {}),
-    ...(usage.saturated === true ? { saturated: true } : {}),
+    ...(saturatedByProvider ? { saturatedByProvider: true, saturated: true } : {}),
+    ...(usage.saturatedByEstimate === true ? { saturatedByEstimate: true } : {}),
   };
 }
 
@@ -247,27 +259,67 @@ function formatExactTokens(value: number | null | undefined): string {
     : "unknown";
 }
 
+function formatEstimatedTokens(
+  value: number | null | undefined,
+  contextWindow: number,
+): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "?";
+  return value >= contextWindow
+    ? `${formatTokens(contextWindow)}+`
+    : formatTokens(value);
+}
+
 function ContextMeter({ usage }: { usage: ContextUsageState }) {
-  const percentValue =
+  const providerPercent =
     usage.percent ??
     (usage.tokens !== null ? (usage.tokens / usage.contextWindow) * 100 : null);
-  const usageClass =
-    usage.saturated || (percentValue !== null && percentValue >= 90)
+  const estimatedPercent =
+    usage.estimatedPercent ??
+    (usage.estimatedTokens !== null
+      ? (usage.estimatedTokens / usage.contextWindow) * 100
+      : null);
+  const saturatedByProvider = usage.saturatedByProvider || usage.saturated;
+  const estimateActive =
+    usage.transientTokens > 0 &&
+    usage.tokens !== null &&
+    usage.estimatedTokens !== null &&
+    usage.estimatedTokens > usage.tokens;
+  const estimateOverCompact =
+    estimateActive &&
+    usage.autoCompactEnabled &&
+    usage.estimatedTokens !== null &&
+    usage.estimatedTokens >= usage.compactAtTokens &&
+    (usage.tokens === null || usage.tokens < usage.compactAtTokens);
+  const saturatedByEstimate =
+    usage.saturatedByEstimate ||
+    (estimateActive &&
+      !saturatedByProvider &&
+      usage.estimatedTokens !== null &&
+      usage.estimatedTokens >= usage.contextWindow);
+  const usageClass = saturatedByProvider
+    ? " is-danger"
+    : providerPercent !== null && providerPercent >= 90
       ? " is-danger"
-      : percentValue !== null && percentValue >= 70
+      : estimateOverCompact ||
+          (providerPercent !== null && providerPercent >= 70)
         ? " is-warning"
         : "";
-  const saturatedClass = usage.saturated ? " is-saturated" : "";
+  const saturatedClass = saturatedByProvider ? " is-saturated" : "";
+  const estimatedClass = estimateOverCompact ? " is-estimated-over" : "";
   const compactingClass = usage.compacting ? " is-compacting" : "";
-  const percentLabel = usage.saturated
+  const percentLabel = saturatedByProvider
     ? "FULL"
-    : percentValue === null
+    : providerPercent === null
       ? "?"
-      : `${Math.round(percentValue)}%`;
+      : `${Math.round(providerPercent)}%`;
   const usedLabel =
     usage.tokens === null
       ? `?/${formatTokens(usage.contextWindow)}`
       : `${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)}`;
+  const estimateLabel = estimateActive
+    ? `est ${formatEstimatedTokens(usage.estimatedTokens, usage.contextWindow)}`
+    : null;
+  const pendingLabel = estimateOverCompact ? "pending turn" : null;
   const autoLabel = usage.autoCompactEnabled
     ? `auto @${formatTokens(usage.compactAtTokens)}`
     : "auto off";
@@ -276,37 +328,64 @@ function ContextMeter({ usage }: { usage: ContextUsageState }) {
     `Context used: ${formatExactTokens(usage.tokens)} of ${formatExactTokens(
       usage.contextWindow,
     )} tokens`,
-    usage.percent === null
-      ? "Usage is unknown until the next assistant response."
-      : `Usage: ${usage.percent.toFixed(1)}%`,
+    providerPercent === null
+      ? "Provider usage is unknown until the next assistant response."
+      : `Provider usage: ${providerPercent.toFixed(1)}%`,
+    estimateActive
+      ? `Live estimate including current turn/tool output: ${formatExactTokens(
+          usage.estimatedTokens,
+        )} of ${formatExactTokens(usage.contextWindow)} tokens${
+          estimatedPercent === null ? "" : ` (${estimatedPercent.toFixed(1)}%)`
+        }`
+      : null,
+    estimateOverCompact
+      ? "Tool output estimate exceeds the auto-compact threshold; compaction is pending the current turn/model response or overflow recovery."
+      : null,
     usage.autoCompactEnabled
       ? `Next auto compaction: ${formatExactTokens(
           usage.compactAtTokens,
-        )} tokens (${formatExactTokens(usage.tokensUntilCompact)} remaining)`
+        )} provider tokens (${formatExactTokens(
+          usage.tokensUntilCompact,
+        )} provider tokens remaining)`
       : "Auto compaction: off",
     `Reserve: ${formatExactTokens(usage.reserveTokens)} tokens`,
-    usage.saturated
+    saturatedByProvider
       ? "Context full — older turns are being truncated (silent, lossy). Run /compact or /clear."
+      : null,
+    saturatedByEstimate
+      ? "The live estimate has reached the context window, but provider usage has not; this is not an auto-compaction failure."
       : null,
   ]
     .filter(Boolean)
     .join("\n");
   return (
     <span
-      className={`a2ui-status-context-chip${usageClass}${saturatedClass}${compactingClass}`}
+      className={`a2ui-status-context-chip${usageClass}${saturatedClass}${estimatedClass}${compactingClass}`}
       title={title}
       aria-label={
-        usage.saturated ? "Context full, truncating" : `Context ${percentLabel}`
+        saturatedByProvider
+          ? "Context full, truncating"
+          : estimateOverCompact
+            ? `Context ${percentLabel}, tool-output estimate pending compaction`
+            : `Context ${percentLabel}`
       }
     >
       <span className="a2ui-status-context-track" aria-hidden="true">
         <span
           className="a2ui-status-context-fill"
-          style={{ width: `${Math.max(0, Math.min(percentValue ?? 0, 100))}%` }}
+          style={{
+            width: `${Math.max(0, Math.min(providerPercent ?? 0, 100))}%`,
+          }}
         />
       </span>
       <span className="a2ui-status-context-label">ctx {percentLabel}</span>
       <span className="a2ui-status-context-detail">{usedLabel}</span>
+      {estimateLabel ? (
+        <span className="a2ui-status-context-estimate">{estimateLabel}</span>
+      ) : null}
+      {pendingLabel ? (
+        <span className="a2ui-status-context-pending">{pendingLabel}</span>
+      ) : null}
       <span className="a2ui-status-context-auto">{autoLabel}</span>
     </span>
   );
