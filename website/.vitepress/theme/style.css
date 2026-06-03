@@ -1,9 +1,9 @@
-/* Aethon docs theme — bridges Aethon's three-palette token system into
-   VitePress's --vp-c-* surface. Light scheme uses Paper; dark uses Ember.
-   The Æther signature palette is kept in the documentation (see
-   guide/themes.md) rather than as a third site mode (VitePress is binary
-   light/dark). All tokens here are kept in sync with src/styles.css —
-   touch one, touch both. */
+/* Aethon docs theme: bridges Aethon's theme token system into VitePress's
+   --vp-c-* surface. VitePress is binary light/dark, so the site maps to two
+   of Aethon's seven shipped themes: Paper (light) and Ember (dark). The
+   other five (Æther, Brink, Daylight, Mist, Nocturne) live in the app and
+   are documented in guide/themes.md, not exposed as site modes. All tokens
+   here are kept in sync with src/styles.css: touch one, touch both. */
 
 /* ─────────────────────────────────────── Paper (light) ─── */
 :root {
@@ -53,19 +53,13 @@
   --vp-font-family-mono: "Geist Mono Variable", "Geist Mono",
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Hero — drives the landing page */
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(
-    120deg,
-    #b94000 30%,
-    #ff6a18
-  );
-  --vp-home-hero-image-background-image: linear-gradient(
-    -45deg,
-    rgba(212, 83, 12, 0.15) 20%,
-    rgba(255, 106, 24, 0.18) 80%
-  );
-  --vp-home-hero-image-filter: blur(56px);
+  /* Hero — drives the landing page. Solid brand name (no gradient text:
+     background-clip:text is a banned dazzle tell) and no ambient glow at
+     rest (the Glow-Is-Earned Rule). The hero illustration carries itself. */
+  --vp-home-hero-name-color: var(--vp-c-brand-1);
+  --vp-home-hero-name-background: transparent;
+  --vp-home-hero-image-background-image: transparent;
+  --vp-home-hero-image-filter: none;
 
   /* Buttons */
   --vp-button-brand-bg: var(--vp-c-brand-2);
@@ -137,19 +131,11 @@
   --vp-c-warning-1: var(--aethon-warn);
   --vp-c-danger-1: var(--aethon-error);
 
-  /* Hero */
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(
-    120deg,
-    #ff6a18 30%,
-    #ffb968
-  );
-  --vp-home-hero-image-background-image: linear-gradient(
-    -45deg,
-    rgba(255, 106, 24, 0.22) 20%,
-    rgba(255, 138, 61, 0.18) 80%
-  );
-  --vp-home-hero-image-filter: blur(72px);
+  /* Hero — solid brand name, no ambient glow (see the Paper block). */
+  --vp-home-hero-name-color: var(--vp-c-brand-1);
+  --vp-home-hero-name-background: transparent;
+  --vp-home-hero-image-background-image: transparent;
+  --vp-home-hero-image-filter: none;
 
   /* Buttons */
   --vp-button-brand-bg: #ff6a18;
@@ -179,12 +165,103 @@
   color: var(--vp-c-brand-1) !important;
 }
 
-/* Slight refinements on the home hero so the brass accent reads as
-   illumination rather than a hard rectangle. */
 .VPHero .name {
   letter-spacing: -0.02em;
 }
 
-.VPHero .image-bg {
-  opacity: 0.85;
+/* De-template the feature grid. VitePress renders four identical cards in
+   one even row (the generated-grid tell). On desktop, promote the first
+   feature ("Agent-rendered UI", the product thesis) to a full-width
+   featured card with centered, measure-capped content, and drop the other
+   three into a 3-up row beneath it. The feature wrapper carries the class
+   `grid-4 item`, so `.items .item` matches and outranks VitePress's
+   `.grid-4[data-v]` width on specificity. Breakpoint matches VitePress's
+   own desktop grid (768px); narrower viewports keep its responsive stack. */
+@media (min-width: 768px) {
+  .VPHome .VPFeatures .items .item:first-child {
+    width: 100%;
+  }
+
+  .VPHome .VPFeatures .items .item:not(:first-child) {
+    width: calc(100% / 3);
+  }
+
+  /* Center the featured card's content so the full width reads as a
+     deliberate banner, not a card with an empty right half. */
+  .VPHome .VPFeatures .items .item:first-child .box {
+    align-items: center;
+    text-align: center;
+  }
+
+  .VPHome .VPFeatures .items .item:first-child .title {
+    font-size: var(--text-xl, 1.4rem);
+    letter-spacing: -0.015em;
+  }
+
+  .VPHome .VPFeatures .items .item:first-child .details {
+    max-width: 60ch;
+    margin-inline: auto;
+  }
+}
+
+/* ───────────────────────────── Doc wireframes ─── */
+/* Brand-styled HTML schematics that replace hand-drawn ASCII UI mockups.
+   They read from VitePress brand vars so they track Paper (light) and
+   Ember (dark), stay legible in both, and reflow on narrow viewports. The
+   <figure> carries an aria-label so a screen reader gets the gist without
+   parsing layout boxes. */
+.ae-wire {
+  margin: 1.5rem 0;
+}
+/* Consent-dialog schematic (shell write prompt). */
+.ae-wire-dialog {
+  max-width: 440px;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--vp-c-border);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+  box-shadow: var(--vp-shadow-3);
+  font-size: 0.85rem;
+}
+.ae-wire-dialog-title {
+  margin-bottom: 0.65rem;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+.ae-wire-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.95rem;
+}
+.ae-wire-btn {
+  padding: 0.3rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid var(--vp-c-border);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.ae-wire-btn-deny {
+  background: transparent;
+  color: var(--vp-c-text-2);
+}
+.ae-wire-btn-allow {
+  background: var(--vp-c-brand-1);
+  border-color: transparent;
+  color: var(--vp-c-bg);
+}
+/* Real product screenshots embedded in the docs. */
+.ae-shot {
+  margin: 1.5rem 0;
+}
+.ae-shot img {
+  width: 100%;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  box-shadow: var(--vp-shadow-3);
+}
+.ae-shot figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--vp-c-text-3);
 }

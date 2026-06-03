@@ -1,16 +1,17 @@
 # Configuration
 
 Aethon stores user settings in **`~/.aethon/config.toml`**. The Settings
-panel (`Cmd+,`) writes the same file — power-users can edit it directly,
-or click **Open config.toml** in Settings to reveal it in your editor.
+panel (`Cmd+,`) writes the same file: power users can edit it directly, or
+click **Open config.toml** in Settings to reveal it in your editor.
 
-The full schema lives in [`reference/config-reference`](/reference/config-reference);
-this page covers the common ones with examples.
+This page is task-focused. Each section below is a copy-paste block for a
+common setup. The full keys-and-defaults schema lives in
+[`reference/config-reference`](/reference/config-reference).
 
 ## File layout
 
 ```toml
-# ~/.aethon/config.toml — managed by Aethon Settings.
+# ~/.aethon/config.toml (managed by Aethon Settings).
 
 [ui]
 theme = "ember"
@@ -18,9 +19,15 @@ font_size = 14
 restore_tabs = true
 notify_on_completion = true
 notify_min_duration_seconds = 8
+thinking_visibility = "show"
+tool_calls_visibility = "show"
 
 [agent]
 model = "anthropic/claude-sonnet-4-6"
+# provider_timeout_seconds = 120   # optional; omit to keep pi's default
+bash_timeout_floor_seconds = 300
+subagent_timeout_seconds = 300
+idle_retire_minutes = 15
 
 [shell]
 default_share_mode = "private"
@@ -50,98 +57,299 @@ enabled = "auto"
 mode = "auto"
 cache_ttl_hours = 720
 refresh_on_lockfile_change = true
+
+[server]
+enabled = true
+
+[guardrails]
+# soft_prompt_anchor = "Prefer small, reviewable diffs."
+hard_enforce_project_root = false
 ```
 
-Every section is optional; unset values use the defaults shown above.
-Aethon never crashes on a bad TOML file — it logs a parse error and
-falls back to defaults.
+Every section is optional, and so is every key. Unset values use the
+defaults shown above. Aethon never crashes on a bad TOML file: it logs a
+parse error and falls back to defaults, clamps out-of-range numbers, and
+falls back unknown enum values to safe defaults.
 
-## `[ui]`
+## The `.aethon` directory
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `theme` | `"ember" \| "paper" \| "aether" \| "brink" \| "daylight" \| "mist" \| "nocturne"` (or a registered theme id) | `"ember"` | Active theme. See [Themes](/guide/themes). |
-| `font_size` | integer (10–22) | `14` | Base UI font size in pixels. |
-| `restore_tabs` | boolean | `true` | Re-open all tabs from the previous session on launch. |
-| `notify_on_completion` | boolean | `true` | Fire a native OS notification when a turn ends and the originating tab is unfocused. |
-| `notify_min_duration_seconds` | integer | `8` | Minimum turn length (s) for the completion notification. Sub-second turns rarely need a ping. |
+`~/.aethon/` holds everything Aethon persists per user:
 
-## `[agent]`
+```text
+~/.aethon/
+├── config.toml            # this file
+├── agents/                # user-scope subagent definitions (<name>.md)
+├── extensions/            # installed extension packages
+├── sessions/<tabId>/      # one pi session per agent tab
+├── auth/                  # auth-profile metadata + per-profile credentials
+├── logs/                  # daily-rotating Rust + bridge logs
+├── state.json             # tab / layout snapshot
+├── window-state.json      # window geometry restore
+├── system-prompt.md       # optional full system-prompt override
+├── system-prompt-append.md# optional system-prompt append
+├── devshell-cache/        # resolved Nix devshell snapshots
+├── updates/               # update backups for boot-probation rollback
+└── projects.json          # recent project list
+```
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `model` | string | provider default | The default model for new agent tabs. Format depends on the provider — `anthropic/claude-sonnet-4-6`, `openai/gpt-4o`, etc. |
+The hand-editable ones are `config.toml`, the subagent definitions under
+`agents/` (see [Agents](/guide/agents#subagents)), and the system-prompt
+override / append files (see
+[Agents](/guide/agents#system-prompt-customization)). The rest are managed
+by Aethon.
 
-The model picker (`/model` slash command) updates the *active* tab's
-model and persists the choice for new tabs.
+## Set a theme
 
-## `[shell]`
+```toml
+[ui]
+theme = "nocturne"
+```
 
-Controls how PTY shell tabs are spawned and how they share data with
-the agent. See [Shells & share modes](/guide/shells-and-share-modes) for
-the full mental model.
+Built-ins: `ember`, `paper`, `aether`, `brink`, `daylight`, `mist`,
+`nocturne` (plus `signature`, a back-compat alias for `aether`). An
+extension can register more; any registered id is valid here. An unknown
+id falls back to `ember`. You can also switch live with `/theme nocturne`.
+See [Themes](/guide/themes) for registering custom themes.
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `default_share_mode` | `"private" \| "read" \| "read-write" \| "read-write-trusted"` | `"private"` | Initial share mode for new shell tabs. Anything else falls back to `"private"`. |
-| `auto_restart_agent` | boolean | `true` | When the bun bridge crashes, respawn it automatically. Set `false` while debugging the bridge. |
-| `default_command` | string | `""` (= `$SHELL`) | Override the program for new shell tabs (`"/usr/local/bin/fish"`, `"/bin/zsh"`, …). |
-| `default_args` | `string[]` | `[]` | Extra argv appended after the platform default (e.g. `-il` on Unix). |
-| `inherit_env` | boolean | `true` | Whether new shell tabs inherit Aethon's environment. Set `false` for hermetic shells. |
-| `prompt_before_close` | boolean | `true` | When a shell's foreground job is *not* the shell itself (vim, npm test, ssh), prompt before killing on `Cmd+W`. |
+`font_size` is the terminal and editor size in pixels, clamped to 10-24:
 
-## `[shortcuts]`
+```toml
+[ui]
+font_size = 16
+```
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `new_tab_kind` | `"agent" \| "shell"` | `"agent"` | What `Cmd+T` opens when focus is *outside* the bottom panel. `"agent"` keeps the focus-aware default; `"shell"` makes `Cmd+T` always open a shell tab. |
+## Tune transcript density
 
-## `[voice]`
+Hide or group the model's thinking blocks and tool-call cards by default:
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `toggle_hotkey` | string | `"mod+shift+m"` | Keyboard combo for toggling voice input. `mod` means Cmd on macOS and Ctrl elsewhere. |
-| `hold_hotkey` | string or unset | `"AltRight"` on macOS, unset elsewhere | Optional hold-to-record physical key. |
+```toml
+[ui]
+thinking_visibility = "collapse"      # show | collapse | hide
+tool_calls_visibility = "group-turn"  # show | group-turn | group-run | group-block | hide
+```
 
-## `[extensions]`
+Both are per-tab overridable at runtime via the composer visibility pills;
+these keys only set the global default for new tabs. The full grouping
+enum is in the [config reference](/reference/config-reference#ui).
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `state_warn_kb` | integer | `64` | Soft warning threshold for extension `setState` payloads. Clamped to 1-8192 KB. |
-| `state_hard_kb` | integer | `512` | Hard rejection threshold for extension `setState` payloads. Clamped to 1-8192 KB and never below the warning threshold. |
+## Set a default model for new tabs
 
-## `[updates]`
+```toml
+[agent]
+model = "anthropic/claude-sonnet-4-6"
+```
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `channel` | `"stable" \| "nightly"` | `"stable"` | Which updater manifest to check. Unknown values fall back to `"stable"`. |
-| `disable_auto_check` | boolean | `false` | Disable background update checks. Manual "Check for Updates" still works. |
+The format is `provider/model-id` (`anthropic/claude-sonnet-4-6`,
+`openai/gpt-4o`, `ollama/llama3.3`). This is the model new tabs open with;
+`/model` changes the active tab and persists the choice. Provider
+credentials come from the shell environment, not this file. See
+[Models and providers](/guide/agents#models-and-providers).
 
-## `[devshell]`
+## Tune agent and provider timeouts
 
-Controls Nix devshell detection for shell tabs and the agent's pi `bash`
-tool. Per-project overrides use the same shape at
-`<project>/.aethon/devshell.toml`.
+The `[agent]` timeout knobs give long-running work more headroom. All are
+in seconds and apply on the **next agent spawn**.
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | `"auto" \| "always" \| "never"` | `"auto"` | Detect devshells from marker files, force resolution, or disable wrapping. |
-| `mode` | `"auto" \| "direnv" \| "nix" \| "nix-shell"` | `"auto"` | Resolver preference. `auto` uses `direnv` before flake before `shell.nix`. |
-| `cache_ttl_hours` | integer | `720` | Max age for successful on-disk snapshots. `0` disables time-based eviction. |
-| `refresh_on_lockfile_change` | boolean | `true` | Re-resolve when watched lockfile or marker mtimes change. |
+```toml
+[agent]
+# Only set this if a provider times out on legitimately long turns.
+provider_timeout_seconds = 300   # omit entirely to keep pi's own default
+
+# Raise the floor under model-supplied bash timeouts (default 300 = 5 min).
+bash_timeout_floor_seconds = 600
+
+# Default ceiling for inline subagents (default 300). Subagent frontmatter
+# can override this per invocation.
+subagent_timeout_seconds = 900
+```
+
+`subagent_timeout_seconds` is the floor of a precedence chain: a
+subagent's frontmatter `timeout` wins, then `AETHON_SUBAGENT_TIMEOUT_SECONDS`,
+then this key, then the built-in 300. See
+[Agents](/guide/agents#subagents) for the full precedence and frontmatter.
+
+## Keep agent workers warm (or reclaim memory)
+
+```toml
+[agent]
+# Retire an idle per-tab worker after 30 minutes instead of the default 15.
+idle_retire_minutes = 30
+
+# Or never retire (workers stay resident; faster follow-ups, more memory):
+# idle_retire_minutes = 0
+```
+
+A retired worker respawns lazily from its persisted session on the next
+message. `0` disables retirement entirely (clamped 0-1440).
+
+## Quieter completion notifications
+
+```toml
+[ui]
+notify_on_completion = true
+notify_min_duration_seconds = 30   # only ping for turns 30s or longer
+```
+
+Set `notify_on_completion = false` to silence the OS notification, or
+raise `notify_min_duration_seconds` (0-3600) so only genuinely long turns
+interrupt you. Notifications only fire when the originating tab is
+unfocused.
+
+## Hermetic shells
+
+```toml
+[shell]
+default_command = "/bin/zsh"
+default_args = ["-l"]
+inherit_env = false   # do not leak Aethon's PATH/locale into shell tabs
+```
+
+With `inherit_env = false`, new shell tabs start without Aethon's
+environment (the PTY still gets `TERM=xterm-256color`). `default_command`
+overrides the spawned program; empty or omitted falls back to `$SHELL`.
+`default_args` are appended after the platform default. See
+[Shells & share modes](/guide/shells-and-share-modes) for share-mode
+semantics.
+
+## Make `Cmd+T` always open a shell
+
+```toml
+[shortcuts]
+new_tab_kind = "shell"
+```
+
+`"agent"` (the default) keeps the focus-aware behavior: `Cmd+T` opens an
+agent tab unless focus is in the bottom terminal panel. `"shell"` makes
+`Cmd+T` always open a shell sub-tab.
+
+## Enable or tune the Nix devshell wrap
+
+Aethon can auto-detect a project's Nix devshell (direnv, flake, or
+`shell.nix`) and apply its environment to both interactive shell tabs and
+the agent's pi `bash` tool.
+
+```toml
+[devshell]
+enabled = "auto"   # auto | always | never
+mode = "auto"      # auto | direnv | nix | nix-shell
+cache_ttl_hours = 720
+refresh_on_lockfile_change = true
+```
+
+- `enabled = "never"` disables wrapping globally.
+- `enabled = "always"` forces detection and fails loud if a marker resolves
+  but the resolver errors.
+- `mode` pins a single resolver kind; `auto` follows precedence (direnv,
+  then flake, then `shell.nix`).
+
+To pin or disable per project, drop a `devshell.toml` in the repo:
+
+```toml
+# <project-root>/.aethon/devshell.toml
+[devshell]
+enabled = "never"   # never wrap this repo
+# mode = "nix"      # or pin the flake resolver if enabled
+```
+
+Only `enabled` and `mode` are per-project-overridable; `cache_ttl_hours`
+and `refresh_on_lockfile_change` stay global.
+
+::: warning
+A malformed per-project `devshell.toml` is silently ignored, so a typo
+never blocks a shell from opening. It also means a typo is silently
+ineffective: confirm the override took with the `⬡` status-bar chip or
+`AETHON_LOG=aethon::devshell=debug`.
+:::
+
+## Track nightly builds
+
+```toml
+[updates]
+channel = "nightly"   # stable | nightly
+disable_auto_check = false
+```
+
+`stable` tracks the latest release; `nightly` follows the nightly tag for
+in-development builds. Set `disable_auto_check = true` to stop background
+checks; the manual "Check for Updates" menu item still works.
+
+## Stop LAN advertisement
+
+```toml
+[server]
+enabled = false
+```
+
+This silences the mDNS advertiser (`_aethon._tcp.local.`) so other hosts
+stop discovering this one. Read-only peer discovery still runs, and a
+manual `server_start` action advertises regardless.
+
+::: warning
+The discovery server has no authentication and no TLS today. It is
+scaffolding for an upcoming pairing feature, not a trusted IPC channel.
+:::
+
+## Team guardrails
+
+```toml
+[guardrails]
+# Advisory: appended to the model's working context every turn. Steers, never blocks.
+soft_prompt_anchor = "Prefer small, reviewable diffs. Run the test suite before claiming done."
+
+# Enforcing: blocks write/edit/bash tool calls outside the active tab's project root.
+hard_enforce_project_root = true
+```
+
+`soft_prompt_anchor` is advice the model can ignore; `hard_enforce_project_root`
+is a deterministic deny that the per-tab composer toggle can override per
+session. Pair them: the anchor steers the model, the enforcement flag is
+the backstop. Both apply on the next agent spawn.
+
+## Enable or tune voice input
+
+```toml
+[voice]
+toggle_hotkey = "mod+shift+m"   # mod = Cmd on macOS, Ctrl elsewhere
+# hold_hotkey = "AltRight"      # optional push-to-talk physical key
+```
+
+`mod` maps to Cmd on macOS and Ctrl on Linux/Windows. `hold_hotkey` is an
+optional hold-to-record key (default `AltRight` / Option on macOS only).
+
+::: warning
+Voice requires the `voice` build feature. On a build without it these keys
+are inert and the voice commands return `VOICE_NOT_BUILT`.
+:::
+
+## Per-project configuration
+
+Only `[devshell]` supports a per-project override today, via
+`<project-root>/.aethon/devshell.toml` (see
+[the devshell section above](#enable-or-tune-the-nix-devshell-wrap)).
+Every other section is global to `~/.aethon/config.toml`; there is no
+per-project variant for `[ui]`, `[agent]`, `[shell]`, and the rest.
 
 ## Hot-reload
 
-Most fields take effect on the next render. A few require restart:
+Most fields take effect on the next render. A few need a spawn or restart:
 
-- `font_size`, `theme` — applied immediately.
-- `default_share_mode` — applies to **new** shell tabs only.
-- `restore_tabs`, `default_command`, `default_args`, `inherit_env`,
-  `auto_restart_agent`, `devshell.*` — applied on next launch, next
-  spawn, or explicit devshell refresh depending on the field.
+- **Immediate** (next render): `theme`, `font_size`,
+  `thinking_visibility`, `tool_calls_visibility`.
+- **New shell tabs only**: `default_share_mode`, `default_command`,
+  `default_args`, `inherit_env`, `prompt_before_close`.
+- **Next agent spawn** (env-wired): the `[agent]` timeout/idle keys and
+  the `[guardrails]` keys flow through `apply_user_env`, so they apply when
+  the worker next starts.
+- **Next launch**: `restore_tabs`, `auto_restart_agent`,
+  `[server] enabled`.
+- **Devshell refresh / next spawn**: `[devshell]` fields, plus the
+  explicit "Refresh now" button in Settings.
 
 ## Where to next
 
-- [Themes](/guide/themes) — registering custom themes.
-- [Extensions](/guide/extensions) — extending Aethon.
-- [Reference: config.toml](/reference/config-reference) — exhaustive schema.
+- [Reference: config.toml](/reference/config-reference): exhaustive
+  schema, clamp ranges, and environment-variable wiring.
+- [Agents](/guide/agents): models, providers, subagent timeouts, and
+  system-prompt overrides.
+- [Themes](/guide/themes): registering custom themes.
+- [Extensions](/guide/extensions): extending Aethon.

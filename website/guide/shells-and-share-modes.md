@@ -108,15 +108,13 @@ they're invisible.
 In `read-write` mode, every `aethon.shells.write` call surfaces a
 **notification with Allow / Deny** actions:
 
-```
-┌─────────────────────────────────────────────────┐
-│ Extension 'team-helper' wants to write to shell 1: │
-│                                                 │
-│   ls -la                                        │
-│                                                 │
-│         [ Deny ]      [ Allow ]                 │
-└─────────────────────────────────────────────────┘
-```
+<figure class="ae-wire" aria-label="A write-consent notification. It reads: extension team-helper wants to write to shell 1, then shows the command ls -la, with Deny and Allow buttons.">
+<div class="ae-wire-dialog">
+<div class="ae-wire-dialog-title">Extension <code>team-helper</code> wants to write to shell 1</div>
+<div><code>ls -la</code></div>
+<div class="ae-wire-actions"><span class="ae-wire-btn ae-wire-btn-deny">Deny</span><span class="ae-wire-btn ae-wire-btn-allow">Allow</span></div>
+</div>
+</figure>
 
 The notification stays open until you decide. You can switch tabs while
 it's pending.
