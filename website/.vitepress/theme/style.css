@@ -3,7 +3,8 @@
    of Aethon's seven shipped themes: Paper (light) and Ember (dark). The
    other five (Æther, Brink, Daylight, Mist, Nocturne) live in the app and
    are documented in guide/themes.md, not exposed as site modes. All tokens
-   here are kept in sync with src/styles.css: touch one, touch both. */
+   here are kept in sync with src/styles/tokens.css + src/styles/themes.css:
+   touch one, touch both. */
 
 /* ─────────────────────────────────────── Paper (light) ─── */
 :root {

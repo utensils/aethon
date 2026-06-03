@@ -79,10 +79,10 @@ deliberate, and worth their time, illuminated rather than dazzled.
   comprehension — guide the eye, mark what matters, set mood — never as flourish
   for its own sake. If a visual element doesn't help the reader understand
   faster, it's noise.
-- **One identity, two surfaces.** Docs and app share the Ember/Paper/Æther token
-  system and the same brand. Keep them in sync (the theme CSS already mirrors
-  `src/styles.css`); a change to the brand on one surface should be reconciled
-  with the other, not allowed to drift.
+- **One identity, two surfaces.** Docs and app share one seven-theme token
+  contract and the same brand. Keep them in sync (the docs theme CSS mirrors
+  `src/styles/tokens.css` + `src/styles/themes.css`); a change to the brand on
+  one surface should be reconciled with the other, not allowed to drift.
 
 ## Accessibility & Inclusion
 

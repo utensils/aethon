@@ -16,11 +16,14 @@ how it tolerates bad input:
   logged, not surfaced as a crash.
 - **Unknown enum values** (a misspelled `theme`, `enabled`, `mode`, …)
   fall back to a safe default per field rather than erroring.
-- **Out-of-range numbers** clamp silently to the nearest valid value.
+- **Out-of-range numbers** clamp to the nearest valid value. This is
+  non-fatal but not always silent: `ui.font_size`, for example, logs a
+  warning when it clamps.
 - **Unknown sections and keys** are preserved on round-trip; Aethon only
   writes back the keys it manages.
-- **File size** is capped at 64 KiB to guard against pathologically large
-  configs.
+- **File size**: Aethon reads at most the first 64 KiB of the file. Any
+  bytes past that are ignored, so truncating mid-file may produce a parse
+  error that falls back to defaults.
 
 ## `[ui]`
 
@@ -38,9 +41,9 @@ tool_calls_visibility = "show"
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `theme` | string | `"ember"` | One of the registered theme ids. Built-ins: `ember`, `paper`, `aether`, `brink`, `daylight`, `mist`, `nocturne`. `signature` is a back-compat alias for `aether`. Custom theme ids registered by extensions are valid here too. Unknown ids fall back to `ember`. |
-| `font_size` | integer | `14` | Terminal and editor font size in pixels. Clamped to 10-24; values outside that range clamp silently to protect layout integrity. |
+| `font_size` | integer | `14` | Terminal and editor font size in pixels. Clamped to 10-24; values outside that range are clamped (with a warning logged) to protect layout integrity. |
 | `restore_tabs` | boolean | `true` | Re-open all tabs from the previous session on launch. |
-| `notify_on_completion` | boolean | `true` | Fire a native OS notification when an agent turn ends while the originating tab is unfocused. |
+| `notify_on_completion` | boolean | `true` | Notify when an agent turn ends and you are not watching that tab: an in-app toast if the Aethon window is focused but another tab is active, or a native OS notification if the window is unfocused. Nothing fires if the finishing tab is already active. |
 | `notify_min_duration_seconds` | integer | `8` | Minimum turn length (seconds) to trigger the completion notification. Sub-second turns skip notification. Clamped to 0-3600. |
 | `thinking_visibility` | `"show" \| "collapse" \| "hide"` | `"show"` | Global default visibility for the model's thinking blocks in the transcript. Per-tab overridable at runtime via the composer visibility pills. |
 | `tool_calls_visibility` | `"show" \| "group-turn" \| "group-run" \| "group-block" \| "hide"` | `"show"` | Global default visibility and grouping for tool-call cards. The legacy value `collapse` migrates to `group-turn`. Per-tab overridable at runtime via the composer visibility pills. |
@@ -117,8 +120,9 @@ toggle_hotkey = "mod+shift+m"
 
 ::: warning
 All `[voice]` behavior requires the `voice` build feature. On a build
-without it, the voice commands return `VOICE_NOT_BUILT` and these keys are
-inert. See [Voice-to-text input](/guide/configuration#enable-or-tune-voice-input).
+without it, the voice commands return the error `voice support not built
+into this binary` and these keys are inert. See
+[Voice-to-text input](/guide/configuration#enable-or-tune-voice-input).
 :::
 
 ## `[extensions]`
@@ -237,9 +241,10 @@ is the backstop if it wanders anyway.
 
 ## Clamps and validation
 
-Out-of-range numbers clamp silently; unknown enum values fall back to safe
-defaults. Both behaviors are non-fatal: Aethon corrects the value rather
-than erroring.
+Out-of-range numbers clamp to the nearest valid value (non-fatal, though
+some keys like `ui.font_size` log a warning when they clamp); unknown enum
+values fall back to safe defaults. Aethon corrects the value rather than
+erroring.
 
 | Key | Range | Zero handling |
 |---|---|---|
@@ -292,7 +297,9 @@ and the [Runtime API](/reference/runtime-api) page for the full non-config
   whitelisted keys the Settings UI manages are written back.
 - **Reset to defaults** in Settings clears the keys Aethon manages but
   leaves the file intact, including your custom keys.
-- **File size** is capped at 64 KiB; oversized files fall back to defaults.
+- **File size**: Aethon reads at most the first 64 KiB and parses what it
+  read. A file whose first 64 KiB is valid TOML still loads; truncating
+  mid-file may cause a parse error that falls back to defaults.
 
 ## Where to next
 

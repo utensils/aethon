@@ -190,10 +190,12 @@ notify_on_completion = true
 notify_min_duration_seconds = 30   # only ping for turns 30s or longer
 ```
 
-Set `notify_on_completion = false` to silence the OS notification, or
-raise `notify_min_duration_seconds` (0-3600) so only genuinely long turns
-interrupt you. Notifications only fire when the originating tab is
-unfocused.
+Set `notify_on_completion = false` to silence completion alerts, or raise
+`notify_min_duration_seconds` (0-3600) so only genuinely long turns
+interrupt you. When a turn ends, Aethon shows an in-app toast if the window
+is focused but you are on a different tab, and a native OS notification if
+the window is unfocused. Nothing fires if the finishing tab is already
+active.
 
 ## Hermetic shells
 
@@ -318,7 +320,8 @@ optional hold-to-record key (default `AltRight` / Option on macOS only).
 
 ::: warning
 Voice requires the `voice` build feature. On a build without it these keys
-are inert and the voice commands return `VOICE_NOT_BUILT`.
+are inert and the voice commands return the error `voice support not built
+into this binary`.
 :::
 
 ## Per-project configuration
