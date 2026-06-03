@@ -110,6 +110,34 @@ export async function appendLocalChatMessage(
   await pruneLocalChatFile(path);
 }
 
+function serializeLocalChatEntry(m: RestoredChatMessage): string {
+  return JSON.stringify({
+    type: "aethon_chat",
+    id: m.id,
+    role: m.role,
+    ...(m.text ? { text: m.text } : {}),
+    ...(m.thinking ? { thinking: m.thinking } : {}),
+    ...(m.attachments && m.attachments.length > 0
+      ? { attachments: m.attachments }
+      : {}),
+    ...(m.a2ui ? { a2ui: m.a2ui } : {}),
+    ...(typeof m.createdAt === "number" ? { createdAt: m.createdAt } : {}),
+    ...(m.cwd ? { cwd: m.cwd } : {}),
+  });
+}
+
+/** Atomically rewrite the local-chat file from a kept set of messages
+ *  (temp-write + rename, same contract as the append path). */
+async function rewriteLocalChatFile(
+  path: string,
+  kept: RestoredChatMessage[],
+): Promise<void> {
+  const next = kept.map(serializeLocalChatEntry).join("\n");
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, next ? `${next}\n` : "", "utf8");
+  await rename(tempPath, path);
+}
+
 async function pruneLocalChatFile(path: string): Promise<void> {
   try {
     const raw = await readFile(path, "utf8");
@@ -120,29 +148,32 @@ async function pruneLocalChatFile(path: string): Promise<void> {
         : lines.length;
     if (lineCount <= MAX_LOCAL_CHAT_MESSAGES) return;
     const kept = parseLocalChatLines(lines).slice(-MAX_LOCAL_CHAT_MESSAGES);
-    const next = kept
-      .map((m) =>
-        JSON.stringify({
-          type: "aethon_chat",
-          id: m.id,
-          role: m.role,
-          ...(m.text ? { text: m.text } : {}),
-          ...(m.thinking ? { thinking: m.thinking } : {}),
-          ...(m.attachments && m.attachments.length > 0
-            ? { attachments: m.attachments }
-            : {}),
-          ...(m.a2ui ? { a2ui: m.a2ui } : {}),
-          ...(typeof m.createdAt === "number"
-            ? { createdAt: m.createdAt }
-            : {}),
-          ...(m.cwd ? { cwd: m.cwd } : {}),
-        }),
-      )
-      .join("\n");
-    const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(tempPath, next ? `${next}\n` : "", "utf8");
-    await rename(tempPath, path);
+    await rewriteLocalChatFile(path, kept);
   } catch {
     /* best effort */
+  }
+}
+
+/**
+ * Drop local-chat rows created strictly after `cutoffMs`. Called after a
+ * rollback so a subsequent restore (which merges pi history with the local
+ * chat) doesn't resurrect content the user discarded. Rows without a
+ * timestamp are kept — they predate timestamping and are rare. Best-effort:
+ * a missing file is success.
+ */
+export async function truncateLocalChatAfterEntry(
+  sessionDir: string,
+  cutoffMs: number,
+): Promise<void> {
+  const path = join(sessionDir, LOCAL_CHAT_FILE);
+  try {
+    const raw = await readFile(path, "utf8");
+    const lines = raw.split(/\r?\n/);
+    const kept = parseLocalChatLines(lines).filter(
+      (m) => typeof m.createdAt !== "number" || m.createdAt <= cutoffMs,
+    );
+    await rewriteLocalChatFile(path, kept);
+  } catch {
+    /* best effort — missing file is fine */
   }
 }

@@ -14,6 +14,7 @@ import { handleSetExtensionDisabled } from "./extensionControl";
 import { ackMutation, markFrontendReady } from "./mutation-ack";
 import { onDevshellEvent } from "./devshell";
 import { handleSubagentsChanged } from "./subagents/changed";
+import { handleForkSession, handleRollbackSession } from "./session-branch";
 import { handleNativeSlashCommand } from "./nativeSlash";
 import { handleSetProject } from "./projectLifecycle";
 import { handleAuthProfileMessage } from "./auth-profiles";
@@ -195,6 +196,12 @@ export async function dispatchInboundMessage(
         break;
       case "subagents_changed":
         await handleSubagentsChanged(state, deps);
+        break;
+      case "rollback_session":
+        await handleRollbackSession(state, deps, msg);
+        break;
+      case "fork_session":
+        await handleForkSession(state, deps, msg);
         break;
       case "devshell_event": {
         const status = msg.devshellStatus;

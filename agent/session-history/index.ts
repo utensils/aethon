@@ -33,6 +33,7 @@ export {
   appendLocalChatMessage,
   normalizeSessionLabel,
   readSessionLabel,
+  truncateLocalChatAfterEntry,
   writeSessionLabel,
 } from "./io";
 export { readSessionMetadata } from "./metadata";
