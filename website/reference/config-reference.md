@@ -2,12 +2,28 @@
 
 This is the exhaustive schema for `~/.aethon/config.toml`. The
 [Configuration guide](/guide/configuration) walks through the common
-fields with examples; this page is the keys-and-defaults table for when
-you need to look up an option.
+fields with copy-paste examples; this page is the keys-and-defaults
+table for when you need to look up an option.
 
-Aethon never crashes on a malformed `config.toml` — it logs the parse
-error and falls back to defaults. Unknown sections and keys are
-preserved; Aethon only writes back the keys it manages.
+The file lives at `~/.aethon/config.toml` (resolved through Tauri's
+cross-platform home-directory API). Every section is optional, and so is
+every key inside it. Unset values use the defaults documented below.
+
+Aethon never crashes on a malformed `config.toml`. A few rules govern
+how it tolerates bad input:
+
+- **Parse errors** fall back to the full set of defaults; the error is
+  logged, not surfaced as a crash.
+- **Unknown enum values** (a misspelled `theme`, `enabled`, `mode`, …)
+  fall back to a safe default per field rather than erroring.
+- **Out-of-range numbers** clamp to the nearest valid value. This is
+  non-fatal but not always silent: `ui.font_size`, for example, logs a
+  warning when it clamps.
+- **Unknown sections and keys** are preserved on round-trip; Aethon only
+  writes back the keys it manages.
+- **File size**: Aethon reads at most the first 64 KiB of the file. Any
+  bytes past that are ignored, so truncating mid-file may produce a parse
+  error that falls back to defaults.
 
 ## `[ui]`
 
@@ -18,26 +34,44 @@ font_size = 14
 restore_tabs = true
 notify_on_completion = true
 notify_min_duration_seconds = 8
+thinking_visibility = "show"
+tool_calls_visibility = "show"
 ```
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `theme` | string | `"ember"` | One of the registered theme ids. Built-ins: `ember`, `paper`, `aether`, `brink`, `daylight`, `mist`, `nocturne`. `signature` is a back-compat alias for `aether`. Unknown ids fall back to `ember`. |
-| `font_size` | integer | `14` | Clamped to a sensible range (10–22). |
+| `theme` | string | `"ember"` | One of the registered theme ids. Built-ins: `ember`, `paper`, `aether`, `brink`, `daylight`, `mist`, `nocturne`. `signature` is a back-compat alias for `aether`. Custom theme ids registered by extensions are valid here too. Unknown ids fall back to `ember`. |
+| `font_size` | integer | `14` | Terminal and editor font size in pixels. Clamped to 10-24; values outside that range are clamped (with a warning logged) to protect layout integrity. |
 | `restore_tabs` | boolean | `true` | Re-open all tabs from the previous session on launch. |
-| `notify_on_completion` | boolean | `true` | Fire a native OS notification when a turn ends and the originating tab or window is unfocused. |
-| `notify_min_duration_seconds` | integer | `8` | Minimum turn length (s) for the completion notification. Sub-second turns rarely need a notification. |
+| `notify_on_completion` | boolean | `true` | Notify when an agent turn ends and you are not watching that tab: an in-app toast if the Aethon window is focused but another tab is active, or a native OS notification if the window is unfocused. Nothing fires if the finishing tab is already active. |
+| `notify_min_duration_seconds` | integer | `8` | Minimum turn length (seconds) to trigger the completion notification. Sub-second turns skip notification. Clamped to 0-3600. |
+| `thinking_visibility` | `"show" \| "collapse" \| "hide"` | `"show"` | Global default visibility for the model's thinking blocks in the transcript. Per-tab overridable at runtime via the composer visibility pills. |
+| `tool_calls_visibility` | `"show" \| "group-turn" \| "group-run" \| "group-block" \| "hide"` | `"show"` | Global default visibility and grouping for tool-call cards. The legacy value `collapse` migrates to `group-turn`. Per-tab overridable at runtime via the composer visibility pills. |
 
 ## `[agent]`
 
 ```toml
 [agent]
 model = "anthropic/claude-sonnet-4-6"
+# provider_timeout_seconds = 120     # optional; omit to keep pi's default
+bash_timeout_floor_seconds = 300
+subagent_timeout_seconds = 300
+idle_retire_minutes = 15
 ```
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `model` | string | provider default | The default model for new agent tabs. Format depends on the provider — `anthropic/claude-sonnet-4-6`, `openai/gpt-4o`, etc. The `/model` slash command updates *the active tab's* model and persists the choice for new tabs. |
+| `model` | string | provider default | The default model for new agent tabs. Format depends on the provider: `anthropic/claude-sonnet-4-6`, `openai/gpt-4o`, etc. The `/model` slash command updates *the active tab's* model and persists the choice for new tabs. |
+| `provider_timeout_seconds` | integer | unset | Aethon-owned override for the provider/SDK request timeout, in seconds. Omit (or set `0`) to leave pi's own `retry.provider.timeoutMs` behavior unchanged. Clamped to 1-86400. Wired through `AETHON_PROVIDER_TIMEOUT_SECONDS`. |
+| `bash_timeout_floor_seconds` | integer | `300` | Floor applied to model-supplied bash tool timeouts, in seconds. A missing or invalid (`0`) value uses the historical 5-minute default. Clamped to 1-86400. Wired through `AETHON_BASH_TIMEOUT_FLOOR_SECONDS`. |
+| `subagent_timeout_seconds` | integer | `300` | Default inline subagent wall-clock ceiling, in seconds. Individual subagent frontmatter may override this per invocation (see [Agents](/guide/agents)). A missing or invalid (`0`) value uses the 5-minute default. Clamped to 1-86400. Wired through `AETHON_SUBAGENT_TIMEOUT_SECONDS`. |
+| `idle_retire_minutes` | integer | `15` | Minutes a per-tab agent worker may sit idle (no prompt in flight, no traffic) before the background sweep retires it. The worker respawns lazily from the persisted session on the next message. `0` disables retirement. Clamped to 0-1440. |
+
+::: tip
+`provider_timeout_seconds` is the one `[agent]` knob with no default. Leave
+it out unless a provider is timing out on legitimately long turns. The
+other three timeout/idle knobs ship with working defaults.
+:::
 
 ## `[shell]`
 
@@ -55,10 +89,10 @@ prompt_before_close = true
 |---|---|---|---|
 | `default_share_mode` | `"private" \| "read" \| "read-write" \| "read-write-trusted"` | `"private"` | Initial share mode for new shell tabs. Anything else falls back to `"private"` so a typo cannot accidentally widen exposure. |
 | `auto_restart_agent` | boolean | `true` | When the bun bridge child crashes unexpectedly, automatically respawn it. Set `false` to surface the crash notice without auto-restart (useful when debugging the bridge). |
-| `default_command` | string | `""` (= `$SHELL`) | Override the program spawned for new shell tabs. Empty string or omission falls back to `$SHELL` (and the platform default). |
-| `default_args` | `string[]` | `[]` | Extra argv for the spawned shell. Appended after the platform default (e.g. `-il` on Unix). |
+| `default_command` | string | `""` (= `$SHELL`) | Override the program spawned for new shell tabs. Empty string or omission falls back to `$SHELL` (and the platform default on macOS). |
+| `default_args` | `string[]` | `[]` | Extra argv for the spawned shell. Each element becomes a separate argv slot, appended after the platform default (e.g. `-il` on Unix). Use to pass profile flags or a `-c <command>` every new tab should run. |
 | `inherit_env` | boolean | `true` | Whether new shell tabs inherit Aethon's environment (`PATH`, locale, etc.). Set `false` for hermetic shells (the PTY still gets `TERM=xterm-256color`). |
-| `prompt_before_close` | boolean | `true` | When closing a shell whose foreground job is *not* the shell itself (vim, npm test, ssh), prompt before killing. `Cmd+W` honours this; the X close button always honours it. |
+| `prompt_before_close` | boolean | `true` | When closing a shell whose foreground job is *not* the shell itself (vim, npm test, ssh), prompt before killing. Enforced **frontend-side**: both `Cmd+W` and the X close button honour it. |
 
 ## `[shortcuts]`
 
@@ -81,8 +115,15 @@ toggle_hotkey = "mod+shift+m"
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `toggle_hotkey` | string | `"mod+shift+m"` | Toggle voice input. `mod` means Cmd on macOS and Ctrl elsewhere. |
-| `hold_hotkey` | string or unset | `"AltRight"` on macOS, unset elsewhere | Optional hold-to-record physical key. |
+| `toggle_hotkey` | string | `"mod+shift+m"` | Global hotkey to toggle voice input on and off. `mod` maps to Cmd on macOS and Ctrl on Linux/Windows. |
+| `hold_hotkey` | string or unset | `"AltRight"` on macOS, unset elsewhere | Optional hold-to-record physical key. Platform-dependent default (AltRight / Option on macOS only). |
+
+::: warning
+All `[voice]` behavior requires the `voice` build feature. On a build
+without it, the voice commands return the error `voice support not built
+into this binary` and these keys are inert. See
+[Voice-to-text input](/guide/configuration#enable-or-tune-voice-input).
+:::
 
 ## `[extensions]`
 
@@ -94,8 +135,8 @@ state_hard_kb = 512
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `state_warn_kb` | integer | `64` | Soft warning threshold for extension `setState` payloads. Clamped to 1-8192 KB. |
-| `state_hard_kb` | integer | `512` | Hard rejection threshold for extension `setState` payloads. Clamped to 1-8192 KB and raised to at least `state_warn_kb`. |
+| `state_warn_kb` | integer | `64` | Soft warning threshold (KB) for an extension's `setState` payload. Above this, the bridge logs a WARN naming the extension and the path. Clamped to 1-8192. Wired through `AETHON_STATE_WARN_KB`. |
+| `state_hard_kb` | integer | `512` | Hard rejection threshold (KB) for an extension's `setState` payload. Above this the write is rejected and the extension's mutation Promise resolves to `{ ok: false, error }`. Clamped to 1-8192 and raised to at least `state_warn_kb`. Wired through `AETHON_STATE_HARD_KB`. |
 
 ## `[updates]`
 
@@ -107,10 +148,13 @@ disable_auto_check = false
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `channel` | `"stable" \| "nightly"` | `"stable"` | Which release channel the updater checks. Unknown values fall back to `"stable"`. |
-| `disable_auto_check` | boolean | `false` | Disable automatic background checks. Manual "Check for Updates" still works. |
+| `channel` | `"stable" \| "nightly"` | `"stable"` | Which release channel the auto-updater checks. `stable` tracks `releases/latest`; `nightly` follows the nightly tag for in-development builds. Unknown values fall back to `"stable"`. |
+| `disable_auto_check` | boolean | `false` | Disable automatic background update checks entirely. The manual "Check for Updates" menu item still works. |
 
 ## `[devshell]`
+
+Controls Nix devshell detection for shell tabs and the agent's pi `bash`
+tool.
 
 ```toml
 [devshell]
@@ -122,23 +166,148 @@ refresh_on_lockfile_change = true
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `enabled` | `"auto" \| "always" \| "never"` | `"auto"` | Detect and apply Nix devshells automatically, force resolution, or disable wrapping. Unknown values fall back to `"auto"`. |
-| `mode` | `"auto" \| "direnv" \| "nix" \| "nix-shell"` | `"auto"` | Resolver selection. `auto` uses natural precedence: direnv, then flake, then `shell.nix`. |
-| `cache_ttl_hours` | integer | `720` | Successful on-disk snapshot lifetime. `0` disables time-based eviction; lockfile-hash mismatches still invalidate. |
-| `refresh_on_lockfile_change` | boolean | `true` | Re-resolve when watched lockfile or marker files change. |
+| `enabled` | `"auto" \| "always" \| "never"` | `"auto"` | Whether to detect and apply a Nix devshell on shell and agent spawn. `auto` detects via marker files; `always` forces detection with loud errors on failure; `never` disables wrapping entirely. Unknown values fall back to `"auto"`. |
+| `mode` | `"auto" \| "direnv" \| "nix" \| "nix-shell"` | `"auto"` | Pin a resolver kind. `auto` honours natural precedence (direnv before flake before `shell.nix`). Named variants force a single kind and fall back to no-wrap if the marker file or binary is missing. |
+| `cache_ttl_hours` | integer | `720` | How long a successful on-disk snapshot stays valid (hours) before the next launch ignores it. Lockfile-hash mismatches always invalidate first. `0` disables time-based eviction. |
+| `refresh_on_lockfile_change` | boolean | `true` | Re-resolve automatically when watched lockfile or marker files change mtime. Disable to require a manual "Refresh now" in Settings. |
+
+### Per-project override
+
+A project can override the global `[devshell]` section with
+`<project-root>/.aethon/devshell.toml`:
+
+```toml
+# <project-root>/.aethon/devshell.toml
+[devshell]
+enabled = "never"   # never wrap this repo
+mode = "nix"        # if enabled, force the flake resolver
+```
+
+Merge semantics:
+
+- Only `enabled` and `mode` are per-project-overridable. Project-level
+  values take precedence when set; missing keys fall through to the global
+  `[devshell]` defaults. The two keys can be overridden independently.
+- `cache_ttl_hours` and `refresh_on_lockfile_change` are **global only**;
+  a project file cannot change them.
+- The override is loaded best-effort at command-invocation time (in
+  `effective_config()`, consumed by `devshell_status`,
+  `devshell_env_for_path`, and `devshell_refresh`). Malformed TOML is
+  silently ignored, so a bad `.aethon/devshell.toml` never blocks a shell
+  from opening.
+
+::: tip
+`[devshell]` is the only section with a per-project variant. Every other
+section is global to `~/.aethon/config.toml`.
+:::
+
+## `[server]`
+
+```toml
+[server]
+enabled = true
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Whether to advertise this host over mDNS (`_aethon._tcp.local.`) at boot. Set `false` to stop the LAN announcement while keeping peer discovery (the browser) running read-only. A manual `server_start` action always advertises regardless of this flag. |
+
+::: warning
+The discovery server has **no authentication and no TLS**. It is explicit
+scaffolding for an upcoming pairing feature; do not treat the HTTP
+endpoints as a trusted IPC channel. `enabled = false` only silences the
+mDNS advertiser; the HTTP server and the read-only discovery browser keep
+running.
+:::
+
+## `[guardrails]`
+
+```toml
+[guardrails]
+# soft_prompt_anchor = "Prefer small, reviewable diffs. Run the test suite before claiming done."
+hard_enforce_project_root = false
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `soft_prompt_anchor` | string | unset | Optional free-text "soft anchor" appended to the per-turn working context the agent injects into the model's system prompt. Use it to remind the model of project rules. Whitespace-only is treated as unset. This **never enforces anything**: it is advisory prompt text only. Wired through `AETHON_SOFT_GUARDRAIL_PROMPT` (emitted only when present). |
+| `hard_enforce_project_root` | boolean | `false` | Hard enforcement: blocks write/edit/bash tool calls touching paths outside the active tab's project root. A deterministic backstop for a wandering model. The per-tab composer toggle can override this default per session. Wired through `AETHON_HARD_ENFORCE_PROJECT_ROOT` (`0` or `1`). |
+
+::: tip
+`soft_prompt_anchor` is advice; `hard_enforce_project_root` is a hard
+deny. Pair them: a short anchor steers the model, and the enforcement flag
+is the backstop if it wanders anyway.
+:::
+
+## Clamps and validation
+
+Out-of-range numbers clamp to the nearest valid value (non-fatal, though
+some keys like `ui.font_size` log a warning when they clamp); unknown enum
+values fall back to safe defaults. Aethon corrects the value rather than
+erroring.
+
+| Key | Range | Zero handling |
+|---|---|---|
+| `ui.font_size` | 10-24 | clamps into range |
+| `ui.notify_min_duration_seconds` | 0-3600 | `0` allowed (notify on any turn) |
+| `agent.provider_timeout_seconds` | 1-86400 | `0` / unset means "leave pi's default" |
+| `agent.bash_timeout_floor_seconds` | 1-86400 | `0` falls back to default `300` |
+| `agent.subagent_timeout_seconds` | 1-86400 | `0` falls back to default `300` |
+| `agent.idle_retire_minutes` | 0-1440 | `0` disables retirement |
+| `extensions.state_warn_kb` | 1-8192 | clamps into range |
+| `extensions.state_hard_kb` | 1-8192 | raised to at least `state_warn_kb` |
+| `devshell.cache_ttl_hours` | 0 and up | `0` disables time-based eviction |
+
+Enum fall-backs: `theme` to `ember`, `default_share_mode` to `private`,
+`new_tab_kind` to `agent`, `updates.channel` to `stable`,
+`devshell.enabled` / `devshell.mode` to `auto`.
+
+## Environment variable wiring
+
+Some config keys are pushed into the agent bridge process as `AETHON_*`
+environment variables at spawn time (in
+`agent_process/spawn.rs::apply_user_env()`). Editing one of these keys takes
+effect on the **next agent spawn**, not the next render.
+
+| Config key | Env var | Effect |
+|---|---|---|
+| `agent.provider_timeout_seconds` | `AETHON_PROVIDER_TIMEOUT_SECONDS` | Provider/SDK request timeout (omitted when unset/`0`). |
+| `agent.bash_timeout_floor_seconds` | `AETHON_BASH_TIMEOUT_FLOOR_SECONDS` | Floor for bash tool timeouts. |
+| `agent.subagent_timeout_seconds` | `AETHON_SUBAGENT_TIMEOUT_SECONDS` | Default inline subagent ceiling. |
+| `extensions.state_warn_kb` | `AETHON_STATE_WARN_KB` | Soft `setState` payload warning threshold. |
+| `extensions.state_hard_kb` | `AETHON_STATE_HARD_KB` | Hard `setState` payload rejection threshold. |
+| `guardrails.soft_prompt_anchor` | `AETHON_SOFT_GUARDRAIL_PROMPT` | Advisory system-prompt anchor (emitted only when present). |
+| `guardrails.hard_enforce_project_root` | `AETHON_HARD_ENFORCE_PROJECT_ROOT` | `1` to enforce the project-root write/edit/bash deny. |
+
+::: tip
+Provider credentials (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) are **not**
+Aethon config. They come from the shell environment Aethon was launched
+with and are read by pi. See [Models and providers](/guide/agents#models-and-providers)
+and the [Runtime API](/reference/runtime-api) page for the full non-config
+`AETHON_*` runtime contract.
+:::
 
 ## How Aethon reads and writes the file
 
-- **Reads** happen at app launch and again whenever the Settings panel
-  is opened — manual edits take effect on next launch (or next Settings open).
+- **Reads** happen at app launch and again whenever the Settings panel is
+  opened. Manual edits take effect on next launch (or next Settings open).
 - **Writes** happen when you change a value in Settings and the panel
-  saves. Aethon writes back **only the keys it manages**, preserving
-  any custom keys you've added by hand.
+  saves. Aethon uses `toml_edit`, so it preserves comments, key ordering,
+  and any custom keys or unknown sections you added by hand. Only the
+  whitelisted keys the Settings UI manages are written back.
 - **Reset to defaults** in Settings clears the keys Aethon manages but
-  leaves the file intact. Custom keys you've added are preserved.
+  leaves the file intact, including your custom keys.
+- **File size**: Aethon reads at most the first 64 KiB and parses what it
+  read. A file whose first 64 KiB is valid TOML still loads; truncating
+  mid-file may cause a parse error that falls back to defaults.
 
 ## Where to next
 
-- [Configuration](/guide/configuration) — guided tour with examples.
-- [Themes](/guide/themes) — registering custom themes that `[ui] theme` can target.
-- [Settings & search](/guide/settings-and-search) — the GUI for `config.toml`.
+- [Configuration](/guide/configuration): task-focused tour with full
+  copy-paste blocks.
+- [Agents](/guide/agents): models, providers, subagents, and the timeout
+  precedence that `[agent]` feeds.
+- [Themes](/guide/themes): registering custom themes that `[ui] theme`
+  can target.
+- [Settings & search](/guide/settings-and-search): the GUI for
+  `config.toml`.

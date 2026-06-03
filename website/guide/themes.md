@@ -9,13 +9,13 @@ composers, sidebars, badges, code blocks.
 
 | Theme | `id` | Mood |
 |---|---|---|
-| **Ember** | `ember` | Warm dark — near-black with brass accent (`#ff6a18`). The default. Teal secondary accent (`#4dc6c0`) breaks the brass monotony. |
-| **Paper** | `paper` | Cream light — Bodoni-on-paper. Deep terracotta accent (`#b94000`) reads with authority on the cream bg; sage secondary (`#4f7d52`) for hierarchical CTAs. |
-| **Æther** | `aether` | Deep ink-blue — the signature palette behind the four shipped layouts. Steel-blue secondary (`#6aa9ff`). |
-| **Brink** | `brink` | Mid-tone warm chrome with gold accent (`#f9cc6c`) and lavender secondary (`#a8a9eb`). The header carries a Tokyo-Night slate (`#2d2f44`) wash — Claudette's signature "cool sky over warm ground" character. |
-| **Daylight** | `daylight` | Rich warm light — parchment cream with deeper amber base, terracotta + sage dual-accent. "Paper but with more depth." |
-| **Mist** | `mist` | Cool light — pale blue-gray base, mint primary accent (`#1f7d5e`), slate-blue secondary. Professional alternative to the warm light themes. |
-| **Nocturne** | `nocturne` | High-contrast dark — deep navy (`#0a0d14`), electric cyan primary (`#28e0e0`), vivid magenta secondary. For demos, screen-sharing, projectors. |
+| **Ember** | `ember` | Warm dark: near-black with a glowing brass accent (`#ff7a29`). The default. A teal secondary (`#4dd6cf`) breaks the brass monotony. |
+| **Paper** | `paper` | Crisp light: bright near-white stock with ink type. A deep terracotta accent (`#b8400a`) reads with authority, and a deep ink-blue secondary (`#2f5793`) keeps the palette neutral rather than warm. |
+| **Æther** | `aether` | Deep cosmic ink-blue with a brighter brass accent (`#ff8a3d`); the signature palette. Steel-blue secondary (`#6fb0ff`). |
+| **Brink** | `brink` | Mid-tone warm chrome with a gold accent (`#ffd479`) and lavender secondary (`#b3b4f0`). A slate-blue wash (`#2d2f44`) bleeds into the top of elevated surfaces for a "cool sky over warm ground" character. |
+| **Daylight** | `daylight` | Warm golden light: a saturated honey-amber base with a burnt-amber accent (`#bf5410`), deep-olive secondary (`#50602a`), and gold tertiary (`#a8740e`). Paper, but warmer and deeper. |
+| **Mist** | `mist` | Cool light: a pale blue-gray base with a deep teal accent (`#0f766e`) and slate-blue secondary (`#2c5694`). A professional alternative to the warm light themes. |
+| **Nocturne** | `nocturne` | High-contrast dark: deep navy (`#070a12`), electric cyan accent (`#2ef2f2`), vivid magenta secondary (`#ff5cb6`), lime tertiary (`#d4ff5e`). Built for demos, screen-sharing, and projectors. |
 
 ::: tip
 The site you're reading uses **Paper** in light mode and **Ember** in

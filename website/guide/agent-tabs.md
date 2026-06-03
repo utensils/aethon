@@ -7,18 +7,10 @@ focused session.
 
 ## Anatomy of an agent tab
 
-```
-┌─────────────────────────────────────────────────┐
-│ [Tab title · model]                          [×]│  ← top strip
-├─────────────────────────────────────────────────┤
-│  Sidebar  │   Chat history (scrollable)         │
-│           │                                     │
-│           │   ─────────────────────────         │
-│           │   Composer (multi-line)        [⏎] │
-├─────────────────────────────────────────────────┤
-│ Status: model · cwd · queued                    │
-└─────────────────────────────────────────────────┘
-```
+<figure class="ae-shot">
+<img src="/agent-tab-anatomy.png" alt="An Aethon agent tab. The top strip carries the active tab title and model picker; the left sidebar shows the host and project tree; the center is the scrollable chat history with the composer beneath it; the right panel is source control; the status bar along the bottom shows the model, project, branch, and context usage." />
+<figcaption>An agent tab in the default workstation layout: the tab strip and model picker up top, the host and project sidebar at left, chat history with the composer at center, the source-control panel at right, and the status bar below.</figcaption>
+</figure>
 
 ## Tab management
 

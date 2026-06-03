@@ -79,6 +79,7 @@ export default defineConfig({
           items: [
             { text: "Projects", link: "/guide/projects" },
             { text: "Agent tabs", link: "/guide/agent-tabs" },
+            { text: "Agents", link: "/guide/agents" },
             {
               text: "Shells & share modes",
               link: "/guide/shells-and-share-modes",
