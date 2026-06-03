@@ -377,6 +377,47 @@ describe("useChat setModel", () => {
     expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
   });
 
+  it("holds normal messages in the client queue while a tool-card is still running", async () => {
+    const runningTool = {
+      id: "tool-message",
+      role: "agent" as const,
+      a2ui: {
+        components: [
+          {
+            id: "tool-1",
+            type: "tool-card",
+            props: { title: "bash", startedAt: 1_000 },
+          },
+        ],
+      },
+    };
+    const { ctx, stateRef } = buildContext({
+      waiting: false,
+      tabs: [
+        {
+          ...makeEmptyTab("tab-1", "Tab 1"),
+          waiting: false,
+          messages: [runningTool],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("after this");
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith(
+      "send_message",
+      expect.objectContaining({
+        request: expect.objectContaining({ message: "after this" }),
+      }),
+    );
+    const tab = (stateRef.current.tabs as Tab[])[0];
+    expect(tab.queuedMessages.map((m) => m.content)).toEqual(["after this"]);
+    expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
+  });
+
   it("holds attachments with queued normal messages while the prompt is busy", async () => {
     const attachment = {
       id: "img-queued",
