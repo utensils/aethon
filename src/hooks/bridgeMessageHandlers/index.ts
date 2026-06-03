@@ -52,6 +52,7 @@ import { handleDashboardQuery } from "./dashboardQuery";
 import { handleDevshellQuery } from "./devshellQuery";
 import { handleGitQuery } from "./gitQuery";
 import { handleStatePatch } from "./statePatch";
+import { handleSubagentProgress } from "./subagentProgress";
 import { handleTabClosed } from "./tabClosed";
 import { handleTabReady } from "./tabReady";
 import { handleTerminalOutput } from "./terminalOutput";
@@ -100,6 +101,7 @@ export const bridgeMessageHandlers: Readonly<
   devshell_query: handleDevshellQuery,
   git_query: handleGitQuery,
   state_patch: handleStatePatch,
+  subagent_progress: handleSubagentProgress,
   tab_closed: handleTabClosed,
   tab_ready: handleTabReady,
   terminal_output: handleTerminalOutput,

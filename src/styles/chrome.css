@@ -8679,3 +8679,53 @@ button.ae-vcs-chip:focus-visible {
   color: var(--danger);
   border-color: var(--danger);
 }
+
+/* --------------------------------------------------------------------------
+ * Subagent activity timeline (nested inside a `task` tool card).
+ * ------------------------------------------------------------------------ */
+.ae-subagent-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-left: 2px solid var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: var(--radius-sm, 6px);
+}
+.ae-subagent-activity-head {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+}
+.ae-subagent-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ae-subagent-steps li {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-subagent-steps li::before {
+  content: "▸ ";
+  color: var(--text-dim);
+}
+.ae-subagent-step-error {
+  color: var(--danger) !important;
+}
+.ae-subagent-text {
+  font-size: var(--text-xs);
+  color: var(--text-md, var(--text));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 8em;
+  overflow-y: auto;
+}
