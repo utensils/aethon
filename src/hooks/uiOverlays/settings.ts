@@ -212,11 +212,24 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
     try {
       await invoke("write_config", { config: merged });
       clearConfigCache();
+      let fresh: AethonConfig | null = null;
       try {
-        const fresh = await getConfig();
+        fresh = await getConfig();
         reapplyConfig(fresh);
       } catch (err) {
         console.warn("settings save: re-read failed:", err);
+      }
+      if (fresh) {
+        try {
+          await invoke("agent_broadcast_command", {
+            payload: JSON.stringify({
+              type: "runtime_config_changed",
+              config: fresh,
+            }),
+          });
+        } catch (err) {
+          console.warn("settings save: agent runtime broadcast failed:", err);
+        }
       }
       const latestPending = readCurrentPending(stateRef.current);
       if (!sameConfigPatch(latestPending, pendingSnapshot)) {

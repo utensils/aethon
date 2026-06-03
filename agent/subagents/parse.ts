@@ -8,6 +8,7 @@
  */
 
 import { parse as parseYaml } from "yaml";
+import { MAX_AGENT_TIMEOUT_SECONDS } from "../runtime-config";
 import type { Subagent, SubagentScope, SubagentSurface } from "./types";
 
 /** Canonical name shape: lower-case, `[a-z0-9_-]`, must start alphanumeric,
@@ -82,6 +83,8 @@ export function parseSubagentMarkdown(
     typeof fields.model === "string" && fields.model.trim()
       ? fields.model.trim()
       : undefined;
+  const timeoutSeconds = parseTimeoutField(fields.timeout);
+  if (timeoutSeconds.error) return { error: timeoutSeconds.error };
 
   return {
     subagent: {
@@ -90,6 +93,7 @@ export function parseSubagentMarkdown(
       model,
       tools: parseToolsField(fields.tools),
       surface: parseSurfaceField(fields.surface),
+      timeoutSeconds: timeoutSeconds.value,
       systemPrompt: body.trim(),
       scope: ctx.scope,
       filePath: ctx.filePath,
@@ -121,6 +125,24 @@ function parseToolsField(value: unknown): string[] | undefined {
 
 function parseSurfaceField(value: unknown): SubagentSurface {
   return value === "tab" ? "tab" : "inline";
+}
+
+function parseTimeoutField(value: unknown): {
+  value?: number;
+  error?: string;
+} {
+  if (value === undefined || value === null || value === "") return {};
+  if (typeof value === "string" && value.trim()) {
+    return parseTimeoutField(Number(value));
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return {
+      error: "frontmatter `timeout` must be a positive number of seconds",
+    };
+  }
+  return {
+    value: Math.min(Math.max(Math.floor(value), 1), MAX_AGENT_TIMEOUT_SECONDS),
+  };
 }
 
 /**

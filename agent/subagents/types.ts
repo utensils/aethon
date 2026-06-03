@@ -17,6 +17,7 @@
  *   model: ollama/llama3.3
  *   tools: [read, grep, bash]
  *   surface: inline
+ *   timeout: 900
  *   ---
  *   You are a meticulous code reviewer...   <- markdown body == system prompt
  *
@@ -45,6 +46,8 @@ export interface Subagent {
   tools?: string[];
   /** Default `inline`. */
   surface: SubagentSurface;
+  /** Inline run timeout override, in seconds. Undefined uses global config. */
+  timeoutSeconds?: number;
   /** Markdown body — used as the subagent's system prompt. */
   systemPrompt: string;
   scope: SubagentScope;

@@ -21,7 +21,6 @@
 import {
   SessionManager,
   createAgentSession,
-  createBashToolDefinition,
   defineTool,
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
@@ -33,16 +32,14 @@ import {
   servicesForProvider,
 } from "../auth-profiles";
 import { buildDevshellSpawnHook } from "../devshell";
+import { createAethonBashToolDefinition } from "../bash-tool";
 import { extractAgentEndError } from "../agent-errors";
 import { summarizeToolArgs } from "../tool-card";
 import { logger } from "../logger";
 import { getSubagentsForCwd } from "./loader";
 import { resolveSubagentTools } from "./parse";
 import type { Subagent, SubagentSurface } from "./types";
-
-/** Hard ceiling on a single delegation so a wedged subagent can't hang the
- *  parent turn indefinitely. */
-const DEFAULT_TIMEOUT_MS = 300_000;
+import { timeoutMsFromSeconds } from "../runtime-config";
 /** Cap on the text returned to the parent (and streamed partials). */
 const MAX_RESULT_CHARS = 100_000;
 
@@ -231,7 +228,7 @@ async function runInlineSubagent(
 
   // Devshell-aware bash shadow so the subagent's bash (if allowlisted) inherits
   // the project's Nix env, exactly like the main agent's.
-  const devshellBashTool = createBashToolDefinition(cwd, {
+  const devshellBashTool = createAethonBashToolDefinition(state, cwd, {
     spawnHook: buildDevshellSpawnHook(state, deps),
   });
 
@@ -303,7 +300,7 @@ async function runInlineSubagent(
   try {
     await withTimeout(
       session.prompt(composedPrompt),
-      DEFAULT_TIMEOUT_MS,
+      timeoutMsFromSeconds(sub.timeoutSeconds ?? state.subagentTimeoutSeconds),
       () => {
         void session.abort();
       },

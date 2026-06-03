@@ -22,10 +22,10 @@ pub mod paths;
 // generate dead-code warnings until something outside `helpers` needs
 // them.
 pub use config::{
-    FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size, normalize_default_share_mode,
-    normalize_devshell_enabled, normalize_devshell_mode, normalize_new_tab_kind,
-    normalize_update_channel, normalize_tool_visibility, normalize_visibility,
-    parse_config_toml,
+    AGENT_TIMEOUT_SECONDS_DEFAULT, FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size,
+    normalize_default_share_mode, normalize_devshell_enabled, normalize_devshell_mode,
+    normalize_new_tab_kind, normalize_optional_timeout_seconds, normalize_timeout_seconds,
+    normalize_tool_visibility, normalize_update_channel, normalize_visibility, parse_config_toml,
 };
 pub use names::{sanitize_filename_segment, validate_state_name};
 pub use paths::{aethon_dir, resolve_inside_root};

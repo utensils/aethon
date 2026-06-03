@@ -183,6 +183,20 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("model"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
+    let provider_timeout_seconds = agent
+        .and_then(|m| m.get("providerTimeoutSeconds"))
+        .and_then(|v| v.as_u64())
+        .and_then(|n| {
+            helpers::normalize_optional_timeout_seconds(Some(n.min(u32::MAX as u64) as u32))
+        });
+    let bash_timeout_floor_seconds = agent
+        .and_then(|m| m.get("bashTimeoutFloorSeconds"))
+        .and_then(|v| v.as_u64())
+        .map(|n| helpers::normalize_timeout_seconds(Some(n.min(u32::MAX as u64) as u32)));
+    let subagent_timeout_seconds = agent
+        .and_then(|m| m.get("subagentTimeoutSeconds"))
+        .and_then(|v| v.as_u64())
+        .map(|n| helpers::normalize_timeout_seconds(Some(n.min(u32::MAX as u64) as u32)));
 
     let default_share_mode = shell
         .and_then(|m| m.get("defaultShareMode"))
@@ -313,6 +327,21 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     {
         let agent_table = ensure_table(&mut doc, "agent");
         set_or_clear_str(agent_table, "model", model);
+        set_or_clear_int(
+            agent_table,
+            "provider_timeout_seconds",
+            provider_timeout_seconds,
+        );
+        set_or_clear_int(
+            agent_table,
+            "bash_timeout_floor_seconds",
+            bash_timeout_floor_seconds,
+        );
+        set_or_clear_int(
+            agent_table,
+            "subagent_timeout_seconds",
+            subagent_timeout_seconds,
+        );
     }
 
     // ── [shell] ──
@@ -462,6 +491,18 @@ fn set_or_clear_bool(table: &mut toml_edit::Table, key: &str, value: Option<bool
     match value {
         Some(v) => {
             table.insert(key, toml_edit::value(v));
+        }
+        None => {
+            table.remove(key);
+        }
+    }
+}
+
+/// Integer variant of `set_or_clear_str`.
+fn set_or_clear_int(table: &mut toml_edit::Table, key: &str, value: Option<u32>) {
+    match value {
+        Some(v) => {
+            table.insert(key, toml_edit::value(v as i64));
         }
         None => {
             table.remove(key);

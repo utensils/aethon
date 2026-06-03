@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
@@ -235,6 +236,53 @@ pub(crate) fn agent_command(
         retire_agent_key(&state, &key)?;
     }
     Ok(())
+}
+
+/// Forward a JSON payload to every currently running agent worker without
+/// spawning any new workers. Used for hot runtime config updates that must
+/// reach existing tab-scoped bridge processes as well as the global worker.
+#[tauri::command]
+pub(crate) fn agent_broadcast_command(
+    payload: String,
+    state: State<'_, AgentProcesses>,
+) -> Result<(), String> {
+    let payload_value: serde_json::Value =
+        serde_json::from_str(&payload).map_err(|e| format!("invalid agent command: {e}"))?;
+    let line = payload_value.to_string();
+    let children: Vec<_> = {
+        let guard = state.children.lock().map_err(|e| e.to_string())?;
+        guard
+            .iter()
+            .map(|(k, c)| (k.clone(), Arc::clone(c)))
+            .collect()
+    };
+    let mut failures = Vec::new();
+    for (key, child) in children {
+        let result = (|| -> Result<(), String> {
+            let mut child = child.lock().map_err(|e| e.to_string())?;
+            let stdin = child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| format!("agent {key} has no stdin"))?;
+            writeln!(stdin, "{line}").map_err(|e| format!("write failed for {key}: {e}"))?;
+            stdin
+                .flush()
+                .map_err(|e| format!("flush failed for {key}: {e}"))
+        })();
+        if let Err(err) = result {
+            tracing::warn!(target: "aethon::agent", key = key, error = %err, "agent broadcast write failed");
+            failures.push(err);
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "agent broadcast failed for {} worker(s): {}",
+            failures.len(),
+            failures.join("; ")
+        ))
+    }
 }
 
 #[tauri::command]

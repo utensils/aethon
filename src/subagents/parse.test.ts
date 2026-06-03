@@ -29,6 +29,7 @@ describe("parseSubagentContent", () => {
       "model: ollama/llama3.3",
       "tools: [read, grep]",
       "surface: tab",
+      "timeout: 900",
       "---",
       "You review code.",
     ].join("\n");
@@ -39,6 +40,7 @@ describe("parseSubagentContent", () => {
       model: "ollama/llama3.3",
       tools: ["read", "grep"],
       surface: "tab",
+      timeoutSeconds: 900,
       systemPrompt: "You review code.",
     });
   });
@@ -57,6 +59,7 @@ describe("parseSubagentContent", () => {
     expect(fields?.surface).toBe("inline");
     expect(fields?.tools).toBeUndefined();
     expect(fields?.model).toBeUndefined();
+    expect(fields?.timeoutSeconds).toBeUndefined();
   });
 
   it("treats an empty tools list as none", () => {
@@ -64,6 +67,21 @@ describe("parseSubagentContent", () => {
       "---\ndescription: d\ntools: []\n---\nb",
     );
     expect(fields?.tools).toEqual([]);
+  });
+
+  it("rejects invalid timeout frontmatter", () => {
+    const { error } = parseSubagentContent(
+      "---\ndescription: d\ntimeout: nope\n---\nbody",
+    );
+    expect(error).toMatch(/timeout/);
+  });
+
+  it("floors fractional timeout frontmatter to at least one second", () => {
+    const { fields, error } = parseSubagentContent(
+      "---\ndescription: d\ntimeout: 0.5\n---\nbody",
+    );
+    expect(error).toBeUndefined();
+    expect(fields?.timeoutSeconds).toBe(1);
   });
 });
 
@@ -73,6 +91,7 @@ describe("serializeSubagent", () => {
     model: "ollama/llama3.3",
     tools: ["read", "grep"],
     surface: "tab",
+    timeoutSeconds: 900,
     systemPrompt: "You review.",
   };
 
@@ -91,6 +110,7 @@ describe("serializeSubagent", () => {
     });
     expect(text).not.toContain("surface:");
     expect(text).not.toContain("tools:");
+    expect(text).not.toContain("timeout:");
     expect(text).toContain("description: d");
     const { fields } = parseSubagentContent(text);
     expect(fields?.surface).toBe("inline");

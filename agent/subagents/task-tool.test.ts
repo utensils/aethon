@@ -88,6 +88,7 @@ function makeState(sub: Partial<Subagent> & { name: string }): {
     model: sub.model,
     tools: sub.tools,
     surface: sub.surface ?? "inline",
+    timeoutSeconds: sub.timeoutSeconds,
     systemPrompt: sub.systemPrompt ?? "You are a helper.",
     scope: "user",
     filePath: `/agents/${sub.name}.md`,
@@ -109,6 +110,8 @@ function makeState(sub: Partial<Subagent> & { name: string }): {
       getDefaultModel: () => undefined,
     },
     resourceLoader: {},
+    bashTimeoutFloorSeconds: 300,
+    subagentTimeoutSeconds: 300,
   } as unknown as AethonAgentState;
   return { state, findSpy };
 }
@@ -138,6 +141,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete (globalThis as { aethon?: unknown }).aethon;
+  vi.useRealTimers();
 });
 
 describe("buildSubagentTaskTool", () => {
@@ -279,6 +283,27 @@ describe("buildSubagentTaskTool", () => {
     expect(h.abortSpy).toHaveBeenCalled();
     release();
     await pending;
+  });
+
+  it("uses the subagent timeout override for inline runs", async () => {
+    vi.useFakeTimers();
+    h.promptImpl = () => new Promise<void>(() => {});
+    const { state } = makeState({
+      name: "reviewer",
+      model: "ollama/llama3.3",
+      timeoutSeconds: 1,
+    });
+    const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+    const pending = execOf(tool)("c", {
+      subagent_type: "reviewer",
+      prompt: "x",
+    });
+    const rejection = expect(pending).rejects.toThrow(/timed out after 1s/);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejection;
+    expect(h.abortSpy).toHaveBeenCalled();
+    expect(h.disposeSpy).toHaveBeenCalled();
   });
 
   it("launches a tab for surface: tab subagents", async () => {
