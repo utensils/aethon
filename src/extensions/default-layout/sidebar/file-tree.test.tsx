@@ -901,7 +901,10 @@ describe("FileTreePanel", () => {
 
     const appRow = await waitFor(() => screen.getByText("App.tsx"));
     expect(appRow.closest("li")?.className).toContain("is-revealed");
-    expect(scrollSpy).toHaveBeenCalled();
+    // scrollIntoView fires in a `revealed`-keyed effect that flushes a tick
+    // after the row commits, so poll rather than assert synchronously — the
+    // synchronous check raced under CI load and flaked on macOS.
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
     proto.scrollIntoView = prevScroll;
   });
 });
