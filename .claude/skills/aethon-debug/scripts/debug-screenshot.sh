@@ -69,18 +69,22 @@ resolve_port() {
   fi
 }
 
-# Resolve the dev PID: explicit override, dev-info.json 'pid', else the
-# process LISTENing on the debug port (the debug server is PID-bound, so
-# this is guaranteed to be the running dev process — never a release).
+# Resolve the dev GUI PID. The debug server runs INSIDE the Tauri GUI
+# process, so the PID LISTENing on the debug port is the window we want.
+# Prefer that. dev-info.json's `pid` is written by scripts/dev.sh as the
+# launcher SHELL pid ($$) on a normal `dev` launch — it has no window, so
+# `System Events` can't find it and we'd silently fall back to full-screen.
+# Only use dev-info.json's pid as a last resort (e.g. lsof unavailable).
 resolve_pid() {
   [[ -n "${PID_OVERRIDE}" ]] && { echo "${PID_OVERRIDE}"; return; }
   local pid=""
+  pid=$(lsof -nP -iTCP:"$(resolve_port)" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
+  if [[ -n "$pid" ]]; then echo "$pid"; return; fi
   if [[ -n "${DEV_INFO}" && -f "${DEV_INFO}" ]]; then
     pid=$(python3 -c "import json;print(json.load(open('${DEV_INFO}')).get('pid') or '')" 2>/dev/null || true)
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then echo "$pid"; return; fi
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && { echo "$pid"; return; }
   fi
-  pid=$(lsof -nP -iTCP:"$(resolve_port)" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
-  echo "$pid"
+  echo ""
 }
 
 # Nudge the webview to foreground its own window (harmless, helps on the
