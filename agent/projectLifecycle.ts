@@ -9,6 +9,7 @@ import { loadProjectAethonExtensions } from "./extension-loader";
 import { patchLayoutTree } from "./layout-manager";
 import { logger } from "./logger";
 import { dismissNotification, notify } from "./notifications";
+import { refreshSubagents } from "./subagents";
 
 export function projectDisplayName(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
@@ -225,6 +226,7 @@ export async function handleSetProject(
     if (state.currentProjectCwd !== null) {
       unloadProjectExtensions(state, deps);
       state.currentProjectCwd = null;
+      refreshSubagents(state);
       await state.resourceLoader.reload();
       deps.scheduleStateFileWrite();
       emitGlobalReady(state, deps);
@@ -282,6 +284,8 @@ export async function handleSetProject(
       );
   }
   state.currentProjectCwd = cwd;
+  // Re-merge subagents so project-scoped definitions follow the active cwd.
+  if (projectChanged) refreshSubagents(state);
   if (
     result.loaded > 0 ||
     result.failed > 0 ||

@@ -23,4 +23,5 @@ export {
   loadAuthProfiles,
   modelRegistryForModelId,
   saveAuthProfiles,
+  servicesForProvider,
 } from "./manager";

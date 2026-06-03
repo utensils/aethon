@@ -82,6 +82,8 @@ import {
   discoverPiAethonExtensions,
 } from "./extension-loader";
 import { ensureTab, emitReady, tabSessionDir } from "./tab-lifecycle";
+import { refreshSubagents } from "./subagents";
+import { buildExplicitSubagentSteer } from "./subagents/steer";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
 import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
 
@@ -217,7 +219,19 @@ async function main(): Promise<void> {
         git,
         softAnchor: softGuardrailPrompt,
       });
-      return { systemPrompt: `${event.systemPrompt}\n\n${section}` };
+      let systemPrompt = `${event.systemPrompt}\n\n${section}`;
+      // Explicit @name invocation: consume the one-shot steer for this tab
+      // (clearing it prevents the subagent's own turn from re-triggering it).
+      if (tabId) {
+        const explicit = state.pendingExplicitSubagent.get(tabId);
+        if (explicit && state.subagents.has(explicit)) {
+          state.pendingExplicitSubagent.delete(tabId);
+          systemPrompt += `\n\n${buildExplicitSubagentSteer(explicit)}`;
+        } else if (explicit) {
+          state.pendingExplicitSubagent.delete(tabId);
+        }
+      }
+      return { systemPrompt };
     });
   };
 
@@ -307,6 +321,9 @@ async function main(): Promise<void> {
     loadHooks,
   );
   state.currentProjectCwd = startupCwd;
+  // Merge user + project subagents before the reload so the very first turn's
+  // system prompt already advertises them.
+  refreshSubagents(state);
 
   // Reload so the appendSystemPromptOverride sees the populated extensions.
   await state.resourceLoader.reload();

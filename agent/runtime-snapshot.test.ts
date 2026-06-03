@@ -7,10 +7,7 @@ import {
   type AethonAgentStateOptions,
   type TabRecord,
 } from "./state";
-import {
-  getRuntimeSnapshot,
-  scheduleStateFileWrite,
-} from "./runtime-snapshot";
+import { getRuntimeSnapshot, scheduleStateFileWrite } from "./runtime-snapshot";
 
 function makeOpts(userDir: string): AethonAgentStateOptions {
   return {
@@ -38,6 +35,7 @@ describe("getRuntimeSnapshot", () => {
     expect(snap.extensions).toEqual([]);
     expect(snap.themes).toEqual([]);
     expect(snap.components).toEqual([]);
+    expect(snap.subagents).toEqual([]);
     expect(snap.tabs).toEqual([]);
     expect(snap.eventRoutingMode).toBe("builtin");
     expect(snap.layoutStructure).toBeNull();
@@ -57,6 +55,37 @@ describe("getRuntimeSnapshot", () => {
     expect(snap.extensions).toEqual([{ name: "hello", source: "directory" }]);
     expect(snap.themes).toEqual([{ id: "twilight", label: "Twilight" }]);
     expect(snap.components).toEqual(["card-x"]);
+  });
+
+  it("includes configured subagents", () => {
+    const state = new AethonAgentState(makeOpts("/tmp/aethon-sa"));
+    state.subagents.set("reviewer", {
+      name: "reviewer",
+      description: "Reviews diffs",
+      model: "ollama/llama3.3",
+      surface: "inline",
+      systemPrompt: "You review.",
+      scope: "user",
+      filePath: "/agents/reviewer.md",
+    });
+    state.subagents.set("builder", {
+      name: "builder",
+      description: "Builds features",
+      surface: "tab",
+      systemPrompt: "You build.",
+      scope: "project",
+      filePath: "/proj/.aethon/agents/builder.md",
+    });
+    const snap = getRuntimeSnapshot(state);
+    expect(snap.subagents).toEqual([
+      {
+        name: "reviewer",
+        description: "Reviews diffs",
+        model: "ollama/llama3.3",
+        surface: "inline",
+      },
+      { name: "builder", description: "Builds features", surface: "tab" },
+    ]);
   });
 
   it("annotates each tab with its per-tab working directory", () => {

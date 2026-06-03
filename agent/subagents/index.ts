@@ -18,3 +18,7 @@ export {
   userAgentsDir,
 } from "./loader";
 export type { LoadSubagentsResult } from "./loader";
+export { buildSubagentTaskTool } from "./task-tool";
+export type { SubagentTaskDeps } from "./task-tool";
+export { buildExplicitSubagentSteer, detectSubagentMention } from "./steer";
+export { handleSubagentsChanged } from "./changed";

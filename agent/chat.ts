@@ -9,6 +9,7 @@ import {
   ensureTab,
 } from "./tab-lifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
+import { detectSubagentMention } from "./subagents/steer";
 import { emitContextUsage } from "./context-usage";
 
 export async function handleChat(
@@ -25,6 +26,12 @@ export async function handleChat(
   // the current value before this turn's tool calls (and survives a respawn).
   if (typeof msg.hardEnforce === "boolean") {
     state.tabHardEnforce.set(tabId, msg.hardEnforce);
+  }
+  // Explicit `@name` subagent invocation: record a one-shot steer consumed by
+  // the before_agent_start hook so this turn delegates to that subagent.
+  const mention = detectSubagentMention(msg.content);
+  if (mention && state.subagents.has(mention)) {
+    state.pendingExplicitSubagent.set(tabId, mention);
   }
   const cwdOverride =
     typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;

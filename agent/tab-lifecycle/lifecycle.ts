@@ -19,7 +19,11 @@ import {
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "../shell-tools";
 import { buildDashboardTools } from "../dashboard-tools";
-import { buildDevshellSpawnHook, ensureFetched as ensureDevshellFetched } from "../devshell";
+import { buildSubagentTaskTool } from "../subagents/task-tool";
+import {
+  buildDevshellSpawnHook,
+  ensureFetched as ensureDevshellFetched,
+} from "../devshell";
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
 import { authProfileServicesForTab } from "../auth-profiles";
@@ -28,10 +32,7 @@ import type { AethonAgentState, TabRecord } from "../state";
 import { contextUsageSnapshot, emitContextUsage } from "../context-usage";
 import { handleSessionEvent } from "./events";
 import { installAethonRetryClassifier } from "./retry";
-import {
-  buildPickerModels,
-  ensurePickerHasModel,
-} from "./models";
+import { buildPickerModels, ensurePickerHasModel } from "./models";
 import { refreshPiSlashCommands } from "./slash-commands";
 import { modelDescriptor, modelKey, tabSessionDir } from "./utils";
 import type { TabLifecycleDeps } from "./utils";
@@ -122,6 +123,7 @@ export async function ensureTab(
       devshellBashTool,
       ...buildShellTools(),
       ...buildDashboardTools(),
+      buildSubagentTaskTool(state, deps, tabId),
     ],
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });

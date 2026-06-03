@@ -60,6 +60,12 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       id: t.id,
       label: t.label,
     })),
+    subagents: [...state.subagents.values()].map((s) => ({
+      name: s.name,
+      description: s.description,
+      ...(s.model ? { model: s.model } : {}),
+      surface: s.surface,
+    })),
     components: [...state.extensionComponents.keys()],
     layoutSummary: summarizeLayout(state),
     tabs: [...state.tabs.values()].map((t) => ({

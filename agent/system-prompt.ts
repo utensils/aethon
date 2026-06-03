@@ -35,7 +35,7 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
   lines.push(
     `Build: ${snapshot.release ? "release" : "dev"}. Agent host dir: \`${snapshot.cwd}\` — ` +
       "this is where the bridge process launched, NOT necessarily where any tab " +
-      'operates. Each turn\'s authoritative working directory + git state arrives in the ' +
+      "operates. Each turn's authoritative working directory + git state arrives in the " +
       '"Working context" section appended below; trust that over this line.',
   );
   if (snapshot.projectRoot) {
@@ -88,6 +88,23 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
         .map((c) => `\`${c}\``)
         .join(", ")}.`,
     );
+  }
+
+  if (snapshot.subagents.length > 0) {
+    lines.push("");
+    lines.push(
+      "Available subagents — delegate focused work to one with the `task` tool " +
+        '(`task({ subagent_type: "<name>", prompt: "<self-contained task>" })`). ' +
+        "Choose the subagent whose description best fits; pass everything it needs " +
+        "in `prompt` (it runs in an isolated session and sees only that). When the " +
+        "user prefixes a message with `@<name>`, delegate to that subagent. Do NOT " +
+        "delegate trivial work you can do directly.",
+    );
+    for (const s of snapshot.subagents) {
+      const model = s.model ? `, model \`${s.model}\`` : "";
+      const tab = s.surface === "tab" ? ", opens its own tab" : "";
+      lines.push(`- \`${s.name}\`${model}${tab} — ${s.description}`);
+    }
   }
 
   if (snapshot.slashCommands.length > 0) {
