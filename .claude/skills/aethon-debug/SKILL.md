@@ -68,7 +68,7 @@ To raise/focus the dev window without LaunchServices ambiguity, do it from insid
 ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'window.focus(); return "focused"'
 ```
 
-For screenshots, use `debug-screenshot.sh` (it does not activate by app name) and crop after the fact, or ask the user to bring the dev window forward themselves.
+For screenshots, use `debug-screenshot.sh` — it raises the dev window by PID (via System Events `unix id`, never by app name) and region-captures just that window, so you get a scoped shot with no manual cropping and no app-name activation. It falls back to a full-display capture only if the window bounds can't be read.
 
 ## Available globals (dev only)
 
@@ -159,13 +159,23 @@ ${CLAUDE_SKILL_DIR}/scripts/debug-wait.sh
 
 Returns `{waiting:false, status, messageCount, lastRole, durationSeconds}` when `state.waiting` flips false. Default timeout 300s, override with `--timeout N`.
 
-### `screenshot` — capture screen
+### `screenshot` — capture the dev window (scoped)
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh
+${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh                # window-scoped PNG
+${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh --width 1700   # downscale for docs assets
+${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh --full         # whole display
+${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh --pid 12345    # target a specific dev PID
 ```
 
-Returns the path to a PNG. Use the Read tool to view it. Saves to `${TMPDIR:-/tmp}/aethon-debug/` by default.
+On macOS this captures **just the Aethon dev window**: it raises the dev
+process by PID (System Events `unix id`, never by app name, so it can't grab a
+stale release) and region-captures the front window's bounds. If the bounds
+can't be read (Accessibility not granted), it logs a note and falls back to a
+full-display capture. `--full` forces a full-display capture; `--width N`
+downscales the PNG (handy for embedding real screenshots in the website docs);
+`--pid N` overrides PID auto-resolution. Returns the path to the PNG; use the
+Read tool to view it. Saves to `${TMPDIR:-/tmp}/aethon-debug/` by default.
 
 ### `layout` — dump the active layout's component tree
 
