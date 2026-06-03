@@ -29,7 +29,12 @@ interface ProjectListItem {
   path: string;
   active?: boolean;
   iconUrl?: string;
-  gitStatus?: { branch?: string; dirty?: boolean; ahead?: number; behind?: number };
+  gitStatus?: {
+    branch?: string;
+    dirty?: boolean;
+    ahead?: number;
+    behind?: number;
+  };
 }
 
 interface HostBannerInfo {
@@ -39,7 +44,10 @@ interface HostBannerInfo {
   isLocal: boolean;
 }
 
-function resolveOptional<T>(v: unknown, state: Record<string, unknown>): T | null {
+function resolveOptional<T>(
+  v: unknown,
+  state: Record<string, unknown>,
+): T | null {
   if (!v) return null;
   if (isRef(v)) {
     const r = resolvePointer(state, v.$ref);
@@ -62,7 +70,7 @@ interface ExtraCard {
 }
 
 function isRef(v: unknown): v is { $ref: string } {
-  return typeof v === "object" && v !== null && "$ref" in (v);
+  return typeof v === "object" && v !== null && "$ref" in v;
 }
 
 function resolveArray<T>(v: unknown, state: Record<string, unknown>): T[] {
@@ -214,6 +222,16 @@ export function ProjectsDashboard({
             </ul>
           </section>
         )}
+        <section className="a2ui-projects-dashboard-section">
+          <RegistryComponent
+            type="subagents-config"
+            state={state}
+            onEvent={(_component, eventType, data) =>
+              onEvent(eventType, data, "subagents-config")
+            }
+            componentProps={{ scope: "user" }}
+          />
+        </section>
       </div>
     </div>
   );

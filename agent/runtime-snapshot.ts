@@ -23,6 +23,7 @@ import type { AethonAgentState } from "./state";
 import type { RuntimeSnapshot } from "./system-prompt";
 import { logger } from "./logger";
 import { summarizeLayout, summarizeLayoutStructure } from "./layout-manager";
+import { getSubagentsForCwd } from "./subagents";
 
 const STATE_FILE_DEBOUNCE_MS = 200;
 
@@ -59,6 +60,16 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
     themes: [...state.extensionThemes.values()].map((t) => ({
       id: t.id,
       label: t.label,
+    })),
+    // Introspection / state-file view of the active project's subagents (the
+    // prompt advertisement is injected per-turn per-tab-cwd, see system-prompt).
+    subagents: [
+      ...getSubagentsForCwd(state, state.currentProjectCwd).byName.values(),
+    ].map((s) => ({
+      name: s.name,
+      description: s.description,
+      ...(s.model ? { model: s.model } : {}),
+      surface: s.surface,
     })),
     components: [...state.extensionComponents.keys()],
     layoutSummary: summarizeLayout(state),

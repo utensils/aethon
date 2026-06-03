@@ -15,6 +15,10 @@ export const MAX_LABEL_CHARS = 60;
 
 export interface RestoredChatMessage {
   id: string;
+  /** pi session entry id (8-char hex) for user/assistant turns — the handle
+   *  `SessionManager.branch()` / `createBranchedSession()` need for rollback /
+   *  fork. Absent on tool-card and system rows (you don't branch to those). */
+  entryId?: string;
   role: "user" | "agent" | "system";
   text?: string;
   thinking?: string;

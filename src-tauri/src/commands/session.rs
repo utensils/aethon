@@ -6,11 +6,11 @@
 //! a rendered chat to `~/Downloads/`. Snippet building lives here too
 //! so UTF-16 / multibyte indexing pitfalls stay Rust-side.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
-use crate::helpers::sanitize_filename_segment;
+use crate::helpers::{resolve_inside_root, sanitize_filename_segment};
 
 /// Cross-session search (M6 P6). Walks `~/.aethon/sessions/<tabId>/*.jsonl`
 /// and returns user / assistant messages whose text content contains
@@ -162,6 +162,74 @@ pub fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
         .join("sessions");
     let target = sessions_root.join(&tab_id);
     delete_session_dir(target, sessions_root)
+}
+
+/// Move a freshly-branched session file (produced by `createBranchedSession`
+/// into the *source* tab's dir) into a new tab's session directory, so the
+/// per-tab layout the bridge expects holds for the fork. Used by `fork_session`.
+///
+/// `source_path` is supplied by the bridge; we trust nothing about it — it must
+/// canonicalize to a real file that already lives under `~/.aethon/sessions`
+/// (blocking a spoofed path at `/etc/...`), and the destination is pinned to
+/// `<sessions>/<dest_tab_id>/` with a validated tab id + lexical inside-root
+/// check. Returns the absolute destination path.
+#[tauri::command]
+pub fn copy_session_file(
+    source_path: String,
+    dest_tab_id: String,
+    app: AppHandle,
+) -> Result<String, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let sessions_root = crate::helpers::aethon_dir(Some(home))
+        .ok_or_else(|| "aethon dir unresolved".to_string())?
+        .join("sessions");
+    let dest = copy_session_into_tab(Path::new(&source_path), &sessions_root, &dest_tab_id)?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+fn copy_session_into_tab(
+    source_path: &Path,
+    sessions_root: &Path,
+    dest_tab_id: &str,
+) -> Result<PathBuf, String> {
+    validate_session_tab_id(dest_tab_id)?;
+    // The source must exist and live under the sessions root (it was produced by
+    // createBranchedSession into a tab dir). Canonicalize both so a symlink or
+    // `..` can't smuggle a path outside the tree past the prefix check.
+    let canonical_root = std::fs::canonicalize(sessions_root)
+        .map_err(|e| format!("canonicalize sessions root: {e}"))?;
+    let canonical_source =
+        std::fs::canonicalize(source_path).map_err(|e| format!("canonicalize source: {e}"))?;
+    if !canonical_source.starts_with(&canonical_root) {
+        return Err("refusing to copy: source escapes the sessions root".to_string());
+    }
+    if !canonical_source.is_file() {
+        return Err("source is not a file".to_string());
+    }
+    let file_name = canonical_source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "source has no file name".to_string())?;
+    let dest_dir = canonical_root.join(dest_tab_id);
+    std::fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("create_dir_all {}: {e}", dest_dir.display()))?;
+    // Symlink-aware: if `<sessions>/<dest_tab_id>` is (or resolves through) a
+    // symlink out of the sessions tree, reject before writing into it.
+    crate::commands::fs::ensure_symlink_safe(&dest_dir, &canonical_root)?;
+    let dest_path = dest_dir.join(file_name);
+    if resolve_inside_root(&dest_dir, &dest_path).is_none() {
+        return Err("refusing to copy: dest escapes the tab dir".to_string());
+    }
+    // Rename when same-filesystem (atomic); copy + remove for cross-device.
+    if std::fs::rename(&canonical_source, &dest_path).is_err() {
+        std::fs::copy(&canonical_source, &dest_path)
+            .map_err(|e| format!("copy {}: {e}", dest_path.display()))?;
+        let _ = std::fs::remove_file(&canonical_source);
+    }
+    Ok(dest_path)
 }
 
 fn validate_session_tab_id(tab_id: &str) -> Result<(), String> {
@@ -356,7 +424,8 @@ pub fn export_chat_markdown(
 
 #[cfg(test)]
 mod tests {
-    use super::{delete_session_dir, validate_session_tab_id};
+    use super::{copy_session_into_tab, delete_session_dir, validate_session_tab_id};
+    use std::path::PathBuf;
 
     #[test]
     fn validate_session_tab_id_allows_default() {
@@ -382,5 +451,77 @@ mod tests {
         delete_session_dir(default_dir.clone(), sessions).expect("delete default session");
         assert!(!default_dir.exists());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn copy_test_root() -> PathBuf {
+        std::env::temp_dir().join(format!("aethon-session-copy-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn copy_session_into_tab_moves_file_and_preserves_header() {
+        let root = copy_test_root();
+        let sessions = root.join("sessions");
+        let src_dir = sessions.join("tab-a");
+        std::fs::create_dir_all(&src_dir).expect("create src tab dir");
+        let header = "{\"type\":\"session\",\"id\":\"s1\",\"cwd\":\"/proj\"}\n{\"type\":\"message\",\"id\":\"m1\"}\n";
+        let src = src_dir.join("123_branch.jsonl");
+        std::fs::write(&src, header).expect("write source session");
+
+        let dest = copy_session_into_tab(&src, &sessions, "tab-b").expect("copy into tab-b");
+
+        assert!(dest.ends_with("123_branch.jsonl"));
+        assert!(dest.starts_with(std::fs::canonicalize(&sessions).unwrap().join("tab-b")));
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), header);
+        // Move semantics: the branched source is gone.
+        assert!(!src.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn copy_session_into_tab_rejects_source_outside_sessions_root() {
+        let root = copy_test_root();
+        let sessions = root.join("sessions");
+        std::fs::create_dir_all(&sessions).expect("create sessions root");
+        // A real file, but outside the sessions tree.
+        let outside = root.join("outside.jsonl");
+        std::fs::write(&outside, "{}\n").expect("write outside file");
+
+        let err = copy_session_into_tab(&outside, &sessions, "tab-b").unwrap_err();
+        assert!(err.contains("escapes the sessions root"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_session_into_tab_rejects_symlinked_dest_dir() {
+        use std::os::unix::fs::symlink;
+        let root = copy_test_root();
+        let sessions = root.join("sessions");
+        let src_dir = sessions.join("tab-a");
+        std::fs::create_dir_all(&src_dir).expect("create src tab dir");
+        let src = src_dir.join("x.jsonl");
+        std::fs::write(&src, "{}\n").expect("write source");
+        // A pre-existing dest tab dir that's a symlink pointing outside sessions.
+        let evil = root.join("evil");
+        std::fs::create_dir_all(&evil).expect("create evil dir");
+        symlink(&evil, sessions.join("tabb")).expect("symlink dest");
+
+        let err = copy_session_into_tab(&src, &sessions, "tabb").unwrap_err();
+        assert!(err.contains("symlink escapes"), "got: {err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn copy_session_into_tab_rejects_invalid_dest_tab_id() {
+        let root = copy_test_root();
+        let sessions = root.join("sessions");
+        let src_dir = sessions.join("tab-a");
+        std::fs::create_dir_all(&src_dir).expect("create src tab dir");
+        let src = src_dir.join("x.jsonl");
+        std::fs::write(&src, "{}\n").expect("write source");
+
+        assert!(copy_session_into_tab(&src, &sessions, "../escape").is_err());
+        assert!(copy_session_into_tab(&src, &sessions, "nested/id").is_err());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

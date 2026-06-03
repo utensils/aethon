@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import {
-  AuthStorage,
-  ModelRegistry,
-} from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "../state";
 import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
@@ -59,7 +56,9 @@ export function saveAuthProfiles(state: AethonAgentState): void {
   saveAuthProfilesState(state.userDir, state.authProfiles);
 }
 
-export function authProfilesSnapshot(state: AethonAgentState): AuthProfilesSnapshot {
+export function authProfilesSnapshot(
+  state: AethonAgentState,
+): AuthProfilesSnapshot {
   return {
     profiles: state.authProfiles.profiles,
     defaultByProvider: state.authProfiles.defaultByProvider,
@@ -133,6 +132,25 @@ export function modelRegistryForModelId(
     : state.modelRegistry;
 }
 
+/**
+ * Resolve the auth + model services for a *provider's* default profile,
+ * independent of any tab. Unlike {@link modelRegistryForModelId} this ignores
+ * the calling tab's profile, so a subagent on a different provider (e.g. an
+ * Ollama subagent delegated to by an OpenAI main agent) gets the matching
+ * authStorage AND modelRegistry as a pair — the model's base URL / key live on
+ * that profile's authStorage, so they must be resolved together. Falls back to
+ * the global services when the provider has no configured profile.
+ */
+export function servicesForProvider(
+  state: AethonAgentState,
+  provider: string,
+): AuthProfileServices {
+  const profileId = state.authProfiles.defaultByProvider[provider];
+  return profileId && findProfile(state, profileId)
+    ? servicesForProfile(state, profileId)
+    : { authStorage: state.authStorage, modelRegistry: state.modelRegistry };
+}
+
 export async function handleAuthProfileMessage(
   state: AethonAgentState,
   deps: DispatcherDeps,
@@ -175,7 +193,10 @@ export function emitAuthProfiles(
   state: AethonAgentState,
   deps: Pick<DispatcherDeps, "send">,
 ): void {
-  deps.send({ type: "auth_profiles", authProfiles: authProfilesSnapshot(state) });
+  deps.send({
+    type: "auth_profiles",
+    authProfiles: authProfilesSnapshot(state),
+  });
 }
 
 function servicesForProfile(
@@ -209,7 +230,10 @@ function authProfileProviders(state: AethonAgentState): AuthProfileProvider[] {
   return [...ids]
     .map((id) => ({
       id,
-      label: state.modelRegistry.getProviderDisplayName(id) || oauthIds.get(id) || id,
+      label:
+        state.modelRegistry.getProviderDisplayName(id) ||
+        oauthIds.get(id) ||
+        id,
       kind: oauthIds.has(id) ? ("oauth" as const) : ("api_key" as const),
       configured: state.modelRegistry.getProviderAuthStatus(id).configured,
       modelCount: modelCounts.get(id) ?? 0,
@@ -224,7 +248,8 @@ function handleApiKeySave(
 ): void {
   const providerId = stringField(msg.providerId);
   const key = stringField(msg.key);
-  if (!providerId || !key) throw new Error("auth_profile_api_key_save: providerId and key required");
+  if (!providerId || !key)
+    throw new Error("auth_profile_api_key_save: providerId and key required");
   const meta = createProfileMeta(state.authProfiles, {
     providerId,
     label: stringField(msg.label) || providerId,
@@ -250,7 +275,8 @@ function handleOAuthStart(
   msg: InboundMessage,
 ): void {
   const providerId = stringField(msg.providerId);
-  if (!providerId) throw new Error("auth_profile_login_start: providerId required");
+  if (!providerId)
+    throw new Error("auth_profile_login_start: providerId required");
   const meta = createProfileMeta(state.authProfiles, {
     providerId,
     label: stringField(msg.label) || providerId,
@@ -279,13 +305,26 @@ function handleOAuthStart(
       onAuth: ({ url, instructions }) => {
         deps.send({
           type: "auth_profile_login_event",
-          event: { type: "auth", challengeId, profileId: meta.id, providerId, url, instructions },
+          event: {
+            type: "auth",
+            challengeId,
+            profileId: meta.id,
+            providerId,
+            url,
+            instructions,
+          },
         });
       },
       onProgress: (message) => {
         deps.send({
           type: "auth_profile_login_event",
-          event: { type: "progress", challengeId, profileId: meta.id, providerId, message },
+          event: {
+            type: "progress",
+            challengeId,
+            profileId: meta.id,
+            providerId,
+            message,
+          },
         });
       },
       onPrompt: ({ message, placeholder, allowEmpty }) =>
@@ -336,7 +375,13 @@ function handleOAuthStart(
       state.authProfileServices.delete(meta.id);
       deps.send({
         type: "auth_profile_login_event",
-        event: { type: "complete", challengeId, profileId: meta.id, providerId, ok: true },
+        event: {
+          type: "complete",
+          challengeId,
+          profileId: meta.id,
+          providerId,
+          ok: true,
+        },
       });
       emitAuthProfiles(state, deps);
     })
@@ -347,7 +392,14 @@ function handleOAuthStart(
       const message = err instanceof Error ? err.message : String(err);
       deps.send({
         type: "auth_profile_login_event",
-        event: { type: "complete", challengeId, profileId: meta.id, providerId, ok: false, error: message },
+        event: {
+          type: "complete",
+          challengeId,
+          profileId: meta.id,
+          providerId,
+          ok: false,
+          error: message,
+        },
       });
       emitAuthProfiles(state, deps);
     });
@@ -404,7 +456,8 @@ async function handleUseForTab(
   state.tabAuthProfileIds.set(tabId, profile.id);
   const services = servicesForProfile(state, profile.id);
   const nextModel =
-    previousModel && services.modelRegistry.find(previousModel.provider, previousModel.id);
+    previousModel &&
+    services.modelRegistry.find(previousModel.provider, previousModel.id);
   const rec = await ensureTab(state, deps, tabId, {
     cwdOverride: cwd,
     initialModel: nextModel || previousModel,
@@ -466,7 +519,9 @@ function handleDelete(
     if (activeProfileId !== profileId) continue;
     const tab = state.tabs.get(tabId);
     if (tab?.promptInFlight) {
-      throw new Error("Cannot delete an account while one of its sessions is running.");
+      throw new Error(
+        "Cannot delete an account while one of its sessions is running.",
+      );
     }
   }
   removeProfile(state, profileId);

@@ -39,6 +39,16 @@ export interface RuntimeSnapshot {
   disabledExtensions: string[];
   themes: { id: string; label: string }[];
   components: string[];
+  // Configured subagents the main model can delegate to via the `task` tool.
+  // Merged user-scope + active-project-scope (project wins by name). The model
+  // chooses one by `description`; the user can also invoke explicitly with
+  // `@name`. `surface` is where the run shows up (inline card vs its own tab).
+  subagents: {
+    name: string;
+    description: string;
+    model?: string;
+    surface: "inline" | "tab";
+  }[];
   layoutSummary: string;
   // `cwd` is the per-tab working directory (from `state.tabProjectCwds`).
   // Distinct from the top-level `cwd` (the agent process launch dir), which

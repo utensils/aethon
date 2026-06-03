@@ -74,6 +74,13 @@ export interface BridgeMessageContext {
   // ─── Tab actions (from useTabs) ─────────────────────────────────────
   updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
   updateActiveTab: (updater: (tab: Tab) => Tab) => void;
+  /** Open (or focus) a tab. Used by `session_forked` to open the forked tab
+   *  with its restored history. */
+  newTab: (
+    tabId?: string,
+    label?: string,
+    options?: { restoredSession?: boolean; cwd?: string; scrollToMatch?: string },
+  ) => void;
   dispatchTerminalReplay: (buffer: string) => void;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],

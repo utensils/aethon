@@ -48,6 +48,7 @@ import { TaskLauncher } from "./dashboard/task-launcher";
 import { ProjectsDashboard } from "./dashboard/projects-dashboard";
 import { ProjectDashboard } from "./dashboard/project-dashboard";
 import { IssuesSection } from "./dashboard/issues-section";
+import { SubagentsConfig } from "./dashboard/subagents-config";
 import workstationPayload from "./workstation.a2ui.json";
 
 export {
@@ -150,6 +151,7 @@ export const defaultLayoutExtension: A2UIExtension = {
     "projects-dashboard": ProjectsDashboard,
     "project-dashboard": ProjectDashboard,
     "issues-section": IssuesSection,
+    "subagents-config": SubagentsConfig,
   },
   layout: workstationPayload,
 };

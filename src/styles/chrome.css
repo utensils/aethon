@@ -8445,3 +8445,287 @@ button.ae-vcs-chip:focus-visible {
   gap: 10px;
   padding: 4px 8px 10px;
 }
+
+/* --------------------------------------------------------------------------
+ * Subagents config (overview editor) — project + host overview surfaces.
+ * ------------------------------------------------------------------------ */
+.ae-subagents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ae-subagents-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.ae-subagents-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text);
+}
+.ae-subagents-note {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+.ae-subagents-new,
+.ae-subagents-save,
+.ae-subagents-cancel,
+.ae-subagents-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--chrome-text-compact);
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.ae-subagents-new:hover,
+.ae-subagents-action:hover,
+.ae-subagents-save:hover,
+.ae-subagents-cancel:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.ae-subagents-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+.ae-subagents-save:hover {
+  background: var(--accent-hover-tint, var(--accent));
+}
+.ae-subagents-action-danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.ae-subagents-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm, 6px);
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.ae-subagents-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.ae-subagents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ae-subagents-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-elev);
+}
+.ae-subagents-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.ae-subagents-row-name {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+.ae-subagents-row-desc {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-subagents-row-badges {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.ae-subagents-badge {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+}
+.ae-subagents-badge-tab {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+.ae-subagents-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.ae-subagents-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  padding: var(--space-3, 12px);
+  background: var(--bg-elev);
+}
+.ae-subagents-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ae-subagents-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-md, var(--text));
+}
+.ae-subagents-hint {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+.ae-subagents-input,
+.ae-subagents-textarea,
+.ae-subagents-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text);
+  font-size: var(--text-sm);
+  padding: 6px 8px;
+  font-family: inherit;
+}
+.ae-subagents-input:focus,
+.ae-subagents-textarea:focus,
+.ae-subagents-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ae-subagents-prompt {
+  font-family: var(--font-mono, monospace);
+  resize: vertical;
+}
+.ae-subagents-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.ae-subagents-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+.ae-subagents-editor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --------------------------------------------------------------------------
+ * Per-message rollback / fork hover toolbar (chat + canvas transcripts).
+ * ------------------------------------------------------------------------ */
+.a2ui-canvas-message {
+  position: relative;
+}
+.ae-msg-branch-actions {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+  pointer-events: none;
+}
+.a2ui-chat-message:hover .ae-msg-branch-actions,
+.a2ui-canvas-message:hover .ae-msg-branch-actions,
+.ae-msg-branch-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ae-msg-branch-btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  line-height: 1.4;
+}
+.ae-msg-branch-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ae-msg-branch-confirm {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* --------------------------------------------------------------------------
+ * Subagent activity timeline (nested inside a `task` tool card).
+ * ------------------------------------------------------------------------ */
+.ae-subagent-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-left: 2px solid var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: var(--radius-sm, 6px);
+}
+.ae-subagent-activity-head {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+}
+.ae-subagent-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ae-subagent-steps li {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-subagent-steps li::before {
+  content: "▸ ";
+  color: var(--text-dim);
+}
+.ae-subagent-step-error {
+  color: var(--danger) !important;
+}
+.ae-subagent-text {
+  font-size: var(--text-xs);
+  color: var(--text-md, var(--text));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 8em;
+  overflow-y: auto;
+}

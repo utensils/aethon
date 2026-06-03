@@ -30,6 +30,7 @@ import { handleShellConsent } from "./shellConsent";
 import { matchesExtensionRoute } from "./extensions";
 import { handleChatInput } from "./chatInput";
 import { handleChatMessages } from "./chatMessages";
+import { handleSessionBranch } from "./session";
 import { handleComposerPills } from "./composerPills";
 import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
@@ -96,8 +97,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // handleChatInput unchanged.
     ["type:chat-input", [handleQueuedMessages, handleChatInput]],
     ["type:composer-visibility-pills", [handleComposerPills]],
-    ["type:chat-history", [handleChatMessages]],
-    ["type:main-canvas", [handleChatMessages]],
+    ["type:chat-history", [handleChatMessages, handleSessionBranch]],
+    ["type:main-canvas", [handleChatMessages, handleSessionBranch]],
     ["type:queued-messages-popover", [handleQueuedMessages]],
     ["type:empty-state", [handleEmptyState]],
     // Worktree landing — session rows share dashboard restore/delete

@@ -41,6 +41,8 @@ export interface InboundMessage {
   args?: string;
   id?: string;
   tabId?: string;
+  /** pi session entry id — carried on `rollback_session` / `fork_session`. */
+  entryId?: string;
   componentType?: string;
   template?: unknown;
   path?: string;

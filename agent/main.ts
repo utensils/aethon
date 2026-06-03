@@ -56,7 +56,10 @@ import {
 
 import { logger } from "./logger";
 import { resolveStateLimits } from "./state-limits";
-import { resolveAethonSystemPrompt } from "./system-prompt";
+import {
+  buildSubagentsSection,
+  resolveAethonSystemPrompt,
+} from "./system-prompt";
 import { buildWorkingContextSection } from "./system-prompt/working-context";
 import { getWorkingContext } from "./git-context";
 import { readSessionTranscript } from "./session-history";
@@ -82,6 +85,8 @@ import {
   discoverPiAethonExtensions,
 } from "./extension-loader";
 import { ensureTab, emitReady, tabSessionDir } from "./tab-lifecycle";
+import { getSubagentsForCwd } from "./subagents";
+import { buildExplicitSubagentSteer } from "./subagents/steer";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
 import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
 
@@ -217,7 +222,25 @@ async function main(): Promise<void> {
         git,
         softAnchor: softGuardrailPrompt,
       });
-      return { systemPrompt: `${event.systemPrompt}\n\n${section}` };
+      let systemPrompt = `${event.systemPrompt}\n\n${section}`;
+      // Advertise the subagents available for THIS tab's cwd, per turn — so a
+      // tab on project A never sees project B's subagents even after B opens
+      // (the static system-prompt snapshot can't be per-tab).
+      const subagents = getSubagentsForCwd(state, resolvedCwd).byName;
+      const advert = buildSubagentsSection([...subagents.values()]);
+      if (advert) systemPrompt += `\n\n${advert}`;
+      // Explicit @name invocation: consume the one-shot steer for this tab
+      // (clearing it prevents the subagent's own turn from re-triggering it).
+      if (tabId) {
+        const explicit = state.pendingExplicitSubagent.get(tabId);
+        if (explicit && subagents.has(explicit)) {
+          state.pendingExplicitSubagent.delete(tabId);
+          systemPrompt += `\n\n${buildExplicitSubagentSteer(explicit)}`;
+        } else if (explicit) {
+          state.pendingExplicitSubagent.delete(tabId);
+        }
+      }
+      return { systemPrompt };
     });
   };
 

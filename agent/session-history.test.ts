@@ -65,9 +65,10 @@ describe("parseSessionHistoryLines", () => {
     ];
 
     expect(parseSessionHistoryLines(lines)).toEqual([
-      { id: "u1", role: "user", text: "hello" },
+      { id: "u1", entryId: "u1", role: "user", text: "hello" },
       {
         id: "a1",
+        entryId: "a1",
         role: "agent",
         text: "Hi there.",
         thinking: "hidden reasoning",
@@ -251,6 +252,7 @@ describe("parseSessionHistoryLines", () => {
     expect(parsed).toEqual([
       {
         id: "before",
+        entryId: "before",
         role: "agent",
         text: "before compaction",
         createdAt: Date.parse("2026-06-02T13:23:02.101Z"),
@@ -278,7 +280,12 @@ describe("parseSessionHistoryLines", () => {
 
     const parsed = parseSessionHistoryLines(lines);
     expect(parsed).toHaveLength(200);
-    expect(parsed[0]).toEqual({ id: "m5", role: "user", text: "message 5" });
+    expect(parsed[0]).toEqual({
+      id: "m5",
+      entryId: "m5",
+      role: "user",
+      text: "message 5",
+    });
   });
 });
 
@@ -310,7 +317,7 @@ describe("readSessionTranscript", () => {
     await utimes(newPath, new Date(2_000), new Date(2_000));
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "new", role: "agent", text: "new" },
+      { id: "new", entryId: "new", role: "agent", text: "new" },
     ]);
   });
 
@@ -339,7 +346,7 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-user", role: "user", text: "hi" },
+      { id: "pi-user", entryId: "pi-user", role: "user", text: "hi" },
       { id: "slash-user", role: "user", text: "/context", createdAt: 1 },
       {
         id: "slash-output",
@@ -381,14 +388,14 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
+      { id: "pi-user", entryId: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
       {
         id: "stderr-warning",
         role: "system",
         text: "[agent stderr] transient provider error",
         createdAt: 2_000,
       },
-      { id: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
+      { id: "pi-agent", entryId: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
     ]);
   });
 
@@ -436,14 +443,14 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
+      { id: "pi-user", entryId: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
       {
         id: "compaction:cmp-1",
         role: "system",
         text: "Context compacted · 13,005 tokens summarized",
         createdAt: 2_000,
       },
-      { id: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
+      { id: "pi-agent", entryId: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
     ]);
   });
 
@@ -550,6 +557,7 @@ describe("readSessionTranscript", () => {
     await expect(readSessionTranscript(dir)).resolves.toEqual([
       {
         id: "pi-user",
+        entryId: "pi-user",
         role: "user",
         text: "what is this?",
         createdAt: 1_500,
@@ -596,8 +604,13 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-user", role: "user", text: "Please work on issue 85" },
-      { id: "pi-agent", role: "agent", text: "Working on it" },
+      {
+        id: "pi-user",
+        entryId: "pi-user",
+        role: "user",
+        text: "Please work on issue 85",
+      },
+      { id: "pi-agent", entryId: "pi-agent", role: "agent", text: "Working on it" },
     ]);
   });
 
@@ -631,6 +644,7 @@ describe("readSessionTranscript", () => {
     await expect(readSessionTranscript(dir)).resolves.toEqual([
       {
         id: "pi-agent",
+        entryId: "pi-agent",
         role: "agent",
         thinking:
           "**Earlier reasoning**\n\nstep one\n\n**Later reasoning**\n\nstep two",
@@ -661,7 +675,13 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-agent", role: "agent", text: "all done", createdAt: 1_000 },
+      {
+        id: "pi-agent",
+        entryId: "pi-agent",
+        role: "agent",
+        text: "all done",
+        createdAt: 1_000,
+      },
       { id: "text-2", role: "agent", text: "done", createdAt: 2_000 },
     ]);
   });
@@ -898,11 +918,21 @@ describe("readSessionTranscript with expectedCwd", () => {
     );
     // Without the cwd filter the latest mtime ("leak.jsonl") wins.
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "leak.jsonl-u", role: "user", text: "from other" },
+      {
+        id: "leak.jsonl-u",
+        entryId: "leak.jsonl-u",
+        role: "user",
+        text: "from other",
+      },
     ]);
     // With the cwd filter, the older matching session is returned.
     await expect(readSessionTranscript(dir, "/tmp/target")).resolves.toEqual([
-      { id: "old.jsonl-u", role: "user", text: "from target" },
+      {
+        id: "old.jsonl-u",
+        entryId: "old.jsonl-u",
+        role: "user",
+        text: "from target",
+      },
     ]);
   });
 
@@ -945,7 +975,12 @@ describe("readSessionTranscript with expectedCwd", () => {
     });
 
     await expect(readSessionTranscript(dir, "/tmp/target")).resolves.toEqual([
-      { id: "target.jsonl-u", role: "user", text: "from target" },
+      {
+        id: "target.jsonl-u",
+        entryId: "target.jsonl-u",
+        role: "user",
+        text: "from target",
+      },
       {
         id: "target-local",
         role: "system",

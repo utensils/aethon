@@ -30,12 +30,44 @@ export type { RuntimeSnapshot };
 // prompt. Compact by design — the agent can read $AETHON_STATE_FILE for
 // the full data; this is just enough to answer "what's loaded?" without
 // a tool call.
+/**
+ * Build the "Available subagents" advertisement appended to the system prompt.
+ * Injected per-turn by the `before_agent_start` hook (not via the static
+ * snapshot) so it reflects the *active tab's* cwd — tabs on different projects
+ * see different subagents. Returns "" when none are configured.
+ */
+export function buildSubagentsSection(
+  subagents: {
+    name: string;
+    description: string;
+    model?: string;
+    surface: "inline" | "tab";
+  }[],
+): string {
+  if (subagents.length === 0) return "";
+  const lines: string[] = [
+    "# Available subagents",
+    "Delegate focused work to one with the `task` tool " +
+      '(`task({ subagent_type: "<name>", prompt: "<self-contained task>" })`). ' +
+      "Choose the subagent whose description best fits; pass everything it needs " +
+      "in `prompt` (it runs in an isolated session and sees only that). When the " +
+      "user prefixes a message with `@<name>`, delegate to that subagent. Do NOT " +
+      "delegate trivial work you can do directly.",
+  ];
+  for (const s of subagents) {
+    const model = s.model ? `, model \`${s.model}\`` : "";
+    const tab = s.surface === "tab" ? ", opens its own tab" : "";
+    lines.push(`- \`${s.name}\`${model}${tab} — ${s.description}`);
+  }
+  return lines.join("\n");
+}
+
 export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
   const lines: string[] = ["# Current runtime snapshot"];
   lines.push(
     `Build: ${snapshot.release ? "release" : "dev"}. Agent host dir: \`${snapshot.cwd}\` — ` +
       "this is where the bridge process launched, NOT necessarily where any tab " +
-      'operates. Each turn\'s authoritative working directory + git state arrives in the ' +
+      "operates. Each turn's authoritative working directory + git state arrives in the " +
       '"Working context" section appended below; trust that over this line.',
   );
   if (snapshot.projectRoot) {

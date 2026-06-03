@@ -10,8 +10,51 @@ import {
   resolveNumber,
   resolveString,
 } from "../../utils/dataBinding";
+import type { SubagentProgress } from "../../hooks/bridgeMessageHandlers/subagentProgress";
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
+
+/** The tool-card's component id is `tool-<seq>-<callId>`; the subagent progress
+ *  slice is keyed by the raw callId, so strip the prefix to look it up. */
+function readSubagentProgress(
+  state: Record<string, unknown>,
+  componentId: string | undefined,
+): SubagentProgress | null {
+  if (!componentId) return null;
+  const callId = componentId.replace(/^tool-\d+-/, "");
+  const map = state.subagentProgress as
+    | Record<string, SubagentProgress>
+    | undefined;
+  return map?.[callId] ?? null;
+}
+
+function SubagentActivity({ progress }: { progress: SubagentProgress }) {
+  return (
+    <div className="ae-subagent-activity">
+      <div className="ae-subagent-activity-head">
+        <span aria-hidden="true">⬡</span> {progress.subagent}
+        {progress.model ? ` · ${progress.model}` : ""}
+      </div>
+      {progress.steps.length > 0 && (
+        <ul className="ae-subagent-steps">
+          {progress.steps.map((step, i) => (
+            <li
+              key={i}
+              className={
+                step.kind === "error" ? "ae-subagent-step-error" : undefined
+              }
+            >
+              {step.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!progress.done && progress.text && (
+        <div className="ae-subagent-text">{progress.text}</div>
+      )}
+    </div>
+  );
+}
 
 // eslint-disable-next-line react-refresh/only-export-components -- exported for vitest unit tests; doesn't affect HMR semantics in practice
 export function formatToolDuration(ms: number): string {
@@ -96,6 +139,9 @@ export function ToolCard({
     ? resolveNumber(props.endedAt, state)
     : undefined;
   const isError = props.isError ? resolveBoolean(props.isError, state) : false;
+  const toolName = props.toolName ? resolveString(props.toolName, state) : "";
+  const subagentProgress =
+    toolName === "task" ? readSubagentProgress(state, component.id) : null;
   const status = props.status ? resolveString(props.status, state) : undefined;
   const isCancelled = status === "cancelled";
   const running = startedAt !== undefined && endedAt === undefined;
@@ -154,9 +200,10 @@ export function ToolCard({
         )}
       </summary>
       <div className="ae-tool-card-body">
+        {subagentProgress && <SubagentActivity progress={subagentProgress} />}
         {hasChildren ? (
           renderChildren?.()
-        ) : (
+        ) : subagentProgress ? null : (
           <div className="ae-tool-card-empty">No output</div>
         )}
       </div>

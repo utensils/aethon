@@ -5,7 +5,29 @@ import {
   coerceChatMessages,
   stripImageDataUrls,
   trimMessage,
+  truncateToEntry,
 } from "./messages";
+import type { ChatMessage } from "../types/a2ui";
+
+describe("truncateToEntry", () => {
+  const messages: ChatMessage[] = [
+    { id: "1", entryId: "e1", role: "user", text: "a" },
+    { id: "2", entryId: "e2", role: "agent", text: "b" },
+    { id: "3", entryId: "e3", role: "user", text: "c" },
+  ];
+
+  it("keeps the prefix up to and including the matched entry", () => {
+    expect(truncateToEntry(messages, "e2").map((m) => m.id)).toEqual(["1", "2"]);
+  });
+
+  it("returns the same array reference when no entry matches", () => {
+    expect(truncateToEntry(messages, "missing")).toBe(messages);
+  });
+
+  it("keeps everything when the last entry matches", () => {
+    expect(truncateToEntry(messages, "e3")).toHaveLength(3);
+  });
+});
 
 describe("stripImageDataUrls", () => {
   it("returns non-objects unchanged", () => {
@@ -136,6 +158,18 @@ describe("coerceChatMessages", () => {
   it("preserves a string id when present", () => {
     const out = coerceChatMessages([{ id: "abc", role: "user", text: "hi" }]);
     expect(out[0].id).toBe("abc");
+  });
+
+  it("threads the pi entry id when present", () => {
+    const out = coerceChatMessages([
+      { id: "abc", entryId: "e1f2", role: "user", text: "hi" },
+    ]);
+    expect(out[0].entryId).toBe("e1f2");
+  });
+
+  it("omits entryId when absent", () => {
+    const out = coerceChatMessages([{ id: "abc", role: "user", text: "hi" }]);
+    expect(out[0].entryId).toBeUndefined();
   });
 
   it("preserves finite creation timestamps", () => {

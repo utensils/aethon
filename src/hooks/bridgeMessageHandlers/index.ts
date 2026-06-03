@@ -16,6 +16,7 @@ import {
 } from "./authProfiles";
 import { handleA2ui } from "./a2ui";
 import { handleContextUsage } from "./contextUsage";
+import { handleEntryIds } from "./entryIds";
 import { handleError } from "./error";
 import { handleExtensionComponents } from "./extensionComponents";
 import { handleExtensionEventRoutes } from "./extensionEventRoutes";
@@ -43,12 +44,15 @@ import { handleRegisterHighlightGrammar } from "./registerHighlightGrammar";
 import { handleResponse } from "./response";
 import { handleResponseDelta } from "./responseDelta";
 import { handleResponseEnd } from "./responseEnd";
+import { handleSessionForked } from "./sessionForked";
 import { handleSessionHistory } from "./sessionHistory";
+import { handleSessionRolledBack } from "./sessionRolledBack";
 import { handleShellQuery } from "./shellQuery";
 import { handleDashboardQuery } from "./dashboardQuery";
 import { handleDevshellQuery } from "./devshellQuery";
 import { handleGitQuery } from "./gitQuery";
 import { handleStatePatch } from "./statePatch";
+import { handleSubagentProgress } from "./subagentProgress";
 import { handleTabClosed } from "./tabClosed";
 import { handleTabReady } from "./tabReady";
 import { handleTerminalOutput } from "./terminalOutput";
@@ -61,6 +65,7 @@ export const bridgeMessageHandlers: Readonly<
   auth_profile_login_event: handleAuthProfileLoginEvent,
   auth_profiles: handleAuthProfiles,
   context_usage: handleContextUsage,
+  entry_ids: handleEntryIds,
   error: handleError,
   extension_components: handleExtensionComponents,
   extension_event_routes: handleExtensionEventRoutes,
@@ -88,12 +93,15 @@ export const bridgeMessageHandlers: Readonly<
   response: handleResponse,
   response_delta: handleResponseDelta,
   response_end: handleResponseEnd,
+  session_forked: handleSessionForked,
   session_history: handleSessionHistory,
+  session_rolled_back: handleSessionRolledBack,
   shell_query: handleShellQuery,
   dashboard_query: handleDashboardQuery,
   devshell_query: handleDevshellQuery,
   git_query: handleGitQuery,
   state_patch: handleStatePatch,
+  subagent_progress: handleSubagentProgress,
   tab_closed: handleTabClosed,
   tab_ready: handleTabReady,
   terminal_output: handleTerminalOutput,

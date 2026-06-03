@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildRuntimeSection, type RuntimeSnapshot } from "./system-prompt";
+import {
+  buildRuntimeSection,
+  buildSubagentsSection,
+  type RuntimeSnapshot,
+} from "./system-prompt";
 
 function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
   return {
@@ -13,6 +17,7 @@ function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
     failedExtensions: [],
     disabledExtensions: [],
     themes: [],
+    subagents: [],
     components: [],
     layoutSummary: "(none)",
     tabs: [],
@@ -46,7 +51,8 @@ describe("buildRuntimeSection failedExtensions", () => {
             name: "git-worktree-manager",
             source: "directory",
             status: "failed",
-            error: "This assignment will throw because \"entries\" is a constant.",
+            error:
+              'This assignment will throw because "entries" is a constant.',
             path: "/Users/me/.aethon/extensions/git-worktree-manager.ts",
           },
           {
@@ -60,7 +66,9 @@ describe("buildRuntimeSection failedExtensions", () => {
     );
     expect(out).toContain("Extensions that did NOT load");
     expect(out).toContain("`git-worktree-manager` (directory, failed)");
-    expect(out).toContain("/Users/me/.aethon/extensions/git-worktree-manager.ts");
+    expect(out).toContain(
+      "/Users/me/.aethon/extensions/git-worktree-manager.ts",
+    );
     expect(out).toContain("entries");
     expect(out).toContain("`no-register` (extension-package, skipped)");
     expect(out).toContain("no register() export");
@@ -99,12 +107,48 @@ describe("buildRuntimeSection failedExtensions", () => {
     const out = buildRuntimeSection(
       snapshot({
         tabs: [
-          { id: "default", model: "anthropic/x", messageCount: 2, cwd: "/repo/a" },
+          {
+            id: "default",
+            model: "anthropic/x",
+            messageCount: 2,
+            cwd: "/repo/a",
+          },
           { id: "t2", model: "", messageCount: 0 },
         ],
       }),
     );
     expect(out).toContain("cwd `/repo/a`");
     expect(out).toContain("`t2` — model `(none)`, 0 messages");
+  });
+});
+
+describe("buildSubagentsSection", () => {
+  it("returns empty when there are no subagents", () => {
+    expect(buildSubagentsSection([])).toBe("");
+  });
+
+  it("lists subagents with model, surface, and delegation guidance", () => {
+    const out = buildSubagentsSection([
+      {
+        name: "reviewer",
+        description: "Reviews diffs",
+        model: "ollama/llama3.3",
+        surface: "inline",
+      },
+      { name: "builder", description: "Builds features", surface: "tab" },
+    ]);
+    expect(out).toContain("Available subagents");
+    expect(out).toContain("`task`");
+    expect(out).toContain("@<name>");
+    expect(out).toContain("`reviewer`");
+    expect(out).toContain("ollama/llama3.3");
+    expect(out).toContain("Reviews diffs");
+    expect(out).toContain("opens its own tab");
+  });
+
+  it("is not rendered by buildRuntimeSection (advertisement is per-turn)", () => {
+    expect(buildRuntimeSection(snapshot())).not.toContain(
+      "Available subagents",
+    );
   });
 });

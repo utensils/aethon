@@ -144,7 +144,10 @@ function ThinkingBlock({
 }) {
   const label = complete ? "Thinking" : "Thinking...";
   return (
-    <details className="a2ui-thinking-block" open={collapsed ? false : !complete}>
+    <details
+      className="a2ui-thinking-block"
+      open={collapsed ? false : !complete}
+    >
       <summary>{label}</summary>
       <div className="a2ui-thinking-content a2ui-markdown">
         <ReactMarkdown {...CHAT_MARKDOWN_PROPS}>{children}</ReactMarkdown>
@@ -223,7 +226,7 @@ function AttachmentGallery({ attachments }: { attachments: ChatAttachment[] }) {
   );
 }
 
-const ChatMessageRow = memo(
+export const ChatMessageRow = memo(
   function ChatMessageRow({
     message,
     state,
@@ -245,6 +248,15 @@ const ChatMessageRow = memo(
     isLatest?: boolean;
     thinkingVisibility?: VisibilityMode;
   }) {
+    const [confirmingRollback, setConfirmingRollback] = useState(false);
+    // Rollback / fork are offered on real user/assistant turns that carry a pi
+    // entry id (tool-card and system rows are not branch targets). Thinking-only
+    // turns count too — they're valid branch points.
+    const canBranch =
+      Boolean(message.entryId) &&
+      (message.role === "user" || message.role === "agent") &&
+      (Boolean(message.text) || Boolean(message.thinking)) &&
+      Boolean(onEvent);
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
     const textClass = isCanvas
@@ -314,6 +326,55 @@ const ChatMessageRow = memo(
         )}
         {message.a2ui && (
           <A2UIRenderer payload={message.a2ui} state={state} tabId={tabId} />
+        )}
+        {canBranch && (
+          <div
+            className="ae-msg-branch-actions"
+            onMouseLeave={() => setConfirmingRollback(false)}
+          >
+            {confirmingRollback ? (
+              <>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn ae-msg-branch-confirm"
+                  onClick={() => {
+                    setConfirmingRollback(false);
+                    onEvent?.("rollback-to-here", { entryId: message.entryId });
+                  }}
+                >
+                  Confirm rollback
+                </button>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn"
+                  onClick={() => setConfirmingRollback(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn"
+                  title="Rewind the conversation to this message"
+                  onClick={() => setConfirmingRollback(true)}
+                >
+                  ↶ Rollback
+                </button>
+                <button
+                  type="button"
+                  className="ae-msg-branch-btn"
+                  title="Fork the conversation into a new tab from here"
+                  onClick={() =>
+                    onEvent?.("fork-to-tab", { entryId: message.entryId })
+                  }
+                >
+                  ⑂ Fork
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
     );
@@ -484,7 +545,9 @@ function TurnBlockRow({
           {expanded ? "▾" : "▸"}
         </span>
         <span className="ae-turn-block-label">Agent turn</span>
-        <span className="ae-turn-block-meta">{turnBlockLabel(group.messages)}</span>
+        <span className="ae-turn-block-meta">
+          {turnBlockLabel(group.messages)}
+        </span>
         {!expanded && peek && (
           <span className="ae-turn-block-peek">{peek}</span>
         )}

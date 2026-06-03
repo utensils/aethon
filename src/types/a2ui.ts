@@ -306,6 +306,11 @@ export interface ChatAttachment {
 // Message shape used by ChatHistory and MainCanvas — text or embedded A2UI subtree.
 export interface ChatMessage {
   id: string;
+  /** pi session entry id (8-char hex) for user/assistant turns. Present on
+   *  restored messages and back-filled on live ones after a turn settles; it's
+   *  the handle the rollback/fork affordances pass to the bridge. Absent on
+   *  tool-card / system rows. */
+  entryId?: string;
   role: "user" | "agent" | "system";
   text?: string;
   attachments?: ChatAttachment[];

@@ -79,6 +79,8 @@ export interface MutationResult {
 import type { AethonApi } from "./aethon-api";
 export type AethonExtensionApi = AethonApi;
 
+import type { LoadSubagentsResult } from "./subagents/types";
+
 export interface AethonExtensionModule {
   register?: (api: AethonExtensionApi) => void | Promise<void>;
   default?: { register?: (api: AethonExtensionApi) => void | Promise<void> };
@@ -387,6 +389,20 @@ export class AethonAgentState {
   readonly turnStartTimes = new Map<string, number>();
   /** Cached model picker. First populated when the default tab is created. */
   cachedModels: ModelDescriptor[] = [];
+
+  // -- Subagents -----------------------------------------------------------
+  /** Per-cwd subagent registry cache (user scope + that project's scope,
+   *  merged project-wins-by-name), keyed by project cwd ("" = user-only).
+   *  Lazily populated by `getSubagentsForCwd` and cleared by `refreshSubagents`
+   *  when the UI edits a definition. Keying by cwd keeps subagents correct when
+   *  tabs on different projects are open simultaneously. */
+  readonly subagentsByCwd = new Map<string, LoadSubagentsResult>();
+  /** One-shot per-tab steer: when the user opens a message with `@<name>`
+   *  matching a known subagent, the tabId → name is recorded here and the
+   *  `before_agent_start` hook consumes (and clears) it to strongly steer the
+   *  model to delegate. One-shot + clear prevents the subagent's own turn from
+   *  re-triggering delegation. */
+  readonly pendingExplicitSubagent = new Map<string, string>();
   /** Persisted per-tab session directories discovered at boot. Shipped
    *  in `ready` so the frontend can offer "Recent sessions". */
   discoveredTabs: DiscoveredTab[] = [];
