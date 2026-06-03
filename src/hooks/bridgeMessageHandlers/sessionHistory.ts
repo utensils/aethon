@@ -1,3 +1,4 @@
+import { closeRunningToolCards } from "../../utils/agentBusy";
 import {
   coerceChatMessages,
   dedupeToolResultTextMessages,
@@ -367,9 +368,16 @@ export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
       tab.waiting === true,
     );
     const nextWaiting = merged.hasLivePending ? tab.waiting : false;
+    const dedupedMessages = dedupeToolResultTextMessages(merged.messages);
+    const closedTools = nextWaiting
+      ? { messages: dedupedMessages, changed: false }
+      : closeRunningToolCards(dedupedMessages, {
+          notice:
+            "No live prompt is running. This tool was marked stopped after restore.",
+        });
     return {
       ...tab,
-      messages: dedupeToolResultTextMessages(merged.messages),
+      messages: closedTools.messages,
       waiting: nextWaiting,
       ...(label
         ? { label }

@@ -637,6 +637,52 @@ describe("handleSessionHistory", () => {
     expect(out.waiting).toBe(false);
   });
 
+  it("freezes restored unfinished tool cards when no live turn remains", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "restored-tool-call_stale",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "restored-tool-call_stale",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    startedAt: 1_000,
+                  },
+                  children: [],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater({
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      waiting: false,
+    });
+
+    const toolCard = out.messages[0].a2ui?.components[0];
+    expect(out.waiting).toBe(false);
+    expect(toolCard?.props).toMatchObject({
+      status: "cancelled",
+      endedAt: expect.any(Number),
+    });
+    expect(toolCard?.children?.[0].props?.content).toContain(
+      "stopped after restore",
+    );
+  });
+
   it("drops restored duplicate assistant text and completed tool cards so reloads do not look busy", () => {
     const { ctx, mocks } = buildHandlerFixture();
     handleSessionHistory(

@@ -1,3 +1,4 @@
+import { closeRunningToolCards } from "../../utils/agentBusy";
 import type { BridgeMessageHandler } from "./types";
 import { flushResponseDeltas } from "./responseDelta";
 
@@ -10,7 +11,14 @@ export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
   // re-flips it to true while popping the head and dispatching the
   // next message — same render commit, so the Send button doesn't
   // flash. When the queue is empty, waiting stays false.
-  ctx.updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+  ctx.updateTab(tabId, (tab) => {
+    const closedTools = closeRunningToolCards(tab.messages);
+    return {
+      ...tab,
+      waiting: false,
+      ...(closedTools.changed ? { messages: closedTools.messages } : {}),
+    };
+  });
   // Drop the tab from the bucket-independent running set (see promptStarted).
   ctx.setState((prev) => {
     const running = prev.agentRunningTabs as Record<string, true> | undefined;

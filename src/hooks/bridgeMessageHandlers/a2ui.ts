@@ -1,5 +1,6 @@
 import type { A2UIComponent, A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
+import { closeRunningToolCards } from "../../utils/agentBusy";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { BridgeMessageHandler } from "./types";
 import { flushResponseDeltas } from "./responseDelta";
@@ -36,7 +37,7 @@ function createdAtFromPayload(payload: A2UIPayload): number | undefined {
   return undefined;
 }
 
-function replacesRunningToolCard(
+function replacesPriorToolCard(
   tab: Tab | undefined,
   incomingMessageId: string,
   identity: string | undefined,
@@ -49,7 +50,6 @@ function replacesRunningToolCard(
       if (component?.type !== "tool-card") return false;
       if (typeof component.id !== "string") return false;
       if (component.props?.startedAt === undefined) return false;
-      if (component.props.endedAt !== undefined) return false;
       return toolCardIdentityFromId(component.id) === identity;
     });
   });
@@ -74,7 +74,7 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
     const tabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
     const tab = tabs.find((t) => t.id === tabId);
     const identity = completedToolCardIdentity(payload);
-    if (replacesRunningToolCard(tab, id, identity)) {
+    if (replacesPriorToolCard(tab, id, identity)) {
       ctx.updateTab(tabId, (current) => ({
         ...current,
         messages: current.messages.map((currentMessage) => {
@@ -83,7 +83,6 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
               component?.type === "tool-card" &&
               typeof component.id === "string" &&
               component.props?.startedAt !== undefined &&
-              component.props.endedAt === undefined &&
               toolCardIdentityFromId(component.id) === identity,
           );
           return matches ? message : currentMessage;
@@ -95,7 +94,14 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
     ctx.persistLocalChatMessage(message, tabId);
   }
   if (data.done) {
-    ctx.updateTab(tabId, (tab) => ({ ...tab, waiting: false }));
+    ctx.updateTab(tabId, (tab) => {
+      const closedTools = closeRunningToolCards(tab.messages);
+      return {
+        ...tab,
+        waiting: false,
+        ...(closedTools.changed ? { messages: closedTools.messages } : {}),
+      };
+    });
     if (ctx.stateRef.current.activeTabId === tabId) {
       ctx.setStatusFlags({ status: "ready" });
     }
