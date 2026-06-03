@@ -8,10 +8,17 @@ import { makeEmptyTab, OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 interface Fixture {
   tabs: Tab[];
   activeTabId: string;
+  activeSubId?: string;
 }
 
 function setup(fx: Fixture) {
-  const stateRef = { current: { tabs: fx.tabs, activeTabId: fx.activeTabId } };
+  const stateRef = {
+    current: {
+      tabs: fx.tabs,
+      activeTabId: fx.activeTabId,
+      terminalPanel: fx.activeSubId ? { activeSubId: fx.activeSubId } : {},
+    },
+  };
   const setState = vi.fn();
   const setActiveTab = vi.fn((id: string) => {
     stateRef.current.activeTabId = id;
@@ -20,7 +27,7 @@ function setup(fx: Fixture) {
   const { result } = renderHook(() =>
     useTabNavigation({ stateRef, setState, setActiveTab, setActiveSubTab }),
   );
-  return { stateRef, setActiveTab, actions: result.current };
+  return { stateRef, setState, setActiveTab, actions: result.current };
 }
 
 describe("nextTab includes editor tabs", () => {
@@ -102,6 +109,66 @@ describe("nextTab includes editor tabs", () => {
     });
     actions.nextTab(-1);
     expect(setActiveTab).toHaveBeenLastCalledWith("editor-1");
+  });
+});
+
+describe("moveActiveTab", () => {
+  it("reorders top-strip tabs without moving shell slots", () => {
+    const agentA = makeEmptyTab("agent-a", "Agent A", null, "agent");
+    const shell = makeEmptyTab("shell-1", "Shell", null, "shell");
+    const editor = makeEmptyTab("editor-1", "App.tsx", null, "editor");
+    const agentB = makeEmptyTab("agent-b", "Agent B", null, "agent");
+    const { actions, setState } = setup({
+      tabs: [agentA, shell, editor, agentB],
+      activeTabId: "agent-b",
+    });
+
+    actions.moveActiveTab(-1);
+
+    const reducer = setState.mock.calls[0][0] as (state: {
+      tabs: Tab[];
+    }) => { tabs: Tab[] };
+    const next = reducer({ tabs: [agentA, shell, editor, agentB] });
+    expect(next.tabs.map((t) => t.id)).toEqual([
+      "agent-a",
+      "shell-1",
+      "agent-b",
+      "editor-1",
+    ]);
+  });
+});
+
+describe("moveActiveShellSubTab", () => {
+  it("reorders shell sub-tabs without moving agent/editor slots", () => {
+    const agent = makeEmptyTab("agent-1", "Agent", null, "agent");
+    const shellA = makeEmptyTab("shell-a", "Shell A", null, "shell");
+    const editor = makeEmptyTab("editor-1", "App.tsx", null, "editor");
+    const shellB = makeEmptyTab("shell-b", "Shell B", null, "shell");
+    const shellC = makeEmptyTab("shell-c", "Shell C", null, "shell");
+    const { actions, setState } = setup({
+      tabs: [agent, shellA, editor, shellB, shellC],
+      activeTabId: "agent-1",
+      activeSubId: "shell-c",
+    });
+
+    actions.moveActiveShellSubTab(-1);
+
+    const reducer = setState.mock.calls[0][0] as (state: {
+      tabs: Tab[];
+      terminalPanel: { activeSubId?: string };
+    }) => { tabs: Tab[]; terminalPanel: { activeSubId?: string } };
+    const next = reducer({
+      tabs: [agent, shellA, editor, shellB, shellC],
+      terminalPanel: { activeSubId: "shell-c" },
+    });
+    expect(next.tabs.map((t) => t.id)).toEqual([
+      "agent-1",
+      "shell-a",
+      "editor-1",
+      "shell-c",
+      "shell-b",
+    ]);
+    expect(next.terminalPanel.activeSubId).toBe("shell-c");
   });
 });
 

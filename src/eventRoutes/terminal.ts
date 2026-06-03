@@ -2,6 +2,7 @@ import type { EventRouteHandler } from "./types";
 import { cycleShareMode } from "../utils/shareMode";
 import type { Tab } from "../types/tab";
 import { WORKSTATION_AREAS, workstationRows } from "../hooks/useFocus";
+import { reorderTabToIndex } from "../utils/tabReorder";
 
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
@@ -23,7 +24,7 @@ export const handleTerminalPanel: EventRouteHandler = (
   ctx,
 ) => {
   if (component.type !== "terminal-panel") return false;
-  const sel = data as { subTabId?: string } | undefined;
+  const sel = data as { subTabId?: string; toIndex?: number } | undefined;
   if (eventType === "select-sub-tab" && sel?.subTabId) {
     ctx.setActiveSubTab(sel.subTabId);
     return true;
@@ -36,6 +37,16 @@ export const handleTerminalPanel: EventRouteHandler = (
   }
   if (eventType === "new-shell-sub-tab") {
     ctx.newShellTab();
+    return true;
+  }
+  if (eventType === "reorder-sub-tab" && sel?.subTabId) {
+    const subTabId = sel.subTabId;
+    const toIndex = typeof sel.toIndex === "number" ? sel.toIndex : NaN;
+    ctx.setState((prev) => {
+      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+      const reordered = reorderTabToIndex(tabs, "shell", subTabId, toIndex);
+      return reordered ? { ...prev, tabs: reordered } : prev;
+    });
     return true;
   }
   if (eventType === "resize") {

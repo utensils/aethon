@@ -4454,7 +4454,7 @@ body.ae-resizing-composer * {
   border-radius: 0;
   color: var(--text-dim);
   font-size: var(--chrome-text);
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   white-space: nowrap;
   position: relative;
@@ -4491,6 +4491,14 @@ body.ae-resizing-composer * {
 .a2ui-tab:hover {
   color: var(--text);
   background: var(--bg-hover, var(--accent-hover-tint));
+}
+
+.a2ui-tab:active {
+  cursor: grabbing;
+}
+
+.a2ui-tab-dragging {
+  opacity: 0.62;
 }
 
 .a2ui-tab-active {
@@ -4662,6 +4670,7 @@ body.ae-resizing-composer * {
    navigation, not a session, and carries the Æ brand glyph instead of a
    close button (it can't be closed). */
 .a2ui-tab-overview {
+  cursor: pointer;
   min-inline-size: 6.5rem;
   max-inline-size: 8rem;
   flex: 0 0 7rem;
@@ -5230,13 +5239,22 @@ body.ae-resizing-terminal * {
   border: 1px solid transparent;
   border-bottom: none;
   border-radius: 6px 6px 0 0;
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
   user-select: none;
   margin-top: 2px;
 }
 .ae-sub-tab:hover {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.ae-sub-tab:active {
+  cursor: grabbing;
+}
+.ae-sub-tab[draggable="false"] {
+  cursor: pointer;
+}
+.ae-sub-tab-dragging {
+  opacity: 0.62;
 }
 .ae-sub-tab-active {
   background: var(--bg-elev);

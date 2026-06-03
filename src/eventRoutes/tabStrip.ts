@@ -1,7 +1,8 @@
 import type { EventRouteHandler, EventRouteContext } from "./types";
-import { OVERVIEW_TAB_ID } from "../types/tab";
+import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { renameSessionLabel } from "./sessionRename";
+import { reorderTabToIndex } from "../utils/tabReorder";
 
 /** Switch the active tab to the overview sentinel. Used both by the
  *  permanent overview pill in the tab strip and by the sidebar
@@ -24,7 +25,13 @@ export const handleTabStrip: EventRouteHandler = (
 ) => {
   if (component.type !== "tab-strip") return false;
   const sel = data as
-    | { tabId?: string; action?: string; id?: string; label?: string }
+    | {
+        tabId?: string;
+        action?: string;
+        id?: string;
+        label?: string;
+        toIndex?: number;
+      }
     | undefined;
   if (eventType === "select" && sel?.tabId) {
     if (sel.tabId === OVERVIEW_TAB_ID) {
@@ -62,6 +69,16 @@ export const handleTabStrip: EventRouteHandler = (
   if (eventType === "rename" && sel?.tabId) {
     const label = typeof sel.label === "string" ? sel.label : "";
     renameSessionLabel(ctx, sel.tabId, label);
+    return true;
+  }
+  if (eventType === "reorder" && sel?.tabId) {
+    const tabId = sel.tabId;
+    const toIndex = typeof sel.toIndex === "number" ? sel.toIndex : NaN;
+    ctx.setState((prev) => {
+      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+      const reordered = reorderTabToIndex(tabs, "top", tabId, toIndex);
+      return reordered ? { ...prev, tabs: reordered } : prev;
+    });
     return true;
   }
   if (eventType === "new") {

@@ -177,6 +177,65 @@ describe("handleTabStrip", () => {
     );
   });
 
+  it("reorder rearranges only visible top-strip tabs and keeps active id", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        activeTabId: "ed-1",
+        tabs: [
+          { id: "ag-1", kind: "agent" },
+          { id: "sh-1", kind: "shell" },
+          { id: "ed-1", kind: "editor" },
+          { id: "sh-2", kind: "shell" },
+          { id: "ag-2", kind: "agent" },
+        ],
+      },
+    });
+    const handled = await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "reorder",
+        data: { tabId: "ag-2", toIndex: 0 },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    const next = applySetState();
+    expect((next.tabs as Array<{ id: string }>).map((tab) => tab.id)).toEqual([
+      "ag-2",
+      "sh-1",
+      "ag-1",
+      "sh-2",
+      "ed-1",
+    ]);
+    expect(next.activeTabId).toBe("ed-1");
+  });
+
+  it("reorder ignores shell ids in the top strip route", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        tabs: [
+          { id: "ag-1", kind: "agent" },
+          { id: "sh-1", kind: "shell" },
+          { id: "ag-2", kind: "agent" },
+        ],
+      },
+    });
+    await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "reorder",
+        data: { tabId: "sh-1", toIndex: 0 },
+      },
+      ctx,
+    );
+    const next = applySetState();
+    expect((next.tabs as Array<{ id: string }>).map((tab) => tab.id)).toEqual([
+      "ag-1",
+      "sh-1",
+      "ag-2",
+    ]);
+  });
+
   it("new spawns a fresh tab", async () => {
     const { ctx, mocks } = buildRouteFixture();
     await handleTabStrip(

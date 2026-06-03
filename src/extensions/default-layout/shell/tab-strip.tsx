@@ -16,6 +16,7 @@
  *   ("select",  { tabId })  click on a tab pill (overview emits its sentinel id)
  *   ("close",   { tabId })  click on a tab's close button
  *   ("new")                 click on the "+" button
+ *   ("reorder", { tabId, toIndex }) drag a visible top-strip tab
  */
 
 import {
@@ -23,6 +24,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
@@ -90,6 +92,8 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     id: string;
     value: string;
   } | null>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const draggedTabIdRef = useRef<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
   const renamingTabId = renamingTab?.id;
@@ -150,6 +154,51 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
 
   const projectPath =
     (state["project"] as { path?: string } | undefined)?.path ?? "";
+
+  const dragPayloadType = "application/x-aethon-tab-id";
+  const startTabDrag = (event: DragEvent<HTMLElement>, tab: TabStripItem) => {
+    const target = event.target as HTMLElement;
+    if (
+      renamingTab?.id === tab.id ||
+      target.closest(".a2ui-tab-close") ||
+      target.closest(".ae-tab-rename-input")
+    ) {
+      event.preventDefault();
+      return;
+    }
+    draggedTabIdRef.current = tab.id;
+    setDraggingTabId(tab.id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(dragPayloadType, tab.id);
+  };
+
+  const finishTabDrag = () => {
+    draggedTabIdRef.current = null;
+    setDraggingTabId(null);
+  };
+
+  const getDraggedTabId = (event: DragEvent<HTMLElement>) =>
+    event.dataTransfer.getData(dragPayloadType) || draggedTabIdRef.current;
+
+  const dropTabOnTarget = (
+    event: DragEvent<HTMLElement>,
+    target: TabStripItem,
+  ) => {
+    const tabId = getDraggedTabId(event);
+    if (!tabId || tabId === target.id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const remaining = tabs.filter((tab) => tab.id !== tabId);
+    const targetIndex = remaining.findIndex((tab) => tab.id === target.id);
+    if (targetIndex < 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const after = event.clientX > rect.left + rect.width / 2;
+    onEvent("reorder", {
+      tabId,
+      toIndex: targetIndex + (after ? 1 : 0),
+    });
+    finishTabDrag();
+  };
 
   const buildMenuItems = (): ContextMenuItem[] => {
     if (!contextMenu) return [];
@@ -288,16 +337,35 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
             key={t.id}
             role="tab"
             aria-selected={isActive}
-            className={isActive ? "a2ui-tab a2ui-tab-active" : "a2ui-tab"}
-            onMouseDown={(e) => {
-              // mousedown not click so focus doesn't shift away from the
-              // chat input first (avoids a stray blur that could submit
-              // a draft). The select handler swaps the active tab.
-              if (e.button !== 0) return;
-              if ((e.target as HTMLElement).closest(".a2ui-tab-close")) return;
-              if ((e.target as HTMLElement).closest(".ae-tab-rename-input"))
-                return;
+            className={[
+              "a2ui-tab",
+              isActive ? "a2ui-tab-active" : "",
+              draggingTabId === t.id ? "a2ui-tab-dragging" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            draggable={renamingTab?.id !== t.id}
+            onDragStart={(e) => startTabDrag(e, t)}
+            onDragOver={(e) => {
+              const tabId = draggedTabIdRef.current;
+              if (!tabId || tabId === t.id) return;
               e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(e) => dropTabOnTarget(e, t)}
+            onDragEnd={finishTabDrag}
+            onMouseDown={(e) => {
+              // mousedown not click so selecting feels immediate, but do
+              // not preventDefault here: native draggable tabs need the
+              // browser's default mouse gesture to fire dragstart.
+              if (e.button !== 0) return;
+              if (
+                (e.target as HTMLElement).closest(".a2ui-tab-close") ||
+                (e.target as HTMLElement).closest(".ae-tab-rename-input")
+              ) {
+                e.preventDefault();
+                return;
+              }
               onEvent("select", { tabId: t.id });
             }}
             onContextMenu={(e) => openTabMenu(e, t)}
