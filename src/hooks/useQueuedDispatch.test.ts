@@ -80,6 +80,35 @@ describe("useQueuedDispatch", () => {
     expect(updateTab).not.toHaveBeenCalled();
   });
 
+  it("does nothing while a tool-card is still running after waiting drifted false", () => {
+    const sendChat = vi.fn(() => Promise.resolve());
+    const updateTab = vi.fn();
+    const busy = tabWithQueue(
+      {
+        waiting: false,
+        messages: [
+          {
+            id: "tool-message",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "tool-1",
+                  type: "tool-card",
+                  props: { title: "bash", startedAt: 1_000 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { id: "q1", content: "wait" },
+    );
+    renderHook(() => useQueuedDispatch({ tabs: [busy], sendChat, updateTab }));
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(updateTab).not.toHaveBeenCalled();
+  });
+
   it("does nothing while a queued steer is in flight", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();

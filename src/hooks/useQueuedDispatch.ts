@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { ChatAttachment } from "../types/a2ui";
 import type { Tab } from "../types/tab";
+import { isAgentTabInFlight } from "../utils/agentBusy";
 
 /**
- * Drains client-held queues. Watches every agent tab's `waiting` flag;
- * when it transitions to false and the tab still has queued messages,
- * the head pops and ships through `sendChat(..., { mode: "normal" })`.
+ * Drains client-held queues. Watches every agent tab's in-flight state;
+ * when it transitions to idle and the tab still has queued messages, the
+ * head pops and ships through `sendChat(..., { mode: "normal" })`.
  *
  * Coupling notes:
  *
@@ -51,7 +52,7 @@ export function useQueuedDispatch({
   useEffect(() => {
     for (const tab of tabs) {
       if (tab.kind !== "agent") continue;
-      if (tab.waiting) continue;
+      if (isAgentTabInFlight(tab)) continue;
       // Defensive: persisted tabs created before this feature don't have
       // queuedMessages on disk. The sessionUiSnapshot loader now seeds
       // [], but a tab created by the bridge / a hand-crafted state

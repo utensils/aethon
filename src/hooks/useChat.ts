@@ -22,6 +22,7 @@ import {
   hydrateAgentActivityState,
   type AgentDiagnosticRow,
 } from "./useAgentActivityHydration";
+import { isAgentTabInFlight } from "../utils/agentBusy";
 
 const STOP_CONFIRM_DELAYS_MS = [0, 150, 500, 1000, 2000] as const;
 
@@ -492,7 +493,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       (tab) => tab.id === tabId,
     );
     const wasBusy =
-      targetTab?.waiting === true ||
+      isAgentTabInFlight(targetTab) ||
       ((targetTab === undefined || tabId === activeTabId) &&
         stateRef.current.waiting === true);
 
@@ -674,7 +675,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const previousTabModel = activeTab?.model ?? "";
     // Only mirror onto a live session when an agent tab is focused and not
     // mid-turn (the bridge rejects a switch while a prompt is in flight).
-    const canMirror = hasActiveAgentTab && stateRef.current.waiting !== true;
+    const canMirror =
+      hasActiveAgentTab &&
+      stateRef.current.waiting !== true &&
+      !isAgentTabInFlight(activeTab);
 
     recordProjectModel(trimmed, activeId);
     setState((prev) => ({

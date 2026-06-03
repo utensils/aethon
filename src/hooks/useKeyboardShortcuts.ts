@@ -7,6 +7,7 @@ import {
   resolveActiveSubIdFromState,
 } from "../extensions/default-layout/shell/panel-helpers";
 import type { Tab } from "../types/tab";
+import { isAgentTabBusy } from "../utils/agentBusy";
 
 interface NotificationInput {
   id: string;
@@ -23,16 +24,7 @@ function activeAgentTabIsBusy(state: Record<string, unknown>): boolean {
   if (!activeTab) return false;
   if ((activeTab.kind ?? "agent") !== "agent") return false;
   return (
-    activeTab?.waiting === true ||
-    (activeTab?.queueCount ?? 0) > 0 ||
-    (activeTab.messages ?? []).some((message) =>
-      (message.a2ui?.components ?? []).some(
-        (component) =>
-          component.type === "tool-card" &&
-          component.props?.startedAt !== undefined &&
-          component.props.endedAt === undefined,
-      ),
-    ) ||
+    isAgentTabBusy(activeTab, { includeQueue: true }) ||
     state.waiting === true ||
     ((state.queueCount as number | undefined) ?? 0) > 0
   );
