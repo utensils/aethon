@@ -16,11 +16,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
-import {
-  getGhBranchStatus,
-  refreshGhBranchStatus,
-} from "../../../ghBranchStatusCache";
-import { getGhChecks, refreshGhChecks } from "../../../ghChecksCache";
+import { getGhBranchStatus } from "../../../ghBranchStatusCache";
+import { getGhChecks } from "../../../ghChecksCache";
 import {
   summarizeWorktreePrStatus,
   type WorktreePrChip,
@@ -126,29 +123,26 @@ export function WorktreeRow({
           ? WORKTREE_PENDING_CI_REFRESH_MS
           : WORKTREE_PR_REFRESH_MS;
       refreshTimer = window.setTimeout(() => {
-        void load("refresh");
+        void load();
       }, delay);
     };
 
-    const load = async (mode: "cache" | "refresh") => {
+    const load = async () => {
       if (cancelled || polling || document.hidden) return;
+      const showLoading = !loadedOnce;
       polling = true;
-      setPrLoading(true);
-      if (!loadedOnce) setPrChip(null);
+      if (showLoading) {
+        setPrLoading(true);
+        setPrChip(null);
+      }
       try {
-        const status =
-          mode === "refresh"
-            ? await refreshGhBranchStatus(item.path, branch)
-            : await getGhBranchStatus(item.path, branch);
+        const status = await getGhBranchStatus(item.path, branch);
         const checks =
           status.ghAvailable &&
           status.repo &&
           !status.worktreeBroken &&
           status.prs.length > 0
-            ? await (mode === "refresh"
-                ? refreshGhChecks(item.path, branch)
-                : getGhChecks(item.path, branch)
-              ).catch(() => null)
+            ? await getGhChecks(item.path, branch).catch(() => null)
             : null;
         if (!cancelled) {
           const chip = summarizeWorktreePrStatus(status, checks);
@@ -164,18 +158,18 @@ export function WorktreeRow({
         }
       } finally {
         polling = false;
-        if (!cancelled) setPrLoading(false);
+        if (!cancelled && showLoading) setPrLoading(false);
       }
     };
 
     const onFocus = () => {
-      if (!document.hidden) void load("cache");
+      if (!document.hidden) void load();
     };
     const onVisibility = () => {
-      if (!document.hidden) void load("cache");
+      if (!document.hidden) void load();
     };
 
-    void load("cache");
+    void load();
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
 
