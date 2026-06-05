@@ -188,6 +188,12 @@ export interface EventRouteContext {
     projectId: string,
     baseBranch: string | null,
   ) => void;
+  reorderWorktree: (
+    projectId: string,
+    worktreeId: string,
+    toIndex: number,
+  ) => void;
+  sortProjectWorktreesNewest: (projectId: string) => void;
 
   // ─── Tauri IPC (injected so tests can mock it) ─────────────────────
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;

@@ -57,6 +57,12 @@ export interface WorktreeOperations {
     projectId: string,
     baseBranch: string | null,
   ) => void;
+  reorderWorktree: (
+    projectId: string,
+    worktreeId: string,
+    toIndex: number,
+  ) => void;
+  sortProjectWorktreesNewest: (projectId: string) => void;
   findProjectOfWorktree: (
     worktreeId: string,
   ) => { project: Project; worktree: Worktree } | null;

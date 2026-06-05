@@ -1,17 +1,40 @@
 // @vitest-environment jsdom
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+
+const { branchStatusMock, checksMock } = vi.hoisted(() => ({
+  branchStatusMock: vi.fn(),
+  checksMock: vi.fn(),
+}));
+
+vi.mock("../../../ghBranchStatusCache", () => ({
+  getGhBranchStatus: branchStatusMock,
+}));
+vi.mock("../../../ghChecksCache", () => ({
+  getGhChecks: checksMock,
+}));
+
 import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
 
 afterEach(() => {
   vi.useRealTimers();
+  branchStatusMock.mockReset();
+  checksMock.mockReset();
   cleanup();
 });
 
 function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
   return {
     id: "wt-1",
+    projectId: "p1",
     label: "feature-x",
     branch: "feature-x",
     path: "/repo-feature-x",
@@ -44,6 +67,27 @@ function harness(
 }
 
 describe("WorktreeRow", () => {
+  beforeEach(() => {
+    branchStatusMock.mockResolvedValue({
+      ghAvailable: true,
+      repo: "owner/repo",
+      pushed: true,
+      worktreeBroken: false,
+      prs: [],
+    });
+    checksMock.mockResolvedValue({
+      ghAvailable: true,
+      repo: "owner/repo",
+      conclusion: "success",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      pending: 0,
+      skipped: 0,
+      checks: [],
+    });
+  });
+
   it("emits switch-worktree on row click", () => {
     const { onEvent } = harness(wt());
     fireEvent.click(screen.getByText("feature-x").closest("li")!);
@@ -102,6 +146,40 @@ describe("WorktreeRow", () => {
       expect.objectContaining({ worktreeId: "wt-1" }),
       "wt-1",
     );
+  });
+
+  it("renders a compact PR badge when GitHub reports a matching PR", async () => {
+    branchStatusMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      pushed: true,
+      worktreeBroken: false,
+      prs: [
+        {
+          number: 42,
+          state: "OPEN",
+          title: "Feature X",
+          url: "https://github.test/pr/42",
+          isDraft: false,
+          merged: false,
+          baseRefName: "main",
+        },
+      ],
+    });
+    checksMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      conclusion: "pending",
+      total: 1,
+      passed: 0,
+      failed: 0,
+      pending: 1,
+      skipped: 0,
+      checks: [],
+    });
+    harness(wt());
+    await waitFor(() => expect(screen.getByText("#42")).toBeTruthy());
+    expect(screen.getByLabelText(/Open PR #42/)).toBeTruthy();
   });
 
   it("opens inline confirmation from the remove icon", () => {

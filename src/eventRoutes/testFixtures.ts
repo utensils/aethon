@@ -69,6 +69,8 @@ export interface RouteFixture {
     removeProjectById: Mock;
     syncRecentSessionsToState: Mock;
     activateWorktree: Mock;
+    reorderWorktree: Mock;
+    sortProjectWorktreesNewest: Mock;
     invoke: Mock;
     writeState: Mock;
   };
@@ -155,6 +157,8 @@ export function buildRouteFixture(
   const removeProjectById = vi.fn(() => true);
   const syncRecentSessionsToState = vi.fn();
   const activateWorktree = vi.fn();
+  const reorderWorktree = vi.fn();
+  const sortProjectWorktreesNewest = vi.fn();
   const invoke = vi.fn(() => Promise.resolve(undefined));
   const writeState = vi.fn(() => Promise.resolve(true));
 
@@ -226,6 +230,8 @@ export function buildRouteFixture(
     renameWorktree: vi.fn(),
     renameProject: vi.fn(),
     setProjectWorktreeBaseBranch: vi.fn(),
+    reorderWorktree,
+    sortProjectWorktreesNewest,
     invoke,
     writeState,
   };
@@ -295,6 +301,8 @@ export function buildRouteFixture(
       removeProjectById,
       syncRecentSessionsToState,
       activateWorktree,
+      reorderWorktree,
+      sortProjectWorktreesNewest,
       invoke,
       writeState,
     },

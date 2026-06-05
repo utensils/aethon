@@ -5,6 +5,7 @@ import type { ProjectsState } from "../../projects";
 import type { ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import { formatRelativeTime } from "../../utils/time";
+import { orderWorktreesForDisplay } from "../../worktrees";
 import type { GitStatus } from "../useProjects";
 import { normalizeSessionPath } from "./tabBuckets";
 import type {
@@ -217,7 +218,10 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
       sidebar: {
         ...sidebar,
         projects: ps.projects.map((p) => {
-          const wts = ps.worktreesByProject[p.id] ?? [];
+          const wts = orderWorktreesForDisplay(
+            ps.worktreesByProject[p.id] ?? [],
+            p.worktreeSortMode,
+          );
           const projectIsActive = p.id === ps.activeId;
           const activeWorktreeBelongsToProject =
             projectIsActive &&
@@ -233,9 +237,11 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
             expanded: p.uiExpanded === true,
             worktrees: wts.map((w) => ({
               id: w.id,
+              projectId: p.id,
               label: w.label ?? w.branch ?? "worktree",
               branch: w.branch,
               path: w.path,
+              createdAt: w.createdAt,
               active: w.id === ps.activeWorktreeId,
               isMain: w.isMain,
               pendingState: w.pendingState,

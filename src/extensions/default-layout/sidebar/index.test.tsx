@@ -4,6 +4,16 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 // Force the macOS branch so the brand-strip drag-region assertion is
 // deterministic under jsdom (navigator.platform is empty there).
 vi.mock("../../../utils/platform", () => ({ isMacOS: () => true }));
+const { branchStatusMock, checksMock } = vi.hoisted(() => ({
+  branchStatusMock: vi.fn(),
+  checksMock: vi.fn(),
+}));
+vi.mock("../../../ghBranchStatusCache", () => ({
+  getGhBranchStatus: branchStatusMock,
+}));
+vi.mock("../../../ghChecksCache", () => ({
+  getGhChecks: checksMock,
+}));
 import { Sidebar } from ".";
 import type { A2UIComponent } from "../../../types/a2ui";
 import type { ComponentProps } from "react";
@@ -11,6 +21,8 @@ import type { ComponentProps } from "react";
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  branchStatusMock.mockReset();
+  checksMock.mockReset();
   cleanup();
 });
 
@@ -433,6 +445,54 @@ describe("Sidebar project menu", () => {
       itemId: "project-1",
       projectId: "project-1",
       baseBranch: "upstream/trunk",
+    });
+  });
+
+  it("emits the project worktree newest-first sort event", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "projects",
+            title: "projects",
+            items: [
+              {
+                id: "project-1",
+                label: "aethon",
+                worktrees: [
+                  {
+                    id: "main",
+                    label: "main",
+                    branch: "main",
+                    path: "/repo",
+                    active: false,
+                    isMain: true,
+                  },
+                  {
+                    id: "wt-1",
+                    label: "feature-x",
+                    branch: "feature-x",
+                    path: "/repo-feature-x",
+                    active: false,
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("aethon").closest("li")!);
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Sort worktrees newest first/ }),
+    );
+
+    expect(onEvent).toHaveBeenCalledWith("sort-project-worktrees", {
+      sectionId: "projects",
+      itemId: "project-1",
+      projectId: "project-1",
     });
   });
 });

@@ -13,17 +13,25 @@
  * the regular list.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
+import { getGhBranchStatus } from "../../../ghBranchStatusCache";
+import { getGhChecks } from "../../../ghChecksCache";
+import {
+  summarizeWorktreePrStatus,
+  type WorktreePrChip,
+} from "./worktree-pr-status";
 
 export interface WorktreeSidebarItem {
   id: string;
+  projectId?: string;
   /** User-visible label (defaults to branch name when absent). */
   label: string;
   /** Short branch name; falls back to "detached" for detached HEAD. */
   branch: string | null;
   path: string;
+  createdAt?: number;
   active: boolean;
   isMain: boolean;
   pendingState?: "queued" | "starting" | "removing" | "succeeded" | "failed";
@@ -48,6 +56,14 @@ export interface WorktreeRowProps {
   renaming?: boolean;
   /** Called after Enter/Escape/blur exits inline rename mode. */
   onRenameEnd?: (worktreeId: string) => void;
+  dragging?: boolean;
+  dropSide?: "before" | "after";
+  dragOffsetY?: number;
+  onPointerDragStart?: (
+    e: React.PointerEvent<HTMLElement>,
+    item: WorktreeSidebarItem,
+  ) => void;
+  consumeSuppressedClick?: () => boolean;
 }
 
 export function WorktreeRow({
@@ -57,8 +73,15 @@ export function WorktreeRow({
   onItemContextMenu,
   renaming = false,
   onRenameEnd,
+  dragging = false,
+  dropSide,
+  dragOffsetY = 0,
+  onPointerDragStart,
+  consumeSuppressedClick,
 }: WorktreeRowProps) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [prChip, setPrChip] = useState<WorktreePrChip | null>(null);
+  const [prLoading, setPrLoading] = useState(false);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
   const renameBlurCancelRef = useRef<number | null>(null);
@@ -71,6 +94,39 @@ export function WorktreeRow({
   const canRemoveInline =
     !item.isMain && !isPendingActive && !isFailed && !canRenameInline;
 
+  useEffect(() => {
+    let cancelled = false;
+    const branch = item.branch;
+    if (item.isMain || isPendingActive || isFailed || !branch) {
+      queueMicrotask(() => {
+        if (cancelled) return;
+        setPrChip(null);
+        setPrLoading(false);
+      });
+      return;
+    }
+    void (async () => {
+      setPrLoading(true);
+      try {
+        const status = await getGhBranchStatus(item.path, branch);
+        const checks =
+          status.ghAvailable && status.repo && !status.worktreeBroken
+            ? await getGhChecks(item.path, branch).catch(() => null)
+            : null;
+        if (!cancelled) {
+          setPrChip(summarizeWorktreePrStatus(status, checks));
+        }
+      } catch {
+        if (!cancelled) setPrChip(null);
+      } finally {
+        if (!cancelled) setPrLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isFailed, isPendingActive, item.branch, item.isMain, item.path]);
+
   const className = [
     "a2ui-sidebar-item",
     "ae-worktree-row",
@@ -78,6 +134,8 @@ export function WorktreeRow({
     item.isMain ? "ae-worktree-row--main" : "",
     isPendingActive ? "ae-worktree-row--pending" : "",
     isFailed ? "ae-worktree-row--failed" : "",
+    dragging ? "ae-worktree-row--dragging" : "",
+    dropSide ? `ae-worktree-row-drop-${dropSide}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -162,14 +220,25 @@ export function WorktreeRow({
   return (
     <li
       className={className}
+      data-worktree-id={item.id}
+      data-project-id={item.projectId}
       title={tooltip}
+      draggable={false}
+      style={
+        dragging
+          ? ({ "--ae-worktree-drag-y": `${dragOffsetY}px` } as CSSProperties)
+          : undefined
+      }
+      onPointerDown={(e) => onPointerDragStart?.(e, item)}
       onMouseLeave={() => setConfirmingRemove(false)}
       onClick={() => {
+        if (consumeSuppressedClick?.()) return;
         if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
           return;
         onEvent("switch-worktree", { sectionId, worktreeId: item.id }, item.id);
       }}
       onDoubleClick={() => {
+        if (consumeSuppressedClick?.()) return;
         if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
           return;
         onEvent(
@@ -239,6 +308,11 @@ export function WorktreeRow({
       {!canRenameInline && item.branch && item.branch !== displayLabel ? (
         <span className="a2ui-sidebar-item-git-branch ae-worktree-branch">
           {item.branch}
+        </span>
+      ) : null}
+      {!canRenameInline && (prLoading || prChip) ? (
+        <span className="ae-worktree-pr-slot">
+          {prChip ? <WorktreePrBadge chip={prChip} /> : <span aria-hidden="true" />}
         </span>
       ) : null}
       {isPendingActive ? (
@@ -360,5 +434,41 @@ export function WorktreeRow({
         </span>
       ) : null}
     </li>
+  );
+}
+
+function WorktreePrBadge({ chip }: { chip: WorktreePrChip }) {
+  const content = (
+    <>
+      {chip.ci ? (
+        <span
+          className={`ae-worktree-pr-ci ae-worktree-pr-ci--${chip.ci}`}
+          aria-hidden="true"
+        />
+      ) : null}
+      <span className="ae-worktree-pr-label">{chip.label}</span>
+    </>
+  );
+  const className = `ae-worktree-pr-chip ae-worktree-pr-chip--${chip.kind}`;
+  if (chip.url) {
+    return (
+      <a
+        className={className}
+        href={chip.url}
+        target="_blank"
+        rel="noreferrer"
+        title={chip.title}
+        aria-label={chip.title}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        {content}
+      </a>
+    );
+  }
+  return (
+    <span className={className} title={chip.title} aria-label={chip.title}>
+      {content}
+    </span>
   );
 }

@@ -403,6 +403,8 @@ export default function App() {
     renameWorktree,
     renameProject,
     setProjectWorktreeBaseBranch,
+    reorderWorktree,
+    sortProjectWorktreesNewest,
   } = useProjectOps({
     setState,
     stateRef,
@@ -916,6 +918,8 @@ export default function App() {
     renameWorktree,
     renameProject,
     setProjectWorktreeBaseBranch,
+    reorderWorktree,
+    sortProjectWorktreesNewest,
     invoke,
     writeState,
   });

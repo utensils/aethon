@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 use crate::env;
 
@@ -21,6 +22,10 @@ pub struct Worktree {
     /// True when `worktree list --porcelain` reports `locked`. Locked
     /// worktrees must be unlocked before removal.
     pub locked: bool,
+    /// Best-effort filesystem timestamp for sorting worktrees newest-first.
+    /// Milliseconds since epoch; omitted when neither created nor modified
+    /// time is available.
+    pub created_at: Option<u64>,
 }
 
 /// One branch row for the "create worktree" picker.
@@ -89,6 +94,7 @@ pub(crate) fn parse_worktrees_porcelain(text: &str) -> Vec<Worktree> {
                 head: None,
                 is_main: false,
                 locked: false,
+                created_at: worktree_created_at_ms(Path::new(rest)),
             });
         } else if let Some(rest) = line.strip_prefix("HEAD ") {
             if let Some(w) = cur.as_mut() {
@@ -111,6 +117,13 @@ pub(crate) fn parse_worktrees_porcelain(text: &str) -> Vec<Worktree> {
         out.push(w);
     }
     out
+}
+
+fn worktree_created_at_ms(path: &Path) -> Option<u64> {
+    let meta = std::fs::metadata(path).ok()?;
+    let time = meta.created().or_else(|_| meta.modified()).ok()?;
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    Some(duration.as_millis().min(u128::from(u64::MAX)) as u64)
 }
 
 /// Create a new git worktree.
@@ -403,10 +416,12 @@ mod tests {
             head: Some("abcdef0".into()),
             is_main: true,
             locked: false,
+            created_at: Some(42),
         };
         let json = serde_json::to_value(&w).unwrap();
         assert!(json.get("isMain").is_some());
         assert!(json.get("is_main").is_none());
+        assert!(json.get("createdAt").is_some());
         assert_eq!(json["isMain"], serde_json::json!(true));
         assert_eq!(json["path"], serde_json::json!("/x"));
         assert_eq!(json["branch"], serde_json::json!("main"));

@@ -32,6 +32,7 @@ export interface SidebarContextMenuState {
    *  minus the `ext:` / `ext-failed:` / `ext-disabled:` prefix). */
   extensionName?: string;
   baseBranch?: string;
+  hasExtraWorktrees?: boolean;
   /** For `worktree` kind: the full worktree shape so menu actions can
    *  surface path + branch + main-flag context without re-resolving. */
   worktree?: WorktreeSidebarItem;
@@ -59,6 +60,7 @@ export interface SidebarMenuHandlers {
   createWorktreeForContextProject: () => void;
   editContextProjectWorktreeBase: () => void;
   submitContextProjectWorktreeBase: (baseBranch: string) => void;
+  sortContextProjectWorktreesNewest: () => void;
   openContextProjectInFinder: () => void;
   copyContextProjectPath: () => void;
   renameContextProject: () => void;
@@ -122,6 +124,12 @@ export function buildSidebarMenuItems(
           label: "Set worktree base…",
           keepOpenOnSelect: true,
           onSelect: h.editContextProjectWorktreeBase,
+        },
+        {
+          id: "sort-worktrees",
+          label: "Sort worktrees newest first",
+          disabled: !state.hasExtraWorktrees,
+          onSelect: h.sortContextProjectWorktreesNewest,
         },
         { type: "separator" },
         {

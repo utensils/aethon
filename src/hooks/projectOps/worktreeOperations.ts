@@ -12,6 +12,8 @@ import {
   dismissPendingWorktree,
   renameProject,
   renameWorktree,
+  reorderWorktree,
+  sortProjectWorktreesNewest,
   setProjectExpanded,
   setProjectIconUrl,
   setProjectWorktreeBaseBranch,
@@ -154,6 +156,26 @@ export function useWorktreeOperations(
         },
         projectId,
         baseBranch,
+      ),
+    reorderWorktree: (projectId, worktreeId, toIndex) =>
+      reorderWorktree(
+        {
+          projectsRef: deps.projectsRef,
+          syncProjectsToState: deps.syncProjectsToState,
+          persistProjects: deps.persistProjects,
+        },
+        projectId,
+        worktreeId,
+        toIndex,
+      ),
+    sortProjectWorktreesNewest: (projectId) =>
+      sortProjectWorktreesNewest(
+        {
+          projectsRef: deps.projectsRef,
+          syncProjectsToState: deps.syncProjectsToState,
+          persistProjects: deps.persistProjects,
+        },
+        projectId,
       ),
     findProjectOfWorktree: lookups.findProjectOfWorktree,
   };
