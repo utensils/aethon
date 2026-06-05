@@ -24,9 +24,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { StringValue } from "../../../types/a2ui";
 import { OVERVIEW_TAB_ID } from "../../../types/tab";
@@ -93,7 +94,22 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     value: string;
   } | null>(null);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{
+    tabId: string;
+    side: "before" | "after";
+  } | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+  const stripRef = useRef<HTMLDivElement | null>(null);
   const draggedTabIdRef = useRef<string | null>(null);
+  const pendingPointerDragRef = useRef<{
+    tabId: string;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const suppressionClearTimerRef = useRef<number | null>(null);
+  const suppressNextClickRef = useRef(false);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
   const renamingTabId = renamingTab?.id;
@@ -155,49 +171,146 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
   const projectPath =
     (state["project"] as { path?: string } | undefined)?.path ?? "";
 
-  const dragPayloadType = "application/x-aethon-tab-id";
-  const startTabDrag = (event: DragEvent<HTMLElement>, tab: TabStripItem) => {
+  const finishTabDrag = () => {
+    draggedTabIdRef.current = null;
+    setDraggingTabId(null);
+    setDropIndicator(null);
+    setDragOffsetX(0);
+  };
+
+  const tabElementsForDrop = (root: HTMLElement, draggedTabId: string) =>
+    Array.from(
+      root.querySelectorAll<HTMLElement>(".a2ui-tab[data-tab-id]"),
+    ).filter((el) => el.dataset.tabId !== draggedTabId);
+
+  const insertionIndexForDrop = (
+    root: HTMLElement,
+    draggedTabId: string,
+    clientX: number,
+  ) => {
+    const tabElements = tabElementsForDrop(root, draggedTabId);
+    for (let index = 0; index < tabElements.length; index += 1) {
+      const rect = tabElements[index].getBoundingClientRect();
+      if (clientX < rect.left + rect.width / 2) return index;
+    }
+    return tabElements.length;
+  };
+
+  const showDropIndicator = (
+    root: HTMLElement,
+    draggedTabId: string,
+    clientX: number,
+  ) => {
+    const tabElements = tabElementsForDrop(root, draggedTabId);
+    if (tabElements.length === 0) {
+      setDropIndicator(null);
+      return;
+    }
+    for (let index = 0; index < tabElements.length; index += 1) {
+      const el = tabElements[index];
+      const rect = el.getBoundingClientRect();
+      if (clientX < rect.left + rect.width / 2) {
+        const tabId = el.dataset.tabId;
+        if (tabId) setDropIndicator({ tabId, side: "before" });
+        return;
+      }
+    }
+    const tabId = tabElements[tabElements.length - 1].dataset.tabId;
+    if (tabId) setDropIndicator({ tabId, side: "after" });
+  };
+
+  const emitReorder = (tabId: string, toIndex: number) => {
+    onEvent("reorder", { tabId, toIndex });
+    finishTabDrag();
+  };
+
+  const clearSuppressionSoon = () => {
+    if (suppressionClearTimerRef.current !== null) {
+      window.clearTimeout(suppressionClearTimerRef.current);
+    }
+    suppressionClearTimerRef.current = window.setTimeout(() => {
+      suppressNextClickRef.current = false;
+      suppressionClearTimerRef.current = null;
+    }, 0);
+  };
+
+  useEffect(
+    () => () => {
+      pointerCleanupRef.current?.();
+      pointerCleanupRef.current = null;
+      if (suppressionClearTimerRef.current !== null) {
+        window.clearTimeout(suppressionClearTimerRef.current);
+        suppressionClearTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const startPointerDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    tab: TabStripItem,
+  ) => {
+    if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (
       renamingTab?.id === tab.id ||
       target.closest(".a2ui-tab-close") ||
       target.closest(".ae-tab-rename-input")
     ) {
-      event.preventDefault();
       return;
     }
-    draggedTabIdRef.current = tab.id;
-    setDraggingTabId(tab.id);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData(dragPayloadType, tab.id);
-  };
+    pointerCleanupRef.current?.();
+    pendingPointerDragRef.current = {
+      tabId: tab.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
 
-  const finishTabDrag = () => {
-    draggedTabIdRef.current = null;
-    setDraggingTabId(null);
-  };
+    const onMove = (moveEvent: PointerEvent) => {
+      const pending = pendingPointerDragRef.current;
+      const root = stripRef.current;
+      if (!pending || !root) return;
+      const dx = moveEvent.clientX - pending.startX;
+      const dy = moveEvent.clientY - pending.startY;
+      if (!pending.dragging && Math.hypot(dx, dy) < 4) return;
+      if (!pending.dragging) {
+        pending.dragging = true;
+        suppressNextClickRef.current = true;
+        draggedTabIdRef.current = pending.tabId;
+        setDraggingTabId(pending.tabId);
+      }
+      moveEvent.preventDefault();
+      setDragOffsetX(dx);
+      showDropIndicator(root, pending.tabId, moveEvent.clientX);
+    };
 
-  const getDraggedTabId = (event: DragEvent<HTMLElement>) =>
-    event.dataTransfer.getData(dragPayloadType) || draggedTabIdRef.current;
+    const onUp = (upEvent: PointerEvent) => {
+      const pending = pendingPointerDragRef.current;
+      const root = stripRef.current;
+      const wasDragging = pending?.dragging;
+      if (pending && root && wasDragging) {
+        upEvent.preventDefault();
+        const toIndex = insertionIndexForDrop(
+          root,
+          pending.tabId,
+          upEvent.clientX,
+        );
+        emitReorder(pending.tabId, toIndex);
+      }
+      pointerCleanupRef.current?.();
+      pointerCleanupRef.current = null;
+      pendingPointerDragRef.current = null;
+      if (wasDragging) clearSuppressionSoon();
+      if (!wasDragging) finishTabDrag();
+    };
 
-  const dropTabOnTarget = (
-    event: DragEvent<HTMLElement>,
-    target: TabStripItem,
-  ) => {
-    const tabId = getDraggedTabId(event);
-    if (!tabId || tabId === target.id) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const remaining = tabs.filter((tab) => tab.id !== tabId);
-    const targetIndex = remaining.findIndex((tab) => tab.id === target.id);
-    if (targetIndex < 0) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const after = event.clientX > rect.left + rect.width / 2;
-    onEvent("reorder", {
-      tabId,
-      toIndex: targetIndex + (after ? 1 : 0),
-    });
-    finishTabDrag();
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+    pointerCleanupRef.current = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
   };
 
   const buildMenuItems = (): ContextMenuItem[] => {
@@ -302,7 +415,16 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     activeId === OVERVIEW_TAB_ID ||
     !tabs.some((t) => t.id === activeId);
   return (
-    <div className="a2ui-tab-strip" role="tablist">
+    <div
+      ref={stripRef}
+      className={[
+        "a2ui-tab-strip",
+        draggingTabId ? "a2ui-tab-strip-dragging" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      role="tablist"
+    >
       <button
         type="button"
         role="tab"
@@ -341,29 +463,41 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
               "a2ui-tab",
               isActive ? "a2ui-tab-active" : "",
               draggingTabId === t.id ? "a2ui-tab-dragging" : "",
+              dropIndicator?.tabId === t.id
+                ? `a2ui-tab-drop-${dropIndicator.side}`
+                : "",
             ]
               .filter(Boolean)
               .join(" ")}
-            draggable={renamingTab?.id !== t.id}
-            onDragStart={(e) => startTabDrag(e, t)}
-            onDragOver={(e) => {
-              const tabId = draggedTabIdRef.current;
-              if (!tabId || tabId === t.id) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-            }}
-            onDrop={(e) => dropTabOnTarget(e, t)}
-            onDragEnd={finishTabDrag}
+            data-tab-id={t.id}
+            draggable={false}
+            style={
+              draggingTabId === t.id
+                ? ({ "--ae-tab-drag-x": `${dragOffsetX}px` } as CSSProperties)
+                : undefined
+            }
+            onPointerDown={(e) => startPointerDrag(e, t)}
             onMouseDown={(e) => {
-              // mousedown not click so selecting feels immediate, but do
-              // not preventDefault here: native draggable tabs need the
-              // browser's default mouse gesture to fire dragstart.
               if (e.button !== 0) return;
               if (
                 (e.target as HTMLElement).closest(".a2ui-tab-close") ||
                 (e.target as HTMLElement).closest(".ae-tab-rename-input")
               ) {
                 e.preventDefault();
+                return;
+              }
+            }}
+            onClick={(e) => {
+              if (suppressNextClickRef.current) {
+                suppressNextClickRef.current = false;
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
+              if (
+                (e.target as HTMLElement).closest(".a2ui-tab-close") ||
+                (e.target as HTMLElement).closest(".ae-tab-rename-input")
+              ) {
                 return;
               }
               onEvent("select", { tabId: t.id });

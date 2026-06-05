@@ -20,11 +20,15 @@
  *   ("reorder-sub-tab", { subTabId, toIndex }) drag an interactive shell tab
  */
 
-import { useMemo, useRef, useState, type DragEvent } from "react";
-import type {
-  BooleanValue,
-  NumberValue,
-} from "../../../types/a2ui";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import type { BooleanValue, NumberValue } from "../../../types/a2ui";
 import { resolveBoolean } from "../../../utils/dataBinding";
 import { activeTabKind, type Tab } from "../../../types/tab";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
@@ -74,14 +78,30 @@ export function TerminalPanel({
   // pseudo-tab hides the agent-bash sub-tab (no agent session is
   // running) — fall through to the first interactive shell instead.
   const panelState =
-    (state["terminalPanel"] as { activeSubId?: string; height?: number } | undefined) ?? {};
+    (state["terminalPanel"] as
+      | { activeSubId?: string; height?: number }
+      | undefined) ?? {};
   const showAgentBash =
-    activeTabKind(tabs, state["activeTabId"] as string | undefined) ===
-    "agent";
+    activeTabKind(tabs, state["activeTabId"] as string | undefined) === "agent";
   const requestedActiveId = panelState.activeSubId ?? AGENT_BASH_SUB_ID;
   const panelRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const [draggingSubTabId, setDraggingSubTabId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{
+    subTabId: string;
+    side: "before" | "after";
+  } | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
   const draggedSubTabIdRef = useRef<string | null>(null);
+  const pendingPointerDragRef = useRef<{
+    subTabId: string;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const suppressionClearTimerRef = useRef<number | null>(null);
+  const suppressNextClickRef = useRef(false);
   // Resolve via the shared helper so the focus-aware Cmd+W path in
   // useKeyboardShortcuts sees the same active sub-tab the user does.
   const activeSubId = useMemo<string | null>(
@@ -94,47 +114,140 @@ export function TerminalPanel({
     [requestedActiveId, shellTabs, showAgentBash],
   );
 
-  const dragPayloadType = "application/x-aethon-shell-sub-tab-id";
-  const startSubTabDrag = (
-    event: DragEvent<HTMLElement>,
-    subTab: ShellSubTabItem,
-  ) => {
-    if ((event.target as HTMLElement).closest(".ae-sub-tab-close")) {
-      event.preventDefault();
-      return;
-    }
-    draggedSubTabIdRef.current = subTab.id;
-    setDraggingSubTabId(subTab.id);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData(dragPayloadType, subTab.id);
-  };
-
   const finishSubTabDrag = () => {
     draggedSubTabIdRef.current = null;
     setDraggingSubTabId(null);
+    setDropIndicator(null);
+    setDragOffsetX(0);
   };
 
-  const getDraggedSubTabId = (event: DragEvent<HTMLElement>) =>
-    event.dataTransfer.getData(dragPayloadType) || draggedSubTabIdRef.current;
+  const subTabElementsForDrop = (root: HTMLElement, draggedSubTabId: string) =>
+    Array.from(
+      root.querySelectorAll<HTMLElement>(".ae-sub-tab[data-sub-tab-id]"),
+    ).filter((el) => el.dataset.subTabId !== draggedSubTabId);
 
-  const dropSubTabOnTarget = (
-    event: DragEvent<HTMLElement>,
-    target: ShellSubTabItem,
+  const insertionIndexForDrop = (
+    root: HTMLElement,
+    draggedSubTabId: string,
+    clientX: number,
   ) => {
-    const subTabId = getDraggedSubTabId(event);
-    if (!subTabId || subTabId === target.id) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const remaining = shellTabs.filter((tab) => tab.id !== subTabId);
-    const targetIndex = remaining.findIndex((tab) => tab.id === target.id);
-    if (targetIndex < 0) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const after = event.clientX > rect.left + rect.width / 2;
-    onEvent("reorder-sub-tab", {
-      subTabId,
-      toIndex: targetIndex + (after ? 1 : 0),
-    });
+    const subTabElements = subTabElementsForDrop(root, draggedSubTabId);
+    for (let index = 0; index < subTabElements.length; index += 1) {
+      const rect = subTabElements[index].getBoundingClientRect();
+      if (clientX < rect.left + rect.width / 2) return index;
+    }
+    return subTabElements.length;
+  };
+
+  const showDropIndicator = (
+    root: HTMLElement,
+    draggedSubTabId: string,
+    clientX: number,
+  ) => {
+    const subTabElements = subTabElementsForDrop(root, draggedSubTabId);
+    if (subTabElements.length === 0) {
+      setDropIndicator(null);
+      return;
+    }
+    for (let index = 0; index < subTabElements.length; index += 1) {
+      const el = subTabElements[index];
+      const rect = el.getBoundingClientRect();
+      if (clientX < rect.left + rect.width / 2) {
+        const subTabId = el.dataset.subTabId;
+        if (subTabId) setDropIndicator({ subTabId, side: "before" });
+        return;
+      }
+    }
+    const subTabId = subTabElements[subTabElements.length - 1].dataset.subTabId;
+    if (subTabId) setDropIndicator({ subTabId, side: "after" });
+  };
+
+  const emitSubTabReorder = (subTabId: string, toIndex: number) => {
+    onEvent("reorder-sub-tab", { subTabId, toIndex });
     finishSubTabDrag();
+  };
+
+  const clearSuppressionSoon = () => {
+    if (suppressionClearTimerRef.current !== null) {
+      window.clearTimeout(suppressionClearTimerRef.current);
+    }
+    suppressionClearTimerRef.current = window.setTimeout(() => {
+      suppressNextClickRef.current = false;
+      suppressionClearTimerRef.current = null;
+    }, 0);
+  };
+
+  useEffect(
+    () => () => {
+      pointerCleanupRef.current?.();
+      pointerCleanupRef.current = null;
+      if (suppressionClearTimerRef.current !== null) {
+        window.clearTimeout(suppressionClearTimerRef.current);
+        suppressionClearTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const startPointerDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    subTab: ShellSubTabItem,
+  ) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest(".ae-sub-tab-close")) return;
+
+    pointerCleanupRef.current?.();
+    pendingPointerDragRef.current = {
+      subTabId: subTab.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const pending = pendingPointerDragRef.current;
+      const root = tabsRef.current;
+      if (!pending || !root) return;
+      const dx = moveEvent.clientX - pending.startX;
+      const dy = moveEvent.clientY - pending.startY;
+      if (!pending.dragging && Math.hypot(dx, dy) < 4) return;
+      if (!pending.dragging) {
+        pending.dragging = true;
+        suppressNextClickRef.current = true;
+        draggedSubTabIdRef.current = pending.subTabId;
+        setDraggingSubTabId(pending.subTabId);
+      }
+      moveEvent.preventDefault();
+      setDragOffsetX(dx);
+      showDropIndicator(root, pending.subTabId, moveEvent.clientX);
+    };
+
+    const onUp = (upEvent: PointerEvent) => {
+      const pending = pendingPointerDragRef.current;
+      const root = tabsRef.current;
+      const wasDragging = pending?.dragging;
+      if (pending && root && wasDragging) {
+        upEvent.preventDefault();
+        const toIndex = insertionIndexForDrop(
+          root,
+          pending.subTabId,
+          upEvent.clientX,
+        );
+        emitSubTabReorder(pending.subTabId, toIndex);
+      }
+      pointerCleanupRef.current?.();
+      pointerCleanupRef.current = null;
+      pendingPointerDragRef.current = null;
+      if (wasDragging) clearSuppressionSoon();
+      if (!wasDragging) finishSubTabDrag();
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+    pointerCleanupRef.current = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
   };
 
   const onResizeStart = (e: React.MouseEvent) => {
@@ -165,9 +278,7 @@ export function TerminalPanel({
   return (
     <div
       ref={panelRef}
-      className={
-        visible ? "ae-terminal-panel" : "ae-terminal-panel is-closed"
-      }
+      className={visible ? "ae-terminal-panel" : "ae-terminal-panel is-closed"}
       aria-hidden={!visible}
       style={{ gridArea: "terminal", height: "100%" }}
     >
@@ -178,7 +289,16 @@ export function TerminalPanel({
         aria-label="Resize terminal panel"
         onMouseDown={onResizeStart}
       />
-      <div className="ae-terminal-panel-tabs" role="tablist">
+      <div
+        ref={tabsRef}
+        className={[
+          "ae-terminal-panel-tabs",
+          draggingSubTabId ? "ae-terminal-panel-tabs-dragging" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        role="tablist"
+      >
         {showAgentBash && (
           <SubTabPill
             id={AGENT_BASH_SUB_ID}
@@ -199,17 +319,18 @@ export function TerminalPanel({
             active={activeSubId === s.id}
             closable
             dragging={draggingSubTabId === s.id}
+            dragOffsetX={draggingSubTabId === s.id ? dragOffsetX : undefined}
+            dropSide={
+              dropIndicator?.subTabId === s.id ? dropIndicator.side : undefined
+            }
             onSelect={() => onEvent("select-sub-tab", { subTabId: s.id })}
             onClose={() => onEvent("close-sub-tab", { subTabId: s.id })}
-            onDragStart={(e) => startSubTabDrag(e, s)}
-            onDragOver={(e) => {
-              const subTabId = draggedSubTabIdRef.current;
-              if (!subTabId || subTabId === s.id) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
+            shouldSuppressClick={() => {
+              if (!suppressNextClickRef.current) return false;
+              suppressNextClickRef.current = false;
+              return true;
             }}
-            onDrop={(e) => dropSubTabOnTarget(e, s)}
-            onDragEnd={finishSubTabDrag}
+            onPointerDown={(e) => startPointerDrag(e, s)}
           />
         ))}
         <button
@@ -267,25 +388,26 @@ function SubTabPill(props: {
   active: boolean;
   closable?: boolean;
   dragging?: boolean;
+  dragOffsetX?: number;
+  dropSide?: "before" | "after";
   onSelect: () => void;
   onClose?: () => void;
-  onDragStart?: (event: DragEvent<HTMLElement>) => void;
-  onDragOver?: (event: DragEvent<HTMLElement>) => void;
-  onDrop?: (event: DragEvent<HTMLElement>) => void;
-  onDragEnd?: () => void;
+  shouldSuppressClick?: () => boolean;
+  onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const {
+    id,
     label,
     hint,
     active,
     closable,
     dragging,
+    dragOffsetX,
+    dropSide,
     onSelect,
     onClose,
-    onDragStart,
-    onDragOver,
-    onDrop,
-    onDragEnd,
+    shouldSuppressClick,
+    onPointerDown,
   } = props;
   return (
     <div
@@ -295,17 +417,31 @@ function SubTabPill(props: {
         "ae-sub-tab",
         active ? "ae-sub-tab-active" : "",
         dragging ? "ae-sub-tab-dragging" : "",
+        dropSide ? `ae-sub-tab-drop-${dropSide}` : "",
       ]
         .filter(Boolean)
         .join(" ")}
-      draggable={!!onDragStart}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
+      data-sub-tab-id={onPointerDown ? id : undefined}
+      draggable={false}
+      style={
+        dragging && typeof dragOffsetX === "number"
+          ? ({ "--ae-tab-drag-x": `${dragOffsetX}px` } as CSSProperties)
+          : undefined
+      }
+      onPointerDown={onPointerDown}
       onMouseDown={(e) => {
         if ((e.target as HTMLElement).closest(".ae-sub-tab-close")) {
           e.preventDefault();
+          return;
+        }
+      }}
+      onClick={(e) => {
+        if (shouldSuppressClick?.()) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if ((e.target as HTMLElement).closest(".ae-sub-tab-close")) {
           return;
         }
         onSelect();

@@ -24,16 +24,6 @@ function tabStripComponent(): A2UIComponent {
   };
 }
 
-function createDataTransfer() {
-  const values = new Map<string, string>();
-  return {
-    effectAllowed: "",
-    dropEffect: "",
-    setData: vi.fn((type: string, value: string) => values.set(type, value)),
-    getData: vi.fn((type: string) => values.get(type) ?? ""),
-  };
-}
-
 function setRect(element: Element, rect: Partial<DOMRect>) {
   vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
     left: rect.left ?? 0,
@@ -323,16 +313,64 @@ describe("TabStrip", () => {
     const chat = screen.getByText("Chat").closest('[role="tab"]')!;
     const editor = screen.getByText("App.tsx").closest('[role="tab"]')!;
     setRect(chat, { left: 0, width: 100 });
-    const dataTransfer = createDataTransfer();
 
-    fireEvent.dragStart(editor, { dataTransfer });
-    fireEvent.dragOver(chat, { clientX: 10, dataTransfer });
-    fireEvent.drop(chat, { clientX: 10, dataTransfer });
+    fireEvent.pointerDown(editor, { button: 0, clientX: 120, clientY: 8 });
+    fireEvent.pointerMove(document, { clientX: 10, clientY: 8 });
+
+    expect(editor.className).toContain("a2ui-tab-dragging");
+    expect(editor.getAttribute("style")).toContain("--ae-tab-drag-x");
+    expect(chat.className).toContain("a2ui-tab-drop-before");
+
+    fireEvent.pointerUp(document, { clientX: 10, clientY: 8 });
 
     expect(onEvent).toHaveBeenCalledWith("reorder", {
       tabId: "ed-1",
       toIndex: 0,
     });
+  });
+
+  it("does not let drag click suppression leak into the next real tab click", () => {
+    vi.useFakeTimers();
+    try {
+      const onEvent = vi.fn<TabStripOnEvent>();
+      render(
+        <TabStrip
+          component={tabStripComponent()}
+          state={{
+            activeTabId: "ag-1",
+            tabs: [
+              { id: "ag-1", label: "Chat", kind: "agent" },
+              {
+                id: "ed-1",
+                label: "App.tsx",
+                kind: "editor",
+                editor: { filePath: "/repo/App.tsx" },
+              },
+            ],
+          }}
+          onEvent={onEvent}
+        />,
+      );
+      const chat = screen.getByText("Chat").closest('[role="tab"]')!;
+      const editor = screen.getByText("App.tsx").closest('[role="tab"]')!;
+      setRect(chat, { left: 0, width: 100 });
+
+      fireEvent.pointerDown(editor, { button: 0, clientX: 120, clientY: 8 });
+      fireEvent.pointerMove(document, { clientX: 10, clientY: 8 });
+      fireEvent.pointerUp(document, { clientX: 10, clientY: 8 });
+      expect(onEvent).toHaveBeenCalledWith("reorder", {
+        tabId: "ed-1",
+        toIndex: 0,
+      });
+
+      onEvent.mockClear();
+      vi.runOnlyPendingTimers();
+      fireEvent.click(chat);
+
+      expect(onEvent).toHaveBeenCalledWith("select", { tabId: "ag-1" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the overview and new-tab controls out of drag reordering", () => {
@@ -343,9 +381,12 @@ describe("TabStrip", () => {
     const realTab = screen.getByText("Tab 1").closest('[role="tab"]')!;
     const newButton = screen.getByRole("button", { name: "New Tab" });
 
-    expect(realTab.getAttribute("draggable")).toBe("true");
+    expect(realTab.getAttribute("draggable")).toBe("false");
+    expect(realTab.getAttribute("data-tab-id")).toBe("tab-1");
     expect(overviewPill.getAttribute("draggable")).not.toBe("true");
+    expect(overviewPill.getAttribute("data-tab-id")).toBeNull();
     expect(newButton.getAttribute("draggable")).not.toBe("true");
+    expect(newButton.getAttribute("data-tab-id")).toBeNull();
   });
 
   it("renders a file-type icon for editor tabs but not agent tabs", () => {
