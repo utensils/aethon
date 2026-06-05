@@ -2455,8 +2455,8 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-shrink: 0;
 }
 .ae-pr-merged {
-  background: rgba(140, 82, 255, 0.15);
-  color: #b58aff;
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
 }
 .ae-pr-open {
   background: rgba(46, 160, 67, 0.15);
@@ -7929,9 +7929,9 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
 }
 .ae-vcs-chip.is-merged {
-  background: rgba(140, 82, 255, 0.15);
-  color: #b58aff;
-  border-color: rgba(140, 82, 255, 0.35);
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
 }
 .ae-vcs-chip.is-muted {
   color: var(--text-dim);
@@ -8093,9 +8093,9 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
 }
 .ae-scm-badge.is-merged {
-  background: rgba(140, 82, 255, 0.15);
-  color: #b58aff;
-  border-color: rgba(140, 82, 255, 0.35);
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
 }
 .ae-scm-badge.is-muted {
   color: var(--text-dim);

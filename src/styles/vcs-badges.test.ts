@@ -23,7 +23,7 @@ function cssProperty(body: string, name: string): string {
 }
 
 describe("VCS merged PR badge CSS", () => {
-  it("matches the source-control merged badge to the worktree purple treatment", () => {
+  it("matches the source-control merged badge to the worktree success treatment", () => {
     const worktreeMerged = cssRuleBody(".ae-pr-merged");
     const sourceControlMerged = cssRuleBody(".ae-scm-badge.is-merged");
 
@@ -39,9 +39,10 @@ describe("VCS merged PR badge CSS", () => {
     const sourceControlMerged = cssRuleBody(".ae-scm-badge.is-merged");
     const sourceControlNeutral = cssRuleBody(".ae-scm-badge.is-neutral");
 
-    expect(sourceControlMerged).toContain("#b58aff");
-    expect(sourceControlNeutral).not.toContain("#b58aff");
-    expect(sourceControlNeutral).not.toMatch(/background:\s*rgba\(140, 82, 255, 0\.15\);/);
+    expect(sourceControlMerged).toContain("var(--state-success-bg)");
+    expect(sourceControlMerged).toContain("var(--state-success-fg)");
+    expect(sourceControlNeutral).not.toContain("var(--state-success-bg)");
+    expect(sourceControlNeutral).not.toContain("var(--state-success-fg)");
   });
 
   it("gives header PR chips the same explicit merged tone", () => {
