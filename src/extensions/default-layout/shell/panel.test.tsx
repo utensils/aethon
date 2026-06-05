@@ -11,15 +11,16 @@ vi.mock("../terminal", () => ({
   Terminal: () => <div data-testid="stub-terminal" />,
 }));
 vi.mock("./canvas", () => ({
-  ShellCanvas: ({
-    component,
-  }: {
-    component: { props: { tabId: string } };
-  }) => <div data-testid="stub-shell" data-tab-id={component.props.tabId} />,
+  ShellCanvas: ({ component }: { component: { props: { tabId: string } } }) => (
+    <div data-testid="stub-shell" data-tab-id={component.props.tabId} />
+  ),
 }));
 
 import { TerminalPanel } from "./panel";
-import { resolveActiveSubId, resolveActiveSubIdFromState } from "./panel-helpers";
+import {
+  resolveActiveSubId,
+  resolveActiveSubIdFromState,
+} from "./panel-helpers";
 
 afterEach(() => {
   cleanup();
@@ -88,9 +89,7 @@ describe("resolveActiveSubIdFromState", () => {
     // resolve the same shell the panel paints.
     const state = {
       activeTabId: "__overview__",
-      tabs: [
-        { id: "sh-1", kind: "shell", label: "Shell 1" },
-      ],
+      tabs: [{ id: "sh-1", kind: "shell", label: "Shell 1" }],
       terminalPanel: { activeSubId: "agent-bash" },
     } as Record<string, unknown>;
     expect(resolveActiveSubIdFromState(state)).toBe("sh-1");
@@ -99,9 +98,7 @@ describe("resolveActiveSubIdFromState", () => {
   it("treats a shell active id like overview instead of showing agent-bash", () => {
     const state = {
       activeTabId: "sh-1",
-      tabs: [
-        { id: "sh-1", kind: "shell", label: "Shell 1" },
-      ],
+      tabs: [{ id: "sh-1", kind: "shell", label: "Shell 1" }],
       terminalPanel: { activeSubId: "agent-bash" },
     } as Record<string, unknown>;
     expect(resolveActiveSubIdFromState(state)).toBe("sh-1");
@@ -116,16 +113,6 @@ describe("resolveActiveSubIdFromState", () => {
     expect(resolveActiveSubIdFromState(state)).toBe("agent-bash");
   });
 });
-
-function createDataTransfer() {
-  const values = new Map<string, string>();
-  return {
-    effectAllowed: "",
-    dropEffect: "",
-    setData: vi.fn((type: string, value: string) => values.set(type, value)),
-    getData: vi.fn((type: string) => values.get(type) ?? ""),
-  };
-}
 
 function setRect(element: Element, rect: Partial<DOMRect>) {
   vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
@@ -276,11 +263,15 @@ describe("TerminalPanel", () => {
     const shell1 = screen.getByText("Shell 1").closest('[role="tab"]')!;
     const shell2 = screen.getByText("Shell 2").closest('[role="tab"]')!;
     setRect(shell1, { left: 0, width: 100 });
-    const dataTransfer = createDataTransfer();
 
-    fireEvent.dragStart(shell2, { dataTransfer });
-    fireEvent.dragOver(shell1, { clientX: 10, dataTransfer });
-    fireEvent.drop(shell1, { clientX: 10, dataTransfer });
+    fireEvent.pointerDown(shell2, { button: 0, clientX: 120, clientY: 8 });
+    fireEvent.pointerMove(document, { clientX: 10, clientY: 8 });
+
+    expect(shell2.className).toContain("ae-sub-tab-dragging");
+    expect(shell2.getAttribute("style")).toContain("--ae-tab-drag-x");
+    expect(shell1.className).toContain("ae-sub-tab-drop-before");
+
+    fireEvent.pointerUp(document, { clientX: 10, clientY: 8 });
 
     expect(onEvent).toHaveBeenCalledWith("reorder-sub-tab", {
       subTabId: "sh-2",
@@ -307,7 +298,9 @@ describe("TerminalPanel", () => {
     const shell = screen.getByText("Shell 1").closest('[role="tab"]')!;
 
     expect(agentBash.getAttribute("draggable")).toBe("false");
-    expect(shell.getAttribute("draggable")).toBe("true");
+    expect(agentBash.getAttribute("data-sub-tab-id")).toBeNull();
+    expect(shell.getAttribute("draggable")).toBe("false");
+    expect(shell.getAttribute("data-sub-tab-id")).toBe("sh-1");
   });
 
   it("always renders the + new-shell button", () => {

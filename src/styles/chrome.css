@@ -4448,6 +4448,12 @@ body.ae-resizing-composer * {
   min-width: 0;
   flex: 1 1 auto;
 }
+
+.a2ui-tab-strip-dragging,
+.a2ui-tab-strip-dragging .a2ui-tab {
+  cursor: grabbing;
+}
+
 .a2ui-tab-strip::-webkit-scrollbar {
   /* WebKit (the only browser engine the Tauri webview uses on macOS,
      and one of the engines on Linux) needs an explicit zero-size rule
@@ -4481,7 +4487,10 @@ body.ae-resizing-composer * {
   flex: 0 1 13rem;
   transition:
     color 120ms var(--ease-out, ease),
-    background-color 120ms var(--ease-out, ease);
+    background-color 120ms var(--ease-out, ease),
+    opacity 120ms var(--ease-out, ease),
+    box-shadow 120ms var(--ease-out, ease),
+    transform 120ms var(--ease-out, ease);
 }
 
 /* Underline marker — sits flush with the strip's bottom border so a
@@ -4511,7 +4520,20 @@ body.ae-resizing-composer * {
 }
 
 .a2ui-tab-dragging {
-  opacity: 0.62;
+  z-index: var(--z-elevated);
+  color: var(--text);
+  background: var(--bg-active);
+  opacity: 0.94;
+  transform: translate3d(var(--ae-tab-drag-x, 0px), -2px, 0);
+  box-shadow:
+    0 0 0 1px var(--border-hover),
+    var(--shadow-2);
+  transition:
+    color 120ms var(--ease-out, ease),
+    background-color 120ms var(--ease-out, ease),
+    opacity 120ms var(--ease-out, ease),
+    box-shadow 120ms var(--ease-out, ease),
+    transform 0ms linear;
 }
 
 .a2ui-tab-active {
@@ -4534,6 +4556,33 @@ body.ae-resizing-composer * {
   background: var(--accent);
   margin-right: 4px;
   flex-shrink: 0;
+}
+
+.a2ui-tab-drop-before,
+.a2ui-tab-drop-after {
+  background: var(--accent-hover-tint);
+}
+
+.a2ui-tab-drop-before::before,
+.a2ui-tab-drop-after::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.a2ui-tab-drop-before::before {
+  left: -2px;
+}
+
+.a2ui-tab-drop-after::before {
+  right: -2px;
 }
 
 /* Live busy dot — a subtly pulsing accent dot when a tab is mid-prompt.
@@ -5241,6 +5290,12 @@ body.ae-resizing-terminal * {
   overflow-x: auto;
   scrollbar-width: thin;
 }
+
+.ae-terminal-panel-tabs-dragging,
+.ae-terminal-panel-tabs-dragging .ae-sub-tab {
+  cursor: grabbing;
+}
+
 .ae-sub-tab {
   display: inline-flex;
   align-items: center;
@@ -5256,6 +5311,14 @@ body.ae-resizing-terminal * {
   white-space: nowrap;
   user-select: none;
   margin-top: 2px;
+  position: relative;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 .ae-sub-tab:hover {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
@@ -5263,11 +5326,49 @@ body.ae-resizing-terminal * {
 .ae-sub-tab:active {
   cursor: grabbing;
 }
-.ae-sub-tab[draggable="false"] {
+.ae-sub-tab:not([data-sub-tab-id]) {
   cursor: pointer;
 }
 .ae-sub-tab-dragging {
-  opacity: 0.62;
+  z-index: var(--z-elevated);
+  color: var(--text);
+  background: var(--bg-active);
+  border-color: var(--border-hover);
+  opacity: 0.95;
+  transform: translate3d(var(--ae-tab-drag-x, 0px), -2px, 0);
+  box-shadow:
+    0 0 0 1px var(--border-hover),
+    var(--shadow-2);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform 0ms linear;
+}
+.ae-sub-tab-drop-before,
+.ae-sub-tab-drop-after {
+  background: var(--accent-hover-tint);
+}
+.ae-sub-tab-drop-before::before,
+.ae-sub-tab-drop-after::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  pointer-events: none;
+  z-index: 1;
+}
+.ae-sub-tab-drop-before::before {
+  left: -2px;
+}
+.ae-sub-tab-drop-after::before {
+  right: -2px;
 }
 .ae-sub-tab-active {
   background: var(--bg-elev);
