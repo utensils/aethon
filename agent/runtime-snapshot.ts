@@ -114,6 +114,12 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       entryPath: m.entryPath,
       bytes: m.code.length,
     })),
+    highlightGrammars: [...state.extensionHighlightGrammars.values()].map(
+      (g) => ({
+        lang: g.lang,
+        bytes: JSON.stringify(g.grammar).length,
+      }),
+    ),
   };
 }
 

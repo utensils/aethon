@@ -37,7 +37,11 @@ export function onEvent(
   handler: A2UIEventHandler,
 ): void {
   if (typeof handler !== "function") return;
-  const key = JSON.stringify(match) + "::" + handler.toString();
+  const scope =
+    state.currentExtensionName && state.currentExtensionLoadScope
+      ? `${state.currentExtensionLoadScope}:${state.currentExtensionName}`
+      : "global";
+  const key = scope + "::" + JSON.stringify(match) + "::" + handler.toString();
   if (state.registeredHandlerKeys.has(key)) return;
   state.registeredHandlerKeys.add(key);
   state.a2uiEventHandlers.push({ match, handler });

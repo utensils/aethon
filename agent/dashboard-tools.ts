@@ -24,6 +24,8 @@ interface TasksApi {
     newWorktree?: boolean;
     branch?: string;
     baseBranch?: string;
+    model?: string;
+    bridgePrompt?: string;
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
@@ -81,6 +83,18 @@ const StartTaskParams = Type.Object({
     Type.String({
       description:
         "Base branch to fork the new worktree from. Defaults to the project's configured worktree base when omitted.",
+    }),
+  ),
+  model: Type.Optional(
+    Type.String({
+      description:
+        "Optional model id to use in the launched task tab, matching the dashboard model chip.",
+    }),
+  ),
+  bridgePrompt: Type.Optional(
+    Type.String({
+      description:
+        "Optional hidden bridge prompt to send to the launched tab; prompt remains the visible user text.",
     }),
   ),
 });
@@ -150,6 +164,10 @@ export function buildDashboardTools(): ToolDefinition[] {
         ...(typeof params.branch === "string" ? { branch: params.branch } : {}),
         ...(typeof params.baseBranch === "string"
           ? { baseBranch: params.baseBranch }
+          : {}),
+        ...(typeof params.model === "string" ? { model: params.model } : {}),
+        ...(typeof params.bridgePrompt === "string"
+          ? { bridgePrompt: params.bridgePrompt }
           : {}),
       });
       if (!r.ok) fail(r.error ?? "unknown");

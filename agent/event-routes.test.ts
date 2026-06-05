@@ -44,13 +44,25 @@ function makeFixture() {
 }
 
 describe("onEvent", () => {
-  it("appends a handler entry and dedupes by (match + fn body)", () => {
+  it("appends a handler entry and dedupes by scope + match + fn body", () => {
     const f = makeFixture();
     const h = () => {};
     onEvent(f.state, f.deps, { eventType: "click" }, h);
     onEvent(f.state, f.deps, { eventType: "click" }, h);
     expect(f.state.a2uiEventHandlers).toHaveLength(1);
     expect(f.state.registeredHandlerKeys.size).toBe(1);
+  });
+
+  it("allows the same handler body from different extensions", () => {
+    const f = makeFixture();
+    const h = () => {};
+    f.state.currentExtensionLoadScope = "user";
+    f.state.currentExtensionName = "one";
+    onEvent(f.state, f.deps, { eventType: "click" }, h);
+    f.state.currentExtensionName = "two";
+    onEvent(f.state, f.deps, { eventType: "click" }, h);
+    expect(f.state.a2uiEventHandlers).toHaveLength(2);
+    expect(f.state.registeredHandlerKeys.size).toBe(2);
   });
 
   it("ignores non-function handlers", () => {

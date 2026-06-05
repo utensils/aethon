@@ -132,7 +132,9 @@ see `applyOptimisticUpdate` in `A2UIRenderer.tsx`. Pointer helpers in
 - Primitive React components (`src/components/primitives/`) are
   re-exported through `src/components/builtins.tsx` and wired into a
   hardcoded 19-entry `PRIMITIVE_REGISTRY` in
-  `src/components/A2UIRenderer.tsx`. **Cannot be overridden by extensions.**
+  `src/components/A2UIRenderer.tsx`; `for-each` is handled inline by the
+  renderer, so agents see 20 non-overridable primitive types in total.
+  **Cannot be overridden by extensions.**
 - Everything else (chrome composites like `sidebar`, `chat-input`,
   `command-palette`, `terminal-panel`, `tab-strip`, `shell-canvas`, etc.)
   comes from `ExtensionRegistry`. Mount via `<RegistryComponent type="…" />`

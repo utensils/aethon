@@ -811,6 +811,10 @@ describe("unloadProjectExtensions", () => {
       entryPath: "/base/frontend.js",
       code: "extension.registerComponent('base', () => null)",
     });
+    f.state.extensionHighlightGrammars.set("base-lang", {
+      lang: "base-lang",
+      grammar: { scopeName: "source.base" },
+    });
     f.state.eventRoutingMode = "builtin";
     captureProjectExtensionBaseline(f.state);
     // Now layer some "project" registrations on top.
@@ -830,6 +834,10 @@ describe("unloadProjectExtensions", () => {
       entryPath: "/project/frontend.js",
       code: "extension.registerComponent('project', () => null)",
     });
+    f.state.extensionHighlightGrammars.set("project-lang", {
+      lang: "project-lang",
+      grammar: { scopeName: "source.project" },
+    });
     f.state.eventRoutingMode = "extension";
     f.state.loadedExtensions.set("foo", "project-directory");
     f.state.loadedExtensions.set("base-ext", "directory");
@@ -844,6 +852,9 @@ describe("unloadProjectExtensions", () => {
     expect([...f.state.extensionStateKeys]).toEqual(["/base"]);
     expect([...f.state.extensionFrontendModules.keys()]).toEqual([
       "base-module",
+    ]);
+    expect([...f.state.extensionHighlightGrammars.keys()]).toEqual([
+      "base-lang",
     ]);
     expect(f.state.eventRoutingMode).toBe("builtin");
     // loadedExtensions: project-directory entries dropped, others kept.
@@ -860,11 +871,18 @@ describe("unloadProjectExtensions", () => {
     expect(types).toContain("extension_layouts");
     expect(types).toContain("extension_event_routes");
     expect(types).toContain("extension_frontend_modules");
+    expect(types).toContain("extension_highlight_grammars");
     const frontendModulesMsg = f.sent.find(
       (m) => m.type === "extension_frontend_modules",
     );
     expect(frontendModulesMsg).toMatchObject({
       modules: [{ name: "base-module" }],
+    });
+    const grammarsMsg = f.sent.find(
+      (m) => m.type === "extension_highlight_grammars",
+    );
+    expect(grammarsMsg).toMatchObject({
+      grammars: [{ lang: "base-lang" }],
     });
     expect(f.writes()).toBe(1);
   });
@@ -923,6 +941,7 @@ describe("ProjectBaselineSnapshot type shape", () => {
       stateTree: {},
       stateKeys: [],
       frontendModules: new Map(),
+      highlightGrammars: new Map(),
       extensionLayout: undefined,
       pendingLayoutPatches: [],
     };

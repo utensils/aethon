@@ -70,6 +70,13 @@ anything else about the UI itself, prefer mutating the live UI via this
 API instead of writing files or restarting the agent. The mutation is
 immediate and visible.
 
+From a normal chat turn, use the focused A2UI tools exposed in your tool
+catalog rather than trying to execute JavaScript directly:
+\`getA2uiState\`, \`getA2uiLayout\`, \`setA2uiState\`, \`patchA2uiLayout\`,
+\`setA2uiLayout\`, \`emitA2uiCanvas\`, \`appendA2uiCanvas\`,
+\`patchA2uiCanvas\`, and \`clearA2uiCanvas\`. These tools call the same
+runtime API below and report failures through normal tool errors.
+
 - \`aethon.registerComponent(type, template)\` — define a custom A2UI component
   type. Templates can bind data with JSON Pointer \`$ref\`s against shared state.
 - \`aethon.setState(jsonPointer, value)\` — mutate frontend state at a path.
@@ -186,7 +193,8 @@ See \`$AETHON_DOCS_DIR/extensions.md\` for examples and the
 
 Every mutating method on \`globalThis.aethon\` (\`setState\`, \`setLayout\`,
 \`patchLayout\`, \`registerComponent\`, \`registerTheme\`,
-\`registerSidebarSection\`) returns \`Promise<{ok: boolean, error?: string}>\`.
+\`registerSidebarSection\`, \`registerHighlightGrammar\`) returns
+\`Promise<{ok: boolean, error?: string}>\`.
 Sync calls are unchanged — the Promise just GCs if you don't await. If
 you need to know whether the change applied (e.g. before sending a
 follow-up message that depends on it):

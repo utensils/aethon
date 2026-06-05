@@ -147,4 +147,7 @@ export interface RuntimeSnapshot {
   // size — useful for the agent to spot oversized modules; the actual
   // code body is NOT in the snapshot.
   frontendModules: { name: string; entryPath: string; bytes: number }[];
+  // Extension-registered TextMate grammars for the code primitive. The
+  // snapshot omits grammar bodies and keeps only compact metadata.
+  highlightGrammars: { lang: string; bytes: number }[];
 }

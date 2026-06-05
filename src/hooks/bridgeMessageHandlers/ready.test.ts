@@ -4,16 +4,24 @@ import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 import { makeEmptyTab } from "../../types/tab";
 import { defaultLayoutExtension } from "../../extensions/default-layout";
+import * as highlight from "../../utils/highlight";
 
 describe("handleReady", () => {
+  let grammarSpy: ReturnType<typeof vi.spyOn> | undefined;
+
   beforeEach(() => {
     installTauriMocks();
   });
   afterEach(() => {
+    grammarSpy?.mockRestore();
+    grammarSpy = undefined;
     clearTauriMocks();
   });
 
   it("hydrates extensions, sets layout, fills active model, and pushes ready status", () => {
+    grammarSpy = vi
+      .spyOn(highlight, "registerGrammar")
+      .mockImplementation(() => {});
     const { ctx, mocks, applySetState } = buildHandlerFixture({
       state: {
         activeTabId: "default",
@@ -51,6 +59,9 @@ describe("handleReady", () => {
         extensionEventRoutes: [],
         extensionLayouts: [],
         extensionFrontendModules: [],
+        extensionHighlightGrammars: [
+          { lang: "lean", grammar: { scopeName: "source.lean" } },
+        ],
         extensionStateKeys: [],
         extensionMenuItems: [],
         discoveredTabs: [],
@@ -87,6 +98,9 @@ describe("handleReady", () => {
       ],
     );
     expect(mocks.setLayout).toHaveBeenCalledTimes(1);
+    expect(grammarSpy).toHaveBeenCalledWith("lean", {
+      scopeName: "source.lean",
+    });
     const next = applySetState({
       activeTabId: "default",
       tabs: [{ id: "default", model: "" }],

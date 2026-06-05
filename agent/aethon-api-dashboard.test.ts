@@ -49,12 +49,20 @@ describe("buildTasksApi", () => {
       projectPath: "/repo",
       prompt: "build it",
       newWorktree: true,
+      model: "openai/gpt-5",
+      bridgePrompt: "hidden context",
     });
     const msg = sent.at(-1)!;
     expect(msg).toMatchObject({
       type: "dashboard_query",
       op: "start_task",
-      args: { projectPath: "/repo", prompt: "build it", newWorktree: true },
+      args: {
+        projectPath: "/repo",
+        prompt: "build it",
+        newWorktree: true,
+        model: "openai/gpt-5",
+        bridgePrompt: "hidden context",
+      },
     });
     // branch/baseBranch were omitted, so they must not appear in args.
     expect(msg.args).not.toHaveProperty("branch");

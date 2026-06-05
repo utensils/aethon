@@ -40,6 +40,7 @@ describe("getRuntimeSnapshot", () => {
     expect(snap.eventRoutingMode).toBe("builtin");
     expect(snap.layoutStructure).toBeNull();
     expect(snap.layoutSlots).toBeNull();
+    expect(snap.highlightGrammars).toEqual([]);
   });
 
   it("reflects loaded extensions, themes, components", () => {
@@ -51,10 +52,17 @@ describe("getRuntimeSnapshot", () => {
       vars: {},
     });
     state.extensionComponents.set("card-x", { type: "card" });
+    state.extensionHighlightGrammars.set("lean", {
+      lang: "lean",
+      grammar: { scopeName: "source.lean" },
+    });
     const snap = getRuntimeSnapshot(state);
     expect(snap.extensions).toEqual([{ name: "hello", source: "directory" }]);
     expect(snap.themes).toEqual([{ id: "twilight", label: "Twilight" }]);
     expect(snap.components).toEqual(["card-x"]);
+    expect(snap.highlightGrammars).toEqual([
+      { lang: "lean", bytes: JSON.stringify({ scopeName: "source.lean" }).length },
+    ]);
   });
 
   it("includes configured subagents", () => {
