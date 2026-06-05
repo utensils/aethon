@@ -11,6 +11,7 @@ import { getLocalHostId } from "./hosts";
 import { readState, writeState } from "./persist";
 import {
   type Worktree,
+  type WorktreeSortMode,
   worktreesForPersist,
 } from "./worktrees";
 
@@ -33,6 +34,8 @@ export interface Project {
   /** Default base passed to `git worktree add -b <branch> <path> <base>`.
    *  Missing / blank falls back to DEFAULT_WORKTREE_BASE_BRANCH. */
   worktreeBaseBranch?: string;
+  /** Worktree ordering for this project's nested sidebar rows. */
+  worktreeSortMode?: WorktreeSortMode;
 }
 
 export interface ProjectsState {
@@ -54,7 +57,7 @@ const FILE = "projects.json";
  *  (#159). The sidecar is read once on load and rewritten on save. */
 const ICONS_FILE = "project-icons.json";
 const MAX_PROJECTS = 16;
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 export const DEFAULT_WORKTREE_BASE_BRANCH = "origin/main";
 /** Fallback used when host_info IPC isn't reachable (tests, plain browser).
  *  Real boots resolve a stable id via `commands::host::host_info`. */
@@ -173,6 +176,10 @@ export function migrateProjects(
         p.worktreeBaseBranch.trim().length > 0
           ? p.worktreeBaseBranch.trim()
           : undefined,
+      worktreeSortMode:
+        p.worktreeSortMode === "manual" || p.worktreeSortMode === "newest"
+          ? p.worktreeSortMode
+          : "newest",
     }));
   const activeId =
     typeof parsed.activeId === "string" &&
@@ -313,6 +320,21 @@ export function setProjectWorktreeBaseBranch(
   return changed ? { ...state, projects } : state;
 }
 
+export function setProjectWorktreeSortMode(
+  state: ProjectsState,
+  projectId: string,
+  sortMode: WorktreeSortMode,
+): ProjectsState {
+  let changed = false;
+  const projects = state.projects.map((p) => {
+    if (p.id !== projectId) return p;
+    if (p.worktreeSortMode === sortMode) return p;
+    changed = true;
+    return { ...p, worktreeSortMode: sortMode };
+  });
+  return changed ? { ...state, projects } : state;
+}
+
 /** Add a directory as a project. If a project at the same path already
  *  exists, that entry is reused (lastUsed bumped) so the picker doesn't
  *  collect duplicates when the user re-opens a familiar directory. */
@@ -326,7 +348,12 @@ export function upsertProject(
   const now = Date.now();
   const resolvedHostId = hostId ?? state.activeHostId ?? FALLBACK_LOCAL_HOST_ID;
   if (existing) {
-    const updated: Project = { ...existing, lastUsed: now, hostId: existing.hostId ?? resolvedHostId };
+    const updated: Project = {
+      ...existing,
+      lastUsed: now,
+      hostId: existing.hostId ?? resolvedHostId,
+      worktreeSortMode: existing.worktreeSortMode ?? "newest",
+    };
     if (label && label !== existing.label) updated.label = label;
     const projects = [updated, ...state.projects.filter((p) => p.id !== existing.id)];
     return {
@@ -341,6 +368,7 @@ export function upsertProject(
     path,
     lastUsed: now,
     hostId: resolvedHostId,
+    worktreeSortMode: "newest",
   };
   const projects = [next, ...state.projects].slice(0, MAX_PROJECTS);
   return { state: { ...state, projects, activeId: id }, id };

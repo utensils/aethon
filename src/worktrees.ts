@@ -48,6 +48,9 @@ export interface Worktree {
   /** Short SHA at HEAD; populated by git_worktrees on each refresh. */
   head?: string;
   locked?: boolean;
+  /** Stable chronology for default sorting. Epoch ms; set by Rust when
+   *  available and first-seen by the frontend otherwise. */
+  createdAt?: number;
   /** User-renameable label; falls back to branch name in the UI. */
   label?: string;
   /** Pending-state machine; absent for fully-live worktrees. */
@@ -62,6 +65,23 @@ export interface GitWorktreeRecord {
   head: string | null;
   isMain: boolean;
   locked: boolean;
+  createdAt?: number | null;
+}
+
+export type WorktreeSortMode = "newest" | "manual";
+
+function createdAtFor(
+  existing: Worktree | undefined,
+  rec: GitWorktreeRecord,
+  now: number,
+): number | undefined {
+  if (typeof existing?.createdAt === "number" && Number.isFinite(existing.createdAt)) {
+    return existing.createdAt;
+  }
+  if (typeof rec.createdAt === "number" && Number.isFinite(rec.createdAt)) {
+    return rec.createdAt;
+  }
+  return now;
 }
 
 export interface GitBranchInfo {
@@ -81,6 +101,7 @@ export function reconcileWorktrees(
   projectId: string,
   prior: Worktree[],
   listing: GitWorktreeRecord[],
+  now = Date.now(),
 ): Worktree[] {
   const byPath = new Map<string, Worktree>();
   for (const w of prior) {
@@ -98,6 +119,7 @@ export function reconcileWorktrees(
         isMain: rec.isMain,
         head: rec.head ?? undefined,
         locked: rec.locked || undefined,
+        createdAt: createdAtFor(existing, rec, now),
       });
     } else {
       out.push({
@@ -108,6 +130,7 @@ export function reconcileWorktrees(
         isMain: rec.isMain,
         head: rec.head ?? undefined,
         locked: rec.locked || undefined,
+        createdAt: createdAtFor(existing, rec, now),
         label: existing?.label,
         // Live row — creation pendingState clears on reconcile.
       });
@@ -172,6 +195,46 @@ export function worktreesForPersist(list: Worktree[]): Worktree[] {
   return list.filter(
     (w) => !w.pendingState || w.pendingState === "failed",
   );
+}
+
+export function sortWorktreesNewestFirst(list: readonly Worktree[]): Worktree[] {
+  const main = list.filter((w) => w.isMain);
+  const extra = list
+    .filter((w) => !w.isMain)
+    .slice()
+    .sort((a, b) => {
+      const byCreated = (b.createdAt ?? 0) - (a.createdAt ?? 0);
+      if (byCreated !== 0) return byCreated;
+      return (a.label ?? a.branch ?? a.path).localeCompare(
+        b.label ?? b.branch ?? b.path,
+      );
+    });
+  return [...main, ...extra];
+}
+
+export function orderWorktreesForDisplay(
+  list: readonly Worktree[],
+  mode: WorktreeSortMode | undefined,
+): Worktree[] {
+  return mode === "manual" ? list.slice() : sortWorktreesNewestFirst(list);
+}
+
+export function reorderExtraWorktreeToIndex(
+  list: readonly Worktree[],
+  worktreeId: string,
+  toIndex: number,
+): Worktree[] | null {
+  if (!worktreeId || !Number.isFinite(toIndex)) return null;
+  const main = list.filter((w) => w.isMain);
+  const extra = list.filter((w) => !w.isMain);
+  const fromIndex = extra.findIndex((w) => w.id === worktreeId);
+  if (fromIndex < 0) return null;
+  const [moved] = extra.splice(fromIndex, 1);
+  const targetIndex = Math.max(0, Math.min(extra.length, Math.trunc(toIndex)));
+  extra.splice(targetIndex, 0, moved);
+  const next = [...main, ...extra];
+  const changed = next.some((w, index) => w.id !== list[index]?.id);
+  return changed ? next : null;
 }
 
 /* -------------------------------------------------------------------------- */

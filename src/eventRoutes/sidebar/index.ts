@@ -43,6 +43,8 @@ export {
   handleSidebarCancelPendingWorktree,
   handleSidebarRetryPendingWorktree,
   handleSidebarRenameWorktree,
+  handleSidebarReorderWorktree,
+  handleSidebarSortProjectWorktrees,
   handleSidebarOpenWorktreeInFinder,
   handleSidebarCopyWorktreePath,
 } from "./worktree";

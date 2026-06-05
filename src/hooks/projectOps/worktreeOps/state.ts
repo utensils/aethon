@@ -5,11 +5,15 @@ import {
   setProjectIconUrl as setProjectIconUrlState,
   setProjectUiExpanded,
   setProjectWorktreeBaseBranch as setProjectWorktreeBaseBranchState,
+  setProjectWorktreeSortMode,
   setProjectWorktrees,
   type ProjectsState,
 } from "../../../projects";
 import {
+  orderWorktreesForDisplay,
+  reorderExtraWorktreeToIndex,
   removeWorktreeFromList,
+  sortWorktreesNewestFirst,
   type Worktree,
 } from "../../../worktrees";
 import { projectScopeBucketKey } from "../tabBuckets";
@@ -194,6 +198,61 @@ export function setProjectWorktreeBaseBranch(
   );
   if (next === deps.projectsRef.current) return;
   deps.projectsRef.current = next;
+  void deps.persistProjects();
+}
+
+export function reorderWorktree(
+  deps: Pick<
+    StateMutationDeps,
+    "projectsRef" | "syncProjectsToState" | "persistProjects"
+  >,
+  projectId: string,
+  worktreeId: string,
+  toIndex: number,
+): void {
+  const prior = deps.projectsRef.current.worktreesByProject[projectId] ?? [];
+  const project = deps.projectsRef.current.projects.find(
+    (entry) => entry.id === projectId,
+  );
+  const displayOrder = orderWorktreesForDisplay(
+    prior,
+    project?.worktreeSortMode,
+  );
+  const reordered = reorderExtraWorktreeToIndex(
+    displayOrder,
+    worktreeId,
+    toIndex,
+  );
+  if (!reordered) return;
+  let next = setProjectWorktrees(
+    deps.projectsRef.current,
+    projectId,
+    reordered,
+  );
+  next = setProjectWorktreeSortMode(next, projectId, "manual");
+  deps.projectsRef.current = next;
+  deps.syncProjectsToState();
+  void deps.persistProjects();
+}
+
+export function sortProjectWorktreesNewest(
+  deps: Pick<
+    StateMutationDeps,
+    "projectsRef" | "syncProjectsToState" | "persistProjects"
+  >,
+  projectId: string,
+): void {
+  const prior = deps.projectsRef.current.worktreesByProject[projectId] ?? [];
+  const sorted = sortWorktreesNewestFirst(prior);
+  const changed = sorted.some((w, index) => w.id !== prior[index]?.id);
+  let next = deps.projectsRef.current;
+  if (changed) {
+    next = setProjectWorktrees(next, projectId, sorted);
+  }
+  next = setProjectWorktreeSortMode(next, projectId, "newest");
+  if (next === deps.projectsRef.current && !changed) return;
+  deps.projectsRef.current = next;
+  deps.syncProjectsToState();
   void deps.persistProjects();
 }
 

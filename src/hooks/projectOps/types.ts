@@ -142,6 +142,12 @@ export interface UseProjectOpsActions {
     projectId: string,
     baseBranch: string | null,
   ) => void;
+  reorderWorktree: (
+    projectId: string,
+    worktreeId: string,
+    toIndex: number,
+  ) => void;
+  sortProjectWorktreesNewest: (projectId: string) => void;
   fetchBranches: (projectId: string) => Promise<string[]>;
   findProjectOfWorktree: (
     worktreeId: string,

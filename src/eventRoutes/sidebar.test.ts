@@ -4,6 +4,8 @@ import {
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
   handleSidebarRemoveWorktree,
+  handleSidebarReorderWorktree,
+  handleSidebarSortProjectWorktrees,
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
   handleSidebarSetProjectWorktreeBase,
@@ -99,6 +101,38 @@ describe("handleSidebarRemoveWorktree", () => {
     expect(ctx.removeWorktreeById).toHaveBeenCalledWith("wt-1", {
       confirmed: true,
     });
+  });
+});
+
+describe("handleSidebarReorderWorktree", () => {
+  it("delegates manual worktree reordering to project ops", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarReorderWorktree(
+      {
+        component: { id: "sidebar" },
+        eventType: "reorder-worktree",
+        data: { projectId: "proj-1", worktreeId: "wt-1", toIndex: 0 },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.reorderWorktree).toHaveBeenCalledWith("proj-1", "wt-1", 0);
+  });
+});
+
+describe("handleSidebarSortProjectWorktrees", () => {
+  it("delegates newest-first sorting to project ops", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleSidebarSortProjectWorktrees(
+      {
+        component: { id: "sidebar" },
+        eventType: "sort-project-worktrees",
+        data: { projectId: "proj-1" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.sortProjectWorktreesNewest).toHaveBeenCalledWith("proj-1");
   });
 });
 

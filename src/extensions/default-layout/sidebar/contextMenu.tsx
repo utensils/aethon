@@ -76,6 +76,12 @@ export function useSidebarContextMenu(
       label: item.label,
       kind: kind.kind,
       extensionName: kind.extensionName,
+      hasExtraWorktrees:
+        kind.kind === "project" &&
+        Array.isArray((item as { worktrees?: unknown }).worktrees) &&
+        ((item as { worktrees?: unknown[] }).worktrees ?? []).filter(
+          (w) => !(w as { isMain?: boolean } | null)?.isMain,
+        ).length > 0,
     });
   };
 
@@ -191,6 +197,15 @@ export function useSidebarContextMenu(
     });
     close();
   };
+  const sortContextProjectWorktreesNewest = () => {
+    if (!contextMenu) return;
+    onEvent("sort-project-worktrees", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      projectId: contextMenu.itemId,
+    });
+    close();
+  };
   const openContextProjectInFinder = () => {
     if (!contextMenu) return;
     onEvent("open-project-in-finder", {
@@ -271,6 +286,7 @@ export function useSidebarContextMenu(
       createWorktreeForContextProject,
       editContextProjectWorktreeBase,
       submitContextProjectWorktreeBase,
+      sortContextProjectWorktreesNewest,
       openContextProjectInFinder,
       copyContextProjectPath,
       renameContextProject,

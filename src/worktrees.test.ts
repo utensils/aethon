@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   type Worktree,
   newPendingWorktree,
+  orderWorktreesForDisplay,
   reconcileWorktrees,
   removeWorktreeFromList,
+  reorderExtraWorktreeToIndex,
+  sortWorktreesNewestFirst,
   updateWorktreePendingState,
   worktreesForPersist,
 } from "./worktrees";
@@ -22,7 +25,7 @@ function wt(overrides: Partial<Worktree> = {}): Worktree {
 describe("reconcileWorktrees", () => {
   it("preserves id + label across reconciles by path", () => {
     const prior: Worktree[] = [
-      wt({ id: "stable-id", path: "/repo", label: "Stable" }),
+      wt({ id: "stable-id", path: "/repo", label: "Stable", createdAt: 10 }),
     ];
     const next = reconcileWorktrees("p1", prior, [
       {
@@ -37,6 +40,33 @@ describe("reconcileWorktrees", () => {
     expect(next[0].id).toBe("stable-id");
     expect(next[0].label).toBe("Stable");
     expect(next[0].head).toBe("abc");
+    expect(next[0].createdAt).toBe(10);
+  });
+
+  it("uses listing createdAt for new rows and first-seen time as fallback", () => {
+    const next = reconcileWorktrees(
+      "p1",
+      [],
+      [
+        {
+          path: "/repo",
+          branch: "main",
+          head: "abc",
+          isMain: true,
+          locked: false,
+          createdAt: 11,
+        },
+        {
+          path: "/repo-feat",
+          branch: "feat",
+          head: "def",
+          isMain: false,
+          locked: false,
+        },
+      ],
+      22,
+    );
+    expect(next.map((w) => w.createdAt)).toEqual([11, 22]);
   });
 
   it("clears creation pendingState when the worktree appears in listing", () => {
@@ -110,6 +140,50 @@ describe("reconcileWorktrees", () => {
     ]);
     expect(next[0].isMain).toBe(true);
     expect(next[1].isMain).toBe(false);
+  });
+});
+
+describe("worktree ordering", () => {
+  it("sorts extra worktrees newest-first while keeping main first", () => {
+    const list = [
+      wt({ id: "main", path: "/repo", isMain: true, createdAt: 1 }),
+      wt({ id: "old", path: "/old", isMain: false, createdAt: 10 }),
+      wt({ id: "new", path: "/new", isMain: false, createdAt: 20 }),
+    ];
+    expect(sortWorktreesNewestFirst(list).map((w) => w.id)).toEqual([
+      "main",
+      "new",
+      "old",
+    ]);
+  });
+
+  it("uses manual display order when requested", () => {
+    const list = [
+      wt({ id: "main", path: "/repo", isMain: true, createdAt: 1 }),
+      wt({ id: "old", path: "/old", isMain: false, createdAt: 10 }),
+      wt({ id: "new", path: "/new", isMain: false, createdAt: 20 }),
+    ];
+    expect(orderWorktreesForDisplay(list, "manual").map((w) => w.id)).toEqual([
+      "main",
+      "old",
+      "new",
+    ]);
+    expect(orderWorktreesForDisplay(list, "newest").map((w) => w.id)).toEqual([
+      "main",
+      "new",
+      "old",
+    ]);
+  });
+
+  it("reorders only extra worktrees", () => {
+    const list = [
+      wt({ id: "main", path: "/repo", isMain: true }),
+      wt({ id: "a", path: "/a", isMain: false }),
+      wt({ id: "b", path: "/b", isMain: false }),
+      wt({ id: "c", path: "/c", isMain: false }),
+    ];
+    const next = reorderExtraWorktreeToIndex(list, "c", 0);
+    expect(next?.map((w) => w.id)).toEqual(["main", "c", "a", "b"]);
   });
 });
 

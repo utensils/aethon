@@ -6,6 +6,7 @@ import {
   removeProject,
   setActiveWorktree,
   setProjectWorktreeBaseBranch,
+  setProjectWorktreeSortMode,
   setProjectUiExpanded,
   setProjectWorktrees,
   upsertProject,
@@ -85,6 +86,27 @@ describe("migrateProjects", () => {
     expect(out.activeId).toBe("a");
     expect(out.activeWorktreeId).toBeNull();
     expect(out.worktreesByProject).toEqual({});
+    expect(out.projects[0].worktreeSortMode).toBe("newest");
+  });
+
+  it("preserves manual worktree sort mode", () => {
+    const v4 = {
+      schemaVersion: 4,
+      projects: [
+        {
+          id: "a",
+          label: "aethon",
+          path: "/Users/example/aethon",
+          lastUsed: 1,
+          worktreeSortMode: "manual" as const,
+        },
+      ],
+      activeId: "a",
+      activeWorktreeId: null,
+      worktreesByProject: {},
+    };
+    const out = migrateProjects(v4);
+    expect(out.projects[0].worktreeSortMode).toBe("manual");
   });
 
   it("stamps localHostId onto v2 entries during v2->v3 migration", () => {
@@ -247,5 +269,14 @@ describe("setProjectWorktreeBaseBranch", () => {
 
     const blank = setProjectWorktreeBaseBranch(state, target.id, " ");
     expect(blank.projects.find((p) => p.id === target.id)?.worktreeBaseBranch).toBeUndefined();
+  });
+});
+
+describe("setProjectWorktreeSortMode", () => {
+  it("stores the requested worktree sort mode", () => {
+    const state = stateWithProjects();
+    const project = state.projects[0];
+    const next = setProjectWorktreeSortMode(state, project.id, "manual");
+    expect(next.projects[0].worktreeSortMode).toBe("manual");
   });
 });

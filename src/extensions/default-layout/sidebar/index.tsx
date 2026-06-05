@@ -11,7 +11,7 @@
  * `extensionToggleState` live in `menuItems.ts` as pure data.
  */
 
-import { Fragment, useCallback, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -313,10 +313,191 @@ function SidebarSectionBlock({
   renamingWorktreeId,
   onRenameWorktreeEnd,
 }: SidebarSectionBlockProps) {
+  const [draggingWorktreeId, setDraggingWorktreeId] = useState<string | null>(
+    null,
+  );
+  const [dropIndicator, setDropIndicator] = useState<{
+    worktreeId: string;
+    side: "before" | "after";
+  } | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const pendingPointerDragRef = useRef<{
+    projectId: string;
+    worktreeId: string;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const suppressionClearTimerRef = useRef<number | null>(null);
   const actions = section.actions ?? [];
   const isProjects = section.id === "projects";
   const isExtensionsSection =
     section.id === "extensions" || section.id === "extensions-user";
+
+  const finishWorktreeDrag = () => {
+    setDraggingWorktreeId(null);
+    setDropIndicator(null);
+    setDragOffsetY(0);
+  };
+
+  const worktreeElementsForDrop = (
+    root: HTMLElement,
+    projectId: string,
+    draggedWorktreeId: string,
+  ) =>
+    Array.from(
+      root.querySelectorAll<HTMLElement>(".ae-worktree-row[data-worktree-id]"),
+    ).filter(
+      (el) =>
+        el.dataset.projectId === projectId &&
+        el.dataset.worktreeId !== draggedWorktreeId,
+    );
+
+  const insertionIndexForWorktreeDrop = (
+    root: HTMLElement,
+    projectId: string,
+    draggedWorktreeId: string,
+    clientY: number,
+  ) => {
+    const rows = worktreeElementsForDrop(root, projectId, draggedWorktreeId);
+    for (let index = 0; index < rows.length; index += 1) {
+      const rect = rows[index].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) return index;
+    }
+    return rows.length;
+  };
+
+  const showWorktreeDropIndicator = (
+    root: HTMLElement,
+    projectId: string,
+    draggedWorktreeId: string,
+    clientY: number,
+  ) => {
+    const rows = worktreeElementsForDrop(root, projectId, draggedWorktreeId);
+    if (rows.length === 0) {
+      setDropIndicator(null);
+      return;
+    }
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        const worktreeId = row.dataset.worktreeId;
+        if (worktreeId) setDropIndicator({ worktreeId, side: "before" });
+        return;
+      }
+    }
+    const worktreeId = rows[rows.length - 1].dataset.worktreeId;
+    if (worktreeId) setDropIndicator({ worktreeId, side: "after" });
+  };
+
+  const clearSuppressionSoon = () => {
+    if (suppressionClearTimerRef.current !== null) {
+      window.clearTimeout(suppressionClearTimerRef.current);
+    }
+    suppressionClearTimerRef.current = window.setTimeout(() => {
+      suppressNextClickRef.current = false;
+      suppressionClearTimerRef.current = null;
+    }, 0);
+  };
+
+  useEffect(
+    () => () => {
+      pointerCleanupRef.current?.();
+      pointerCleanupRef.current = null;
+      if (suppressionClearTimerRef.current !== null) {
+        window.clearTimeout(suppressionClearTimerRef.current);
+        suppressionClearTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const startWorktreeDrag = (
+    event: React.PointerEvent<HTMLElement>,
+    item: WorktreeSidebarItem,
+  ) => {
+    if (!isProjects || item.isMain || event.button !== 0) return;
+    if (!item.projectId) return;
+    const target = event.target as HTMLElement;
+    if (
+      target.closest("button") ||
+      target.closest("input") ||
+      target.closest(".ae-worktree-rename-input")
+    ) {
+      return;
+    }
+    const root = event.currentTarget.closest(".a2ui-sidebar-list");
+    if (!(root instanceof HTMLElement)) return;
+    pointerCleanupRef.current?.();
+    pendingPointerDragRef.current = {
+      projectId: item.projectId,
+      worktreeId: item.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const pending = pendingPointerDragRef.current;
+      if (!pending) return;
+      const dx = moveEvent.clientX - pending.startX;
+      const dy = moveEvent.clientY - pending.startY;
+      if (!pending.dragging && Math.hypot(dx, dy) < 4) return;
+      if (!pending.dragging) {
+        pending.dragging = true;
+        suppressNextClickRef.current = true;
+        setDraggingWorktreeId(pending.worktreeId);
+      }
+      moveEvent.preventDefault();
+      setDragOffsetY(dy);
+      showWorktreeDropIndicator(
+        root,
+        pending.projectId,
+        pending.worktreeId,
+        moveEvent.clientY,
+      );
+    };
+
+    const onUp = (upEvent: PointerEvent) => {
+      const pending = pendingPointerDragRef.current;
+      const wasDragging = pending?.dragging;
+      if (pending && wasDragging) {
+        upEvent.preventDefault();
+        const toIndex = insertionIndexForWorktreeDrop(
+          root,
+          pending.projectId,
+          pending.worktreeId,
+          upEvent.clientY,
+        );
+        onEvent("reorder-worktree", {
+          sectionId: section.id,
+          projectId: pending.projectId,
+          worktreeId: pending.worktreeId,
+          toIndex,
+        });
+      }
+      pointerCleanupRef.current?.();
+      pointerCleanupRef.current = null;
+      pendingPointerDragRef.current = null;
+      if (wasDragging) clearSuppressionSoon();
+      finishWorktreeDrag();
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+    pointerCleanupRef.current = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
+  };
+
+  const consumeSuppressedWorktreeClick = () => {
+    if (!suppressNextClickRef.current) return false;
+    suppressNextClickRef.current = false;
+    return true;
+  };
   return (
     <div
       className={[
@@ -441,6 +622,15 @@ function SidebarSectionBlock({
                         onItemContextMenu={openWorktreeContextMenu}
                         renaming={renamingWorktreeId === wt.id}
                         onRenameEnd={onRenameWorktreeEnd}
+                        dragging={draggingWorktreeId === wt.id}
+                        dropSide={
+                          dropIndicator?.worktreeId === wt.id
+                            ? dropIndicator.side
+                            : undefined
+                        }
+                        dragOffsetY={dragOffsetY}
+                        onPointerDragStart={startWorktreeDrag}
+                        consumeSuppressedClick={consumeSuppressedWorktreeClick}
                       />
                     ))
                   : null}

@@ -222,6 +222,35 @@ export const handleSidebarRenameWorktree: EventRouteHandler = (
   return true;
 };
 
+export const handleSidebarReorderWorktree: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "reorder-worktree") return false;
+  const payload =
+    (data as
+      | { projectId?: string; worktreeId?: string; toIndex?: number }
+      | undefined) ?? {};
+  if (
+    payload.projectId &&
+    payload.worktreeId &&
+    typeof payload.toIndex === "number"
+  ) {
+    ctx.reorderWorktree(payload.projectId, payload.worktreeId, payload.toIndex);
+  }
+  return true;
+};
+
+export const handleSidebarSortProjectWorktrees: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "sort-project-worktrees") return false;
+  const projectId = (data as { projectId?: string } | undefined)?.projectId;
+  if (projectId) ctx.sortProjectWorktreesNewest(projectId);
+  return true;
+};
+
 export const handleSidebarOpenWorktreeInFinder: EventRouteHandler = async (
   { eventType, data },
   ctx,

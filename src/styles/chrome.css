@@ -1296,6 +1296,45 @@ body.ae-resizing-sidebar .a2ui-layout {
 .ae-worktree-row:hover {
   color: var(--text);
 }
+.ae-worktree-row--dragging {
+  z-index: var(--z-elevated);
+  color: var(--text);
+  background: var(--bg-active);
+  opacity: 0.94;
+  transform: translate3d(0, var(--ae-worktree-drag-y, 0px), 0);
+  box-shadow:
+    0 0 0 1px var(--border-hover),
+    var(--shadow-2);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform 0ms linear;
+}
+.ae-worktree-row-drop-before,
+.ae-worktree-row-drop-after {
+  background: var(--accent-hover-tint);
+}
+.ae-worktree-row-drop-before::after,
+.ae-worktree-row-drop-after::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--ae-sb-indent) - 2px);
+  right: var(--space-3);
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  pointer-events: none;
+  z-index: 1;
+}
+.ae-worktree-row-drop-before::after {
+  top: -1px;
+}
+.ae-worktree-row-drop-after::after {
+  bottom: -1px;
+}
 .ae-worktree-row:hover::before,
 .ae-worktree-row.a2ui-sidebar-item-active::before {
   background: var(--accent);
@@ -1323,6 +1362,84 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 .ae-worktree-branch {
   margin-left: auto;
+}
+.ae-worktree-pr-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 58px;
+  min-width: 58px;
+  margin-left: var(--space-1);
+}
+.ae-worktree-pr-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  max-width: 58px;
+  min-width: 0;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elev);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ae-worktree-pr-chip:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+.ae-worktree-pr-chip--open {
+  border-color: var(--state-info-border, var(--border-hover));
+  color: var(--state-info-fg, var(--text));
+}
+.ae-worktree-pr-chip--draft,
+.ae-worktree-pr-chip--closed {
+  color: var(--text-dim);
+}
+.ae-worktree-pr-chip--merged {
+  border-color: var(--state-success-border, var(--border-hover));
+  color: var(--state-success-fg, var(--success));
+}
+.ae-worktree-pr-chip--stale {
+  border-color: color-mix(in oklab, var(--warn) 42%, var(--border));
+  color: var(--warn);
+}
+.ae-worktree-pr-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-worktree-pr-ci {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+.ae-worktree-pr-ci--success {
+  background: var(--state-success-fg, var(--success));
+}
+.ae-worktree-pr-ci--failure {
+  background: var(--error);
+}
+.ae-worktree-pr-ci--pending {
+  background: var(--warn);
+  animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
+}
+.ae-worktree-pr-ci--neutral {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-worktree-pr-ci--pending {
+    animation: none;
+  }
 }
 .ae-worktree-rename-input {
   flex: 1 1 auto;
@@ -2338,8 +2455,8 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-shrink: 0;
 }
 .ae-pr-merged {
-  background: rgba(140, 82, 255, 0.15);
-  color: #b58aff;
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
 }
 .ae-pr-open {
   background: rgba(46, 160, 67, 0.15);
@@ -7812,9 +7929,9 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
 }
 .ae-vcs-chip.is-merged {
-  background: rgba(140, 82, 255, 0.15);
-  color: #b58aff;
-  border-color: rgba(140, 82, 255, 0.35);
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
 }
 .ae-vcs-chip.is-muted {
   color: var(--text-dim);
@@ -7976,9 +8093,9 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary);
 }
 .ae-scm-badge.is-merged {
-  background: rgba(140, 82, 255, 0.15);
-  color: #b58aff;
-  border-color: rgba(140, 82, 255, 0.35);
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
 }
 .ae-scm-badge.is-muted {
   color: var(--text-dim);
