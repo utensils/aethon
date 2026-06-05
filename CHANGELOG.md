@@ -4,6 +4,28 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.8.0](https://github.com/utensils/aethon/compare/v0.7.0...v0.8.0) (2026-06-05)
+
+
+### Features
+
+* surface worktree PR status and ordering ([#235](https://github.com/utensils/aethon/issues/235)) ([706db32](https://github.com/utensils/aethon/commit/706db3227ca717d5807b17ed871e134ba3092306))
+* **tabs:** support drag reorder for sessions and shells ([#224](https://github.com/utensils/aethon/issues/224)) ([f0fb74f](https://github.com/utensils/aethon/commit/f0fb74fc9e13e0a6276d9578ddd790e5c447a435))
+
+
+### Bug Fixes
+
+* **agent:** expose A2UI runtime tools ([b98d3ca](https://github.com/utensils/aethon/commit/b98d3ca4d212cdec526794ea5b1b3b9e360b80bf))
+* **agent:** keep sidebar activity running for live tool cards ([#225](https://github.com/utensils/aethon/issues/225)) ([2644efd](https://github.com/utensils/aethon/commit/2644efd8b2aba2fe434752e18730eacc7adf26df))
+* **chat:** keep normal submits queued during running tool calls ([#227](https://github.com/utensils/aethon/issues/227)) ([0c1d9c5](https://github.com/utensils/aethon/commit/0c1d9c5d5844092ad58107a64f0a8cdbf2316708))
+* **context:** distinguish live estimates in context meter ([cf6affd](https://github.com/utensils/aethon/commit/cf6affd86e3724600ee6c22f51d8c905b6165c59))
+* keep host sessions scoped and closed ([#240](https://github.com/utensils/aethon/issues/240)) ([164a419](https://github.com/utensils/aethon/commit/164a4196f869229dae42e98462c0cf773b91b1f5))
+* **settings:** open config.toml in host editor tab ([#237](https://github.com/utensils/aethon/issues/237)) ([1e4d5c8](https://github.com/utensils/aethon/commit/1e4d5c875c66e450416ff7595de4f0eab7292c2c))
+* **ui:** refresh worktree PR badges ([43438be](https://github.com/utensils/aethon/commit/43438be511328b79f773759fc1a48a6b20592cc7))
+* **update-banner:** honor accent foreground fallbacks ([31c62ff](https://github.com/utensils/aethon/commit/31c62ff1597127259789a446fbaa3717ee109566)), closes [#230](https://github.com/utensils/aethon/issues/230)
+* use pointer-driven tab reordering ([4216d6e](https://github.com/utensils/aethon/commit/4216d6efd0ba3962fa02e7224b6cfc7e5d656e2d))
+* **worktrees:** remove worktrees optimistically ([cec4037](https://github.com/utensils/aethon/commit/cec40371f74049188b6a4d8a5f6575ccb0e2ecdd))
+
 ## [0.7.0](https://github.com/utensils/aethon/compare/v0.6.0...v0.7.0) (2026-06-03)
 
 
