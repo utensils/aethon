@@ -1,7 +1,7 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Tab } from "../types/tab";
-import { closeRunningToolCards } from "../utils/agentBusy";
+import { closeRunningToolCards, hasRunningToolCard } from "../utils/agentBusy";
 import { TAB_MIRROR_KEYS } from "./useTabs";
 
 export const AGENT_ACTIVITY_HYDRATION_RETRY_DELAYS_MS = [
@@ -40,32 +40,45 @@ export function hydrateAgentActivityState(
   const tabs = (state.tabs as Tab[] | undefined) ?? [];
   if (tabs.length === 0) return state;
 
-  const livePromptByTabId = new Map<string, boolean>();
+  const promptByTabId = new Map<string, boolean>();
   for (const row of diagnostics) {
-    if (row.alive === false) continue;
     const tabId = diagnosticTabId(row);
     if (!tabId) continue;
-    livePromptByTabId.set(
+    const promptInFlight = row.alive !== false && diagnosticPromptInFlight(row);
+    promptByTabId.set(
       tabId,
-      (livePromptByTabId.get(tabId) ?? false) ||
-        diagnosticPromptInFlight(row),
+      (promptByTabId.get(tabId) ?? false) || promptInFlight,
     );
   }
+  const runningTabs =
+    (state.agentRunningTabs as Record<string, true> | undefined) ?? {};
+  const anyPromptInFlight = [...promptByTabId.values()].some(Boolean);
   let tabChanged = false;
   const endedAt = Date.now();
   const nextTabs = tabs.map((tab) => {
     if ((tab.kind ?? "agent") !== "agent") return tab;
-    const hasDiagnostic = livePromptByTabId.has(tab.id);
-    const nextWaiting = hasDiagnostic
-      ? livePromptByTabId.get(tab.id) === true
-      : false;
-    const stoppedTools = nextWaiting
-      ? { messages: tab.messages, changed: false }
-      : closeRunningToolCards(tab.messages, {
+    const hasDiagnostic = promptByTabId.has(tab.id);
+    const runningTool = hasRunningToolCard(tab.messages);
+    const diagnosticsAbsent = diagnostics.length === 0;
+    const preserveUnknownBusyState =
+      !hasDiagnostic &&
+      !diagnosticsAbsent &&
+      anyPromptInFlight &&
+      runningTabs[tab.id] === true &&
+      (tab.waiting || runningTool);
+    const nextWaiting = preserveUnknownBusyState
+      ? true
+      : hasDiagnostic
+        ? promptByTabId.get(tab.id) === true
+        : false;
+    const shouldStopTools = !nextWaiting;
+    const stoppedTools = shouldStopTools
+      ? closeRunningToolCards(tab.messages, {
           endedAt,
           notice:
             "No live prompt is running. This tool was marked stopped after reload.",
-        });
+        })
+      : { messages: tab.messages, changed: false };
     if (tab.waiting === nextWaiting && !stoppedTools.changed) return tab;
     tabChanged = true;
     return { ...tab, waiting: nextWaiting, messages: stoppedTools.messages };

@@ -232,17 +232,7 @@ pub(crate) fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> 
     Ok(())
 }
 
-pub(crate) fn route_payload_key(
-    state: &State<'_, AgentProcesses>,
-    payload: &serde_json::Value,
-) -> String {
-    if payload.get("type").and_then(|v| v.as_str()) == Some("mutation_ack")
-        && let Some(mutation_id) = payload.get("mutationId").and_then(|v| v.as_str())
-        && let Ok(mut routes) = state.mutation_routes.lock()
-        && let Some(key) = routes.remove(mutation_id)
-    {
-        return key;
-    }
+fn route_payload_key_without_mutation(payload: &serde_json::Value) -> String {
     let tab_scoped = matches!(
         payload.get("type").and_then(|v| v.as_str()),
         Some(
@@ -266,12 +256,26 @@ pub(crate) fn route_payload_key(
     GLOBAL_AGENT_KEY.to_string()
 }
 
+pub(crate) fn route_payload_key(
+    state: &State<'_, AgentProcesses>,
+    payload: &serde_json::Value,
+) -> String {
+    if payload.get("type").and_then(|v| v.as_str()) == Some("mutation_ack")
+        && let Some(mutation_id) = payload.get("mutationId").and_then(|v| v.as_str())
+        && let Ok(mut routes) = state.mutation_routes.lock()
+        && let Some(key) = routes.remove(mutation_id)
+    {
+        return key;
+    }
+    route_payload_key_without_mutation(payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         Arc, GLOBAL_AGENT_KEY, HashMap, HashSet, Instant, Mutex, WorkerMeta, idle_keys_to_retire,
-        keys_to_reconcile, payload_starts_prompt, should_retire_idle, tab_agent_key,
-        touch_worker_activity,
+        keys_to_reconcile, payload_starts_prompt, route_payload_key_without_mutation,
+        should_retire_idle, tab_agent_key, touch_worker_activity,
     };
     use std::time::Duration;
 
@@ -407,6 +411,37 @@ mod tests {
     #[test]
     fn tab_agent_key_keeps_tab_prefix() {
         assert_eq!(tab_agent_key("abc"), "tab:abc");
+    }
+
+    #[test]
+    fn tab_scoped_chats_route_to_distinct_workers() {
+        let first = route_payload_key_without_mutation(&serde_json::json!({
+            "type": "chat",
+            "tabId": "tab-a",
+        }));
+        let second = route_payload_key_without_mutation(&serde_json::json!({
+            "type": "chat",
+            "tabId": "tab-b",
+        }));
+
+        assert_eq!(first, tab_agent_key("tab-a"));
+        assert_eq!(second, tab_agent_key("tab-b"));
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn default_and_unscoped_payloads_route_to_global_worker() {
+        assert_eq!(
+            route_payload_key_without_mutation(&serde_json::json!({
+                "type": "chat",
+                "tabId": "default",
+            })),
+            GLOBAL_AGENT_KEY
+        );
+        assert_eq!(
+            route_payload_key_without_mutation(&serde_json::json!({ "type": "report" })),
+            GLOBAL_AGENT_KEY
+        );
     }
 
     #[test]
