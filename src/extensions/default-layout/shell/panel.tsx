@@ -100,6 +100,7 @@ export function TerminalPanel({
     dragging: boolean;
   } | null>(null);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const suppressionClearTimerRef = useRef<number | null>(null);
   const suppressNextClickRef = useRef(false);
   // Resolve via the shared helper so the focus-aware Cmd+W path in
   // useKeyboardShortcuts sees the same active sub-tab the user does.
@@ -166,10 +167,24 @@ export function TerminalPanel({
     finishSubTabDrag();
   };
 
+  const clearSuppressionSoon = () => {
+    if (suppressionClearTimerRef.current !== null) {
+      window.clearTimeout(suppressionClearTimerRef.current);
+    }
+    suppressionClearTimerRef.current = window.setTimeout(() => {
+      suppressNextClickRef.current = false;
+      suppressionClearTimerRef.current = null;
+    }, 0);
+  };
+
   useEffect(
     () => () => {
       pointerCleanupRef.current?.();
       pointerCleanupRef.current = null;
+      if (suppressionClearTimerRef.current !== null) {
+        window.clearTimeout(suppressionClearTimerRef.current);
+        suppressionClearTimerRef.current = null;
+      }
     },
     [],
   );
@@ -223,6 +238,7 @@ export function TerminalPanel({
       pointerCleanupRef.current?.();
       pointerCleanupRef.current = null;
       pendingPointerDragRef.current = null;
+      if (wasDragging) clearSuppressionSoon();
       if (!wasDragging) finishSubTabDrag();
     };
 

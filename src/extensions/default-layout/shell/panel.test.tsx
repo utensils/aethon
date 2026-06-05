@@ -279,6 +279,48 @@ describe("TerminalPanel", () => {
     });
   });
 
+  it("does not let drag click suppression leak into the next real sub-tab click", () => {
+    vi.useFakeTimers();
+    try {
+      const onEvent = vi.fn();
+      render(
+        <TerminalPanel
+          component={panelComponent()}
+          state={{
+            activeTabId: OVERVIEW_TAB_ID,
+            tabs: [
+              { id: "sh-1", kind: "shell", label: "Shell 1" },
+              { id: "sh-2", kind: "shell", label: "Shell 2" },
+            ],
+            terminalPanel: { activeSubId: "sh-1" },
+          }}
+          onEvent={onEvent}
+        />,
+      );
+      const shell1 = screen.getByText("Shell 1").closest('[role="tab"]')!;
+      const shell2 = screen.getByText("Shell 2").closest('[role="tab"]')!;
+      setRect(shell1, { left: 0, width: 100 });
+
+      fireEvent.pointerDown(shell2, { button: 0, clientX: 120, clientY: 8 });
+      fireEvent.pointerMove(document, { clientX: 10, clientY: 8 });
+      fireEvent.pointerUp(document, { clientX: 10, clientY: 8 });
+      expect(onEvent).toHaveBeenCalledWith("reorder-sub-tab", {
+        subTabId: "sh-2",
+        toIndex: 0,
+      });
+
+      onEvent.mockClear();
+      vi.runOnlyPendingTimers();
+      fireEvent.click(shell1);
+
+      expect(onEvent).toHaveBeenCalledWith("select-sub-tab", {
+        subTabId: "sh-1",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps Agent bash pinned and only shell tabs draggable", () => {
     render(
       <TerminalPanel

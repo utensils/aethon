@@ -108,6 +108,7 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     dragging: boolean;
   } | null>(null);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const suppressionClearTimerRef = useRef<number | null>(null);
   const suppressNextClickRef = useRef(false);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
@@ -223,10 +224,24 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
     finishTabDrag();
   };
 
+  const clearSuppressionSoon = () => {
+    if (suppressionClearTimerRef.current !== null) {
+      window.clearTimeout(suppressionClearTimerRef.current);
+    }
+    suppressionClearTimerRef.current = window.setTimeout(() => {
+      suppressNextClickRef.current = false;
+      suppressionClearTimerRef.current = null;
+    }, 0);
+  };
+
   useEffect(
     () => () => {
       pointerCleanupRef.current?.();
       pointerCleanupRef.current = null;
+      if (suppressionClearTimerRef.current !== null) {
+        window.clearTimeout(suppressionClearTimerRef.current);
+        suppressionClearTimerRef.current = null;
+      }
     },
     [],
   );
@@ -286,6 +301,7 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
       pointerCleanupRef.current?.();
       pointerCleanupRef.current = null;
       pendingPointerDragRef.current = null;
+      if (wasDragging) clearSuppressionSoon();
       if (!wasDragging) finishTabDrag();
     };
 
