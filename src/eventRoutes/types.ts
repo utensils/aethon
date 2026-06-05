@@ -146,6 +146,7 @@ export interface EventRouteContext {
   activateLayoutById: (id: string) => void;
   openProjectFromPicker: () => Promise<string | null>;
   setActiveProjectById: (id: string) => void;
+  clearActiveProject: () => void;
   removeProjectById: (id: string) => boolean;
   /** Switch the active host (HOSTS sidebar section). Clearing the active
    *  project is the responsibility of the caller chain; this just

@@ -19,12 +19,12 @@ Sections:
 - **Voice** — toggle and hold-to-record hotkeys.
 - **Updater** — stable/nightly channel and background-check toggle.
 - **Nix devshell** — detection mode, cache lifetime, lockfile refresh, and manual refresh.
-- **Advanced** — extension state payload limits.
+- **Advanced** — extension state payload limits and layout reset.
 
 Two convenience buttons live at the bottom:
 
-- **Open `config.toml`** — reveals the file in your default editor for
-  power-user edits.
+- **Open `config.toml`** — opens `~/.aethon/config.toml` in Aethon's
+  in-app Monaco editor for power-user edits.
 - **Reset to defaults** — clears every key Aethon manages. Doesn't
   delete the file (it stays for any keys you've added by hand) — only
   the Aethon-managed sections are reset.

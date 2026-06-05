@@ -901,6 +901,7 @@ export default function App() {
     activateLayoutById,
     openProjectFromPicker,
     setActiveProjectById,
+    clearActiveProject,
     removeProjectById,
     setActiveHost: (id) => {
       hostInfo.setActiveHost(id);

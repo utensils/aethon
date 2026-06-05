@@ -51,6 +51,32 @@ export const handleSettings: EventRouteHandler = (
       });
     return true;
   }
+  if (eventType === "open-config-file") {
+    void ctx
+      .invoke("aethon_home_dir")
+      .then(async (dir) => {
+        if (typeof dir !== "string" || dir.length === 0) {
+          throw new Error("Aethon directory unavailable");
+        }
+        const fileName = "config.toml";
+        const existing = await ctx.invoke("read_state", { name: fileName });
+        if (typeof existing !== "string" || existing.length === 0) {
+          await ctx.invoke("write_state", { name: fileName, content: "" });
+        }
+        ctx.clearActiveProject();
+        ctx.newEditorTab(`${dir}/${fileName}`, { rootPath: dir });
+        ctx.closeSettings();
+      })
+      .catch((err: unknown) => {
+        ctx.pushNotification({
+          title: "Open config.toml failed",
+          message: String(err),
+          kind: "error",
+          durationMs: 6000,
+        });
+      });
+    return true;
+  }
   if (eventType === "open-system-prompt") {
     void ctx
       .invoke("aethon_home_dir")
