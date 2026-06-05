@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Buffer } from "node:buffer";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,6 +41,7 @@ describe("getRuntimeSnapshot", () => {
     expect(snap.eventRoutingMode).toBe("builtin");
     expect(snap.layoutStructure).toBeNull();
     expect(snap.layoutSlots).toBeNull();
+    expect(snap.highlightGrammars).toEqual([]);
   });
 
   it("reflects loaded extensions, themes, components", () => {
@@ -51,10 +53,41 @@ describe("getRuntimeSnapshot", () => {
       vars: {},
     });
     state.extensionComponents.set("card-x", { type: "card" });
+    state.extensionHighlightGrammars.set("lean", {
+      lang: "lean",
+      grammar: { scopeName: "source.lean" },
+    });
+    state.extensionHighlightGrammars.set("unicode", {
+      lang: "unicode",
+      grammar: { scopeName: "source.é" },
+    });
+    const circular: Record<string, unknown> = { scopeName: "source.circular" };
+    circular.self = circular;
+    state.extensionHighlightGrammars.set("circular", {
+      lang: "circular",
+      grammar: circular,
+    });
     const snap = getRuntimeSnapshot(state);
     expect(snap.extensions).toEqual([{ name: "hello", source: "directory" }]);
     expect(snap.themes).toEqual([{ id: "twilight", label: "Twilight" }]);
     expect(snap.components).toEqual(["card-x"]);
+    expect(snap.highlightGrammars).toEqual([
+      {
+        lang: "lean",
+        bytes: Buffer.byteLength(
+          JSON.stringify({ scopeName: "source.lean" }),
+          "utf8",
+        ),
+      },
+      {
+        lang: "unicode",
+        bytes: Buffer.byteLength(
+          JSON.stringify({ scopeName: "source.é" }),
+          "utf8",
+        ),
+      },
+      { lang: "circular", bytes: 0 },
+    ]);
   });
 
   it("includes configured subagents", () => {

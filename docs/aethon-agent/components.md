@@ -37,11 +37,11 @@ handler because the dispatcher matches `type: "sidebar"`. The same
 holds for any registered override — preserve the canonical type and
 the wiring works; the id is yours to choose.
 
-The 19 primitives (`text`, `heading`, `paragraph`, `code`, `card`,
+The 20 primitives (`text`, `heading`, `paragraph`, `code`, `card`,
 `container`, `divider`, `button`, `text-input`, `date-picker`,
 `select`, `checkbox`, `slider`, `table`, `list`, `image`, `icon`,
-`form`, `form-field`) are intentionally NOT overridable — they are the
-substrate composites are built from.
+`form`, `form-field`, `for-each`) are intentionally NOT overridable —
+they are the substrate that composites are built from.
 
 ## Data Binding via `$ref`
 

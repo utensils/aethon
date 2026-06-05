@@ -21,6 +21,7 @@ import { handleError } from "./error";
 import { handleExtensionComponents } from "./extensionComponents";
 import { handleExtensionEventRoutes } from "./extensionEventRoutes";
 import { handleExtensionFrontendModules } from "./extensionFrontendModules";
+import { handleExtensionHighlightGrammars } from "./extensionHighlightGrammars";
 import { handleExtensionKeybindings } from "./extensionKeybindings";
 import { handleExtensionLayouts } from "./extensionLayouts";
 import { handleExtensionLifecycle } from "./extensionLifecycle";
@@ -70,6 +71,7 @@ export const bridgeMessageHandlers: Readonly<
   extension_components: handleExtensionComponents,
   extension_event_routes: handleExtensionEventRoutes,
   extension_frontend_modules: handleExtensionFrontendModules,
+  extension_highlight_grammars: handleExtensionHighlightGrammars,
   extension_keybindings: handleExtensionKeybindings,
   extension_layouts: handleExtensionLayouts,
   extension_lifecycle: handleExtensionLifecycle,

@@ -32,6 +32,7 @@ function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
     layoutSlots: null,
     layouts: [],
     frontendModules: [],
+    highlightGrammars: [],
     ...overrides,
   };
 }

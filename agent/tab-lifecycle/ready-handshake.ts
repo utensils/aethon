@@ -63,6 +63,9 @@ export function emitReady(
         code: m.code,
       }),
     ),
+    extensionHighlightGrammars: [
+      ...state.extensionHighlightGrammars.values(),
+    ],
     extensionsList: [...state.loadedExtensions.entries()].map(
       ([name, source]) => ({
         name,

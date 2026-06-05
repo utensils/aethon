@@ -302,12 +302,18 @@ export function buildAethonApi(
       return Promise.resolve({ ok: false, error: errorMsg });
     }
     const { id: mid, promise } = trackMutation(state);
+    const normalizedLang = lang.trim();
+    state.extensionHighlightGrammars.set(normalizedLang, {
+      lang: normalizedLang,
+      grammar,
+    });
     deps.send({
       type: "register_highlight_grammar",
       mutationId: mid,
-      lang: lang.trim(),
+      lang: normalizedLang,
       grammar,
     });
+    deps.scheduleStateFileWrite();
     return promise;
   }
 

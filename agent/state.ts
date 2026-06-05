@@ -148,6 +148,11 @@ export interface FrontendModule {
   code: string;
 }
 
+export interface RegisteredHighlightGrammar {
+  lang: string;
+  grammar: unknown;
+}
+
 export interface DiscoveredTab {
   tabId: string;
   lastModified: number;
@@ -279,6 +284,7 @@ export interface ProjectBaselineSnapshot {
    *  lets the frontend prune project-only state slices on the next hydrate. */
   stateKeys: string[];
   frontendModules: Map<string, FrontendModule>;
+  highlightGrammars: Map<string, RegisteredHighlightGrammar>;
   /** Active extension-supplied layout (full replacement). Cloned so a
    *  later patchLayout doesn't mutate the snapshot in place. */
   extensionLayout: unknown;
@@ -457,6 +463,10 @@ export class AethonAgentState {
   piSkills: RegisteredPiSkill[] = [];
   readonly extensionLayouts = new Map<string, RegisteredLayout>();
   readonly extensionFrontendModules = new Map<string, FrontendModule>();
+  readonly extensionHighlightGrammars = new Map<
+    string,
+    RegisteredHighlightGrammar
+  >();
   readonly a2uiEventHandlers: {
     match: A2UIEventMatch;
     handler: A2UIEventHandler;

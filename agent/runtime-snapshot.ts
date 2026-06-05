@@ -18,6 +18,7 @@
 
 import { mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
 import type { RuntimeSnapshot } from "./system-prompt";
@@ -26,6 +27,15 @@ import { summarizeLayout, summarizeLayoutStructure } from "./layout-manager";
 import { getSubagentsForCwd } from "./subagents";
 
 const STATE_FILE_DEBOUNCE_MS = 200;
+
+function jsonByteLength(value: unknown): number {
+  try {
+    const text = JSON.stringify(value);
+    return text ? Buffer.byteLength(text, "utf8") : 0;
+  } catch {
+    return 0;
+  }
+}
 
 function modelKey(m: Model<Api>): string {
   return `${m.provider}/${m.id}`;
@@ -114,6 +124,12 @@ export function getRuntimeSnapshot(state: AethonAgentState): RuntimeSnapshot {
       entryPath: m.entryPath,
       bytes: m.code.length,
     })),
+    highlightGrammars: [...state.extensionHighlightGrammars.values()].map(
+      (g) => ({
+        lang: g.lang,
+        bytes: jsonByteLength(g.grammar),
+      }),
+    ),
   };
 }
 

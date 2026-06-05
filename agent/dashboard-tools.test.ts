@@ -12,6 +12,8 @@ interface FakeTasks {
 interface FakeDashboard {
   getRepoOverview: ReturnType<typeof vi.fn>;
   refresh: ReturnType<typeof vi.fn>;
+  listIssues: ReturnType<typeof vi.fn>;
+  getIssue: ReturnType<typeof vi.fn>;
 }
 
 let fakeTasks: FakeTasks;
@@ -20,7 +22,12 @@ let originalAethon: unknown;
 
 beforeEach(() => {
   fakeTasks = { start: vi.fn() };
-  fakeDashboard = { getRepoOverview: vi.fn(), refresh: vi.fn() };
+  fakeDashboard = {
+    getRepoOverview: vi.fn(),
+    refresh: vi.fn(),
+    listIssues: vi.fn(),
+    getIssue: vi.fn(),
+  };
   originalAethon = (globalThis as { aethon?: unknown }).aethon;
   (globalThis as {
     aethon?: { tasks: FakeTasks; dashboard: FakeDashboard };
@@ -61,6 +68,8 @@ describe("startTask tool", () => {
       newWorktree: true,
       branch: "fix",
       baseBranch: "main",
+      model: "openai/gpt-5",
+      bridgePrompt: "hidden context",
     });
     expect(fakeTasks.start).toHaveBeenCalledWith({
       projectPath: "/p",
@@ -68,6 +77,8 @@ describe("startTask tool", () => {
       newWorktree: true,
       branch: "fix",
       baseBranch: "main",
+      model: "openai/gpt-5",
+      bridgePrompt: "hidden context",
     });
   });
 

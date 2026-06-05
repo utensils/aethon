@@ -17,6 +17,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "../shell-tools";
+import { buildA2uiTools } from "../a2ui-tools";
 import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildSubagentTaskTool } from "../subagents/task-tool";
@@ -121,6 +122,7 @@ export async function ensureTab(
     resourceLoader: state.resourceLoader,
     customTools: [
       devshellBashTool,
+      ...buildA2uiTools(),
       ...buildShellTools(),
       ...buildDashboardTools(),
       buildSubagentTaskTool(state, deps, tabId),

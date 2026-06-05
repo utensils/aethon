@@ -29,9 +29,28 @@ Failure modes:
   it with errors (e.g. invalid layout payload, malformed pointer).
 - `"<arg> required"` — bridge-side validation (path/payload missing).
 
-Calls made before the frontend has reported `ready` resolve immediately
-with `{ ok: true }` — the bridge's retained-state replay covers them
-on the next `ready`, so awaiting at register-time doesn't block.
+Calls made before the frontend has reported `ready` are retained and replayed
+on the next `ready`. Mutation-tracked calls resolve after the frontend ack;
+calls using the side-effect shortcut may resolve immediately with `{ ok: true }`.
+
+## Agent-visible A2UI tools
+
+During a normal chat turn the model cannot call `globalThis.aethon`
+directly; it uses the standard tool-use protocol. Aethon therefore
+registers focused tools that call this same runtime API:
+
+- `getA2uiState({ path? })` — read frontend-mirrored state, either all
+  watched slices or one JSON Pointer path.
+- `getA2uiLayout({})` — read the active layout payload before patching.
+- `setA2uiState({ path, value })` — call `aethon.setState`.
+- `patchA2uiLayout({ path, value })` — call `aethon.patchLayout`.
+- `setA2uiLayout({ payload })` — call `aethon.setLayout`.
+- `emitA2uiCanvas({ components })` / `appendA2uiCanvas({ components })`
+  / `patchA2uiCanvas({ path, value })` / `clearA2uiCanvas({})` — call
+  `aethon.canvas.*`.
+
+These tools throw on `{ ok: false }`, so failed mutations show up as
+ordinary tool errors.
 
 ### `setState(path, value)`
 
@@ -473,8 +492,9 @@ The `descendantId` matches the canonical combo (lowercased modifiers in
 ### `registerTheme({ id, label?, vars })`
 
 Register a CSS color scheme. `id` must match `/^[A-Za-z][\w-]*$/` and may
-not collide with built-ins (`dark`, `light`). `vars` is a map of CSS
-custom properties (each key must start with `--`).
+not collide with built-ins (`ember`, `paper`, `aether`, `signature`,
+`brink`, `daylight`, `mist`, `nocturne`). `vars` is a map of CSS custom
+properties (each key must start with `--`).
 
 ```ts
 globalThis.aethon.registerTheme({
@@ -613,7 +633,7 @@ so handlers can read or drive shells without going through the global.
 Tools `listShells` / `readShell` / `writeShell` register automatically;
 the model can use them via the standard tool-use protocol.
 
-### `tasks.start / dashboard.getRepoOverview / dashboard.refresh`
+### `tasks.start / dashboard.getRepoOverview / dashboard.refresh / dashboard.listIssues / dashboard.getIssue`
 
 Agent-side counterparts to the per-project dashboard's task launcher
 
@@ -628,10 +648,13 @@ aethon.tasks.start({
   newWorktree?: boolean,      // create a fresh git worktree first
   branch?: string,            // required when newWorktree is true
   baseBranch?: string,        // base to fork from (project default, then origin/main)
+  model?: string,             // optional model id for the launched tab
+  bridgePrompt?: string,      // hidden bridge prompt; prompt remains visible text
 });
 // → { ok: true, data: { projectId } }
 //   Worktree-create + new-tab + send first message run as one chain;
 //   the resolved Promise fires after the prompt lands in the new tab.
+//   `bridgePrompt` is extension-trusted hidden context, not user-visible text.
 
 aethon.dashboard.getRepoOverview({ projectPath });
 // → { ok: true, data: GhRepoOverview }
@@ -640,17 +663,24 @@ aethon.dashboard.getRepoOverview({ projectPath });
 
 aethon.dashboard.refresh({ projectPath? });
 // → { ok: true }
-//   Bust the gh cache for one project (or omit projectPath to do nothing
-//   beyond a no-op ack — useful as a barrier after an external change).
+//   Bust gh caches for one project, or all repo/issue caches when omitted.
+
+aethon.dashboard.listIssues({ projectPath, limit? });
+// → { ok: true, data: { issues, limit } }
+//   Cached open issues, matching the project dashboard Issues section.
+
+aethon.dashboard.getIssue({ projectPath, number });
+// → { ok: true, data: { title, url, author, body, ... } }
+//   Full issue detail for preparing a task launch.
 ```
 
-The same three actions register as pi tools `startTask` /
-`getRepoOverview` / `refreshDashboard` so the model can drive them
-directly via the standard tool-use protocol. The matching UI events
-on the dashboard composites (`start-task`, `select-project-card`,
-`switch-worktree`, …) route through the same App-level
-`startTaskInProject` orchestrator, so a user click and an agent tool
-call follow identical code paths.
+These actions register as pi tools `startTask`, `getRepoOverview`,
+`refreshDashboard`, `listOpenIssues`, and `getOpenIssue` so the model
+can drive them directly via the standard tool-use protocol. The matching
+UI events on the dashboard composites (`start-task`,
+`select-project-card`, `switch-worktree`, …) route through the same
+App-level `startTaskInProject` orchestrator, so a user click and an
+agent tool call follow identical code paths.
 
 ## Lifecycle
 

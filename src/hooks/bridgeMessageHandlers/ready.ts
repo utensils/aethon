@@ -22,6 +22,10 @@ import type {
   ModelDescriptor,
 } from "./types";
 import { contextUsageFromMessage } from "./contextUsage";
+import {
+  replayHighlightGrammars,
+  type ExtensionHighlightGrammar,
+} from "./extensionHighlightGrammars";
 
 function isWorkstationBootLayout(layout: A2UIPayload): boolean {
   const state = layout.state as
@@ -166,6 +170,10 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     (data.extensionFrontendModules as
       | { name: string; code: string }[]
       | undefined) ?? [];
+  const extHighlightGrammars =
+    (data.extensionHighlightGrammars as
+      | ExtensionHighlightGrammar[]
+      | undefined) ?? [];
   const extStateKeys = (data.extensionStateKeys as string[] | undefined) ?? [];
   const discTabs =
     (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
@@ -207,6 +215,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   ctx.hydrateEventRoutes(extEventRoutes, extEventRoutingMode);
   ctx.hydrateExtensionLayouts(extLayouts);
   ctx.hydrateFrontendModules(extFrontendModules);
+  replayHighlightGrammars(extHighlightGrammars);
   // Push the persisted menu list into Tauri so the native menu is
   // correct on first paint after webview reload. Errors are logged but
   // non-fatal — the menu falls back to built-ins-only.

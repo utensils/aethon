@@ -32,7 +32,9 @@ function fakeSnapshot(): RuntimeSnapshot {
     stateFile: "/tmp/state.json",
     extensions: [],
     failedExtensions: [],
+    disabledExtensions: [],
     themes: [],
+    subagents: [],
     components: [],
     layoutSummary: "",
     tabs: [],
@@ -47,6 +49,7 @@ function fakeSnapshot(): RuntimeSnapshot {
     layoutSlots: null,
     layouts: [],
     frontendModules: [],
+    highlightGrammars: [],
   };
 }
 
@@ -150,6 +153,23 @@ describe("buildAethonApi", () => {
     const r = await api.registerTheme({ id: "ember", vars: {} });
     expect(r.ok).toBe(false);
     expect(r.error).toContain("reserved");
+  });
+
+  it("registerHighlightGrammar retains and emits the grammar", async () => {
+    const { state, sent, api, writes } = makeFixture();
+    const grammar = { scopeName: "source.lean" };
+    const r = await api.registerHighlightGrammar(" lean ", grammar);
+    expect(r.ok).toBe(true);
+    expect(state.extensionHighlightGrammars.get("lean")).toEqual({
+      lang: "lean",
+      grammar,
+    });
+    expect(sent.at(-1)).toMatchObject({
+      type: "register_highlight_grammar",
+      lang: "lean",
+      grammar,
+    });
+    expect(writes()).toBe(1);
   });
 
   it("getRuntimeSnapshot delegates to deps", () => {

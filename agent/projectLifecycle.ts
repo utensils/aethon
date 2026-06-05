@@ -32,6 +32,7 @@ export function captureProjectExtensionBaseline(
     keybindings: new Map(state.extensionKeybindings),
     menuItems: new Map(state.extensionMenuItems),
     layouts: new Map(state.extensionLayouts),
+    highlightGrammars: new Map(state.extensionHighlightGrammars),
     eventRoutes: new Map(state.extensionEventRoutes),
     eventRoutingMode: state.eventRoutingMode,
     eventHandlerCount: state.a2uiEventHandlers.length,
@@ -142,6 +143,10 @@ export function unloadProjectExtensions(
   for (const [k, v] of state.projectBaseline.frontendModules) {
     state.extensionFrontendModules.set(k, v);
   }
+  state.extensionHighlightGrammars.clear();
+  for (const [k, v] of state.projectBaseline.highlightGrammars) {
+    state.extensionHighlightGrammars.set(k, v);
+  }
   state.extensionLayout =
     state.projectBaseline.extensionLayout === undefined
       ? undefined
@@ -189,6 +194,10 @@ export function unloadProjectExtensions(
       name: m.name,
       code: m.code,
     })),
+  });
+  deps.send({
+    type: "extension_highlight_grammars",
+    grammars: [...state.extensionHighlightGrammars.values()],
   });
   // Push the restored layout to the frontend.
   const effective = (() => {
