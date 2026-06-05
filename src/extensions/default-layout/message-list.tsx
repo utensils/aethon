@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type {
@@ -34,7 +42,33 @@ import { ImageLightbox } from "./image-lightbox";
 // Distance (px) from the bottom still treated as "at the bottom" for follow +
 // the scroll-to-bottom pill. Matches the old StickyScrollController default.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
+const PROGRAMMATIC_SCROLL_GUARD_MS = 1200;
 const FENCED_CODE_MARKER_RE = /(^|\n)(```|~~~)/;
+const USER_SCROLL_INTENT_EVENTS = [
+  "wheel",
+  "touchstart",
+  "touchmove",
+  "pointerdown",
+  "keydown",
+] as const;
+
+function addUserScrollIntentListeners(
+  el: HTMLElement,
+  listener: EventListener,
+): void {
+  for (const eventName of USER_SCROLL_INTENT_EVENTS) {
+    el.addEventListener(eventName, listener, { passive: true });
+  }
+}
+
+function removeUserScrollIntentListeners(
+  el: HTMLElement,
+  listener: EventListener,
+): void {
+  for (const eventName of USER_SCROLL_INTENT_EVENTS) {
+    el.removeEventListener(eventName, listener);
+  }
+}
 
 // Top-level state keys that change identity on every streamed token — the
 // active tab's `messages` array and the `tabs` array that nests it (both
@@ -606,6 +640,9 @@ function VirtualMessageList({
   const [canScroll, setCanScroll] = useState(false);
   const scrollerElRef = useRef<HTMLElement | null>(null);
   const followLatestRef = useRef(true);
+  const [followLatest, setFollowLatestState] = useState(true);
+  const programmaticScrollUntilRef = useRef(0);
+  const userScrollIntentRef = useRef(false);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
   const queuedLabels = useMemo(
@@ -633,6 +670,23 @@ function VirtualMessageList({
       return next;
     });
   }, []);
+  const setFollowLatest = useCallback((next: boolean) => {
+    followLatestRef.current = next;
+    setFollowLatestState(next);
+  }, []);
+
+  const markProgrammaticScroll = useCallback(() => {
+    programmaticScrollUntilRef.current = Math.max(
+      programmaticScrollUntilRef.current,
+      Date.now() + PROGRAMMATIC_SCROLL_GUARD_MS,
+    );
+  }, []);
+
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentRef.current = true;
+    programmaticScrollUntilRef.current = 0;
+  }, []);
+
   const updateCanScroll = useCallback(() => {
     const el = scrollerElRef.current;
     setCanScroll(
@@ -641,6 +695,11 @@ function VirtualMessageList({
       ),
     );
   }, []);
+
+  const scrollToBottom = useCallback(() => {
+    markProgrammaticScroll();
+    virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+  }, [markProgrammaticScroll]);
 
   const updateFollowFromScroller = useCallback(() => {
     const el = scrollerElRef.current;
@@ -653,10 +712,25 @@ function VirtualMessageList({
       },
       DEFAULT_AT_BOTTOM_THRESHOLD,
     );
-    followLatestRef.current = atBottom;
-    setIsAtBottom(atBottom);
+    const isProgrammaticFollowScroll =
+      Date.now() < programmaticScrollUntilRef.current &&
+      !userScrollIntentRef.current;
+
     updateCanScroll();
-  }, [updateCanScroll]);
+
+    if (isProgrammaticFollowScroll) {
+      if (atBottom) {
+        programmaticScrollUntilRef.current = 0;
+        setFollowLatest(true);
+        setIsAtBottom(true);
+      }
+      return;
+    }
+
+    userScrollIntentRef.current = false;
+    setFollowLatest(atBottom);
+    setIsAtBottom(atBottom);
+  }, [setFollowLatest, updateCanScroll]);
 
   const handleScrollerRef = useCallback(
     (ref: HTMLElement | Window | null) => {
@@ -664,6 +738,10 @@ function VirtualMessageList({
         scrollerElRef.current.removeEventListener(
           "scroll",
           updateFollowFromScroller,
+        );
+        removeUserScrollIntentListeners(
+          scrollerElRef.current,
+          markUserScrollIntent,
         );
       }
       const el =
@@ -675,23 +753,25 @@ function VirtualMessageList({
         el.addEventListener("scroll", updateFollowFromScroller, {
           passive: true,
         });
+        addUserScrollIntentListeners(el, markUserScrollIntent);
       }
       updateCanScroll();
     },
-    [updateCanScroll, updateFollowFromScroller],
+    [markUserScrollIntent, updateCanScroll, updateFollowFromScroller],
   );
 
   const handleAtBottomStateChange = useCallback(
     (atBottom: boolean) => {
       updateCanScroll();
       if (atBottom) {
-        followLatestRef.current = true;
+        programmaticScrollUntilRef.current = 0;
+        setFollowLatest(true);
         setIsAtBottom(true);
       } else if (!followLatestRef.current) {
         setIsAtBottom(false);
       }
     },
-    [updateCanScroll],
+    [setFollowLatest, updateCanScroll],
   );
 
   useEffect(
@@ -701,9 +781,13 @@ function VirtualMessageList({
           "scroll",
           updateFollowFromScroller,
         );
+        removeUserScrollIntentListeners(
+          scrollerElRef.current,
+          markUserScrollIntent,
+        );
       }
     },
-    [updateFollowFromScroller],
+    [markUserScrollIntent, updateFollowFromScroller],
   );
 
   // Jump to the newest message matching the search needle and flash it. Virtuoso
@@ -829,6 +913,38 @@ function VirtualMessageList({
     state.waiting === true &&
     hasFencedCodeMarker(latestMessage.text);
 
+  const handleFollowOutput = useCallback(() => {
+    if (!followLatestRef.current) return false;
+    markProgrammaticScroll();
+    return latestStreamingFences ? "auto" : "smooth";
+  }, [latestStreamingFences, markProgrammaticScroll]);
+
+  const handleTotalListHeightChanged = useCallback(() => {
+    updateCanScroll();
+    if (followLatestRef.current) scrollToBottom();
+  }, [scrollToBottom, updateCanScroll]);
+
+  // Tool grouping and streamed thinking frequently change row keys/counts or
+  // measured heights without a simple "new last item appended" signal. When
+  // follow intent is still enabled, explicitly pin the scroller after React has
+  // committed the new rows; when the user has scrolled away, `followLatest`
+  // stays false and this path is inert.
+  useLayoutEffect(() => {
+    updateCanScroll();
+    if (!followLatest) return;
+    const frame = window.requestAnimationFrame(scrollToBottom);
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    expandedGroups,
+    followLatest,
+    footerContext,
+    groups,
+    messages,
+    scrollToBottom,
+    updateCanScroll,
+    visibility.thinking,
+  ]);
+
   return (
     <div className="a2ui-msg-list-shell">
       <Virtuoso
@@ -850,28 +966,22 @@ function VirtualMessageList({
           index: Math.max(0, groups.length - 1),
           align: "end",
         }}
-        followOutput={() =>
-          followLatestRef.current
-            ? latestStreamingFences
-              ? "auto"
-              : "smooth"
-            : false
-        }
+        followOutput={followLatest ? handleFollowOutput : false}
         atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
         atBottomStateChange={handleAtBottomStateChange}
         scrollerRef={handleScrollerRef}
-        totalListHeightChanged={updateCanScroll}
+        totalListHeightChanged={handleTotalListHeightChanged}
         {...footerProps}
       />
       <ScrollToBottomPill
         visible={!isAtBottom && canScroll && hasContent}
         onClick={() => {
-          followLatestRef.current = true;
+          setFollowLatest(true);
           setIsAtBottom(true);
           // Scroll to the true bottom of the scroller, which includes the
           // Footer (live subtree / typing indicator) — scrollToIndex(last)
           // would stop at the last message, above a footer-only response.
-          virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+          scrollToBottom();
         }}
       />
     </div>
