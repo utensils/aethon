@@ -467,6 +467,50 @@ describe("useProjectOps session scoping", () => {
       },
     ]);
   });
+
+  it("excludes project and worktree sessions from the host scope", () => {
+    const { result } = renderProjectOps(
+      makeProjectsState({
+        activeId: null,
+        activeWorktreeId: null,
+        projects: [
+          {
+            id: "project-1",
+            label: "aethon",
+            path: "/projects/aethon",
+            lastUsed: 1,
+          },
+        ],
+        worktreesByProject: {
+          "project-1": [
+            {
+              id: "wt-1",
+              projectId: "project-1",
+              path: "/projects/aethon-fix-session-restore",
+              branch: "fix/session-restore",
+              isMain: false,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(
+      result.current.scopedDiscoveredSessions([
+        { tabId: "host", lastModified: 1 },
+        { tabId: "project", lastModified: 2, cwd: "/projects/aethon/" },
+        {
+          tabId: "worktree",
+          lastModified: 3,
+          cwd: "/projects/aethon-fix-session-restore",
+        },
+        { tabId: "other-host-cwd", lastModified: 4, cwd: "/tmp/scratch" },
+      ]),
+    ).toEqual([
+      { tabId: "host", lastModified: 1 },
+      { tabId: "other-host-cwd", lastModified: 4, cwd: "/tmp/scratch" },
+    ]);
+  });
 });
 
 describe("useProjectOps overview terminal project switches", () => {

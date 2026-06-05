@@ -57,13 +57,7 @@ export const handleTabStrip: EventRouteHandler = (
     return true;
   }
   if (eventType === "close-all") {
-    const tabs =
-      (ctx.stateRef.current.tabs as
-        | Array<{ id: string; kind?: string }>
-        | undefined) ?? [];
-    for (const t of tabs) {
-      if (t.kind !== "shell") ctx.closeTab(t.id);
-    }
+    ctx.closeAllWorkspaceSessions();
     return true;
   }
   if (eventType === "rename" && sel?.tabId) {
