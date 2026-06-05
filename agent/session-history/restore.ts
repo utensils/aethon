@@ -109,9 +109,11 @@ function toolCardIdentityFromId(id: string): string | undefined {
   return undefined;
 }
 
-function toolCardIdentities(message: RestoredChatMessage): string[] {
+function toolCardRecords(
+  message: RestoredChatMessage,
+): Array<{ identity: string; status?: unknown }> {
   const components = message.a2ui?.components ?? [];
-  const identities: string[] = [];
+  const records: Array<{ identity: string; status?: unknown }> = [];
   for (const component of components) {
     if (!component || typeof component !== "object") continue;
     const record = component as Record<string, unknown>;
@@ -119,9 +121,18 @@ function toolCardIdentities(message: RestoredChatMessage): string[] {
       continue;
     }
     const identity = toolCardIdentityFromId(record.id);
-    if (identity) identities.push(identity);
+    if (!identity) continue;
+    const props =
+      record.props && typeof record.props === "object"
+        ? (record.props as Record<string, unknown>)
+        : undefined;
+    records.push({ identity, status: props?.status });
   }
-  return identities;
+  return records;
+}
+
+function toolCardIdentities(message: RestoredChatMessage): string[] {
+  return toolCardRecords(message).map((record) => record.identity);
 }
 
 function piToolCardIdentitySet(piMessages: RestoredChatMessage[]): Set<string> {
@@ -133,15 +144,51 @@ function piToolCardIdentitySet(piMessages: RestoredChatMessage[]): Set<string> {
   return identities;
 }
 
+function isCancelledToolCardMessage(message: RestoredChatMessage): boolean {
+  const records = toolCardRecords(message);
+  return (
+    records.length > 0 &&
+    records.some((record) => record.status === "cancelled")
+  );
+}
+
+function cancelledToolCardIdentitySet(
+  messages: RestoredChatMessage[],
+): Set<string> {
+  const identities = new Set<string>();
+  for (const message of messages) {
+    for (const record of toolCardRecords(message)) {
+      if (record.status === "cancelled") identities.add(record.identity);
+    }
+  }
+  return identities;
+}
+
 function isCoveredByPiToolCard(
   message: RestoredChatMessage,
   piToolCards: ReadonlySet<string>,
 ): boolean {
+  if (isCancelledToolCardMessage(message)) return false;
   const identities = toolCardIdentities(message);
   return (
     identities.length > 0 &&
     identities.every((identity) => piToolCards.has(identity))
   );
+}
+
+function removePiToolCardsCoveredByLocalCancellation(
+  piMessages: RestoredChatMessage[],
+  localMessages: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  const cancelledIdentities = cancelledToolCardIdentitySet(localMessages);
+  if (cancelledIdentities.size === 0) return piMessages;
+  return piMessages.filter((message) => {
+    const identities = toolCardIdentities(message);
+    return (
+      identities.length === 0 ||
+      !identities.every((identity) => cancelledIdentities.has(identity))
+    );
+  });
 }
 
 function isCompactionMarker(message: RestoredChatMessage): boolean {
@@ -162,7 +209,8 @@ function piCompactionMarkers(
   piMessages: RestoredChatMessage[],
 ): RestoredChatMessage[] {
   return piMessages.filter(
-    (message) => message.id.startsWith("compaction:") && isCompactionMarker(message),
+    (message) =>
+      message.id.startsWith("compaction:") && isCompactionMarker(message),
   );
 }
 
@@ -329,7 +377,10 @@ export async function readSessionTranscript(
   if (!path) return localMessages.slice(-MAX_RESTORED_MESSAGES);
 
   const raw = await readFile(path, "utf8");
-  const piMessages = parseSessionHistoryLines(raw.split(/\r?\n/));
+  const piMessages = removePiToolCardsCoveredByLocalCancellation(
+    parseSessionHistoryLines(raw.split(/\r?\n/)),
+    localMessages,
+  );
   const mergedPiMessages = mergeLocalAttachmentsIntoPiMessages(
     piMessages,
     localMessages,

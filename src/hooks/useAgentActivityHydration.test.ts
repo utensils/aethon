@@ -114,8 +114,9 @@ describe("hydrateAgentActivityState", () => {
       ],
     );
 
-    expect((next.tabs as ReturnType<typeof makeEmptyTab>[]).map((t) => t.id))
-      .toEqual(["tab-a"]);
+    expect(
+      (next.tabs as ReturnType<typeof makeEmptyTab>[]).map((t) => t.id),
+    ).toEqual(["tab-a"]);
     expect(next.waiting).toBe(false);
   });
 
@@ -143,6 +144,118 @@ describe("hydrateAgentActivityState", () => {
     );
     expect(next.waiting).toBe(false);
     expect(next.status).toBe("ready");
+  });
+
+  it("keeps another tab's running tool card when diagnostics only mention a different worker", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(123_456);
+    const tabA = {
+      ...makeEmptyTab("tab-a", "A"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-1-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "sleep 60",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const tabB = makeEmptyTab("tab-b", "B");
+
+    const next = hydrateAgentActivityState(
+      {
+        activeTabId: "tab-a",
+        waiting: true,
+        status: "thinking…",
+        agentRunningTabs: { "tab-a": true },
+        tabs: [tabA, tabB],
+      },
+      [
+        {
+          key: "tab:tab-b",
+          tab_id: "tab-b",
+          alive: true,
+          prompt_in_flight: true,
+        },
+      ],
+    );
+
+    expect(next.status).toBe("thinking…");
+    const outTabA = (next.tabs as (typeof tabA)[])[0];
+    expect(outTabA.waiting).toBe(true);
+    const toolCard = outTabA.messages[0].a2ui?.components?.[0] as
+      | A2UIComponent
+      | undefined;
+    expect(toolCard?.props?.endedAt).toBeUndefined();
+    expect(toolCard?.props?.status).toBeUndefined();
+  });
+
+  it("marks stale running tool cards stopped when diagnostics only show unrelated idle workers", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(123_456);
+    const waitingTab = {
+      ...makeEmptyTab("tab-a", "A"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-1-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "sleep 60",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const next = hydrateAgentActivityState(
+      {
+        activeTabId: "tab-a",
+        waiting: true,
+        status: "thinking…",
+        agentRunningTabs: { "tab-a": true },
+        tabs: [waitingTab],
+      },
+      [
+        {
+          key: "__global__",
+          tab_id: null,
+          alive: true,
+          prompt_in_flight: false,
+        },
+      ],
+    );
+
+    expect(next.status).toBe("ready");
+    const toolCard = ((next.tabs as (typeof waitingTab)[])[0].messages[0].a2ui
+      ?.components?.[0] ?? {}) as A2UIComponent;
+    expect(toolCard.props).toMatchObject({
+      status: "cancelled",
+      endedAt: 123_456,
+    });
   });
 
   it("marks stale running tool cards stopped when diagnostics show no live prompt", () => {
@@ -190,7 +303,7 @@ describe("hydrateAgentActivityState", () => {
     );
 
     expect(next.status).toBe("ready");
-    const components = (next.tabs as typeof waitingTab[])[0].messages[0].a2ui
+    const components = (next.tabs as (typeof waitingTab)[])[0].messages[0].a2ui
       ?.components as A2UIComponent[] | undefined;
     const toolCard = components?.[0];
     expect(toolCard).toBeDefined();
@@ -272,8 +385,8 @@ describe("hydrateAgentActivityState", () => {
 
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(state).toMatchObject({ waiting: true, status: "thinking…" });
-    expect(
-      ((state.tabs as ReturnType<typeof makeEmptyTab>[])[0]).waiting,
-    ).toBe(true);
+    expect((state.tabs as ReturnType<typeof makeEmptyTab>[])[0].waiting).toBe(
+      true,
+    );
   });
 });

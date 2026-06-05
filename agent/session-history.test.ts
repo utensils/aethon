@@ -388,14 +388,26 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-user", entryId: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
+      {
+        id: "pi-user",
+        entryId: "pi-user",
+        role: "user",
+        text: "hi",
+        createdAt: 1_000,
+      },
       {
         id: "stderr-warning",
         role: "system",
         text: "[agent stderr] transient provider error",
         createdAt: 2_000,
       },
-      { id: "pi-agent", entryId: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
+      {
+        id: "pi-agent",
+        entryId: "pi-agent",
+        role: "agent",
+        text: "done",
+        createdAt: 3_000,
+      },
     ]);
   });
 
@@ -443,14 +455,26 @@ describe("readSessionTranscript", () => {
     });
 
     await expect(readSessionTranscript(dir)).resolves.toEqual([
-      { id: "pi-user", entryId: "pi-user", role: "user", text: "hi", createdAt: 1_000 },
+      {
+        id: "pi-user",
+        entryId: "pi-user",
+        role: "user",
+        text: "hi",
+        createdAt: 1_000,
+      },
       {
         id: "compaction:cmp-1",
         role: "system",
         text: "Context compacted · 13,005 tokens summarized",
         createdAt: 2_000,
       },
-      { id: "pi-agent", entryId: "pi-agent", role: "agent", text: "done", createdAt: 3_000 },
+      {
+        id: "pi-agent",
+        entryId: "pi-agent",
+        role: "agent",
+        text: "done",
+        createdAt: 3_000,
+      },
     ]);
   });
 
@@ -610,7 +634,12 @@ describe("readSessionTranscript", () => {
         role: "user",
         text: "Please work on issue 85",
       },
-      { id: "pi-agent", entryId: "pi-agent", role: "agent", text: "Working on it" },
+      {
+        id: "pi-agent",
+        entryId: "pi-agent",
+        role: "agent",
+        text: "Working on it",
+      },
     ]);
   });
 
@@ -722,6 +751,67 @@ describe("readSessionTranscript", () => {
     expect(restored.at(-1)?.a2ui?.components[0]).toMatchObject({
       type: "tool-card",
       props: { toolName: "bash", startedAt: 3_000 },
+    });
+  });
+
+  it("keeps locally cancelled tool cards ahead of late pi completions on restore", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        timestamp: 3_000,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call_late_1|fc_abc",
+              name: "bash",
+              arguments: { command: "sleep 60" },
+            },
+          ],
+        },
+      })}\n${JSON.stringify({
+        type: "message",
+        id: "tool-result",
+        timestamp: 5_000,
+        message: {
+          role: "toolResult",
+          toolCallId: "call_late_1|fc_abc",
+          toolName: "bash",
+          content: [{ type: "text", text: "done" }],
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "tool-7-call_late_1-fc_abc",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-7-call_late_1-fc_abc",
+            type: "tool-card",
+            props: {
+              toolName: "bash",
+              startedAt: 3_000,
+              endedAt: 4_000,
+              status: "cancelled",
+            },
+          },
+        ],
+      },
+      createdAt: 4_000,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "tool-7-call_late_1-fc_abc",
+    ]);
+    expect(restored[0].a2ui?.components[0].props).toMatchObject({
+      status: "cancelled",
+      endedAt: 4_000,
     });
   });
 
