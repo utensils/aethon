@@ -146,10 +146,11 @@ export interface EventRouteContext {
   activateLayoutById: (id: string) => void;
   openProjectFromPicker: () => Promise<string | null>;
   setActiveProjectById: (id: string) => void;
+  clearActiveProject: () => void;
   removeProjectById: (id: string) => boolean;
-  /** Switch the active host (HOSTS sidebar section). Clearing the active
-   *  project is the responsibility of the caller chain; this just
-   *  flips the host pointer. */
+  /** Switch the active host (HOSTS sidebar section). App's implementation
+   *  also clears the active project so host selection lands in the
+   *  no-project workspace. */
   setActiveHost: (id: string | null) => void;
   syncRecentSessionsToState: () => void;
   // ─── Worktrees ─────────────────────────────────────────────────────

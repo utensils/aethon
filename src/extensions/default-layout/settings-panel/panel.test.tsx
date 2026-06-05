@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsPanel } from "./panel";
@@ -10,10 +10,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
-}));
-
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: vi.fn(),
 }));
 
 vi.mock("../../../config", () => ({
@@ -68,6 +64,27 @@ describe("SettingsPanel", () => {
   });
 
   afterEach(() => cleanup());
+
+  it("routes Open config.toml through the settings event route", async () => {
+    const onEvent = vi.fn();
+    render(
+      <SettingsPanel
+        component={{ id: "settings-panel", type: "settings-panel" }}
+        state={{
+          settings: { open: true, pending: null, saveStatus: "idle" },
+          sidebar: { models: [] },
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open config.toml" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open config.toml" }));
+    expect(onEvent).toHaveBeenCalledWith("open-config-file");
+  });
 
   it("renders as a live settings dialog without a save footer or stale save copy", async () => {
     render(

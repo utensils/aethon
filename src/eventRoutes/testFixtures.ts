@@ -66,6 +66,7 @@ export interface RouteFixture {
     activateLayoutById: Mock;
     openProjectFromPicker: Mock;
     setActiveProjectById: Mock;
+    clearActiveProject: Mock;
     removeProjectById: Mock;
     syncRecentSessionsToState: Mock;
     activateWorktree: Mock;
@@ -154,6 +155,7 @@ export function buildRouteFixture(
     Promise.resolve<string | null>(null),
   );
   const setActiveProjectById = vi.fn();
+  const clearActiveProject = vi.fn();
   const removeProjectById = vi.fn(() => true);
   const syncRecentSessionsToState = vi.fn();
   const activateWorktree = vi.fn();
@@ -216,6 +218,7 @@ export function buildRouteFixture(
     activateLayoutById,
     openProjectFromPicker,
     setActiveProjectById,
+    clearActiveProject,
     removeProjectById,
     setActiveHost: vi.fn(),
     syncRecentSessionsToState,
@@ -298,6 +301,7 @@ export function buildRouteFixture(
       activateLayoutById,
       openProjectFromPicker,
       setActiveProjectById,
+      clearActiveProject,
       removeProjectById,
       syncRecentSessionsToState,
       activateWorktree,

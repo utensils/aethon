@@ -58,6 +58,62 @@ describe("handleSettings", () => {
     });
   });
 
+  it("opens config.toml in a host-level editor tab rooted at the Aethon dir", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeProjectId: "project-1" },
+    });
+    mocks.invoke
+      .mockResolvedValueOnce("/Users/test/.aethon")
+      .mockResolvedValueOnce("");
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "open-config-file",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "aethon_home_dir");
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "read_state", {
+      name: "config.toml",
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(3, "write_state", {
+      name: "config.toml",
+      content: "",
+    });
+    expect(mocks.clearActiveProject).toHaveBeenCalledTimes(1);
+    expect(mocks.newEditorTab).toHaveBeenCalledWith(
+      "/Users/test/.aethon/config.toml",
+      { rootPath: "/Users/test/.aethon" },
+    );
+    expect(
+      mocks.clearActiveProject.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.newEditorTab.mock.invocationCallOrder[0]);
+    expect(mocks.closeSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a notification when config.toml cannot be opened", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    mocks.invoke.mockRejectedValueOnce(new Error("boom"));
+    const handled = await handleSettings(
+      {
+        component: { id: "settings-panel" },
+        eventType: "open-config-file",
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.newEditorTab).not.toHaveBeenCalled();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Open config.toml failed",
+        kind: "error",
+      }),
+    );
+  });
+
   it("opens system-prompt.md in an editor tab rooted at the Aethon dir", async () => {
     const { ctx, mocks } = buildRouteFixture();
     mocks.invoke

@@ -11,9 +11,7 @@
 // so the form reflects what's actually on disk, not stale in-memory
 // tab state.
 
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import {
@@ -54,18 +52,6 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
     onEvent("update", { patch });
   };
   const close = () => onEvent("close");
-  // `aethon_home_dir` returns the *Aethon* dir (`~/.aethon`), not the
-  // user's home — joining another `/.aethon/` produces a wrong nested
-  // path that the agent never reads. Append the bare filename only.
-  const openConfigFile = async () => {
-    try {
-      const aethonDir = (await invoke<string>("aethon_home_dir")) ?? "";
-      const path = `${aethonDir}/config.toml`;
-      await openUrl(`file://${path}`);
-    } catch (err) {
-      console.warn("open config.toml failed:", err);
-    }
-  };
   const openSystemPromptFile = () => {
     onEvent("open-system-prompt");
   };
@@ -628,7 +614,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               <button
                 type="button"
                 className="ae-settings-secondary"
-                onClick={openConfigFile}
+                onClick={() => onEvent("open-config-file")}
               >
                 Open config.toml
               </button>
