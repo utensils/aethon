@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   groupMessages,
   groupKey,
+  anchorMessageIdForGroup,
+  findGroupIndexForMessageId,
   isToolCardMessage,
   isRunningToolCard,
   type MessageGroup,
@@ -207,5 +209,58 @@ describe("groupKey", () => {
     expect(
       groupKey({ type: "turn-block", id: "turnblock-y", messages: [text("y")] }),
     ).toBe("turnblock-y");
+  });
+});
+
+describe("anchorMessageIdForGroup", () => {
+  it("returns the message id for a single", () => {
+    expect(anchorMessageIdForGroup({ type: "single", message: text("m1") })).toBe(
+      "m1",
+    );
+  });
+
+  it("returns the first contained message id for clusters and blocks", () => {
+    expect(
+      anchorMessageIdForGroup({
+        type: "tool-group",
+        id: "toolgroup-a",
+        messages: [tool("a"), tool("b")],
+      }),
+    ).toBe("a");
+    expect(
+      anchorMessageIdForGroup({
+        type: "turn-block",
+        id: "turnblock-c",
+        messages: [text("c"), tool("d")],
+      }),
+    ).toBe("c");
+  });
+
+  it("is undefined-safe", () => {
+    expect(anchorMessageIdForGroup(undefined)).toBeUndefined();
+  });
+});
+
+describe("findGroupIndexForMessageId", () => {
+  it("finds a message rendered as a single", () => {
+    const groups = groupMessages([text("a"), text("b"), text("c")], "show");
+    expect(findGroupIndexForMessageId(groups, "b")).toBe(1);
+  });
+
+  it("finds a message that folded into a cluster", () => {
+    // group-run folds the two consecutive completed tool cards into one cluster.
+    const groups = groupMessages(
+      [text("u", "user"), tool("t0"), tool("t1"), text("done")],
+      "group-run",
+    );
+    // groups: [single u, tool-group(t0,t1), single done]
+    expect(groups[1].type).toBe("tool-group");
+    expect(findGroupIndexForMessageId(groups, "t1")).toBe(1);
+  });
+
+  it("returns -1 when the id is absent (e.g. a hidden tool card) or undefined", () => {
+    const groups = groupMessages([text("a"), tool("t0")], "hide");
+    expect(findGroupIndexForMessageId(groups, "t0")).toBe(-1);
+    expect(findGroupIndexForMessageId(groups, undefined)).toBe(-1);
   });
 });

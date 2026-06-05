@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { forwardRef, useEffect, useImperativeHandle } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatHistory,
@@ -18,10 +18,18 @@ const virtuosoMockState = vi.hoisted(
     followOutput?: unknown;
     scrollToCalls: unknown[];
     scrollToIndexCalls: unknown[];
+    // Virtuoso callbacks captured so tests can drive at-bottom / range
+    // transitions explicitly (the real library is the sole at-bottom signal).
+    atBottomStateChange?: (atBottom: boolean) => void;
+    rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
+    totalListHeightChanged?: (height: number) => void;
   } => ({
     followOutput: undefined,
     scrollToCalls: [],
     scrollToIndexCalls: [],
+    atBottomStateChange: undefined,
+    rangeChanged: undefined,
+    totalListHeightChanged: undefined,
   }),
 );
 
@@ -51,6 +59,7 @@ vi.mock("react-virtuoso", () => ({
         context,
         className,
         atBottomStateChange,
+        rangeChanged,
         scrollerRef,
         totalListHeightChanged,
         followOutput,
@@ -63,6 +72,7 @@ vi.mock("react-virtuoso", () => ({
         context?: unknown;
         className?: string;
         atBottomStateChange?: (atBottom: boolean) => void;
+        rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
         scrollerRef?: (ref: HTMLElement | null) => void;
         totalListHeightChanged?: (height: number) => void;
         followOutput?: unknown;
@@ -71,6 +81,9 @@ vi.mock("react-virtuoso", () => ({
     ) => {
       const Footer = components?.Footer;
       virtuosoMockState.followOutput = followOutput;
+      virtuosoMockState.atBottomStateChange = atBottomStateChange;
+      virtuosoMockState.rangeChanged = rangeChanged;
+      virtuosoMockState.totalListHeightChanged = totalListHeightChanged;
       useImperativeHandle(
         ref,
         () => ({
@@ -83,26 +96,32 @@ vi.mock("react-virtuoso", () => ({
         }),
         [],
       );
+      // jsdom can't measure, so fake a height proportional to row count:
+      // ~400px/row vs a 500px viewport means 1 row is not scrollable while 2+
+      // rows are. Mount pinned to the bottom (scrollTop at max), like Virtuoso's
+      // initialTopMostItemIndex. Follow is driven by real scroll/gesture events
+      // (the component owns scrolling); tests fire wheel+scroll to scroll away.
+      const scrollHeight = data.length * 400;
+      const clientHeight = 500;
       useEffect(() => {
         const el = document.querySelector<HTMLElement>(
           "[data-testid='virtuoso-mock']",
         );
         if (el) {
           Object.defineProperties(el, {
-            scrollHeight: { value: 1000, configurable: true },
-            clientHeight: { value: 500, configurable: true },
+            scrollHeight: { value: scrollHeight, configurable: true },
+            clientHeight: { value: clientHeight, configurable: true },
             scrollTop: {
-              value: 470,
+              value: Math.max(0, scrollHeight - clientHeight),
               writable: true,
               configurable: true,
             },
           });
         }
         scrollerRef?.(el);
-        totalListHeightChanged?.(0);
-        atBottomStateChange?.(false);
+        totalListHeightChanged?.(scrollHeight);
         return () => scrollerRef?.(null);
-      }, [atBottomStateChange, scrollerRef, totalListHeightChanged]);
+      }, [scrollHeight, scrollerRef, totalListHeightChanged]);
       return (
         <div className={className} data-testid="virtuoso-mock">
           {data.map((item, index) => (
@@ -189,6 +208,29 @@ function renderHistory(state: Record<string, unknown>) {
     />,
   );
   return { onEvent, ...result };
+}
+
+function setScrollTop(el: HTMLElement, top: number) {
+  Object.defineProperty(el, "scrollTop", {
+    value: top,
+    writable: true,
+    configurable: true,
+  });
+}
+
+// Simulate a genuine user scroll-away: a gesture (wheel) then a scroll event at
+// a non-bottom position. The component only honors gesture-flagged scrolls.
+function userScrollUp(el: HTMLElement) {
+  fireEvent.wheel(el);
+  setScrollTop(el, 0);
+  fireEvent.scroll(el);
+}
+
+// Simulate the user scrolling back to the bottom.
+function userScrollToBottom(el: HTMLElement) {
+  fireEvent.wheel(el);
+  setScrollTop(el, el.scrollHeight - el.clientHeight);
+  fireEvent.scroll(el);
 }
 
 function renderToolCard(props: Record<string, unknown>) {
@@ -457,7 +499,7 @@ describe("ChatInput", () => {
     ).toBeNull();
   });
 
-  it("keeps following latest when Virtuoso reports false before a user scrolls away", () => {
+  it("starts pinned to latest: pill hidden, Virtuoso followOutput disabled", () => {
     renderHistory({
       messages: [
         { id: "1", role: "user", text: "start" },
@@ -468,11 +510,12 @@ describe("ChatInput", () => {
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
+    // The controller owns scrolling; Virtuoso's own follow is off so it never
+    // double-scrolls or emits spurious not-at-bottom on reflow.
+    expect(virtuosoMockState.followOutput).toBe(false);
   });
 
-  it("ignores intermediate non-bottom scroll events from programmatic follow", () => {
+  it("shows the pill and stops following when the user scrolls up", () => {
     renderHistory({
       messages: [
         { id: "1", role: "user", text: "start" },
@@ -480,84 +523,165 @@ describe("ChatInput", () => {
       ],
     });
 
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
-
     const scroller = screen.getByTestId("virtuoso-mock");
-    scroller.scrollTop = 100;
-    fireEvent.scroll(scroller);
-
-    expect(
-      screen.queryByRole("button", { name: "Scroll to latest message" }),
-    ).toBeNull();
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
-  });
-
-  it("does not treat non-scrolling keydown events as user scroll-away", () => {
-    renderHistory({
-      messages: [
-        { id: "1", role: "user", text: "start" },
-        { id: "2", role: "agent", text: "streaming update" },
-      ],
-    });
-
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
-
-    const scroller = screen.getByTestId("virtuoso-mock");
-    fireEvent.keyDown(scroller, { key: "Enter" });
-    scroller.scrollTop = 100;
-    fireEvent.scroll(scroller);
-
-    expect(
-      screen.queryByRole("button", { name: "Scroll to latest message" }),
-    ).toBeNull();
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
-  });
-
-  it("treats scrolling keydown events as user scroll-away", () => {
-    renderHistory({
-      messages: [
-        { id: "1", role: "user", text: "start" },
-        { id: "2", role: "agent", text: "streaming update" },
-      ],
-    });
-
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
-
-    const scroller = screen.getByTestId("virtuoso-mock");
-    fireEvent.keyDown(scroller, { key: "PageUp" });
-    scroller.scrollTop = 100;
-    fireEvent.scroll(scroller);
+    act(() => userScrollUp(scroller));
 
     expect(
       screen.getByRole("button", { name: "Scroll to latest message" }),
     ).toBeTruthy();
-    expect(virtuosoMockState.followOutput).toBe(false);
   });
 
-  it("disables Virtuoso followOutput when the user scrolls away", () => {
+  it("re-engages follow and hides the pill when the user scrolls back to bottom", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+
+    act(() => userScrollToBottom(scroller));
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("ignores un-gestured scroll events (our own re-pins) — follow stays on", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    // A scroll event WITHOUT a preceding user gesture (as a programmatic re-pin
+    // produces) must not disengage follow.
+    setScrollTop(scroller, 0);
+    act(() => fireEvent.scroll(scroller));
+
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("re-pins to the bottom on content growth while following", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const before = virtuosoMockState.scrollToCalls.length;
+    // Content grew (e.g. a streamed token) → totalListHeightChanged fires.
+    act(() => virtuosoMockState.totalListHeightChanged?.(2000));
+
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
+  it("does NOT re-pin on content growth after the user scrolled away", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    act(() => virtuosoMockState.totalListHeightChanged?.(4000));
+
+    // Following is off → streaming growth must not yank the reader to the bottom.
+    expect(virtuosoMockState.scrollToCalls.length).toBe(before);
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+  });
+
+  it("does not treat non-scrolling keydowns as a scroll-away", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    // Enter is not a scroll-intent key; a following scroll event must be ignored.
+    fireEvent.keyDown(scroller, { key: "Enter" });
+    setScrollTop(scroller, 0);
+    act(() => fireEvent.scroll(scroller));
+
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("treats a PageUp keydown as a scroll-away gesture", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    fireEvent.keyDown(scroller, { key: "PageUp" });
+    setScrollTop(scroller, 0);
+    act(() => fireEvent.scroll(scroller));
+
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+  });
+
+  it("pill click scrolls to the true bottom and re-engages follow", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    );
+
+    // scrollTo({ top: MAX }) targets the true bottom (below any footer).
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("keeps follow off across streaming once the user has scrolled away", () => {
     const messages = [
       { id: "1", role: "user", text: "start" },
       { id: "2", role: "agent", text: "streaming update", thinking: "plan" },
     ];
-    const { onEvent, rerender } = renderHistory({
-      waiting: true,
-      messages,
-    });
+    const { onEvent, rerender } = renderHistory({ waiting: true, messages });
 
     const scroller = screen.getByTestId("virtuoso-mock");
-    fireEvent.wheel(scroller);
-    scroller.scrollTop = 100;
-    fireEvent.scroll(scroller);
-
+    act(() => userScrollUp(scroller));
     expect(
       screen.getByRole("button", { name: "Scroll to latest message" }),
     ).toBeTruthy();
-    expect(virtuosoMockState.followOutput).toBe(false);
+    const before = virtuosoMockState.scrollToCalls.length;
 
     rerender(
       <ChatHistory
@@ -576,11 +700,16 @@ describe("ChatInput", () => {
         onEvent={onEvent}
       />,
     );
+    act(() => virtuosoMockState.totalListHeightChanged?.(3000));
 
-    expect(virtuosoMockState.followOutput).toBe(false);
+    // Streaming more content must not silently re-enable follow or yank down.
+    expect(virtuosoMockState.scrollToCalls.length).toBe(before);
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
   });
 
-  it("uses stable non-animated follow only while the latest agent text streams a fenced block", () => {
+  it("renders a streaming fenced block as a code frame (follow stays pinned)", () => {
     renderHistory({
       waiting: true,
       messages: [
@@ -595,8 +724,11 @@ describe("ChatInput", () => {
 
     expect(document.querySelector(".a2ui-code-frame")).toBeTruthy();
     expect(screen.queryByText("```text")).toBeNull();
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("auto");
+    // Virtuoso's own follow is disabled; the controller re-pins via height change.
+    expect(virtuosoMockState.followOutput).toBe(false);
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
   });
 
   it("rerenders the latest fenced message when streaming finishes", () => {
@@ -630,7 +762,7 @@ describe("ChatInput", () => {
     expect(document.querySelector(".a2ui-code-frame")).toBeNull();
   });
 
-  it("keeps smooth follow for normal streaming prose", () => {
+  it("renders normal streaming prose without a code frame (follow stays pinned)", () => {
     renderHistory({
       waiting: true,
       messages: [
@@ -640,8 +772,10 @@ describe("ChatInput", () => {
     });
 
     expect(document.querySelector(".a2ui-code-frame")).toBeNull();
-    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
-    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
+    expect(virtuosoMockState.followOutput).toBe(false);
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
   });
 
   it("renders user image attachments and opens them in a lightbox", () => {
@@ -992,11 +1126,9 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
     ];
     const { rerender } = render(withHistory(running));
 
-    const scroller = screen.getByTestId("virtuoso-mock");
-    fireEvent.wheel(scroller);
-    scroller.scrollTop = 100;
-    fireEvent.scroll(scroller);
-    expect(virtuosoMockState.followOutput).toBe(false);
+    // User scrolls away.
+    act(() => userScrollUp(screen.getByTestId("virtuoso-mock")));
+    const scrollsBefore = virtuosoMockState.scrollToCalls.length;
 
     rerender(
       withHistory([
@@ -1014,7 +1146,12 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
     );
 
     expect(screen.getByText("2 tool calls")).toBeTruthy();
-    expect(virtuosoMockState.followOutput).toBe(false);
+    // Collapsing the completed tools into a group must NOT re-pin or re-enable
+    // follow while the user is reading scrolled-up.
+    expect(virtuosoMockState.scrollToCalls.length).toBe(scrollsBefore);
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
   });
 
   it("group-turn folds a turn's tools into one cluster with a name peek", () => {
@@ -1056,5 +1193,96 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
     });
     expect(screen.queryByText("2 tool calls")).toBeNull();
     expect(screen.queryByText("Agent turn")).toBeNull();
+  });
+});
+
+describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
+  const registry = new ExtensionRegistry();
+  registry.register({
+    name: "test-tool-card",
+    components: { "tool-card": ToolCard },
+  });
+
+  // show-mode group indices: u1(0) a1(1) t1(2) t2(3) a2(4).
+  const messages = [
+    { id: "u1", role: "user", text: "do tools" },
+    { id: "a1", role: "agent", text: "reading" },
+    {
+      id: "t1",
+      role: "agent",
+      a2ui: {
+        components: [
+          { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+        ],
+      },
+    },
+    {
+      id: "t2",
+      role: "agent",
+      a2ui: {
+        components: [
+          { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 1, endedAt: 2 } },
+        ],
+      },
+    },
+    { id: "a2", role: "agent", text: "done" },
+  ];
+
+  const withVis = (mode: string) => (
+    <ExtensionRegistryProvider registry={registry}>
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{ messages, transcriptVisibility: { toolCalls: mode } }}
+        onEvent={vi.fn()}
+      />
+    </ExtensionRegistryProvider>
+  );
+
+  it("re-pins to the bottom when a filter changes while following", () => {
+    const { rerender } = render(withVis("show"));
+    // Following by default (no user scroll-away).
+    const before = virtuosoMockState.scrollToCalls.length;
+    rerender(withVis("group-run"));
+    // The following branch pins to the true bottom via scrollTo({ top: MAX }).
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
+  it("preserves the reading anchor when a filter changes while scrolled-up", () => {
+    const { rerender } = render(withVis("show"));
+    // Topmost visible row is "a1" (show index 1); user has scrolled up.
+    act(() => virtuosoMockState.rangeChanged?.({ startIndex: 1, endIndex: 4 }));
+    act(() => userScrollUp(screen.getByTestId("virtuoso-mock")));
+    const before = virtuosoMockState.scrollToIndexCalls.length;
+
+    rerender(withVis("group-run"));
+
+    // group-run keeps "a1" a single, so the anchor maps to its new index and is
+    // pinned to the TOP (align "start") — the reading position is preserved.
+    expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThan(before);
+    const last = virtuosoMockState.scrollToIndexCalls.at(-1);
+    expect(last).toMatchObject({ index: 1, align: "start" });
+  });
+
+  it("falls back to a surviving ancestor when the anchored tool card is hidden", () => {
+    const { rerender } = render(withVis("show"));
+    // Anchor ON the tool card "t1" (show index 2); user has scrolled up.
+    act(() => virtuosoMockState.rangeChanged?.({ startIndex: 2, endIndex: 4 }));
+    act(() => userScrollUp(screen.getByTestId("virtuoso-mock")));
+    const before = virtuosoMockState.scrollToIndexCalls.length;
+
+    rerender(withVis("hide"));
+
+    // hide drops t1/t2; the anchor disappears, so we fall back to the nearest
+    // preceding survivor "a1" (hide index 1), still pinned to the top.
+    expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThan(before);
+    const last = virtuosoMockState.scrollToIndexCalls.at(-1);
+    expect(last).toMatchObject({ index: 1, align: "start" });
   });
 });
