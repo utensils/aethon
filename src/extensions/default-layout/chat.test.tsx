@@ -494,6 +494,51 @@ describe("ChatInput", () => {
     expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
   });
 
+  it("does not treat non-scrolling keydown events as user scroll-away", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
+    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    fireEvent.keyDown(scroller, { key: "Enter" });
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
+    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
+  });
+
+  it("treats scrolling keydown events as user scroll-away", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    expect(virtuosoMockState.followOutput).toEqual(expect.any(Function));
+    expect((virtuosoMockState.followOutput as () => unknown)()).toBe("smooth");
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    fireEvent.keyDown(scroller, { key: "PageUp" });
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+    expect(virtuosoMockState.followOutput).toBe(false);
+  });
+
   it("disables Virtuoso followOutput when the user scrolls away", () => {
     const messages = [
       { id: "1", role: "user", text: "start" },

@@ -51,6 +51,33 @@ const USER_SCROLL_INTENT_EVENTS = [
   "pointerdown",
   "keydown",
 ] as const;
+const SCROLL_INTENT_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+  "Spacebar",
+]);
+
+function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return Boolean(
+    target.closest(
+      "button,a,input,textarea,select,[role='button'],[role='link'],[role='textbox'],[tabindex]:not([tabindex='-1'])",
+    ),
+  );
+}
+
+function isUserScrollIntentEvent(event: Event): boolean {
+  if (!(event instanceof KeyboardEvent)) return true;
+  if (!SCROLL_INTENT_KEYS.has(event.key)) return false;
+  if (isInteractiveKeyboardTarget(event.target)) return false;
+  return true;
+}
 
 function addUserScrollIntentListeners(
   el: HTMLElement,
@@ -682,7 +709,8 @@ function VirtualMessageList({
     );
   }, []);
 
-  const markUserScrollIntent = useCallback(() => {
+  const markUserScrollIntent = useCallback((event: Event) => {
+    if (!isUserScrollIntentEvent(event)) return;
     userScrollIntentRef.current = true;
     programmaticScrollUntilRef.current = 0;
   }, []);
