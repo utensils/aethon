@@ -513,9 +513,11 @@ function WorktreePrBadge({ chip }: { chip: WorktreePrChip }) {
         href={url}
         title={chip.title}
         aria-label={chip.title}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          if (e.detail > 1) return;
           void openUrl(url).catch(() => undefined);
         }}
         onDoubleClick={(e) => e.stopPropagation()}

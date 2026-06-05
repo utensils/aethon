@@ -30,6 +30,7 @@ import {
   WORKTREE_PENDING_CI_REFRESH_MS,
   WORKTREE_PR_REFRESH_MS,
   WorktreeRow,
+  type WorktreeRowProps,
   type WorktreeSidebarItem,
 } from "./worktree-row";
 
@@ -56,7 +57,10 @@ function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
 
 function harness(
   item: WorktreeSidebarItem,
-  options: { renaming?: boolean } = {},
+  options: {
+    renaming?: boolean;
+    onPointerDragStart?: WorktreeRowProps["onPointerDragStart"];
+  } = {},
 ) {
   const onEvent = vi.fn();
   const onItemContextMenu = vi.fn();
@@ -70,6 +74,7 @@ function harness(
         onItemContextMenu={onItemContextMenu}
         renaming={options.renaming}
         onRenameEnd={onRenameEnd}
+        onPointerDragStart={options.onPointerDragStart}
       />
     </ul>,
   );
@@ -225,11 +230,14 @@ describe("WorktreeRow", () => {
       skipped: 0,
       checks: [],
     });
-    const { onEvent } = harness(wt());
+    const onPointerDragStart = vi.fn();
+    const { onEvent } = harness(wt(), { onPointerDragStart });
     const badge = await screen.findByLabelText(/Open PR #42/);
 
+    fireEvent.pointerDown(badge);
     fireEvent.click(badge);
 
+    expect(onPointerDragStart).not.toHaveBeenCalled();
     expect(openUrl).toHaveBeenCalledWith("https://github.test/pr/42");
     expect(onEvent).not.toHaveBeenCalledWith(
       "switch-worktree",
@@ -237,7 +245,9 @@ describe("WorktreeRow", () => {
       expect.anything(),
     );
 
+    fireEvent.click(badge, { detail: 2 });
     fireEvent.doubleClick(badge);
+    expect(openUrl).toHaveBeenCalledTimes(1);
     expect(onEvent).not.toHaveBeenCalledWith(
       "open-worktree-in-new-tab",
       expect.anything(),
