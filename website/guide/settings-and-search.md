@@ -25,9 +25,8 @@ Two convenience buttons live at the bottom:
 
 - **Open `config.toml`** — opens `~/.aethon/config.toml` in Aethon's
   in-app Monaco editor for power-user edits.
-- **Reset to defaults** — clears every key Aethon manages. Doesn't
-  delete the file (it stays for any keys you've added by hand) — only
-  the Aethon-managed sections are reset.
+- **Reset layout** — restores the sidebar, file sidebar, and terminal
+  panel sizes to their defaults without changing `config.toml`.
 
 ::: tip Direct edits override
 The Settings panel reads the file every time it opens, so manual edits
