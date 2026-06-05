@@ -10,24 +10,35 @@ import {
   waitFor,
 } from "@testing-library/react";
 
-const { branchStatusMock, checksMock } = vi.hoisted(() => ({
-  branchStatusMock: vi.fn(),
-  checksMock: vi.fn(),
-}));
+const { branchStatusMock, branchRefreshMock, checksMock, checksRefreshMock } =
+  vi.hoisted(() => ({
+    branchStatusMock: vi.fn(),
+    branchRefreshMock: vi.fn(),
+    checksMock: vi.fn(),
+    checksRefreshMock: vi.fn(),
+  }));
 
 vi.mock("../../../ghBranchStatusCache", () => ({
   getGhBranchStatus: branchStatusMock,
+  refreshGhBranchStatus: branchRefreshMock,
 }));
 vi.mock("../../../ghChecksCache", () => ({
   getGhChecks: checksMock,
+  refreshGhChecks: checksRefreshMock,
 }));
 
-import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
+import {
+  WORKTREE_PENDING_CI_REFRESH_MS,
+  WorktreeRow,
+  type WorktreeSidebarItem,
+} from "./worktree-row";
 
 afterEach(() => {
   vi.useRealTimers();
   branchStatusMock.mockReset();
+  branchRefreshMock.mockReset();
   checksMock.mockReset();
+  checksRefreshMock.mockReset();
   cleanup();
 });
 
@@ -86,6 +97,8 @@ describe("WorktreeRow", () => {
       skipped: 0,
       checks: [],
     });
+    branchRefreshMock.mockImplementation(branchStatusMock);
+    checksRefreshMock.mockImplementation(checksMock);
   });
 
   it("emits switch-worktree on row click", () => {
@@ -178,8 +191,95 @@ describe("WorktreeRow", () => {
       checks: [],
     });
     harness(wt());
-    await waitFor(() => expect(screen.getByText("#42")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("open #42")).toBeTruthy());
     expect(screen.getByLabelText(/Open PR #42/)).toBeTruthy();
+    expect(
+      document.querySelector(".ae-worktree-pr-ci--pending"),
+    ).toBeTruthy();
+  });
+
+  it("periodically refreshes PR and CI badges without remounting", async () => {
+    vi.useFakeTimers();
+    branchStatusMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      pushed: true,
+      worktreeBroken: false,
+      prs: [
+        {
+          number: 42,
+          state: "OPEN",
+          title: "Feature X",
+          url: "https://github.test/pr/42",
+          isDraft: false,
+          merged: false,
+          baseRefName: "main",
+        },
+      ],
+    });
+    checksMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      conclusion: "pending",
+      total: 1,
+      passed: 0,
+      failed: 0,
+      pending: 1,
+      skipped: 0,
+      checks: [],
+    });
+    branchRefreshMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      pushed: true,
+      worktreeBroken: false,
+      prs: [
+        {
+          number: 42,
+          state: "CLOSED",
+          title: "Feature X",
+          url: "https://github.test/pr/42",
+          isDraft: false,
+          merged: true,
+          baseRefName: "main",
+        },
+      ],
+    });
+    checksRefreshMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      conclusion: "success",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      pending: 0,
+      skipped: 0,
+      checks: [],
+    });
+
+    harness(wt());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("open #42")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WORKTREE_PENDING_CI_REFRESH_MS);
+    });
+
+    expect(branchRefreshMock).toHaveBeenCalledWith(
+      "/repo-feature-x",
+      "feature-x",
+    );
+    expect(checksRefreshMock).toHaveBeenCalledWith(
+      "/repo-feature-x",
+      "feature-x",
+    );
+    expect(screen.getByText("merged #42")).toBeTruthy();
+    expect(
+      document.querySelector(".ae-worktree-pr-ci--success"),
+    ).toBeTruthy();
   });
 
   it("does not fetch CI checks when there is no PR to summarize", async () => {

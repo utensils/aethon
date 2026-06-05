@@ -16,12 +16,18 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
-import { getGhBranchStatus } from "../../../ghBranchStatusCache";
-import { getGhChecks } from "../../../ghChecksCache";
+import {
+  getGhBranchStatus,
+  refreshGhBranchStatus,
+} from "../../../ghBranchStatusCache";
+import { getGhChecks, refreshGhChecks } from "../../../ghChecksCache";
 import {
   summarizeWorktreePrStatus,
   type WorktreePrChip,
 } from "./worktree-pr-status";
+
+export const WORKTREE_PR_REFRESH_MS = 60_000;
+export const WORKTREE_PENDING_CI_REFRESH_MS = 45_000;
 
 export interface WorktreeSidebarItem {
   id: string;
@@ -98,33 +104,86 @@ export function WorktreeRow({
 
   useEffect(() => {
     let cancelled = false;
+    let polling = false;
+    let loadedOnce = false;
+    let refreshTimer: number | null = null;
     const branch = item.branch;
     if (!prEligible || !branch) {
       return;
     }
-    void (async () => {
+
+    const clearRefreshTimer = () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+    };
+
+    const scheduleRefresh = (chip: WorktreePrChip | null) => {
+      clearRefreshTimer();
+      const delay =
+        chip?.ci === "pending"
+          ? WORKTREE_PENDING_CI_REFRESH_MS
+          : WORKTREE_PR_REFRESH_MS;
+      refreshTimer = window.setTimeout(() => {
+        void load("refresh");
+      }, delay);
+    };
+
+    const load = async (mode: "cache" | "refresh") => {
+      if (cancelled || polling || document.hidden) return;
+      polling = true;
       setPrLoading(true);
-      setPrChip(null);
+      if (!loadedOnce) setPrChip(null);
       try {
-        const status = await getGhBranchStatus(item.path, branch);
+        const status =
+          mode === "refresh"
+            ? await refreshGhBranchStatus(item.path, branch)
+            : await getGhBranchStatus(item.path, branch);
         const checks =
           status.ghAvailable &&
           status.repo &&
           !status.worktreeBroken &&
           status.prs.length > 0
-            ? await getGhChecks(item.path, branch).catch(() => null)
+            ? await (mode === "refresh"
+                ? refreshGhChecks(item.path, branch)
+                : getGhChecks(item.path, branch)
+              ).catch(() => null)
             : null;
         if (!cancelled) {
-          setPrChip(summarizeWorktreePrStatus(status, checks));
+          const chip = summarizeWorktreePrStatus(status, checks);
+          loadedOnce = true;
+          setPrChip(chip);
+          scheduleRefresh(chip);
         }
       } catch {
-        if (!cancelled) setPrChip(null);
+        if (!cancelled) {
+          loadedOnce = true;
+          setPrChip(null);
+          scheduleRefresh(null);
+        }
       } finally {
+        polling = false;
         if (!cancelled) setPrLoading(false);
       }
-    })();
+    };
+
+    const onFocus = () => {
+      if (!document.hidden) void load("cache");
+    };
+    const onVisibility = () => {
+      if (!document.hidden) void load("cache");
+    };
+
+    void load("cache");
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       cancelled = true;
+      clearRefreshTimer();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [item.branch, item.path, prEligible]);
 

@@ -1367,8 +1367,8 @@ body.ae-resizing-sidebar .a2ui-layout {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  flex: 0 0 58px;
-  min-width: 58px;
+  flex: 0 0 86px;
+  min-width: 86px;
   margin-left: var(--space-1);
 }
 .ae-worktree-pr-chip {
@@ -1376,7 +1376,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  max-width: 58px;
+  max-width: 86px;
   min-width: 0;
   height: 18px;
   padding: 0 6px;

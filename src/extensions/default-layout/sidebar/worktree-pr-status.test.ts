@@ -48,7 +48,10 @@ describe("summarizeWorktreePrStatus", () => {
   });
 
   it("summarizes open and draft PRs", () => {
-    expect(summarizeWorktreePrStatus(status(), checks())?.label).toBe("#12");
+    const openChip = summarizeWorktreePrStatus(status(), checks());
+    expect(openChip?.label).toBe("open #12");
+    expect(openChip?.kind).toBe("open");
+    expect(openChip?.title).toContain("CI success");
     expect(
       summarizeWorktreePrStatus(
         status({
@@ -66,6 +69,23 @@ describe("summarizeWorktreePrStatus", () => {
         }),
       )?.label,
     ).toBe("draft #13");
+    expect(
+      summarizeWorktreePrStatus(
+        status({
+          prs: [
+            {
+              number: 13,
+              state: "OPEN",
+              title: "Draft work",
+              url: "u",
+              isDraft: true,
+              merged: false,
+              baseRefName: "main",
+            },
+          ],
+        }),
+      )?.kind,
+    ).toBe("draft");
   });
 
   it("summarizes merged and closed PRs", () => {
@@ -106,10 +126,20 @@ describe("summarizeWorktreePrStatus", () => {
   });
 
   it("carries CI rollup into the chip", () => {
+    const chip = summarizeWorktreePrStatus(
+      status(),
+      checks({ conclusion: "failure" }),
+    );
+    expect(chip?.ci).toBe("failure");
+    expect(chip?.title).toContain("CI failure");
     expect(
-      summarizeWorktreePrStatus(status(), checks({ conclusion: "failure" }))
+      summarizeWorktreePrStatus(status(), checks({ conclusion: "pending" }))
         ?.ci,
-    ).toBe("failure");
+    ).toBe("pending");
+    expect(
+      summarizeWorktreePrStatus(status(), checks({ conclusion: "neutral" }))
+        ?.ci,
+    ).toBe("neutral");
   });
 
   it("marks broken worktrees as stale", () => {
