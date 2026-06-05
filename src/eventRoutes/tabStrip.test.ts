@@ -119,7 +119,7 @@ describe("handleTabStrip", () => {
     expect(mocks.closeTab).not.toHaveBeenCalledWith("sh-1");
   });
 
-  it("close-all closes every non-shell tab", async () => {
+  it("close-all delegates to the active workspace close operation", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {
         tabs: [
@@ -136,9 +136,8 @@ describe("handleTabStrip", () => {
       },
       ctx,
     );
-    expect(mocks.closeTab).toHaveBeenCalledWith("ed-1");
-    expect(mocks.closeTab).toHaveBeenCalledWith("ag-1");
-    expect(mocks.closeTab).not.toHaveBeenCalledWith("sh-1");
+    expect(mocks.closeAllWorkspaceSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.closeTab).not.toHaveBeenCalled();
   });
 
   it("rename updates the label and persists it through the bridge", async () => {

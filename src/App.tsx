@@ -54,6 +54,7 @@ import { useProjectModelRecorder } from "./hooks/useProjectModelRecorder";
 import { useProjectSyncEffects } from "./hooks/useProjectSyncEffects";
 import { useAppSlashCommandContext } from "./hooks/useAppSlashCommandContext";
 import { useAppBridgeMessages } from "./hooks/useAppBridgeMessages";
+import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
 import pkg from "../package.json" with { type: "json" };
@@ -856,6 +857,14 @@ export default function App() {
     renameEditorTabsForPath,
     closeEditorTabsForPath,
     closeTab,
+    closeAllWorkspaceSessions: () =>
+      closeAllWorkspaceSessions({
+        setState,
+        stateRef,
+        projectsRef,
+        tabBucketsRef,
+        closeTab,
+      }),
     setActiveTab,
     activateTabAnywhere: (tabId: string) => {
       const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];

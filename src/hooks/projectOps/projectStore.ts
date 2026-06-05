@@ -142,7 +142,23 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
     const activePath = normalizeSessionPath(
       activeCwd(projectsRef.current) ?? undefined,
     );
-    if (!activePath) return discovered;
+    if (!activePath) {
+      const projectPaths = new Set<string>();
+      for (const project of projectsRef.current.projects) {
+        const projectPath = normalizeSessionPath(project.path);
+        if (projectPath) projectPaths.add(projectPath);
+        for (const worktree of projectsRef.current.worktreesByProject[
+          project.id
+        ] ?? []) {
+          const worktreePath = normalizeSessionPath(worktree.path);
+          if (worktreePath) projectPaths.add(worktreePath);
+        }
+      }
+      return discovered.filter((session) => {
+        const cwd = normalizeSessionPath(session.cwd);
+        return !cwd || !projectPaths.has(cwd);
+      });
+    }
     return discovered.filter(
       (session) => normalizeSessionPath(session.cwd) === activePath,
     );
