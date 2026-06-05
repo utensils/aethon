@@ -23,6 +23,9 @@ import {
   type WorktreePrChip,
 } from "./worktree-pr-status";
 
+export const WORKTREE_PR_REFRESH_MS = 60_000;
+export const WORKTREE_PENDING_CI_REFRESH_MS = 45_000;
+
 export interface WorktreeSidebarItem {
   id: string;
   projectId?: string;
@@ -98,13 +101,40 @@ export function WorktreeRow({
 
   useEffect(() => {
     let cancelled = false;
+    let polling = false;
+    let loadedOnce = false;
+    let refreshTimer: number | null = null;
     const branch = item.branch;
     if (!prEligible || !branch) {
       return;
     }
-    void (async () => {
-      setPrLoading(true);
-      setPrChip(null);
+
+    const clearRefreshTimer = () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+    };
+
+    const scheduleRefresh = (chip: WorktreePrChip | null) => {
+      clearRefreshTimer();
+      const delay =
+        chip?.ci === "pending"
+          ? WORKTREE_PENDING_CI_REFRESH_MS
+          : WORKTREE_PR_REFRESH_MS;
+      refreshTimer = window.setTimeout(() => {
+        void load();
+      }, delay);
+    };
+
+    const load = async () => {
+      if (cancelled || polling || document.hidden) return;
+      const showLoading = !loadedOnce;
+      polling = true;
+      if (showLoading) {
+        setPrLoading(true);
+        setPrChip(null);
+      }
       try {
         const status = await getGhBranchStatus(item.path, branch);
         const checks =
@@ -115,16 +145,39 @@ export function WorktreeRow({
             ? await getGhChecks(item.path, branch).catch(() => null)
             : null;
         if (!cancelled) {
-          setPrChip(summarizeWorktreePrStatus(status, checks));
+          const chip = summarizeWorktreePrStatus(status, checks);
+          loadedOnce = true;
+          setPrChip(chip);
+          scheduleRefresh(chip);
         }
       } catch {
-        if (!cancelled) setPrChip(null);
+        if (!cancelled) {
+          loadedOnce = true;
+          setPrChip(null);
+          scheduleRefresh(null);
+        }
       } finally {
-        if (!cancelled) setPrLoading(false);
+        polling = false;
+        if (!cancelled && showLoading) setPrLoading(false);
       }
-    })();
+    };
+
+    const onFocus = () => {
+      if (!document.hidden) void load();
+    };
+    const onVisibility = () => {
+      if (!document.hidden) void load();
+    };
+
+    void load();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       cancelled = true;
+      clearRefreshTimer();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [item.branch, item.path, prEligible]);
 

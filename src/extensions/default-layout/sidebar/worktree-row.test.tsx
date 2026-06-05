@@ -11,8 +11,8 @@ import {
 } from "@testing-library/react";
 
 const { branchStatusMock, checksMock } = vi.hoisted(() => ({
-  branchStatusMock: vi.fn(),
-  checksMock: vi.fn(),
+    branchStatusMock: vi.fn(),
+    checksMock: vi.fn(),
 }));
 
 vi.mock("../../../ghBranchStatusCache", () => ({
@@ -22,7 +22,12 @@ vi.mock("../../../ghChecksCache", () => ({
   getGhChecks: checksMock,
 }));
 
-import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
+import {
+  WORKTREE_PENDING_CI_REFRESH_MS,
+  WORKTREE_PR_REFRESH_MS,
+  WorktreeRow,
+  type WorktreeSidebarItem,
+} from "./worktree-row";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -178,8 +183,125 @@ describe("WorktreeRow", () => {
       checks: [],
     });
     harness(wt());
-    await waitFor(() => expect(screen.getByText("#42")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("open #42")).toBeTruthy());
     expect(screen.getByLabelText(/Open PR #42/)).toBeTruthy();
+    expect(
+      document.querySelector(".ae-worktree-pr-ci--pending"),
+    ).toBeTruthy();
+  });
+
+  it("periodically polls PR and CI badges through the cache getters", async () => {
+    vi.useFakeTimers();
+    branchStatusMock
+      .mockResolvedValueOnce({
+        ghAvailable: true,
+        repo: "owner/repo",
+        pushed: true,
+        worktreeBroken: false,
+        prs: [
+          {
+            number: 42,
+            state: "OPEN",
+            title: "Feature X",
+            url: "https://github.test/pr/42",
+            isDraft: false,
+            merged: false,
+            baseRefName: "main",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ghAvailable: true,
+        repo: "owner/repo",
+        pushed: true,
+        worktreeBroken: false,
+        prs: [
+          {
+            number: 42,
+            state: "CLOSED",
+            title: "Feature X",
+            url: "https://github.test/pr/42",
+            isDraft: false,
+            merged: true,
+            baseRefName: "main",
+          },
+        ],
+      });
+    checksMock
+      .mockResolvedValueOnce({
+        ghAvailable: true,
+        repo: "owner/repo",
+        conclusion: "pending",
+        total: 1,
+        passed: 0,
+        failed: 0,
+        pending: 1,
+        skipped: 0,
+        checks: [],
+      })
+      .mockResolvedValueOnce({
+        ghAvailable: true,
+        repo: "owner/repo",
+        conclusion: "success",
+        total: 1,
+        passed: 1,
+        failed: 0,
+        pending: 0,
+        skipped: 0,
+        checks: [],
+      });
+
+    harness(wt());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("open #42")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WORKTREE_PENDING_CI_REFRESH_MS);
+    });
+
+    expect(branchStatusMock).toHaveBeenCalledTimes(2);
+    expect(branchStatusMock).toHaveBeenLastCalledWith(
+      "/repo-feature-x",
+      "feature-x",
+    );
+    expect(checksMock).toHaveBeenCalledTimes(2);
+    expect(checksMock).toHaveBeenLastCalledWith(
+      "/repo-feature-x",
+      "feature-x",
+    );
+    expect(screen.getByText("merged #42")).toBeTruthy();
+    expect(
+      document.querySelector(".ae-worktree-pr-ci--success"),
+    ).toBeTruthy();
+  });
+
+  it("does not show an empty PR slot during background refreshes without a PR", async () => {
+    vi.useFakeTimers();
+    branchStatusMock.mockResolvedValue({
+      ghAvailable: true,
+      repo: "owner/repo",
+      pushed: true,
+      worktreeBroken: false,
+      prs: [],
+    });
+
+    harness(wt());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(document.querySelector(".ae-worktree-pr-slot")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WORKTREE_PR_REFRESH_MS);
+    });
+
+    expect(branchStatusMock).toHaveBeenCalledTimes(2);
+    expect(checksMock).not.toHaveBeenCalled();
+    expect(document.querySelector(".ae-worktree-pr-slot")).toBeNull();
   });
 
   it("does not fetch CI checks when there is no PR to summarize", async () => {

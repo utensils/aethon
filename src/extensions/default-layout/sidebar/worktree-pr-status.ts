@@ -63,7 +63,7 @@ export function summarizeWorktreePrStatus(
         ? `merged #${pr.number}`
         : kind === "closed"
           ? `closed #${pr.number}`
-          : `#${pr.number}`;
+          : `open #${pr.number}`;
   const stateLabel =
     kind === "open"
       ? "Open"
