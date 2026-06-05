@@ -41,7 +41,7 @@ The 20 primitives (`text`, `heading`, `paragraph`, `code`, `card`,
 `container`, `divider`, `button`, `text-input`, `date-picker`,
 `select`, `checkbox`, `slider`, `table`, `list`, `image`, `icon`,
 `form`, `form-field`, `for-each`) are intentionally NOT overridable —
-they are the substrate composites are built from.
+they are the substrate that composites are built from.
 
 ## Data Binding via `$ref`
 

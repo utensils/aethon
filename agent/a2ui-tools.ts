@@ -114,10 +114,10 @@ const CanvasPatchParams = Type.Object({
 
 type EmptyParamsT = Static<typeof EmptyParams>;
 type OptionalPathParamsT = Static<typeof OptionalPathParams>;
-type PathValueParamsT = Static<typeof PathValueParams>;
-type LayoutPayloadParamsT = Static<typeof LayoutPayloadParams>;
-type CanvasComponentsParamsT = Static<typeof CanvasComponentsParams>;
-type CanvasPatchParamsT = Static<typeof CanvasPatchParams>;
+type PathValueParamsT = { path: string; value: unknown };
+type LayoutPayloadParamsT = { payload: unknown };
+type CanvasComponentsParamsT = { components: unknown };
+type CanvasPatchParamsT = { path: string; value: unknown };
 
 export function buildA2uiTools(): ToolDefinition[] {
   const getStateTool = defineTool({
