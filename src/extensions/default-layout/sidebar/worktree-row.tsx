@@ -93,24 +93,25 @@ export function WorktreeRow({
   const canRenameInline = renaming && !isPendingActive && !isFailed;
   const canRemoveInline =
     !item.isMain && !isPendingActive && !isFailed && !canRenameInline;
+  const prEligible =
+    !item.isMain && !isPendingActive && !isFailed && item.branch != null;
 
   useEffect(() => {
     let cancelled = false;
     const branch = item.branch;
-    if (item.isMain || isPendingActive || isFailed || !branch) {
-      queueMicrotask(() => {
-        if (cancelled) return;
-        setPrChip(null);
-        setPrLoading(false);
-      });
+    if (!prEligible || !branch) {
       return;
     }
     void (async () => {
       setPrLoading(true);
+      setPrChip(null);
       try {
         const status = await getGhBranchStatus(item.path, branch);
         const checks =
-          status.ghAvailable && status.repo && !status.worktreeBroken
+          status.ghAvailable &&
+          status.repo &&
+          !status.worktreeBroken &&
+          status.prs.length > 0
             ? await getGhChecks(item.path, branch).catch(() => null)
             : null;
         if (!cancelled) {
@@ -125,7 +126,7 @@ export function WorktreeRow({
     return () => {
       cancelled = true;
     };
-  }, [isFailed, isPendingActive, item.branch, item.isMain, item.path]);
+  }, [item.branch, item.path, prEligible]);
 
   const className = [
     "a2ui-sidebar-item",
@@ -310,7 +311,7 @@ export function WorktreeRow({
           {item.branch}
         </span>
       ) : null}
-      {!canRenameInline && (prLoading || prChip) ? (
+      {prEligible && !canRenameInline && (prLoading || prChip) ? (
         <span className="ae-worktree-pr-slot">
           {prChip ? <WorktreePrBadge chip={prChip} /> : <span aria-hidden="true" />}
         </span>

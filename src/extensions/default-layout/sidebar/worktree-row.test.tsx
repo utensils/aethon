@@ -182,6 +182,14 @@ describe("WorktreeRow", () => {
     expect(screen.getByLabelText(/Open PR #42/)).toBeTruthy();
   });
 
+  it("does not fetch CI checks when there is no PR to summarize", async () => {
+    harness(wt());
+
+    await waitFor(() => expect(branchStatusMock).toHaveBeenCalled());
+    expect(checksMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/#/)).toBeNull();
+  });
+
   it("opens inline confirmation from the remove icon", () => {
     const { onEvent } = harness(wt({ label: "feature-x" }));
     const row = screen.getByText("feature-x").closest("li")!;
