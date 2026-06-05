@@ -73,6 +73,47 @@ describe("switchProjectBucket", () => {
     ).toEqual(["b1"]);
   });
 
+  it("clears a stale landing override when restoring an active tab", () => {
+    const tabA = agentTab("a1", "P", "/P/A");
+    const h = makeHarness({
+      tabs: [],
+      activeTabId: undefined,
+      landing: { kind: "worktree", worktreeId: "B" },
+      messages: [{ id: "stale", role: "user", text: "stale landing" }],
+      draft: "stale draft",
+    });
+    h.tabBucketsRef.current.set("P::worktree::A", {
+      tabs: [tabA],
+      activeTabId: "a1",
+    });
+
+    const restored = switchProjectBucket(
+      h.deps,
+      "P::worktree::B",
+      "P::worktree::A",
+    );
+
+    expect(restored).toBe("a1");
+    expect(h.get().activeTabId).toBe("a1");
+    expect(h.get().landing).toBeNull();
+    expect(h.get().messages).toEqual(tabA.messages);
+    expect(h.get().draft).toBe(tabA.draft);
+  });
+
+  it("preserves landing when switching to an empty workspace", () => {
+    const h = makeHarness({
+      tabs: [],
+      activeTabId: undefined,
+      landing: { kind: "worktree", worktreeId: "B" },
+    });
+
+    switchProjectBucket(h.deps, "P::worktree::B", "P::worktree::A");
+
+    expect(h.get().activeTabId).toBeUndefined();
+    expect(h.get().tabs).toEqual([]);
+    expect(h.get().landing).toEqual({ kind: "worktree", worktreeId: "B" });
+  });
+
   it("mirrors non-active buckets into state.persistedTabBuckets for persistence", () => {
     const tabP = agentTab("p-main", "P", "/P");
     const h = makeHarness({ tabs: [tabP], activeTabId: "p-main" });
