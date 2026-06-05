@@ -192,6 +192,10 @@ export function switchProjectBucket(
       }
       result.empty = false;
       result.hasTabs = true;
+      // Restoring a real tab must clear any worktree-landing override,
+      // matching setActiveTab's invariant so the active tab's canvas owns
+      // the main surface after a workspace switch.
+      result.landing = null;
       result.sidebar = recomputeModelPicker(
         prev.sidebar as Record<string, unknown> | undefined,
         activeTab.model,

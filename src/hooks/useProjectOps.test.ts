@@ -344,6 +344,67 @@ describe("useProjectOps session scoping", () => {
     expect(stateRef.current.activeTabId).toBe("root-tab");
   });
 
+  it("clears stale landing when activateWorktree restores a saved tab", () => {
+    const worktreeTab = {
+      ...nonEmptyAgentTab("worktree-tab", "Worktree chat", "project-1"),
+      cwd: "/projects/aethon-fix-issue",
+    };
+    const { result, stateRef, projectsRef } = renderProjectOps(
+      makeProjectsState({
+        activeId: "project-1",
+        activeWorktreeId: "wt-issue",
+        worktreesByProject: {
+          "project-1": [
+            {
+              id: "wt-issue",
+              projectId: "project-1",
+              path: "/projects/aethon-fix-issue",
+              branch: "fix/issue",
+              isMain: false,
+            },
+            {
+              id: "wt-empty",
+              projectId: "project-1",
+              path: "/projects/aethon-empty",
+              branch: "empty",
+              isMain: false,
+            },
+          ],
+        },
+      }),
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      tabs: [worktreeTab],
+      activeTabId: "worktree-tab",
+    };
+
+    act(() => {
+      result.current.activateWorktree("wt-empty");
+    });
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([]);
+
+    stateRef.current = {
+      ...stateRef.current,
+      landing: { kind: "worktree", worktreeId: "wt-empty" },
+      messages: [{ id: "stale", role: "user", text: "stale" }],
+      draft: "stale draft",
+    };
+
+    act(() => {
+      result.current.activateWorktree("wt-issue");
+    });
+
+    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "worktree-tab",
+    ]);
+    expect(stateRef.current.activeTabId).toBe("worktree-tab");
+    expect(stateRef.current.landing).toBeNull();
+    expect(stateRef.current.messages).toEqual(worktreeTab.messages);
+    expect(stateRef.current.draft).toBe(worktreeTab.draft);
+  });
+
   it("swaps the project extensions watcher when a worktree from another project is activated", () => {
     // Regression: activateWorktree changed activeId directly when the
     // worktree belonged to a different project than the current one,

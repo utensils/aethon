@@ -110,9 +110,10 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     toKey: string,
     opts: { mirrorProjects?: boolean } = {},
   ): string | undefined {
-    const wasOverview = isOverviewActive(
-      stateRef.current.activeTabId as string | undefined,
-    );
+    // Preserve only an explicitly selected overview. An unset activeTabId
+    // usually means the source bucket was empty; it must not suppress a
+    // real active tab restored from the destination bucket.
+    const wasOverview = stateRef.current.activeTabId === OVERVIEW_TAB_ID;
     const nextTabId = switchTabBucket(
       {
         setState,
