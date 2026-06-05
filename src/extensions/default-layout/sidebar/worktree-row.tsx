@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
 import { getGhBranchStatus } from "../../../ghBranchStatusCache";
@@ -505,15 +506,20 @@ function WorktreePrBadge({ chip }: { chip: WorktreePrChip }) {
   );
   const className = `ae-worktree-pr-chip ae-worktree-pr-chip--${chip.kind}`;
   if (chip.url) {
+    const url = chip.url;
     return (
       <a
         className={className}
-        href={chip.url}
-        target="_blank"
-        rel="noreferrer"
+        href={url}
         title={chip.title}
         aria-label={chip.title}
-        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.detail > 1) return;
+          void openUrl(url).catch(() => undefined);
+        }}
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {content}

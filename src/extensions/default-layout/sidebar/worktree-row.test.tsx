@@ -9,10 +9,11 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 const { branchStatusMock, checksMock } = vi.hoisted(() => ({
-    branchStatusMock: vi.fn(),
-    checksMock: vi.fn(),
+  branchStatusMock: vi.fn(),
+  checksMock: vi.fn(),
 }));
 
 vi.mock("../../../ghBranchStatusCache", () => ({
@@ -21,11 +22,15 @@ vi.mock("../../../ghBranchStatusCache", () => ({
 vi.mock("../../../ghChecksCache", () => ({
   getGhChecks: checksMock,
 }));
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(),
+}));
 
 import {
   WORKTREE_PENDING_CI_REFRESH_MS,
   WORKTREE_PR_REFRESH_MS,
   WorktreeRow,
+  type WorktreeRowProps,
   type WorktreeSidebarItem,
 } from "./worktree-row";
 
@@ -33,6 +38,7 @@ afterEach(() => {
   vi.useRealTimers();
   branchStatusMock.mockReset();
   checksMock.mockReset();
+  vi.mocked(openUrl).mockReset();
   cleanup();
 });
 
@@ -51,7 +57,10 @@ function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
 
 function harness(
   item: WorktreeSidebarItem,
-  options: { renaming?: boolean } = {},
+  options: {
+    renaming?: boolean;
+    onPointerDragStart?: WorktreeRowProps["onPointerDragStart"];
+  } = {},
 ) {
   const onEvent = vi.fn();
   const onItemContextMenu = vi.fn();
@@ -65,6 +74,7 @@ function harness(
         onItemContextMenu={onItemContextMenu}
         renaming={options.renaming}
         onRenameEnd={onRenameEnd}
+        onPointerDragStart={options.onPointerDragStart}
       />
     </ul>,
   );
@@ -73,6 +83,7 @@ function harness(
 
 describe("WorktreeRow", () => {
   beforeEach(() => {
+    vi.mocked(openUrl).mockResolvedValue(undefined);
     branchStatusMock.mockResolvedValue({
       ghAvailable: true,
       repo: "owner/repo",
@@ -188,6 +199,60 @@ describe("WorktreeRow", () => {
     expect(
       document.querySelector(".ae-worktree-pr-ci--pending"),
     ).toBeTruthy();
+  });
+
+  it("opens PR badge links in the user's browser without switching worktrees", async () => {
+    branchStatusMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      pushed: true,
+      worktreeBroken: false,
+      prs: [
+        {
+          number: 42,
+          state: "OPEN",
+          title: "Feature X",
+          url: "https://github.test/pr/42",
+          isDraft: false,
+          merged: false,
+          baseRefName: "main",
+        },
+      ],
+    });
+    checksMock.mockResolvedValueOnce({
+      ghAvailable: true,
+      repo: "owner/repo",
+      conclusion: "success",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      pending: 0,
+      skipped: 0,
+      checks: [],
+    });
+    const onPointerDragStart = vi.fn();
+    const { onEvent } = harness(wt(), { onPointerDragStart });
+    const badge = await screen.findByLabelText(/Open PR #42/);
+
+    fireEvent.pointerDown(badge);
+    fireEvent.click(badge);
+
+    expect(onPointerDragStart).not.toHaveBeenCalled();
+    expect(openUrl).toHaveBeenCalledWith("https://github.test/pr/42");
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "switch-worktree",
+      expect.anything(),
+      expect.anything(),
+    );
+
+    fireEvent.click(badge, { detail: 2 });
+    fireEvent.doubleClick(badge);
+    expect(openUrl).toHaveBeenCalledTimes(1);
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "open-worktree-in-new-tab",
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it("periodically polls PR and CI badges through the cache getters", async () => {
