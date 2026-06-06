@@ -144,6 +144,56 @@ describe("ChatHistory + real Virtuoso", () => {
     }
   });
 
+  it("cycles visibility modes on a mounted transcript without crashing", () => {
+    const messages = toolTranscript();
+    const view = (mode: string) => (
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{ messages, transcriptVisibility: { toolCalls: mode } }}
+        onEvent={vi.fn()}
+      />
+    );
+    const { rerender } = render(view("show"));
+    // Cycling exercises rangeChanged / groupKey / the anchor-lookup effect.
+    expect(() => {
+      for (const mode of ["group-run", "group-turn", "group-block", "hide", "show"]) {
+        rerender(view(mode));
+      }
+    }).not.toThrow();
+  });
+
+  it("remounts per tab id (key) and restores state without crashing", () => {
+    const msgs = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `${prefix}${i}`,
+        role: i % 2 === 0 ? "user" : "agent",
+        text: `${prefix} message ${i}`,
+      }));
+    const view = (tabId: string, messages: ReturnType<typeof msgs>) => (
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{ messages }}
+        tabId={tabId}
+        onEvent={vi.fn()}
+      />
+    );
+    const { rerender } = render(view("a", msgs("a", 20)));
+    // Switching tab id changes the inner Virtuoso key → unmount (getState
+    // snapshot capture) + remount (restoreStateFrom). Must not throw.
+    expect(() => {
+      rerender(view("b", msgs("b", 5)));
+      rerender(view("a", msgs("a", 20)));
+    }).not.toThrow();
+  });
+
   it("renders the empty-state hint without Virtuoso", () => {
     const { getByText } = render(
       <ChatHistory

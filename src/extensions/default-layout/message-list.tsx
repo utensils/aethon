@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import type {
   A2UIComponent,
   ChatAttachment,
@@ -28,6 +28,8 @@ import {
   groupMessages,
   groupKey,
   isToolCardMessage,
+  anchorMessageIdForGroup,
+  findGroupIndexForMessageId,
   type MessageGroup,
 } from "../../utils/toolCardGrouping";
 import type { VisibilityMode } from "../../config";
@@ -35,15 +37,34 @@ import {
   CHAT_MARKDOWN_PROPS,
   CHAT_STREAMING_MARKDOWN_PROPS,
 } from "./markdown-adapter";
-import { isAtBottom as metricsAreAtBottom } from "../../utils/stickyScrollController";
+import { isAtBottom as metricsAtBottom } from "../../utils/stickyScrollController";
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
 
-// Distance (px) from the bottom still treated as "at the bottom" for follow +
-// the scroll-to-bottom pill. Matches the old StickyScrollController default.
+// Distance (px) from the bottom still treated as "at the bottom" — used by the
+// scroll handler's metricsAtBottom check (follow on/off) and the canScroll
+// overflow check that gates the scroll-to-bottom pill.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
-const PROGRAMMATIC_SCROLL_GUARD_MS = 1200;
 const FENCED_CODE_MARKER_RE = /(^|\n)(```|~~~)/;
+
+// tabId → the message id at the top of the viewport when the tab was left
+// scrolled-up (absent when it was left following at the bottom). The message
+// list is keyed by tab id (see ChatHistory / MainCanvas), so each tab mounts its
+// own Virtuoso instance; on the next mount we map this id back to its current
+// row index and open there via initialTopMostItemIndex. Keyed by message id, not
+// pixels, so it survives new messages arriving while the tab is backgrounded and
+// avoids react-virtuoso's fragile getState/restoreStateFrom scrollTop timing.
+// Module-level so it survives the keyed remount.
+const tabScrollCache = new Map<string, string>();
+
+// Follow state must flip only on a genuine USER scroll, never on the
+// programmatic re-pins we issue while following (those would otherwise be read
+// back as "the user scrolled"). Content reflow/growth does NOT fire a scroll
+// event, so the only scroll events to disambiguate are user gestures vs our own
+// scrollTo. We mark a user gesture (wheel / touch / scroll-key) and let the
+// resulting scroll event recompute follow; un-gestured scroll events (our
+// re-pins) are ignored. This is what makes a scroll-away win the race against an
+// in-flight streaming re-pin.
 const USER_SCROLL_INTENT_EVENTS = [
   "wheel",
   "touchstart",
@@ -647,10 +668,13 @@ interface VirtualMessageListProps {
   visibility: ResolvedVisibility;
 }
 
-/** Virtualized chat feed. Replaces the old hand-rolled window + useStickyScroll:
- *  Virtuoso mounts only the visible rows (long histories no longer pin 160+
- *  markdown subtrees in the DOM) and owns stick-to-bottom via `followOutput`,
- *  the at-bottom signal for the pill, and index scrolling for search matches. */
+/** Virtualized chat feed. Virtuoso mounts only the visible rows (long histories
+ *  no longer pin 160+ markdown subtrees in the DOM). Stick-to-bottom has a
+ *  SINGLE owner — the `following` flag in this component, NOT Virtuoso (its
+ *  `followOutput` is disabled). Follow flips only on a user-gestured scroll;
+ *  while following, content growth re-pins via `totalListHeightChanged` →
+ *  instant `scrollTo`. `scrollToIndex` handles search jumps, filter-toggle
+ *  re-anchoring, and per-tab restore. No competing scroller. */
 function VirtualMessageList({
   messages,
   state,
@@ -663,15 +687,24 @@ function VirtualMessageList({
   visibility,
 }: VirtualMessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
+  // `following` drives the pill (render); `followingRef` is the synchronous
+  // source of truth the re-pin + filter effects read. They move together via
+  // setFollowing(). This flag is the single owner of stick-to-bottom intent.
+  // A cached snapshot exists only for a tab left scrolled-up (see handleScroll),
+  // so seed follow=false when restoring one — otherwise default to following.
+  const initialFollowing = !(tabId !== undefined && tabScrollCache.has(tabId));
+  const [following, setFollowingState] = useState(initialFollowing);
+  const followingRef = useRef(initialFollowing);
   const [canScroll, setCanScroll] = useState(false);
   const scrollerElRef = useRef<HTMLElement | null>(null);
-  const followLatestRef = useRef(true);
-  const [followLatest, setFollowLatestState] = useState(true);
-  const programmaticScrollUntilRef = useRef(0);
-  const userScrollIntentRef = useRef(false);
+  // Set by a user gesture (wheel/touch/scroll-key); the next scroll event reads
+  // and clears it. Distinguishes a real scroll-away from our own re-pins.
+  const userScrollRef = useRef(false);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
+  // Topmost visible group index, fed by Virtuoso's rangeChanged — used to
+  // recover the reading anchor when a filter toggle rebuilds the group list.
+  const lastRangeRef = useRef<ListRange | null>(null);
   const queuedLabels = useMemo(
     () => queuedDeliveryLabels(messages),
     [messages],
@@ -686,6 +719,14 @@ function VirtualMessageList({
     () => groupMessages(messages, visibility.toolCalls),
     [messages, visibility.toolCalls],
   );
+  // Always-current groups for synchronous reads inside event handlers (scroll /
+  // rangeChanged), which fire outside the render that produced `groups`. Synced
+  // in a layout effect (refs must not be written during render); event handlers
+  // run after commit, so the ref is current by the time they fire.
+  const groupsRef = useRef(groups);
+  useLayoutEffect(() => {
+    groupsRef.current = groups;
+  }, [groups]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(),
   );
@@ -697,22 +738,15 @@ function VirtualMessageList({
       return next;
     });
   }, []);
-  const setFollowLatest = useCallback((next: boolean) => {
-    followLatestRef.current = next;
-    setFollowLatestState(next);
-  }, []);
+  const prevGroupsRef = useRef<MessageGroup[]>(groups);
+  const prevVisRef = useRef({
+    toolCalls: visibility.toolCalls,
+    thinking: visibility.thinking,
+  });
 
-  const markProgrammaticScroll = useCallback(() => {
-    programmaticScrollUntilRef.current = Math.max(
-      programmaticScrollUntilRef.current,
-      Date.now() + PROGRAMMATIC_SCROLL_GUARD_MS,
-    );
-  }, []);
-
-  const markUserScrollIntent = useCallback((event: Event) => {
-    if (!isUserScrollIntentEvent(event)) return;
-    userScrollIntentRef.current = true;
-    programmaticScrollUntilRef.current = 0;
+  const setFollowing = useCallback((next: boolean) => {
+    followingRef.current = next;
+    setFollowingState(next);
   }, []);
 
   const updateCanScroll = useCallback(() => {
@@ -725,14 +759,26 @@ function VirtualMessageList({
   }, []);
 
   const scrollToBottom = useCallback(() => {
-    markProgrammaticScroll();
+    // Scroll to the true bottom of the scroller — this includes the footer's
+    // live subtree / typing indicator, which sit below the last data row.
     virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
-  }, [markProgrammaticScroll]);
+  }, []);
 
-  const updateFollowFromScroller = useCallback(() => {
+  const markUserScrollIntent = useCallback((event: Event) => {
+    if (isUserScrollIntentEvent(event)) userScrollRef.current = true;
+  }, []);
+
+  // Sole follow on/off path. Only a gesture-flagged scroll recomputes follow
+  // from the live position; un-flagged scroll events (our own re-pins) are
+  // ignored. Because content reflow/growth fires no scroll event, follow can
+  // never be flipped off by streaming — only by a real user scroll-away.
+  const handleScroll = useCallback(() => {
+    updateCanScroll();
+    if (!userScrollRef.current) return;
+    userScrollRef.current = false;
     const el = scrollerElRef.current;
     if (!el) return;
-    const atBottom = metricsAreAtBottom(
+    const atBottom = metricsAtBottom(
       {
         scrollTop: el.scrollTop,
         clientHeight: el.clientHeight,
@@ -740,37 +786,47 @@ function VirtualMessageList({
       },
       DEFAULT_AT_BOTTOM_THRESHOLD,
     );
-    const isProgrammaticFollowScroll =
-      Date.now() < programmaticScrollUntilRef.current &&
-      !userScrollIntentRef.current;
-
-    updateCanScroll();
-
-    if (isProgrammaticFollowScroll) {
+    setFollowing(atBottom);
+    // Per-tab scroll restore: remember the top-of-viewport message id while
+    // scrolled-up; clear it when the user returns to the bottom (so the tab
+    // reopens following at the live bottom). ONLY user-gestured scrolls touch
+    // the cache — programmatic re-pins and the restore itself are un-gestured,
+    // so a transient mount-time position (e.g. React StrictMode's dev remount)
+    // can never clobber it. rangeChanged keeps this fresh as the user scrolls.
+    if (tabId !== undefined) {
       if (atBottom) {
-        programmaticScrollUntilRef.current = 0;
-        setFollowLatest(true);
-        setIsAtBottom(true);
+        tabScrollCache.delete(tabId);
+      } else {
+        const anchorId = anchorMessageIdForGroup(
+          groupsRef.current[lastRangeRef.current?.startIndex ?? 0],
+        );
+        if (anchorId) tabScrollCache.set(tabId, anchorId);
       }
-      return;
     }
+  }, [setFollowing, tabId, updateCanScroll]);
 
-    userScrollIntentRef.current = false;
-    setFollowLatest(atBottom);
-    setIsAtBottom(atBottom);
-  }, [setFollowLatest, updateCanScroll]);
+  // Track the topmost visible group and, while scrolled-up, keep the per-tab
+  // restore anchor current as the user scrolls (so switching away restores the
+  // exact message they were reading, even after new messages arrived).
+  const handleRangeChanged = useCallback(
+    (range: ListRange) => {
+      lastRangeRef.current = range;
+      if (tabId !== undefined && !followingRef.current) {
+        const anchorId = anchorMessageIdForGroup(
+          groupsRef.current[range.startIndex],
+        );
+        if (anchorId) tabScrollCache.set(tabId, anchorId);
+      }
+    },
+    [tabId],
+  );
 
   const handleScrollerRef = useCallback(
     (ref: HTMLElement | Window | null) => {
-      if (scrollerElRef.current) {
-        scrollerElRef.current.removeEventListener(
-          "scroll",
-          updateFollowFromScroller,
-        );
-        removeUserScrollIntentListeners(
-          scrollerElRef.current,
-          markUserScrollIntent,
-        );
+      const prev = scrollerElRef.current;
+      if (prev) {
+        prev.removeEventListener("scroll", handleScroll);
+        removeUserScrollIntentListeners(prev, markUserScrollIntent);
       }
       const el =
         typeof HTMLElement !== "undefined" && ref instanceof HTMLElement
@@ -778,45 +834,38 @@ function VirtualMessageList({
           : null;
       scrollerElRef.current = el;
       if (el) {
-        el.addEventListener("scroll", updateFollowFromScroller, {
-          passive: true,
-        });
+        el.addEventListener("scroll", handleScroll, { passive: true });
         addUserScrollIntentListeners(el, markUserScrollIntent);
       }
       updateCanScroll();
     },
-    [markUserScrollIntent, updateCanScroll, updateFollowFromScroller],
+    [handleScroll, markUserScrollIntent, updateCanScroll],
   );
 
-  const handleAtBottomStateChange = useCallback(
-    (atBottom: boolean) => {
-      updateCanScroll();
-      if (atBottom) {
-        programmaticScrollUntilRef.current = 0;
-        setFollowLatest(true);
-        setIsAtBottom(true);
-      } else if (!followLatestRef.current) {
-        setIsAtBottom(false);
-      }
-    },
-    [setFollowLatest, updateCanScroll],
-  );
+  // Content grew/shrank (append, streamed token, tool/thinking expand, late
+  // reflow, footer). While following, re-pin to the bottom instantly. This is
+  // the SOLE re-pin source — Virtuoso's own followOutput is disabled — so no
+  // second scroller races it. Reflow that fires no scroll event is caught here,
+  // which is what keeps a fresh mount (async highlight/markdown reflow) pinned.
+  const handleTotalListHeightChanged = useCallback(() => {
+    updateCanScroll();
+    if (followingRef.current) scrollToBottom();
+  }, [scrollToBottom, updateCanScroll]);
 
-  useEffect(
-    () => () => {
-      if (scrollerElRef.current) {
-        scrollerElRef.current.removeEventListener(
-          "scroll",
-          updateFollowFromScroller,
-        );
-        removeUserScrollIntentListeners(
-          scrollerElRef.current,
-          markUserScrollIntent,
-        );
+  // Detach the scroll listeners when the keyed instance unmounts (tab switch).
+  // The per-tab snapshot is maintained live in handleScroll (gated to genuine
+  // user scrolls), so there is deliberately NO getState-on-unmount here — that
+  // would capture a transient pre-restore scrollTop under React StrictMode's
+  // dev double-mount and clobber the cached position.
+  useLayoutEffect(() => {
+    return () => {
+      const el = scrollerElRef.current;
+      if (el) {
+        el.removeEventListener("scroll", handleScroll);
+        removeUserScrollIntentListeners(el, markUserScrollIntent);
       }
-    },
-    [markUserScrollIntent, updateFollowFromScroller],
-  );
+    };
+  }, [handleScroll, markUserScrollIntent]);
 
   // Jump to the newest message matching the search needle and flash it. Virtuoso
   // mounts the target row even when it's far offscreen, so no DOM walk is needed.
@@ -935,42 +984,83 @@ function VirtualMessageList({
     footerContext && (footerContext.liveSubtree || footerContext.showTyping),
   );
   const hasContent = messages.length > 0 || hasFooterContent;
-  const latestMessage = messages.at(-1);
-  const latestStreamingFences =
-    latestMessage?.role === "agent" &&
-    state.waiting === true &&
-    hasFencedCodeMarker(latestMessage.text);
+  // Per-tab restore: map the saved top-of-viewport message id to its current row
+  // index. When present, open there (aligned to the top); otherwise open pinned
+  // to the bottom. These are mutually exclusive — a bottom initial index would
+  // otherwise win over any restore.
+  const restoreAnchorId =
+    tabId !== undefined ? tabScrollCache.get(tabId) : undefined;
+  const restoreIndex = restoreAnchorId
+    ? findGroupIndexForMessageId(groups, restoreAnchorId)
+    : -1;
+  const initialIndex =
+    restoreIndex >= 0
+      ? { index: restoreIndex, align: "start" as const }
+      : { index: Math.max(0, groups.length - 1), align: "end" as const };
 
-  const handleFollowOutput = useCallback(() => {
-    if (!followLatestRef.current) return false;
-    markProgrammaticScroll();
-    return latestStreamingFences ? "auto" : "smooth";
-  }, [latestStreamingFences, markProgrammaticScroll]);
-
-  const handleTotalListHeightChanged = useCallback(() => {
-    updateCanScroll();
-    if (followLatestRef.current) scrollToBottom();
-  }, [scrollToBottom, updateCanScroll]);
-
-  // Tool grouping and streamed thinking frequently change row keys/counts or
-  // measured heights without a simple "new last item appended" signal. When
-  // follow intent is still enabled, explicitly pin the scroller after React has
-  // committed the new rows; when the user has scrolled away, `followLatest`
-  // stays false and this path is inert.
+  // A cached restore anchor that no longer exists (chat cleared via Cmd+K, or a
+  // session rollback truncated it away) is stale: restoreIndex is -1 so the list
+  // opens at the bottom, but `following` was seeded false — which would leave the
+  // pill showing at the bottom with content-growth re-pins disabled. Drop the
+  // stale entry and resume following at the live bottom.
   useLayoutEffect(() => {
-    updateCanScroll();
-    if (!followLatest) return;
-    const frame = window.requestAnimationFrame(scrollToBottom);
-    return () => window.cancelAnimationFrame(frame);
+    if (!restoreAnchorId || restoreIndex >= 0) return;
+    if (tabId !== undefined) tabScrollCache.delete(tabId);
+    if (!followingRef.current) {
+      setFollowing(true);
+      scrollToBottom();
+    }
+  }, [restoreAnchorId, restoreIndex, scrollToBottom, setFollowing, tabId]);
+
+  // Toggling a transcript filter (tool-call grouping / thinking visibility)
+  // rebuilds `groups` with a different length + identity. Re-anchor exactly once
+  // per toggle (NOT per streamed token — visibility is the guard) so the view
+  // never jumps: a following user stays pinned to the new bottom; a scrolled-up
+  // user keeps the message they were reading in place.
+  useLayoutEffect(() => {
+    const prevVis = prevVisRef.current;
+    const prevGroups = prevGroupsRef.current;
+    const visChanged =
+      prevVis.toolCalls !== visibility.toolCalls ||
+      prevVis.thinking !== visibility.thinking;
+    prevVisRef.current = {
+      toolCalls: visibility.toolCalls,
+      thinking: visibility.thinking,
+    };
+    prevGroupsRef.current = groups;
+    if (!visChanged) return;
+
+    if (followingRef.current) {
+      scrollToBottom();
+      return;
+    }
+
+    // Map the topmost visible message id from the OLD groups to its index in
+    // the NEW groups and pin it to the top (preserves the reading position).
+    const startIndex = lastRangeRef.current?.startIndex ?? 0;
+    const anchorId = anchorMessageIdForGroup(prevGroups[startIndex]);
+    let newIndex = findGroupIndexForMessageId(groups, anchorId);
+    if (newIndex < 0 && anchorId) {
+      // Anchor dropped (e.g. its tool card was hidden): fall back to the nearest
+      // preceding message that still survives in the new groups.
+      const anchorMsgIdx = messages.findIndex((m) => m.id === anchorId);
+      for (let i = anchorMsgIdx - 1; i >= 0; i--) {
+        const idx = findGroupIndexForMessageId(groups, messages[i].id);
+        if (idx >= 0) {
+          newIndex = idx;
+          break;
+        }
+      }
+    }
+    if (newIndex >= 0) {
+      virtuosoRef.current?.scrollToIndex({ index: newIndex, align: "start" });
+    }
   }, [
-    expandedGroups,
-    followLatest,
-    footerContext,
     groups,
     messages,
     scrollToBottom,
-    updateCanScroll,
     visibility.thinking,
+    visibility.toolCalls,
   ]);
 
   return (
@@ -979,33 +1069,39 @@ function VirtualMessageList({
         ref={virtuosoRef}
         className={className}
         style={{ flex: 1, minHeight: 0 }}
+        // Short transcripts (content < viewport) sit flush at the BOTTOM, just
+        // above the composer — the chat convention — instead of floating at the
+        // top with a gap. No effect once the list overflows.
+        alignToBottom
         data={groups}
         computeItemKey={(index, g) => (g ? groupKey(g) : String(index))}
         itemContent={itemContent}
-        // Open scrolled to the BOTTOM of the newest message. `align: "end"`
-        // pins the last item's bottom to the viewport bottom — a bare index
-        // aligns it to the top, so a tall final message would open at its start
-        // instead of the latest content (the old scrollTop=scrollHeight
-        // contract). Do NOT also pass `initialItemCount`: combined with a bottom
-        // index Virtuoso requests rows past the end of `data` and feeds
-        // `undefined` into computeItemKey, crashing on m.id for any restored 2+
-        // message chat (see message-list.virtuoso.test.tsx).
-        initialTopMostItemIndex={{
-          index: Math.max(0, groups.length - 1),
-          align: "end",
-        }}
-        followOutput={followLatest ? handleFollowOutput : false}
-        atBottomThreshold={DEFAULT_AT_BOTTOM_THRESHOLD}
-        atBottomStateChange={handleAtBottomStateChange}
+        // Open at the saved per-tab anchor (top-aligned) when restoring a
+        // scrolled-up tab, else pinned to the BOTTOM of the newest message.
+        // `align: "end"` pins the last item's bottom to the viewport bottom — a
+        // bare index aligns to the top, so a tall final message would open at
+        // its start instead of the latest content. Do NOT also pass
+        // `initialItemCount`: combined with a bottom index Virtuoso requests
+        // rows past the end of `data` and feeds `undefined` into computeItemKey,
+        // crashing on m.id for any restored 2+ message chat (see
+        // message-list.virtuoso.test.tsx).
+        initialTopMostItemIndex={initialIndex}
+        // followOutput is intentionally OFF: our controller is the single
+        // scroller (via totalListHeightChanged), so Virtuoso never auto-scrolls
+        // and there is no second source of truth to race. Disabling it also
+        // disables Virtuoso's internal size-change re-pin, which proved
+        // unreliable (it re-pins only in brief windows and emitted a spurious
+        // not-at-bottom after late mount reflow, freezing the pill on).
+        followOutput={false}
+        rangeChanged={handleRangeChanged}
         scrollerRef={handleScrollerRef}
         totalListHeightChanged={handleTotalListHeightChanged}
         {...footerProps}
       />
       <ScrollToBottomPill
-        visible={!isAtBottom && canScroll && hasContent}
+        visible={!following && canScroll && hasContent}
         onClick={() => {
-          setFollowLatest(true);
-          setIsAtBottom(true);
+          setFollowing(true);
           // Scroll to the true bottom of the scroller, which includes the
           // Footer (live subtree / typing indicator) — scrollToIndex(last)
           // would stop at the last message, above a footer-only response.
@@ -1053,6 +1149,9 @@ export function ChatHistory({
 
   return (
     <VirtualMessageList
+      // Per-tab Virtuoso instance: isolates measurement cache + follow state and
+      // lets each tab restore its own scroll position across switches.
+      key={tabId ?? "standalone"}
       className="a2ui-chat-history"
       messages={messages}
       state={state}
@@ -1132,6 +1231,9 @@ export function MainCanvas({
   return (
     <main className="a2ui-canvas a2ui-canvas-host">
       <VirtualMessageList
+        // Per-tab Virtuoso instance: isolates measurement cache + follow state
+        // and lets each tab restore its own scroll position across switches.
+        key={tabId ?? "standalone"}
         className="a2ui-canvas-scroller"
         rowClassName="a2ui-canvas-message"
         messages={messages}

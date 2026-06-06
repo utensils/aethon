@@ -194,3 +194,29 @@ export function groupMessages(
 export function groupKey(group: MessageGroup): string {
   return group.type === "single" ? group.message.id : group.id;
 }
+
+/** The stable anchor message id a group maps to — the first contained message
+ *  for clusters. Used to preserve the user's reading position across a
+ *  visibility (filter) change that rebuilds the group list, since the synthetic
+ *  cluster ids differ between modes but message ids do not. */
+export function anchorMessageIdForGroup(
+  group: MessageGroup | undefined,
+): string | undefined {
+  if (!group) return undefined;
+  return group.type === "single" ? group.message.id : group.messages[0]?.id;
+}
+
+/** Index of the group that CONTAINS the given message id, or -1 if none does.
+ *  A message can be a `single` in one mode and folded into a cluster in another,
+ *  so both shapes are searched. */
+export function findGroupIndexForMessageId(
+  groups: readonly MessageGroup[],
+  id: string | undefined,
+): number {
+  if (!id) return -1;
+  return groups.findIndex((g) =>
+    g.type === "single"
+      ? g.message.id === id
+      : g.messages.some((m) => m.id === id),
+  );
+}
