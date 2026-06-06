@@ -121,8 +121,13 @@
             pkgs.libsoup_3
             pkgs.glib
             pkgs.glib-networking
+            pkgs.zlib
+            pkgs.dbus
             pkgs.alsa-lib
             pkgs.openssl
+            pkgs.libdbusmenu-gtk3
+            pkgs.ayatana-ido
+            pkgs.libayatana-indicator
             pkgs.libayatana-appindicator
             pkgs.gsettings-desktop-schemas
           ];
@@ -231,7 +236,10 @@
             ++ lib.optionals pkgs.stdenv.isLinux [
               {
                 name = "PKG_CONFIG_PATH";
-                value = lib.makeSearchPath "lib/pkgconfig" (map lib.getDev linuxBuildInputs);
+                value = lib.concatStringsSep ":" [
+                  (lib.makeSearchPath "lib/pkgconfig" (map lib.getDev linuxBuildInputs))
+                  (lib.makeSearchPath "share/pkgconfig" (map lib.getDev linuxBuildInputs))
+                ];
               }
               {
                 name = "LD_LIBRARY_PATH";
