@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { forwardRef, useEffect, useImperativeHandle } from "react";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatHistory,
@@ -72,7 +78,10 @@ vi.mock("react-virtuoso", () => ({
         context?: unknown;
         className?: string;
         atBottomStateChange?: (atBottom: boolean) => void;
-        rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
+        rangeChanged?: (range: {
+          startIndex: number;
+          endIndex: number;
+        }) => void;
         scrollerRef?: (ref: HTMLElement | null) => void;
         totalListHeightChanged?: (height: number) => void;
         followOutput?: unknown;
@@ -1023,7 +1032,11 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
       role: "agent",
       a2ui: {
         components: [
-          { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+          {
+            id: "c1",
+            type: "tool-card",
+            props: { title: "read", startedAt: 1, endedAt: 2 },
+          },
         ],
       },
     },
@@ -1032,7 +1045,11 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
       role: "agent",
       a2ui: {
         components: [
-          { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 1, endedAt: 2 } },
+          {
+            id: "c2",
+            type: "tool-card",
+            props: { title: "bash", startedAt: 1, endedAt: 2 },
+          },
         ],
       },
     },
@@ -1043,7 +1060,11 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
       role: "agent",
       a2ui: {
         components: [
-          { id: "c3", type: "tool-card", props: { title: "edit", startedAt: 1, endedAt: 2 } },
+          {
+            id: "c3",
+            type: "tool-card",
+            props: { title: "edit", startedAt: 1, endedAt: 2 },
+          },
         ],
       },
     },
@@ -1110,7 +1131,11 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
         role: "agent",
         a2ui: {
           components: [
-            { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+            {
+              id: "c1",
+              type: "tool-card",
+              props: { title: "read", startedAt: 1, endedAt: 2 },
+            },
           ],
         },
       },
@@ -1119,7 +1144,11 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
         role: "agent",
         a2ui: {
           components: [
-            { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 3 } },
+            {
+              id: "c2",
+              type: "tool-card",
+              props: { title: "bash", startedAt: 3 },
+            },
           ],
         },
       },
@@ -1138,7 +1167,11 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
           ...running[2],
           a2ui: {
             components: [
-              { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 3, endedAt: 4 } },
+              {
+                id: "c2",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 3, endedAt: 4 },
+              },
             ],
           },
         },
@@ -1212,7 +1245,11 @@ describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
       role: "agent",
       a2ui: {
         components: [
-          { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+          {
+            id: "c1",
+            type: "tool-card",
+            props: { title: "read", startedAt: 1, endedAt: 2 },
+          },
         ],
       },
     },
@@ -1221,7 +1258,11 @@ describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
       role: "agent",
       a2ui: {
         components: [
-          { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 1, endedAt: 2 } },
+          {
+            id: "c2",
+            type: "tool-card",
+            props: { title: "bash", startedAt: 1, endedAt: 2 },
+          },
         ],
       },
     },
@@ -1284,5 +1325,58 @@ describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
     expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThan(before);
     const last = virtuosoMockState.scrollToIndexCalls.at(-1);
     expect(last).toMatchObject({ index: 1, align: "start" });
+  });
+});
+
+describe("stale per-tab restore anchor (mocked Virtuoso)", () => {
+  const view = (tabId: string, messages: unknown[]) => (
+    <ChatHistory
+      component={{
+        id: "chat-history",
+        type: "chat-history",
+        props: { messages: { $ref: "/messages" } },
+      }}
+      state={{ messages }}
+      tabId={tabId}
+      onEvent={vi.fn()}
+    />
+  );
+
+  it("resumes following + pins to bottom when the cached anchor message is gone", () => {
+    const tabId = "stale-anchor-tab";
+    const full = [
+      { id: "u1", role: "user", text: "one" },
+      { id: "a1", role: "agent", text: "two" },
+      { id: "u2", role: "user", text: "three" },
+      { id: "a2", role: "agent", text: "four" },
+    ];
+    const { rerender } = render(view(tabId, full));
+
+    // User scrolls up anchoring on "a1" (index 1) — caches it for this tab.
+    act(() => virtuosoMockState.rangeChanged?.({ startIndex: 1, endIndex: 3 }));
+    act(() => userScrollUp(screen.getByTestId("virtuoso-mock")));
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    // The chat is cleared / rolled back so the anchored message no longer exists
+    // (still a scrollable transcript, so a hidden pill reflects follow, not size).
+    rerender(
+      view(tabId, [
+        { id: "u9", role: "user", text: "fresh one" },
+        { id: "a9", role: "agent", text: "fresh two" },
+        { id: "u10", role: "user", text: "fresh three" },
+      ]),
+    );
+
+    // Stale anchor detected → cache dropped, follow resumes, pinned to bottom.
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
   });
 });

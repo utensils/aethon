@@ -8,11 +8,7 @@ import {
   useState,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import {
-  Virtuoso,
-  type VirtuosoHandle,
-  type ListRange,
-} from "react-virtuoso";
+import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import type {
   A2UIComponent,
   ChatAttachment,
@@ -45,9 +41,9 @@ import { isAtBottom as metricsAtBottom } from "../../utils/stickyScrollControlle
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
 
-// Distance (px) from the bottom still treated as "at the bottom" for the
-// scroll-to-bottom pill + canScroll overflow check. Also fed to Virtuoso as its
-// `atBottomThreshold` so the app and the library agree on "at bottom".
+// Distance (px) from the bottom still treated as "at the bottom" — used by the
+// scroll handler's metricsAtBottom check (follow on/off) and the canScroll
+// overflow check that gates the scroll-to-bottom pill.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
 const FENCED_CODE_MARKER_RE = /(^|\n)(```|~~~)/;
 
@@ -673,11 +669,12 @@ interface VirtualMessageListProps {
 }
 
 /** Virtualized chat feed. Virtuoso mounts only the visible rows (long histories
- *  no longer pin 160+ markdown subtrees in the DOM) and is the single owner of
- *  stick-to-bottom: `followOutput` re-pins on append, its native size-change
- *  re-pin handles streamed token growth, `atBottomStateChange` is the sole
- *  follow/at-bottom signal (drives the pill), and `scrollToIndex` handles search
- *  jumps + filter-toggle re-anchoring. No manual scroll listener races it. */
+ *  no longer pin 160+ markdown subtrees in the DOM). Stick-to-bottom has a
+ *  SINGLE owner — the `following` flag in this component, NOT Virtuoso (its
+ *  `followOutput` is disabled). Follow flips only on a user-gestured scroll;
+ *  while following, content growth re-pins via `totalListHeightChanged` →
+ *  instant `scrollTo`. `scrollToIndex` handles search jumps, filter-toggle
+ *  re-anchoring, and per-tab restore. No competing scroller. */
 function VirtualMessageList({
   messages,
   state,
@@ -1000,6 +997,20 @@ function VirtualMessageList({
     restoreIndex >= 0
       ? { index: restoreIndex, align: "start" as const }
       : { index: Math.max(0, groups.length - 1), align: "end" as const };
+
+  // A cached restore anchor that no longer exists (chat cleared via Cmd+K, or a
+  // session rollback truncated it away) is stale: restoreIndex is -1 so the list
+  // opens at the bottom, but `following` was seeded false — which would leave the
+  // pill showing at the bottom with content-growth re-pins disabled. Drop the
+  // stale entry and resume following at the live bottom.
+  useLayoutEffect(() => {
+    if (!restoreAnchorId || restoreIndex >= 0) return;
+    if (tabId !== undefined) tabScrollCache.delete(tabId);
+    if (!followingRef.current) {
+      setFollowing(true);
+      scrollToBottom();
+    }
+  }, [restoreAnchorId, restoreIndex, scrollToBottom, setFollowing, tabId]);
 
   // Toggling a transcript filter (tool-call grouping / thinking visibility)
   // rebuilds `groups` with a different length + identity. Re-anchor exactly once
