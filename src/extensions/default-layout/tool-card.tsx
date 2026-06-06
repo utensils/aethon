@@ -49,9 +49,25 @@ function SubagentActivity({ progress }: { progress: SubagentProgress }) {
           ))}
         </ul>
       )}
-      {!progress.done && progress.text && (
-        <div className="ae-subagent-text">{progress.text}</div>
+      {progress.text && (
+        <div className="ae-subagent-text" data-done={progress.done}>
+          {progress.text}
+        </div>
       )}
+    </div>
+  );
+}
+
+export function SubagentResult({ component, state }: BuiltinComponentProps) {
+  const props = component.props as {
+    content?: StringValue;
+    isError?: BooleanValue;
+  };
+  const content = props.content ? resolveString(props.content, state) : "";
+  const isError = props.isError ? resolveBoolean(props.isError, state) : false;
+  return (
+    <div className="ae-subagent-result" data-error={isError ? "true" : "false"}>
+      {content}
     </div>
   );
 }

@@ -27,6 +27,7 @@ import {
   Terminal,
   TerminalPanel,
   ToolCard,
+  SubagentResult,
   AuthProfilePanel,
 } from "./components";
 import {
@@ -114,6 +115,7 @@ export const defaultLayoutExtension: A2UIExtension = {
     // amber warning at 30s. Bridge emits this for tool execution events
     // (replacing the plain `card` primitive in toolCardPayload).
     "tool-card": ToolCard,
+    "subagent-result": SubagentResult,
     "empty-state": EmptyState,
     // Worktree landing page — shown when the user clicks a worktree in
     // the sidebar but hasn't yet started a session. Mirrors EmptyState

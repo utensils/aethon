@@ -3,4 +3,4 @@
 export { ChatInput } from "./chat-input";
 export { ChatHistory, MainCanvas } from "./message-list";
 export { QueuedMessagesPopover } from "./queued-popover";
-export { ToolCard, formatToolDuration } from "./tool-card";
+export { ToolCard, SubagentResult, formatToolDuration } from "./tool-card";

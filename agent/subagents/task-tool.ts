@@ -319,8 +319,21 @@ async function runInlineSubagent(
     },
   );
 
+  let abortPromise: Promise<void> | undefined;
+  const requestAbort = (): Promise<void> => {
+    abortPromise ??= session.abort().catch((err: unknown) => {
+      logger
+        .scope("subagent")
+        .warn(
+          `abort failed for "${sub.name}": ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+    });
+    return abortPromise;
+  };
   const onAbort = (): void => {
-    void session.abort();
+    void requestAbort();
   };
   signal?.addEventListener("abort", onAbort);
 
@@ -330,7 +343,7 @@ async function runInlineSubagent(
       session.prompt(composedPrompt),
       timeoutMsFromSeconds(sub.timeoutSeconds ?? state.subagentTimeoutSeconds),
       () => {
-        void session.abort();
+        void requestAbort();
       },
     );
   } catch (err) {
@@ -346,6 +359,9 @@ async function runInlineSubagent(
     );
   } finally {
     signal?.removeEventListener("abort", onAbort);
+    if (abortPromise) {
+      await abortPromise;
+    }
     unsubscribe();
     try {
       session.dispose();

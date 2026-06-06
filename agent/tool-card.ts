@@ -1,5 +1,22 @@
 const MAX_IMAGES_PER_RESULT = 4;
 
+function firstLine(value: unknown, max = 180): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const newline = trimmed.search(/\r?\n/);
+  const line = newline >= 0 ? trimmed.slice(0, newline) : trimmed;
+  return line.length > max ? line.slice(0, max - 1) + "…" : line;
+}
+
+function baseName(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "";
+  return value.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? value;
+}
+
+function compactSummary(parts: Array<string | false | undefined>): string {
+  return parts.filter(Boolean).join(" · ");
+}
+
 /** Render a one-line summary of tool args so the card description shows
  *  what the tool was actually invoked with, not just `{...}`. */
 export function summarizeToolArgs(toolName: string, args: unknown): string {
@@ -28,6 +45,15 @@ export function summarizeToolArgs(toolName: string, args: unknown): string {
       return String(a.pattern ?? a.path ?? "");
     case "ls":
       return String(a.path ?? ".");
+    case "task":
+      return compactSummary([
+        String(a.subagent_type ?? "subagent"),
+        firstLine(a.prompt),
+      ]);
+    case "subagent":
+      return compactSummary([String(a.agent ?? "agent"), firstLine(a.task)]);
+    case "startTask":
+      return compactSummary([baseName(a.projectPath), firstLine(a.prompt)]);
     default: {
       const json = JSON.stringify(args);
       return json.length > 200 ? json.slice(0, 197) + "…" : json;
@@ -192,18 +218,29 @@ export function toolCardPayload(opts: {
   if (result !== undefined) {
     const extracted = extractToolContent(result);
     if (extracted.text) {
-      children.push({
-        id: `${id}-result`,
-        type: "code",
-        props: {
-          content: truncate(extracted.text, 1500),
-          language: inferToolResultLanguage(
-            toolName,
-            argsSummary,
-            extracted.text,
-          ),
-        },
-      });
+      if (toolName === "task") {
+        children.push({
+          id: `${id}-result`,
+          type: "subagent-result",
+          props: {
+            content: truncate(extracted.text, 3000),
+            ...(isError ? { isError: true } : {}),
+          },
+        });
+      } else {
+        children.push({
+          id: `${id}-result`,
+          type: "code",
+          props: {
+            content: truncate(extracted.text, 1500),
+            language: inferToolResultLanguage(
+              toolName,
+              argsSummary,
+              extracted.text,
+            ),
+          },
+        });
+      }
     }
     extracted.images.forEach((img, i) => {
       children.push({

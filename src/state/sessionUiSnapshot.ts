@@ -1,7 +1,10 @@
 import { OVERVIEW_TAB_ID, type QueuedMessage, type Tab } from "../types/tab";
 import type { ChatMessage } from "../types/a2ui";
 import { durableImageAttachments } from "../utils/imageAttachments";
-import { dedupeToolResultTextMessages } from "../utils/messages";
+import {
+  collapseAmendedAgentMessages,
+  dedupeToolResultTextMessages,
+} from "../utils/messages";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
 export const SESSION_UI_SNAPSHOT_FLUSH_EVENT =
@@ -59,7 +62,9 @@ function canUseSessionStorage(): boolean {
 }
 
 function trimTab(tab: Tab): Tab {
-  const messages = dedupeToolResultTextMessages(tab.messages)
+  const messages = collapseAmendedAgentMessages(
+    dedupeToolResultTextMessages(tab.messages),
+  )
     .slice(-MAX_MESSAGES_PER_TAB)
     .map((message): ChatMessage => {
       if (!message.attachments || message.attachments.length === 0) {
@@ -350,7 +355,9 @@ function restoreTabRecord(
     ...t,
     kind,
     messages: normalizeRestoredMessages(
-      dedupeToolResultTextMessages(t.messages).map((message): ChatMessage =>
+      collapseAmendedAgentMessages(
+        dedupeToolResultTextMessages(t.messages),
+      ).map((message): ChatMessage =>
         message.attachments && message.attachments.length > 0
           ? {
               ...message,

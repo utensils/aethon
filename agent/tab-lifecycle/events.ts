@@ -276,6 +276,33 @@ export function handleSessionEvent(
         emitBashResult(deps, streamed.delta, tabId);
         addLiveContextUsageEstimate(rec, streamed.delta);
         emitContextUsageThrottled(state, deps, tabId, rec);
+      } else if (ev.toolName === "task") {
+        let cached = rec.toolArgsCache.get(ev.toolCallId);
+        if (!cached) {
+          cached = {
+            name: ev.toolName,
+            summary: summarizeToolArgs(ev.toolName, ev.args),
+            uiId: `tool-${++rec.toolCardSeq}-${ev.toolCallId}`,
+            startedAt: Date.now(),
+          };
+          rec.toolArgsCache.set(ev.toolCallId, cached);
+        }
+        const payload = toolCardPayload({
+          id: cached.uiId,
+          toolName: ev.toolName,
+          argsSummary: cached.summary,
+          result: ev.partialResult,
+          startedAt: cached.startedAt,
+        });
+        deps.send({ type: "a2ui", tabId, id: cached.uiId, payload });
+        const extracted = extractToolContent(ev.partialResult);
+        const streamed = consumeBashTerminalSnapshot(
+          extracted.text,
+          cached.taskPartialStream,
+        );
+        cached.taskPartialStream = streamed.state;
+        addLiveContextUsageEstimate(rec, streamed.delta);
+        emitContextUsageThrottled(state, deps, tabId, rec);
       }
       break;
     }

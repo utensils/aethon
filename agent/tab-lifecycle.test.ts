@@ -114,6 +114,21 @@ describe("summarizeToolArgs", () => {
     expect(summarizeToolArgs("read", null)).toBe("");
     expect(summarizeToolArgs("read", "x")).toBe("");
   });
+
+  it("summarizes Aethon and pi subagent tools without raw JSON", () => {
+    expect(
+      summarizeToolArgs("task", {
+        subagent_type: "coder",
+        prompt: "Fix the UI\nwith details",
+      }),
+    ).toBe("coder · Fix the UI");
+    expect(
+      summarizeToolArgs("subagent", {
+        agent: "reviewer",
+        task: "Review the patch",
+      }),
+    ).toBe("reviewer · Review the patch");
+  });
 });
 
 describe("extractToolContent", () => {
@@ -195,6 +210,22 @@ describe("toolCardPayload", () => {
     expect(code.type).toBe("code");
     expect(code.props.content.length).toBe(1500);
     expect(code.props.content.endsWith("…")).toBe(true);
+  });
+
+  it("renders task text results as subagent prose output", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "task",
+      argsSummary: "coder · fix it",
+      result: "Done.",
+    });
+    const root = payload.components[0] as { children: unknown[] };
+    const child = root.children[0] as {
+      type: string;
+      props: { content: string };
+    };
+    expect(child.type).toBe("subagent-result");
+    expect(child.props.content).toBe("Done.");
   });
 
   it("infers the code language for file-backed tool results", () => {
@@ -602,6 +633,47 @@ describe("handleSessionEvent", () => {
     expect(a2uiMsg).toMatchObject({ id: "tool-1-c1" });
     expect(f.sent.find((m) => m.type === "terminal_output")).toMatchObject({
       content: "\r\n$ ls\r\n",
+    });
+  });
+
+  it("tool_execution_update streams task partials into the existing card", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "task",
+      args: { subagent_type: "coder", prompt: "fix the bug" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_update",
+      toolCallId: "c1",
+      toolName: "task",
+      args: { subagent_type: "coder", prompt: "fix the bug" },
+      partialResult: { content: [{ type: "text", text: "working" }] },
+    });
+
+    const a2uiMessages = f.sent.filter((m) => m.type === "a2ui");
+    expect(a2uiMessages.map((m) => m.id)).toEqual(["tool-1-c1", "tool-1-c1"]);
+    expect(a2uiMessages.at(-1)).toMatchObject({
+      payload: {
+        components: [
+          {
+            id: "tool-1-c1",
+            props: {
+              toolName: "task",
+              description: "coder · fix the bug",
+              startedAt: expect.any(Number),
+            },
+            children: [
+              {
+                type: "subagent-result",
+                props: { content: "working" },
+              },
+            ],
+          },
+        ],
+      },
     });
   });
 

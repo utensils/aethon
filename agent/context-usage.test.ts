@@ -209,6 +209,44 @@ describe("live context updates", () => {
     expect(context?.saturated).toBeUndefined();
   });
 
+  it("counts only task partial deltas in live context estimates", () => {
+    const state = stateWithCompaction();
+    const rec = recWithUsage({
+      tokens: 1_000,
+      contextWindow: 2_000,
+      percent: 50,
+    });
+    const sent: Record<string, unknown>[] = [];
+    const deps = { send: (msg: Record<string, unknown>) => sent.push(msg) };
+
+    handleSessionEvent(state, deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "task-1",
+      toolName: "task",
+      args: { subagent_type: "coder", prompt: "fix it" },
+    });
+    const beforePartials = rec.contextUsageTransientTokens ?? 0;
+    handleSessionEvent(state, deps, rec, "tab-1", {
+      type: "tool_execution_update",
+      toolCallId: "task-1",
+      toolName: "task",
+      args: { subagent_type: "coder", prompt: "fix it" },
+      partialResult: { content: [{ type: "text", text: "abcd" }] },
+    });
+    handleSessionEvent(state, deps, rec, "tab-1", {
+      type: "tool_execution_update",
+      toolCallId: "task-1",
+      toolName: "task",
+      args: { subagent_type: "coder", prompt: "fix it" },
+      partialResult: { content: [{ type: "text", text: "abcdef" }] },
+    });
+
+    // estimateTokens is ceil(chars / 4), so "abcd" contributes 1 and the
+    // cumulative update's delta "ef" contributes 1. Counting full snapshots
+    // would yield 3 instead.
+    expect((rec.contextUsageTransientTokens ?? 0) - beforePartials).toBe(2);
+  });
+
   it("clears transient estimates for authoritative turn-end usage", () => {
     const state = stateWithCompaction({ currentAgentTabId: "tab-1" });
     const rec = recWithUsage({

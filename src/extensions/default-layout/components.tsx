@@ -37,6 +37,7 @@ export {
   ChatInput,
   MainCanvas,
   QueuedMessagesPopover,
+  SubagentResult,
   ToolCard,
   formatToolDuration,
 } from "./chat";
