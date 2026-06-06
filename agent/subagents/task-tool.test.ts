@@ -347,6 +347,30 @@ describe("buildSubagentTaskTool", () => {
     await pending;
   });
 
+  it("catches rejected aborts before disposing the subagent session", async () => {
+    let release!: () => void;
+    h.promptImpl = () => new Promise<void>((res) => (release = res));
+    const { state } = makeState({ name: "reviewer", model: "ollama/llama3.3" });
+    const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+    const ctrl = new AbortController();
+    const pending = execOf(tool)(
+      "c",
+      { subagent_type: "reviewer", prompt: "x" },
+      ctrl.signal,
+    );
+    await Promise.resolve();
+    h.abortSpy.mockRejectedValueOnce(new Error("abort failed"));
+
+    ctrl.abort();
+    release();
+
+    await expect(pending).resolves.toMatchObject({
+      details: { subagent: "reviewer" },
+    });
+    expect(h.abortSpy).toHaveBeenCalledTimes(1);
+    expect(h.disposeSpy).toHaveBeenCalled();
+  });
+
   it("uses the subagent timeout override for inline runs", async () => {
     vi.useFakeTimers();
     h.promptImpl = () => new Promise<void>(() => {});

@@ -206,6 +206,26 @@ describe("coerceChatMessages", () => {
     ]);
   });
 
+  it("collapses repeated amended agent snapshots by id", () => {
+    const out = coerceChatMessages([
+      { id: "t1", role: "agent", thinking: "first", createdAt: 10 },
+      { id: "t1", role: "agent", thinking: "first second", createdAt: 20 },
+      { id: "u1", role: "user", text: "next" },
+      { id: "t1", role: "agent", text: "final", createdAt: 30 },
+    ]);
+
+    expect(out).toEqual([
+      {
+        id: "t1",
+        role: "agent",
+        thinking: "first second",
+        text: "final",
+        createdAt: 10,
+      },
+      { id: "u1", role: "user", text: "next" },
+    ]);
+  });
+
   it("preserves known user delivery states", () => {
     const out = coerceChatMessages([
       { id: "q1", role: "user", text: "after this", delivery: "queued" },

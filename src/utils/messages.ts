@@ -138,7 +138,7 @@ function toolResultTexts(message: ChatMessage): string[] {
   for (const component of components) {
     if (component.type !== "tool-card") continue;
     for (const child of component.children ?? []) {
-      if (child.type !== "code") continue;
+      if (child.type !== "code" && child.type !== "subagent-result") continue;
       const content = child.props?.content;
       if (typeof content === "string" && content.trim().length > 0) {
         texts.push(normalizedText(content));
@@ -166,6 +166,60 @@ export function dedupeToolResultTextMessages(
         : "";
     if (text && toolOutputs.has(text)) continue;
     out.push(message);
+  }
+  return out;
+}
+
+function canCollapseAmendedAgentMessage(message: ChatMessage): boolean {
+  return (
+    message.role === "agent" &&
+    !message.a2ui &&
+    typeof message.id === "string" &&
+    message.id.length > 0
+  );
+}
+
+function latestNonEmpty(
+  previous: string | undefined,
+  next: string | undefined,
+): string | undefined {
+  if (next !== undefined) return next;
+  return previous;
+}
+
+/** Persisted local chat is append-only, while streamed agent text/thinking is
+ * amended in memory under one stable message id. If the app reloads before a
+ * compacting rewrite, the JSONL history can contain many cumulative snapshots
+ * of the same message. Collapse those rows back to the latest amended state so
+ * restore matches the live transcript. */
+export function collapseAmendedAgentMessages(
+  messages: ChatMessage[],
+): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const byId = new Map<string, number>();
+  for (const message of messages) {
+    if (!canCollapseAmendedAgentMessage(message)) {
+      out.push(message);
+      continue;
+    }
+    const existingIndex = byId.get(message.id);
+    if (existingIndex === undefined) {
+      byId.set(message.id, out.length);
+      out.push(message);
+      continue;
+    }
+    const previous = out[existingIndex];
+    out[existingIndex] = {
+      ...previous,
+      ...message,
+      createdAt: previous.createdAt ?? message.createdAt,
+      text: latestNonEmpty(previous.text, message.text),
+      thinking: latestNonEmpty(previous.thinking, message.thinking),
+      attachments:
+        message.attachments && message.attachments.length > 0
+          ? message.attachments
+          : previous.attachments,
+    };
   }
   return out;
 }
@@ -272,5 +326,5 @@ export function coerceChatMessages(value: unknown): ChatMessage[] {
       }),
     );
   }
-  return messages;
+  return collapseAmendedAgentMessages(messages);
 }

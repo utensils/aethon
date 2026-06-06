@@ -6260,6 +6260,25 @@ body.ae-resizing-terminal * {
   font-style: italic;
 }
 
+.ae-subagent-result {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  color: var(--text);
+  font-size: var(--type-body-size, 0.92rem);
+  line-height: var(--type-body-line, 1.5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ae-subagent-result[data-error="true"] {
+  border-color: color-mix(in srgb, var(--danger, #c5494a) 42%, var(--border));
+  color: var(--state-error-fg, var(--danger, #c5494a));
+}
+
 /* =============================================================================
    Shell canvas — interactive PTY tab. The container is a flex column so
    the xterm fills the canvas cell and a thin status bar sits underneath
