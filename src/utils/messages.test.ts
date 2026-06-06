@@ -226,6 +226,17 @@ describe("coerceChatMessages", () => {
     ]);
   });
 
+  it("does not let empty amended snapshots erase prior streamed content", () => {
+    const out = coerceChatMessages([
+      { id: "t1", role: "agent", text: "visible", thinking: "plan" },
+      { id: "t1", role: "agent", text: "", thinking: "" },
+    ]);
+
+    expect(out).toEqual([
+      { id: "t1", role: "agent", text: "visible", thinking: "plan" },
+    ]);
+  });
+
   it("preserves known user delivery states", () => {
     const out = coerceChatMessages([
       { id: "q1", role: "user", text: "after this", delivery: "queued" },

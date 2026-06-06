@@ -183,7 +183,7 @@ function latestNonEmpty(
   previous: string | undefined,
   next: string | undefined,
 ): string | undefined {
-  if (next !== undefined) return next;
+  if (next && next.length > 0) return next;
   return previous;
 }
 

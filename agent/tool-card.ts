@@ -2,7 +2,9 @@ const MAX_IMAGES_PER_RESULT = 4;
 
 function firstLine(value: unknown, max = 180): string {
   if (typeof value !== "string") return "";
-  const line = value.trim().split(/\r?\n/)[0] ?? "";
+  const trimmed = value.trim();
+  const newline = trimmed.search(/\r?\n/);
+  const line = newline >= 0 ? trimmed.slice(0, newline) : trimmed;
   return line.length > max ? line.slice(0, max - 1) + "…" : line;
 }
 
