@@ -4,6 +4,18 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.8.1](https://github.com/utensils/aethon/compare/v0.8.0...v0.8.1) (2026-06-06)
+
+
+### Bug Fixes
+
+* **agent:** isolate tab activity hydration ([37422f7](https://github.com/utensils/aethon/commit/37422f7070642a8bfbe65ecfc4b1850da86fbb1d))
+* **chat:** rework sticky scroll as a single-owner follow controller ([#250](https://github.com/utensils/aethon/issues/250)) ([04927b4](https://github.com/utensils/aethon/commit/04927b42415e5b6a0461e8aee048b4c0879df08f))
+* **chat:** stabilize virtual sticky follow ([579711e](https://github.com/utensils/aethon/commit/579711ec5434a6919a3c604d430c65857ba4e881))
+* harden subagent output lifecycle ([ae43834](https://github.com/utensils/aethon/commit/ae4383408efea4e9e5261cc524b6ad55d15de843))
+* **sidebar:** open worktree PR badges externally ([e592d89](https://github.com/utensils/aethon/commit/e592d89aac6d95f3ed9ea7d0a1afd699a1e95f73)), closes [#242](https://github.com/utensils/aethon/issues/242)
+* **workspaces:** clear stale landing on tab restore ([#249](https://github.com/utensils/aethon/issues/249)) ([7dc0676](https://github.com/utensils/aethon/commit/7dc067677830acb2ef3d1d4e6b0e259e64561366)), closes [#248](https://github.com/utensils/aethon/issues/248)
+
 ## [0.8.0](https://github.com/utensils/aethon/compare/v0.7.0...v0.8.0) (2026-06-05)
 
 
