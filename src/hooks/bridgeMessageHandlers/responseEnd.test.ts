@@ -7,7 +7,11 @@ describe("handleResponseEnd", () => {
   it("clears waiting + status, dismisses hang notification, fires completion", () => {
     const tabId = "default";
     const { ctx, mocks, applySetState } = buildHandlerFixture({
-      state: { activeTabId: tabId, queueCount: 0 },
+      state: {
+        activeTabId: tabId,
+        queueCount: 0,
+        agentRunningTabs: { [tabId]: true },
+      },
     });
     ctx.activeResponseIdRef.current = "msg-1";
     ctx.turnStartedAtRef.current.set(tabId, Date.now() - 5000);
@@ -19,7 +23,10 @@ describe("handleResponseEnd", () => {
     expect(out.waiting).toBe(false);
     const next = applySetState();
     expect(next.status).toBe("ready");
-    expect(mocks.dismissNotification).toHaveBeenCalledWith(`ae-hang-warn:${tabId}`);
+    expect(next.agentRunningTabs).toEqual({});
+    expect(mocks.dismissNotification).toHaveBeenCalledWith(
+      `ae-hang-warn:${tabId}`,
+    );
     // maybeFireCompletionNotification called via void.
     expect(mocks.maybeFireCompletionNotification).toHaveBeenCalled();
   });
@@ -57,9 +64,7 @@ describe("handleResponseEnd", () => {
       status: "cancelled",
       endedAt: expect.any(Number),
     });
-    expect(toolCard?.children?.[0].props?.content).toContain(
-      "did not finish",
-    );
+    expect(toolCard?.children?.[0].props?.content).toContain("did not finish");
   });
 
   it("clears waiting even when a client-side queue is non-empty", () => {

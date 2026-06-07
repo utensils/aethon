@@ -1,4 +1,7 @@
-import { closeRunningToolCards } from "../../utils/agentBusy";
+import {
+  closeRunningToolCards,
+  hasRunningToolCard,
+} from "../../utils/agentBusy";
 import {
   coerceChatMessages,
   dedupeToolResultTextMessages,
@@ -149,14 +152,14 @@ function isCompactionMarker(message: ChatMessage): boolean {
 function isStopNotice(message: ChatMessage): boolean {
   return (
     message.role === "system" &&
-    message.text?.replace(/\s+/g, " ").trim().toLowerCase() ===
-      "agent stopped."
+    message.text?.replace(/\s+/g, " ").trim().toLowerCase() === "agent stopped."
   );
 }
 
 function restoredCompactionMarkers(restored: ChatMessage[]): ChatMessage[] {
   return restored.filter(
-    (message) => message.id.startsWith("compaction:") && isCompactionMarker(message),
+    (message) =>
+      message.id.startsWith("compaction:") && isCompactionMarker(message),
   );
 }
 
@@ -168,7 +171,9 @@ function isDuplicateCompactionMarker(
     return false;
   }
   if (typeof message.createdAt !== "number") {
-    return restoredCompactions.some((candidate) => candidate.text === message.text);
+    return restoredCompactions.some(
+      (candidate) => candidate.text === message.text,
+    );
   }
   const createdAt = message.createdAt;
   return restoredCompactions.some(
@@ -325,10 +330,15 @@ function mergePendingLocalPrompts(
       isLivePendingMessage(message, currentlyWaiting, latestRestoredTime) ||
       messageCreatedAt(message) === undefined,
   );
-  const mergedHistory = mergeTimestampedLocalMessages(restored, timestampedLocal);
+  const mergedHistory = mergeTimestampedLocalMessages(
+    restored,
+    timestampedLocal,
+  );
   return {
     messages:
-      appendLocal.length > 0 ? [...mergedHistory, ...appendLocal] : mergedHistory,
+      appendLocal.length > 0
+        ? [...mergedHistory, ...appendLocal]
+        : mergedHistory,
     hasLivePending: pendingLocal.some((message) =>
       isLivePendingMessage(message, currentlyWaiting, latestRestoredTime),
     ),
@@ -338,7 +348,9 @@ function mergePendingLocalPrompts(
 export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
   const messages = dedupeToolResultTextMessages(
-    coerceChatMessages(data.messages).filter((message) => !isStopNotice(message)),
+    coerceChatMessages(data.messages).filter(
+      (message) => !isStopNotice(message),
+    ),
   );
   const session = ctx.allDiscoveredSessionsRef.current.find(
     (s) => s.tabId === tabId,
@@ -354,21 +366,32 @@ export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
           (tab) => tab.id === tabId,
         )
       : undefined;
+  const runningTabs =
+    (ctx.stateRef.current.agentRunningTabs as
+      | Record<string, true>
+      | undefined) ?? {};
+  const hasLiveTurnEvidence = (tab: Tab): boolean =>
+    tab.waiting === true ||
+    runningTabs[tab.id] === true ||
+    hasRunningToolCard(tab.messages);
   const activeHydration = activeTab
     ? mergePendingLocalPrompts(
         messages,
         dedupeToolResultTextMessages(activeTab.messages),
-        activeTab.waiting === true,
+        hasLiveTurnEvidence(activeTab),
       )
     : undefined;
   ctx.updateTab(tabId, (tab) => {
+    const liveTurnEvidence = hasLiveTurnEvidence(tab);
     const merged = mergePendingLocalPrompts(
       messages,
       dedupeToolResultTextMessages(tab.messages),
-      tab.waiting === true,
+      liveTurnEvidence,
     );
-    const nextWaiting = merged.hasLivePending ? tab.waiting : false;
     const dedupedMessages = dedupeToolResultTextMessages(merged.messages);
+    const nextWaiting =
+      liveTurnEvidence &&
+      (merged.hasLivePending || hasRunningToolCard(dedupedMessages));
     const closedTools = nextWaiting
       ? { messages: dedupedMessages, changed: false }
       : closeRunningToolCards(dedupedMessages, {
@@ -383,10 +406,18 @@ export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
         ? { label }
         : shouldReplaceGenericLabel(tab.label)
           ? { label: firstUserMessageLabel(messages) ?? tab.label }
-      : {}),
+          : {}),
     };
   });
-  if (activeHydration && !activeHydration.hasLivePending) {
+  if (
+    activeHydration &&
+    !activeHydration.hasLivePending &&
+    !(
+      activeTab &&
+      hasLiveTurnEvidence(activeTab) &&
+      hasRunningToolCard(activeHydration.messages)
+    )
+  ) {
     ctx.setStatusFlags({ waiting: false, status: "ready" });
   }
   ctx.syncRecentSessionsToState();
