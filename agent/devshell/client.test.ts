@@ -8,6 +8,7 @@ import {
   maybeWarnColdRun,
   onDevshellEvent,
   refresh,
+  seedPreparedEnv,
 } from "./client";
 import { ackMutation, markFrontendReady } from "../mutation-ack";
 
@@ -50,7 +51,12 @@ function makeHarness(): Harness {
   return { state, deps: { send }, sent };
 }
 
-function ackLastWith(harness: Harness, success: boolean, data?: unknown, error?: string): void {
+function ackLastWith(
+  harness: Harness,
+  success: boolean,
+  data?: unknown,
+  error?: string,
+): void {
   const last = harness.sent[harness.sent.length - 1];
   if (!last?.mutationId) throw new Error("no pending mutation to ack");
   ackMutation(harness.state, last.mutationId, success, error, data);
@@ -90,7 +96,10 @@ describe("getCachedEnv", () => {
     const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
     expect(hot).toBe(true);
     expect(kind).toBe("flake");
-    expect(env).toEqual({ PATH: "/nix/store/abc/bin", RUSTC: "/nix/store/xyz/bin/rustc" });
+    expect(env).toEqual({
+      PATH: "/nix/store/abc/bin",
+      RUSTC: "/nix/store/xyz/bin/rustc",
+    });
   });
 
   it("flushes env when enabled is 'never'", async () => {
@@ -108,7 +117,11 @@ describe("getCachedEnv", () => {
     const h = makeHarness();
     // 1st fetch — success
     let p = ensureFetched(h.state, h.deps, "/proj");
-    ackLastWith(h, true, { enabled: "auto", kind: "flake", env: { PATH: "/x" } });
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/x" },
+    });
     await p;
     // 2nd fetch — failure should NOT clear the cached env.
     p = ensureFetched(h.state, h.deps, "/proj");
@@ -117,6 +130,55 @@ describe("getCachedEnv", () => {
     const { env, hot } = getCachedEnv(h.state, h.deps, "/proj");
     expect(env).toEqual({ PATH: "/x" });
     expect(hot).toBe(true);
+  });
+});
+
+describe("seedPreparedEnv", () => {
+  it("seeds only the supervisor-marked devshell env keys", () => {
+    const h = makeHarness();
+    seedPreparedEnv(
+      "/proj",
+      {
+        AETHON_WORKER_DEVSHELL_ENV_KEYS: JSON.stringify([
+          "PATH",
+          "IN_NIX_SHELL",
+        ]),
+        PATH: "/nix/store/bin",
+        IN_NIX_SHELL: "impure",
+        PWD: "/wrong",
+        SHLVL: "7",
+        "BASH_FUNC_menu%%": "() { echo leaked; }",
+      },
+      "flake",
+    );
+
+    const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
+    expect(hot).toBe(true);
+    expect(kind).toBe("flake");
+    expect(env).toEqual({
+      PATH: "/nix/store/bin",
+      IN_NIX_SHELL: "impure",
+    });
+    expect(h.sent.length).toBe(0);
+  });
+
+  it("keeps the cache cold when prepared env keys are missing", () => {
+    const h = makeHarness();
+    seedPreparedEnv(
+      "/proj",
+      { PATH: "/nix/store/bin", PWD: "/wrong" },
+      "flake",
+    );
+
+    const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
+    expect(hot).toBe(false);
+    expect(kind).toBeNull();
+    expect(env).toEqual({});
+    expect(h.sent[0]).toMatchObject({
+      type: "devshell_query",
+      op: "env_for_path",
+      args: { cwd: "/proj" },
+    });
   });
 });
 
@@ -155,13 +217,25 @@ describe("onDevshellEvent", () => {
   it("invalidates cache entries under a root on ready", async () => {
     const h = makeHarness();
     const p1 = ensureFetched(h.state, h.deps, "/proj");
-    ackLastWith(h, true, { enabled: "auto", kind: "flake", env: { PATH: "/old" } });
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/old" },
+    });
     await p1;
     const p2 = ensureFetched(h.state, h.deps, "/proj/sub");
-    ackLastWith(h, true, { enabled: "auto", kind: "flake", env: { PATH: "/old-sub" } });
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/old-sub" },
+    });
     await p2;
 
-    onDevshellEvent(h.state, h.deps, { kind: "flake", root: "/proj", status: "ready" });
+    onDevshellEvent(h.state, h.deps, {
+      kind: "flake",
+      root: "/proj",
+      status: "ready",
+    });
     const { hot: hotRoot } = getCachedEnv(h.state, h.deps, "/proj");
     const { hot: hotSub } = getCachedEnv(h.state, h.deps, "/proj/sub");
     // Both went cold → fetches kicked off.
@@ -172,9 +246,17 @@ describe("onDevshellEvent", () => {
   it("does not invalidate cache entries under unrelated roots", async () => {
     const h = makeHarness();
     const p = ensureFetched(h.state, h.deps, "/proj-a");
-    ackLastWith(h, true, { enabled: "auto", kind: "flake", env: { PATH: "/a" } });
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/a" },
+    });
     await p;
-    onDevshellEvent(h.state, h.deps, { kind: "flake", root: "/proj-b", status: "ready" });
+    onDevshellEvent(h.state, h.deps, {
+      kind: "flake",
+      root: "/proj-b",
+      status: "ready",
+    });
     const { env, hot } = getCachedEnv(h.state, h.deps, "/proj-a");
     expect(hot).toBe(true);
     expect(env).toEqual({ PATH: "/a" });
@@ -185,7 +267,11 @@ describe("refresh", () => {
   it("clears cache for the root and sends a refresh query", async () => {
     const h = makeHarness();
     const p = ensureFetched(h.state, h.deps, "/proj");
-    ackLastWith(h, true, { enabled: "auto", kind: "flake", env: { PATH: "/old" } });
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/old" },
+    });
     await p;
 
     const refreshP = refresh(h.state, h.deps, "/proj");

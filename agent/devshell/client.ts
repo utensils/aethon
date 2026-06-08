@@ -43,6 +43,7 @@ export interface DevshellClientDeps {
 
 const FETCH_TIMEOUT_MS = 5_000;
 const PREPARE_TIMEOUT_MS = 130_000;
+const PREPARED_ENV_KEYS_VAR = "AETHON_WORKER_DEVSHELL_ENV_KEYS";
 
 /** Hit point for the bash spawnHook. Synchronous. Returns the cached
  *  env (possibly empty) and, if necessary, kicks off a background
@@ -73,8 +74,11 @@ export function seedPreparedEnv(
   env: NodeJS.ProcessEnv,
   kind: string | null,
 ): void {
+  const keys = preparedEnvKeys(env);
+  if (keys.length === 0) return;
   const prepared: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
+  for (const key of keys) {
+    const value = env[key];
     if (typeof value === "string") prepared[key] = value;
   }
   cache.set(cwd, {
@@ -84,6 +88,20 @@ export function seedPreparedEnv(
     stale: false,
     fetching: false,
   });
+}
+
+function preparedEnvKeys(env: NodeJS.ProcessEnv): string[] {
+  const raw = env[PREPARED_ENV_KEYS_VAR];
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (key): key is string => typeof key === "string" && key.length > 0,
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** Explicit fetch — used by tab-lifecycle on session creation so the
@@ -104,7 +122,13 @@ export async function ensureFetched(
     fetching: true,
   });
   try {
-    const result = await sendQuery(state, deps, "env_for_path", { cwd }, FETCH_TIMEOUT_MS);
+    const result = await sendQuery(
+      state,
+      deps,
+      "env_for_path",
+      { cwd },
+      FETCH_TIMEOUT_MS,
+    );
     if (!result.ok) {
       // Don't drop the existing cache on a transient failure — the
       // previous env (if any) is still our best bet. Just clear the
@@ -222,7 +246,9 @@ export async function ensurePrepared(
       });
       logger
         .scope("devshell")
-        .warn(`prepare_for_path(${cwd}) failed: ${payload.reason ?? "unknown"}`);
+        .warn(
+          `prepare_for_path(${cwd}) failed: ${payload.reason ?? "unknown"}`,
+        );
       return;
     }
     cache.set(cwd, {
@@ -277,7 +303,11 @@ export async function refresh(
 export function onDevshellEvent(
   state: AethonAgentState,
   deps: DevshellClientDeps,
-  event: { kind: string; root: string; status: "ready" | "failed" | "resolving" },
+  event: {
+    kind: string;
+    root: string;
+    status: "ready" | "failed" | "resolving";
+  },
 ): void {
   if (event.status === "ready") {
     // Just invalidate; the next spawnHook call will re-fetch under
@@ -319,10 +349,12 @@ function isUnderRoot(cwd: string, root: string): boolean {
 export function maybeWarnColdRun(cwd: string, kind: string | null): boolean {
   if (warned.has(cwd)) return false;
   warned.add(cwd);
-  logger.scope("devshell").warn(
-    `cold devshell run for cwd ${cwd}${kind ? ` (kind=${kind})` : ""}: ` +
-      `host env in use until resolver completes. Subsequent calls will inherit the devshell env.`,
-  );
+  logger
+    .scope("devshell")
+    .warn(
+      `cold devshell run for cwd ${cwd}${kind ? ` (kind=${kind})` : ""}: ` +
+        `host env in use until resolver completes. Subsequent calls will inherit the devshell env.`,
+    );
   return true;
 }
 
@@ -348,7 +380,9 @@ async function sendQuery(
   if (!state.frontendReady) {
     const ready = await Promise.race<boolean>([
       state.frontendReadyPromise.then(() => true),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), timeoutMs),
+      ),
     ]);
     if (!ready) return { ok: false, error: "frontend_not_ready" };
   }

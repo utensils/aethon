@@ -87,7 +87,7 @@ pub(crate) async fn send_message(
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, true);
     prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
-    write_agent_payload(&state, &app, key, payload, worker)
+    write_agent_payload(&state, &app, key, payload, worker).await
 }
 
 fn attachments_to_agent_images(
@@ -236,7 +236,7 @@ pub(crate) async fn agent_command(
     let should_retire = payload_value.get("type").and_then(|v| v.as_str()) == Some("tab_close")
         && key != GLOBAL_AGENT_KEY;
     prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
-    write_agent_payload(&state, &app, key.clone(), payload_value, worker)?;
+    write_agent_payload(&state, &app, key.clone(), payload_value, worker).await?;
     if should_retire {
         retire_agent_key(&state, &key)?;
     }
@@ -354,7 +354,7 @@ pub(crate) fn agent_broadcast_command(
 }
 
 #[tauri::command]
-pub(crate) fn dispatch_a2ui_event(
+pub(crate) async fn dispatch_a2ui_event(
     event: String,
     tab_id: Option<String>,
     state: State<'_, AgentProcesses>,
@@ -369,7 +369,7 @@ pub(crate) fn dispatch_a2ui_event(
     });
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, false);
-    write_agent_payload(&state, &app, key, payload, worker)
+    write_agent_payload(&state, &app, key, payload, worker).await
 }
 
 /// Read-only per-worker diagnostic row. Maps a live `aethon-agent` PID back to

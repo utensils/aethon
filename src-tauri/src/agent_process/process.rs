@@ -15,10 +15,10 @@
 use std::collections::{HashMap, HashSet};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, State};
+use tokio::time::sleep;
 
 use super::sidecar::project_root;
 use super::spawn::ensure_agent_spawned;
@@ -116,7 +116,7 @@ fn worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) -> bo
         .unwrap_or(false)
 }
 
-fn wait_for_worker_ready(
+async fn wait_for_worker_ready(
     child: &Arc<Mutex<Child>>,
     meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
     key: &str,
@@ -137,7 +137,7 @@ fn wait_for_worker_ready(
         {
             return Err(format!("agent worker exited before ready: {status:?}"));
         }
-        thread::sleep(Duration::from_millis(25));
+        sleep(Duration::from_millis(25)).await;
     }
     Err(format!(
         "agent worker did not become ready within {timeout:?}"
@@ -218,7 +218,7 @@ pub(crate) fn tab_agent_key(tab_id: &str) -> String {
     format!("tab:{tab_id}")
 }
 
-pub(crate) fn write_agent_payload(
+pub(crate) async fn write_agent_payload(
     state: &State<'_, AgentProcesses>,
     app: &AppHandle,
     key: String,
@@ -241,7 +241,7 @@ pub(crate) fn write_agent_payload(
 
     let prompt_starts = payload_starts_prompt(&payload);
     if prompt_starts {
-        wait_for_worker_ready(&child, &state.meta, &key, Duration::from_secs(20))?;
+        wait_for_worker_ready(&child, &state.meta, &key, Duration::from_secs(20)).await?;
     }
     let prompt_flag = prompt_starts.then_some(true);
 

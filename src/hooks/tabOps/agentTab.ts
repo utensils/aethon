@@ -154,33 +154,43 @@ export function useNewTab(deps: NewTabDeps) {
     dispatchTerminalReplay(initialTerminalBuffer);
     const opening = (async () => {
       if (inheritedCwd) {
-        const prepared = await invoke<{
-          state?: string;
-          kind?: string | null;
-          reason?: string | null;
-        }>("devshell_prepare_for_path", {
-          args: { cwd: inheritedCwd, includeEnv: false },
-        });
-        if (prepared?.state === "failed") {
+        try {
+          const prepared = await invoke<{
+            state?: string;
+            kind?: string | null;
+            reason?: string | null;
+          }>("devshell_prepare_for_path", {
+            args: { cwd: inheritedCwd, includeEnv: false },
+          });
+          if (prepared?.state === "failed") {
+            appendSystem(
+              `Devshell prepare failed for ${inheritedCwd}${
+                prepared.reason ? `: ${prepared.reason}` : ""
+              }. Opening tab with the host environment.`,
+            );
+          }
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
           appendSystem(
             `Devshell prepare failed for ${inheritedCwd}${
-              prepared.reason ? `: ${prepared.reason}` : ""
+              reason ? `: ${reason}` : ""
             }. Opening tab with the host environment.`,
           );
+        } finally {
+          setState((prev) => {
+            const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
+              tab.id === id && tab.waiting === true
+                ? { ...tab, waiting: false }
+                : tab,
+            );
+            const activeTabId = prev.activeTabId;
+            return {
+              ...prev,
+              tabs,
+              ...(activeTabId === id ? { waiting: false } : {}),
+            };
+          });
         }
-        setState((prev) => {
-          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
-            tab.id === id && tab.waiting === true
-              ? { ...tab, waiting: false }
-              : tab,
-          );
-          const activeTabId = prev.activeTabId;
-          return {
-            ...prev,
-            tabs,
-            ...(activeTabId === id ? { waiting: false } : {}),
-          };
-        });
       }
       return await invoke("agent_command", {
         payload: JSON.stringify({

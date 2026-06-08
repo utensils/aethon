@@ -329,6 +329,10 @@ fn apply_worker_devshell_env(app: &AppHandle, command: &mut Command, worker: Opt
         cwd.display()
     );
     command.env("AETHON_WORKER_DEVSHELL_READY", "1");
+    let prepared_keys: Vec<String> = prepared.env.keys().cloned().collect();
+    if let Ok(keys_json) = serde_json::to_string(&prepared_keys) {
+        command.env("AETHON_WORKER_DEVSHELL_ENV_KEYS", keys_json);
+    }
     if let Some(kind) = prepared.kind.as_deref() {
         command.env("AETHON_WORKER_DEVSHELL_KIND", kind);
         if kind != "direnv" {
