@@ -3,6 +3,7 @@ import { subscribeShellStreams } from "./osEdges/shellStreams";
 import { subscribeAgentReload } from "./osEdges/agentReload";
 import { subscribeAgentCrash } from "./osEdges/agentCrash";
 import { subscribeAgentStderr } from "./osEdges/agentStderr";
+import { subscribeDevshellOutput } from "./osEdges/devshellOutput";
 import { subscribeMenu } from "./osEdges/menu";
 import { subscribeDragDrop } from "./osEdges/dragDrop";
 import { subscribeClipboardPaste } from "./osEdges/clipboardPaste";
@@ -70,6 +71,11 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
       subscribeAgentStderr({
         appendMessage: ctx.appendMessage,
         persistLocalChatMessage: ctx.persistLocalChatMessage,
+      }),
+      subscribeDevshellOutput({
+        setState: ctx.setState,
+        stateRef: ctx.stateRef,
+        updateTab: ctx.updateTab,
       }),
       subscribeMenu({
         stateRef: ctx.stateRef,

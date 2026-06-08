@@ -20,6 +20,9 @@ import {
   FileReferenceError,
   expandFileReferencesInPrompt,
 } from "./file-references";
+import { logger } from "./logger";
+
+const chatLog = logger.scope("chat");
 
 export async function handleChat(
   state: AethonAgentState,
@@ -31,6 +34,7 @@ export async function handleChat(
     return;
   }
   const tabId = msg.tabId ?? "default";
+  chatLog.info(`received tabId=${tabId} chars=${msg.content.length}`);
   // Per-tab hard-guardrail override rides each chat so the source guard sees
   // the current value before this turn's tool calls (and survives a respawn).
   if (typeof msg.hardEnforce === "boolean") {
@@ -73,6 +77,7 @@ export async function handleChat(
     tabId,
     cwdOverride || initialModel ? { cwdOverride, initialModel } : {},
   );
+  chatLog.info(`tab ready tabId=${tabId}`);
   if (authServicesRefreshed) {
     refreshTabSessionModelFromAuthServices(state, tabId);
   }
@@ -171,6 +176,7 @@ export async function handleChat(
       }
       maybeExitForReload(state, deps);
     });
+  chatLog.info(`prompt dispatched tabId=${tabId}`);
 }
 
 function isUnderlyingSessionBusy(tab: TabRecord): boolean {

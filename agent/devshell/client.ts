@@ -42,6 +42,7 @@ export interface DevshellClientDeps {
 }
 
 const FETCH_TIMEOUT_MS = 5_000;
+const PREPARE_TIMEOUT_MS = 130_000;
 
 /** Hit point for the bash spawnHook. Synchronous. Returns the cached
  *  env (possibly empty) and, if necessary, kicks off a background
@@ -60,6 +61,29 @@ export function getCachedEnv(
     void ensureFetched(state, deps, cwd);
   }
   return { env: entry?.env ?? {}, kind: entry?.kind ?? null, hot: false };
+}
+
+/** Seed the synchronous bash-hook cache from a tab worker process that Rust
+ *  already spawned under a prepared devshell env. This avoids a duplicate
+ *  bridge -> frontend -> Rust prepare query before the first prompt can reach
+ *  pi, while still keeping Force/None modes honest: callers only invoke this
+ *  when the supervisor explicitly marked the worker env prepared. */
+export function seedPreparedEnv(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  kind: string | null,
+): void {
+  const prepared: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === "string") prepared[key] = value;
+  }
+  cache.set(cwd, {
+    kind,
+    env: prepared,
+    resolvedAt: Date.now(),
+    stale: false,
+    fetching: false,
+  });
 }
 
 /** Explicit fetch — used by tab-lifecycle on session creation so the
@@ -133,6 +157,90 @@ export async function ensureFetched(
     logger
       .scope("devshell")
       .warn(`env_for_path(${cwd}) threw: ${(err as Error).message}`);
+  }
+}
+
+/** Blocking preparation used before creating a tab-scoped session. This asks
+ *  the frontend/Rust cache to wait for Nix/direnv readiness, then seeds the
+ *  synchronous spawn-hook cache with the prepared env. */
+export async function ensurePrepared(
+  state: AethonAgentState,
+  deps: DevshellClientDeps,
+  cwd: string,
+): Promise<void> {
+  const existing = cache.get(cwd);
+  cache.set(cwd, {
+    kind: existing?.kind ?? null,
+    env: existing?.env ?? {},
+    resolvedAt: existing?.resolvedAt ?? 0,
+    stale: existing?.stale ?? false,
+    fetching: true,
+  });
+  try {
+    const result = await sendQuery(
+      state,
+      deps,
+      "prepare_for_path",
+      { cwd, includeEnv: true },
+      PREPARE_TIMEOUT_MS,
+    );
+    if (!result.ok) {
+      cache.set(cwd, {
+        kind: existing?.kind ?? null,
+        env: existing?.env ?? {},
+        resolvedAt: existing?.resolvedAt ?? 0,
+        stale: true,
+        fetching: false,
+      });
+      throw new Error(result.error ?? "devshell prepare failed");
+    }
+    const payload = (result.data ?? {}) as {
+      enabled?: string;
+      state?: string;
+      kind?: string | null;
+      env?: Record<string, string>;
+      stale?: boolean;
+      reason?: string | null;
+    };
+    if (payload.enabled === "never" || payload.state === "none") {
+      cache.set(cwd, {
+        kind: null,
+        env: {},
+        resolvedAt: Date.now(),
+        stale: false,
+        fetching: false,
+      });
+      return;
+    }
+    if (payload.state === "failed") {
+      cache.set(cwd, {
+        kind: payload.kind ?? existing?.kind ?? null,
+        env: existing?.env ?? {},
+        resolvedAt: existing?.resolvedAt ?? 0,
+        stale: true,
+        fetching: false,
+      });
+      logger
+        .scope("devshell")
+        .warn(`prepare_for_path(${cwd}) failed: ${payload.reason ?? "unknown"}`);
+      return;
+    }
+    cache.set(cwd, {
+      kind: payload.kind ?? null,
+      env: payload.env ?? {},
+      resolvedAt: Date.now(),
+      stale: payload.stale === true,
+      fetching: false,
+    });
+  } catch (err) {
+    cache.set(cwd, {
+      kind: existing?.kind ?? null,
+      env: existing?.env ?? {},
+      resolvedAt: existing?.resolvedAt ?? 0,
+      stale: true,
+      fetching: false,
+    });
+    throw err;
   }
 }
 

@@ -75,6 +75,14 @@ pub fn detect_mode(root: &Path, mode: DetectMode) -> Option<DevshellKind> {
     detect_with(root, mode, &RealProbe)
 }
 
+/// If a named resolver is forced but this root only matches another
+/// Nix-backed devshell entry path, return the naturally detected kind.
+/// Callers use this to surface a configuration mismatch instead of
+/// silently falling back to direnv/flake/shell.
+pub fn forced_mode_mismatch(root: &Path, configured: DetectMode) -> Option<DevshellKind> {
+    forced_mode_mismatch_with(root, configured, &RealProbe)
+}
+
 /// Trait so unit tests can fake binary availability without poking
 /// the real PATH. Production callers use `RealProbe`.
 pub trait BinProbe {
@@ -124,6 +132,20 @@ pub(super) fn detect_with(
         DetectMode::Nix => flake_ok.then_some(DevshellKind::Flake),
         DetectMode::NixShell => shell_ok.then_some(DevshellKind::Shell),
     }
+}
+
+pub(super) fn forced_mode_mismatch_with(
+    root: &Path,
+    configured: DetectMode,
+    probe: &dyn BinProbe,
+) -> Option<DevshellKind> {
+    if matches!(configured, DetectMode::Auto) {
+        return None;
+    }
+    if detect_with(root, configured, probe).is_some() {
+        return None;
+    }
+    detect_with(root, DetectMode::Auto, probe)
 }
 
 /// Cheaply check whether a `.envrc` actually wires up Nix. A `.envrc`
@@ -384,6 +406,54 @@ mod tests {
         };
         // Forced Nix mode but no nix binary on PATH — refuse rather than lie.
         assert_eq!(detect_with(td.path(), DetectMode::Nix, &probe), None);
+    }
+
+    #[test]
+    fn forced_mode_mismatch_reports_natural_kind() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        write(&td, ".envrc", "use flake\n");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::NixShell, &probe),
+            Some(DevshellKind::Direnv)
+        );
+    }
+
+    #[test]
+    fn forced_mode_mismatch_is_none_for_auto_mode() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        write(&td, ".envrc", "use flake\n");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::Auto, &probe),
+            None
+        );
+    }
+
+    #[test]
+    fn forced_mode_mismatch_is_none_when_preferred_marker_exists() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        write(&td, "shell.nix", "{}");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::NixShell, &probe),
+            None
+        );
     }
 
     #[test]

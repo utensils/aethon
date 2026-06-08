@@ -80,6 +80,7 @@ import {
   getRuntimeSnapshot,
   scheduleStateFileWrite as scheduleStateFileWriteImpl,
 } from "./runtime-snapshot";
+import { markFrontendReady } from "./mutation-ack";
 import {
   loadAethonExtensions,
   loadAethonExtensionPackages,
@@ -89,6 +90,7 @@ import {
   discoverPiAethonExtensions,
 } from "./extension-loader";
 import { ensureTab, emitReady, tabSessionDir } from "./tab-lifecycle";
+import { seedPreparedEnv } from "./devshell";
 import { getSubagentsForCwd } from "./subagents";
 import { buildExplicitSubagentSteer } from "./subagents/steer";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
@@ -112,6 +114,8 @@ async function main(): Promise<void> {
   const layoutSlotsFile = process.env.AETHON_LAYOUT_SLOTS_FILE;
   const workerTabId = process.env.AETHON_WORKER_TAB_ID;
   const workerCwd = process.env.AETHON_WORKER_CWD;
+  const workerDevshellReady = process.env.AETHON_WORKER_DEVSHELL_READY === "1";
+  const workerDevshellKind = process.env.AETHON_WORKER_DEVSHELL_KIND ?? null;
   const workerMode = typeof workerTabId === "string" && workerTabId.length > 0;
   const { warnKb, hardKb } = resolveStateLimits(
     process.env.AETHON_STATE_WARN_KB,
@@ -379,7 +383,12 @@ async function main(): Promise<void> {
       });
   } else {
     state.tabProjectCwds.set(workerTabId, startupCwd);
+    if (workerDevshellReady) {
+      seedPreparedEnv(startupCwd, process.env, workerDevshellKind);
+    }
+    markFrontendReady(state);
     scheduleStateFileWrite();
+    send({ type: "worker_ready", tabId: workerTabId, cwd: startupCwd });
   }
 
   // -- Run the dispatcher ------------------------------------------------

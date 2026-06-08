@@ -50,6 +50,26 @@ pub(super) fn ensure_agent_spawned(
         guard.remove(key);
     }
 
+    if should_respawn_for_worker_cwd(key, &meta, worker.as_ref())
+        && let Some(child) = guard.remove(key)
+    {
+        tracing::info!(
+            target: "aethon::agent",
+            key = key,
+            "worker cwd changed; respawning agent"
+        );
+        if let Ok(mut exits) = intentional_exits.lock() {
+            exits.insert(key.to_string());
+        }
+        if let Ok(mut child) = child.lock() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if let Ok(mut map) = meta.lock() {
+            map.remove(key);
+        }
+    }
+
     if guard.contains_key(key) {
         return Ok(());
     }
@@ -57,6 +77,9 @@ pub(super) fn ensure_agent_spawned(
     let mut command = build_command(app)?;
     apply_user_env(app, &mut command);
     apply_worker_env(&mut command, worker.as_ref());
+    clear_inherited_devshell_identity(&mut command, worker.as_ref());
+    apply_worker_devshell_env(app, &mut command, worker.as_ref());
+    apply_worker_current_dir(&mut command, worker.as_ref());
 
     let mut child = command
         .stdin(Stdio::piped())
@@ -91,24 +114,8 @@ pub(super) fn ensure_agent_spawned(
         pid,
         key: key.to_string(),
         stderr_tail,
+        meta: Arc::clone(&meta),
     });
-
-    // Bridge processes start with `frontendReady = false` and only
-    // flip it when the dispatcher receives `{"type":"report"}`. The
-    // React tree sends one such message on mount, but `route_payload_key`
-    // pins it to `__global__` — workers would otherwise stay un-ready
-    // forever and `sendQuery` (e.g. devshell `env_for_path`) would race
-    // against a 5s timeout. Synthesise the handshake here so every
-    // bridge — global and per-tab — comes up ready.
-    if let Some(stdin) = child.stdin.as_mut()
-        && let Err(e) = inject_initial_handshake(stdin)
-    {
-        tracing::warn!(
-            target: "aethon::agent",
-            key = key,
-            "failed to inject initial handshake: {e}"
-        );
-    }
 
     {
         let now = Instant::now();
@@ -126,9 +133,28 @@ pub(super) fn ensure_agent_spawned(
                     spawned_at: now,
                     last_activity: now,
                     prompt_in_flight: false,
+                    bridge_ready: key == super::process::GLOBAL_AGENT_KEY,
                 },
             );
         }
+    }
+
+    // Bridge processes start with `frontendReady = false` and only
+    // flip it when the dispatcher receives `{"type":"report"}`. The
+    // React tree sends one such message on mount, but `route_payload_key`
+    // pins it to `__global__` — workers would otherwise stay un-ready
+    // forever and `sendQuery` (e.g. devshell `env_for_path`) would race
+    // against a 5s timeout. Synthesise the handshake here so every
+    // bridge — global and per-tab — comes up ready. Metadata is registered
+    // first so any immediate stdout readiness marker can be recorded.
+    if let Some(stdin) = child.stdin.as_mut()
+        && let Err(e) = inject_initial_handshake(stdin)
+    {
+        tracing::warn!(
+            target: "aethon::agent",
+            key = key,
+            "failed to inject initial handshake: {e}"
+        );
     }
 
     guard.insert(key.to_string(), Arc::new(Mutex::new(child)));
@@ -150,7 +176,9 @@ fn build_command(app: &AppHandle) -> Result<Command, String> {
             .join("default-layout")
             .join("slots.json");
         let mut c = env::command("bun");
-        c.current_dir(&root).arg("run").arg("agent/main.ts");
+        c.current_dir(&root)
+            .arg("run")
+            .arg(root.join("agent").join("main.ts"));
         c.env("AETHON_RELEASE_MODE", "0");
         c.env("AETHON_PROJECT_ROOT", &root);
         c.env("AETHON_DOCS_DIR", &docs_dir);
@@ -255,6 +283,88 @@ fn apply_worker_env(command: &mut Command, worker: Option<&AgentWorker>) {
     {
         command.env("AETHON_WORKER_CWD", cwd);
     }
+}
+
+fn clear_inherited_devshell_identity(command: &mut Command, worker: Option<&AgentWorker>) {
+    if worker.is_none() {
+        return;
+    }
+    for key in [
+        "IN_NIX_SHELL",
+        "DEVSHELL_DIR",
+        "NIX_BUILD_TOP",
+        "NIX_ENFORCE_PURITY",
+        "name",
+    ] {
+        command.env_remove(key);
+    }
+    command.env("PATH", env::resolved_project_path());
+}
+
+fn apply_worker_devshell_env(app: &AppHandle, command: &mut Command, worker: Option<&AgentWorker>) {
+    let Some(cwd) = worker
+        .and_then(|w| w.cwd.as_deref())
+        .filter(|cwd| !cwd.is_empty())
+    else {
+        return;
+    };
+    let cwd = std::path::PathBuf::from(cwd);
+    let (enabled, configured_mode) = crate::commands::devshell::effective_config(app, &cwd);
+    if enabled == "never" {
+        return;
+    }
+    let cache = app.state::<Arc<crate::devshell::DevshellCache>>();
+    let Some(prepared) = cache.ready_env_now(&cwd, configured_mode) else {
+        tracing::warn!(
+            target: "aethon::devshell",
+            "agent worker spawn for {} did not find a ready devshell env",
+            cwd.display()
+        );
+        return;
+    };
+    tracing::debug!(
+        target: "aethon::devshell",
+        "applying {} devshell vars to agent worker {}",
+        prepared.env.len(),
+        cwd.display()
+    );
+    command.env("AETHON_WORKER_DEVSHELL_READY", "1");
+    if let Some(kind) = prepared.kind.as_deref() {
+        command.env("AETHON_WORKER_DEVSHELL_KIND", kind);
+    }
+    for (k, v) in prepared.env {
+        command.env(k, v);
+    }
+}
+
+fn apply_worker_current_dir(command: &mut Command, worker: Option<&AgentWorker>) {
+    let Some(worker) = worker else {
+        return;
+    };
+    let Some(cwd) = worker.cwd.as_deref().filter(|cwd| !cwd.is_empty()) else {
+        return;
+    };
+    command.current_dir(cwd);
+}
+
+fn should_respawn_for_worker_cwd(
+    key: &str,
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    worker: Option<&AgentWorker>,
+) -> bool {
+    let Some(worker_cwd) = worker
+        .and_then(|w| w.cwd.as_deref())
+        .filter(|cwd| !cwd.is_empty())
+    else {
+        return false;
+    };
+    let Ok(map) = meta.lock() else {
+        return false;
+    };
+    let Some(existing) = map.get(key) else {
+        return false;
+    };
+    existing.cwd.as_deref() != Some(worker_cwd)
 }
 
 /// Synthesise the `{"type":"report"}` handshake that the React tree

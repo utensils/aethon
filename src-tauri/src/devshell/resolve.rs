@@ -16,6 +16,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,15 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_secs(120);
 /// shell from OOM'ing us. 32 MiB is well above the worst realistic
 /// shell env.
 const STDOUT_MAX_BYTES: usize = 32 * 1024 * 1024;
+const STDERR_MAX_BYTES: usize = 256 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct ResolveProgress {
+    pub stream: &'static str,
+    pub content: String,
+}
+
+pub type ResolveProgressSender = Arc<dyn Fn(ResolveProgress) + Send + Sync>;
 
 /// The resolved devshell environment in a stable serializable form.
 /// Returning a `BTreeMap` (not `HashMap`) makes snapshot-style tests
@@ -53,12 +63,16 @@ pub struct ResolvedEnv {
 /// Resolve the devshell env for `root` given the chosen kind. Returns
 /// an error string suitable for surfacing in the status badge — never
 /// panics on bad resolver output (always falls through to a `Failed`).
-pub async fn resolve(root: &Path, kind: DevshellKind) -> Result<ResolvedEnv, String> {
+pub async fn resolve(
+    root: &Path,
+    kind: DevshellKind,
+    progress: Option<ResolveProgressSender>,
+) -> Result<ResolvedEnv, String> {
     let started = Instant::now();
     let raw_env = match kind {
-        DevshellKind::Direnv => resolve_direnv(root).await?,
-        DevshellKind::Flake => resolve_flake(root).await?,
-        DevshellKind::Shell => resolve_shell_nix(root).await?,
+        DevshellKind::Direnv => resolve_direnv(root, progress.as_ref()).await?,
+        DevshellKind::Flake => resolve_flake(root, progress.as_ref()).await?,
+        DevshellKind::Shell => resolve_shell_nix(root, progress.as_ref()).await?,
     };
     let filtered = filter_resolver_junk(raw_env);
     Ok(ResolvedEnv {
@@ -67,7 +81,10 @@ pub async fn resolve(root: &Path, kind: DevshellKind) -> Result<ResolvedEnv, Str
     })
 }
 
-async fn resolve_direnv(root: &Path) -> Result<BTreeMap<String, String>, String> {
+async fn resolve_direnv(
+    root: &Path,
+    progress: Option<&ResolveProgressSender>,
+) -> Result<BTreeMap<String, String>, String> {
     let mut cmd = env::tokio_command("direnv");
     cmd.arg("exec")
         .arg(root)
@@ -80,11 +97,14 @@ async fn resolve_direnv(root: &Path) -> Result<BTreeMap<String, String>, String>
         .env("DIRENV_LOG_FORMAT", "")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let raw = run_with_timeout("direnv exec", cmd, RESOLVE_TIMEOUT).await?;
+    let raw = run_with_timeout("direnv exec", cmd, RESOLVE_TIMEOUT, progress).await?;
     parse_null_separated_env(&raw)
 }
 
-async fn resolve_flake(root: &Path) -> Result<BTreeMap<String, String>, String> {
+async fn resolve_flake(
+    root: &Path,
+    progress: Option<&ResolveProgressSender>,
+) -> Result<BTreeMap<String, String>, String> {
     let mut cmd = env::tokio_command("nix");
     cmd.arg("print-dev-env")
         .arg("--json")
@@ -95,18 +115,21 @@ async fn resolve_flake(root: &Path) -> Result<BTreeMap<String, String>, String> 
         .current_dir(root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let raw = run_with_timeout("nix print-dev-env", cmd, RESOLVE_TIMEOUT).await?;
+    let raw = run_with_timeout("nix print-dev-env", cmd, RESOLVE_TIMEOUT, progress).await?;
     parse_print_dev_env_json(&raw)
 }
 
-async fn resolve_shell_nix(root: &Path) -> Result<BTreeMap<String, String>, String> {
+async fn resolve_shell_nix(
+    root: &Path,
+    progress: Option<&ResolveProgressSender>,
+) -> Result<BTreeMap<String, String>, String> {
     let mut cmd = env::tokio_command("nix-shell");
     cmd.arg("--run")
         .arg("env -0")
         .current_dir(root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let raw = run_with_timeout("nix-shell", cmd, RESOLVE_TIMEOUT).await?;
+    let raw = run_with_timeout("nix-shell", cmd, RESOLVE_TIMEOUT, progress).await?;
     parse_null_separated_env(&raw)
 }
 
@@ -114,7 +137,13 @@ async fn run_with_timeout(
     label: &'static str,
     mut cmd: Command,
     t: Duration,
+    progress: Option<&ResolveProgressSender>,
 ) -> Result<Vec<u8>, String> {
+    emit_progress(
+        progress,
+        "status",
+        format!("\r\n[devshell] resolving with {label}\r\n"),
+    );
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("{label}: failed to spawn — {e} (is the binary on PATH?)"))?;
@@ -147,10 +176,32 @@ async fn run_with_timeout(
         Ok::<Vec<u8>, String>(buf)
     };
 
+    let progress_for_stderr = progress.cloned();
     let stderr_drain = async move {
         let mut stderr = stderr;
         let mut buf = Vec::with_capacity(4 * 1024);
-        let _ = stderr.read_to_end(&mut buf).await;
+        loop {
+            let mut chunk = [0u8; 8 * 1024];
+            let n = match stderr.read(&mut chunk).await {
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            if n == 0 {
+                break;
+            }
+            let bytes = &chunk[..n];
+            if let Some(progress) = progress_for_stderr.as_ref() {
+                emit_progress(
+                    Some(progress),
+                    "stderr",
+                    String::from_utf8_lossy(bytes).into_owned(),
+                );
+            }
+            if buf.len() < STDERR_MAX_BYTES {
+                let available = STDERR_MAX_BYTES - buf.len();
+                buf.extend_from_slice(&bytes[..bytes.len().min(available)]);
+            }
+        }
         buf
     };
 
@@ -169,12 +220,26 @@ async fn run_with_timeout(
                     .unwrap_or_else(|| "signal".to_string())
             ));
         }
+        emit_progress(
+            progress,
+            "status",
+            format!("[devshell] {label} completed\r\n"),
+        );
         Ok::<Vec<u8>, String>(out)
     })
     .await;
     match result {
         Ok(inner) => inner,
         Err(_elapsed) => Err(format!("{label}: timed out after {}s", t.as_secs())),
+    }
+}
+
+fn emit_progress(progress: Option<&ResolveProgressSender>, stream: &'static str, content: String) {
+    if content.is_empty() {
+        return;
+    }
+    if let Some(progress) = progress {
+        progress(ResolveProgress { stream, content });
     }
 }
 

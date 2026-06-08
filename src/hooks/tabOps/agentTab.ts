@@ -140,15 +140,33 @@ export function useNewTab(deps: NewTabDeps) {
     // Clear the shared xterm so it doesn't keep showing the previous
     // tab's scrollback until the next switch / output event.
     dispatchTerminalReplay("");
-    const opening = invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "tab_open",
-        tabId: id,
-        ...(inheritedModel ? { model: inheritedModel } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        ...(options?.restoredSession ? { restoreHistory: true } : {}),
-      }),
-    });
+    const opening = (async () => {
+      if (inheritedCwd) {
+        const prepared = await invoke<{
+          state?: string;
+          kind?: string | null;
+          reason?: string | null;
+        }>("devshell_prepare_for_path", {
+          args: { cwd: inheritedCwd, includeEnv: false },
+        });
+        if (prepared?.state === "failed") {
+          appendSystem(
+            `Devshell prepare failed for ${inheritedCwd}${
+              prepared.reason ? `: ${prepared.reason}` : ""
+            }. Opening tab with the host environment.`,
+          );
+        }
+      }
+      return await invoke("agent_command", {
+        payload: JSON.stringify({
+          type: "tab_open",
+          tabId: id,
+          ...(inheritedModel ? { model: inheritedModel } : {}),
+          ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+          ...(options?.restoredSession ? { restoreHistory: true } : {}),
+        }),
+      });
+    })();
     pendingTabOpens.current.set(id, opening);
     opening
       .catch((err) => {

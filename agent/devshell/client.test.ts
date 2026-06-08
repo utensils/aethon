@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AethonAgentState, type AethonAgentStateOptions } from "../state";
 import {
   _resetForTests,
+  ensurePrepared,
   ensureFetched,
   getCachedEnv,
   maybeWarnColdRun,
@@ -116,6 +117,37 @@ describe("getCachedEnv", () => {
     const { env, hot } = getCachedEnv(h.state, h.deps, "/proj");
     expect(env).toEqual({ PATH: "/x" });
     expect(hot).toBe(true);
+  });
+});
+
+describe("ensurePrepared", () => {
+  it("sends blocking prepare query and seeds the cache", async () => {
+    const h = makeHarness();
+    const p = ensurePrepared(h.state, h.deps, "/proj");
+    expect(h.sent[0]).toMatchObject({
+      type: "devshell_query",
+      op: "prepare_for_path",
+      args: { cwd: "/proj", includeEnv: true },
+    });
+    ackLastWith(h, true, {
+      enabled: "auto",
+      state: "ready",
+      kind: "direnv",
+      env: { PATH: "/nix/store/bin", IN_NIX_SHELL: "impure" },
+      stale: false,
+    });
+    await p;
+    const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
+    expect(hot).toBe(true);
+    expect(kind).toBe("direnv");
+    expect(env).toEqual({ PATH: "/nix/store/bin", IN_NIX_SHELL: "impure" });
+  });
+
+  it("throws when blocking prepare is rejected", async () => {
+    const h = makeHarness();
+    const p = ensurePrepared(h.state, h.deps, "/proj");
+    ackLastWith(h, false, undefined, "devshell required");
+    await expect(p).rejects.toThrow("devshell required");
   });
 });
 

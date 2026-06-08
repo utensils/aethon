@@ -22,7 +22,9 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter};
 
-use super::process::{WorkerMeta, touch_worker_activity};
+use super::process::{
+    WorkerMeta, clear_worker_meta_for_pid, mark_worker_ready, touch_worker_activity,
+};
 
 pub(super) const STDERR_TAIL_CAP: usize = 32;
 
@@ -76,10 +78,26 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                             routes.insert(mutation_id.to_string(), key.clone());
                         }
                         prompt_flag = match value.get("type").and_then(|v| v.as_str()) {
+                            Some("worker_ready") => {
+                                mark_worker_ready(&meta, &key);
+                                None
+                            }
+                            Some("ready") | Some("tab_ready") => {
+                                mark_worker_ready(&meta, &key);
+                                None
+                            }
                             Some("prompt_started") => Some(true),
                             Some("response_end") => Some(false),
                             _ => None,
                         };
+                    } else if let Ok(mut g) = stderr_tail.lock() {
+                        if g.len() >= STDERR_TAIL_CAP {
+                            g.pop_front();
+                        }
+                        g.push_back(format!(
+                            "stdout: {}",
+                            text.chars().take(500).collect::<String>()
+                        ));
                     }
                     touch_worker_activity(&meta, &key, prompt_flag);
                     let _ = app.emit("agent-response", text);
@@ -93,20 +111,28 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
             .map(|mut exits| exits.remove(&key))
             .unwrap_or(false);
         if intentional_exit || saw_reload_done {
+            clear_worker_meta_for_pid(&meta, &key, pid);
             return;
         }
-        let tail: Vec<String> = match stderr_tail.lock() {
+        let mut tail: Vec<String> = match stderr_tail.lock() {
             Ok(g) => g.iter().cloned().collect(),
             Err(_) => Vec::new(),
         };
+        if tail.is_empty() {
+            tail.push(format!(
+                "agent stdout closed unexpectedly (key={key}, pid={pid})"
+            ));
+        }
         let _ = app.emit(
             "agent-crashed",
             serde_json::json!({
                 "pid": pid,
+                "key": key,
                 "tabId": tab_id,
                 "stderrTail": tail,
             }),
         );
+        clear_worker_meta_for_pid(&meta, &key, pid);
     });
 }
 
@@ -116,6 +142,7 @@ pub(super) struct StderrReaderCtx {
     pub(super) pid: u32,
     pub(super) key: String,
     pub(super) stderr_tail: Arc<Mutex<VecDeque<String>>>,
+    pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
 }
 
 pub(super) fn spawn_stderr_reader(ctx: StderrReaderCtx) {
@@ -125,6 +152,7 @@ pub(super) fn spawn_stderr_reader(ctx: StderrReaderCtx) {
         pid,
         key,
         stderr_tail,
+        meta,
     } = ctx;
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
@@ -132,6 +160,14 @@ pub(super) fn spawn_stderr_reader(ctx: StderrReaderCtx) {
             match line {
                 Ok(text) => {
                     tracing::info!(target: "aethon::agent::stderr", pid = pid, key = key, "{text}");
+                    let prompt_flag = if text.contains("turn: start") {
+                        Some(true)
+                    } else if text.contains("turn: end") {
+                        Some(false)
+                    } else {
+                        None
+                    };
+                    touch_worker_activity(&meta, &key, prompt_flag);
                     if let Ok(mut g) = stderr_tail.lock() {
                         if g.len() >= STDERR_TAIL_CAP {
                             g.pop_front();

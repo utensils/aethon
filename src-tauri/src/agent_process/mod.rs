@@ -29,8 +29,9 @@ mod spawn;
 mod sweep;
 
 pub(crate) use process::{
-    AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, ensure_global_agent,
-    keys_to_reconcile, retire_agent_key, route_payload_key, write_agent_payload,
+    AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, cleanup_orphaned_dev_agents,
+    ensure_global_agent, keys_to_reconcile, retire_agent_key, route_payload_key,
+    shutdown_all_agents, write_agent_payload,
 };
 pub(crate) use sidecar::project_root;
 pub(crate) use sweep::spawn_idle_sweep;

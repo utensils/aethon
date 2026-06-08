@@ -6,7 +6,7 @@
 //! Rust IPC command resolves dependencies the same way.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
@@ -119,6 +119,25 @@ pub(crate) fn resolved_login_path() -> Option<String> {
     if path.is_empty() { None } else { Some(path) }
 }
 
+pub(crate) fn resolved_project_path() -> String {
+    strip_devshell_path_entries(
+        &resolved_tool_path(),
+        std::env::var_os("DEVSHELL_DIR")
+            .map(PathBuf::from)
+            .as_deref(),
+    )
+}
+
+fn strip_devshell_path_entries(path: &str, devshell_dir: Option<&Path>) -> String {
+    let Some(devshell_dir) = devshell_dir.filter(|p| !p.as_os_str().is_empty()) else {
+        return path.to_string();
+    };
+    let paths = std::env::split_paths(path).filter(|entry| !entry.starts_with(devshell_dir));
+    std::env::join_paths(paths)
+        .map(|v| v.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string())
+}
+
 fn has_separator(program: &str) -> bool {
     program.contains('/') || program.contains('\\')
 }
@@ -174,5 +193,16 @@ mod tests {
     #[test]
     fn resolve_program_does_not_require_login_shell_for_system_tools() {
         assert!(resolve_program("sh").is_some() || resolve_program("cmd").is_some());
+    }
+
+    #[test]
+    fn strips_active_devshell_entries_from_project_path() {
+        let devshell = Path::new("/nix/store/example-aethon-dir");
+        let path = "/nix/store/example-aethon-dir/bin:/opt/homebrew/bin:/nix/store/other/bin";
+        let clean = strip_devshell_path_entries(path, Some(devshell));
+        let paths: Vec<_> = std::env::split_paths(&clean).collect();
+        assert!(!paths.contains(&PathBuf::from("/nix/store/example-aethon-dir/bin")));
+        assert!(paths.contains(&PathBuf::from("/opt/homebrew/bin")));
+        assert!(paths.contains(&PathBuf::from("/nix/store/other/bin")));
     }
 }

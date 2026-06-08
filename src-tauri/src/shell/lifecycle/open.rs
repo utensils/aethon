@@ -108,35 +108,41 @@ pub async fn shell_open<R: Runtime>(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("AETHON", "1");
+    clear_inherited_devshell_identity(&mut cmd);
+    cmd.env("PATH", crate::env::resolved_project_path());
 
-    // Devshell wrap: if the cwd has a flake / direnv / shell.nix and
-    // the global config doesn't disable the feature, layer the
-    // resolved devshell env over the inherited host env. We apply
-    // *before* the user's per-tab `env` table so explicit overrides
-    // still win.
-    //
-    // The lookup is intentionally non-blocking: a `Resolving` slot
-    // returns immediately with an empty env, the shell spawns
-    // unwrapped, and the next shell open in this tab will be
-    // wrapped once the background resolver completes. The frontend
-    // listens for `devshell-ready` / `devshell-failed` to update
-    // the status badge.
+    // Devshell wrap: shells must enter the project environment on the
+    // first prompt. If a devshell is detected, block until it is ready
+    // and fail the open on resolver errors instead of spawning a plain
+    // host shell that can trip direnv's "blocked" prompt.
     if let Some(cwd) = args.cwd.as_ref() {
         let cwd_path = std::path::PathBuf::from(cwd);
-        let (enabled, mode) = devshell_effective_config(&app, &cwd_path);
+        let (enabled, configured_mode) = devshell_effective_config(&app, &cwd_path);
         if enabled != "never" {
-            let emitter: AppEmitter = AppEmitter::new(
-                Arc::new(TauriEmitter::new(app.clone())) as Arc<dyn DevshellEmitter>
-            );
-            let env_response = devshell.env_for(Some(&emitter), &cwd_path, mode).await;
-            if !env_response.env.is_empty() {
+            if let Some(reason) =
+                crate::commands::devshell::forced_mode_mismatch_reason(&cwd_path, configured_mode)
+            {
+                return Err(format!("devshell prepare: {reason}"));
+            }
+            let detected_kind = crate::devshell::detect_mode(&cwd_path, configured_mode);
+            if let Some(kind) = detected_kind {
+                if kind.as_str() == "direnv" {
+                    crate::commands::devshell::direnv_allow(&cwd_path).await?;
+                }
+                let emitter: AppEmitter = AppEmitter::new(
+                    Arc::new(TauriEmitter::new(app.clone())) as Arc<dyn DevshellEmitter>
+                );
+                let prepared = devshell
+                    .prepare_for(Some(&emitter), &cwd_path, configured_mode)
+                    .await
+                    .map_err(|e| format!("devshell prepare: {e}"))?;
                 tracing::debug!(
                     target: "aethon::devshell",
                     "shell_open: applying {} devshell vars to tab {}",
-                    env_response.env.len(),
+                    prepared.env.len(),
                     args.tab_id
                 );
-                for (k, v) in env_response.env {
+                for (k, v) in prepared.env {
                     cmd.env(k, v);
                 }
             }
@@ -243,6 +249,18 @@ pub async fn shell_open<R: Runtime>(
         let _ = handle.join();
     }
     Err(format!("shell already open for tab {}", args.tab_id))
+}
+
+fn clear_inherited_devshell_identity(cmd: &mut CommandBuilder) {
+    for key in [
+        "IN_NIX_SHELL",
+        "DEVSHELL_DIR",
+        "NIX_BUILD_TOP",
+        "NIX_ENFORCE_PURITY",
+        "name",
+    ] {
+        cmd.env(key, "");
+    }
 }
 
 /// Read `[devshell] enabled` + `mode` from the global config (and any

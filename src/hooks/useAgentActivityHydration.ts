@@ -15,6 +15,20 @@ export interface AgentDiagnosticRow {
   alive?: boolean;
   prompt_in_flight?: boolean;
   promptInFlight?: boolean;
+  process?: {
+    pid: number;
+    ppid?: number | null;
+    cpuPercent?: number | null;
+    rssBytes?: number | null;
+    command?: string | null;
+  } | null;
+  children?: Array<{
+    pid: number;
+    ppid?: number | null;
+    cpuPercent?: number | null;
+    rssBytes?: number | null;
+    command?: string | null;
+  }>;
 }
 
 export interface HydrateAgentActivityOptions {

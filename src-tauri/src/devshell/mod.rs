@@ -27,4 +27,4 @@ pub mod resolve;
 pub use cache::{
     AppEmitter, DevshellCache, DevshellEmitter, EnvForPath, StatusSnapshot, evict_stale_snapshots,
 };
-pub use detect::{DetectMode, detect_mode};
+pub use detect::{DetectMode, detect_mode, forced_mode_mismatch};
