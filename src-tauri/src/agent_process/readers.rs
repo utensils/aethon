@@ -23,7 +23,8 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 use super::process::{
-    WorkerMeta, clear_worker_meta_for_pid, mark_worker_ready, touch_worker_activity,
+    GLOBAL_AGENT_KEY, WorkerMeta, clear_worker_meta_for_pid, mark_worker_ready,
+    touch_worker_activity,
 };
 
 pub(super) const STDERR_TAIL_CAP: usize = 32;
@@ -118,11 +119,16 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
             Ok(g) => g.iter().cloned().collect(),
             Err(_) => Vec::new(),
         };
-        if tail.is_empty() {
-            tail.push(format!(
-                "agent stdout closed unexpectedly (key={key}, pid={pid})"
-            ));
+        if quiet_global_stdout_eof(&key, &tail) {
+            tracing::info!(
+                target: "aethon::agent",
+                key = key,
+                "global agent stdout closed without stderr; waiting for the next global request"
+            );
+            clear_worker_meta_for_pid(&meta, &key, pid);
+            return;
         }
+        fill_empty_stdout_tail(&mut tail, &key, pid);
         let _ = app.emit(
             "agent-crashed",
             serde_json::json!({
@@ -136,6 +142,18 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
     });
 }
 
+fn quiet_global_stdout_eof(key: &str, tail: &[String]) -> bool {
+    key == GLOBAL_AGENT_KEY && tail.is_empty()
+}
+
+fn fill_empty_stdout_tail(tail: &mut Vec<String>, key: &str, pid: u32) {
+    if tail.is_empty() {
+        tail.push(format!(
+            "agent stdout closed unexpectedly (key={key}, pid={pid})"
+        ));
+    }
+}
+
 pub(super) struct StderrReaderCtx {
     pub(super) stderr: ChildStderr,
     pub(super) app: AppHandle,
@@ -143,6 +161,32 @@ pub(super) struct StderrReaderCtx {
     pub(super) key: String,
     pub(super) stderr_tail: Arc<Mutex<VecDeque<String>>>,
     pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fill_empty_stdout_tail, quiet_global_stdout_eof};
+    use crate::agent_process::GLOBAL_AGENT_KEY;
+
+    #[test]
+    fn quiet_global_stdout_eof_does_not_count_as_a_crash() {
+        assert!(quiet_global_stdout_eof(GLOBAL_AGENT_KEY, &[]));
+        assert!(!quiet_global_stdout_eof(
+            GLOBAL_AGENT_KEY,
+            &["panic".to_string()]
+        ));
+        assert!(!quiet_global_stdout_eof("tab:abc", &[]));
+    }
+
+    #[test]
+    fn non_global_empty_stdout_tail_gets_a_diagnostic_line() {
+        let mut tail = Vec::new();
+        fill_empty_stdout_tail(&mut tail, "tab:abc", 42);
+        assert_eq!(
+            tail,
+            ["agent stdout closed unexpectedly (key=tab:abc, pid=42)"]
+        );
+    }
 }
 
 pub(super) fn spawn_stderr_reader(ctx: StderrReaderCtx) {

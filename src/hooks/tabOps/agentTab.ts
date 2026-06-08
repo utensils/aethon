@@ -5,6 +5,10 @@ import type { ProjectsState } from "../../projects";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { TAB_MIRROR_KEYS } from "./constants";
 import {
+  devshellNeedsPreparation,
+  initialDevshellTerminalBuffer,
+} from "./devshellTerminal";
+import {
   cwdForNewTab,
   modelForNewProjectTab,
   sessionLabelFromMessages,
@@ -93,6 +97,12 @@ export function useNewTab(deps: NewTabDeps) {
       piDefaultModelRef.current,
       options?.model,
     );
+    const initialTerminalBuffer = inheritedCwd
+      ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
+      : "";
+    const preparingDevshell = inheritedCwd
+      ? devshellNeedsPreparation(stateRef.current, inheritedCwd)
+      : false;
     const existingSessionLabel = restoreId
       ? sessionLabelFromMessages(
           ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
@@ -107,6 +117,8 @@ export function useNewTab(deps: NewTabDeps) {
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
+        terminalBuffer: initialTerminalBuffer,
+        waiting: preparingDevshell,
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
       };
       tabs.push(tab);
@@ -139,7 +151,7 @@ export function useNewTab(deps: NewTabDeps) {
     });
     // Clear the shared xterm so it doesn't keep showing the previous
     // tab's scrollback until the next switch / output event.
-    dispatchTerminalReplay("");
+    dispatchTerminalReplay(initialTerminalBuffer);
     const opening = (async () => {
       if (inheritedCwd) {
         const prepared = await invoke<{
@@ -156,6 +168,19 @@ export function useNewTab(deps: NewTabDeps) {
             }. Opening tab with the host environment.`,
           );
         }
+        setState((prev) => {
+          const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
+            tab.id === id && tab.waiting === true
+              ? { ...tab, waiting: false }
+              : tab,
+          );
+          const activeTabId = prev.activeTabId;
+          return {
+            ...prev,
+            tabs,
+            ...(activeTabId === id ? { waiting: false } : {}),
+          };
+        });
       }
       return await invoke("agent_command", {
         payload: JSON.stringify({

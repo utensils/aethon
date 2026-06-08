@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { makeEmptyTab, type ShellMeta, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
+import { initialDevshellTerminalBuffer } from "./devshellTerminal";
 import { cwdForNewTab } from "./helpers";
 
 export interface NewShellTabDeps {
@@ -58,12 +59,16 @@ export function useNewShellTab(deps: NewShellTabDeps) {
         ? shellDefaultArgsRef.current
         : undefined);
     const inheritEnv = shellInheritEnvRef.current;
+    const initialTerminalBuffer = inheritedCwd
+      ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
+      : "";
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
       const projectId = projectsRef.current.activeId;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId, "shell"),
+        terminalBuffer: initialTerminalBuffer,
         shell: {
           cwd: inheritedCwd ?? "",
           command: resolvedCommand ?? "",

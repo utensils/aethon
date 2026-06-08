@@ -15,7 +15,7 @@
 //! The resolver task is launched once per (root, fingerprint) — the
 //! second-pass write lock checks whether a matching `Resolving` /
 //! `Ready` already exists so concurrent shell opens collapse onto the
-//! same in-flight `nix print-dev-env` evaluation instead of fanning
+//! same in-flight `nix develop --command env` evaluation instead of fanning
 //! out into N parallel resolves.
 
 use std::collections::BTreeMap;
@@ -230,7 +230,7 @@ impl DevshellCache {
         // Cold-start disk pre-warm: no in-memory slot for this root
         // AND a snapshot on disk matches the current fingerprint?
         // Hydrate the slot before deciding whether to spawn a
-        // resolver. Saves a full `nix print-dev-env` re-eval on app
+        // resolver. Saves a full `nix develop --command env` re-eval on app
         // boot when nothing has changed since the previous session.
         {
             let already_warm = self.slots.read().await.contains_key(&root);
@@ -453,9 +453,7 @@ impl DevshellCache {
         fingerprint: &str,
     ) -> Option<PreparedEnv> {
         let guard = self.slots.read().await;
-        let Some(slot) = guard.get(root) else {
-            return None;
-        };
+        let slot = guard.get(root)?;
         let ResolverState::Ready {
             env,
             duration_ms,
@@ -702,6 +700,7 @@ impl AppEmitter {
 /// bytes once.
 pub fn fingerprint_inputs(root: &Path) -> String {
     let mut hasher = Sha1::new();
+    hasher.update(b"resolver:v2:nix-develop-env");
     if let Ok(bytes) = std::fs::read(root.join("flake.lock")) {
         hasher.update(b"lock:");
         hasher.update(&bytes);
@@ -780,7 +779,7 @@ fn write_disk_snapshot(
 /// `env_for` call for a project after app boot pulls the previous
 /// session's resolver output from disk (if its fingerprint still
 /// matches the current `flake.lock` + marker mtimes), skipping the
-/// full `nix print-dev-env` re-eval. Fingerprint mismatch falls
+/// full `nix develop --command env` re-eval. Fingerprint mismatch falls
 /// through to a fresh resolve.
 pub fn load_disk_snapshot(disk_root: &Path, fingerprint: &str) -> Option<ResolvedEnv> {
     let dir = disk_root.join(&fingerprint[..fingerprint.len().min(16)]);

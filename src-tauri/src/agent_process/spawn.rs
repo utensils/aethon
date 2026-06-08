@@ -331,6 +331,9 @@ fn apply_worker_devshell_env(app: &AppHandle, command: &mut Command, worker: Opt
     command.env("AETHON_WORKER_DEVSHELL_READY", "1");
     if let Some(kind) = prepared.kind.as_deref() {
         command.env("AETHON_WORKER_DEVSHELL_KIND", kind);
+        if kind != "direnv" {
+            command.env("DIRENV_DISABLE", "1");
+        }
     }
     for (k, v) in prepared.env {
         command.env(k, v);

@@ -188,7 +188,7 @@ function devshellChipTooltip(entry: DevshellEntry): string | null {
       }
       break;
     case "resolving":
-      lines.push("Resolver running — first shell may use host env");
+      lines.push("Resolver running — new shells wait for the dev env");
       break;
     case "failed":
       if (entry.reason) lines.push(`Error: ${entry.reason}`);

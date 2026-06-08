@@ -131,6 +131,20 @@ export function useDevshell(opts: UseDevshellOptions): void {
   useEffect(() => {
     let unlisteners: UnlistenFn[] = [];
     let cancelled = false;
+    const hydrateRootStatus = async (root: string) => {
+      try {
+        const result = await invoke<StatusResponse>("devshell_status", {
+          args: { root },
+        });
+        const entry = entryFromStatus(result);
+        if (entry) {
+          optsRef.current.setDevshellEntry(root, entry);
+        }
+      } catch {
+        // Lifecycle events already updated state; config metadata
+        // hydration is best-effort.
+      }
+    };
     void (async () => {
       try {
         // Push events carry only what the resolver knows (kind +
@@ -149,6 +163,7 @@ export function useDevshell(opts: UseDevshellOptions): void {
               detectedKind: kind,
               state: "resolving",
             });
+            void hydrateRootStatus(root);
             forwardToAgent(root, kind, "resolving");
           },
         );
@@ -162,6 +177,7 @@ export function useDevshell(opts: UseDevshellOptions): void {
             durationMs,
             varCount,
           });
+          void hydrateRootStatus(root);
           forwardToAgent(root, kind, "ready");
         });
         const offFailed = await listen<FailedPayload>("devshell-failed", (event) => {
@@ -172,12 +188,13 @@ export function useDevshell(opts: UseDevshellOptions): void {
             state: "failed",
             reason,
           });
+          void hydrateRootStatus(root);
           forwardToAgent(root, kind, "failed");
         });
         if (cancelled) {
-          offResolving();
-          offReady();
-          offFailed();
+          safeUnlisten(offResolving);
+          safeUnlisten(offReady);
+          safeUnlisten(offFailed);
           return;
         }
         unlisteners = [offResolving, offReady, offFailed];
@@ -187,9 +204,18 @@ export function useDevshell(opts: UseDevshellOptions): void {
     })();
     return () => {
       cancelled = true;
-      for (const fn of unlisteners) fn();
+      for (const fn of unlisteners) safeUnlisten(fn);
     };
   }, []);
+}
+
+function safeUnlisten(fn: UnlistenFn): void {
+  try {
+    fn();
+  } catch {
+    // Tauri can already have dropped listener ids during webview reload or
+    // app shutdown. Cleanup is best-effort; avoid surfacing teardown noise.
+  }
 }
 
 function entryFromStatus(s: StatusResponse): DevshellEntry | null {

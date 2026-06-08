@@ -265,17 +265,45 @@ async fn prepare_worker_devshell(
         return Err(format!("devshell prepare: {reason}"));
     }
     let Some(kind) = crate::devshell::detect_mode(&cwd, configured_mode) else {
+        let reason = format!("no devshell detected at {}", cwd.display());
+        if let Some(error) =
+            crate::commands::devshell::required_devshell_missing_error(&enabled, reason)
+        {
+            return Err(format!("devshell prepare: {error}"));
+        }
         return Ok(());
     };
-    if kind.as_str() == "direnv" {
-        crate::commands::devshell::direnv_allow(&cwd).await?;
+    if kind.as_str() == "direnv"
+        && let Err(reason) = crate::commands::devshell::direnv_allow(&cwd).await
+    {
+        if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
+            return Err(reason);
+        }
+        tracing::warn!(
+            target: "aethon::devshell",
+            "agent worker devshell direnv allow failed for {}: {reason}; opening host worker",
+            cwd.display()
+        );
+        return Ok(());
     }
     let emitter = crate::commands::devshell::emitter_for(app);
-    cache
+    match cache
         .prepare_for(Some(&emitter), &cwd, configured_mode)
         .await
-        .map(|_| ())
-        .map_err(|e| format!("devshell prepare: {e}"))
+    {
+        Ok(_) => Ok(()),
+        Err(reason) => {
+            if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
+                return Err(format!("devshell prepare: {reason}"));
+            }
+            tracing::warn!(
+                target: "aethon::devshell",
+                "agent worker devshell prepare failed for {}: {reason}; opening host worker",
+                cwd.display()
+            );
+            Ok(())
+        }
+    }
 }
 
 /// Forward a JSON payload to every currently running agent worker without

@@ -97,4 +97,56 @@ describe("newTab restore handling", () => {
     ]);
     expect(invokeMock.mock.calls[1]?.[0]).toBe("agent_command");
   });
+
+  it("shows retained devshell output immediately when opening a cwd-backed agent tab", () => {
+    let state: Record<string, unknown> = {
+      tabs: [],
+      devshell: {
+        outputByRoot: {
+          "/proj": "building deps\r\n",
+        },
+        entries: {
+          "/proj": { state: "resolving" },
+        },
+      },
+    };
+    const stateRef = ref(state);
+    const setState = vi.fn((updater: unknown) => {
+      if (typeof updater !== "function") return;
+      state = (
+        updater as (prev: Record<string, unknown>) => Record<string, unknown>
+      )(state);
+      stateRef.current = state;
+    });
+    const dispatchTerminalReplay = vi.fn();
+    const newTab = useNewTab({
+      setState,
+      stateRef,
+      projectsRef: ref<ProjectsState>({
+        activeId: "p1",
+        activeWorktreeId: null,
+        activeHostId: null,
+        projects: [
+          {
+            id: "p1",
+            label: "Project",
+            path: "/proj",
+            lastUsed: 1,
+          },
+        ],
+        worktreesByProject: {},
+      }),
+      piDefaultModelRef: ref(""),
+      pendingTabOpens: ref(new Map()),
+      appendSystem: vi.fn(),
+      dispatchTerminalReplay,
+    });
+
+    newTab("tab-1", "Project");
+
+    const tab = (state.tabs as Array<{ terminalBuffer: string; waiting: boolean }>)[0];
+    expect(tab.terminalBuffer).toBe("building deps\r\n");
+    expect(tab.waiting).toBe(true);
+    expect(dispatchTerminalReplay).toHaveBeenCalledWith("building deps\r\n");
+  });
 });

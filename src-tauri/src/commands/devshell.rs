@@ -157,9 +157,9 @@ pub struct StatusResponse {
 /// a devshell becomes a hard error (returned via `StatusSnapshot::
 /// Failed`), so the user sees a loud signal on the badge instead of
 /// the silent no-op the original `"auto"` policy would produce. The
-/// caller (PTY intercept, agent spawnHook) still falls through to
-/// the host env so shells continue to work — `"always"` only changes
-/// what the UI shows, not whether the shell opens.
+/// caller (PTY intercept, agent provisioning) treats the same
+/// condition as a hard prepare failure, so `"always"` means "do not
+/// silently open outside the devshell".
 #[tauri::command]
 pub async fn devshell_status<R: Runtime>(
     app: AppHandle<R>,
@@ -217,8 +217,17 @@ fn expected_marker(mode: DetectMode) -> &'static str {
         DetectMode::Auto => "devshell",
         DetectMode::Direnv => ".envrc with use flake/use nix",
         DetectMode::Nix => "flake.nix",
-        DetectMode::NixShell => "shell.nix",
+        DetectMode::NixShell => "flake.nix or shell.nix",
     }
+}
+
+pub(crate) fn devshell_prepare_is_required(enabled: &str) -> bool {
+    enabled == "always"
+}
+
+pub(crate) fn required_devshell_missing_error(enabled: &str, reason: String) -> Option<String> {
+    devshell_prepare_is_required(enabled)
+        .then(|| format!("{reason} and [devshell] enabled = \"always\""))
 }
 
 #[derive(Deserialize)]
@@ -296,8 +305,8 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
     let Some(kind) = detected_kind else {
         let reason = forced_mode_mismatch_reason(&cwd, configured_mode)
             .unwrap_or_else(|| format!("no devshell detected at {}", cwd.display()));
-        if enabled == "always" {
-            return Err(format!("{reason} and [devshell] enabled = \"always\""));
+        if let Some(error) = required_devshell_missing_error(&enabled, reason.clone()) {
+            return Err(error);
         }
         let is_mismatch = crate::devshell::forced_mode_mismatch(&cwd, configured_mode).is_some();
         return Ok(PrepareForPathResponse {
@@ -412,7 +421,7 @@ pub(crate) async fn direnv_allow(root: &Path) -> Result<(), String> {
 
 /// Non-blocking env lookup. Returns immediately even if a resolver is
 /// in-flight; the agent spawnHook + PTY intercept both use this and
-/// must never block the user's tool call on `nix print-dev-env`.
+/// must never block the user's tool call on Nix evaluation.
 #[tauri::command]
 pub async fn devshell_env_for_path<R: Runtime>(
     app: AppHandle<R>,
@@ -474,7 +483,11 @@ pub async fn devshell_refresh<R: Runtime>(
             // "auto" silently no-ops when there's no devshell to
             // refresh (a project without a flake is fine to refresh);
             // "always" treats the same condition as a hard error.
-            if enabled == "always" { Err(e) } else { Ok(()) }
+            if devshell_prepare_is_required(&enabled) {
+                Err(e)
+            } else {
+                Ok(())
+            }
         }
     }
 }
@@ -502,5 +515,27 @@ pub async fn boot_init_cache<R: Runtime>(app: &AppHandle<R>, cache: &DevshellCac
             disk_root.display(),
             e
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{devshell_prepare_is_required, required_devshell_missing_error};
+
+    #[test]
+    fn only_always_requires_devshell_preparation() {
+        assert!(devshell_prepare_is_required("always"));
+        assert!(!devshell_prepare_is_required("auto"));
+        assert!(!devshell_prepare_is_required("never"));
+    }
+
+    #[test]
+    fn required_devshell_missing_error_preserves_the_detected_reason() {
+        assert_eq!(
+            required_devshell_missing_error("always", "configured mode mismatch".to_string())
+                .as_deref(),
+            Some("configured mode mismatch and [devshell] enabled = \"always\""),
+        );
+        assert!(required_devshell_missing_error("auto", "missing".to_string()).is_none());
     }
 }

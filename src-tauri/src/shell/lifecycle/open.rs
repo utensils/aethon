@@ -15,6 +15,7 @@ use super::registry::{
     ChildHandle, SCROLLBACK_BYTES, ScrollbackHandle, ShareHandle, ShellRegistry, ShellSlot,
 };
 use crate::commands::devshell::TauriEmitter;
+use crate::devshell::detect::DevshellKind;
 use crate::devshell::{AppEmitter, DetectMode, DevshellCache, DevshellEmitter};
 use crate::shell::scrollback::Scrollback;
 use crate::shell::sharemode::{ShareMode, ShareState};
@@ -87,18 +88,122 @@ pub async fn shell_open<R: Runtime>(
     // derivations in sync.
     let effective_command: Option<&str> = args.command.as_deref().filter(|c| !c.is_empty());
 
-    let mut cmd = match effective_command {
-        Some(c) => CommandBuilder::new(c),
-        None => default_shell_command(),
+    let command_args = match effective_command {
+        Some(_) => args.args.unwrap_or_default(),
+        None => default_shell_args(),
     };
-    if let Some(extra_args) = args.args {
-        for a in extra_args {
-            cmd.arg(a);
+    let command_program = effective_command
+        .map(str::to_string)
+        .unwrap_or_else(default_shell_label);
+    let mut launch_kind: Option<DevshellKind> = None;
+    let mut prepared_env: Option<(Option<String>, std::collections::BTreeMap<String, String>)> =
+        None;
+    let mut detected_launch_kind: Option<DevshellKind> = None;
+
+    if let Some(cwd) = args.cwd.as_ref() {
+        let cwd_path = std::path::PathBuf::from(cwd);
+        let (enabled, configured_mode) = devshell_effective_config(&app, &cwd_path);
+        if enabled != "never" {
+            if let Some(reason) =
+                crate::commands::devshell::forced_mode_mismatch_reason(&cwd_path, configured_mode)
+            {
+                return Err(format!("devshell prepare: {reason}"));
+            }
+            let detected_kind = crate::devshell::detect_mode(&cwd_path, configured_mode);
+            match detected_kind {
+                Some(kind) => {
+                    detected_launch_kind = Some(kind);
+                    let mut can_prepare = true;
+                    if kind.as_str() == "direnv"
+                        && let Err(reason) =
+                            crate::commands::devshell::direnv_allow(&cwd_path).await
+                    {
+                        if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
+                            return Err(reason);
+                        }
+                        tracing::warn!(
+                            target: "aethon::devshell",
+                            "shell_open: direnv allow failed for {}: {reason}; opening host shell",
+                            cwd_path.display()
+                        );
+                        can_prepare = false;
+                    }
+                    if can_prepare {
+                        let emitter: AppEmitter =
+                            AppEmitter::new(Arc::new(TauriEmitter::new(app.clone()))
+                                as Arc<dyn DevshellEmitter>);
+                        let prepared = match devshell
+                            .prepare_for(Some(&emitter), &cwd_path, configured_mode)
+                            .await
+                        {
+                            Ok(prepared) => Some(prepared),
+                            Err(reason) => {
+                                if crate::commands::devshell::devshell_prepare_is_required(&enabled)
+                                {
+                                    return Err(format!("devshell prepare: {reason}"));
+                                }
+                                tracing::warn!(
+                                    target: "aethon::devshell",
+                                    "shell_open: devshell prepare failed for {}: {reason}; opening host shell",
+                                    cwd_path.display()
+                                );
+                                None
+                            }
+                        };
+                        if let Some(prepared) = prepared {
+                            tracing::debug!(
+                                target: "aethon::devshell",
+                                "shell_open: prepared {} devshell vars for tab {}",
+                                prepared.env.len(),
+                                args.tab_id
+                            );
+                            match kind {
+                                DevshellKind::Flake | DevshellKind::Direnv => {
+                                    launch_kind = Some(kind);
+                                }
+                                DevshellKind::Shell => {
+                                    prepared_env = Some((prepared.kind, prepared.env));
+                                }
+                            }
+                        }
+                    }
+                }
+                None if enabled == "always" => {
+                    let reason = format!("no devshell detected at {}", cwd_path.display());
+                    if let Some(error) =
+                        crate::commands::devshell::required_devshell_missing_error(&enabled, reason)
+                    {
+                        return Err(format!("devshell prepare: {error}"));
+                    }
+                }
+                None => {}
+            }
         }
     }
-    if let Some(cwd) = args.cwd.as_ref() {
-        cmd.cwd(cwd);
-    }
+
+    let disable_direnv_hooks = matches!(launch_kind, Some(DevshellKind::Flake))
+        || matches!(
+            detected_launch_kind,
+            Some(DevshellKind::Flake | DevshellKind::Shell)
+        )
+        || prepared_env
+            .as_ref()
+            .is_some_and(|(kind, _)| kind.as_deref() != Some("direnv"));
+    let launch_kind_for_log = launch_kind;
+    tracing::info!(
+        target: "aethon::devshell",
+        "shell_open: launching tab {} via {:?}: {} {:?}",
+        args.tab_id,
+        launch_kind_for_log,
+        command_program,
+        command_args
+    );
+    let mut cmd = devshell_launch_command(
+        launch_kind,
+        args.cwd.as_deref(),
+        &command_program,
+        &command_args,
+    )?;
     // Hermetic mode: drop the host env before stamping our own
     // baseline. `TERM`/`COLORTERM`/`AETHON` and the explicit per-tab
     // `env` table still get applied below so the shell remains usable.
@@ -110,42 +215,19 @@ pub async fn shell_open<R: Runtime>(
     cmd.env("AETHON", "1");
     clear_inherited_devshell_identity(&mut cmd);
     cmd.env("PATH", crate::env::resolved_project_path());
+    if disable_direnv_hooks {
+        cmd.env("DIRENV_DISABLE", "1");
+    }
 
-    // Devshell wrap: shells must enter the project environment on the
-    // first prompt. If a devshell is detected, block until it is ready
-    // and fail the open on resolver errors instead of spawning a plain
-    // host shell that can trip direnv's "blocked" prompt.
-    if let Some(cwd) = args.cwd.as_ref() {
-        let cwd_path = std::path::PathBuf::from(cwd);
-        let (enabled, configured_mode) = devshell_effective_config(&app, &cwd_path);
-        if enabled != "never" {
-            if let Some(reason) =
-                crate::commands::devshell::forced_mode_mismatch_reason(&cwd_path, configured_mode)
-            {
-                return Err(format!("devshell prepare: {reason}"));
-            }
-            let detected_kind = crate::devshell::detect_mode(&cwd_path, configured_mode);
-            if let Some(kind) = detected_kind {
-                if kind.as_str() == "direnv" {
-                    crate::commands::devshell::direnv_allow(&cwd_path).await?;
-                }
-                let emitter: AppEmitter = AppEmitter::new(
-                    Arc::new(TauriEmitter::new(app.clone())) as Arc<dyn DevshellEmitter>
-                );
-                let prepared = devshell
-                    .prepare_for(Some(&emitter), &cwd_path, configured_mode)
-                    .await
-                    .map_err(|e| format!("devshell prepare: {e}"))?;
-                tracing::debug!(
-                    target: "aethon::devshell",
-                    "shell_open: applying {} devshell vars to tab {}",
-                    prepared.env.len(),
-                    args.tab_id
-                );
-                for (k, v) in prepared.env {
-                    cmd.env(k, v);
-                }
-            }
+    if let Some((_kind, env)) = prepared_env {
+        tracing::debug!(
+            target: "aethon::devshell",
+            "shell_open: applying {} legacy devshell vars to tab {}",
+            env.len(),
+            args.tab_id
+        );
+        for (k, v) in env {
+            cmd.env(k, v);
         }
     }
 
@@ -196,9 +278,7 @@ pub async fn shell_open<R: Runtime>(
     );
 
     let display_cwd = args.cwd.clone().unwrap_or_default();
-    let display_command = effective_command
-        .map(str::to_string)
-        .unwrap_or_else(default_shell_label);
+    let display_command = command_program.clone();
     // No `effective_command` means we used the system shell — that child
     // *is* an interactive shell and manages a foreground process group.
     // A configured command means the child is the foreground job itself
@@ -249,6 +329,70 @@ pub async fn shell_open<R: Runtime>(
         let _ = handle.join();
     }
     Err(format!("shell already open for tab {}", args.tab_id))
+}
+
+fn devshell_launch_command(
+    launch_kind: Option<DevshellKind>,
+    cwd: Option<&str>,
+    command: &str,
+    args: &[String],
+) -> Result<CommandBuilder, String> {
+    devshell_launch_command_with_resolver(launch_kind, cwd, command, args, |program| {
+        crate::env::resolve_program(program).map(|path| path.to_string_lossy().to_string())
+    })
+}
+
+fn devshell_launch_command_with_resolver<F>(
+    launch_kind: Option<DevshellKind>,
+    cwd: Option<&str>,
+    command: &str,
+    args: &[String],
+    resolve_program: F,
+) -> Result<CommandBuilder, String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut cmd = match launch_kind {
+        Some(DevshellKind::Flake) => {
+            let nix = resolve_program("nix")
+                .ok_or_else(|| "devshell prepare: nix is not on PATH".to_string())?;
+            let mut cmd = CommandBuilder::new(nix);
+            cmd.arg("develop");
+            cmd.arg("--accept-flake-config");
+            cmd.arg("--command");
+            cmd.arg(command);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            cmd
+        }
+        Some(DevshellKind::Direnv) => {
+            let direnv = resolve_program("direnv")
+                .ok_or_else(|| "devshell prepare: direnv is not on PATH".to_string())?;
+            let Some(root) = cwd else {
+                return Err("devshell prepare: cwd is required for direnv".to_string());
+            };
+            let mut cmd = CommandBuilder::new(direnv);
+            cmd.arg("exec");
+            cmd.arg(root);
+            cmd.arg(command);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            cmd
+        }
+        Some(DevshellKind::Shell) | None => {
+            let mut cmd = CommandBuilder::new(command);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            cmd
+        }
+    };
+    if let Some(cwd) = cwd {
+        cmd.cwd(cwd);
+    }
+    Ok(cmd)
 }
 
 fn clear_inherited_devshell_identity(cmd: &mut CommandBuilder) {
@@ -349,18 +493,14 @@ pub(super) fn is_known_interactive_shell(command: &str) -> bool {
     SHELLS.iter().any(|s| s.eq_ignore_ascii_case(basename))
 }
 
-fn default_shell_command() -> CommandBuilder {
+fn default_shell_args() -> Vec<String> {
     #[cfg(unix)]
     {
-        let mut cmd = CommandBuilder::new(default_shell_label());
-        cmd.arg("-il");
-        cmd
+        vec!["-il".to_string()]
     }
     #[cfg(windows)]
     {
-        let mut cmd = CommandBuilder::new(default_shell_label());
-        cmd.arg("-NoLogo");
-        cmd
+        vec!["-NoLogo".to_string()]
     }
 }
 
@@ -377,7 +517,25 @@ fn default_shell_label() -> String {
 
 #[cfg(test)]
 mod shell_classification_tests {
-    use super::is_known_interactive_shell;
+    use std::ffi::OsString;
+
+    use super::{devshell_launch_command_with_resolver, is_known_interactive_shell};
+    use crate::devshell::detect::DevshellKind;
+
+    fn argv(cmd: &portable_pty::CommandBuilder) -> Vec<String> {
+        cmd.get_argv()
+            .iter()
+            .map(|item| item.to_string_lossy().to_string())
+            .collect()
+    }
+
+    fn fake_resolver(program: &str) -> Option<String> {
+        match program {
+            "nix" => Some("/bin/nix".to_string()),
+            "direnv" => Some("/bin/direnv".to_string()),
+            _ => None,
+        }
+    }
 
     #[test]
     fn classifies_common_unix_shells() {
@@ -416,5 +574,62 @@ mod shell_classification_tests {
                 "expected {cmd} to NOT be classified as an interactive shell",
             );
         }
+    }
+
+    #[test]
+    fn flake_devshell_wraps_shell_in_nix_develop_command() {
+        let cmd = devshell_launch_command_with_resolver(
+            Some(DevshellKind::Flake),
+            Some("/repo/worktree"),
+            "/bin/zsh",
+            &["-il".to_string()],
+            fake_resolver,
+        )
+        .unwrap();
+
+        assert_eq!(
+            argv(&cmd),
+            [
+                "/bin/nix",
+                "develop",
+                "--accept-flake-config",
+                "--command",
+                "/bin/zsh",
+                "-il"
+            ]
+        );
+        assert_eq!(cmd.get_cwd(), Some(&OsString::from("/repo/worktree")));
+    }
+
+    #[test]
+    fn direnv_devshell_wraps_command_in_direnv_exec_root() {
+        let cmd = devshell_launch_command_with_resolver(
+            Some(DevshellKind::Direnv),
+            Some("/repo/worktree"),
+            "menu",
+            &[],
+            fake_resolver,
+        )
+        .unwrap();
+
+        assert_eq!(
+            argv(&cmd),
+            ["/bin/direnv", "exec", "/repo/worktree", "menu"]
+        );
+        assert_eq!(cmd.get_cwd(), Some(&OsString::from("/repo/worktree")));
+    }
+
+    #[test]
+    fn direnv_devshell_requires_a_cwd_for_exec_root() {
+        let err = devshell_launch_command_with_resolver(
+            Some(DevshellKind::Direnv),
+            None,
+            "menu",
+            &[],
+            fake_resolver,
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "devshell prepare: cwd is required for direnv");
     }
 }
