@@ -59,6 +59,40 @@ describe("handleDevshellQuery", () => {
     expect(mocks.ackMutation).toHaveBeenCalledWith("m2", true, undefined, fakeResp);
   });
 
+  it("routes prepare_for_path op with includeEnv", async () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    const fakeResp = {
+      enabled: "auto",
+      mode: "auto",
+      state: "ready",
+      kind: "direnv",
+      stale: false,
+      varCount: 3,
+      env: { PATH: "/nix/store/bin" },
+    };
+    harness.invoke.mockResolvedValueOnce(fakeResp);
+    handleDevshellQuery(
+      {
+        type: "devshell_query",
+        op: "prepare_for_path",
+        mutationId: "m-prepare",
+        args: { cwd: "/proj", includeEnv: true },
+      },
+      ctx,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(harness.invoke).toHaveBeenCalledWith("devshell_prepare_for_path", {
+      args: { cwd: "/proj", includeEnv: true },
+    });
+    expect(mocks.ackMutation).toHaveBeenCalledWith(
+      "m-prepare",
+      true,
+      undefined,
+      fakeResp,
+    );
+  });
+
   it("routes refresh op", async () => {
     const { ctx, mocks } = buildHandlerFixture();
     harness.invoke.mockResolvedValueOnce(undefined);

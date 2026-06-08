@@ -15,7 +15,7 @@
 //! The resolver task is launched once per (root, fingerprint) — the
 //! second-pass write lock checks whether a matching `Resolving` /
 //! `Ready` already exists so concurrent shell opens collapse onto the
-//! same in-flight `nix print-dev-env` evaluation instead of fanning
+//! same in-flight `nix develop --command env` evaluation instead of fanning
 //! out into N parallel resolves.
 
 use std::collections::BTreeMap;
@@ -26,14 +26,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tokio::sync::{Notify, RwLock};
+use tokio::time::timeout;
 
 use super::detect::{DetectMode, DevshellKind, RealProbe, detect_with};
-use super::resolve::{ResolvedEnv, resolve};
+use super::resolve::{ResolveProgress, ResolveProgressSender, ResolvedEnv, resolve};
 
 /// How long we wait before retrying a `Failed` resolve. Without this
 /// floor, a hard error (missing `nix` binary, broken flake) would be
 /// re-attempted on every shell open and storm the user with errors.
 const FAILED_RETRY_AFTER: Duration = Duration::from_secs(30);
+const PREPARE_WAIT_TIMEOUT: Duration = Duration::from_secs(125);
 
 /// State of a single resolver slot.
 #[derive(Debug, Clone)]
@@ -102,6 +104,15 @@ pub struct EnvForPath {
     pub stale: bool,
     /// Empty when state is anything other than `Ready`.
     pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedEnv {
+    pub kind: Option<String>,
+    pub stale: bool,
+    pub env: BTreeMap<String, String>,
+    pub duration_ms: Option<u64>,
 }
 
 struct Slot {
@@ -219,7 +230,7 @@ impl DevshellCache {
         // Cold-start disk pre-warm: no in-memory slot for this root
         // AND a snapshot on disk matches the current fingerprint?
         // Hydrate the slot before deciding whether to spawn a
-        // resolver. Saves a full `nix print-dev-env` re-eval on app
+        // resolver. Saves a full `nix develop --command env` re-eval on app
         // boot when nothing has changed since the previous session.
         {
             let already_warm = self.slots.read().await.contains_key(&root);
@@ -284,6 +295,109 @@ impl DevshellCache {
         }
     }
 
+    /// Blocking preparation for project/worktree provisioning. Unlike
+    /// [`env_for`], this waits until the resolver is either `Ready` or
+    /// `Failed` so the first agent/tool run does not race a cold Nix/direnv
+    /// evaluation.
+    pub async fn prepare_for(
+        &self,
+        emitter: Option<&AppEmitter>,
+        root: &Path,
+        mode: DetectMode,
+    ) -> Result<PreparedEnv, String> {
+        let root = canonicalize_key(root);
+        let Some(kind) = detect_with(&root, mode, &RealProbe) else {
+            return Ok(PreparedEnv {
+                kind: None,
+                stale: false,
+                env: BTreeMap::new(),
+                duration_ms: None,
+            });
+        };
+        let fingerprint = fingerprint_inputs(&root);
+        self.hydrate_from_disk_if_available(&root, kind, &fingerprint)
+            .await;
+
+        if let Some(ready) = self
+            .ready_env_for_fingerprint(&root, kind, &fingerprint)
+            .await
+        {
+            return Ok(ready);
+        }
+
+        self.kick_resolve(emitter, root.clone(), kind, fingerprint.clone(), false)
+            .await;
+
+        let wait = async {
+            loop {
+                let notify = {
+                    let guard = self.slots.read().await;
+                    match guard.get(&root) {
+                        Some(slot) => match &slot.state {
+                            ResolverState::Ready {
+                                env,
+                                duration_ms,
+                                fingerprint: fp,
+                                ..
+                            } if *fp == fingerprint => {
+                                return Ok(PreparedEnv {
+                                    kind: Some(kind.as_str().into()),
+                                    stale: false,
+                                    env: env.clone(),
+                                    duration_ms: Some(*duration_ms),
+                                });
+                            }
+                            ResolverState::Failed {
+                                reason,
+                                fingerprint: fp,
+                                ..
+                            } if *fp == fingerprint => {
+                                return Err(reason.clone());
+                            }
+                            _ => Arc::clone(&slot.notify),
+                        },
+                        None => {
+                            return Err(format!(
+                                "devshell resolver slot disappeared for {}",
+                                root.display()
+                            ));
+                        }
+                    }
+                };
+                let notified = notify.notified();
+                if let Some(ready) = self
+                    .ready_env_for_fingerprint(&root, kind, &fingerprint)
+                    .await
+                {
+                    return Ok(ready);
+                }
+                {
+                    let guard = self.slots.read().await;
+                    if let Some(slot) = guard.get(&root)
+                        && let ResolverState::Failed {
+                            reason,
+                            fingerprint: fp,
+                            ..
+                        } = &slot.state
+                        && *fp == fingerprint
+                    {
+                        return Err(reason.clone());
+                    }
+                }
+                notified.await;
+            }
+        };
+
+        match timeout(PREPARE_WAIT_TIMEOUT, wait).await {
+            Ok(result) => result,
+            Err(_) => Err(format!(
+                "timed out waiting for devshell at {} after {}s",
+                root.display(),
+                PREPARE_WAIT_TIMEOUT.as_secs()
+            )),
+        }
+    }
+
     /// Invalidate the cached state for `root` and kick off a fresh
     /// resolve. Frontend "Refresh now" button reaches here.
     pub async fn refresh(
@@ -300,6 +414,93 @@ impl DevshellCache {
         self.kick_resolve(emitter, root, kind, fingerprint, true)
             .await;
         Ok(())
+    }
+
+    async fn hydrate_from_disk_if_available(
+        &self,
+        root: &Path,
+        kind: DevshellKind,
+        fingerprint: &str,
+    ) {
+        let already_warm = self.slots.read().await.contains_key(root);
+        if already_warm {
+            return;
+        }
+        let disk_root = self.disk_root.read().await.clone();
+        let Some(disk) = disk_root else {
+            return;
+        };
+        let Some(snap) = load_disk_snapshot(&disk, fingerprint) else {
+            return;
+        };
+        let mut guard = self.slots.write().await;
+        guard.entry(root.to_path_buf()).or_insert_with(|| Slot {
+            state: ResolverState::Ready {
+                kind,
+                env: snap.env,
+                resolved_at: SystemTime::now(),
+                duration_ms: snap.duration_ms,
+                fingerprint: fingerprint.to_string(),
+            },
+            notify: Arc::new(Notify::new()),
+        });
+    }
+
+    async fn ready_env_for_fingerprint(
+        &self,
+        root: &Path,
+        kind: DevshellKind,
+        fingerprint: &str,
+    ) -> Option<PreparedEnv> {
+        let guard = self.slots.read().await;
+        let slot = guard.get(root)?;
+        let ResolverState::Ready {
+            env,
+            duration_ms,
+            fingerprint: fp,
+            ..
+        } = &slot.state
+        else {
+            return None;
+        };
+        if fp != fingerprint {
+            return None;
+        }
+        Some(PreparedEnv {
+            kind: Some(kind.as_str().into()),
+            stale: false,
+            env: env.clone(),
+            duration_ms: Some(*duration_ms),
+        })
+    }
+
+    /// Immediate, non-blocking read of a hot env. Used by synchronous
+    /// process-spawn paths after the frontend already performed the
+    /// blocking prepare step.
+    pub fn ready_env_now(&self, root: &Path, mode: DetectMode) -> Option<PreparedEnv> {
+        let root = canonicalize_key(root);
+        let kind = detect_with(&root, mode, &RealProbe)?;
+        let fingerprint = fingerprint_inputs(&root);
+        let guard = self.slots.try_read().ok()?;
+        let slot = guard.get(&root)?;
+        let ResolverState::Ready {
+            env,
+            duration_ms,
+            fingerprint: fp,
+            ..
+        } = &slot.state
+        else {
+            return None;
+        };
+        if *fp != fingerprint {
+            return None;
+        }
+        Some(PreparedEnv {
+            kind: Some(kind.as_str().into()),
+            stale: false,
+            env: env.clone(),
+            duration_ms: Some(*duration_ms),
+        })
     }
 
     async fn kick_resolve(
@@ -372,7 +573,8 @@ impl DevshellCache {
         let emitter_clone = emitter.cloned();
         let fingerprint_owned = fingerprint.clone();
         tokio::spawn(async move {
-            let outcome = resolve(&root, kind).await;
+            let progress = progress_sender(emitter_clone.clone(), root.display().to_string(), kind);
+            let outcome = resolve(&root, kind, progress).await;
             let now = SystemTime::now();
             let new_state = match outcome {
                 Ok(resolved) => {
@@ -453,6 +655,26 @@ impl DevshellCache {
     }
 }
 
+fn progress_sender(
+    emitter: Option<AppEmitter>,
+    root: String,
+    kind: DevshellKind,
+) -> Option<ResolveProgressSender> {
+    emitter.map(|emitter| {
+        Arc::new(move |progress: ResolveProgress| {
+            emitter.emit(
+                "devshell-output",
+                serde_json::json!({
+                    "root": root.as_str(),
+                    "kind": kind.as_str(),
+                    "stream": progress.stream,
+                    "content": progress.content,
+                }),
+            );
+        }) as ResolveProgressSender
+    })
+}
+
 /// Lightweight emitter trait so the cache doesn't have to depend on
 /// `tauri::AppHandle` — unit tests pass `None`, the real handler in
 /// `commands/devshell.rs` wraps Tauri's `Emitter::emit`.
@@ -478,6 +700,7 @@ impl AppEmitter {
 /// bytes once.
 pub fn fingerprint_inputs(root: &Path) -> String {
     let mut hasher = Sha1::new();
+    hasher.update(b"resolver:v2:nix-develop-env");
     if let Ok(bytes) = std::fs::read(root.join("flake.lock")) {
         hasher.update(b"lock:");
         hasher.update(&bytes);
@@ -556,7 +779,7 @@ fn write_disk_snapshot(
 /// `env_for` call for a project after app boot pulls the previous
 /// session's resolver output from disk (if its fingerprint still
 /// matches the current `flake.lock` + marker mtimes), skipping the
-/// full `nix print-dev-env` re-eval. Fingerprint mismatch falls
+/// full `nix develop --command env` re-eval. Fingerprint mismatch falls
 /// through to a fresh resolve.
 pub fn load_disk_snapshot(disk_root: &Path, fingerprint: &str) -> Option<ResolvedEnv> {
     let dir = disk_root.join(&fingerprint[..fingerprint.len().min(16)]);

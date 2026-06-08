@@ -18,7 +18,9 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -56,14 +58,17 @@ impl<R: Runtime> DevshellEmitter for TauriEmitter<R> {
     }
 }
 
-fn emitter_for<R: Runtime>(app: &AppHandle<R>) -> AppEmitter {
+pub(crate) fn emitter_for<R: Runtime>(app: &AppHandle<R>) -> AppEmitter {
     AppEmitter::new(Arc::new(TauriEmitter::new(app.clone())) as Arc<dyn DevshellEmitter>)
 }
 
 /// Resolve `[devshell]` config — global toml merged with the
 /// optional `<root>/.aethon/devshell.toml` override. Returns the
 /// effective `(enabled, mode)` strings already normalised.
-fn effective_config<R: Runtime>(app: &AppHandle<R>, root: &Path) -> (String, DetectMode) {
+pub(crate) fn effective_config<R: Runtime>(
+    app: &AppHandle<R>,
+    root: &Path,
+) -> (String, DetectMode) {
     use std::io::Read;
 
     // 1) Global config. Replicate aethon_state_path's home-dir
@@ -110,6 +115,20 @@ fn effective_config<R: Runtime>(app: &AppHandle<R>, root: &Path) -> (String, Det
     (enabled, DetectMode::from_str(&mode_str))
 }
 
+pub(crate) fn forced_mode_mismatch_reason(
+    root: &Path,
+    configured_mode: DetectMode,
+) -> Option<String> {
+    let natural = crate::devshell::forced_mode_mismatch(root, configured_mode)?;
+    Some(format!(
+        "configured [devshell].mode = \"{}\", but {} is detected as a {} devshell. Aethon will not fall back to a different resolver; change Resolver mode or add the expected {} marker.",
+        mode_str(configured_mode),
+        root.display(),
+        natural.as_str(),
+        expected_marker(configured_mode)
+    ))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusArgs {
@@ -138,9 +157,9 @@ pub struct StatusResponse {
 /// a devshell becomes a hard error (returned via `StatusSnapshot::
 /// Failed`), so the user sees a loud signal on the badge instead of
 /// the silent no-op the original `"auto"` policy would produce. The
-/// caller (PTY intercept, agent spawnHook) still falls through to
-/// the host env so shells continue to work — `"always"` only changes
-/// what the UI shows, not whether the shell opens.
+/// caller (PTY intercept, agent provisioning) treats the same
+/// condition as a hard prepare failure, so `"always"` means "do not
+/// silently open outside the devshell".
 #[tauri::command]
 pub async fn devshell_status<R: Runtime>(
     app: AppHandle<R>,
@@ -148,16 +167,26 @@ pub async fn devshell_status<R: Runtime>(
     args: StatusArgs,
 ) -> Result<StatusResponse, String> {
     let root = PathBuf::from(&args.root);
-    let (enabled, mode) = effective_config(&app, &root);
+    let (enabled, configured_mode) = effective_config(&app, &root);
     let detected_kind = if enabled == "never" {
         None
     } else {
-        crate::devshell::detect_mode(&root, mode).map(|k| k.as_str().to_string())
+        crate::devshell::detect_mode(&root, configured_mode).map(|k| k.as_str().to_string())
+    };
+    let mismatch = if enabled == "never" {
+        None
+    } else {
+        forced_mode_mismatch_reason(&root, configured_mode)
     };
     let snapshot = match enabled.as_str() {
         "never" => StatusSnapshot::None,
+        _ if mismatch.is_some() => StatusSnapshot::Failed {
+            kind: mode_str(configured_mode).to_string(),
+            reason: mismatch.unwrap(),
+            failed_at_ms: 0,
+        },
         "always" if detected_kind.is_none() => StatusSnapshot::Failed {
-            kind: mode_str(mode).to_string(),
+            kind: mode_str(configured_mode).to_string(),
             reason: format!(
                 "no devshell detected at {} and [devshell] enabled = \"always\"",
                 root.display()
@@ -168,7 +197,7 @@ pub async fn devshell_status<R: Runtime>(
     };
     Ok(StatusResponse {
         enabled,
-        mode: mode_str(mode).to_string(),
+        mode: mode_str(configured_mode).to_string(),
         snapshot,
         detected_kind,
     })
@@ -181,6 +210,24 @@ fn mode_str(mode: DetectMode) -> &'static str {
         DetectMode::Nix => "nix",
         DetectMode::NixShell => "nix-shell",
     }
+}
+
+fn expected_marker(mode: DetectMode) -> &'static str {
+    match mode {
+        DetectMode::Auto => "devshell",
+        DetectMode::Direnv => ".envrc with use flake/use nix",
+        DetectMode::Nix => "flake.nix",
+        DetectMode::NixShell => "flake.nix or shell.nix",
+    }
+}
+
+pub(crate) fn devshell_prepare_is_required(enabled: &str) -> bool {
+    enabled == "always"
+}
+
+pub(crate) fn required_devshell_missing_error(enabled: &str, reason: String) -> Option<String> {
+    devshell_prepare_is_required(enabled)
+        .then(|| format!("{reason} and [devshell] enabled = \"always\""))
 }
 
 #[derive(Deserialize)]
@@ -201,9 +248,180 @@ pub struct EnvForPathResponse {
     pub env: BTreeMap<String, String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrepareForPathArgs {
+    /// The project/worktree cwd that is about to be provisioned.
+    pub cwd: String,
+    /// Agent-side callers set this so the prepared env can seed their
+    /// synchronous spawn-hook cache. Frontend tab-open callers leave it false.
+    pub include_env: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrepareForPathResponse {
+    pub enabled: String,
+    pub mode: String,
+    pub state: String,
+    pub kind: Option<String>,
+    pub stale: bool,
+    pub duration_ms: Option<u64>,
+    pub var_count: usize,
+    pub direnv_allowed: bool,
+    pub reason: Option<String>,
+    pub env: Option<BTreeMap<String, String>>,
+}
+
+/// Blocking prepare for explicit project/worktree roots. This is intentionally
+/// separate from `devshell_env_for_path`: agent/session provisioning should
+/// wait for the env so the first tool call is correct, while PTY opens still
+/// use the non-blocking path.
+#[tauri::command]
+pub async fn devshell_prepare_for_path<R: Runtime>(
+    app: AppHandle<R>,
+    cache: State<'_, Arc<DevshellCache>>,
+    args: PrepareForPathArgs,
+) -> Result<PrepareForPathResponse, String> {
+    let cwd = PathBuf::from(&args.cwd);
+    let include_env = args.include_env.unwrap_or(false);
+    let (enabled, configured_mode) = effective_config(&app, &cwd);
+    if enabled == "never" {
+        return Ok(PrepareForPathResponse {
+            enabled,
+            mode: mode_str(configured_mode).to_string(),
+            state: "disabled".to_string(),
+            kind: None,
+            stale: false,
+            duration_ms: None,
+            var_count: 0,
+            direnv_allowed: false,
+            reason: None,
+            env: include_env.then(BTreeMap::new),
+        });
+    }
+
+    let detected_kind = crate::devshell::detect_mode(&cwd, configured_mode);
+    let Some(kind) = detected_kind else {
+        let reason = forced_mode_mismatch_reason(&cwd, configured_mode)
+            .unwrap_or_else(|| format!("no devshell detected at {}", cwd.display()));
+        if let Some(error) = required_devshell_missing_error(&enabled, reason.clone()) {
+            return Err(error);
+        }
+        let is_mismatch = crate::devshell::forced_mode_mismatch(&cwd, configured_mode).is_some();
+        return Ok(PrepareForPathResponse {
+            enabled,
+            mode: mode_str(configured_mode).to_string(),
+            state: if is_mismatch { "failed" } else { "none" }.to_string(),
+            kind: None,
+            stale: false,
+            duration_ms: None,
+            var_count: 0,
+            direnv_allowed: false,
+            reason: Some(reason),
+            env: include_env.then(BTreeMap::new),
+        });
+    };
+
+    let mut direnv_allowed = false;
+    if kind.as_str() == "direnv" {
+        if let Err(reason) = direnv_allow(&cwd).await {
+            if enabled == "always" {
+                return Err(reason);
+            }
+            return Ok(PrepareForPathResponse {
+                enabled,
+                mode: mode_str(configured_mode).to_string(),
+                state: "failed".to_string(),
+                kind: Some(kind.as_str().to_string()),
+                stale: false,
+                duration_ms: None,
+                var_count: 0,
+                direnv_allowed: false,
+                reason: Some(reason),
+                env: include_env.then(BTreeMap::new),
+            });
+        }
+        direnv_allowed = true;
+    }
+
+    let emitter = emitter_for(&app);
+    match cache
+        .prepare_for(Some(&emitter), &cwd, configured_mode)
+        .await
+    {
+        Ok(prepared) => {
+            let var_count = prepared.env.len();
+            Ok(PrepareForPathResponse {
+                enabled,
+                mode: mode_str(configured_mode).to_string(),
+                state: "ready".to_string(),
+                kind: prepared.kind,
+                stale: prepared.stale,
+                duration_ms: prepared.duration_ms,
+                var_count,
+                direnv_allowed,
+                reason: None,
+                env: include_env.then_some(prepared.env),
+            })
+        }
+        Err(reason) => {
+            if enabled == "always" {
+                return Err(reason);
+            }
+            Ok(PrepareForPathResponse {
+                enabled,
+                mode: mode_str(configured_mode).to_string(),
+                state: "failed".to_string(),
+                kind: Some(kind.as_str().to_string()),
+                stale: false,
+                duration_ms: None,
+                var_count: 0,
+                direnv_allowed,
+                reason: Some(reason),
+                env: include_env.then(BTreeMap::new),
+            })
+        }
+    }
+}
+
+pub(crate) async fn direnv_allow(root: &Path) -> Result<(), String> {
+    let Some(bin) = crate::env::resolve_program("direnv") else {
+        return Err("direnv binary not found on Aethon tool PATH".to_string());
+    };
+    let mut command = tokio::process::Command::new(bin);
+    command
+        .arg("allow")
+        .arg(root)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+        .await
+        .map_err(|_| format!("direnv allow {} timed out after 30s", root.display()))?
+        .map_err(|e| format!("direnv allow {} failed to start: {e}", root.display()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() { stderr } else { stdout };
+    Err(format!(
+        "direnv allow {} exited with {}{}",
+        root.display(),
+        output.status,
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        }
+    ))
+}
+
 /// Non-blocking env lookup. Returns immediately even if a resolver is
 /// in-flight; the agent spawnHook + PTY intercept both use this and
-/// must never block the user's tool call on `nix print-dev-env`.
+/// must never block the user's tool call on Nix evaluation.
 #[tauri::command]
 pub async fn devshell_env_for_path<R: Runtime>(
     app: AppHandle<R>,
@@ -211,7 +429,7 @@ pub async fn devshell_env_for_path<R: Runtime>(
     args: EnvForPathArgs,
 ) -> Result<EnvForPathResponse, String> {
     let cwd = PathBuf::from(&args.cwd);
-    let (enabled, mode) = effective_config(&app, &cwd);
+    let (enabled, configured_mode) = effective_config(&app, &cwd);
     if enabled == "never" {
         return Ok(EnvForPathResponse {
             enabled,
@@ -221,7 +439,8 @@ pub async fn devshell_env_for_path<R: Runtime>(
         });
     }
     let emitter = emitter_for(&app);
-    let EnvForPath { kind, stale, env } = cache.env_for(Some(&emitter), &cwd, mode).await;
+    let EnvForPath { kind, stale, env } =
+        cache.env_for(Some(&emitter), &cwd, configured_mode).await;
     Ok(EnvForPathResponse {
         enabled,
         kind,
@@ -250,18 +469,25 @@ pub async fn devshell_refresh<R: Runtime>(
     args: RefreshArgs,
 ) -> Result<(), String> {
     let root = PathBuf::from(&args.root);
-    let (enabled, mode) = effective_config(&app, &root);
+    let (enabled, configured_mode) = effective_config(&app, &root);
     if enabled == "never" {
         return Ok(());
     }
+    if let Some(reason) = forced_mode_mismatch_reason(&root, configured_mode) {
+        return Err(reason);
+    }
     let emitter = emitter_for(&app);
-    match cache.refresh(Some(&emitter), &root, mode).await {
+    match cache.refresh(Some(&emitter), &root, configured_mode).await {
         Ok(()) => Ok(()),
         Err(e) => {
             // "auto" silently no-ops when there's no devshell to
             // refresh (a project without a flake is fine to refresh);
             // "always" treats the same condition as a hard error.
-            if enabled == "always" { Err(e) } else { Ok(()) }
+            if devshell_prepare_is_required(&enabled) {
+                Err(e)
+            } else {
+                Ok(())
+            }
         }
     }
 }
@@ -289,5 +515,27 @@ pub async fn boot_init_cache<R: Runtime>(app: &AppHandle<R>, cache: &DevshellCac
             disk_root.display(),
             e
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{devshell_prepare_is_required, required_devshell_missing_error};
+
+    #[test]
+    fn only_always_requires_devshell_preparation() {
+        assert!(devshell_prepare_is_required("always"));
+        assert!(!devshell_prepare_is_required("auto"));
+        assert!(!devshell_prepare_is_required("never"));
+    }
+
+    #[test]
+    fn required_devshell_missing_error_preserves_the_detected_reason() {
+        assert_eq!(
+            required_devshell_missing_error("always", "configured mode mismatch".to_string())
+                .as_deref(),
+            Some("configured mode mismatch and [devshell] enabled = \"always\""),
+        );
+        assert!(required_devshell_missing_error("auto", "missing".to_string()).is_none());
     }
 }

@@ -42,6 +42,8 @@ export interface DevshellClientDeps {
 }
 
 const FETCH_TIMEOUT_MS = 5_000;
+const PREPARE_TIMEOUT_MS = 130_000;
+const PREPARED_ENV_KEYS_VAR = "AETHON_WORKER_DEVSHELL_ENV_KEYS";
 
 /** Hit point for the bash spawnHook. Synchronous. Returns the cached
  *  env (possibly empty) and, if necessary, kicks off a background
@@ -62,6 +64,46 @@ export function getCachedEnv(
   return { env: entry?.env ?? {}, kind: entry?.kind ?? null, hot: false };
 }
 
+/** Seed the synchronous bash-hook cache from a tab worker process that Rust
+ *  already spawned under a prepared devshell env. This avoids a duplicate
+ *  bridge -> frontend -> Rust prepare query before the first prompt can reach
+ *  pi, while still keeping Force/None modes honest: callers only invoke this
+ *  when the supervisor explicitly marked the worker env prepared. */
+export function seedPreparedEnv(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  kind: string | null,
+): void {
+  const keys = preparedEnvKeys(env);
+  if (keys.length === 0) return;
+  const prepared: Record<string, string> = {};
+  for (const key of keys) {
+    const value = env[key];
+    if (typeof value === "string") prepared[key] = value;
+  }
+  cache.set(cwd, {
+    kind,
+    env: prepared,
+    resolvedAt: Date.now(),
+    stale: false,
+    fetching: false,
+  });
+}
+
+function preparedEnvKeys(env: NodeJS.ProcessEnv): string[] {
+  const raw = env[PREPARED_ENV_KEYS_VAR];
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (key): key is string => typeof key === "string" && key.length > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
 /** Explicit fetch — used by tab-lifecycle on session creation so the
  *  cache is warm by the first tool call, and by `getCachedEnv` on miss. */
 export async function ensureFetched(
@@ -80,7 +122,13 @@ export async function ensureFetched(
     fetching: true,
   });
   try {
-    const result = await sendQuery(state, deps, "env_for_path", { cwd }, FETCH_TIMEOUT_MS);
+    const result = await sendQuery(
+      state,
+      deps,
+      "env_for_path",
+      { cwd },
+      FETCH_TIMEOUT_MS,
+    );
     if (!result.ok) {
       // Don't drop the existing cache on a transient failure — the
       // previous env (if any) is still our best bet. Just clear the
@@ -136,6 +184,92 @@ export async function ensureFetched(
   }
 }
 
+/** Blocking preparation used before creating a tab-scoped session. This asks
+ *  the frontend/Rust cache to wait for Nix/direnv readiness, then seeds the
+ *  synchronous spawn-hook cache with the prepared env. */
+export async function ensurePrepared(
+  state: AethonAgentState,
+  deps: DevshellClientDeps,
+  cwd: string,
+): Promise<void> {
+  const existing = cache.get(cwd);
+  cache.set(cwd, {
+    kind: existing?.kind ?? null,
+    env: existing?.env ?? {},
+    resolvedAt: existing?.resolvedAt ?? 0,
+    stale: existing?.stale ?? false,
+    fetching: true,
+  });
+  try {
+    const result = await sendQuery(
+      state,
+      deps,
+      "prepare_for_path",
+      { cwd, includeEnv: true },
+      PREPARE_TIMEOUT_MS,
+    );
+    if (!result.ok) {
+      cache.set(cwd, {
+        kind: existing?.kind ?? null,
+        env: existing?.env ?? {},
+        resolvedAt: existing?.resolvedAt ?? 0,
+        stale: true,
+        fetching: false,
+      });
+      throw new Error(result.error ?? "devshell prepare failed");
+    }
+    const payload = (result.data ?? {}) as {
+      enabled?: string;
+      state?: string;
+      kind?: string | null;
+      env?: Record<string, string>;
+      stale?: boolean;
+      reason?: string | null;
+    };
+    if (payload.enabled === "never" || payload.state === "none") {
+      cache.set(cwd, {
+        kind: null,
+        env: {},
+        resolvedAt: Date.now(),
+        stale: false,
+        fetching: false,
+      });
+      return;
+    }
+    if (payload.state === "failed") {
+      cache.set(cwd, {
+        kind: payload.kind ?? existing?.kind ?? null,
+        env: existing?.env ?? {},
+        resolvedAt: existing?.resolvedAt ?? 0,
+        stale: true,
+        fetching: false,
+      });
+      logger
+        .scope("devshell")
+        .warn(
+          `prepare_for_path(${cwd}) failed: ${payload.reason ?? "unknown"}`,
+        );
+      return;
+    }
+    cache.set(cwd, {
+      kind: payload.kind ?? null,
+      env: payload.env ?? {},
+      resolvedAt: Date.now(),
+      stale: payload.stale === true,
+      fetching: false,
+    });
+  } catch (err) {
+    cache.set(cwd, {
+      kind: existing?.kind ?? null,
+      env: existing?.env ?? {},
+      resolvedAt: existing?.resolvedAt ?? 0,
+      stale: true,
+      fetching: false,
+    });
+    throw err;
+  }
+}
+
 /** Forced refresh — invalidate local cache for a project root and
  *  ask the resolver to re-evaluate. Settings "Refresh now" reaches
  *  here via the frontend bridge. */
@@ -169,7 +303,11 @@ export async function refresh(
 export function onDevshellEvent(
   state: AethonAgentState,
   deps: DevshellClientDeps,
-  event: { kind: string; root: string; status: "ready" | "failed" | "resolving" },
+  event: {
+    kind: string;
+    root: string;
+    status: "ready" | "failed" | "resolving";
+  },
 ): void {
   if (event.status === "ready") {
     // Just invalidate; the next spawnHook call will re-fetch under
@@ -211,10 +349,12 @@ function isUnderRoot(cwd: string, root: string): boolean {
 export function maybeWarnColdRun(cwd: string, kind: string | null): boolean {
   if (warned.has(cwd)) return false;
   warned.add(cwd);
-  logger.scope("devshell").warn(
-    `cold devshell run for cwd ${cwd}${kind ? ` (kind=${kind})` : ""}: ` +
-      `host env in use until resolver completes. Subsequent calls will inherit the devshell env.`,
-  );
+  logger
+    .scope("devshell")
+    .warn(
+      `cold devshell run for cwd ${cwd}${kind ? ` (kind=${kind})` : ""}: ` +
+        `host env in use until resolver completes. Subsequent calls will inherit the devshell env.`,
+    );
   return true;
 }
 
@@ -240,7 +380,9 @@ async function sendQuery(
   if (!state.frontendReady) {
     const ready = await Promise.race<boolean>([
       state.frontendReadyPromise.then(() => true),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), timeoutMs),
+      ),
     ]);
     if (!ready) return { ok: false, error: "frontend_not_ready" };
   }

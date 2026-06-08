@@ -7,7 +7,7 @@
 //! warm in-process cache pi can't see. Flake comes next so a
 //! repo with `flake.nix` + `nix` on PATH transparently lights up
 //! without any direnv setup. `shell.nix` is the legacy non-flake
-//! fallback.
+//! fallback when no flake is present.
 //!
 //! Detection is intentionally *capability-aware*: a `flake.nix`
 //! without `nix` on PATH yields `None` rather than `Flake`, because
@@ -24,10 +24,11 @@ pub enum DevshellKind {
     /// `direnv exec <root> env -0`.
     Direnv,
     /// `flake.nix` + `nix` binary present. Resolve via
-    /// `nix print-dev-env --json` from the root.
+    /// `nix develop --command env -0` from the root.
     Flake,
     /// `shell.nix` + `nix` binary present. Resolve via
-    /// `nix-shell --run 'env -0'` from the root.
+    /// `nix-shell --run 'env -0'` from the root. Used only for
+    /// non-flake legacy projects.
     Shell,
 }
 
@@ -44,9 +45,12 @@ impl DevshellKind {
 }
 
 /// Override for `mode` from `[devshell] mode` in `config.toml`. `Auto`
-/// keeps the natural precedence; the named variants pin a kind and
-/// still gracefully fall back to `None` if the marker file or the
-/// required binary is missing.
+/// keeps the natural precedence; the named variants pin a resolver family and
+/// still gracefully fall back to `None` if the marker file or the required
+/// binary is missing. `NixShell` is kept as a compatibility spelling for the
+/// user-facing "Nix devshell" mode: flake projects use the flake resolver
+/// (`nix develop --command env -0`), and only
+/// non-flake projects fall back to legacy `shell.nix`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DetectMode {
     #[default]
@@ -73,6 +77,14 @@ impl DetectMode {
 /// alias — pass `DetectMode::Auto` for the natural precedence.
 pub fn detect_mode(root: &Path, mode: DetectMode) -> Option<DevshellKind> {
     detect_with(root, mode, &RealProbe)
+}
+
+/// If a named resolver is forced but this root only matches another
+/// Nix-backed devshell entry path, return the naturally detected kind.
+/// Callers use this to surface a configuration mismatch instead of
+/// silently falling back to direnv/flake/shell.
+pub fn forced_mode_mismatch(root: &Path, configured: DetectMode) -> Option<DevshellKind> {
+    forced_mode_mismatch_with(root, configured, &RealProbe)
 }
 
 /// Trait so unit tests can fake binary availability without poking
@@ -122,8 +134,28 @@ pub(super) fn detect_with(
         }
         DetectMode::Direnv => direnv_ok.then_some(DevshellKind::Direnv),
         DetectMode::Nix => flake_ok.then_some(DevshellKind::Flake),
-        DetectMode::NixShell => shell_ok.then_some(DevshellKind::Shell),
+        DetectMode::NixShell => {
+            if flake_ok {
+                Some(DevshellKind::Flake)
+            } else {
+                shell_ok.then_some(DevshellKind::Shell)
+            }
+        }
     }
+}
+
+pub(super) fn forced_mode_mismatch_with(
+    root: &Path,
+    configured: DetectMode,
+    probe: &dyn BinProbe,
+) -> Option<DevshellKind> {
+    if matches!(configured, DetectMode::Auto) {
+        return None;
+    }
+    if detect_with(root, configured, probe).is_some() {
+        return None;
+    }
+    detect_with(root, DetectMode::Auto, probe)
 }
 
 /// Cheaply check whether a `.envrc` actually wires up Nix. A `.envrc`
@@ -370,7 +402,7 @@ mod tests {
         );
         assert_eq!(
             detect_with(td.path(), DetectMode::NixShell, &probe),
-            Some(DevshellKind::Shell)
+            Some(DevshellKind::Flake)
         );
     }
 
@@ -384,6 +416,73 @@ mod tests {
         };
         // Forced Nix mode but no nix binary on PATH — refuse rather than lie.
         assert_eq!(detect_with(td.path(), DetectMode::Nix, &probe), None);
+    }
+
+    #[test]
+    fn nix_shell_mode_uses_flake_devshell_when_present() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        write(&td, ".envrc", "use flake\n");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            detect_with(td.path(), DetectMode::NixShell, &probe),
+            Some(DevshellKind::Flake)
+        );
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::NixShell, &probe),
+            None
+        );
+    }
+
+    #[test]
+    fn forced_mode_mismatch_reports_natural_kind_for_unmatched_mode() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::Direnv, &probe),
+            Some(DevshellKind::Flake)
+        );
+    }
+
+    #[test]
+    fn forced_mode_mismatch_is_none_for_auto_mode() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        write(&td, ".envrc", "use flake\n");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::Auto, &probe),
+            None
+        );
+    }
+
+    #[test]
+    fn forced_mode_mismatch_is_none_when_preferred_marker_exists() {
+        let td = TempDir::new().unwrap();
+        write(&td, "flake.nix", "{}");
+        write(&td, "shell.nix", "{}");
+        let probe = FakeProbe {
+            direnv: true,
+            nix: true,
+        };
+
+        assert_eq!(
+            forced_mode_mismatch_with(td.path(), DetectMode::NixShell, &probe),
+            None
+        );
     }
 
     #[test]

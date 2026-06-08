@@ -60,16 +60,24 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
 
   const unlistenCrashed = listen<{
     pid?: number;
+    key?: string;
     tabId?: string | null;
     stderrTail?: string[];
   }>("agent-crashed", (event) => {
     const tail = event.payload?.stderrTail ?? [];
+    const crashedKey = event.payload?.key;
     const crashedTabId =
       typeof event.payload?.tabId === "string" &&
       event.payload.tabId.length > 0
         ? event.payload.tabId
         : undefined;
-    const lastLine = tail.length > 0 ? tail[tail.length - 1] : "no stderr";
+    const globalOnlyCrash = !crashedTabId && crashedKey === "__global__";
+    const lastLine =
+      tail.length > 0
+        ? tail[tail.length - 1]
+        : crashedKey
+          ? `agent stdout closed unexpectedly (${crashedKey})`
+          : "agent stdout closed unexpectedly";
     activeResponseIdRef.current = null;
     if (crashedTabId) {
       const h = hangWarnTimersRef.current.get(crashedTabId);
@@ -87,6 +95,7 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
     }
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((t) => {
+        if (globalOnlyCrash) return t;
         if (crashedTabId && t.id !== crashedTabId) return t;
         const closedTools = closeRunningToolCards(t.messages, {
           notice: "Tool call did not finish before the agent crashed.",
@@ -105,7 +114,9 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
       const prevRunning =
         (prev.agentRunningTabs as Record<string, true> | undefined) ?? {};
       let agentRunningTabs: Record<string, true>;
-      if (crashedTabId) {
+      if (globalOnlyCrash) {
+        agentRunningTabs = prevRunning;
+      } else if (crashedTabId) {
         agentRunningTabs = { ...prevRunning };
         delete agentRunningTabs[crashedTabId];
       } else {
@@ -115,10 +126,10 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
         ...prev,
         tabs,
         agentRunningTabs,
-        ...(!crashedTabId || prev.activeTabId === crashedTabId
+        ...(!globalOnlyCrash && (!crashedTabId || prev.activeTabId === crashedTabId)
           ? { waiting: false, queueCount: 0 }
           : {}),
-        status: "agent crashed",
+        status: globalOnlyCrash ? "agent reloading" : "agent crashed",
       };
     });
     const willAutoRestart = autoRestartAgentRef.current;

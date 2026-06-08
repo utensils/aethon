@@ -241,6 +241,7 @@ pub fn run() {
             commands::boot::boot_stage,
             commands::boot::boot_ok,
             commands::devshell::devshell_status,
+            commands::devshell::devshell_prepare_for_path,
             commands::devshell::devshell_env_for_path,
             commands::devshell::devshell_refresh,
             shell::shell_open,
@@ -262,8 +263,9 @@ pub fn run() {
             debug::debug_shell_write_raw,
         ]);
 
-    builder
+    let app = builder
         .setup(|app| {
+            agent_process::cleanup_orphaned_dev_agents();
             if let Some(watcher) = commands::extensions::start_agent_watcher(app.handle().clone()) {
                 app.manage(watcher);
             }
@@ -362,8 +364,14 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let state = app_handle.state::<agent_process::AgentProcesses>();
+            agent_process::shutdown_all_agents(&state, "app exit");
+        }
+    });
 }
 
 #[cfg(test)]

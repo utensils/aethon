@@ -545,8 +545,10 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                     Auto (direnv when present, else flake, else shell.nix)
                   </option>
                   <option value="direnv">Force direnv exec</option>
-                  <option value="nix">Force nix print-dev-env (flake)</option>
-                  <option value="nix-shell">Force nix-shell (legacy)</option>
+                  <option value="nix">Force nix develop (flake)</option>
+                  <option value="nix-shell">
+                    Force Nix devshell (flake, legacy alias)
+                  </option>
                 </select>
               </Field>
               <Field label="Cache TTL (hours)">

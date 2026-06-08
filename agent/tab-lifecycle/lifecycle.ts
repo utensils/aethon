@@ -23,7 +23,7 @@ import { buildDashboardTools } from "../dashboard-tools";
 import { buildSubagentTaskTool } from "../subagents/task-tool";
 import {
   buildDevshellSpawnHook,
-  ensureFetched as ensureDevshellFetched,
+  ensurePrepared as ensureDevshellPrepared,
 } from "../devshell";
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
@@ -42,6 +42,11 @@ export interface EnsureTabOptions {
   initialModel?: Model<Api>;
   cwdOverride?: string;
 }
+
+const lifecycleLog = logger.scope("tab-lifecycle");
+const WORKER_MODE =
+  typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
+  process.env.AETHON_WORKER_TAB_ID.length > 0;
 
 /** Create (or fetch) the session record for a tabId. Subscribes to its
  *  pi session and tags every per-turn event with tabId so the frontend
@@ -91,12 +96,19 @@ export async function ensureTab(
     sessionManager = SessionManager.inMemory();
   }
 
-  // Warm the devshell cache for this tab's cwd in the background.
-  // The fetch races with the first bash tool call; if the resolver
-  // hasn't completed in time, the spawnHook emits a one-shot
-  // advisory warning and the command runs against the host env.
-  // Subsequent commands pick up the devshell env automatically.
-  void ensureDevshellFetched(state, deps, resolvedCwd);
+  // Frontend tab creation normally prepares the devshell before `tab_open`.
+  // Tab workers are spawned by Rust only after that prepare step has run and
+  // after any ready env has been injected into process.env, so do not issue a
+  // second blocking devshell_query here. That duplicate query can wedge the
+  // first prompt before pi emits agent_start if the frontend ack path is not
+  // available yet.
+  if (WORKER_MODE) {
+    lifecycleLog.info(
+      `worker session using pre-spawn devshell cwd=${resolvedCwd} tabId=${tabId}`,
+    );
+  } else {
+    await ensureDevshellPrepared(state, deps, resolvedCwd);
+  }
 
   // Shadow pi's built-in `bash` tool with our own that mounts the
   // devshell spawnHook. The customTools registry merges later-wins
@@ -129,6 +141,7 @@ export async function ensureTab(
     ],
     ...(options.initialModel ? { model: options.initialModel } : {}),
   });
+  lifecycleLog.info(`session ready tabId=${tabId} cwd=${resolvedCwd}`);
   installAethonRetryClassifier(session);
   wrapWithSourceGuard(session.agent, state.projectRoot, {
     tabRoot: resolvedCwd,

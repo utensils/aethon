@@ -4,9 +4,11 @@ import type { BridgeMessageHandler } from "./types";
 /** Bridge proxy for the agent's `aethon.devshell.*` queries
  *  (currently consumed by the bash spawnHook).
  *
- *  Three ops, mirroring the Rust IPC surface:
+ *  Four ops, mirroring the Rust IPC surface:
  *    - `status` — non-blocking snapshot for the status badge / agent
  *      hot-cache primer.
+ *    - `prepare_for_path` — blocking project/worktree preparation used before
+ *      provisioning an agent session.
  *    - `env_for_path` — non-blocking env lookup. The spawnHook
  *      consumes this; when state is still `Resolving` the response
  *      carries an empty `env` and the agent re-fetches after the
@@ -33,6 +35,14 @@ export const handleDevshellQuery: BridgeMessageHandler = (data, ctx) => {
       const cwd = args.cwd as string | undefined;
       if (!cwd) throw new Error("devshell_query.env_for_path requires cwd");
       return await invoke("devshell_env_for_path", { args: { cwd } });
+    }
+    if (op === "prepare_for_path") {
+      const cwd = args.cwd as string | undefined;
+      if (!cwd) throw new Error("devshell_query.prepare_for_path requires cwd");
+      const includeEnv = args.includeEnv === true;
+      return await invoke("devshell_prepare_for_path", {
+        args: { cwd, includeEnv },
+      });
     }
     if (op === "refresh") {
       const root = args.root as string | undefined;

@@ -12,6 +12,7 @@ use crate::agent_process::{
     AgentProcesses, AgentWorker, GLOBAL_AGENT_KEY, WorkerMeta, ensure_global_agent,
     keys_to_reconcile, retire_agent_key, route_payload_key, write_agent_payload,
 };
+use crate::devshell::DevshellCache;
 
 /// Grace period before a worker is eligible for orphan reconciliation, so a
 /// tab the frontend just opened (but hasn't yet included in its reported live
@@ -52,9 +53,10 @@ pub(crate) fn start_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> R
 }
 
 #[tauri::command]
-pub(crate) fn send_message(
+pub(crate) async fn send_message(
     request: SendMessageRequest,
     state: State<'_, AgentProcesses>,
+    devshell: State<'_, Arc<DevshellCache>>,
     app: AppHandle,
 ) -> Result<(), String> {
     let tab_id = request.tab_id.unwrap_or_else(|| "default".to_string());
@@ -84,7 +86,8 @@ pub(crate) fn send_message(
 
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, true);
-    write_agent_payload(&state, &app, key, payload, worker)
+    prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
+    write_agent_payload(&state, &app, key, payload, worker).await
 }
 
 fn attachments_to_agent_images(
@@ -220,9 +223,10 @@ pub(crate) fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> 
 /// Forward an arbitrary JSON payload to the agent's stdin. Used by the model
 /// picker and runtime controls that are not wrapped in `dispatch_a2ui_event`.
 #[tauri::command]
-pub(crate) fn agent_command(
+pub(crate) async fn agent_command(
     payload: String,
     state: State<'_, AgentProcesses>,
+    devshell: State<'_, Arc<DevshellCache>>,
     app: AppHandle,
 ) -> Result<(), String> {
     let payload_value: serde_json::Value =
@@ -231,11 +235,75 @@ pub(crate) fn agent_command(
     let worker = worker_for_payload(&key, &payload_value, true);
     let should_retire = payload_value.get("type").and_then(|v| v.as_str()) == Some("tab_close")
         && key != GLOBAL_AGENT_KEY;
-    write_agent_payload(&state, &app, key.clone(), payload_value, worker)?;
+    prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
+    write_agent_payload(&state, &app, key.clone(), payload_value, worker).await?;
     if should_retire {
         retire_agent_key(&state, &key)?;
     }
     Ok(())
+}
+
+async fn prepare_worker_devshell(
+    app: &AppHandle,
+    cache: &Arc<DevshellCache>,
+    worker: Option<&AgentWorker>,
+) -> Result<(), String> {
+    let Some(cwd) = worker
+        .and_then(|w| w.cwd.as_deref())
+        .filter(|cwd| !cwd.is_empty())
+    else {
+        return Ok(());
+    };
+    let cwd = PathBuf::from(cwd);
+    let (enabled, configured_mode) = crate::commands::devshell::effective_config(app, &cwd);
+    if enabled == "never" {
+        return Ok(());
+    }
+    if let Some(reason) =
+        crate::commands::devshell::forced_mode_mismatch_reason(&cwd, configured_mode)
+    {
+        return Err(format!("devshell prepare: {reason}"));
+    }
+    let Some(kind) = crate::devshell::detect_mode(&cwd, configured_mode) else {
+        let reason = format!("no devshell detected at {}", cwd.display());
+        if let Some(error) =
+            crate::commands::devshell::required_devshell_missing_error(&enabled, reason)
+        {
+            return Err(format!("devshell prepare: {error}"));
+        }
+        return Ok(());
+    };
+    if kind.as_str() == "direnv"
+        && let Err(reason) = crate::commands::devshell::direnv_allow(&cwd).await
+    {
+        if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
+            return Err(reason);
+        }
+        tracing::warn!(
+            target: "aethon::devshell",
+            "agent worker devshell direnv allow failed for {}: {reason}; opening host worker",
+            cwd.display()
+        );
+        return Ok(());
+    }
+    let emitter = crate::commands::devshell::emitter_for(app);
+    match cache
+        .prepare_for(Some(&emitter), &cwd, configured_mode)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(reason) => {
+            if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
+                return Err(format!("devshell prepare: {reason}"));
+            }
+            tracing::warn!(
+                target: "aethon::devshell",
+                "agent worker devshell prepare failed for {}: {reason}; opening host worker",
+                cwd.display()
+            );
+            Ok(())
+        }
+    }
 }
 
 /// Forward a JSON payload to every currently running agent worker without
@@ -286,7 +354,7 @@ pub(crate) fn agent_broadcast_command(
 }
 
 #[tauri::command]
-pub(crate) fn dispatch_a2ui_event(
+pub(crate) async fn dispatch_a2ui_event(
     event: String,
     tab_id: Option<String>,
     state: State<'_, AgentProcesses>,
@@ -301,7 +369,7 @@ pub(crate) fn dispatch_a2ui_event(
     });
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, false);
-    write_agent_payload(&state, &app, key, payload, worker)
+    write_agent_payload(&state, &app, key, payload, worker).await
 }
 
 /// Read-only per-worker diagnostic row. Maps a live `aethon-agent` PID back to
@@ -318,7 +386,20 @@ pub(crate) struct AgentDiagnostic {
     pub(crate) spawned_ms_ago: u128,
     pub(crate) last_activity_ms_ago: u128,
     pub(crate) prompt_in_flight: bool,
+    pub(crate) bridge_ready: bool,
     pub(crate) session_label: String,
+    pub(crate) process: Option<ProcessDiagnostic>,
+    pub(crate) children: Vec<ProcessDiagnostic>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProcessDiagnostic {
+    pub(crate) pid: u32,
+    pub(crate) ppid: Option<u32>,
+    pub(crate) cpu_percent: Option<f64>,
+    pub(crate) rss_bytes: Option<u64>,
+    pub(crate) command: Option<String>,
 }
 
 /// Human-friendly label for a worker: "global" for the shared agent, otherwise
@@ -364,6 +445,7 @@ pub(crate) fn agent_diagnostics(
         .collect();
 
     let now = Instant::now();
+    let metrics = process_metrics_snapshot();
     let map = state.meta.lock().map_err(|e| e.to_string())?;
     let mut rows: Vec<AgentDiagnostic> = map
         .iter()
@@ -376,11 +458,53 @@ pub(crate) fn agent_diagnostics(
             spawned_ms_ago: now.duration_since(m.spawned_at).as_millis(),
             last_activity_ms_ago: now.duration_since(m.last_activity).as_millis(),
             prompt_in_flight: m.prompt_in_flight,
+            bridge_ready: m.bridge_ready,
             session_label: session_label_for(key, m),
+            process: metrics.get(&m.pid).cloned(),
+            children: metrics
+                .values()
+                .filter(|p| p.ppid == Some(m.pid))
+                .cloned()
+                .collect(),
         })
         .collect();
     rows.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(rows)
+}
+
+fn process_metrics_snapshot() -> HashMap<u32, ProcessDiagnostic> {
+    let mut command = crate::env::command("ps");
+    command.args(["-axo", "pid=,ppid=,%cpu=,rss=,command="]);
+    let Ok(output) = command.output() else {
+        return HashMap::new();
+    };
+    if !output.status.success() {
+        return HashMap::new();
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .filter_map(parse_ps_metrics_line)
+        .map(|row| (row.pid, row))
+        .collect()
+}
+
+fn parse_ps_metrics_line(line: &str) -> Option<ProcessDiagnostic> {
+    let mut parts = line.split_whitespace();
+    let pid = parts.next()?.parse::<u32>().ok()?;
+    let ppid = parts.next().and_then(|value| value.parse::<u32>().ok());
+    let cpu_percent = parts.next().and_then(|value| value.parse::<f64>().ok());
+    let rss_bytes = parts
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|kib| kib.saturating_mul(1024));
+    let command = parts.collect::<Vec<_>>().join(" ");
+    Some(ProcessDiagnostic {
+        pid,
+        ppid,
+        cpu_percent,
+        rss_bytes,
+        command: (!command.is_empty()).then_some(command),
+    })
 }
 
 /// Retire per-tab workers whose tab no longer exists in the frontend's live
@@ -427,7 +551,9 @@ fn worker_for_payload(
 
 #[cfg(test)]
 mod tests {
-    use super::{GLOBAL_AGENT_KEY, WorkerMeta, session_label_for, worker_for_payload};
+    use super::{
+        GLOBAL_AGENT_KEY, WorkerMeta, parse_ps_metrics_line, session_label_for, worker_for_payload,
+    };
     use std::time::Instant;
 
     fn meta(tab_id: Option<&str>, cwd: Option<&str>) -> WorkerMeta {
@@ -439,6 +565,7 @@ mod tests {
             spawned_at: now,
             last_activity: now,
             prompt_in_flight: false,
+            bridge_ready: true,
         }
     }
 
@@ -492,5 +619,16 @@ mod tests {
 
         assert_eq!(worker.tab_id, "tab-1");
         assert_eq!(worker.cwd, None);
+    }
+
+    #[test]
+    fn parses_ps_metrics_line() {
+        let row =
+            parse_ps_metrics_line("  123   45  12.5  2048 /bin/bash -lc menu").expect("parsed");
+        assert_eq!(row.pid, 123);
+        assert_eq!(row.ppid, Some(45));
+        assert_eq!(row.cpu_percent, Some(12.5));
+        assert_eq!(row.rss_bytes, Some(2048 * 1024));
+        assert_eq!(row.command.as_deref(), Some("/bin/bash -lc menu"));
     }
 }

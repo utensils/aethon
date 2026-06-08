@@ -315,7 +315,13 @@ export function TerminalPanel({
             key={s.id}
             id={s.id}
             label={s.label || `Shell ${i + 1}`}
-            hint={s.shellState === "exited" ? "exited" : undefined}
+            hint={
+              s.shellState === "starting"
+                ? "starting"
+                : s.shellState === "exited"
+                  ? "exited"
+                  : undefined
+            }
             active={activeSubId === s.id}
             closable
             dragging={draggingSubTabId === s.id}

@@ -5,6 +5,10 @@ import type { ProjectsState } from "../../projects";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { TAB_MIRROR_KEYS } from "./constants";
 import {
+  devshellNeedsPreparation,
+  initialDevshellTerminalBuffer,
+} from "./devshellTerminal";
+import {
   cwdForNewTab,
   modelForNewProjectTab,
   sessionLabelFromMessages,
@@ -93,6 +97,12 @@ export function useNewTab(deps: NewTabDeps) {
       piDefaultModelRef.current,
       options?.model,
     );
+    const initialTerminalBuffer = inheritedCwd
+      ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
+      : "";
+    const preparingDevshell = inheritedCwd
+      ? devshellNeedsPreparation(stateRef.current, inheritedCwd)
+      : false;
     const existingSessionLabel = restoreId
       ? sessionLabelFromMessages(
           ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
@@ -107,6 +117,8 @@ export function useNewTab(deps: NewTabDeps) {
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId),
         model: inheritedModel,
+        terminalBuffer: initialTerminalBuffer,
+        waiting: preparingDevshell,
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
       };
       tabs.push(tab);
@@ -139,16 +151,57 @@ export function useNewTab(deps: NewTabDeps) {
     });
     // Clear the shared xterm so it doesn't keep showing the previous
     // tab's scrollback until the next switch / output event.
-    dispatchTerminalReplay("");
-    const opening = invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "tab_open",
-        tabId: id,
-        ...(inheritedModel ? { model: inheritedModel } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        ...(options?.restoredSession ? { restoreHistory: true } : {}),
-      }),
-    });
+    dispatchTerminalReplay(initialTerminalBuffer);
+    const opening = (async () => {
+      if (inheritedCwd) {
+        try {
+          const prepared = await invoke<{
+            state?: string;
+            kind?: string | null;
+            reason?: string | null;
+          }>("devshell_prepare_for_path", {
+            args: { cwd: inheritedCwd, includeEnv: false },
+          });
+          if (prepared?.state === "failed") {
+            appendSystem(
+              `Devshell prepare failed for ${inheritedCwd}${
+                prepared.reason ? `: ${prepared.reason}` : ""
+              }. Opening tab with the host environment.`,
+            );
+          }
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          appendSystem(
+            `Devshell prepare failed for ${inheritedCwd}${
+              reason ? `: ${reason}` : ""
+            }. Opening tab with the host environment.`,
+          );
+        } finally {
+          setState((prev) => {
+            const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
+              tab.id === id && tab.waiting === true
+                ? { ...tab, waiting: false }
+                : tab,
+            );
+            const activeTabId = prev.activeTabId;
+            return {
+              ...prev,
+              tabs,
+              ...(activeTabId === id ? { waiting: false } : {}),
+            };
+          });
+        }
+      }
+      return await invoke("agent_command", {
+        payload: JSON.stringify({
+          type: "tab_open",
+          tabId: id,
+          ...(inheritedModel ? { model: inheritedModel } : {}),
+          ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+          ...(options?.restoredSession ? { restoreHistory: true } : {}),
+        }),
+      });
+    })();
     pendingTabOpens.current.set(id, opening);
     opening
       .catch((err) => {

@@ -11,7 +11,6 @@ import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useHostInfo } from "./hooks/useHostInfo";
 import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
-import { activeCwd as projectsActiveCwd, type ProjectsState } from "./projects";
 import { useProjects } from "./hooks/useProjects";
 import { useAgentWorkerReconcile } from "./hooks/useAgentWorkerReconcile";
 import { useAgentActivityHydration } from "./hooks/useAgentActivityHydration";
@@ -57,6 +56,7 @@ import { useAppBridgeMessages } from "./hooks/useAppBridgeMessages";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
+import { activeWorkspaceCwd } from "./utils/activeWorkspaceRoot";
 import pkg from "../package.json" with { type: "json" };
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
@@ -198,15 +198,19 @@ export default function App() {
   // from Tauri events; the active host is a user-driven selection.
   const hostInfo = useHostInfo();
 
+  // Active workspace root. Root derivation mirrors the file tree
+  // (file-tree.tsx): the active worktree path when one is selected, else the
+  // active project's path, else the active editor tab's root — so devshell,
+  // VCS, and tree decoration all point at the same cwd.
+  const activeWorkspaceRoot = activeWorkspaceCwd(state);
+
   // Devshell badge wiring. Track the current project root; the hook
   // hydrates the chip from the Rust cache on switch and stays in
   // sync via the Tauri `devshell-*` events. Events are also
   // forwarded into the agent so the bash-tool spawnHook's cache
   // stays warm without polling.
-  const projectsSlice = state.projects as ProjectsState | undefined;
-  const devshellActiveRoot = projectsSlice ? projectsActiveCwd(projectsSlice) : null;
   useDevshell({
-    activeRoot: devshellActiveRoot,
+    activeRoot: activeWorkspaceRoot,
     setDevshellEntry: (root, patch) => {
       setState((s) => {
         const prev = (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
@@ -237,42 +241,11 @@ export default function App() {
   // VCS surface wiring. Polls working-tree changes + PR + CI status for the
   // active project/worktree root into the `/vcs` slice, consumed by the
   // header `vcs-status` cluster and the `source-control-panel` above the
-  // file tree. Root derivation mirrors the file tree (file-tree.tsx): the
-  // active worktree path when one is selected, else the active project's
-  // path, else the active editor tab's root — so when an editor is open on
-  // a git repo with no project selected, the VCS surface tracks the same
-  // root the tree is decorating. The file tree's final `~/.aethon` fallback
-  // is intentionally omitted: it is never a git repo, so `/vcs` would
-  // collapse anyway, and replicating the async home-dir fetch here is noise.
-  // (devshellActiveRoot reads a different state shape and can lag.)
-  const vcsActiveRoot = (() => {
-    const wtId = (state.activeWorktreeId as string | null) ?? null;
-    if (wtId) {
-      const projs =
-        ((state.sidebar as { projects?: Array<{ worktrees?: Array<{ id: string; path?: string }> }> } | undefined)
-          ?.projects) ?? [];
-      for (const p of projs) {
-        const wt = p.worktrees?.find((w) => w.id === wtId);
-        if (wt?.path) return wt.path;
-      }
-    }
-    const projectPath = (state.project as { path?: string } | null)?.path;
-    if (projectPath) return projectPath;
-    const tabs =
-      (state.tabs as
-        | Array<{ id: string; kind?: string; editor?: { rootPath?: string } }>
-        | undefined) ?? [];
-    const activeTabId = state.activeTabId as string | undefined;
-    const activeTab = activeTabId
-      ? tabs.find((t) => t.id === activeTabId)
-      : undefined;
-    if (activeTab?.kind === "editor" && activeTab.editor?.rootPath) {
-      return activeTab.editor.rootPath;
-    }
-    return null;
-  })();
-  useVcsStatus({ activeRoot: vcsActiveRoot, setState });
-  useGitWatch(vcsActiveRoot);
+  // file tree. The file tree's final `~/.aethon` fallback is intentionally
+  // omitted: it is never a git repo, so `/vcs` would collapse anyway, and
+  // replicating the async home-dir fetch here is noise.
+  useVcsStatus({ activeRoot: activeWorkspaceRoot, setState });
+  useGitWatch(activeWorkspaceRoot);
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the

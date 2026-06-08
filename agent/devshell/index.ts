@@ -5,11 +5,13 @@
 
 export { buildDevshellSpawnHook } from "./spawnHook";
 export {
+  ensurePrepared,
   ensureFetched,
   getCachedEnv,
   maybeWarnColdRun,
   onDevshellEvent,
   refresh,
+  seedPreparedEnv,
   _resetForTests,
 } from "./client";
 export type { DevshellClientDeps } from "./client";

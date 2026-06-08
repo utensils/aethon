@@ -18,8 +18,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, State};
+use tokio::time::sleep;
 
+use super::sidecar::project_root;
 use super::spawn::ensure_agent_spawned;
+use crate::env;
 
 pub(crate) const GLOBAL_AGENT_KEY: &str = "__global__";
 
@@ -34,6 +37,7 @@ pub(crate) struct WorkerMeta {
     pub(crate) spawned_at: Instant,
     pub(crate) last_activity: Instant,
     pub(crate) prompt_in_flight: bool,
+    pub(crate) bridge_ready: bool,
 }
 
 pub(crate) struct AgentProcesses {
@@ -81,6 +85,63 @@ pub(crate) fn touch_worker_activity(
             entry.prompt_in_flight = flag;
         }
     }
+}
+
+pub(crate) fn mark_worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) {
+    if let Ok(mut map) = meta.lock()
+        && let Some(entry) = map.get_mut(key)
+    {
+        entry.last_activity = Instant::now();
+        entry.bridge_ready = true;
+    }
+}
+
+pub(crate) fn clear_worker_meta_for_pid(
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    key: &str,
+    pid: u32,
+) {
+    if let Ok(mut map) = meta.lock() {
+        let should_remove = map.get(key).is_some_and(|entry| entry.pid == pid);
+        if should_remove {
+            map.remove(key);
+        }
+    }
+}
+
+fn worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) -> bool {
+    meta.lock()
+        .ok()
+        .and_then(|map| map.get(key).map(|entry| entry.bridge_ready))
+        .unwrap_or(false)
+}
+
+async fn wait_for_worker_ready(
+    child: &Arc<Mutex<Child>>,
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    key: &str,
+    timeout: Duration,
+) -> Result<(), String> {
+    if key == GLOBAL_AGENT_KEY || worker_ready(meta, key) {
+        return Ok(());
+    }
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if worker_ready(meta, key) {
+            return Ok(());
+        }
+        if let Some(status) = child
+            .lock()
+            .ok()
+            .and_then(|mut child| child.try_wait().ok().flatten())
+        {
+            return Err(format!("agent worker exited before ready: {status:?}"));
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+    Err(format!(
+        "agent worker did not become ready within {timeout:?}"
+    ))
 }
 
 /// Should this worker be retired by the idle sweep? Pure so the policy is
@@ -157,7 +218,7 @@ pub(crate) fn tab_agent_key(tab_id: &str) -> String {
     format!("tab:{tab_id}")
 }
 
-pub(crate) fn write_agent_payload(
+pub(crate) async fn write_agent_payload(
     state: &State<'_, AgentProcesses>,
     app: &AppHandle,
     key: String,
@@ -178,7 +239,11 @@ pub(crate) fn write_agent_payload(
         guard.get(&key).cloned().ok_or("agent not running")?
     };
 
-    let prompt_flag = payload_starts_prompt(&payload).then_some(true);
+    let prompt_starts = payload_starts_prompt(&payload);
+    if prompt_starts {
+        wait_for_worker_ready(&child, &state.meta, &key, Duration::from_secs(20)).await?;
+    }
+    let prompt_flag = prompt_starts.then_some(true);
 
     {
         let mut child = child.lock().map_err(|e| e.to_string())?;
@@ -230,6 +295,99 @@ pub(crate) fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> 
     let _ = child.kill();
     let _ = child.wait();
     Ok(())
+}
+
+pub(crate) fn shutdown_all_agents(state: &AgentProcesses, reason: &str) {
+    let children: Vec<_> = match state.children.lock() {
+        Ok(mut guard) => guard.drain().collect(),
+        Err(e) => {
+            tracing::warn!(target: "aethon::agent", "shutdown: children lock: {e}");
+            Vec::new()
+        }
+    };
+    if children.is_empty() {
+        return;
+    }
+    if let Ok(mut exits) = state.intentional_exits.lock() {
+        for (key, _) in &children {
+            exits.insert(key.clone());
+        }
+    }
+    for (key, child) in children {
+        let Ok(mut child) = child.lock() else {
+            continue;
+        };
+        let pid = child.id();
+        tracing::info!(target: "aethon::agent", key = key, "shutdown: killing pid={pid}; reason={reason}");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    if let Ok(mut routes) = state.mutation_routes.lock() {
+        routes.clear();
+    }
+    if let Ok(mut meta) = state.meta.lock() {
+        meta.clear();
+    }
+}
+
+pub(crate) fn cleanup_orphaned_dev_agents() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let marker = project_root()
+        .join("agent")
+        .join("main.ts")
+        .to_string_lossy()
+        .to_string();
+    let output = match env::command("ps")
+        .args(["-axo", "pid=,ppid=,command="])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            tracing::warn!(
+                target: "aethon::agent",
+                "orphan cleanup ps exited with status {}",
+                output.status
+            );
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(target: "aethon::agent", "orphan cleanup ps failed: {e}");
+            return;
+        }
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let Some((pid, ppid, command)) = parse_ps_process_line(line) else {
+            continue;
+        };
+        if ppid != 1 || !command.contains(&marker) {
+            continue;
+        }
+        tracing::warn!(
+            target: "aethon::agent",
+            "terminating orphaned dev agent pid={pid}"
+        );
+        if let Err(e) = env::command("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()
+        {
+            tracing::warn!(target: "aethon::agent", "orphan cleanup kill pid={pid}: {e}");
+        }
+    }
+}
+
+fn parse_ps_process_line(line: &str) -> Option<(u32, u32, &str)> {
+    let trimmed = line.trim_start();
+    let (pid_s, rest) = trimmed.split_once(char::is_whitespace)?;
+    let rest = rest.trim_start();
+    let (ppid_s, command) = rest.split_once(char::is_whitespace)?;
+    Some((
+        pid_s.parse().ok()?,
+        ppid_s.parse().ok()?,
+        command.trim_start(),
+    ))
 }
 
 fn route_payload_key_without_mutation(payload: &serde_json::Value) -> String {
@@ -288,6 +446,7 @@ mod tests {
             spawned_at: spawned,
             last_activity: spawned,
             prompt_in_flight: false,
+            bridge_ready: true,
         }
     }
 
@@ -300,6 +459,7 @@ mod tests {
             spawned_at: last,
             last_activity: last,
             prompt_in_flight,
+            bridge_ready: true,
         }
     }
 
@@ -477,6 +637,7 @@ mod tests {
                 spawned_at: stale,
                 last_activity: stale,
                 prompt_in_flight: true,
+                bridge_ready: true,
             },
         );
         Arc::new(Mutex::new(map))

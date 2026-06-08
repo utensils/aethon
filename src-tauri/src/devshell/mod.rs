@@ -10,7 +10,7 @@
 //! - [`detect`] — pure: which kind of devshell does this root have?
 //!   No subprocesses; no I/O beyond reading the marker files.
 //! - [`resolve`] — runs the kind-specific resolver command
-//!   (`nix print-dev-env --json`, `direnv exec env -0`, etc.) and
+//!   (`nix develop --command env -0`, `direnv exec env -0`, etc.) and
 //!   parses the env output into a `BTreeMap`.
 //! - [`cache`] — wraps both behind a non-blocking state machine and
 //!   the on-disk snapshot store. Callers always see `Idle | Resolving
@@ -27,4 +27,4 @@ pub mod resolve;
 pub use cache::{
     AppEmitter, DevshellCache, DevshellEmitter, EnvForPath, StatusSnapshot, evict_stale_snapshots,
 };
-pub use detect::{DetectMode, detect_mode};
+pub use detect::{DetectMode, detect_mode, forced_mode_mismatch};
