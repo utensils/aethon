@@ -418,7 +418,6 @@ describe("useChat setModel", () => {
     expect(tab.messages.some((m) => m.text === "after this")).toBe(false);
   });
 
-
   it("holds attachments with queued normal messages while the prompt is busy", async () => {
     const attachment = {
       id: "img-queued",
@@ -484,6 +483,12 @@ describe("useChat setModel", () => {
             alive: true,
             prompt_in_flight: false,
           },
+          {
+            key: "tab:tab-2",
+            tab_id: "tab-2",
+            alive: true,
+            prompt_in_flight: false,
+          },
         ]);
       }
       return Promise.resolve(undefined);
@@ -509,11 +514,36 @@ describe("useChat setModel", () => {
     const { ctx, stateRef } = buildContext({
       status: "thinking…",
       waiting: true,
+      agentRunningTabs: { "tab-1": true, "tab-2": true },
       tabs: [
         {
           ...makeEmptyTab("tab-1", "Tab 1"),
           waiting: true,
           messages: [runningTool],
+        },
+        {
+          ...makeEmptyTab("tab-2", "Tab 2"),
+          waiting: true,
+          messages: [
+            {
+              ...runningTool,
+              id: "tool-message-2",
+              a2ui: {
+                components: [
+                  {
+                    id: "restored-tool-call_2",
+                    type: "tool-card",
+                    props: {
+                      title: "bash",
+                      description: "pnpm test",
+                      startedAt: 1_000,
+                    },
+                    children: [],
+                  },
+                ],
+              },
+            },
+          ],
         },
       ],
     });
@@ -538,6 +568,12 @@ describe("useChat setModel", () => {
       role: "system",
       text: "Agent stopped.",
     });
+    expect(stateRef.current.agentRunningTabs).toEqual({ "tab-2": true });
+    const concurrentTab = (stateRef.current.tabs as Tab[])[1];
+    const concurrentToolCard = concurrentTab.messages[0].a2ui?.components?.[0];
+    expect(concurrentTab.waiting).toBe(true);
+    expect(concurrentToolCard?.props?.status).toBeUndefined();
+    expect(concurrentToolCard?.props?.endedAt).toBeUndefined();
     expect(ctx.persistLocalChatMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ role: "system", text: "Agent stopped." }),
       expect.any(String),

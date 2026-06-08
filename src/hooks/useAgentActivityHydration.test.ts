@@ -203,7 +203,7 @@ describe("hydrateAgentActivityState", () => {
     expect(toolCard?.props?.status).toBeUndefined();
   });
 
-  it("marks stale running tool cards stopped when diagnostics only show unrelated idle workers", () => {
+  it("keeps a running tab alive when diagnostics only show unrelated idle workers", () => {
     vi.useFakeTimers();
     vi.setSystemTime(123_456);
     const waitingTab = {
@@ -249,16 +249,15 @@ describe("hydrateAgentActivityState", () => {
       ],
     );
 
-    expect(next.status).toBe("ready");
+    expect(next.status).toBe("thinking…");
+    expect(next.agentRunningTabs).toMatchObject({ "tab-a": true });
     const toolCard = ((next.tabs as (typeof waitingTab)[])[0].messages[0].a2ui
       ?.components?.[0] ?? {}) as A2UIComponent;
-    expect(toolCard.props).toMatchObject({
-      status: "cancelled",
-      endedAt: 123_456,
-    });
+    expect(toolCard.props?.status).toBeUndefined();
+    expect(toolCard.props?.endedAt).toBeUndefined();
   });
 
-  it("marks stale running tool cards stopped when diagnostics show no live prompt", () => {
+  it("does not stop a visible running tool card from a negative live diagnostic", () => {
     vi.useFakeTimers();
     vi.setSystemTime(123_456);
     const waitingTab = {
@@ -302,7 +301,8 @@ describe("hydrateAgentActivityState", () => {
       ],
     );
 
-    expect(next.status).toBe("ready");
+    expect(next.status).toBe("thinking…");
+    expect((next.tabs as (typeof waitingTab)[])[0].waiting).toBe(true);
     const components = (next.tabs as (typeof waitingTab)[])[0].messages[0].a2ui
       ?.components as A2UIComponent[] | undefined;
     const toolCard = components?.[0];
@@ -310,13 +310,168 @@ describe("hydrateAgentActivityState", () => {
     if (!toolCard) {
       throw new Error("expected restored tool card to be preserved");
     }
-    expect(toolCard?.props).toMatchObject({
+    expect(toolCard?.props?.status).toBeUndefined();
+    expect(toolCard?.props?.endedAt).toBeUndefined();
+    expect(toolCard.children?.[0]).toBeUndefined();
+  });
+
+  it("can stop running tool cards when an explicit stop flow trusts diagnostics", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(123_456);
+    const waitingTab = {
+      ...makeEmptyTab("tab-a", "A"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-1-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "sleep 60",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const next = hydrateAgentActivityState(
+      {
+        activeTabId: "tab-a",
+        waiting: true,
+        status: "stopping…",
+        agentRunningTabs: { "tab-a": true },
+        tabs: [waitingTab],
+      },
+      [
+        {
+          key: "tab:tab-a",
+          tab_id: "tab-a",
+          alive: true,
+          prompt_in_flight: false,
+        },
+      ],
+      {
+        trustNegativeDiagnosticsForRunningTabs: true,
+        closeStaleToolCards: true,
+      },
+    );
+
+    expect(next.status).toBe("ready");
+    expect(next.agentRunningTabs).toEqual({});
+    const toolCard = ((next.tabs as (typeof waitingTab)[])[0].messages[0].a2ui
+      ?.components?.[0] ?? {}) as A2UIComponent;
+    expect(toolCard.props).toMatchObject({
       status: "cancelled",
       endedAt: 123_456,
     });
-    expect(toolCard.children?.[0].props?.content).toContain(
-      "No live prompt is running",
+  });
+
+  it("scopes explicit stop diagnostics to one tab without cancelling concurrent turns", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(123_456);
+    const stoppedTab = {
+      ...makeEmptyTab("tab-a", "A"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message-a",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-a-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "sleep 60",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const concurrentTab = {
+      ...makeEmptyTab("tab-b", "B"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message-b",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-b-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "pnpm test",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const next = hydrateAgentActivityState(
+      {
+        activeTabId: "tab-a",
+        waiting: true,
+        status: "stopping…",
+        agentRunningTabs: { "tab-a": true, "tab-b": true },
+        tabs: [stoppedTab, concurrentTab],
+      },
+      [
+        {
+          key: "tab:tab-a",
+          tab_id: "tab-a",
+          alive: true,
+          prompt_in_flight: false,
+        },
+        {
+          key: "tab:tab-b",
+          tab_id: "tab-b",
+          alive: true,
+          prompt_in_flight: false,
+        },
+      ],
+      {
+        trustNegativeDiagnosticsForTabIds: new Set(["tab-a"]),
+        closeStaleToolCardsForTabIds: new Set(["tab-a"]),
+      },
     );
+
+    expect(next.agentRunningTabs).toEqual({ "tab-b": true });
+    const [nextStoppedTab, nextConcurrentTab] = next.tabs as [
+      typeof stoppedTab,
+      typeof concurrentTab,
+    ];
+    const stoppedToolCard = nextStoppedTab.messages[0].a2ui
+      ?.components?.[0] as A2UIComponent | undefined;
+    const concurrentToolCard = nextConcurrentTab.messages[0].a2ui
+      ?.components?.[0] as A2UIComponent | undefined;
+    expect(nextStoppedTab.waiting).toBe(false);
+    expect(stoppedToolCard?.props).toMatchObject({
+      status: "cancelled",
+      endedAt: 123_456,
+    });
+    expect(nextConcurrentTab.waiting).toBe(true);
+    expect(concurrentToolCard?.props?.status).toBeUndefined();
+    expect(concurrentToolCard?.props?.endedAt).toBeUndefined();
   });
 
   it("clears stale restored waiting state when there are no live diagnostics", () => {

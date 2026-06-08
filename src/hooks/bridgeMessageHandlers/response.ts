@@ -23,5 +23,12 @@ export const handleResponse: BridgeMessageHandler = (data, ctx) => {
     if (ctx.stateRef.current.activeTabId === tabId) {
       ctx.setStatusFlags({ status: "ready" });
     }
+    ctx.setState((prev) => {
+      const running = prev.agentRunningTabs as Record<string, true> | undefined;
+      if (!running || !running[tabId]) return prev;
+      const next = { ...running };
+      delete next[tabId];
+      return { ...prev, agentRunningTabs: next };
+    });
   }
 };

@@ -55,11 +55,7 @@ describe("useDerivedRenderState", () => {
         },
       ],
     });
-    expect(buildSidebarHistory).toHaveBeenCalledWith(
-      [active],
-      "tab-1",
-      [],
-    );
+    expect(buildSidebarHistory).toHaveBeenCalledWith([active], "tab-1", []);
   });
 
   it("keeps the overview visible when only shell tabs exist", () => {
@@ -274,10 +270,10 @@ describe("useDerivedRenderState", () => {
     expect(wtMain && "agent" in wtMain).toBe(false);
   });
 
-  it("reconciles the running set against active tabs' in-flight state", () => {
-    // Stale running entry for an ACTIVE tab whose turn already ended (crash /
-    // error cleared `waiting` but not the running set) must read as idle, not
-    // running — the active tab's in-flight state is authoritative.
+  it("keeps sidebar activity running until a terminal turn event clears it", () => {
+    // `waiting` can briefly drift false while the agent is still streaming
+    // tool output. The running set owns lifecycle until response_end,
+    // explicit stop, or crash removes the tab id.
     const idleActive = {
       ...makeEmptyTab("m", "m", "p1", "agent"),
       cwd: "/repo/app",
@@ -288,7 +284,7 @@ describe("useDerivedRenderState", () => {
         state: {
           tabs: [idleActive],
           activeTabId: "m",
-          agentRunningTabs: { m: true }, // stale — turn already ended
+          agentRunningTabs: { m: true },
           sidebar: {
             projects: [
               {
@@ -307,7 +303,7 @@ describe("useDerivedRenderState", () => {
         projects: { agent: { status: string } }[];
       }
     ).projects;
-    expect(projects[0].agent.status).toBe("idle-with-session");
+    expect(projects[0].agent.status).toBe("running");
   });
 
   it("keeps sidebar activity running while a visible tool-card is still live", () => {
@@ -352,7 +348,10 @@ describe("useDerivedRenderState", () => {
     );
     const projects = (
       result.current.renderState.sidebar as {
-        projects: { agent: { status: string }; agentRollup: { status: string } }[];
+        projects: {
+          agent: { status: string };
+          agentRollup: { status: string };
+        }[];
       }
     ).projects;
     expect(projects[0].agent.status).toBe("running");

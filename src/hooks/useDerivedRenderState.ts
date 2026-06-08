@@ -1,9 +1,5 @@
 import { useMemo } from "react";
-import {
-  activeTabKind,
-  OVERVIEW_TAB_ID,
-  type Tab,
-} from "../types/tab";
+import { activeTabKind, OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 import type { UseHostInfo } from "./useHostInfo";
 import { attachAgentActivity } from "./projectOps/agentActivity";
 import { isAgentTabInFlight } from "../utils/agentBusy";
@@ -67,8 +63,7 @@ export function useDerivedRenderState({
       (t) => t.kind === "agent" || t.kind === "editor",
     );
     const activeKind = activeTabKind(tabs, activeTabId);
-    const overviewActive =
-      activeKind === null || activeKind === "shell";
+    const overviewActive = activeKind === null || activeKind === "shell";
     const landing = state.landing as { kind?: string } | null | undefined;
     const landingVisible = !!landing && landing.kind === "worktree";
     // The overview owns the canvas when there are no session tabs *or*
@@ -165,16 +160,14 @@ export function useDerivedRenderState({
         (state.agentRunningTabs as Record<string, unknown> | undefined) ?? {},
       ),
     );
-    // The active workspace's tabs carry the freshest liveness signals:
-    // `waiting` plus any visible running tool-card. Reconcile active tabs
-    // here so stale running-set entries do not keep ended/crashed turns orange,
-    // while a waiting drift cannot hide a command that is still visibly live.
-    // Backgrounded tabs (frozen `waiting` and messages) keep relying on the
-    // bucket-independent running set.
+    // The running set is the authoritative cross-workspace turn lifecycle:
+    // prompt_started adds, response_end / explicit stop / crash removes. The
+    // active tab can still promote itself when a visible tool card is live, but
+    // render derivation must not demote a running id just because `waiting`
+    // briefly drifted false before response_end.
     for (const t of tabs) {
       if (t.kind !== "agent") continue;
       if (isAgentTabInFlight(t)) runningIds.add(t.id);
-      else runningIds.delete(t.id);
     }
     const sidebarProjectsWithAgent = Array.isArray(sidebar.projects)
       ? attachAgentActivity(

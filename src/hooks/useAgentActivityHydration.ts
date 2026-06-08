@@ -17,6 +17,16 @@ export interface AgentDiagnosticRow {
   promptInFlight?: boolean;
 }
 
+export interface HydrateAgentActivityOptions {
+  /** Live boot/retry hydration is conservative: diagnostics can prove a turn
+   *  is running, but a transient negative row must not cancel work that may
+   *  resume. Explicit stop/crash flows opt into trusting negatives. */
+  trustNegativeDiagnosticsForRunningTabs?: boolean;
+  trustNegativeDiagnosticsForTabIds?: ReadonlySet<string>;
+  closeStaleToolCards?: boolean;
+  closeStaleToolCardsForTabIds?: ReadonlySet<string>;
+}
+
 function diagnosticTabId(row: AgentDiagnosticRow): string | null {
   if (typeof row.tab_id === "string" && row.tab_id.length > 0) {
     return row.tab_id;
@@ -36,6 +46,7 @@ function diagnosticPromptInFlight(row: AgentDiagnosticRow): boolean {
 export function hydrateAgentActivityState(
   state: Record<string, unknown>,
   diagnostics: AgentDiagnosticRow[],
+  options: HydrateAgentActivityOptions = {},
 ): Record<string, unknown> {
   const tabs = (state.tabs as Tab[] | undefined) ?? [];
   if (tabs.length === 0) return state;
@@ -52,26 +63,46 @@ export function hydrateAgentActivityState(
   }
   const runningTabs =
     (state.agentRunningTabs as Record<string, true> | undefined) ?? {};
-  const anyPromptInFlight = [...promptByTabId.values()].some(Boolean);
+  let nextRunningTabs = runningTabs;
+  for (const [tabId, promptInFlight] of promptByTabId) {
+    if (!promptInFlight) {
+      if (
+        (options.trustNegativeDiagnosticsForRunningTabs === true ||
+          options.trustNegativeDiagnosticsForTabIds?.has(tabId) === true) &&
+        nextRunningTabs[tabId] === true
+      ) {
+        nextRunningTabs =
+          nextRunningTabs === runningTabs
+            ? { ...runningTabs }
+            : nextRunningTabs;
+        delete nextRunningTabs[tabId];
+      }
+      continue;
+    }
+    if (nextRunningTabs[tabId]) continue;
+    nextRunningTabs =
+      nextRunningTabs === runningTabs ? { ...runningTabs } : nextRunningTabs;
+    nextRunningTabs[tabId] = true;
+  }
   let tabChanged = false;
   const endedAt = Date.now();
   const nextTabs = tabs.map((tab) => {
     if ((tab.kind ?? "agent") !== "agent") return tab;
     const hasDiagnostic = promptByTabId.has(tab.id);
     const runningTool = hasRunningToolCard(tab.messages);
-    const diagnosticsAbsent = diagnostics.length === 0;
-    const preserveUnknownBusyState =
-      !hasDiagnostic &&
-      !diagnosticsAbsent &&
-      anyPromptInFlight &&
-      runningTabs[tab.id] === true &&
-      (tab.waiting || runningTool);
-    const nextWaiting = preserveUnknownBusyState
-      ? true
-      : hasDiagnostic
-        ? promptByTabId.get(tab.id) === true
-        : false;
-    const shouldStopTools = !nextWaiting;
+    const diagnosticRunning = hasDiagnostic
+      ? promptByTabId.get(tab.id) === true
+      : false;
+    const runningSetBusy =
+      nextRunningTabs[tab.id] === true &&
+      options.trustNegativeDiagnosticsForRunningTabs !== true &&
+      options.trustNegativeDiagnosticsForTabIds?.has(tab.id) !== true;
+    const closeToolsForTab =
+      options.closeStaleToolCards === true ||
+      options.closeStaleToolCardsForTabIds?.has(tab.id) === true;
+    const nextWaiting =
+      diagnosticRunning || runningSetBusy || (runningTool && !closeToolsForTab);
+    const shouldStopTools = closeToolsForTab && !nextWaiting && runningTool;
     const stoppedTools = shouldStopTools
       ? closeRunningToolCards(tab.messages, {
           endedAt,
@@ -89,20 +120,27 @@ export function hydrateAgentActivityState(
   const activeRecord =
     (activeTab as unknown as Record<string, unknown> | undefined) ?? {};
   const activeTurnBusy =
-    activeTab?.waiting === true || (activeTab?.queueCount ?? 0) > 0;
+    activeTab?.waiting === true ||
+    (activeTab ? nextRunningTabs[activeTab.id] === true : false) ||
+    hasRunningToolCard(activeTab?.messages) ||
+    (activeTab?.queueCount ?? 0) > 0;
   const nextStatus = activeTurnBusy ? "thinking…" : "ready";
   const statusChanged = !!activeTab && state.status !== nextStatus;
+  const runningChanged = nextRunningTabs !== runningTabs;
   const mirrorChanged =
     !!activeTab &&
     TAB_MIRROR_KEYS.some(
       (key) => state[key as string] !== activeRecord[key as string],
     );
-  if (!tabChanged && !statusChanged && !mirrorChanged) return state;
+  if (!tabChanged && !statusChanged && !runningChanged && !mirrorChanged) {
+    return state;
+  }
 
   const next: Record<string, unknown> = {
     ...state,
     ...(tabChanged ? { tabs: nextTabs } : {}),
     ...(activeTab ? { status: nextStatus } : {}),
+    ...(runningChanged ? { agentRunningTabs: nextRunningTabs } : {}),
   };
   if (activeTab) {
     for (const key of TAB_MIRROR_KEYS) {

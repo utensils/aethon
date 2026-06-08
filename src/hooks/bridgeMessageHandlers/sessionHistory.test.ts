@@ -683,6 +683,60 @@ describe("handleSessionHistory", () => {
     );
   });
 
+  it("keeps restored unfinished tool cards live while the tab is still running", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-1",
+        waiting: true,
+        status: "thinking…",
+        agentRunningTabs: { "tab-1": true },
+        tabs: [{ ...makeEmptyTab("tab-1", "Tab 1"), waiting: true }],
+      },
+    });
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "restored-tool-call_live",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "restored-tool-call_live",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    startedAt: 1_000,
+                  },
+                  children: [],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater({
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      waiting: false,
+    });
+
+    const toolCard = out.messages[0].a2ui?.components[0];
+    expect(out.waiting).toBe(true);
+    expect(toolCard?.props?.status).toBeUndefined();
+    expect(toolCard?.props?.endedAt).toBeUndefined();
+    expect(toolCard?.children?.[0]).toBeUndefined();
+    expect(mocks.setStatusFlags).not.toHaveBeenCalledWith({
+      waiting: false,
+      status: "ready",
+    });
+  });
+
   it("drops restored duplicate assistant text and completed tool cards so reloads do not look busy", () => {
     const { ctx, mocks } = buildHandlerFixture();
     handleSessionHistory(
