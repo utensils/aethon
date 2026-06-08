@@ -22,7 +22,9 @@ export interface HydrateAgentActivityOptions {
    *  is running, but a transient negative row must not cancel work that may
    *  resume. Explicit stop/crash flows opt into trusting negatives. */
   trustNegativeDiagnosticsForRunningTabs?: boolean;
+  trustNegativeDiagnosticsForTabIds?: ReadonlySet<string>;
   closeStaleToolCards?: boolean;
+  closeStaleToolCardsForTabIds?: ReadonlySet<string>;
 }
 
 function diagnosticTabId(row: AgentDiagnosticRow): string | null {
@@ -65,7 +67,8 @@ export function hydrateAgentActivityState(
   for (const [tabId, promptInFlight] of promptByTabId) {
     if (!promptInFlight) {
       if (
-        options.trustNegativeDiagnosticsForRunningTabs === true &&
+        (options.trustNegativeDiagnosticsForRunningTabs === true ||
+          options.trustNegativeDiagnosticsForTabIds?.has(tabId) === true) &&
         nextRunningTabs[tabId] === true
       ) {
         nextRunningTabs =
@@ -92,13 +95,14 @@ export function hydrateAgentActivityState(
       : false;
     const runningSetBusy =
       nextRunningTabs[tab.id] === true &&
-      options.trustNegativeDiagnosticsForRunningTabs !== true;
+      options.trustNegativeDiagnosticsForRunningTabs !== true &&
+      options.trustNegativeDiagnosticsForTabIds?.has(tab.id) !== true;
+    const closeToolsForTab =
+      options.closeStaleToolCards === true ||
+      options.closeStaleToolCardsForTabIds?.has(tab.id) === true;
     const nextWaiting =
-      diagnosticRunning ||
-      runningSetBusy ||
-      (runningTool && options.closeStaleToolCards !== true);
-    const shouldStopTools =
-      options.closeStaleToolCards === true && !nextWaiting && runningTool;
+      diagnosticRunning || runningSetBusy || (runningTool && !closeToolsForTab);
+    const shouldStopTools = closeToolsForTab && !nextWaiting && runningTool;
     const stoppedTools = shouldStopTools
       ? closeRunningToolCards(tab.messages, {
           endedAt,

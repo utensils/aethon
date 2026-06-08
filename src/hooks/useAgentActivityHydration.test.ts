@@ -375,6 +375,105 @@ describe("hydrateAgentActivityState", () => {
     });
   });
 
+  it("scopes explicit stop diagnostics to one tab without cancelling concurrent turns", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(123_456);
+    const stoppedTab = {
+      ...makeEmptyTab("tab-a", "A"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message-a",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-a-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "sleep 60",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const concurrentTab = {
+      ...makeEmptyTab("tab-b", "B"),
+      waiting: true,
+      messages: [
+        {
+          id: "tool-message-b",
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: "tool-b-call_1",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "pnpm test",
+                  startedAt: 100_000,
+                },
+                children: [],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const next = hydrateAgentActivityState(
+      {
+        activeTabId: "tab-a",
+        waiting: true,
+        status: "stopping…",
+        agentRunningTabs: { "tab-a": true, "tab-b": true },
+        tabs: [stoppedTab, concurrentTab],
+      },
+      [
+        {
+          key: "tab:tab-a",
+          tab_id: "tab-a",
+          alive: true,
+          prompt_in_flight: false,
+        },
+        {
+          key: "tab:tab-b",
+          tab_id: "tab-b",
+          alive: true,
+          prompt_in_flight: false,
+        },
+      ],
+      {
+        trustNegativeDiagnosticsForTabIds: new Set(["tab-a"]),
+        closeStaleToolCardsForTabIds: new Set(["tab-a"]),
+      },
+    );
+
+    expect(next.agentRunningTabs).toEqual({ "tab-b": true });
+    const [nextStoppedTab, nextConcurrentTab] = next.tabs as [
+      typeof stoppedTab,
+      typeof concurrentTab,
+    ];
+    const stoppedToolCard = nextStoppedTab.messages[0].a2ui
+      ?.components?.[0] as A2UIComponent | undefined;
+    const concurrentToolCard = nextConcurrentTab.messages[0].a2ui
+      ?.components?.[0] as A2UIComponent | undefined;
+    expect(nextStoppedTab.waiting).toBe(false);
+    expect(stoppedToolCard?.props).toMatchObject({
+      status: "cancelled",
+      endedAt: 123_456,
+    });
+    expect(nextConcurrentTab.waiting).toBe(true);
+    expect(concurrentToolCard?.props?.status).toBeUndefined();
+    expect(concurrentToolCard?.props?.endedAt).toBeUndefined();
+  });
+
   it("clears stale restored waiting state when there are no live diagnostics", () => {
     const waitingTab = { ...makeEmptyTab("tab-a", "A"), waiting: true };
     const next = hydrateAgentActivityState(

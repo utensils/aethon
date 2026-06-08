@@ -369,8 +369,8 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       };
       setState((prev) => {
         const hydrated = hydrateAgentActivityState(prev, diagnostics, {
-          trustNegativeDiagnosticsForRunningTabs: true,
-          closeStaleToolCards: true,
+          trustNegativeDiagnosticsForTabIds: new Set([tabId]),
+          closeStaleToolCardsForTabIds: new Set([tabId]),
         });
         const tabs = (hydrated.tabs as Tab[] | undefined) ?? [];
         const nextTabs = tabs.map((tab) =>
