@@ -10,10 +10,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { getLocalHostId } from "./hosts";
 import { readState, writeState } from "./persist";
 import {
-  type Worktree,
-  type WorktreeSortMode,
-  worktreesForPersist,
-} from "./worktrees";
+  type Workspace,
+  type WorkspaceSortMode,
+  workspacesForPersist,
+} from "./workspaces";
 
 export interface Project {
   id: string;
@@ -23,7 +23,7 @@ export interface Project {
   path: string;
   /** Epoch ms — bumped each time the project becomes active or a new tab opens in it. */
   lastUsed: number;
-  /** Per-project disclosure state in the worktree-aware sidebar. */
+  /** Per-project disclosure state in the workspace-aware sidebar. */
   uiExpanded?: boolean;
   /** Host this project lives on. Empty / missing => local. v3+ records
    *  always carry one; v2 records inherit the local host id at migration. */
@@ -32,19 +32,19 @@ export interface Project {
    *  src/projectIcons.ts on hover/intersection. */
   iconUrl?: string;
   /** Default base passed to `git worktree add -b <branch> <path> <base>`.
-   *  Missing / blank falls back to DEFAULT_WORKTREE_BASE_BRANCH. */
-  worktreeBaseBranch?: string;
-  /** Worktree ordering for this project's nested sidebar rows. */
-  worktreeSortMode?: WorktreeSortMode;
+   *  Missing / blank falls back to DEFAULT_WORKSPACE_BASE_BRANCH. */
+  workspaceBaseBranch?: string;
+  /** Workspace ordering for this project's nested sidebar rows. */
+  workspaceSortMode?: WorkspaceSortMode;
 }
 
 export interface ProjectsState {
   projects: Project[];
   activeId: string | null;
-  /** Active worktree id (or null = the project's main worktree / cwd). */
-  activeWorktreeId: string | null;
-  /** Worktrees keyed by projectId. Persisted alongside the projects array. */
-  worktreesByProject: Record<string, Worktree[]>;
+  /** Active workspace id (or null = the project's main workspace / cwd). */
+  activeWorkspaceId: string | null;
+  /** Workspaces keyed by projectId. Persisted alongside the projects array. */
+  workspacesByProject: Record<string, Workspace[]>;
   /** Active host id. Defaults to the local host id at migration time so
    *  upgraded users land on their existing project list. */
   activeHostId: string | null;
@@ -57,8 +57,13 @@ const FILE = "projects.json";
  *  (#159). The sidecar is read once on load and rewritten on save. */
 const ICONS_FILE = "project-icons.json";
 const MAX_PROJECTS = 16;
-const SCHEMA_VERSION = 4;
-export const DEFAULT_WORKTREE_BASE_BRANCH = "origin/main";
+/** v5 renames the persisted worktree-era keys to workspace terminology:
+ *  `activeWorktreeId` → `activeWorkspaceId`, `worktreesByProject` →
+ *  `workspacesByProject`, and per-project `worktreeBaseBranch` /
+ *  `worktreeSortMode` → `workspaceBaseBranch` / `workspaceSortMode`.
+ *  `migrateProjects` reads both spellings; saves write only the new ones. */
+const SCHEMA_VERSION = 5;
+export const DEFAULT_WORKSPACE_BASE_BRANCH = "origin/main";
 /** Fallback used when host_info IPC isn't reachable (tests, plain browser).
  *  Real boots resolve a stable id via `commands::host::host_info`. */
 export const FALLBACK_LOCAL_HOST_ID = "local:unknown";
@@ -75,8 +80,8 @@ export function emptyProjectsState(localHostId?: string | null): ProjectsState {
   return {
     projects: [],
     activeId: null,
-    activeWorktreeId: null,
-    worktreesByProject: {},
+    activeWorkspaceId: null,
+    workspacesByProject: {},
     activeHostId: localHostId ?? null,
   };
 }
@@ -89,11 +94,19 @@ interface PersistedV2 {
   schemaVersion?: number;
   projects?: Project[];
   activeId?: string | null;
+  activeWorkspaceId?: string | null;
+  workspacesByProject?: Record<string, Workspace[]>;
+  /** Pre-v5 spellings — read-only legacy keys. */
   activeWorktreeId?: string | null;
-  worktreesByProject?: Record<string, Worktree[]>;
+  worktreesByProject?: Record<string, Workspace[]>;
 }
 interface PersistedV3 extends PersistedV2 {
   activeHostId?: string | null;
+}
+/** Pre-v5 per-project record may carry the old field spellings. */
+interface LegacyProjectFields {
+  worktreeBaseBranch?: string;
+  worktreeSortMode?: WorkspaceSortMode;
 }
 
 /** Read the project-icon sidecar: a `{ projectId: iconUrl }` map. Returns an
@@ -168,49 +181,65 @@ export function migrateProjects(
         typeof p?.path === "string" &&
         typeof p?.label === "string",
     )
-    .map((p) => ({
-      ...p,
-      hostId: typeof p.hostId === "string" && p.hostId.length > 0 ? p.hostId : localHostId,
-      worktreeBaseBranch:
-        typeof p.worktreeBaseBranch === "string" &&
-        p.worktreeBaseBranch.trim().length > 0
-          ? p.worktreeBaseBranch.trim()
-          : undefined,
-      worktreeSortMode:
-        p.worktreeSortMode === "manual" || p.worktreeSortMode === "newest"
-          ? p.worktreeSortMode
-          : "newest",
-    }));
+    .map((p) => {
+      // Read pre-v5 spellings, then drop them so they never re-persist.
+      const {
+        worktreeBaseBranch: legacyBase,
+        worktreeSortMode: legacySort,
+        ...rest
+      } = p as Project & LegacyProjectFields;
+      const baseBranch = rest.workspaceBaseBranch ?? legacyBase;
+      const sortMode = rest.workspaceSortMode ?? legacySort;
+      return {
+        ...rest,
+        hostId:
+          typeof rest.hostId === "string" && rest.hostId.length > 0
+            ? rest.hostId
+            : localHostId,
+        workspaceBaseBranch:
+          typeof baseBranch === "string" && baseBranch.trim().length > 0
+            ? baseBranch.trim()
+            : undefined,
+        workspaceSortMode:
+          sortMode === "manual" || sortMode === "newest" ? sortMode : "newest",
+      };
+    });
   const activeId =
     typeof parsed.activeId === "string" &&
     valid.some((p) => p.id === parsed.activeId)
       ? parsed.activeId
       : null;
   const v2 = parsed as PersistedV2;
-  const worktreesByProject: Record<string, Worktree[]> = {};
-  if (v2.worktreesByProject && typeof v2.worktreesByProject === "object") {
-    for (const [pid, list] of Object.entries(v2.worktreesByProject)) {
+  // Pre-v5 files persisted these under the worktree spellings.
+  const persistedWorkspaces = v2.workspacesByProject ?? v2.worktreesByProject;
+  const workspacesByProject: Record<string, Workspace[]> = {};
+  if (persistedWorkspaces && typeof persistedWorkspaces === "object") {
+    for (const [pid, list] of Object.entries(persistedWorkspaces)) {
       if (!Array.isArray(list)) continue;
-      worktreesByProject[pid] = list.filter(
-        (w): w is Worktree =>
+      workspacesByProject[pid] = list.filter(
+        (w): w is Workspace =>
           typeof w?.id === "string" &&
           typeof w?.projectId === "string" &&
           typeof w?.path === "string",
       );
     }
   }
-  // Drop a dangling activeWorktreeId so a pruned-but-recorded worktree
+  // Drop a dangling activeWorkspaceId so a pruned-but-recorded workspace
   // doesn't freeze the landing on next boot. Symmetric with the
-  // `activeId` check above. The row itself stays in `worktreesByProject`
-  // — `removeWorktreeById` can clean it up via the orphan path.
-  const rawActiveWorktreeId =
-    typeof v2.activeWorktreeId === "string" ? v2.activeWorktreeId : null;
-  const activeWorktreeId =
-    rawActiveWorktreeId &&
-    Object.values(worktreesByProject)
+  // `activeId` check above. The row itself stays in `workspacesByProject`
+  // — `removeWorkspaceById` can clean it up via the orphan path.
+  const persistedActiveWorkspaceId =
+    v2.activeWorkspaceId ?? v2.activeWorktreeId;
+  const rawActiveWorkspaceId =
+    typeof persistedActiveWorkspaceId === "string"
+      ? persistedActiveWorkspaceId
+      : null;
+  const activeWorkspaceId =
+    rawActiveWorkspaceId &&
+    Object.values(workspacesByProject)
       .flat()
-      .some((w) => w.id === rawActiveWorktreeId)
-      ? rawActiveWorktreeId
+      .some((w) => w.id === rawActiveWorkspaceId)
+      ? rawActiveWorkspaceId
       : null;
   const v3 = parsed as PersistedV3;
   const activeHostId =
@@ -220,17 +249,17 @@ export function migrateProjects(
   return {
     projects: valid,
     activeId,
-    activeWorktreeId,
-    worktreesByProject,
+    activeWorkspaceId,
+    workspacesByProject,
     activeHostId,
   };
 }
 
 export async function saveProjects(state: ProjectsState): Promise<void> {
-  // Strip in-flight pending worktrees before serializing.
-  const worktreesByProject: Record<string, Worktree[]> = {};
-  for (const [pid, list] of Object.entries(state.worktreesByProject)) {
-    worktreesByProject[pid] = worktreesForPersist(list);
+  // Strip in-flight pending workspaces before serializing.
+  const workspacesByProject: Record<string, Workspace[]> = {};
+  for (const [pid, list] of Object.entries(state.workspacesByProject)) {
+    workspacesByProject[pid] = workspacesForPersist(list);
   }
   // Externalize icons: keep the (potentially hundreds-of-KB base64) `iconUrl`
   // out of the hot projects.json and in the sidecar instead.
@@ -241,29 +270,29 @@ export async function saveProjects(state: ProjectsState): Promise<void> {
     schemaVersion: SCHEMA_VERSION,
     projects: projectsForPersist,
     activeId: state.activeId,
-    activeWorktreeId: state.activeWorktreeId,
-    worktreesByProject,
+    activeWorkspaceId: state.activeWorkspaceId,
+    workspacesByProject,
     activeHostId: state.activeHostId,
   };
   await writeState(FILE, JSON.stringify(payload));
   await saveProjectIcons(state.projects);
 }
 
-export function setActiveWorktree(
+export function setActiveWorkspace(
   state: ProjectsState,
-  worktreeId: string | null,
+  workspaceId: string | null,
 ): ProjectsState {
-  return { ...state, activeWorktreeId: worktreeId };
+  return { ...state, activeWorkspaceId: workspaceId };
 }
 
-export function setProjectWorktrees(
+export function setProjectWorkspaces(
   state: ProjectsState,
   projectId: string,
-  worktrees: Worktree[],
+  workspaces: Workspace[],
 ): ProjectsState {
   return {
     ...state,
-    worktreesByProject: { ...state.worktreesByProject, [projectId]: worktrees },
+    workspacesByProject: { ...state.workspacesByProject, [projectId]: workspaces },
   };
 }
 
@@ -300,37 +329,37 @@ export function setProjectIconUrl(
   return changed ? { ...state, projects } : state;
 }
 
-export function setProjectWorktreeBaseBranch(
+export function setProjectWorkspaceBaseBranch(
   state: ProjectsState,
   projectId: string,
   baseBranch: string | null,
 ): ProjectsState {
   const trimmed = (baseBranch ?? "").trim();
   const nextBase =
-    trimmed.length > 0 && trimmed !== DEFAULT_WORKTREE_BASE_BRANCH
+    trimmed.length > 0 && trimmed !== DEFAULT_WORKSPACE_BASE_BRANCH
       ? trimmed
       : undefined;
   let changed = false;
   const projects = state.projects.map((p) => {
     if (p.id !== projectId) return p;
-    if (p.worktreeBaseBranch === nextBase) return p;
+    if (p.workspaceBaseBranch === nextBase) return p;
     changed = true;
-    return { ...p, worktreeBaseBranch: nextBase };
+    return { ...p, workspaceBaseBranch: nextBase };
   });
   return changed ? { ...state, projects } : state;
 }
 
-export function setProjectWorktreeSortMode(
+export function setProjectWorkspaceSortMode(
   state: ProjectsState,
   projectId: string,
-  sortMode: WorktreeSortMode,
+  sortMode: WorkspaceSortMode,
 ): ProjectsState {
   let changed = false;
   const projects = state.projects.map((p) => {
     if (p.id !== projectId) return p;
-    if (p.worktreeSortMode === sortMode) return p;
+    if (p.workspaceSortMode === sortMode) return p;
     changed = true;
-    return { ...p, worktreeSortMode: sortMode };
+    return { ...p, workspaceSortMode: sortMode };
   });
   return changed ? { ...state, projects } : state;
 }
@@ -352,7 +381,7 @@ export function upsertProject(
       ...existing,
       lastUsed: now,
       hostId: existing.hostId ?? resolvedHostId,
-      worktreeSortMode: existing.worktreeSortMode ?? "newest",
+      workspaceSortMode: existing.workspaceSortMode ?? "newest",
     };
     if (label && label !== existing.label) updated.label = label;
     const projects = [updated, ...state.projects.filter((p) => p.id !== existing.id)];
@@ -368,7 +397,7 @@ export function upsertProject(
     path,
     lastUsed: now,
     hostId: resolvedHostId,
-    worktreeSortMode: "newest",
+    workspaceSortMode: "newest",
   };
   const projects = [next, ...state.projects].slice(0, MAX_PROJECTS);
   return { state: { ...state, projects, activeId: id }, id };
@@ -384,20 +413,20 @@ export function removeProject(
   if (!removed) return { state, removed: null };
   const projects = state.projects.filter((p) => p.id !== id);
   const activeId = state.activeId === id ? null : state.activeId;
-  // Drop the project's worktrees + clear active worktree if it pointed
+  // Drop the project's workspaces + clear active workspace if it pointed
   // at one of them.
-  const { [id]: dropped, ...worktreesByProject } = state.worktreesByProject;
+  const { [id]: dropped, ...workspacesByProject } = state.workspacesByProject;
   const droppedIds = new Set((dropped ?? []).map((w) => w.id));
-  const activeWorktreeId =
-    state.activeWorktreeId && droppedIds.has(state.activeWorktreeId)
+  const activeWorkspaceId =
+    state.activeWorkspaceId && droppedIds.has(state.activeWorkspaceId)
       ? null
-      : state.activeWorktreeId;
+      : state.activeWorkspaceId;
   return {
     state: {
       projects,
       activeId,
-      activeWorktreeId,
-      worktreesByProject,
+      activeWorkspaceId,
+      workspacesByProject,
       activeHostId: state.activeHostId,
     },
     removed,
@@ -430,17 +459,17 @@ export function activeProject(state: ProjectsState): Project | null {
   return state.projects.find((p) => p.id === state.activeId) ?? null;
 }
 
-/** The effective cwd a new tab should open in: the active worktree's
+/** The effective cwd a new tab should open in: the active workspace's
  *  path when one is set, falling back to the active project's path.
  *  Used by useTabs.newTab / newShellTab and the file tree so that when
- *  the user has switched to a worktree, follow-on tabs and the files
+ *  the user has switched to a workspace, follow-on tabs and the files
  *  panel both reflect that selection. */
 export function activeCwd(state: ProjectsState): string | null {
   const project = activeProject(state);
   if (!project) return null;
-  if (state.activeWorktreeId) {
-    const list = state.worktreesByProject[project.id] ?? [];
-    const wt = list.find((w) => w.id === state.activeWorktreeId);
+  if (state.activeWorkspaceId) {
+    const list = state.workspacesByProject[project.id] ?? [];
+    const wt = list.find((w) => w.id === state.activeWorkspaceId);
     if (wt?.path) return wt.path;
   }
   return project.path;

@@ -46,7 +46,7 @@ export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   // Track the in-flight turn in a bucket-independent running set. Unlike
   // `tab.waiting` (only mirrored into `state.tabs`, i.e. the active
   // workspace), this set spans every workspace so the sidebar's
-  // agent-activity dots stay accurate for backgrounded projects/worktrees.
+  // agent-activity dots stay accurate for backgrounded projects/workspaces.
   ctx.setState((prev) => {
     const running =
       (prev.agentRunningTabs as Record<string, true> | undefined) ?? {};

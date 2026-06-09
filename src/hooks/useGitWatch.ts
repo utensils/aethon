@@ -3,8 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 /**
  * useGitWatch — owns the Rust git-state watcher lifecycle for the active
- * project/worktree root. The watcher watches the resolved git directory
- * (worktree-aware: HEAD/index plus shared refs) and emits `git-state-changed`,
+ * project/workspace root. The watcher watches the resolved git directory
+ * (workspace-aware: HEAD/index plus shared refs) and emits `git-state-changed`,
  * which `useVcsStatus` and the file tree listen for to repaint immediately
  * after any git operation — including ones run in an external terminal that
  * only touch `.git/` and so never fire the working-tree `fs-tree-changed`

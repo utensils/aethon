@@ -162,7 +162,7 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
 
     // Fetches may mutate remote-tracking refs even when one remote exits
     // nonzero. Once any fetch ran, run the existing status fan-out so every
-    // surface that reads cached git status (including duplicate worktree rows)
+    // surface that reads cached git status (including duplicate workspace rows)
     // gets refreshed from local metadata.
     if (results.some(Boolean)) {
       await refreshStatusAfterFetch();

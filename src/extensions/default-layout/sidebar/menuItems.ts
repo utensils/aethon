@@ -7,8 +7,8 @@
 
 import type { ContextMenuItem } from "../../../components/primitives/context-menu";
 import type { SidebarItem } from "../../../types/a2ui";
-import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
-import type { WorktreeSidebarItem } from "./worktree-row";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
+import type { WorkspaceSidebarItem } from "./workspace-row";
 
 export interface SidebarContextMenuState {
   x: number;
@@ -17,14 +17,14 @@ export interface SidebarContextMenuState {
   itemId: string;
   label: string;
   // Discriminator so the rendered menu shows the right action. "project"
-  // prompts for project actions; "worktree" for nested worktree rows;
+  // prompts for project actions; "workspace" for nested workspace rows;
   // "session" for chat-history rows; "extension-*" for the extension
-  // toggle. Set by openItemContextMenu / openWorktreeContextMenu based
+  // toggle. Set by openItemContextMenu / openWorkspaceContextMenu based
   // on the section + item id.
   kind:
     | "project"
     | "project-base"
-    | "worktree"
+    | "workspace"
     | "session"
     | "extension-enabled"
     | "extension-disabled";
@@ -32,22 +32,22 @@ export interface SidebarContextMenuState {
    *  minus the `ext:` / `ext-failed:` / `ext-disabled:` prefix). */
   extensionName?: string;
   baseBranch?: string;
-  hasExtraWorktrees?: boolean;
-  /** For `worktree` kind: the full worktree shape so menu actions can
+  hasExtraWorkspaces?: boolean;
+  /** For `workspace` kind: the full workspace shape so menu actions can
    *  surface path + branch + main-flag context without re-resolving. */
-  worktree?: WorktreeSidebarItem;
+  workspace?: WorkspaceSidebarItem;
 }
 
-export function canRenameWorktree(
-  item: WorktreeSidebarItem | undefined,
+export function canRenameWorkspace(
+  item: WorkspaceSidebarItem | undefined,
 ): boolean {
   if (!item) return false;
   const pending = item.pendingState;
   return !pending || pending === "succeeded";
 }
 
-export function canRemoveWorktree(
-  item: WorktreeSidebarItem | undefined,
+export function canRemoveWorkspace(
+  item: WorkspaceSidebarItem | undefined,
 ): boolean {
   if (!item || item.isMain) return false;
   const pending = item.pendingState;
@@ -57,20 +57,20 @@ export function canRemoveWorktree(
 export interface SidebarMenuHandlers {
   // Project actions — clicking a row switches; menu only surfaces
   // verbs that aren't reachable from a plain click.
-  createWorktreeForContextProject: () => void;
-  editContextProjectWorktreeBase: () => void;
-  submitContextProjectWorktreeBase: (baseBranch: string) => void;
-  sortContextProjectWorktreesNewest: () => void;
+  createWorkspaceForContextProject: () => void;
+  editContextProjectWorkspaceBase: () => void;
+  submitContextProjectWorkspaceBase: (baseBranch: string) => void;
+  sortContextProjectWorkspacesNewest: () => void;
   openContextProjectInFinder: () => void;
   copyContextProjectPath: () => void;
   renameContextProject: () => void;
   removeContextProject: () => void;
-  // Worktree actions — same convention as projects: row click handles
-  // activation/landing; menu omits a redundant "Switch to worktree".
-  openContextWorktreeInFinder: () => void;
-  copyContextWorktreePath: () => void;
-  renameContextWorktree: () => void;
-  removeContextWorktree: () => void;
+  // Workspace actions — same convention as projects: row click handles
+  // activation/landing; menu omits a redundant "Switch to workspace".
+  openContextWorkspaceInFinder: () => void;
+  copyContextWorkspacePath: () => void;
+  renameContextWorkspace: () => void;
+  removeContextWorkspace: () => void;
   // Session + extension (unchanged)
   renameContextSession: () => void;
   deleteContextSession: () => void;
@@ -115,21 +115,21 @@ export function buildSidebarMenuItems(
     case "project":
       return [
         {
-          id: "create-worktree",
-          label: "Create worktree…",
-          onSelect: h.createWorktreeForContextProject,
+          id: "create-workspace",
+          label: "Create workspace…",
+          onSelect: h.createWorkspaceForContextProject,
         },
         {
-          id: "set-worktree-base",
-          label: "Set worktree base…",
+          id: "set-workspace-base",
+          label: "Set workspace base…",
           keepOpenOnSelect: true,
-          onSelect: h.editContextProjectWorktreeBase,
+          onSelect: h.editContextProjectWorkspaceBase,
         },
         {
-          id: "sort-worktrees",
-          label: "Sort worktrees newest first",
-          disabled: !state.hasExtraWorktrees,
-          onSelect: h.sortContextProjectWorktreesNewest,
+          id: "sort-workspaces",
+          label: "Sort workspaces newest first",
+          disabled: !state.hasExtraWorkspaces,
+          onSelect: h.sortContextProjectWorkspacesNewest,
         },
         { type: "separator" },
         {
@@ -158,51 +158,51 @@ export function buildSidebarMenuItems(
       ];
     case "project-base":
       return [
-        { type: "header", label: "Worktree base" },
+        { type: "header", label: "Workspace base" },
         {
           type: "input",
-          id: "worktree-base-input",
+          id: "workspace-base-input",
           label: "Base branch",
-          defaultValue: state.baseBranch ?? DEFAULT_WORKTREE_BASE_BRANCH,
-          placeholder: DEFAULT_WORKTREE_BASE_BRANCH,
+          defaultValue: state.baseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH,
+          placeholder: DEFAULT_WORKSPACE_BASE_BRANCH,
           submitLabel: "Save",
-          onSubmit: h.submitContextProjectWorktreeBase,
+          onSubmit: h.submitContextProjectWorkspaceBase,
         },
         {
           type: "note",
           label: "Blank or origin/main uses the default",
         },
       ];
-    case "worktree": {
-      const isMain = state.worktree?.isMain === true;
-      const canRemove = canRemoveWorktree(state.worktree);
+    case "workspace": {
+      const isMain = state.workspace?.isMain === true;
+      const canRemove = canRemoveWorkspace(state.workspace);
       return [
         {
           id: "open-finder",
           label: "Open in Finder",
-          onSelect: h.openContextWorktreeInFinder,
+          onSelect: h.openContextWorkspaceInFinder,
         },
         {
           id: "copy-path",
           label: "Copy path",
-          onSelect: h.copyContextWorktreePath,
+          onSelect: h.copyContextWorkspacePath,
         },
         {
-          id: "rename-worktree",
-          label: "Rename worktree…",
-          disabled: !canRenameWorktree(state.worktree),
-          onSelect: h.renameContextWorktree,
+          id: "rename-workspace",
+          label: "Rename workspace…",
+          disabled: !canRenameWorkspace(state.workspace),
+          onSelect: h.renameContextWorkspace,
         },
         { type: "separator" },
         {
-          id: "remove-worktree",
-          label: "Remove worktree",
+          id: "remove-workspace",
+          label: "Remove workspace",
           danger: true,
           disabled: !canRemove,
-          onSelect: h.removeContextWorktree,
+          onSelect: h.removeContextWorkspace,
         },
         isMain
-          ? { type: "note", label: "Can't remove the main worktree" }
+          ? { type: "note", label: "Can't remove the main workspace" }
           : { type: "note", label: "git worktree remove" },
       ];
     }

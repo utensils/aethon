@@ -4,8 +4,8 @@
  * Three composite types feed these handlers:
  *   - projects-dashboard / project-dashboard — open-project, new-tab,
  *     restore-session, select-project-card, request-card-menu,
- *     remove-project-card, refresh-dashboard, create-worktree,
- *     switch-worktree.
+ *     remove-project-card, refresh-dashboard, create-workspace,
+ *     switch-workspace.
  *   - task-launcher — start-task (the Codex-style "do anything"
  *     composer submit).
  *   - gh-stats-strip — open-url (shells out via tauri-plugin-opener).
@@ -17,8 +17,8 @@
 import type { EventRouteHandler } from "./types";
 import {
   handleSidebarDeleteSession,
-  handleSidebarRemoveWorktree,
-  handleSidebarSwitchWorktree,
+  handleSidebarRemoveWorkspace,
+  handleSidebarSwitchWorkspace,
 } from "./sidebar";
 import { restoreSessionFromSelection } from "./sessionRestore";
 
@@ -39,7 +39,7 @@ export const handleProjectsDashboard: EventRouteHandler = (
   if (eventType === "select-project-card") {
     const sel = data as { projectId?: string } | undefined;
     if (sel?.projectId) {
-      ctx.activateWorktree(null);
+      ctx.activateWorkspace(null);
       ctx.setActiveProjectById(sel.projectId);
       ctx.setState((prev) => ({ ...prev, landing: null }));
     }
@@ -73,7 +73,7 @@ export const handleProjectsDashboard: EventRouteHandler = (
 };
 
 /** Per-project dashboard — reuses several of the global routes plus
- *  worktree gestures emitted by the inline worktree rail. */
+ *  workspace gestures emitted by the inline workspace rail. */
 export const handleProjectDashboard: EventRouteHandler = (
   { eventType, data },
   ctx,
@@ -94,19 +94,19 @@ export const handleProjectDashboard: EventRouteHandler = (
       ctx,
     );
   }
-  if (eventType === "create-worktree") {
+  if (eventType === "create-workspace") {
     const sel = data as { projectId?: string } | undefined;
-    if (sel?.projectId) void ctx.createWorktreeForProject(sel.projectId);
+    if (sel?.projectId) void ctx.createWorkspaceForProject(sel.projectId);
     return true;
   }
-  if (eventType === "switch-worktree") {
-    return handleSidebarSwitchWorktree(
+  if (eventType === "switch-workspace") {
+    return handleSidebarSwitchWorkspace(
       { component: { id: "", type: "sidebar" }, eventType, data },
       ctx,
     );
   }
-  if (eventType === "remove-worktree") {
-    return handleSidebarRemoveWorktree(
+  if (eventType === "remove-workspace") {
+    return handleSidebarRemoveWorkspace(
       { component: { id: "", type: "sidebar" }, eventType, data },
       ctx,
     );
@@ -156,10 +156,10 @@ export const handleTaskLauncher: EventRouteHandler = (
           projectId?: string;
           prompt?: string;
           attachments?: unknown;
-          newWorktree?: boolean;
+          newWorkspace?: boolean;
           branch?: string;
           baseBranch?: string;
-          worktreeId?: string;
+          workspaceId?: string;
           model?: string;
         }
       | undefined;
@@ -167,11 +167,11 @@ export const handleTaskLauncher: EventRouteHandler = (
     void ctx.startTaskInProject({
       projectId: sel.projectId,
       prompt: sel.prompt,
-      newWorktree: sel.newWorktree === true,
+      newWorkspace: sel.newWorkspace === true,
       attachments: Array.isArray(sel.attachments) ? sel.attachments : undefined,
       branch: sel.branch,
       baseBranch: sel.baseBranch,
-      worktreeId: sel.worktreeId,
+      workspaceId: sel.workspaceId,
       ...(typeof sel.model === "string" && sel.model.length > 0
         ? { model: sel.model }
         : {}),

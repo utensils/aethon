@@ -5,7 +5,7 @@ import type { ProjectsState } from "../../projects";
 import type { ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import { formatRelativeTime } from "../../utils/time";
-import { orderWorktreesForDisplay } from "../../worktrees";
+import { orderWorkspacesForDisplay } from "../../workspaces";
 import type { GitStatus } from "../useProjects";
 import { normalizeSessionPath } from "./tabBuckets";
 import type {
@@ -147,11 +147,11 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
       for (const project of projectsRef.current.projects) {
         const projectPath = normalizeSessionPath(project.path);
         if (projectPath) projectPaths.add(projectPath);
-        for (const worktree of projectsRef.current.worktreesByProject[
+        for (const workspace of projectsRef.current.workspacesByProject[
           project.id
         ] ?? []) {
-          const worktreePath = normalizeSessionPath(worktree.path);
-          if (worktreePath) projectPaths.add(worktreePath);
+          const workspacePath = normalizeSessionPath(workspace.path);
+          if (workspacePath) projectPaths.add(workspacePath);
         }
       }
       return discovered.filter((session) => {
@@ -221,44 +221,44 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
     return {
       projects: ps.projects,
       activeProjectId: ps.activeId,
-      activeWorktreeId: ps.activeWorktreeId,
+      activeWorkspaceId: ps.activeWorkspaceId,
       project: active
         ? {
             id: active.id,
             label: active.label,
             path: active.path,
-            worktreeBaseBranch: active.worktreeBaseBranch,
+            workspaceBaseBranch: active.workspaceBaseBranch,
           }
         : null,
       sessionLabel: active ? active.label : "",
       sidebar: {
         ...sidebar,
         projects: ps.projects.map((p) => {
-          const wts = orderWorktreesForDisplay(
-            ps.worktreesByProject[p.id] ?? [],
-            p.worktreeSortMode,
+          const wts = orderWorkspacesForDisplay(
+            ps.workspacesByProject[p.id] ?? [],
+            p.workspaceSortMode,
           );
           const projectIsActive = p.id === ps.activeId;
-          const activeWorktreeBelongsToProject =
+          const activeWorkspaceBelongsToProject =
             projectIsActive &&
-            !!ps.activeWorktreeId &&
-            wts.some((w) => w.id === ps.activeWorktreeId && !w.isMain);
+            !!ps.activeWorkspaceId &&
+            wts.some((w) => w.id === ps.activeWorkspaceId && !w.isMain);
           return {
             id: p.id,
             label: p.label,
             tooltip: p.path,
             iconUrl: p.iconUrl,
-            active: projectIsActive && !activeWorktreeBelongsToProject,
+            active: projectIsActive && !activeWorkspaceBelongsToProject,
             git: gitStatusRef.current.get(p.path),
             expanded: p.uiExpanded === true,
-            worktrees: wts.map((w) => ({
+            workspaces: wts.map((w) => ({
               id: w.id,
               projectId: p.id,
-              label: w.label ?? w.branch ?? "worktree",
+              label: w.label ?? w.branch ?? "workspace",
               branch: w.branch,
               path: w.path,
               createdAt: w.createdAt,
-              active: w.id === ps.activeWorktreeId,
+              active: w.id === ps.activeWorkspaceId,
               isMain: w.isMain,
               pendingState: w.pendingState,
               pendingError: w.pendingError,

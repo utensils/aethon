@@ -33,10 +33,10 @@ describe("newTab restore handling", () => {
       stateRef,
       projectsRef: ref<ProjectsState>({
         activeId: null,
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         activeHostId: null,
         projects: [],
-        worktreesByProject: {},
+        workspacesByProject: {},
       }),
       piDefaultModelRef: ref(""),
       pendingTabOpens: ref(new Map()),
@@ -70,7 +70,7 @@ describe("newTab restore handling", () => {
       stateRef,
       projectsRef: ref<ProjectsState>({
         activeId: "p1",
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         activeHostId: null,
         projects: [
           {
@@ -80,7 +80,7 @@ describe("newTab restore handling", () => {
             lastUsed: 1,
           },
         ],
-        worktreesByProject: {},
+        workspacesByProject: {},
       }),
       piDefaultModelRef: ref(""),
       pendingTabOpens: pending,
@@ -121,7 +121,7 @@ describe("newTab restore handling", () => {
       stateRef,
       projectsRef: ref<ProjectsState>({
         activeId: "p1",
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         activeHostId: null,
         projects: [
           {
@@ -131,7 +131,7 @@ describe("newTab restore handling", () => {
             lastUsed: 1,
           },
         ],
-        worktreesByProject: {},
+        workspacesByProject: {},
       }),
       piDefaultModelRef: ref(""),
       pendingTabOpens: pending,
@@ -176,7 +176,7 @@ describe("newTab restore handling", () => {
       stateRef,
       projectsRef: ref<ProjectsState>({
         activeId: "p1",
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         activeHostId: null,
         projects: [
           {
@@ -186,7 +186,7 @@ describe("newTab restore handling", () => {
             lastUsed: 1,
           },
         ],
-        worktreesByProject: {},
+        workspacesByProject: {},
       }),
       piDefaultModelRef: ref(""),
       pendingTabOpens: ref(new Map()),

@@ -1,13 +1,13 @@
 /**
- * Worktree row — sibling of ItemRow, rendered as a nested child under a
- * project row when that project has worktrees attached. The visual
+ * Workspace row — sibling of ItemRow, rendered as a nested child under a
+ * project row when that project has workspaces attached. The visual
  * "this is a child of the project above" cue is a continuous vertical
- * guide line drawn via `.ae-worktree-row::before` in chrome.css; each
+ * guide line drawn via `.ae-workspace-row::before` in chrome.css; each
  * row contributes one segment that joins seamlessly with the next.
  * The non-main rows therefore render *no* per-row glyph — the guide
  * does the work.
  *
- * Pending worktrees (during `git worktree add` or remove) get a distinct
+ * Pending workspaces (during `git worktree add` or remove) get a distinct
  * visual treatment + a small Cancel / Retry / Dismiss button cluster. Once
  * `git worktree add` resolves, the pending state clears and the row joins
  * the regular list.
@@ -20,14 +20,14 @@ import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivi
 import { getGhBranchStatus } from "../../../ghBranchStatusCache";
 import { getGhChecks } from "../../../ghChecksCache";
 import {
-  summarizeWorktreePrStatus,
-  type WorktreePrChip,
-} from "./worktree-pr-status";
+  summarizeWorkspacePrStatus,
+  type WorkspacePrChip,
+} from "./workspace-pr-status";
 
-export const WORKTREE_PR_REFRESH_MS = 60_000;
-export const WORKTREE_PENDING_CI_REFRESH_MS = 45_000;
+export const WORKSPACE_PR_REFRESH_MS = 60_000;
+export const WORKSPACE_PENDING_CI_REFRESH_MS = 45_000;
 
-export interface WorktreeSidebarItem {
+export interface WorkspaceSidebarItem {
   id: string;
   projectId?: string;
   /** User-visible label (defaults to branch name when absent). */
@@ -41,36 +41,36 @@ export interface WorktreeSidebarItem {
   pendingState?: "queued" | "starting" | "removing" | "succeeded" | "failed";
   pendingError?: string;
   locked?: boolean;
-  /** Live agent-activity for this worktree's session scope. Only attached
-   *  to non-main rows (the main worktree shares the project path, so its
+  /** Live agent-activity for this workspace's session scope. Only attached
+   *  to non-main rows (the main workspace shares the project path, so its
    *  activity surfaces on the project line instead). */
   agent?: AgentActivitySummary;
 }
 
-export interface WorktreeRowProps {
-  item: WorktreeSidebarItem;
+export interface WorkspaceRowProps {
+  item: WorkspaceSidebarItem;
   sectionId: string;
   onEvent: BuiltinComponentProps["onEvent"];
   onItemContextMenu?: (
     e: React.MouseEvent<HTMLElement>,
-    item: WorktreeSidebarItem,
+    item: WorkspaceSidebarItem,
     sectionId: string,
   ) => void;
   /** True when the parent sidebar has promoted this row into inline rename mode. */
   renaming?: boolean;
   /** Called after Enter/Escape/blur exits inline rename mode. */
-  onRenameEnd?: (worktreeId: string) => void;
+  onRenameEnd?: (workspaceId: string) => void;
   dragging?: boolean;
   dropSide?: "before" | "after";
   dragOffsetY?: number;
   onPointerDragStart?: (
     e: React.PointerEvent<HTMLElement>,
-    item: WorktreeSidebarItem,
+    item: WorkspaceSidebarItem,
   ) => void;
   consumeSuppressedClick?: () => boolean;
 }
 
-export function WorktreeRow({
+export function WorkspaceRow({
   item,
   sectionId,
   onEvent,
@@ -82,9 +82,9 @@ export function WorktreeRow({
   dragOffsetY = 0,
   onPointerDragStart,
   consumeSuppressedClick,
-}: WorktreeRowProps) {
+}: WorkspaceRowProps) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const [prChip, setPrChip] = useState<WorktreePrChip | null>(null);
+  const [prChip, setPrChip] = useState<WorkspacePrChip | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEndingRef = useRef(false);
@@ -117,12 +117,12 @@ export function WorktreeRow({
       }
     };
 
-    const scheduleRefresh = (chip: WorktreePrChip | null) => {
+    const scheduleRefresh = (chip: WorkspacePrChip | null) => {
       clearRefreshTimer();
       const delay =
         chip?.ci === "pending"
-          ? WORKTREE_PENDING_CI_REFRESH_MS
-          : WORKTREE_PR_REFRESH_MS;
+          ? WORKSPACE_PENDING_CI_REFRESH_MS
+          : WORKSPACE_PR_REFRESH_MS;
       refreshTimer = window.setTimeout(() => {
         void load();
       }, delay);
@@ -141,12 +141,12 @@ export function WorktreeRow({
         const checks =
           status.ghAvailable &&
           status.repo &&
-          !status.worktreeBroken &&
+          !status.workspaceBroken &&
           status.prs.length > 0
             ? await getGhChecks(item.path, branch).catch(() => null)
             : null;
         if (!cancelled) {
-          const chip = summarizeWorktreePrStatus(status, checks);
+          const chip = summarizeWorkspacePrStatus(status, checks);
           loadedOnce = true;
           setPrChip(chip);
           scheduleRefresh(chip);
@@ -184,19 +184,19 @@ export function WorktreeRow({
 
   const className = [
     "a2ui-sidebar-item",
-    "ae-worktree-row",
+    "ae-workspace-row",
     item.active ? "a2ui-sidebar-item-active" : "",
-    item.isMain ? "ae-worktree-row--main" : "",
-    isPendingActive ? "ae-worktree-row--pending" : "",
-    isFailed ? "ae-worktree-row--failed" : "",
-    dragging ? "ae-worktree-row--dragging" : "",
-    dropSide ? `ae-worktree-row-drop-${dropSide}` : "",
+    item.isMain ? "ae-workspace-row--main" : "",
+    isPendingActive ? "ae-workspace-row--pending" : "",
+    isFailed ? "ae-workspace-row--failed" : "",
+    dragging ? "ae-workspace-row--dragging" : "",
+    dropSide ? `ae-workspace-row-drop-${dropSide}` : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   const tooltip = isFailed && item.pendingError ? item.pendingError : item.path;
-  const displayLabel = item.label || item.branch || "worktree";
+  const displayLabel = item.label || item.branch || "workspace";
 
   useEffect(() => {
     if (!canRenameInline) return;
@@ -265,8 +265,8 @@ export function WorktreeRow({
   };
   const commitRename = (label: string) => {
     onEvent(
-      "rename-worktree",
-      { sectionId, itemId: item.id, worktreeId: item.id, label },
+      "rename-workspace",
+      { sectionId, itemId: item.id, workspaceId: item.id, label },
       item.id,
     );
     endRename();
@@ -275,13 +275,13 @@ export function WorktreeRow({
   return (
     <li
       className={className}
-      data-worktree-id={item.id}
+      data-workspace-id={item.id}
       data-project-id={item.projectId}
       title={tooltip}
       draggable={false}
       style={
         dragging
-          ? ({ "--ae-worktree-drag-y": `${dragOffsetY}px` } as CSSProperties)
+          ? ({ "--ae-workspace-drag-y": `${dragOffsetY}px` } as CSSProperties)
           : undefined
       }
       onPointerDown={(e) => onPointerDragStart?.(e, item)}
@@ -290,15 +290,15 @@ export function WorktreeRow({
         if (consumeSuppressedClick?.()) return;
         if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
           return;
-        onEvent("switch-worktree", { sectionId, worktreeId: item.id }, item.id);
+        onEvent("switch-workspace", { sectionId, workspaceId: item.id }, item.id);
       }}
       onDoubleClick={() => {
         if (consumeSuppressedClick?.()) return;
         if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
           return;
         onEvent(
-          "open-worktree-in-new-tab",
-          { sectionId, worktreeId: item.id },
+          "open-workspace-in-new-tab",
+          { sectionId, workspaceId: item.id },
           item.id,
         );
       }}
@@ -306,7 +306,7 @@ export function WorktreeRow({
     >
       {item.isMain ? (
         <span
-          className="ae-worktree-glyph ae-worktree-glyph--main"
+          className="ae-workspace-glyph ae-workspace-glyph--main"
           aria-hidden="true"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -336,8 +336,8 @@ export function WorktreeRow({
       {canRenameInline ? (
         <input
           ref={renameInputRef}
-          className="ae-worktree-rename-input"
-          aria-label={`Rename worktree ${displayLabel}`}
+          className="ae-workspace-rename-input"
+          aria-label={`Rename workspace ${displayLabel}`}
           defaultValue={displayLabel}
           autoCapitalize="none"
           autoCorrect="off"
@@ -361,17 +361,17 @@ export function WorktreeRow({
         <span className="a2ui-sidebar-item-label">{displayLabel}</span>
       )}
       {!canRenameInline && item.branch && item.branch !== displayLabel ? (
-        <span className="a2ui-sidebar-item-git-branch ae-worktree-branch">
+        <span className="a2ui-sidebar-item-git-branch ae-workspace-branch">
           {item.branch}
         </span>
       ) : null}
       {prEligible && !canRenameInline && (prLoading || prChip) ? (
-        <span className="ae-worktree-pr-slot">
-          {prChip ? <WorktreePrBadge chip={prChip} /> : <span aria-hidden="true" />}
+        <span className="ae-workspace-pr-slot">
+          {prChip ? <WorkspacePrBadge chip={prChip} /> : <span aria-hidden="true" />}
         </span>
       ) : null}
       {isPendingActive ? (
-        <span className="ae-worktree-pending-status">
+        <span className="ae-workspace-pending-status">
           {pending === "queued"
             ? "queued…"
             : pending === "removing"
@@ -380,12 +380,12 @@ export function WorktreeRow({
           {pending !== "removing" ? (
             <button
               type="button"
-              className="ae-worktree-action"
+              className="ae-workspace-action"
               onClick={(e) => {
                 e.stopPropagation();
                 onEvent(
-                  "cancel-pending-worktree",
-                  { sectionId, worktreeId: item.id },
+                  "cancel-pending-workspace",
+                  { sectionId, workspaceId: item.id },
                   item.id,
                 );
               }}
@@ -397,16 +397,16 @@ export function WorktreeRow({
         </span>
       ) : null}
       {isFailed ? (
-        <span className="ae-worktree-pending-status ae-worktree-pending-failed">
+        <span className="ae-workspace-pending-status ae-workspace-pending-failed">
           failed
           <button
             type="button"
-            className="ae-worktree-action"
+            className="ae-workspace-action"
             onClick={(e) => {
               e.stopPropagation();
               onEvent(
-                "retry-pending-worktree",
-                { sectionId, worktreeId: item.id },
+                "retry-pending-workspace",
+                { sectionId, workspaceId: item.id },
                 item.id,
               );
             }}
@@ -415,12 +415,12 @@ export function WorktreeRow({
           </button>
           <button
             type="button"
-            className="ae-worktree-action"
+            className="ae-workspace-action"
             onClick={(e) => {
               e.stopPropagation();
               onEvent(
-                "cancel-pending-worktree",
-                { sectionId, worktreeId: item.id },
+                "cancel-pending-workspace",
+                { sectionId, workspaceId: item.id },
                 item.id,
               );
             }}
@@ -432,25 +432,25 @@ export function WorktreeRow({
       ) : null}
       {item.locked ? (
         <span
-          className="ae-worktree-lock"
+          className="ae-workspace-lock"
           aria-label="Locked"
-          title="Worktree is locked"
+          title="Workspace is locked"
         >
           ◆
         </span>
       ) : null}
       {canRemoveInline ? (
-        <span className="ae-worktree-remove-slot">
+        <span className="ae-workspace-remove-slot">
           {confirmingRemove ? (
             <button
               type="button"
-              className="ae-worktree-confirm-remove"
+              className="ae-workspace-confirm-remove"
               aria-label={`Confirm remove ${displayLabel}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onEvent(
-                  "remove-worktree",
-                  { sectionId, worktreeId: item.id, confirmed: true },
+                  "remove-workspace",
+                  { sectionId, workspaceId: item.id, confirmed: true },
                   item.id,
                 );
               }}
@@ -460,9 +460,9 @@ export function WorktreeRow({
           ) : (
             <button
               type="button"
-              className="ae-worktree-remove"
+              className="ae-workspace-remove"
               aria-label={`Remove ${displayLabel}`}
-              title="Remove worktree"
+              title="Remove workspace"
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirmingRemove(true);
@@ -492,19 +492,19 @@ export function WorktreeRow({
   );
 }
 
-function WorktreePrBadge({ chip }: { chip: WorktreePrChip }) {
+function WorkspacePrBadge({ chip }: { chip: WorkspacePrChip }) {
   const content = (
     <>
       {chip.ci ? (
         <span
-          className={`ae-worktree-pr-ci ae-worktree-pr-ci--${chip.ci}`}
+          className={`ae-workspace-pr-ci ae-workspace-pr-ci--${chip.ci}`}
           aria-hidden="true"
         />
       ) : null}
-      <span className="ae-worktree-pr-label">{chip.label}</span>
+      <span className="ae-workspace-pr-label">{chip.label}</span>
     </>
   );
-  const className = `ae-worktree-pr-chip ae-worktree-pr-chip--${chip.kind}`;
+  const className = `ae-workspace-pr-chip ae-workspace-pr-chip--${chip.kind}`;
   if (chip.url) {
     const url = chip.url;
     return (

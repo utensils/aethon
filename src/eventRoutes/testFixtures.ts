@@ -16,7 +16,7 @@ export interface FixtureOverrides {
   pendingShellWriteIds?: string[];
   pendingShellCloseIds?: string[];
   pendingSessionDeleteIds?: string[];
-  pendingWorktreePromptIds?: string[];
+  pendingWorkspacePromptIds?: string[];
   promptDeleteAllow?: boolean;
 }
 
@@ -27,7 +27,7 @@ export interface RouteFixture {
     resolveShellWriteConsent: Mock;
     resolveShellCloseConsent: Mock;
     resolveSessionDeleteConsent: Mock;
-    resolveWorktreePrompt: Mock;
+    resolveWorkspacePrompt: Mock;
     promptDeleteSessionConfirmation: Mock;
     pushNotification: Mock;
     dismissNotification: Mock;
@@ -70,9 +70,9 @@ export interface RouteFixture {
     clearActiveProject: Mock;
     removeProjectById: Mock;
     syncRecentSessionsToState: Mock;
-    activateWorktree: Mock;
-    reorderWorktree: Mock;
-    sortProjectWorktreesNewest: Mock;
+    activateWorkspace: Mock;
+    reorderWorkspace: Mock;
+    sortProjectWorkspacesNewest: Mock;
     invoke: Mock;
     writeState: Mock;
   };
@@ -100,7 +100,7 @@ export function buildRouteFixture(
   const pendingWrite = new Set(overrides.pendingShellWriteIds ?? []);
   const pendingClose = new Set(overrides.pendingShellCloseIds ?? []);
   const pendingDelete = new Set(overrides.pendingSessionDeleteIds ?? []);
-  const pendingWorktree = new Set(overrides.pendingWorktreePromptIds ?? []);
+  const pendingWorkspace = new Set(overrides.pendingWorkspacePromptIds ?? []);
 
   const resolveShellWriteConsent = vi.fn((id: string, _allowed: boolean) => {
     pendingWrite.delete(id);
@@ -111,8 +111,8 @@ export function buildRouteFixture(
   const resolveSessionDeleteConsent = vi.fn((id: string, _allowed: boolean) => {
     pendingDelete.delete(id);
   });
-  const resolveWorktreePrompt = vi.fn((id: string, _allowed: boolean) => {
-    pendingWorktree.delete(id);
+  const resolveWorkspacePrompt = vi.fn((id: string, _allowed: boolean) => {
+    pendingWorkspace.delete(id);
   });
   const promptDeleteSessionConfirmation = vi.fn(() =>
     Promise.resolve(overrides.promptDeleteAllow ?? false),
@@ -160,9 +160,9 @@ export function buildRouteFixture(
   const clearActiveProject = vi.fn();
   const removeProjectById = vi.fn(() => true);
   const syncRecentSessionsToState = vi.fn();
-  const activateWorktree = vi.fn();
-  const reorderWorktree = vi.fn();
-  const sortProjectWorktreesNewest = vi.fn();
+  const activateWorkspace = vi.fn();
+  const reorderWorkspace = vi.fn();
+  const sortProjectWorkspacesNewest = vi.fn();
   const invoke = vi.fn(() => Promise.resolve(undefined));
   const writeState = vi.fn(() => Promise.resolve(true));
 
@@ -181,8 +181,8 @@ export function buildRouteFixture(
     hasPendingSessionDeleteConsent: (id: string) => pendingDelete.has(id),
     resolveSessionDeleteConsent,
     promptDeleteSessionConfirmation,
-    hasPendingWorktreePrompt: (id: string) => pendingWorktree.has(id),
-    resolveWorktreePrompt,
+    hasPendingWorkspacePrompt: (id: string) => pendingWorkspace.has(id),
+    resolveWorkspacePrompt,
     pushNotification,
     dismissNotification,
     sendChat,
@@ -226,18 +226,18 @@ export function buildRouteFixture(
     setActiveHost: vi.fn(),
     syncRecentSessionsToState,
     setProjectExpanded: vi.fn(),
-    refreshProjectWorktrees: vi.fn(() => Promise.resolve()),
-    activateWorktree,
-    createWorktreeForProject: vi.fn(() => Promise.resolve()),
+    refreshProjectWorkspaces: vi.fn(() => Promise.resolve()),
+    activateWorkspace,
+    createWorkspaceForProject: vi.fn(() => Promise.resolve()),
     startTaskInProject: vi.fn(() => Promise.resolve()),
-    removeWorktreeById: vi.fn(() => Promise.resolve()),
-    dismissPendingWorktree: vi.fn(),
-    retryPendingWorktree: vi.fn(() => Promise.resolve()),
-    renameWorktree: vi.fn(),
+    removeWorkspaceById: vi.fn(() => Promise.resolve()),
+    dismissPendingWorkspace: vi.fn(),
+    retryPendingWorkspace: vi.fn(() => Promise.resolve()),
+    renameWorkspace: vi.fn(),
     renameProject: vi.fn(),
-    setProjectWorktreeBaseBranch: vi.fn(),
-    reorderWorktree,
-    sortProjectWorktreesNewest,
+    setProjectWorkspaceBaseBranch: vi.fn(),
+    reorderWorkspace,
+    sortProjectWorkspacesNewest,
     invoke,
     writeState,
   };
@@ -265,7 +265,7 @@ export function buildRouteFixture(
       resolveShellWriteConsent,
       resolveShellCloseConsent,
       resolveSessionDeleteConsent,
-      resolveWorktreePrompt,
+      resolveWorkspacePrompt,
       promptDeleteSessionConfirmation,
       pushNotification,
       dismissNotification,
@@ -308,9 +308,9 @@ export function buildRouteFixture(
       clearActiveProject,
       removeProjectById,
       syncRecentSessionsToState,
-      activateWorktree,
-      reorderWorktree,
-      sortProjectWorktreesNewest,
+      activateWorkspace,
+      reorderWorkspace,
+      sortProjectWorkspacesNewest,
       invoke,
       writeState,
     },

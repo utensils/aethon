@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * useGitWatch owns the Rust git-state watcher lifecycle: it starts a watcher
- * for the active project/worktree root and tears it down when the root changes
+ * for the active project/workspace root and tears it down when the root changes
  * or the hook unmounts. These tests assert the start/stop invoke contract.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";

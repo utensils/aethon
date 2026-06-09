@@ -56,10 +56,10 @@ describe("summarizeAgentTabs", () => {
 });
 
 describe("attachAgentActivity", () => {
-  const project = (worktrees: { id: string; path: string; isMain?: boolean }[]) => ({
+  const project = (workspaces: { id: string; path: string; isMain?: boolean }[]) => ({
     id: "proj",
     label: "proj",
-    worktrees: worktrees.map((w) => ({
+    workspaces: workspaces.map((w) => ({
       id: w.id,
       label: w.id,
       branch: w.id,
@@ -68,7 +68,7 @@ describe("attachAgentActivity", () => {
     })),
   });
 
-  it("scopes main-path tabs to the project line, leaving the main worktree dot-free", () => {
+  it("scopes main-path tabs to the project line, leaving the main workspace dot-free", () => {
     const projects = [
       project([{ id: "wt-main", path: "/p", isMain: true }]),
     ];
@@ -76,11 +76,11 @@ describe("attachAgentActivity", () => {
     const [out] = attachAgentActivity(projects, tabs, new Set(["a"]));
     expect(out.agent.status).toBe("running");
     expect(out.agentRollup.status).toBe("running");
-    // Main worktree row carries no agent summary (no double dot).
-    expect("agent" in out.worktrees[0]).toBe(false);
+    // Main workspace row carries no agent summary (no double dot).
+    expect("agent" in out.workspaces[0]).toBe(false);
   });
 
-  it("scopes worktree-path tabs to that worktree row", () => {
+  it("scopes workspace-path tabs to that workspace row", () => {
     const projects = [
       project([
         { id: "wt-main", path: "/p", isMain: true },
@@ -91,13 +91,13 @@ describe("attachAgentActivity", () => {
     const [out] = attachAgentActivity(projects, tabs, new Set());
     // Not main scope — the project line stays empty.
     expect(out.agent.status).toBe("none");
-    const feat = out.worktrees.find((w) => w.id === "wt-feat");
+    const feat = out.workspaces.find((w) => w.id === "wt-feat");
     expect(feat?.agent?.status).toBe("idle-with-session");
-    // Rollup sees the worktree session even though main is empty.
+    // Rollup sees the workspace session even though main is empty.
     expect(out.agentRollup.status).toBe("idle-with-session");
   });
 
-  it("rolls up running worktree activity for a collapsed project", () => {
+  it("rolls up running workspace activity for a collapsed project", () => {
     const projects = [
       project([
         { id: "wt-main", path: "/p", isMain: true },
@@ -110,15 +110,15 @@ describe("attachAgentActivity", () => {
     ];
     const [out] = attachAgentActivity(projects, tabs, new Set(["w"]));
     expect(out.agent.status).toBe("idle-with-session"); // only main, not running
-    expect(out.agentRollup.status).toBe("running"); // worktree turn in flight
+    expect(out.agentRollup.status).toBe("running"); // workspace turn in flight
     expect(out.agentRollup.activeCount).toBe(2);
     expect(out.agentRollup.runningCount).toBe(1);
   });
 
   it("does not leak tabs across sibling projects", () => {
     const projects = [
-      { id: "p1", label: "p1", worktrees: [{ id: "m1", path: "/p1", isMain: true }] },
-      { id: "p2", label: "p2", worktrees: [{ id: "m2", path: "/p2", isMain: true }] },
+      { id: "p1", label: "p1", workspaces: [{ id: "m1", path: "/p1", isMain: true }] },
+      { id: "p2", label: "p2", workspaces: [{ id: "m2", path: "/p2", isMain: true }] },
     ];
     const tabs = [agentTab("a", "p1", "/p1")];
     const out = attachAgentActivity(projects, tabs, new Set(["a"]));

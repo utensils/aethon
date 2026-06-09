@@ -24,7 +24,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useWindowApi } from "./runtime/windowApi";
 import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
-import { useWorktreePrompts } from "./hooks/useWorktreePrompts";
+import { useWorkspacePrompts } from "./hooks/useWorkspacePrompts";
 import { useFocus } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
@@ -37,7 +37,7 @@ import type { AethonConfig } from "./config";
 import {
   useProjectOps,
   projectIdFromBucketKey,
-  worktreeIdFromBucketKey,
+  workspaceIdFromBucketKey,
 } from "./hooks/useProjectOps";
 import { useOsEdges } from "./hooks/useOsEdges";
 import {
@@ -172,7 +172,7 @@ export default function App() {
     stateRef,
   });
 
-  const worktreePrompts = useWorktreePrompts({
+  const workspacePrompts = useWorkspacePrompts({
     pushNotification: (n) => pushNotificationRef.current(n),
   });
 
@@ -199,7 +199,7 @@ export default function App() {
   const hostInfo = useHostInfo();
 
   // Active workspace root. Root derivation mirrors the file tree
-  // (file-tree.tsx): the active worktree path when one is selected, else the
+  // (file-tree.tsx): the active workspace path when one is selected, else the
   // active project's path, else the active editor tab's root — so devshell,
   // VCS, and tree decoration all point at the same cwd.
   const activeWorkspaceRoot = activeWorkspaceCwd(state);
@@ -239,7 +239,7 @@ export default function App() {
   });
 
   // VCS surface wiring. Polls working-tree changes + PR + CI status for the
-  // active project/worktree root into the `/vcs` slice, consumed by the
+  // active project/workspace root into the `/vcs` slice, consumed by the
   // header `vcs-status` cluster and the `source-control-panel` above the
   // file tree. The file tree's final `~/.aethon` fallback is intentionally
   // omitted: it is never a git repo, so `/vcs` would collapse anyway, and
@@ -367,18 +367,18 @@ export default function App() {
     removeProjectById,
     setProjectExpanded,
     setProjectIconUrl,
-    refreshProjectWorktrees,
-    activateWorktree,
-    createWorktreeForProject,
-    createWorktreeWithParams,
-    removeWorktreeById,
-    dismissPendingWorktree,
-    retryPendingWorktree,
-    renameWorktree,
+    refreshProjectWorkspaces,
+    activateWorkspace,
+    createWorkspaceForProject,
+    createWorkspaceWithParams,
+    removeWorkspaceById,
+    dismissPendingWorkspace,
+    retryPendingWorkspace,
+    renameWorkspace,
     renameProject,
-    setProjectWorktreeBaseBranch,
-    reorderWorktree,
-    sortProjectWorktreesNewest,
+    setProjectWorkspaceBaseBranch,
+    reorderWorkspace,
+    sortProjectWorkspacesNewest,
   } = useProjectOps({
     setState,
     stateRef,
@@ -394,14 +394,14 @@ export default function App() {
     autoRestoreDiscoveredSessions,
     closeTabNow,
     newShellTab,
-    worktreePrompts,
+    workspacePrompts,
   });
   useProjectSyncEffects({
     state,
     stateRef,
     projectsRef,
     setActiveProjectById,
-    activateWorktree,
+    activateWorkspace,
     setProjectIconUrl,
   });
 
@@ -432,7 +432,7 @@ export default function App() {
     notifyMinDurationMsRef,
     resolveShellWriteConsent,
     resolveShellCloseConsent,
-    resolveWorktreePrompt: worktreePrompts.resolveWorktreePrompt,
+    resolveWorkspacePrompt: workspacePrompts.resolveWorkspacePrompt,
   });
 
   // ---------------------------------------------------------------------
@@ -549,8 +549,8 @@ export default function App() {
     projectsRef,
     pushNotificationRef,
     setActiveProjectById,
-    createWorktreeWithParams,
-    activateWorktree,
+    createWorkspaceWithParams,
+    activateWorkspace,
     newTab,
     pendingTabOpens,
     sendChat,
@@ -811,8 +811,8 @@ export default function App() {
     hasPendingSessionDeleteConsent,
     resolveSessionDeleteConsent,
     promptDeleteSessionConfirmation,
-    hasPendingWorktreePrompt: worktreePrompts.hasPendingWorktreePrompt,
-    resolveWorktreePrompt: worktreePrompts.resolveWorktreePrompt,
+    hasPendingWorkspacePrompt: workspacePrompts.hasPendingWorkspacePrompt,
+    resolveWorkspacePrompt: workspacePrompts.resolveWorkspacePrompt,
     pushNotification,
     dismissNotification,
     sendChat,
@@ -846,7 +846,7 @@ export default function App() {
         return;
       }
       // Not in the active workspace — find the bucket that owns it, switch
-      // into that project/worktree, then select. setState is synchronous so
+      // into that project/workspace, then select. setState is synchronous so
       // the bucket load lands before setActiveTab reads state.tabs.
       for (const [key, bucket] of tabBucketsRef.current.entries()) {
         if (!bucket.tabs.some((t) => t.id === tabId)) continue;
@@ -858,7 +858,7 @@ export default function App() {
           if (projectId) setActiveProjectById(projectId);
           else clearActiveProject();
         }
-        activateWorktree(worktreeIdFromBucketKey(key));
+        activateWorkspace(workspaceIdFromBucketKey(key));
         setActiveTab(tabId);
         return;
       }
@@ -891,18 +891,18 @@ export default function App() {
     },
     syncRecentSessionsToState,
     setProjectExpanded,
-    refreshProjectWorktrees,
-    activateWorktree,
-    createWorktreeForProject,
+    refreshProjectWorkspaces,
+    activateWorkspace,
+    createWorkspaceForProject,
     startTaskInProject,
-    removeWorktreeById,
-    dismissPendingWorktree,
-    retryPendingWorktree,
-    renameWorktree,
+    removeWorkspaceById,
+    dismissPendingWorkspace,
+    retryPendingWorkspace,
+    renameWorkspace,
     renameProject,
-    setProjectWorktreeBaseBranch,
-    reorderWorktree,
-    sortProjectWorktreesNewest,
+    setProjectWorkspaceBaseBranch,
+    reorderWorkspace,
+    sortProjectWorkspacesNewest,
     invoke,
     writeState,
   });

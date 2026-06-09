@@ -51,8 +51,8 @@ export interface EventRouteContext {
   hasPendingSessionDeleteConsent: (id: string) => boolean;
   resolveSessionDeleteConsent: (id: string, allowed: boolean) => void;
   promptDeleteSessionConfirmation: (label: string) => Promise<boolean>;
-  hasPendingWorktreePrompt: (id: string) => boolean;
-  resolveWorktreePrompt: (id: string, allowed: boolean) => void;
+  hasPendingWorkspacePrompt: (id: string) => boolean;
+  resolveWorkspacePrompt: (id: string, allowed: boolean) => void;
 
   // ─── Notifications ──────────────────────────────────────────────────
   pushNotification: (input: {
@@ -118,7 +118,7 @@ export interface EventRouteContext {
   setActiveTab: (tabId: string) => void;
   /** Activate a tab by id no matter which workspace owns it. If the tab is
    *  in the active workspace it selects it directly; otherwise it switches
-   *  to the owning project/worktree bucket first, then selects it. Backs
+   *  to the owning project/workspace bucket first, then selects it. Backs
    *  the completion toast's click-to-jump. */
   activateTabAnywhere: (tabId: string) => void;
   setActiveSubTab: (subId: string) => void;
@@ -154,14 +154,14 @@ export interface EventRouteContext {
    *  no-project workspace. */
   setActiveHost: (id: string | null) => void;
   syncRecentSessionsToState: () => void;
-  // ─── Worktrees ─────────────────────────────────────────────────────
+  // ─── Workspaces ─────────────────────────────────────────────────────
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
-  refreshProjectWorktrees: (projectId: string) => Promise<void>;
-  activateWorktree: (worktreeId: string | null) => void;
-  createWorktreeForProject: (projectId: string) => Promise<void>;
+  refreshProjectWorkspaces: (projectId: string) => Promise<void>;
+  activateWorkspace: (workspaceId: string | null) => void;
+  createWorkspaceForProject: (projectId: string) => Promise<void>;
   /** End-to-end task launch from the dashboard composer (or the
-   *  agent-side `startTask` pi tool). Creates a worktree when
-   *  newWorktree is set; otherwise uses `worktreeId` (existing worktree)
+   *  agent-side `startTask` pi tool). Creates a workspace when
+   *  newWorkspace is set; otherwise uses `workspaceId` (existing workspace)
    *  or the project root as the cwd. Spawns a new agent tab with the
    *  resolved cwd and forwards the prompt as the tab's first user
    *  message. Failures surface via the notification stack. */
@@ -169,33 +169,33 @@ export interface EventRouteContext {
     projectId: string;
     prompt: string;
     attachments?: ChatAttachment[];
-    newWorktree?: boolean;
+    newWorkspace?: boolean;
     branch?: string;
     baseBranch?: string;
-    /** Existing worktree to launch under. Ignored when newWorktree is
+    /** Existing workspace to launch under. Ignored when newWorkspace is
      *  true. When omitted, the project root is used. */
-    worktreeId?: string;
+    workspaceId?: string;
     /** Model the launched session should use (task-launcher model chip). */
     model?: string;
   }) => Promise<void>;
-  removeWorktreeById: (
-    worktreeId: string,
+  removeWorkspaceById: (
+    workspaceId: string,
     opts?: { confirmed?: boolean },
   ) => Promise<void>;
-  dismissPendingWorktree: (worktreeId: string) => void;
-  retryPendingWorktree: (worktreeId: string) => Promise<void>;
-  renameWorktree: (worktreeId: string, label: string) => void;
+  dismissPendingWorkspace: (workspaceId: string) => void;
+  retryPendingWorkspace: (workspaceId: string) => Promise<void>;
+  renameWorkspace: (workspaceId: string, label: string) => void;
   renameProject: (projectId: string, label: string) => void;
-  setProjectWorktreeBaseBranch: (
+  setProjectWorkspaceBaseBranch: (
     projectId: string,
     baseBranch: string | null,
   ) => void;
-  reorderWorktree: (
+  reorderWorkspace: (
     projectId: string,
-    worktreeId: string,
+    workspaceId: string,
     toIndex: number,
   ) => void;
-  sortProjectWorktreesNewest: (projectId: string) => void;
+  sortProjectWorkspacesNewest: (projectId: string) => void;
 
   // ─── Tauri IPC (injected so tests can mock it) ─────────────────────
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;

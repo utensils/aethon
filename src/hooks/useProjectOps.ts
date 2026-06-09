@@ -28,7 +28,7 @@ import {
   projectScopeBucketKey,
   switchProjectBucket as switchTabBucket,
 } from "./projectOps/tabBuckets";
-import { useWorktreeOperations } from "./projectOps/worktreeOperations";
+import { useWorkspaceOperations } from "./projectOps/workspaceOperations";
 import type {
   DiscoveredSession,
   TabBucket,
@@ -49,8 +49,8 @@ export {
   projectIdFromBucketKey,
   projectScopeBucketKey,
   tabsForProjectBucket,
-  worktreeIdForCwd,
-  worktreeIdFromBucketKey,
+  workspaceIdForCwd,
+  workspaceIdFromBucketKey,
 } from "./projectOps/tabBuckets";
 
 /**
@@ -61,8 +61,8 @@ export {
  *     restore (filtered to the active project's cwd).
  *
  * The hook is intentionally a facade. Store/mirror projection lives in
- * `projectStore`, bucket transitions in `tabBuckets`, and worktree state
- * mutations in `worktreeOperations`.
+ * `projectStore`, bucket transitions in `tabBuckets`, and workspace state
+ * mutations in `workspaceOperations`.
  */
 export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   const {
@@ -79,7 +79,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     autoRestoreDiscoveredSessions,
     closeTabNow,
     newShellTab,
-    worktreePrompts,
+    workspacePrompts,
   } = ctx;
 
   const projectsLoadedRef = useRef(false);
@@ -161,14 +161,14 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   function openProjectByPath(path: string, label?: string): string {
     const fromKey = projectScopeBucketKey(
       projectsRef.current.activeId,
-      projectsRef.current.activeWorktreeId,
+      projectsRef.current.activeWorkspaceId,
     );
     const { state: nextProjects, id } = upsertProject(
       projectsRef.current,
       path,
       label,
     );
-    projectsRef.current = { ...nextProjects, activeWorktreeId: null };
+    projectsRef.current = { ...nextProjects, activeWorkspaceId: null };
     void refreshGitStatusFor(path);
     const nextTabId = switchProjectBucket(
       fromKey,
@@ -185,7 +185,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     const ps = projectsRef.current;
     const target = ps.projects.find((p) => p.id === id);
     if (!target) return false;
-    const fromKey = projectScopeBucketKey(ps.activeId, ps.activeWorktreeId);
+    const fromKey = projectScopeBucketKey(ps.activeId, ps.activeWorkspaceId);
     const previousActive = activeProject(ps);
     projectsRef.current = {
       ...ps,
@@ -193,7 +193,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
         p.id === id ? { ...p, lastUsed: Date.now() } : p,
       ),
       activeId: id,
-      activeWorktreeId: null,
+      activeWorkspaceId: null,
     };
     const nextTabId = switchProjectBucket(
       fromKey,
@@ -208,7 +208,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       unwatchProjectForBridge(previousActive.path);
     }
     watchProjectForBridge(target.path);
-    void worktreeOps.refreshProjectWorktrees(id);
+    void workspaceOps.refreshProjectWorkspaces(id);
     // Hydrate this project's persisted editor tabs the first time it
     // becomes active (no-op on later switches) so they survive restarts
     // even when it wasn't the boot project — and so persistence isn't
@@ -220,13 +220,13 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   function clearActiveProject() {
     const fromKey = projectScopeBucketKey(
       projectsRef.current.activeId,
-      projectsRef.current.activeWorktreeId,
+      projectsRef.current.activeWorkspaceId,
     );
     const previousActive = activeProject(projectsRef.current);
     projectsRef.current = {
       ...projectsRef.current,
       activeId: null,
-      activeWorktreeId: null,
+      activeWorkspaceId: null,
     };
     const nextTabId = switchProjectBucket(fromKey, NO_PROJECT_KEY, {
       mirrorProjects: true,
@@ -239,7 +239,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
   function removeProjectById(id: string): boolean {
     const fromKey = projectScopeBucketKey(
       projectsRef.current.activeId,
-      projectsRef.current.activeWorktreeId,
+      projectsRef.current.activeWorkspaceId,
     );
     const wasActive = projectsRef.current.activeId === id;
     const removedKey = projectScopeBucketKey(id, null);
@@ -272,7 +272,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     return true;
   }
 
-  const worktreeOps = useWorktreeOperations({
+  const workspaceOps = useWorkspaceOperations({
     projectsRef,
     stateRef,
     tabBucketsRef,
@@ -286,7 +286,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     watchProjectForBridge,
     unwatchProjectForBridge,
     closeTabNow,
-    worktreePrompts,
+    workspacePrompts,
   });
 
   // Load projects once at boot. Mirrors into state on resolve so the
@@ -424,6 +424,6 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     setActiveProjectById,
     clearActiveProject,
     removeProjectById,
-    ...worktreeOps,
+    ...workspaceOps,
   };
 }

@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorktreeLanding } from "./layout";
+import { WorkspaceLanding } from "./layout";
 import type { A2UIComponent } from "../../types/a2ui";
 import type { GhBranchStatus } from "../../ghBranchStatusCache";
 
@@ -13,30 +13,30 @@ vi.mock("../../ghBranchStatusCache", () => ({
 
 afterEach(() => cleanup());
 
-function worktreeLanding(props: Record<string, unknown>): A2UIComponent {
+function workspaceLanding(props: Record<string, unknown>): A2UIComponent {
   return {
-    id: "worktree-landing",
-    type: "worktree-landing",
+    id: "workspace-landing",
+    type: "workspace-landing",
     props,
   };
 }
 
-describe("WorktreeLanding sessions", () => {
+describe("WorkspaceLanding sessions", () => {
   it("uses the parent project's discovered icon when one is available", () => {
     const { container } = render(
-      <WorktreeLanding
-        component={worktreeLanding({
+      <WorkspaceLanding
+        component={workspaceLanding({
           landing: { $ref: "/landing" },
           recentSessions: { $ref: "/recentSessions" },
         })}
         state={{
           landing: {
-            kind: "worktree",
+            kind: "workspace",
             projectId: "p1",
             projectLabel: "Claudette",
             iconUrl: "asset://localhost/project-icons/claudette.png",
-            worktreeId: "wt-1",
-            worktreeLabel: "feat/phaethon",
+            workspaceId: "wt-1",
+            workspaceLabel: "feat/phaethon",
             branch: "feat/phaethon",
             path: "/repo/claudette-feat-phaethon",
           },
@@ -56,18 +56,18 @@ describe("WorktreeLanding sessions", () => {
 
   it("derives the project icon from live sidebar state", () => {
     const { container, rerender } = render(
-      <WorktreeLanding
-        component={worktreeLanding({
+      <WorkspaceLanding
+        component={workspaceLanding({
           landing: { $ref: "/landing" },
           recentSessions: { $ref: "/recentSessions" },
         })}
         state={{
           landing: {
-            kind: "worktree",
+            kind: "workspace",
             projectId: "p1",
             projectLabel: "Claudette",
-            worktreeId: "wt-1",
-            worktreeLabel: "feat/phaethon",
+            workspaceId: "wt-1",
+            workspaceLabel: "feat/phaethon",
             branch: "feat/phaethon",
             path: "/repo/claudette-feat-phaethon",
           },
@@ -81,18 +81,18 @@ describe("WorktreeLanding sessions", () => {
     expect(container.querySelector(".a2ui-empty-state-hero img")).toBeNull();
 
     rerender(
-      <WorktreeLanding
-        component={worktreeLanding({
+      <WorkspaceLanding
+        component={workspaceLanding({
           landing: { $ref: "/landing" },
           recentSessions: { $ref: "/recentSessions" },
         })}
         state={{
           landing: {
-            kind: "worktree",
+            kind: "workspace",
             projectId: "p1",
             projectLabel: "Claudette",
-            worktreeId: "wt-1",
-            worktreeLabel: "feat/phaethon",
+            workspaceId: "wt-1",
+            workspaceLabel: "feat/phaethon",
             branch: "feat/phaethon",
             path: "/repo/claudette-feat-phaethon",
           },
@@ -117,21 +117,21 @@ describe("WorktreeLanding sessions", () => {
     ).toBe("asset://localhost/project-icons/claudette.png");
   });
 
-  it("lists resumable sessions for the selected worktree", () => {
+  it("lists resumable sessions for the selected workspace", () => {
     const onEvent = vi.fn();
     render(
-      <WorktreeLanding
-        component={worktreeLanding({
+      <WorkspaceLanding
+        component={workspaceLanding({
           landing: { $ref: "/landing" },
           recentSessions: { $ref: "/recentSessions" },
         })}
         state={{
           landing: {
-            kind: "worktree",
+            kind: "workspace",
             projectId: "p1",
             projectLabel: "aethon",
-            worktreeId: "wt-1",
-            worktreeLabel: "fix/session-restore",
+            workspaceId: "wt-1",
+            workspaceLabel: "fix/session-restore",
             branch: "fix/session-restore",
             path: "/repo/aethon-fix",
           },
@@ -171,28 +171,28 @@ describe("WorktreeLanding sessions", () => {
   });
 });
 
-describe("WorktreeLanding gh branch status", () => {
-  it("renders a broken-worktree notice when worktreeBroken is true", async () => {
+describe("WorkspaceLanding gh branch status", () => {
+  it("renders a broken-workspace notice when workspaceBroken is true", async () => {
     ghMock.mockResolvedValueOnce({
       ghAvailable: false,
       repo: null,
       pushed: false,
       prs: [],
-      worktreeBroken: true,
+      workspaceBroken: true,
     });
     render(
-      <WorktreeLanding
-        component={worktreeLanding({
+      <WorkspaceLanding
+        component={workspaceLanding({
           landing: { $ref: "/landing" },
           recentSessions: { $ref: "/recentSessions" },
         })}
         state={{
           landing: {
-            kind: "worktree",
+            kind: "workspace",
             projectId: "p1",
             projectLabel: "aethon",
-            worktreeId: "wt-broken",
-            worktreeLabel: "fix/orphan",
+            workspaceId: "wt-broken",
+            workspaceLabel: "fix/orphan",
             branch: "fix/orphan",
             path: "/repo/aethon-broken",
           },
@@ -206,27 +206,27 @@ describe("WorktreeLanding gh branch status", () => {
     );
   });
 
-  it("does not render the gh status block when worktreeBroken is false and gh is unavailable", async () => {
+  it("does not render the gh status block when workspaceBroken is false and gh is unavailable", async () => {
     ghMock.mockResolvedValueOnce({
       ghAvailable: false,
       repo: null,
       pushed: false,
       prs: [],
-      worktreeBroken: false,
+      workspaceBroken: false,
     });
     render(
-      <WorktreeLanding
-        component={worktreeLanding({
+      <WorkspaceLanding
+        component={workspaceLanding({
           landing: { $ref: "/landing" },
           recentSessions: { $ref: "/recentSessions" },
         })}
         state={{
           landing: {
-            kind: "worktree",
+            kind: "workspace",
             projectId: "p1",
             projectLabel: "aethon",
-            worktreeId: "wt-healthy",
-            worktreeLabel: "main",
+            workspaceId: "wt-healthy",
+            workspaceLabel: "main",
             branch: "main",
             path: "/repo/aethon",
           },

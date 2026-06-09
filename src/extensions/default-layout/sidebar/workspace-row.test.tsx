@@ -27,12 +27,12 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 import {
-  WORKTREE_PENDING_CI_REFRESH_MS,
-  WORKTREE_PR_REFRESH_MS,
-  WorktreeRow,
-  type WorktreeRowProps,
-  type WorktreeSidebarItem,
-} from "./worktree-row";
+  WORKSPACE_PENDING_CI_REFRESH_MS,
+  WORKSPACE_PR_REFRESH_MS,
+  WorkspaceRow,
+  type WorkspaceRowProps,
+  type WorkspaceSidebarItem,
+} from "./workspace-row";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -42,7 +42,7 @@ afterEach(() => {
   cleanup();
 });
 
-function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
+function wt(overrides: Partial<WorkspaceSidebarItem> = {}): WorkspaceSidebarItem {
   return {
     id: "wt-1",
     projectId: "p1",
@@ -56,10 +56,10 @@ function wt(overrides: Partial<WorktreeSidebarItem> = {}): WorktreeSidebarItem {
 }
 
 function harness(
-  item: WorktreeSidebarItem,
+  item: WorkspaceSidebarItem,
   options: {
     renaming?: boolean;
-    onPointerDragStart?: WorktreeRowProps["onPointerDragStart"];
+    onPointerDragStart?: WorkspaceRowProps["onPointerDragStart"];
   } = {},
 ) {
   const onEvent = vi.fn();
@@ -67,7 +67,7 @@ function harness(
   const onRenameEnd = vi.fn();
   const view = render(
     <ul>
-      <WorktreeRow
+      <WorkspaceRow
         item={item}
         sectionId="projects"
         onEvent={onEvent}
@@ -81,14 +81,14 @@ function harness(
   return { onEvent, onItemContextMenu, onRenameEnd, ...view };
 }
 
-describe("WorktreeRow", () => {
+describe("WorkspaceRow", () => {
   beforeEach(() => {
     vi.mocked(openUrl).mockResolvedValue(undefined);
     branchStatusMock.mockResolvedValue({
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [],
     });
     checksMock.mockResolvedValue({
@@ -104,22 +104,22 @@ describe("WorktreeRow", () => {
     });
   });
 
-  it("emits switch-worktree on row click", () => {
+  it("emits switch-workspace on row click", () => {
     const { onEvent } = harness(wt());
     fireEvent.click(screen.getByText("feature-x").closest("li")!);
     expect(onEvent).toHaveBeenCalledWith(
-      "switch-worktree",
-      expect.objectContaining({ worktreeId: "wt-1", sectionId: "projects" }),
+      "switch-workspace",
+      expect.objectContaining({ workspaceId: "wt-1", sectionId: "projects" }),
       "wt-1",
     );
   });
 
-  it("emits open-worktree-in-new-tab on double-click", () => {
+  it("emits open-workspace-in-new-tab on double-click", () => {
     const { onEvent } = harness(wt());
     fireEvent.doubleClick(screen.getByText("feature-x").closest("li")!);
     expect(onEvent).toHaveBeenCalledWith(
-      "open-worktree-in-new-tab",
-      expect.objectContaining({ worktreeId: "wt-1" }),
+      "open-workspace-in-new-tab",
+      expect.objectContaining({ workspaceId: "wt-1" }),
       "wt-1",
     );
   });
@@ -131,8 +131,8 @@ describe("WorktreeRow", () => {
     expect(screen.getByText(/creating/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(onEvent).toHaveBeenCalledWith(
-      "cancel-pending-worktree",
-      expect.objectContaining({ worktreeId: "wt-1" }),
+      "cancel-pending-workspace",
+      expect.objectContaining({ workspaceId: "wt-1" }),
       "wt-1",
     );
     // Row click while pending is a no-op.
@@ -158,8 +158,8 @@ describe("WorktreeRow", () => {
     expect(screen.getByText("failed")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "retry" }));
     expect(onEvent).toHaveBeenCalledWith(
-      "retry-pending-worktree",
-      expect.objectContaining({ worktreeId: "wt-1" }),
+      "retry-pending-workspace",
+      expect.objectContaining({ workspaceId: "wt-1" }),
       "wt-1",
     );
   });
@@ -169,7 +169,7 @@ describe("WorktreeRow", () => {
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [
         {
           number: 42,
@@ -197,16 +197,16 @@ describe("WorktreeRow", () => {
     await waitFor(() => expect(screen.getByText("open #42")).toBeTruthy());
     expect(screen.getByLabelText(/Open PR #42/)).toBeTruthy();
     expect(
-      document.querySelector(".ae-worktree-pr-ci--pending"),
+      document.querySelector(".ae-workspace-pr-ci--pending"),
     ).toBeTruthy();
   });
 
-  it("opens PR badge links in the user's browser without switching worktrees", async () => {
+  it("opens PR badge links in the user's browser without switching workspaces", async () => {
     branchStatusMock.mockResolvedValueOnce({
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [
         {
           number: 42,
@@ -240,7 +240,7 @@ describe("WorktreeRow", () => {
     expect(onPointerDragStart).not.toHaveBeenCalled();
     expect(openUrl).toHaveBeenCalledWith("https://github.test/pr/42");
     expect(onEvent).not.toHaveBeenCalledWith(
-      "switch-worktree",
+      "switch-workspace",
       expect.anything(),
       expect.anything(),
     );
@@ -249,7 +249,7 @@ describe("WorktreeRow", () => {
     fireEvent.doubleClick(badge);
     expect(openUrl).toHaveBeenCalledTimes(1);
     expect(onEvent).not.toHaveBeenCalledWith(
-      "open-worktree-in-new-tab",
+      "open-workspace-in-new-tab",
       expect.anything(),
       expect.anything(),
     );
@@ -262,7 +262,7 @@ describe("WorktreeRow", () => {
         ghAvailable: true,
         repo: "owner/repo",
         pushed: true,
-        worktreeBroken: false,
+        workspaceBroken: false,
         prs: [
           {
             number: 42,
@@ -279,7 +279,7 @@ describe("WorktreeRow", () => {
         ghAvailable: true,
         repo: "owner/repo",
         pushed: true,
-        worktreeBroken: false,
+        workspaceBroken: false,
         prs: [
           {
             number: 42,
@@ -324,7 +324,7 @@ describe("WorktreeRow", () => {
     expect(screen.getByText("open #42")).toBeTruthy();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(WORKTREE_PENDING_CI_REFRESH_MS);
+      await vi.advanceTimersByTimeAsync(WORKSPACE_PENDING_CI_REFRESH_MS);
     });
 
     expect(branchStatusMock).toHaveBeenCalledTimes(2);
@@ -339,7 +339,7 @@ describe("WorktreeRow", () => {
     );
     expect(screen.getByText("merged #42")).toBeTruthy();
     expect(
-      document.querySelector(".ae-worktree-pr-ci--success"),
+      document.querySelector(".ae-workspace-pr-ci--success"),
     ).toBeTruthy();
   });
 
@@ -349,7 +349,7 @@ describe("WorktreeRow", () => {
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [],
     });
 
@@ -358,15 +358,15 @@ describe("WorktreeRow", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(document.querySelector(".ae-worktree-pr-slot")).toBeNull();
+    expect(document.querySelector(".ae-workspace-pr-slot")).toBeNull();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(WORKTREE_PR_REFRESH_MS);
+      await vi.advanceTimersByTimeAsync(WORKSPACE_PR_REFRESH_MS);
     });
 
     expect(branchStatusMock).toHaveBeenCalledTimes(2);
     expect(checksMock).not.toHaveBeenCalled();
-    expect(document.querySelector(".ae-worktree-pr-slot")).toBeNull();
+    expect(document.querySelector(".ae-workspace-pr-slot")).toBeNull();
   });
 
   it("does not fetch CI checks when there is no PR to summarize", async () => {
@@ -389,7 +389,7 @@ describe("WorktreeRow", () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  it("confirms inline worktree removal without switching rows", () => {
+  it("confirms inline workspace removal without switching rows", () => {
     const { onEvent } = harness(wt({ label: "feature-x" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
     fireEvent.click(
@@ -397,8 +397,8 @@ describe("WorktreeRow", () => {
     );
     expect(onEvent).toHaveBeenCalledTimes(1);
     expect(onEvent).toHaveBeenCalledWith(
-      "remove-worktree",
-      expect.objectContaining({ worktreeId: "wt-1", confirmed: true }),
+      "remove-workspace",
+      expect.objectContaining({ workspaceId: "wt-1", confirmed: true }),
       "wt-1",
     );
   });
@@ -413,21 +413,21 @@ describe("WorktreeRow", () => {
     ).toBeNull();
     fireEvent.click(row);
     expect(onEvent).toHaveBeenCalledWith(
-      "switch-worktree",
-      expect.objectContaining({ worktreeId: "wt-1" }),
+      "switch-workspace",
+      expect.objectContaining({ workspaceId: "wt-1" }),
       "wt-1",
     );
   });
 
-  it("does not show inline remove for the main worktree", () => {
+  it("does not show inline remove for the main workspace", () => {
     harness(wt({ isMain: true, label: "main" }));
     expect(screen.queryByRole("button", { name: "Remove main" })).toBeNull();
   });
 
-  it("flags main worktree with accent glyph", () => {
+  it("flags main workspace with accent glyph", () => {
     harness(wt({ isMain: true, label: "main" }));
     const row = screen.getByText("main").closest("li")!;
-    expect(row.className).toContain("ae-worktree-row--main");
+    expect(row.className).toContain("ae-workspace-row--main");
   });
 
   it("invokes onItemContextMenu on right-click", () => {
@@ -441,7 +441,7 @@ describe("WorktreeRow", () => {
 
     rerender(
       <ul>
-        <WorktreeRow
+        <WorkspaceRow
           item={wt({ label: "Display name", branch: "feat/x" })}
           sectionId="projects"
           onEvent={vi.fn()}
@@ -450,24 +450,24 @@ describe("WorktreeRow", () => {
       </ul>,
     );
 
-    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    const input = screen.getByRole("textbox", { name: /rename workspace/i });
     expect((input as HTMLInputElement).value).toBe("Display name");
     expect(document.activeElement).toBe(input);
   });
 
   it("saves inline rename on Enter", () => {
     const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
-    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    const input = screen.getByRole("textbox", { name: /rename workspace/i });
 
-    fireEvent.change(input, { target: { value: "Renamed worktree" } });
+    fireEvent.change(input, { target: { value: "Renamed workspace" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onEvent).toHaveBeenCalledWith(
-      "rename-worktree",
+      "rename-workspace",
       expect.objectContaining({
         sectionId: "projects",
-        worktreeId: "wt-1",
-        label: "Renamed worktree",
+        workspaceId: "wt-1",
+        label: "Renamed workspace",
       }),
       "wt-1",
     );
@@ -476,13 +476,13 @@ describe("WorktreeRow", () => {
 
   it("cancels inline rename on Escape", () => {
     const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
-    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    const input = screen.getByRole("textbox", { name: /rename workspace/i });
 
-    fireEvent.change(input, { target: { value: "Renamed worktree" } });
+    fireEvent.change(input, { target: { value: "Renamed workspace" } });
     fireEvent.keyDown(input, { key: "Escape" });
 
     expect(onEvent).not.toHaveBeenCalledWith(
-      "rename-worktree",
+      "rename-workspace",
       expect.anything(),
       expect.anything(),
     );
@@ -492,12 +492,12 @@ describe("WorktreeRow", () => {
   it("cancels inline rename on blur", () => {
     vi.useFakeTimers();
     const { onEvent, onRenameEnd } = harness(wt(), { renaming: true });
-    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    const input = screen.getByRole("textbox", { name: /rename workspace/i });
     act(() => {
       vi.runAllTimers();
     });
 
-    fireEvent.change(input, { target: { value: "Renamed worktree" } });
+    fireEvent.change(input, { target: { value: "Renamed workspace" } });
     const other = document.createElement("button");
     document.body.appendChild(other);
     other.focus();
@@ -506,7 +506,7 @@ describe("WorktreeRow", () => {
     });
 
     expect(onEvent).not.toHaveBeenCalledWith(
-      "rename-worktree",
+      "rename-workspace",
       expect.anything(),
       expect.anything(),
     );
@@ -516,7 +516,7 @@ describe("WorktreeRow", () => {
   it("ends inline rename when a blurred row unmounts", () => {
     vi.useFakeTimers();
     const { onRenameEnd, unmount } = harness(wt(), { renaming: true });
-    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: /rename workspace/i })).toBeTruthy();
     act(() => {
       vi.runAllTimers();
     });
@@ -538,7 +538,7 @@ describe("WorktreeRow", () => {
     render(
       <StrictMode>
         <ul>
-          <WorktreeRow
+          <WorkspaceRow
             item={wt()}
             sectionId="projects"
             onEvent={vi.fn()}
@@ -553,7 +553,7 @@ describe("WorktreeRow", () => {
       vi.runAllTimers();
     });
 
-    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: /rename workspace/i })).toBeTruthy();
     expect(onRenameEnd).not.toHaveBeenCalled();
   });
 
@@ -561,12 +561,12 @@ describe("WorktreeRow", () => {
     const { onEvent, onRenameEnd, rerender } = harness(wt(), {
       renaming: true,
     });
-    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    const input = screen.getByRole("textbox", { name: /rename workspace/i });
     fireEvent.change(input, { target: { value: "half typed" } });
 
     rerender(
       <ul>
-        <WorktreeRow
+        <WorkspaceRow
           item={wt({ label: "fresh from parent" })}
           sectionId="projects"
           onEvent={onEvent}
@@ -577,7 +577,7 @@ describe("WorktreeRow", () => {
     );
 
     expect(
-      screen.getByRole<HTMLInputElement>("textbox", { name: /rename worktree/i })
+      screen.getByRole<HTMLInputElement>("textbox", { name: /rename workspace/i })
         .value,
     ).toBe("half typed");
   });
@@ -585,19 +585,19 @@ describe("WorktreeRow", () => {
   it("does not enter rename mode for pending or failed rows", () => {
     harness(wt({ pendingState: "starting" }), { renaming: true });
     expect(
-      screen.queryByRole("textbox", { name: /rename worktree/i }),
+      screen.queryByRole("textbox", { name: /rename workspace/i }),
     ).toBeNull();
     cleanup();
 
     harness(wt({ pendingState: "removing" }), { renaming: true });
     expect(
-      screen.queryByRole("textbox", { name: /rename worktree/i }),
+      screen.queryByRole("textbox", { name: /rename workspace/i }),
     ).toBeNull();
     cleanup();
 
     harness(wt({ pendingState: "failed" }), { renaming: true });
     expect(
-      screen.queryByRole("textbox", { name: /rename worktree/i }),
+      screen.queryByRole("textbox", { name: /rename workspace/i }),
     ).toBeNull();
   });
 });

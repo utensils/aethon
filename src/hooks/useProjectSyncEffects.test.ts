@@ -25,8 +25,8 @@ function makeProjects(): ProjectsState {
       },
     ],
     activeId: null,
-    activeWorktreeId: null,
-    worktreesByProject: {
+    activeWorkspaceId: null,
+    workspacesByProject: {
       "project-1": [
         {
           id: "wt-main",
@@ -49,7 +49,7 @@ function makeProjects(): ProjectsState {
 }
 
 describe("useProjectSyncEffects", () => {
-  it("syncs the active project and worktree from the active agent tab", async () => {
+  it("syncs the active project and workspace from the active agent tab", async () => {
     const projectsRef = ref(makeProjects());
     const stateRef = ref<Record<string, unknown>>({
       activeTabId: "tab-1",
@@ -65,8 +65,8 @@ describe("useProjectSyncEffects", () => {
       projectsRef.current.activeId = id;
       return true;
     });
-    const activateWorktree = vi.fn((id: string | null) => {
-      projectsRef.current.activeWorktreeId = id;
+    const activateWorkspace = vi.fn((id: string | null) => {
+      projectsRef.current.activeWorkspaceId = id;
     });
 
     renderHook(() =>
@@ -75,14 +75,14 @@ describe("useProjectSyncEffects", () => {
         stateRef,
         projectsRef,
         setActiveProjectById,
-        activateWorktree,
+        activateWorkspace,
         setProjectIconUrl: vi.fn(),
       }),
     );
 
     await waitFor(() => {
       expect(setActiveProjectById).toHaveBeenCalledWith("project-1");
-      expect(activateWorktree).toHaveBeenCalledWith("wt-task");
+      expect(activateWorkspace).toHaveBeenCalledWith("wt-task");
     });
   });
 
@@ -97,7 +97,7 @@ describe("useProjectSyncEffects", () => {
         stateRef: ref({}),
         projectsRef,
         setActiveProjectById: vi.fn(),
-        activateWorktree: vi.fn(),
+        activateWorkspace: vi.fn(),
         setProjectIconUrl,
       }),
     );
@@ -127,7 +127,7 @@ describe("useProjectSyncEffects", () => {
         stateRef: ref({}),
         projectsRef,
         setActiveProjectById: vi.fn(),
-        activateWorktree: vi.fn(),
+        activateWorkspace: vi.fn(),
         setProjectIconUrl,
       }),
     );

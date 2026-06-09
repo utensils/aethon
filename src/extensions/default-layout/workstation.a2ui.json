@@ -165,15 +165,15 @@
             "visible": { "$ref": "/emptyAndProject" },
             "project": { "$ref": "/project" },
             "otherProjects": { "$ref": "/projectDashboard/otherProjects" },
-            "worktrees": { "$ref": "/projectDashboard/worktrees" },
-            "activeWorktreeId": { "$ref": "/activeWorktreeId" },
+            "workspaces": { "$ref": "/projectDashboard/workspaces" },
+            "activeWorkspaceId": { "$ref": "/activeWorkspaceId" },
             "recentSessions": { "$ref": "/projectDashboard/recentSessions" },
             "widgets": { "$ref": "/projectDashboard/widgets" }
           }
         },
         {
-          "id": "worktree-landing",
-          "type": "worktree-landing",
+          "id": "workspace-landing",
+          "type": "workspace-landing",
           "props": {
             "area": "canvas",
             "visible": { "$ref": "/landingVisible" },

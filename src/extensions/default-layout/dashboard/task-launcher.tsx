@@ -7,9 +7,9 @@
  *
  * Chip row:
  *   - project — switcher across projects (selectable when multiple).
- *   - worktree — "current" (cwd), or one of the existing worktrees, or
- *     "+ New worktree" (opens the branch chip).
- *   - branch — only shown for "+ New worktree". Base branch picker
+ *   - workspace — "current" (cwd), or one of the existing workspaces, or
+ *     "+ New workspace" (opens the branch chip).
+ *   - branch — only shown for "+ New workspace". Base branch picker
  *     populated lazily from `git_branch_list`.
  *
  * Props read $ref-style from /taskLauncher/* paths so the surface is
@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { ChatAttachment } from "../../../types/a2ui";
 import { resolvePointer } from "../../../utils/jsonPointer";
-import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
 import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
@@ -29,10 +29,10 @@ interface ProjectLite {
   id: string;
   label: string;
   path: string;
-  worktreeBaseBranch?: string;
+  workspaceBaseBranch?: string;
 }
 
-interface WorktreeLite {
+interface WorkspaceLite {
   id: string;
   label: string;
   branch?: string;
@@ -44,10 +44,10 @@ interface LauncherData {
   project: ProjectLite | null;
   /** Other selectable projects, used by the project chip's menu. */
   otherProjects: ProjectLite[];
-  /** Existing worktrees for the active project. */
-  worktrees: WorktreeLite[];
-  /** Currently-selected worktree id (or null for "project root"). */
-  activeWorktreeId: string | null;
+  /** Existing workspaces for the active project. */
+  workspaces: WorkspaceLite[];
+  /** Currently-selected workspace id (or null for "project root"). */
+  activeWorkspaceId: string | null;
 }
 
 function isRef(v: unknown): v is { $ref: string } {
@@ -66,7 +66,7 @@ function resolveOrInline<T>(
   return v as T;
 }
 
-type WorktreeChoice =
+type WorkspaceChoice =
   | { kind: "current" }
   | { kind: "existing"; id: string; path: string; label: string }
   | { kind: "new" };
@@ -86,8 +86,8 @@ export function TaskLauncher({
     | {
         project?: unknown;
         otherProjects?: unknown;
-        worktrees?: unknown;
-        activeWorktreeId?: unknown;
+        workspaces?: unknown;
+        activeWorkspaceId?: unknown;
         placeholder?: string;
         prompt?: unknown;
       }
@@ -98,15 +98,15 @@ export function TaskLauncher({
       project: resolveOrInline<ProjectLite>(props?.project, state),
       otherProjects:
         resolveOrInline<ProjectLite[]>(props?.otherProjects, state) ?? [],
-      worktrees: resolveOrInline<WorktreeLite[]>(props?.worktrees, state) ?? [],
-      activeWorktreeId:
-        resolveOrInline<string>(props?.activeWorktreeId, state) ?? null,
+      workspaces: resolveOrInline<WorkspaceLite[]>(props?.workspaces, state) ?? [],
+      activeWorkspaceId:
+        resolveOrInline<string>(props?.activeWorkspaceId, state) ?? null,
     }),
     [
       props?.project,
       props?.otherProjects,
-      props?.worktrees,
-      props?.activeWorktreeId,
+      props?.workspaces,
+      props?.activeWorkspaceId,
       state,
     ],
   );
@@ -152,35 +152,35 @@ export function TaskLauncher({
   const [openAttachment, setOpenAttachment] = useState<ChatAttachment | null>(
     null,
   );
-  // Seed worktree selection from the project's currently-active
-  // worktree so the chip shows what the user has switched to in the
+  // Seed workspace selection from the project's currently-active
+  // workspace so the chip shows what the user has switched to in the
   // sidebar, not just "project root". Falls back to "current" (project
-  // root) when no worktree is active.
-  const initialChoice: WorktreeChoice = useMemo(() => {
-    if (!data.activeWorktreeId) return { kind: "current" };
-    const wt = data.worktrees.find((w) => w.id === data.activeWorktreeId);
+  // root) when no workspace is active.
+  const initialChoice: WorkspaceChoice = useMemo(() => {
+    if (!data.activeWorkspaceId) return { kind: "current" };
+    const wt = data.workspaces.find((w) => w.id === data.activeWorkspaceId);
     if (!wt) return { kind: "current" };
     return {
       kind: "existing",
       id: wt.id,
       path: wt.path,
-      label: wt.label || wt.branch || "worktree",
+      label: wt.label || wt.branch || "workspace",
     };
-  }, [data.activeWorktreeId, data.worktrees]);
-  const [worktreeChoice, setWorktreeChoice] =
-    useState<WorktreeChoice>(initialChoice);
-  // Re-sync when the active worktree changes on the project (the user
-  // can switch worktrees from the sidebar while the launcher is open).
+  }, [data.activeWorkspaceId, data.workspaces]);
+  const [workspaceChoice, setWorkspaceChoice] =
+    useState<WorkspaceChoice>(initialChoice);
+  // Re-sync when the active workspace changes on the project (the user
+  // can switch workspaces from the sidebar while the launcher is open).
   // Only resets when the user hasn't started typing — typing a prompt
   // implies intent, so don't yank their selection out from under them.
   const [touched, setTouched] = useState(false);
   useEffect(() => {
     if (touched) return;
-    queueMicrotask(() => setWorktreeChoice(initialChoice));
+    queueMicrotask(() => setWorkspaceChoice(initialChoice));
   }, [initialChoice, touched]);
   const [newBranch, setNewBranch] = useState("");
   const defaultBaseBranch =
-    data.project?.worktreeBaseBranch ?? DEFAULT_WORKTREE_BASE_BRANCH;
+    data.project?.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH;
   const [baseBranch, setBaseBranch] = useState(defaultBaseBranch);
   const [submitting, setSubmitting] = useState(false);
 
@@ -206,23 +206,23 @@ export function TaskLauncher({
       projectId: data.project.id,
       prompt: text,
       attachments,
-      newWorktree: worktreeChoice.kind === "new",
-      branch: worktreeChoice.kind === "new" ? newBranch.trim() : undefined,
+      newWorkspace: workspaceChoice.kind === "new",
+      branch: workspaceChoice.kind === "new" ? newBranch.trim() : undefined,
       baseBranch:
-        worktreeChoice.kind === "new" && baseTrimmed.length > 0
+        workspaceChoice.kind === "new" && baseTrimmed.length > 0
           ? baseTrimmed
           : undefined,
-      // Existing worktree case: we send the worktreeId so the route
+      // Existing workspace case: we send the workspaceId so the route
       // handler can activate it before spawning the tab.
-      worktreeId:
-        worktreeChoice.kind === "existing" ? worktreeChoice.id : undefined,
+      workspaceId:
+        workspaceChoice.kind === "existing" ? workspaceChoice.id : undefined,
       // Per-launch model. Falls back to the resolved default so the
       // session always boots with a concrete model even before `ready`.
       model: selectedModel || defaultModelId || undefined,
     });
     // Clear the input optimistically — if the start fails the dashboard
     // will surface the error via the notification stack. Reset `touched`
-    // so a fresh dashboard visit re-syncs to the active worktree, and
+    // so a fresh dashboard visit re-syncs to the active workspace, and
     // `modelTouched` so the chip re-seeds from the live default.
     setPromptText("");
     setAttachments([]);
@@ -234,7 +234,7 @@ export function TaskLauncher({
     promptText,
     attachments,
     data.project,
-    worktreeChoice,
+    workspaceChoice,
     newBranch,
     baseBranch,
     selectedModel,
@@ -278,12 +278,12 @@ export function TaskLauncher({
 
   if (!data.project) return null;
 
-  const worktreeLabel =
-    worktreeChoice.kind === "current"
+  const workspaceLabel =
+    workspaceChoice.kind === "current"
       ? "project root"
-      : worktreeChoice.kind === "existing"
-        ? worktreeChoice.label
-        : "+ New worktree";
+      : workspaceChoice.kind === "existing"
+        ? workspaceChoice.label
+        : "+ New workspace";
   const modelLabel =
     models.find((m) => m.id === selectedModel)?.label ||
     selectedModel ||
@@ -384,45 +384,45 @@ export function TaskLauncher({
           }}
         />
         <ChipMenu
-          label={worktreeLabel}
+          label={workspaceLabel}
           icon="⌥"
-          ariaLabel="Worktree"
+          ariaLabel="Workspace"
           items={[
             {
               id: "current",
               label: `project root (${data.project.label})`,
-              current: worktreeChoice.kind === "current",
+              current: workspaceChoice.kind === "current",
             },
-            ...data.worktrees.map((w) => ({
+            ...data.workspaces.map((w) => ({
               id: w.id,
-              label: w.label || w.branch || "worktree",
+              label: w.label || w.branch || "workspace",
               current:
-                worktreeChoice.kind === "existing" &&
-                worktreeChoice.id === w.id,
+                workspaceChoice.kind === "existing" &&
+                workspaceChoice.id === w.id,
             })),
             {
               id: "__new__",
-              label: "+ New worktree",
-              current: worktreeChoice.kind === "new",
+              label: "+ New workspace",
+              current: workspaceChoice.kind === "new",
             },
           ]}
           onSelect={(id) => {
             setTouched(true);
-            if (id === "current") setWorktreeChoice({ kind: "current" });
-            else if (id === "__new__") setWorktreeChoice({ kind: "new" });
+            if (id === "current") setWorkspaceChoice({ kind: "current" });
+            else if (id === "__new__") setWorkspaceChoice({ kind: "new" });
             else {
-              const found = data.worktrees.find((w) => w.id === id);
+              const found = data.workspaces.find((w) => w.id === id);
               if (found)
-                setWorktreeChoice({
+                setWorkspaceChoice({
                   kind: "existing",
                   id: found.id,
                   path: found.path,
-                  label: found.label || found.branch || "worktree",
+                  label: found.label || found.branch || "workspace",
                 });
             }
           }}
         />
-        {worktreeChoice.kind === "new" && (
+        {workspaceChoice.kind === "new" && (
           <>
             <input
               type="text"
@@ -436,7 +436,7 @@ export function TaskLauncher({
             <input
               type="text"
               className="a2ui-task-launcher-base-input"
-              placeholder={DEFAULT_WORKTREE_BASE_BRANCH}
+              placeholder={DEFAULT_WORKSPACE_BASE_BRANCH}
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
               aria-label="Base branch (empty = project default)"

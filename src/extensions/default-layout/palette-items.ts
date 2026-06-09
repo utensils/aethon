@@ -180,7 +180,7 @@ export function selectPaletteItems(
       // Hint priority: tooltip (full path) → git branch → "active".
       // The path is what users actually need to disambiguate; the
       // branch helps when a user has the same dir cloned twice in
-      // sibling worktrees.
+      // sibling workspaces.
       const branchTag = p.git?.branch
         ? `${p.git.branch}${p.git.dirty ? "•" : ""}`
         : undefined;

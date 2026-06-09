@@ -49,12 +49,12 @@ describe("buildRuntimeSection failedExtensions", () => {
       snapshot({
         failedExtensions: [
           {
-            name: "git-worktree-manager",
+            name: "git-workspace-manager",
             source: "directory",
             status: "failed",
             error:
               'This assignment will throw because "entries" is a constant.',
-            path: "/Users/me/.aethon/extensions/git-worktree-manager.ts",
+            path: "/Users/me/.aethon/extensions/git-workspace-manager.ts",
           },
           {
             name: "no-register",
@@ -66,9 +66,9 @@ describe("buildRuntimeSection failedExtensions", () => {
       }),
     );
     expect(out).toContain("Extensions that did NOT load");
-    expect(out).toContain("`git-worktree-manager` (directory, failed)");
+    expect(out).toContain("`git-workspace-manager` (directory, failed)");
     expect(out).toContain(
-      "/Users/me/.aethon/extensions/git-worktree-manager.ts",
+      "/Users/me/.aethon/extensions/git-workspace-manager.ts",
     );
     expect(out).toContain("entries");
     expect(out).toContain("`no-register` (extension-package, skipped)");

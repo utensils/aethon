@@ -48,7 +48,7 @@ function renderDashboard(
       <ProjectDashboard
         component={dashboard({
           project,
-          worktrees: [
+          workspaces: [
             {
               id: "main",
               label: "main",
@@ -122,7 +122,7 @@ describe("ProjectDashboard project icon", () => {
               label: "nyc-real-estate",
               path: "/repo/nyc-real-estate",
             },
-            worktrees: [],
+            workspaces: [],
             recentSessions: [],
             widgets: [],
             otherProjects: [],
@@ -150,8 +150,8 @@ describe("ProjectDashboard project icon", () => {
   });
 });
 
-describe("ProjectDashboard worktree removal", () => {
-  it("opens inline confirmation from a worktree remove icon", () => {
+describe("ProjectDashboard workspace removal", () => {
+  it("opens inline confirmation from a workspace remove icon", () => {
     const { onEvent } = renderDashboard();
     fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
     expect(onEvent).not.toHaveBeenCalled();
@@ -160,7 +160,7 @@ describe("ProjectDashboard worktree removal", () => {
     ).toBe("Confirm");
   });
 
-  it("confirms worktree removal without switching the row", () => {
+  it("confirms workspace removal without switching the row", () => {
     const { onEvent } = renderDashboard();
     fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
     fireEvent.click(
@@ -168,8 +168,8 @@ describe("ProjectDashboard worktree removal", () => {
     );
     expect(onEvent).toHaveBeenCalledTimes(1);
     expect(onEvent).toHaveBeenCalledWith(
-      "remove-worktree",
-      expect.objectContaining({ worktreeId: "wt-1", confirmed: true }),
+      "remove-workspace",
+      expect.objectContaining({ workspaceId: "wt-1", confirmed: true }),
       "wt-1",
     );
   });
@@ -184,13 +184,13 @@ describe("ProjectDashboard worktree removal", () => {
     ).toBeNull();
     fireEvent.click(row);
     expect(onEvent).toHaveBeenCalledWith(
-      "switch-worktree",
-      expect.objectContaining({ worktreeId: "wt-1" }),
+      "switch-workspace",
+      expect.objectContaining({ workspaceId: "wt-1" }),
       "wt-1",
     );
   });
 
-  it("does not show remove affordance for the main worktree", () => {
+  it("does not show remove affordance for the main workspace", () => {
     renderDashboard();
     expect(screen.queryByRole("button", { name: "Remove main" })).toBeNull();
   });

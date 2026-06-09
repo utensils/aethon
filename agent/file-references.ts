@@ -31,7 +31,7 @@ export interface FileReferenceExpansion {
 }
 
 export interface FileReferenceExpansionOptions {
-  /** Active tab/project/worktree cwd. All relative refs resolve under here. */
+  /** Active tab/project/workspace cwd. All relative refs resolve under here. */
   cwd: string;
   /** Leading explicit subagent name, if one was accepted for this turn. */
   leadingSubagentName?: string | null;
@@ -264,7 +264,7 @@ async function resolveReferenceTarget(
       const resolved = resolve(candidate);
       if (!isInsidePath(root, resolved) && !requested.startsWith("/")) {
         errors.push(
-          `${refLabel(ref)} resolves outside the project/worktree root`,
+          `${refLabel(ref)} resolves outside the project/workspace root`,
         );
         continue;
       }
@@ -281,7 +281,7 @@ async function resolveReferenceTarget(
       if (!isInsidePath(realRoot, realPath)) {
         return {
           kind: "error",
-          message: `${refLabel(ref)} resolves outside the project/worktree root after resolving symlinks`,
+          message: `${refLabel(ref)} resolves outside the project/workspace root after resolving symlinks`,
         };
       }
       if (stat.isDirectory()) {
@@ -302,7 +302,7 @@ async function resolveReferenceTarget(
       const absolute = resolve(requested);
       if (!isInsidePath(root, absolute) && (await exists(absolute))) {
         errors.push(
-          `${refLabel(ref)} resolves outside the project/worktree root`,
+          `${refLabel(ref)} resolves outside the project/workspace root`,
         );
       }
     }
@@ -426,7 +426,7 @@ function formatFileReferenceContext(
     "",
     "",
     `<aethon_file_references cwd=${JSON.stringify(root)}>`,
-    "The user mentioned @file references. These files were resolved relative to the active project/worktree cwd and are provided as deterministic context.",
+    "The user mentioned @file references. These files were resolved relative to the active project/workspace cwd and are provided as deterministic context.",
   ];
   for (const ref of references) {
     const attrs = [

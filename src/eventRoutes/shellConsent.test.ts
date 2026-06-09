@@ -8,7 +8,7 @@ describe("handleShellConsent", () => {
       "shell-write-",
       "shell-close-",
       "session-delete-",
-      "worktree-confirm-",
+      "workspace-confirm-",
     ]);
   });
 
@@ -79,20 +79,20 @@ describe("handleShellConsent", () => {
     );
   });
 
-  it("worktree-confirm-allow resolves and dismisses", async () => {
+  it("workspace-confirm-allow resolves and dismisses", async () => {
     const { ctx, mocks } = buildRouteFixture({
-      pendingWorktreePromptIds: ["nid-5"],
+      pendingWorkspacePromptIds: ["nid-5"],
     });
     const handled = await handleShellConsent(
       {
         component: { id: "notification-stack" },
         eventType: "action",
-        data: { id: "nid-5", action: "worktree-confirm-allow:nid-5" },
+        data: { id: "nid-5", action: "workspace-confirm-allow:nid-5" },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.resolveWorktreePrompt).toHaveBeenCalledWith("nid-5", true);
+    expect(mocks.resolveWorkspacePrompt).toHaveBeenCalledWith("nid-5", true);
     expect(mocks.dismissNotification).toHaveBeenCalledWith("nid-5");
   });
 

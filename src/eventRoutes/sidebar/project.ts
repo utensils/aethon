@@ -14,7 +14,7 @@ export const handleSidebarRemoveProject: EventRouteHandler = (
 };
 
 /** Sidebar disclosure on a project row — toggle the per-project
- *  expanded state so worktrees show/hide nested under the row. */
+ *  expanded state so workspaces show/hide nested under the row. */
 export const handleSidebarToggleProjectExpand: EventRouteHandler = (
   { eventType, data },
   ctx,
@@ -83,15 +83,15 @@ export const handleSidebarRenameProject: EventRouteHandler = (
   return true;
 };
 
-export const handleSidebarSetProjectWorktreeBase: EventRouteHandler = (
+export const handleSidebarSetProjectWorkspaceBase: EventRouteHandler = (
   { eventType, data },
   ctx,
 ) => {
-  if (eventType !== "set-project-worktree-base") return false;
+  if (eventType !== "set-project-workspace-base") return false;
   const { projectId, baseBranch } =
     (data as { projectId?: string; baseBranch?: string } | undefined) ?? {};
   if (projectId && typeof baseBranch === "string") {
-    ctx.setProjectWorktreeBaseBranch(projectId, baseBranch);
+    ctx.setProjectWorkspaceBaseBranch(projectId, baseBranch);
   }
   return true;
 };

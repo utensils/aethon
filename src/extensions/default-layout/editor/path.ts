@@ -7,7 +7,7 @@ export function compressPath(filePath: string): string {
   return `…/${parts.slice(-2).join("/")}`;
 }
 
-/** Strip the project/worktree root from an absolute path for a
+/** Strip the project/workspace root from an absolute path for a
  *  VS Code-style "Copy Relative Path". Falls back to the absolute path
  *  when the root isn't a prefix. Shared by the editor menubar and the
  *  tab-strip context menu so the two surfaces agree. */

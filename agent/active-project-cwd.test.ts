@@ -5,7 +5,7 @@ import {
 } from "./active-project-cwd";
 
 describe("activeProjectCwdFromJson", () => {
-  it("uses the active project path when no worktree is active", () => {
+  it("uses the active project path when no workspace is active", () => {
     expect(
       activeProjectCwdFromJson(
         JSON.stringify({
@@ -16,14 +16,14 @@ describe("activeProjectCwdFromJson", () => {
     ).toBe("/repo/app");
   });
 
-  it("prefers the active worktree path when present", () => {
+  it("prefers the active workspace path when present", () => {
     expect(
       activeProjectCwdFromJson(
         JSON.stringify({
           activeId: "p1",
-          activeWorktreeId: "wt1",
+          activeWorkspaceId: "wt1",
           projects: [{ id: "p1", path: "/repo/aethon" }],
-          worktreesByProject: {
+          workspacesByProject: {
             p1: [{ id: "wt1", projectId: "p1", path: "/repo/aethon-fix" }],
           },
         }),
@@ -31,14 +31,14 @@ describe("activeProjectCwdFromJson", () => {
     ).toBe("/repo/aethon-fix");
   });
 
-  it("falls back to the project path when the active worktree is stale", () => {
+  it("falls back to the project path when the active workspace is stale", () => {
     expect(
       activeProjectCwdFromJson(
         JSON.stringify({
           activeId: "p1",
-          activeWorktreeId: "missing",
+          activeWorkspaceId: "missing",
           projects: [{ id: "p1", path: "/repo/app" }],
-          worktreesByProject: { p1: [] },
+          workspacesByProject: { p1: [] },
         }),
       ),
     ).toBe("/repo/app");

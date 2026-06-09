@@ -7,10 +7,10 @@ export interface StartTaskOptions {
   projectId: string;
   prompt: string;
   attachments?: ChatAttachment[];
-  newWorktree?: boolean;
+  newWorkspace?: boolean;
   branch?: string;
   baseBranch?: string;
-  worktreeId?: string;
+  workspaceId?: string;
   /** Model the launched session should use (task-launcher model chip).
    *  Overrides the global default + per-project memory for this launch. */
   model?: string;
@@ -24,13 +24,13 @@ export interface UseTaskLauncherOptions {
   projectsRef: MutableRefObject<ProjectsState>;
   pushNotificationRef: MutableRefObject<(n: NotificationInput) => void>;
   setActiveProjectById: (id: string) => boolean;
-  createWorktreeWithParams: (opts: {
+  createWorkspaceWithParams: (opts: {
     projectId: string;
     branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
-  activateWorktree: (worktreeId: string | null) => void;
+  activateWorkspace: (workspaceId: string | null) => void;
   newTab: (
     restoreId?: string,
     restoreLabel?: string,
@@ -56,8 +56,8 @@ export function useTaskLauncher({
   projectsRef,
   pushNotificationRef,
   setActiveProjectById,
-  createWorktreeWithParams,
-  activateWorktree,
+  createWorkspaceWithParams,
+  activateWorkspace,
   newTab,
   pendingTabOpens,
   sendChat,
@@ -79,36 +79,36 @@ export function useTaskLauncher({
         setActiveProjectById(opts.projectId);
       }
       let cwd = project.path;
-      if (opts.newWorktree) {
+      if (opts.newWorkspace) {
         const branch = (opts.branch ?? "").trim();
-        const created = await createWorktreeWithParams({
+        const created = await createWorkspaceWithParams({
           projectId: opts.projectId,
           ...(branch ? { branch } : {}),
           baseBranch: opts.baseBranch,
         });
         if (!created) {
           pushNotificationRef.current({
-            title: "Worktree create failed",
+            title: "Workspace create failed",
             message: branch
               ? `Could not create '${branch}'. See the sidebar's pending row for details.`
-              : "Could not create an automatic worktree. See the sidebar's pending row for details.",
+              : "Could not create an automatic workspace. See the sidebar's pending row for details.",
             kind: "warning",
           });
           return;
         }
         cwd = created;
-        const createdWorktree =
-          projectsRef.current.worktreesByProject[opts.projectId]?.find(
+        const createdWorkspace =
+          projectsRef.current.workspacesByProject[opts.projectId]?.find(
             (w) => w.path === created,
           );
-        if (createdWorktree) activateWorktree(createdWorktree.id);
-      } else if (opts.worktreeId) {
+        if (createdWorkspace) activateWorkspace(createdWorkspace.id);
+      } else if (opts.workspaceId) {
         const list =
-          projectsRef.current.worktreesByProject[opts.projectId] ?? [];
-        const wt = list.find((w) => w.id === opts.worktreeId);
+          projectsRef.current.workspacesByProject[opts.projectId] ?? [];
+        const wt = list.find((w) => w.id === opts.workspaceId);
         if (wt) {
           cwd = wt.path;
-          activateWorktree(wt.id);
+          activateWorkspace(wt.id);
         }
       }
       const tabId = crypto.randomUUID();
@@ -134,8 +134,8 @@ export function useTaskLauncher({
       }
     },
     [
-      activateWorktree,
-      createWorktreeWithParams,
+      activateWorkspace,
+      createWorkspaceWithParams,
       newTab,
       pendingTabOpens,
       projectsRef,

@@ -423,8 +423,11 @@ function parsePersistedBuckets(
     return undefined;
   }
   const out: Record<string, PersistedTabBucket> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+  for (const [rawKey, raw] of Object.entries(value as Record<string, unknown>)) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    // Pre-workspace-rename snapshots used "::worktree::" in bucket keys;
+    // migrate on read so existing tabs restore into the renamed buckets.
+    const key = rawKey.replace("::worktree::", "::workspace::");
     const bucket = raw as { tabs?: unknown; activeTabId?: unknown };
     const tabs = validTabsFrom(bucket.tabs).map((t) =>
       restoreTabRecord(t, restartShellTabs, preserveAgentActivity),
@@ -533,7 +536,7 @@ export function serializeSessionUiSnapshot(
     const closedSessionIds = validSessionIdsFrom(state.closedSessionIds);
     // Persist when the active workspace OR any backgrounded workspace has
     // sessions worth keeping. A user sitting on a project's overview while
-    // agents run in its worktrees still has state to restore.
+    // agents run in its workspaces still has state to restore.
     if (tabs.length === 0 && !buckets && closedSessionIds.length === 0) {
       return null;
     }

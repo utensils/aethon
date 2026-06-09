@@ -1,16 +1,16 @@
 import type { MutableRefObject } from "react";
-import { setProjectWorktrees, type ProjectsState } from "../../../projects";
+import { setProjectWorkspaces, type ProjectsState } from "../../../projects";
 import {
   gitWorktreeRemove,
   gitWorktreeRemoveOrphan,
-  removeWorktreeFromList,
-  type Worktree,
-} from "../../../worktrees";
-import { closeTabsForRemovedWorktree } from "./tabCleanup";
+  removeWorkspaceFromList,
+  type Workspace,
+} from "../../../workspaces";
+import { closeTabsForRemovedWorkspace } from "./tabCleanup";
 import type {
   ProjectLookups,
-  WorktreeOperationDeps,
-  WorktreeRemovalPrompts,
+  WorkspaceOperationDeps,
+  WorkspaceRemovalPrompts,
 } from "./types";
 
 interface RemoveDeps {
@@ -19,47 +19,47 @@ interface RemoveDeps {
   syncProjectsToState: () => void;
   persistProjects: () => Promise<void>;
   tabCleanupDeps: {
-    stateRef: WorktreeOperationDeps["stateRef"];
-    tabBucketsRef: WorktreeOperationDeps["tabBucketsRef"];
-    syncRecentSessionsToState: WorktreeOperationDeps["syncRecentSessionsToState"];
-    closeTabNow: WorktreeOperationDeps["closeTabNow"];
-    activateWorktree: (worktreeId: string | null) => void;
+    stateRef: WorkspaceOperationDeps["stateRef"];
+    tabBucketsRef: WorkspaceOperationDeps["tabBucketsRef"];
+    syncRecentSessionsToState: WorkspaceOperationDeps["syncRecentSessionsToState"];
+    closeTabNow: WorkspaceOperationDeps["closeTabNow"];
+    activateWorkspace: (workspaceId: string | null) => void;
   };
-  worktreePrompts: WorktreeRemovalPrompts;
+  workspacePrompts: WorkspaceRemovalPrompts;
 }
 
-export async function removeWorktreeById(
+export async function removeWorkspaceById(
   deps: RemoveDeps,
-  worktreeId: string,
+  workspaceId: string,
   opts: { confirmed?: boolean } = {},
 ): Promise<void> {
-  const hit = deps.lookups.findProjectOfWorktree(worktreeId);
+  const hit = deps.lookups.findProjectOfWorkspace(workspaceId);
   if (!hit) return;
-  const { project, worktree } = hit;
-  if (worktree.pendingState === "removing") return;
-  if (worktree.isMain) {
-    deps.worktreePrompts.notifyCannotRemoveMain();
+  const { project, workspace } = hit;
+  if (workspace.pendingState === "removing") return;
+  if (workspace.isMain) {
+    deps.workspacePrompts.notifyCannotRemoveMain();
     return;
   }
-  const label = worktree.label ?? worktree.branch ?? "worktree";
+  const label = workspace.label ?? workspace.branch ?? "workspace";
   if (opts.confirmed !== true) {
-    if (!(await deps.worktreePrompts.promptRemoveWorktree(label))) return;
+    if (!(await deps.workspacePrompts.promptRemoveWorkspace(label))) return;
   }
 
   const originalList = [
-    ...(deps.projectsRef.current.worktreesByProject[project.id] ?? []),
+    ...(deps.projectsRef.current.workspacesByProject[project.id] ?? []),
   ];
-  const originalWorktree: Worktree = { ...worktree };
+  const originalWorkspace: Workspace = { ...workspace };
 
   const applyOptimisticRemoval = (): void => {
     const next = (
-      deps.projectsRef.current.worktreesByProject[project.id] ?? []
+      deps.projectsRef.current.workspacesByProject[project.id] ?? []
     ).map((w) =>
-      w.id === worktreeId
+      w.id === workspaceId
         ? { ...w, pendingState: "removing" as const, pendingError: undefined }
         : w,
     );
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       project.id,
       next,
@@ -72,18 +72,18 @@ export async function removeWorktreeById(
       (p) => p.id === project.id,
     );
     if (!projectStillExists) return;
-    closeTabsForRemovedWorktree(
+    closeTabsForRemovedWorkspace(
       deps.tabCleanupDeps,
       project.id,
-      worktreeId,
-      worktree.path,
-      deps.projectsRef.current.activeWorktreeId === worktreeId,
+      workspaceId,
+      workspace.path,
+      deps.projectsRef.current.activeWorkspaceId === workspaceId,
     );
-    const next = removeWorktreeFromList(
-      deps.projectsRef.current.worktreesByProject[project.id] ?? [],
-      worktreeId,
+    const next = removeWorkspaceFromList(
+      deps.projectsRef.current.workspacesByProject[project.id] ?? [],
+      workspaceId,
     );
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       project.id,
       next,
@@ -98,20 +98,20 @@ export async function removeWorktreeById(
     );
     if (!projectStillExists) return;
     const currentList =
-      deps.projectsRef.current.worktreesByProject[project.id] ?? [];
-    const existingIndex = currentList.findIndex((w) => w.id === worktreeId);
+      deps.projectsRef.current.workspacesByProject[project.id] ?? [];
+    const existingIndex = currentList.findIndex((w) => w.id === workspaceId);
     const next = [...currentList];
     if (existingIndex >= 0) {
-      next[existingIndex] = originalWorktree;
+      next[existingIndex] = originalWorkspace;
     } else {
-      const originalIndex = originalList.findIndex((w) => w.id === worktreeId);
+      const originalIndex = originalList.findIndex((w) => w.id === workspaceId);
       if (originalIndex < 0 || originalIndex >= next.length) {
-        next.push(originalWorktree);
+        next.push(originalWorkspace);
       } else {
-        next.splice(originalIndex, 0, originalWorktree);
+        next.splice(originalIndex, 0, originalWorkspace);
       }
     }
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       project.id,
       next,
@@ -124,50 +124,50 @@ export async function removeWorktreeById(
     try {
       await gitWorktreeRemove({
         projectPath: project.path,
-        worktreePath: worktree.path,
+        workspacePath: workspace.path,
         force: false,
       });
       finalizeRemoval();
     } catch (err) {
       const msg = String(err);
       if (msg.includes("dirty") || msg.includes("modified")) {
-        if (!(await deps.worktreePrompts.promptForceRemove(msg))) {
+        if (!(await deps.workspacePrompts.promptForceRemove(msg))) {
           restoreRemoval();
           return;
         }
         try {
           await gitWorktreeRemove({
             projectPath: project.path,
-            worktreePath: worktree.path,
+            workspacePath: workspace.path,
             force: true,
           });
           finalizeRemoval();
           return;
         } catch (e2) {
-          deps.worktreePrompts.notifyFailure(String(e2));
+          deps.workspacePrompts.notifyFailure(String(e2));
           restoreRemoval();
           return;
         }
       }
-      if (msg.includes("worktree not tracked")) {
-        if (!(await deps.worktreePrompts.promptOrphanCleanup())) {
+      if (msg.includes("workspace not tracked")) {
+        if (!(await deps.workspacePrompts.promptOrphanCleanup())) {
           restoreRemoval();
           return;
         }
         try {
           await gitWorktreeRemoveOrphan({
             projectPath: project.path,
-            worktreePath: worktree.path,
+            workspacePath: workspace.path,
           });
           finalizeRemoval();
           return;
         } catch (e2) {
-          deps.worktreePrompts.notifyFailure(String(e2));
+          deps.workspacePrompts.notifyFailure(String(e2));
           restoreRemoval();
           return;
         }
       }
-      deps.worktreePrompts.notifyFailure(msg);
+      deps.workspacePrompts.notifyFailure(msg);
       restoreRemoval();
     }
   };

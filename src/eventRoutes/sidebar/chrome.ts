@@ -67,7 +67,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
       | null
       | undefined;
     const wasAlreadyActiveProject = project?.id === selected.itemId;
-    ctx.activateWorktree(null);
+    ctx.activateWorkspace(null);
     ctx.setActiveProjectById(selected.itemId);
     ctx.setState((prev) => ({ ...prev, landing: null }));
     // Re-clicking the active project while a session tab owns the canvas

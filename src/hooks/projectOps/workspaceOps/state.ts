@@ -1,21 +1,21 @@
 import type { MutableRefObject } from "react";
 import {
   activeProject,
-  setActiveWorktree as setActiveWorktreeState,
+  setActiveWorkspace as setActiveWorkspaceState,
   setProjectIconUrl as setProjectIconUrlState,
   setProjectUiExpanded,
-  setProjectWorktreeBaseBranch as setProjectWorktreeBaseBranchState,
-  setProjectWorktreeSortMode,
-  setProjectWorktrees,
+  setProjectWorkspaceBaseBranch as setProjectWorkspaceBaseBranchState,
+  setProjectWorkspaceSortMode,
+  setProjectWorkspaces,
   type ProjectsState,
 } from "../../../projects";
 import {
-  orderWorktreesForDisplay,
-  reorderExtraWorktreeToIndex,
-  removeWorktreeFromList,
-  sortWorktreesNewestFirst,
-  type Worktree,
-} from "../../../worktrees";
+  orderWorkspacesForDisplay,
+  reorderExtraWorkspaceToIndex,
+  removeWorkspaceFromList,
+  sortWorkspacesNewestFirst,
+  type Workspace,
+} from "../../../workspaces";
 import { projectScopeBucketKey } from "../tabBuckets";
 import { swapProjectWatch } from "./bridgeWatch";
 import type { ProjectLookups } from "./types";
@@ -27,7 +27,7 @@ interface StateMutationDeps {
   scheduleProjectsSave: (delayMs?: number) => void;
 }
 
-interface ActivateWorktreeDeps extends StateMutationDeps {
+interface ActivateWorkspaceDeps extends StateMutationDeps {
   lookups: ProjectLookups;
   switchProjectBucket: (
     fromKey: string,
@@ -53,7 +53,7 @@ export function setProjectExpanded(
     projectId,
     expanded,
   );
-  if (expanded && !deps.projectsRef.current.worktreesByProject[projectId]) {
+  if (expanded && !deps.projectsRef.current.workspacesByProject[projectId]) {
     deps.onFirstExpand(projectId);
   }
   deps.syncProjectsToState();
@@ -75,24 +75,24 @@ export function setProjectIconUrl(
   void deps.persistProjects();
 }
 
-export function activateWorktree(
-  deps: ActivateWorktreeDeps,
-  worktreeId: string | null,
+export function activateWorkspace(
+  deps: ActivateWorkspaceDeps,
+  workspaceId: string | null,
 ): void {
   const current = deps.projectsRef.current;
-  if (current.activeWorktreeId === worktreeId) return;
+  if (current.activeWorkspaceId === workspaceId) return;
   const fromKey = projectScopeBucketKey(
     current.activeId,
-    current.activeWorktreeId,
+    current.activeWorkspaceId,
   );
   let activeProjectId = current.activeId;
   let nextCwd: string | null;
   let nextProjectPath: string | null;
-  if (worktreeId) {
-    const hit = deps.lookups.findProjectOfWorktree(worktreeId);
+  if (workspaceId) {
+    const hit = deps.lookups.findProjectOfWorkspace(workspaceId);
     if (!hit) return;
     activeProjectId = hit.project.id;
-    nextCwd = hit.worktree.path;
+    nextCwd = hit.workspace.path;
     nextProjectPath = hit.project.path;
   } else {
     const project = activeProject(current);
@@ -105,13 +105,13 @@ export function activateWorktree(
     previousActive != null &&
     nextProjectPath !== null &&
     previousActive.path !== nextProjectPath;
-  deps.projectsRef.current = setActiveWorktreeState(
+  deps.projectsRef.current = setActiveWorkspaceState(
     { ...current, activeId: activeProjectId },
-    worktreeId,
+    workspaceId,
   );
   const nextTabId = deps.switchProjectBucket(
     fromKey,
-    projectScopeBucketKey(activeProjectId, worktreeId),
+    projectScopeBucketKey(activeProjectId, workspaceId),
     { mirrorProjects: true },
   );
   deps.scheduleProjectsSave();
@@ -124,19 +124,19 @@ export function activateWorktree(
   }
 }
 
-export function dismissPendingWorktree(
+export function dismissPendingWorkspace(
   deps: Pick<StateMutationDeps, "projectsRef" | "persistProjects"> & {
     lookups: ProjectLookups;
   },
-  worktreeId: string,
+  workspaceId: string,
 ): void {
-  const hit = deps.lookups.findProjectOfWorktree(worktreeId);
+  const hit = deps.lookups.findProjectOfWorkspace(workspaceId);
   if (!hit) return;
-  const list = removeWorktreeFromList(
-    deps.projectsRef.current.worktreesByProject[hit.project.id] ?? [],
-    worktreeId,
+  const list = removeWorkspaceFromList(
+    deps.projectsRef.current.workspacesByProject[hit.project.id] ?? [],
+    workspaceId,
   );
-  deps.projectsRef.current = setProjectWorktrees(
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     hit.project.id,
     list,
@@ -144,24 +144,24 @@ export function dismissPendingWorktree(
   void deps.persistProjects();
 }
 
-export function renameWorktree(
+export function renameWorkspace(
   deps: Pick<StateMutationDeps, "projectsRef" | "persistProjects"> & {
     lookups: ProjectLookups;
   },
-  worktreeId: string,
+  workspaceId: string,
   label: string,
 ): void {
-  const hit = deps.lookups.findProjectOfWorktree(worktreeId);
+  const hit = deps.lookups.findProjectOfWorkspace(workspaceId);
   if (!hit) return;
   const trimmed = label.trim();
-  const next: Worktree[] = (
-    deps.projectsRef.current.worktreesByProject[hit.project.id] ?? []
+  const next: Workspace[] = (
+    deps.projectsRef.current.workspacesByProject[hit.project.id] ?? []
   ).map((w) =>
-    w.id === worktreeId
+    w.id === workspaceId
       ? { ...w, label: trimmed.length > 0 ? trimmed : undefined }
       : w,
   );
-  deps.projectsRef.current = setProjectWorktrees(
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     hit.project.id,
     next,
@@ -186,12 +186,12 @@ export function renameProject(
   void deps.persistProjects();
 }
 
-export function setProjectWorktreeBaseBranch(
+export function setProjectWorkspaceBaseBranch(
   deps: Pick<StateMutationDeps, "projectsRef" | "persistProjects">,
   projectId: string,
   baseBranch: string | null,
 ): void {
-  const next = setProjectWorktreeBaseBranchState(
+  const next = setProjectWorkspaceBaseBranchState(
     deps.projectsRef.current,
     projectId,
     baseBranch,
@@ -201,55 +201,55 @@ export function setProjectWorktreeBaseBranch(
   void deps.persistProjects();
 }
 
-export function reorderWorktree(
+export function reorderWorkspace(
   deps: Pick<
     StateMutationDeps,
     "projectsRef" | "syncProjectsToState" | "persistProjects"
   >,
   projectId: string,
-  worktreeId: string,
+  workspaceId: string,
   toIndex: number,
 ): void {
-  const prior = deps.projectsRef.current.worktreesByProject[projectId] ?? [];
+  const prior = deps.projectsRef.current.workspacesByProject[projectId] ?? [];
   const project = deps.projectsRef.current.projects.find(
     (entry) => entry.id === projectId,
   );
-  const displayOrder = orderWorktreesForDisplay(
+  const displayOrder = orderWorkspacesForDisplay(
     prior,
-    project?.worktreeSortMode,
+    project?.workspaceSortMode,
   );
-  const reordered = reorderExtraWorktreeToIndex(
+  const reordered = reorderExtraWorkspaceToIndex(
     displayOrder,
-    worktreeId,
+    workspaceId,
     toIndex,
   );
   if (!reordered) return;
-  let next = setProjectWorktrees(
+  let next = setProjectWorkspaces(
     deps.projectsRef.current,
     projectId,
     reordered,
   );
-  next = setProjectWorktreeSortMode(next, projectId, "manual");
+  next = setProjectWorkspaceSortMode(next, projectId, "manual");
   deps.projectsRef.current = next;
   deps.syncProjectsToState();
   void deps.persistProjects();
 }
 
-export function sortProjectWorktreesNewest(
+export function sortProjectWorkspacesNewest(
   deps: Pick<
     StateMutationDeps,
     "projectsRef" | "syncProjectsToState" | "persistProjects"
   >,
   projectId: string,
 ): void {
-  const prior = deps.projectsRef.current.worktreesByProject[projectId] ?? [];
-  const sorted = sortWorktreesNewestFirst(prior);
+  const prior = deps.projectsRef.current.workspacesByProject[projectId] ?? [];
+  const sorted = sortWorkspacesNewestFirst(prior);
   const changed = sorted.some((w, index) => w.id !== prior[index]?.id);
   let next = deps.projectsRef.current;
   if (changed) {
-    next = setProjectWorktrees(next, projectId, sorted);
+    next = setProjectWorkspaces(next, projectId, sorted);
   }
-  next = setProjectWorktreeSortMode(next, projectId, "newest");
+  next = setProjectWorkspaceSortMode(next, projectId, "newest");
   if (next === deps.projectsRef.current && !changed) return;
   deps.projectsRef.current = next;
   deps.syncProjectsToState();
@@ -257,22 +257,22 @@ export function sortProjectWorktreesNewest(
 }
 
 /**
- * Apply a removed-worktree state snapshot (drop the row, sync mirror,
+ * Apply a removed-workspace state snapshot (drop the row, sync mirror,
  * persist). Used by remove flows after the git operation succeeds.
  */
-export function applyWorktreeRemoval(
+export function applyWorkspaceRemoval(
   deps: Pick<
     StateMutationDeps,
     "projectsRef" | "syncProjectsToState" | "persistProjects"
   >,
   projectId: string,
-  worktreeId: string,
+  workspaceId: string,
 ): void {
-  const list = removeWorktreeFromList(
-    deps.projectsRef.current.worktreesByProject[projectId] ?? [],
-    worktreeId,
+  const list = removeWorkspaceFromList(
+    deps.projectsRef.current.workspacesByProject[projectId] ?? [],
+    workspaceId,
   );
-  deps.projectsRef.current = setProjectWorktrees(
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     projectId,
     list,
@@ -281,4 +281,4 @@ export function applyWorktreeRemoval(
   void deps.persistProjects();
 }
 
-export { type StateMutationDeps, type ActivateWorktreeDeps, type RefreshDeps };
+export { type StateMutationDeps, type ActivateWorkspaceDeps, type RefreshDeps };

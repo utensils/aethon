@@ -168,7 +168,7 @@ export interface BridgeMessageContext {
   startTaskInProject: (opts: {
     projectId: string;
     prompt: string;
-    newWorktree?: boolean;
+    newWorkspace?: boolean;
     branch?: string;
     baseBranch?: string;
     model?: string;

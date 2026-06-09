@@ -2,9 +2,9 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Project, ProjectsState } from "../../projects";
 import type { ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
-import type { Worktree } from "../../worktrees";
+import type { Workspace } from "../../workspaces";
 import type { GitStatus } from "../useProjects";
-import type { WorktreeRemovalPrompts } from "./worktreeOps/types";
+import type { WorkspaceRemovalPrompts } from "./workspaceOps/types";
 
 export interface RecentSessionItem {
   id: string;
@@ -62,15 +62,15 @@ export interface UseProjectOpsContext {
     discovered: DiscoveredSession[],
     knownIds: Set<string>,
   ) => void;
-  /** From useTabs: force-close visible tabs after their backing worktree
-   *  is removed. Worktree deletion is already destructive, so there is
+  /** From useTabs: force-close visible tabs after their backing workspace
+   *  is removed. Workspace deletion is already destructive, so there is
    *  no separate close confirmation for those session tabs. */
   closeTabNow: (tabId: string) => void;
   /** From useTabs: create an interactive shell sub-tab when the project
    *  overview is already showing an open terminal panel. */
   newShellTab?: () => void;
-  /** Notification-backed prompts for destructive worktree removal flows. */
-  worktreePrompts: WorktreeRemovalPrompts;
+  /** Notification-backed prompts for destructive workspace removal flows. */
+  workspacePrompts: WorkspaceRemovalPrompts;
 }
 
 export interface UseProjectOpsActions {
@@ -114,44 +114,44 @@ export interface UseProjectOpsActions {
    *  is already set to the same value. */
   setProjectIconUrl: (projectId: string, iconUrl: string | null) => void;
 
-  // ─── Worktree ops ──────────────────────────────────────────────────
+  // ─── Workspace ops ──────────────────────────────────────────────────
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
-  refreshProjectWorktrees: (projectId: string) => Promise<void>;
-  activateWorktree: (worktreeId: string | null) => void;
-  createWorktreeForProject: (projectId: string) => Promise<void>;
-  /** Parameterised worktree-create. Used by the task-launcher composer
+  refreshProjectWorkspaces: (projectId: string) => Promise<void>;
+  activateWorkspace: (workspaceId: string | null) => void;
+  createWorkspaceForProject: (projectId: string) => Promise<void>;
+  /** Parameterised workspace-create. Used by the task-launcher composer
    *  and the agent-side `startTask` pi tool; both pass real values
-   *  instead of prompting. Returns the path of the new worktree on
+   *  instead of prompting. Returns the path of the new workspace on
    *  success, or null on failure (the pending-row state machine still
    *  surfaces the error in the sidebar). */
-  createWorktreeWithParams: (opts: {
+  createWorkspaceWithParams: (opts: {
     projectId: string;
     branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
-  removeWorktreeById: (
-    worktreeId: string,
+  removeWorkspaceById: (
+    workspaceId: string,
     opts?: { confirmed?: boolean },
   ) => Promise<void>;
-  dismissPendingWorktree: (worktreeId: string) => void;
-  retryPendingWorktree: (worktreeId: string) => Promise<void>;
-  renameWorktree: (worktreeId: string, label: string) => void;
+  dismissPendingWorkspace: (workspaceId: string) => void;
+  retryPendingWorkspace: (workspaceId: string) => Promise<void>;
+  renameWorkspace: (workspaceId: string, label: string) => void;
   renameProject: (projectId: string, label: string) => void;
-  setProjectWorktreeBaseBranch: (
+  setProjectWorkspaceBaseBranch: (
     projectId: string,
     baseBranch: string | null,
   ) => void;
-  reorderWorktree: (
+  reorderWorkspace: (
     projectId: string,
-    worktreeId: string,
+    workspaceId: string,
     toIndex: number,
   ) => void;
-  sortProjectWorktreesNewest: (projectId: string) => void;
+  sortProjectWorkspacesNewest: (projectId: string) => void;
   fetchBranches: (projectId: string) => Promise<string[]>;
-  findProjectOfWorktree: (
-    worktreeId: string,
-  ) => { project: Project; worktree: Worktree } | null;
+  findProjectOfWorkspace: (
+    workspaceId: string,
+  ) => { project: Project; workspace: Workspace } | null;
 }
 
 export interface TabBucket {

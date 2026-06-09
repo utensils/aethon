@@ -8,7 +8,7 @@ export const SHELL_CONSENT_PREFIXES = Object.freeze([
   "shell-write-",
   "shell-close-",
   "session-delete-",
-  "worktree-confirm-",
+  "workspace-confirm-",
 ] as const);
 
 /** Top-precedence route. Runs before extension interception so a user's
@@ -92,24 +92,24 @@ export const handleShellConsent: EventRouteHandler = ({
     return true;
   }
 
-  // worktree destructive confirmations
+  // workspace destructive confirmations
   if (
     eventType === "action" &&
     typeof action === "string" &&
-    action.startsWith("worktree-confirm-") &&
+    action.startsWith("workspace-confirm-") &&
     id
   ) {
-    const allowed = action.startsWith("worktree-confirm-allow:");
-    ctx.resolveWorktreePrompt(id, allowed);
+    const allowed = action.startsWith("workspace-confirm-allow:");
+    ctx.resolveWorkspacePrompt(id, allowed);
     ctx.dismissNotification(id);
     return true;
   }
   if (
     (eventType === "dismiss" || eventType === "expire") &&
     typeof id === "string" &&
-    ctx.hasPendingWorktreePrompt(id)
+    ctx.hasPendingWorkspacePrompt(id)
   ) {
-    ctx.resolveWorktreePrompt(id, false);
+    ctx.resolveWorkspacePrompt(id, false);
     ctx.dismissNotification(id);
     return true;
   }

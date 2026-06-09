@@ -3,13 +3,13 @@ import {
   handleSidebarResize,
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
-  handleSidebarRemoveWorktree,
-  handleSidebarReorderWorktree,
-  handleSidebarSortProjectWorktrees,
+  handleSidebarRemoveWorkspace,
+  handleSidebarReorderWorkspace,
+  handleSidebarSortProjectWorkspaces,
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
-  handleSidebarSetProjectWorktreeBase,
-  handleSidebarSwitchWorktree,
+  handleSidebarSetProjectWorkspaceBase,
+  handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
   handleSectionedSelect,
 } from "./sidebar";
@@ -67,72 +67,72 @@ describe("handleSidebarRemoveProject", () => {
   });
 });
 
-describe("handleSidebarSetProjectWorktreeBase", () => {
+describe("handleSidebarSetProjectWorkspaceBase", () => {
   it("delegates base branch changes to project ops", async () => {
     const { ctx } = buildRouteFixture();
-    const handled = await handleSidebarSetProjectWorktreeBase(
+    const handled = await handleSidebarSetProjectWorkspaceBase(
       {
         component: { id: "sidebar" },
-        eventType: "set-project-worktree-base",
+        eventType: "set-project-workspace-base",
         data: { projectId: "proj-1", baseBranch: "upstream/trunk" },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(ctx.setProjectWorktreeBaseBranch).toHaveBeenCalledWith(
+    expect(ctx.setProjectWorkspaceBaseBranch).toHaveBeenCalledWith(
       "proj-1",
       "upstream/trunk",
     );
   });
 });
 
-describe("handleSidebarRemoveWorktree", () => {
+describe("handleSidebarRemoveWorkspace", () => {
   it("passes inline confirmation through to the project operation", async () => {
     const { ctx } = buildRouteFixture();
-    const handled = await handleSidebarRemoveWorktree(
+    const handled = await handleSidebarRemoveWorkspace(
       {
         component: { id: "sidebar" },
-        eventType: "remove-worktree",
-        data: { worktreeId: "wt-1", confirmed: true },
+        eventType: "remove-workspace",
+        data: { workspaceId: "wt-1", confirmed: true },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(ctx.removeWorktreeById).toHaveBeenCalledWith("wt-1", {
+    expect(ctx.removeWorkspaceById).toHaveBeenCalledWith("wt-1", {
       confirmed: true,
     });
   });
 });
 
-describe("handleSidebarReorderWorktree", () => {
-  it("delegates manual worktree reordering to project ops", async () => {
+describe("handleSidebarReorderWorkspace", () => {
+  it("delegates manual workspace reordering to project ops", async () => {
     const { ctx, mocks } = buildRouteFixture();
-    const handled = await handleSidebarReorderWorktree(
+    const handled = await handleSidebarReorderWorkspace(
       {
         component: { id: "sidebar" },
-        eventType: "reorder-worktree",
-        data: { projectId: "proj-1", worktreeId: "wt-1", toIndex: 0 },
+        eventType: "reorder-workspace",
+        data: { projectId: "proj-1", workspaceId: "wt-1", toIndex: 0 },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.reorderWorktree).toHaveBeenCalledWith("proj-1", "wt-1", 0);
+    expect(mocks.reorderWorkspace).toHaveBeenCalledWith("proj-1", "wt-1", 0);
   });
 });
 
-describe("handleSidebarSortProjectWorktrees", () => {
+describe("handleSidebarSortProjectWorkspaces", () => {
   it("delegates newest-first sorting to project ops", async () => {
     const { ctx, mocks } = buildRouteFixture();
-    const handled = await handleSidebarSortProjectWorktrees(
+    const handled = await handleSidebarSortProjectWorkspaces(
       {
         component: { id: "sidebar" },
-        eventType: "sort-project-worktrees",
+        eventType: "sort-project-workspaces",
         data: { projectId: "proj-1" },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.sortProjectWorktreesNewest).toHaveBeenCalledWith("proj-1");
+    expect(mocks.sortProjectWorkspacesNewest).toHaveBeenCalledWith("proj-1");
   });
 });
 
@@ -302,7 +302,7 @@ describe("handleSidebarToggleExtension", () => {
   });
 });
 
-describe("handleSidebarSwitchWorktree", () => {
+describe("handleSidebarSwitchWorkspace", () => {
   const sidebarState = {
     sidebar: {
       projects: [
@@ -310,7 +310,7 @@ describe("handleSidebarSwitchWorktree", () => {
           id: "proj-1",
           label: "aethon",
           iconUrl: "asset://localhost/project-icons/aethon.png",
-          worktrees: [
+          workspaces: [
             {
               id: "wt-1",
               label: "fix/issue",
@@ -324,34 +324,34 @@ describe("handleSidebarSwitchWorktree", () => {
     },
   };
 
-  it("shows the landing when switching to an empty worktree scope", async () => {
+  it("shows the landing when switching to an empty workspace scope", async () => {
     const { ctx, applySetState } = buildRouteFixture({ state: sidebarState });
 
-    const handled = await handleSidebarSwitchWorktree(
+    const handled = await handleSidebarSwitchWorkspace(
       {
         component: { id: "sidebar" },
-        eventType: "switch-worktree",
-        data: { worktreeId: "wt-1" },
+        eventType: "switch-workspace",
+        data: { workspaceId: "wt-1" },
       },
       ctx,
     );
 
     expect(handled).toBe(true);
-    expect(ctx.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith("wt-1");
     expect(applySetState().landing).toMatchObject({
-      kind: "worktree",
+      kind: "workspace",
       projectId: "proj-1",
       iconUrl: "asset://localhost/project-icons/aethon.png",
-      worktreeId: "wt-1",
+      workspaceId: "wt-1",
       path: "/repo/aethon-fix-issue",
     });
   });
 
-  it("reveals an existing worktree session instead of covering it with landing", async () => {
+  it("reveals an existing workspace session instead of covering it with landing", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: sidebarState,
     });
-    mocks.activateWorktree.mockImplementation(() => {
+    mocks.activateWorkspace.mockImplementation(() => {
       ctx.stateRef.current = {
         ...ctx.stateRef.current,
         tabs: [{ id: "tab-1", kind: "agent", cwd: "/repo/aethon-fix-issue" }],
@@ -359,11 +359,11 @@ describe("handleSidebarSwitchWorktree", () => {
       };
     });
 
-    const handled = await handleSidebarSwitchWorktree(
+    const handled = await handleSidebarSwitchWorkspace(
       {
         component: { id: "sidebar" },
-        eventType: "switch-worktree",
-        data: { worktreeId: "wt-1" },
+        eventType: "switch-workspace",
+        data: { workspaceId: "wt-1" },
       },
       ctx,
     );
@@ -372,39 +372,39 @@ describe("handleSidebarSwitchWorktree", () => {
     expect(applySetState().landing).toBeNull();
   });
 
-  it("re-clicking the already-active worktree returns to the landing overview", async () => {
-    // Starting state: worktree wt-1 is active with an agent session on
-    // top. Clicking wt-1 again is the user's "back to the worktree
+  it("re-clicking the already-active workspace returns to the landing overview", async () => {
+    // Starting state: workspace wt-1 is active with an agent session on
+    // top. Clicking wt-1 again is the user's "back to the workspace
     // landing" gesture — rebuild the landing AND deselect the session
     // tab via the overview sentinel so the landing actually renders.
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {
         ...sidebarState,
-        activeWorktreeId: "wt-1",
+        activeWorkspaceId: "wt-1",
         tabs: [{ id: "tab-1", kind: "agent", cwd: "/repo/aethon-fix-issue" }],
         activeTabId: "tab-1",
       },
     });
 
-    const handled = await handleSidebarSwitchWorktree(
+    const handled = await handleSidebarSwitchWorkspace(
       {
         component: { id: "sidebar" },
-        eventType: "switch-worktree",
-        data: { worktreeId: "wt-1" },
+        eventType: "switch-workspace",
+        data: { workspaceId: "wt-1" },
       },
       ctx,
     );
 
     expect(handled).toBe(true);
-    expect(mocks.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(mocks.activateWorkspace).toHaveBeenCalledWith("wt-1");
     const next = applySetState({
-      activeWorktreeId: "wt-1",
+      activeWorkspaceId: "wt-1",
       tabs: [{ id: "tab-1", kind: "agent", cwd: "/repo/aethon-fix-issue" }],
       activeTabId: "tab-1",
     });
     expect(next.landing).toMatchObject({
-      kind: "worktree",
-      worktreeId: "wt-1",
+      kind: "workspace",
+      workspaceId: "wt-1",
     });
     expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
   });
@@ -489,13 +489,13 @@ describe("handleSectionedSelect", () => {
     expect(mocks.openProjectFromPicker).toHaveBeenCalledTimes(1);
   });
 
-  it("projects section selects the main project and clears worktree landing", async () => {
+  it("projects section selects the main project and clears workspace landing", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {
         landing: {
-          kind: "worktree",
+          kind: "workspace",
           projectId: "proj-1",
-          worktreeId: "wt-1",
+          workspaceId: "wt-1",
         },
       },
     });
@@ -507,7 +507,7 @@ describe("handleSectionedSelect", () => {
       },
       ctx,
     );
-    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("proj-1");
     expect(applySetState().landing).toBeNull();
   });

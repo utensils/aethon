@@ -6,7 +6,7 @@ import { reorderTabToIndex } from "../utils/tabReorder";
 
 /** Switch the active tab to the overview sentinel. Used both by the
  *  permanent overview pill in the tab strip and by the sidebar
- *  re-click gestures in `sidebar/chrome.ts` + `sidebar/worktree.ts`. */
+ *  re-click gestures in `sidebar/chrome.ts` + `sidebar/workspace.ts`. */
 export function activateOverview(ctx: EventRouteContext): void {
   ctx.setState((prev) => {
     if (prev.activeTabId === OVERVIEW_TAB_ID) return prev;

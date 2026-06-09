@@ -125,6 +125,9 @@ struct RawIssueTemplatesConfig {
 struct RawIssueTemplate {
     label: Option<String>,
     prompt: Option<String>,
+    /// Workspace terminology; `new_worktree` is the pre-rename TOML
+    /// spelling, still accepted so existing issues.toml files keep working.
+    new_workspace: Option<bool>,
     new_worktree: Option<bool>,
     branch: Option<String>,
     branch_prefix: Option<String>,
@@ -144,7 +147,7 @@ pub struct IssueTemplate {
     id: String,
     label: String,
     prompt: String,
-    new_worktree: Option<bool>,
+    new_workspace: Option<bool>,
     branch: Option<String>,
     branch_prefix: Option<String>,
     when_labels: Vec<String>,
@@ -236,7 +239,7 @@ pub(crate) fn parse_issue_templates_toml(input: &str) -> IssueTemplatesConfig {
                 id,
                 label,
                 prompt,
-                new_worktree: raw.new_worktree,
+                new_workspace: raw.new_workspace.or(raw.new_worktree),
                 branch: raw.branch.filter(|s| !s.trim().is_empty()),
                 branch_prefix: raw.branch_prefix.filter(|s| !s.trim().is_empty()),
                 when_labels: raw
@@ -681,12 +684,26 @@ prompt = "Document {title}"
         assert!(parsed.warning.is_none());
         assert_eq!(parsed.templates.len(), 2);
         assert_eq!(parsed.templates[0].id, "default");
-        assert_eq!(parsed.templates[0].new_worktree, Some(true));
+        // Legacy `new_worktree` TOML key still maps onto the renamed field.
+        assert_eq!(parsed.templates[0].new_workspace, Some(true));
         assert_eq!(
             parsed.templates[0].branch.as_deref(),
             Some("{branchPrefix}/issue-{number}-{slug}")
         );
         assert_eq!(parsed.templates[1].when_labels, vec!["documentation"]);
+    }
+
+    #[test]
+    fn parse_issue_templates_toml_accepts_new_workspace_key() {
+        let parsed = parse_issue_templates_toml(
+            r#"
+[issue_templates.modern]
+label = "Modern"
+new_workspace = true
+prompt = "Do {title}"
+"#,
+        );
+        assert_eq!(parsed.templates[0].new_workspace, Some(true));
     }
 
     #[test]

@@ -386,8 +386,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [
         { id: "p1", label: "p1", path: "/tmp/p1", lastUsed: Date.now() },
@@ -406,8 +406,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [{ id: "p1", label: "p1", path: "/tmp/p1", lastUsed: 1 }],
     };
@@ -425,16 +425,16 @@ describe("handleReady", () => {
     expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
   });
 
-  it("re-announces the active worktree cwd, not the project root", () => {
+  it("re-announces the active workspace cwd, not the project root", () => {
     const { ctx, mocks } = buildHandlerFixture({
       state: { activeTabId: "tab-1", tabs: [{ id: "tab-1" }] },
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: "wt-1",
+      activeWorkspaceId: "wt-1",
       activeHostId: null,
       projects: [{ id: "p1", label: "p1", path: "/tmp/p1", lastUsed: 1 }],
-      worktreesByProject: {
+      workspacesByProject: {
         p1: [
           {
             id: "wt-1",
@@ -463,7 +463,7 @@ describe("handleReady", () => {
     );
   });
 
-  it("re-announces the active tab cwd even when the project worktree selection was cleared", () => {
+  it("re-announces the active tab cwd even when the project workspace selection was cleared", () => {
     const { ctx, mocks } = buildHandlerFixture({
       state: {
         activeTabId: "tab-1",
@@ -479,10 +479,10 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: null,
+      activeWorkspaceId: null,
       activeHostId: null,
       projects: [{ id: "p1", label: "p1", path: "/tmp/p1", lastUsed: 1 }],
-      worktreesByProject: {
+      workspacesByProject: {
         p1: [
           {
             id: "wt-1",
@@ -524,8 +524,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p2",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [
         { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },
@@ -566,8 +566,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [{ id: "p1", label: "A", path: "/repo/a", lastUsed: 1 }],
     };
@@ -632,8 +632,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [{ id: "p1", label: "A", path: "/repo/a", lastUsed: 1 }],
     };
@@ -654,7 +654,7 @@ describe("handleReady", () => {
     expect(tabOpenPayloads).toEqual([]);
   });
 
-  it("requests transcript replay for worktree tabs with their tab cwd", () => {
+  it("requests transcript replay for workspace tabs with their tab cwd", () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({
       state: {
@@ -671,8 +671,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p1",
-      activeWorktreeId: "wt-1",
-      worktreesByProject: {
+      activeWorkspaceId: "wt-1",
+      workspacesByProject: {
         p1: [
           {
             id: "wt-1",
@@ -717,8 +717,8 @@ describe("handleReady", () => {
     });
     ctx.projectsRef.current = {
       activeId: "p2",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [
         { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },

@@ -1,6 +1,6 @@
 /**
  * `StatusBar` — three-region status footer (left/center/right) with an
- * optional project/worktree/branch chip wedged between `left` and
+ * optional project/workspace/branch chip wedged between `left` and
  * `center`, plus a devshell chip after it. Both chips read from
  * central state, never from a local fetch — the sidebar feeds the
  * project chip and the `useDevshell` hook feeds the devshell chip.
@@ -20,8 +20,8 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     right?: StringValue;
     context?: { $ref: string };
     /** Optional segments rendered between `left` and `center`. Each is
-     *  a small chip carrying project / worktree / branch context.
-     *  Resolved by reading the active project + active worktree from
+     *  a small chip carrying project / workspace / branch context.
+     *  Resolved by reading the active project + active workspace from
      *  /sidebar/projects. */
     showProjectChip?: boolean;
   };
@@ -33,7 +33,7 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     ? contextUsageFromValue(resolveValue(state, props.context.$ref))
     : null;
 
-  // Project / worktree / branch chip — derived from the live sidebar
+  // Project / workspace / branch chip — derived from the live sidebar
   // projects list so a single source of truth drives both the sidebar
   // and the status bar. No-op when no project is active.
   type SidebarProj = {
@@ -42,7 +42,7 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     active?: boolean;
     tooltip?: string;
     git?: { branch?: string; dirty?: boolean; ahead?: number; behind?: number };
-    worktrees?: Array<{
+    workspaces?: Array<{
       id: string;
       label?: string;
       branch?: string;
@@ -57,11 +57,11 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     (typeof activeProjectId === "string"
       ? projects.find((p) => p.id === activeProjectId)
       : undefined) ?? projects.find((p) => p.active === true);
-  const activeWt = active?.worktrees?.find((w) => w.active === true);
+  const activeWt = active?.workspaces?.find((w) => w.active === true);
   const showChip = props.showProjectChip !== false && !!active;
 
   // Working-tree change count from the /vcs slice (populated by
-  // useVcsStatus for the active project/worktree). Shown in the chip in
+  // useVcsStatus for the active project/workspace). Shown in the chip in
   // place of the bare dirty dot so the footer carries a real signal.
   const vcs = resolveValue(state, "/vcs") as
     | { changes?: { total?: number } }
@@ -99,7 +99,7 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
           {activeWt ? (
             <>
               <span className="a2ui-status-chip-sep">/</span>
-              <span className="a2ui-status-chip-worktree">
+              <span className="a2ui-status-chip-workspace">
                 {activeWt.label || activeWt.branch}
               </span>
             </>

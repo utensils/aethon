@@ -1,13 +1,13 @@
 /**
- * `WorktreeLanding` — full-canvas landing shown when the user clicks a
- * worktree in the sidebar but hasn't yet started a session in it.
+ * `WorkspaceLanding` — full-canvas landing shown when the user clicks a
+ * workspace in the sidebar but hasn't yet started a session in it.
  * Mirrors `EmptyState`'s visual shape (AeMark hero + active-target chip
- * + CTAs) but scoped to a single worktree. The "Start Session" CTA
- * spawns a fresh agent tab whose cwd is the worktree's path; "Open in
+ * + CTAs) but scoped to a single workspace. The "Start Session" CTA
+ * spawns a fresh agent tab whose cwd is the workspace's path; "Open in
  * Files" reveals it in the system file manager.
  *
- * Visibility is driven by `/landing/kind === "worktree"` — sidebar
- * emits the "switch-worktree" event which the app handles by writing
+ * Visibility is driven by `/landing/kind === "workspace"` — sidebar
+ * emits the "switch-workspace" event which the app handles by writing
  * to `/landing`. Selecting any tab clears `/landing` so the canvas
  * snaps back.
  *
@@ -26,14 +26,14 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { DashboardSessionRow } from "../dashboard/session-row";
 import { AeMarkInline } from "./mark";
 
-export function WorktreeLanding({
+export function WorkspaceLanding({
   component,
   state,
   onEvent,
 }: BuiltinComponentProps) {
   const props = component.props as {
     landing?: { $ref: string };
-    recentSessions?: { $ref: string } | WorktreeLandingSession[];
+    recentSessions?: { $ref: string } | WorkspaceLandingSession[];
   };
   const landing = (() => {
     if (!props.landing) return null;
@@ -44,14 +44,14 @@ export function WorktreeLanding({
       projectId?: string;
       projectLabel?: string;
       iconUrl?: string;
-      worktreeId?: string;
-      worktreeLabel?: string;
+      workspaceId?: string;
+      workspaceLabel?: string;
       branch?: string;
       path?: string;
       isMain?: boolean;
     };
   })();
-  if (!landing || landing.kind !== "worktree") return null;
+  if (!landing || landing.kind !== "workspace") return null;
 
   const recentSessions = (() => {
     const raw = props.recentSessions;
@@ -61,7 +61,7 @@ export function WorktreeLanding({
       : resolvePointer(state, raw.$ref);
     if (!Array.isArray(resolved)) return [];
     const landingPath = normalizeLandingPath(landing.path);
-    return (resolved as WorktreeLandingSession[])
+    return (resolved as WorkspaceLandingSession[])
       .filter((session) => {
         if (!landingPath) return true;
         return normalizeLandingPath(session.cwd) === landingPath;
@@ -69,7 +69,7 @@ export function WorktreeLanding({
       .slice(0, 8);
   })();
 
-  const title = landing.worktreeLabel ?? landing.branch ?? "worktree";
+  const title = landing.workspaceLabel ?? landing.branch ?? "workspace";
   const projectLabel = landing.projectLabel ?? "";
   const branch = landing.branch ?? "";
   const path = landing.path ?? "";
@@ -78,14 +78,14 @@ export function WorktreeLanding({
   const iconUrl = sidebarIconUrl ?? landing.iconUrl;
 
   return (
-    <WorktreeLandingInner
+    <WorkspaceLandingInner
       iconUrl={iconUrl}
       title={title}
       projectLabel={projectLabel}
       branch={branch}
       path={path}
       isMain={isMain}
-      worktreeId={landing.worktreeId ?? null}
+      workspaceId={landing.workspaceId ?? null}
       projectId={landing.projectId ?? null}
       recentSessions={recentSessions}
       onEvent={onEvent}
@@ -93,7 +93,7 @@ export function WorktreeLanding({
   );
 }
 
-interface WorktreeLandingSession {
+interface WorkspaceLandingSession {
   id: string;
   label: string;
   lastModified?: string;
@@ -116,16 +116,16 @@ function normalizeLandingPath(path?: string): string {
   return (path ?? "").replace(/[/\\]+$/, "");
 }
 
-function WorktreeLandingInner(props: {
+function WorkspaceLandingInner(props: {
   iconUrl?: string;
   title: string;
   projectLabel: string;
   branch: string;
   path: string;
   isMain: boolean;
-  worktreeId: string | null;
+  workspaceId: string | null;
   projectId: string | null;
-  recentSessions: WorktreeLandingSession[];
+  recentSessions: WorkspaceLandingSession[];
   onEvent: (
     name: string,
     data?: Record<string, unknown>,
@@ -139,7 +139,7 @@ function WorktreeLandingInner(props: {
     branch,
     path,
     isMain,
-    worktreeId,
+    workspaceId,
     projectId,
     recentSessions,
     onEvent,
@@ -147,7 +147,7 @@ function WorktreeLandingInner(props: {
   const [gh, setGh] = useState<GhBranchStatus | null>(null);
   const [ghLoading, setGhLoading] = useState(false);
 
-  // Fetch gh branch status whenever the active worktree changes. The
+  // Fetch gh branch status whenever the active workspace changes. The
   // cache module short-circuits within-session revisits (60s TTL for
   // live repos, 5min for "no gh / no remote") so the landing paints
   // instantly on a tab flip. Failure is silent — Rust always returns
@@ -180,14 +180,14 @@ function WorktreeLandingInner(props: {
   }, [branch, path]);
 
   return (
-    <div className="a2ui-empty-state a2ui-worktree-landing">
+    <div className="a2ui-empty-state a2ui-workspace-landing">
       <div className="a2ui-empty-state-card">
         <div className="a2ui-empty-state-hero" aria-hidden="true">
           {iconUrl ? (
             <img
               src={iconUrl}
               alt=""
-              className="a2ui-worktree-landing-icon"
+              className="a2ui-workspace-landing-icon"
               loading="lazy"
             />
           ) : (
@@ -196,7 +196,7 @@ function WorktreeLandingInner(props: {
         </div>
         <h1 className="a2ui-empty-state-title">{title}</h1>
         <p className="a2ui-empty-state-subtitle">
-          {isMain ? "Main worktree of " : "Worktree of "}
+          {isMain ? "Main workspace of " : "Workspace of "}
           <strong>{projectLabel}</strong>
           {branch && (
             <>
@@ -217,7 +217,7 @@ function WorktreeLandingInner(props: {
             className="a2ui-empty-state-primary"
             onClick={() =>
               onEvent("start-session", {
-                worktreeId: worktreeId ?? undefined,
+                workspaceId: workspaceId ?? undefined,
                 projectId: projectId ?? undefined,
                 path,
               })
@@ -229,8 +229,8 @@ function WorktreeLandingInner(props: {
             type="button"
             className="a2ui-empty-state-secondary"
             onClick={() =>
-              onEvent("open-worktree-in-finder", {
-                worktreeId: worktreeId ?? undefined,
+              onEvent("open-workspace-in-finder", {
+                workspaceId: workspaceId ?? undefined,
                 projectId: projectId ?? undefined,
                 path,
               })
@@ -240,14 +240,14 @@ function WorktreeLandingInner(props: {
           </button>
         </div>
         {recentSessions.length > 0 && (
-          <div className="a2ui-worktree-landing-sessions">
+          <div className="a2ui-workspace-landing-sessions">
             <h2>Recent sessions</h2>
-            <ul className="a2ui-worktree-landing-session-list">
+            <ul className="a2ui-workspace-landing-session-list">
               {recentSessions.map((session) => (
                 <DashboardSessionRow
                   key={session.id}
                   session={session}
-                  classPrefix="a2ui-worktree-landing"
+                  classPrefix="a2ui-workspace-landing"
                   onRestore={() =>
                     onEvent(
                       "restore-session",
@@ -293,21 +293,21 @@ function GhBranchStatusBlock(props: {
   const { status, loading, branch } = props;
   if (loading) {
     return (
-      <div className="a2ui-worktree-landing-gh">
+      <div className="a2ui-workspace-landing-gh">
         <h2>Branch status</h2>
         <p className="a2ui-empty-state-subtitle">Checking GitHub…</p>
       </div>
     );
   }
-  // Surface a dangling worktree before the gh-availability check —
+  // Surface a dangling workspace before the gh-availability check —
   // every git invocation in the dir would have failed, so this is the
   // accurate label, not "no GitHub remote".
-  if (status?.worktreeBroken) {
+  if (status?.workspaceBroken) {
     return (
-      <div className="a2ui-worktree-landing-gh">
-        <h2>Worktree status</h2>
+      <div className="a2ui-workspace-landing-gh">
+        <h2>Workspace status</h2>
         <p className="a2ui-empty-state-subtitle">
-          This worktree is no longer tracked by git. Use the delete
+          This workspace is no longer tracked by git. Use the delete
           button in the sidebar to remove the leftover folder.
         </p>
       </div>
@@ -319,32 +319,32 @@ function GhBranchStatusBlock(props: {
   if (!status || !status.ghAvailable) return null;
   if (!status.repo) {
     return (
-      <div className="a2ui-worktree-landing-gh">
+      <div className="a2ui-workspace-landing-gh">
         <h2>Branch status</h2>
         <p className="a2ui-empty-state-subtitle">
-          No GitHub remote detected for this worktree.
+          No GitHub remote detected for this workspace.
         </p>
       </div>
     );
   }
   const pushedLabel = status.pushed ? "Pushed to remote" : "Not pushed";
   return (
-    <div className="a2ui-worktree-landing-gh">
+    <div className="a2ui-workspace-landing-gh">
       <h2>Branch status</h2>
-      <ul className="a2ui-worktree-landing-gh-list">
+      <ul className="a2ui-workspace-landing-gh-list">
         <li>
-          <span className="a2ui-worktree-landing-gh-label">{status.repo}</span>
+          <span className="a2ui-workspace-landing-gh-label">{status.repo}</span>
           <code>{branch}</code>
         </li>
         <li
-          className={`a2ui-worktree-landing-gh-pushed${
+          className={`a2ui-workspace-landing-gh-pushed${
             status.pushed ? " is-pushed" : ""
           }`}
         >
           {pushedLabel}
         </li>
         {status.prs.map((pr) => (
-          <li key={pr.number} className="a2ui-worktree-landing-gh-pr">
+          <li key={pr.number} className="a2ui-workspace-landing-gh-pr">
             <a
               href={pr.url}
               target="_blank"
@@ -352,7 +352,7 @@ function GhBranchStatusBlock(props: {
               title={pr.title}
             >
               <span
-                className={`a2ui-worktree-landing-gh-pr-state ae-pr-${
+                className={`a2ui-workspace-landing-gh-pr-state ae-pr-${
                   pr.merged ? "merged" : pr.state.toLowerCase()
                 }`}
               >
@@ -362,10 +362,10 @@ function GhBranchStatusBlock(props: {
                     ? "draft"
                     : pr.state.toLowerCase()}
               </span>
-              <span className="a2ui-worktree-landing-gh-pr-number">
+              <span className="a2ui-workspace-landing-gh-pr-number">
                 #{pr.number}
               </span>
-              <span className="a2ui-worktree-landing-gh-pr-title">
+              <span className="a2ui-workspace-landing-gh-pr-title">
                 {pr.title}
               </span>
             </a>

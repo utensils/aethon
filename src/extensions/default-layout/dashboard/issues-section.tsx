@@ -4,8 +4,8 @@
  * spec:
  *
  *   - left-click  → open the issue's URL in the OS browser
- *   - right-click → context menu with "Send to agent (new worktree)" and
- *                   "Send to agent (current worktree/branch)" (also
+ *   - right-click → context menu with "Send to agent (new workspace)" and
+ *                   "Send to agent (current workspace/branch)" (also
  *                   keyboard-equivalent via the dedicated send button
  *                   on the row hover state).
  *
@@ -13,7 +13,7 @@
  * `start-task` with a prompt built from the project's optional
  * `.aethon/issues.toml` templates. The built-in markdown prompt remains
  * the fallback. The default row action asks the shared task path to
- * create a fresh worktree so each issue starts isolated.
+ * create a fresh workspace so each issue starts isolated.
  *
  * Registered as the dashboard component type `issues-section` so
  * extensions can swap it with `aethon.registerComponent`. All data
@@ -79,7 +79,7 @@ interface ContextMenuState {
   y: number;
 }
 
-function projectWorktreeBranches(
+function projectWorkspaceBranches(
   state: Record<string, unknown>,
   projectId: string,
 ): Set<string> {
@@ -88,41 +88,41 @@ function projectWorktreeBranches(
       | {
           projects?: {
             id: string;
-            worktrees?: { branch?: string | null; label?: string }[];
+            workspaces?: { branch?: string | null; label?: string }[];
           }[];
         }
       | undefined) ?? {};
   const project = sidebar.projects?.find((p) => p.id === projectId);
   return new Set(
-    (project?.worktrees ?? [])
+    (project?.workspaces ?? [])
       .flatMap((w) => [w.branch, w.label])
       .filter((v): v is string => typeof v === "string" && v.length > 0),
   );
 }
 
-function currentProjectWorktreeId(
+function currentProjectWorkspaceId(
   state: Record<string, unknown>,
   projectId: string,
 ): string | undefined {
-  const activeWorktreeId =
-    typeof state.activeWorktreeId === "string" &&
-    state.activeWorktreeId.length > 0
-      ? state.activeWorktreeId
+  const activeWorkspaceId =
+    typeof state.activeWorkspaceId === "string" &&
+    state.activeWorkspaceId.length > 0
+      ? state.activeWorkspaceId
       : undefined;
   const sidebar =
     (state.sidebar as
       | {
           projects?: {
             id: string;
-            worktrees?: { id?: string; active?: boolean }[];
+            workspaces?: { id?: string; active?: boolean }[];
           }[];
         }
       | undefined) ?? {};
   const project = sidebar.projects?.find((p) => p.id === projectId);
-  const worktree =
-    project?.worktrees?.find((w) => w.id && w.id === activeWorktreeId) ??
-    project?.worktrees?.find((w) => w.id && w.active === true);
-  return worktree?.id;
+  const workspace =
+    project?.workspaces?.find((w) => w.id && w.id === activeWorkspaceId) ??
+    project?.workspaces?.find((w) => w.id && w.active === true);
+  return workspace?.id;
 }
 
 export function IssuesSection({
@@ -228,7 +228,7 @@ export function IssuesSection({
     async (
       issue: GhIssue,
       options: {
-        forceNewWorktree?: boolean;
+        forceNewWorkspace?: boolean;
         template?: IssueTemplate | null;
       } = {},
     ) => {
@@ -243,12 +243,12 @@ export function IssuesSection({
             : (options.template ?? matching[0] ?? null);
         const task = buildIssueTask(detail, issue, project, {
           template: selectedTemplate,
-          forceNewWorktree: options.forceNewWorktree,
-          existingBranches: projectWorktreeBranches(state, project.id),
+          forceNewWorkspace: options.forceNewWorkspace,
+          existingBranches: projectWorkspaceBranches(state, project.id),
         });
-        const worktreeId = task.newWorktree
+        const workspaceId = task.newWorkspace
           ? undefined
-          : currentProjectWorktreeId(state, project.id);
+          : currentProjectWorkspaceId(state, project.id);
         // Route through the dashboard's start-task event so the
         // launcher + start-task path stays the single source of
         // truth (UI / pi tool parity).
@@ -257,9 +257,9 @@ export function IssuesSection({
           {
             projectId: project.id,
             prompt: task.prompt,
-            newWorktree: task.newWorktree,
+            newWorkspace: task.newWorkspace,
             branch: task.branch,
-            worktreeId,
+            workspaceId,
             // Tag the payload so tests (and future telemetry) can spot
             // an issue-originated launch. The start-task route handler
             // forwards only its known keys, so these extra fields are
@@ -281,16 +281,16 @@ export function IssuesSection({
     [project, onEvent, state, issueTemplates],
   );
 
-  const sendIssueToNewWorktree = useCallback(
+  const sendIssueToNewWorkspace = useCallback(
     async (issue: GhIssue, template?: IssueTemplate | null) => {
-      await sendIssueToAgent(issue, { forceNewWorktree: true, template });
+      await sendIssueToAgent(issue, { forceNewWorkspace: true, template });
     },
     [sendIssueToAgent],
   );
 
-  const sendIssueToCurrentWorktree = useCallback(
+  const sendIssueToCurrentWorkspace = useCallback(
     async (issue: GhIssue, template?: IssueTemplate | null) => {
-      await sendIssueToAgent(issue, { forceNewWorktree: false, template });
+      await sendIssueToAgent(issue, { forceNewWorkspace: false, template });
     },
     [sendIssueToAgent],
   );
@@ -428,11 +428,11 @@ export function IssuesSection({
                   type="button"
                   className="a2ui-dashboard-issue-send"
                   aria-label={`Send issue #${issue.number} to agent`}
-                  title="Send to agent in new worktree"
+                  title="Send to agent in new workspace"
                   disabled={isSending}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void sendIssueToNewWorktree(issue);
+                    void sendIssueToNewWorkspace(issue);
                   }}
                 >
                   {isSending ? "…" : "→ Agent"}
@@ -468,10 +468,10 @@ export function IssuesSection({
             onClick={() => {
               const m = menu;
               setMenu(null);
-              void sendIssueToNewWorktree(m.issue);
+              void sendIssueToNewWorkspace(m.issue);
             }}
           >
-            Send to agent (new worktree)
+            Send to agent (new workspace)
           </button>
           <button
             type="button"
@@ -480,10 +480,10 @@ export function IssuesSection({
             onClick={() => {
               const m = menu;
               setMenu(null);
-              void sendIssueToCurrentWorktree(m.issue);
+              void sendIssueToCurrentWorkspace(m.issue);
             }}
           >
-            Send to agent (current worktree/branch)
+            Send to agent (current workspace/branch)
           </button>
           {showTemplateChoices
             ? menuTemplates.map((template) => (

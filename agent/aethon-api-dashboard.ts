@@ -70,8 +70,8 @@ export function buildTasksApi(
         {
           projectPath: input.projectPath,
           prompt: input.prompt,
-          ...(typeof input.newWorktree === "boolean"
-            ? { newWorktree: input.newWorktree }
+          ...(typeof input.newWorkspace === "boolean"
+            ? { newWorkspace: input.newWorkspace }
             : {}),
           ...(typeof input.branch === "string" ? { branch: input.branch } : {}),
           ...(typeof input.baseBranch === "string"
@@ -84,7 +84,7 @@ export function buildTasksApi(
             ? { bridgePrompt: input.bridgePrompt }
             : {}),
         },
-        // Worktree-create + tab-open + send can take several seconds on a
+        // Workspace-create + tab-open + send can take several seconds on a
         // large repo. 30s is the same ceiling as the shell-write ack
         // pattern, which is the closest existing precedent.
         30_000,

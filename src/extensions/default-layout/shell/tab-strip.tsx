@@ -3,7 +3,7 @@
  * Each tab shows its label; the active one is highlighted; non-default tabs
  * have a small "×" close button. A permanent, non-closable "Æ overview"
  * pill is pinned to the left of the strip — selecting it deselects any
- * active session tab so the host / project / worktree overview owns the
+ * active session tab so the host / project / workspace overview owns the
  * canvas, without closing the open sessions. All interactions go through
  * onEvent so App.tsx can route them to its tab helpers
  * (newTab / closeTab / switch).

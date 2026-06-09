@@ -13,7 +13,7 @@ import {
   EditorCanvas,
   DiffCanvas,
   EmptyState,
-  WorktreeLanding,
+  WorkspaceLanding,
   FileTreePanel,
   ImageViewer,
   Layout,
@@ -117,11 +117,11 @@ export const defaultLayoutExtension: A2UIExtension = {
     "tool-card": ToolCard,
     "subagent-result": SubagentResult,
     "empty-state": EmptyState,
-    // Worktree landing page — shown when the user clicks a worktree in
+    // Workspace landing page — shown when the user clicks a workspace in
     // the sidebar but hasn't yet started a session. Mirrors EmptyState
-    // shape but scoped to a single worktree (cwd + branch + GitHub
+    // shape but scoped to a single workspace (cwd + branch + GitHub
     // status placeholder).
-    "worktree-landing": WorktreeLanding,
+    "workspace-landing": WorkspaceLanding,
     // Workstation header chrome — agent-status pill (canonical
     // `agent-pulse`; legacy `agent-status-pill` alias kept so existing
     // layout payloads continue to render after the rename) plus the

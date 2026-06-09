@@ -1,13 +1,13 @@
 /**
  * useVcsStatus — consolidates working-tree changes, branch ahead/behind,
- * PR state, and CI status for the active project/worktree into a single
+ * PR state, and CI status for the active project/workspace into a single
  * `/vcs` state slice. Both the header VCS cluster (`vcs-status`) and the
  * source-control panel (`source-control-panel`) read from `/vcs`, so the
  * polling + fan-out lives here in one place.
  *
  * Sources (all best-effort, all degrade silently):
- *   - `git_status`       → branch, ahead, behind, dirty (worktree-aware:
- *                          called against the active root so a worktree's
+ *   - `git_status`       → branch, ahead, behind, dirty (workspace-aware:
+ *                          called against the active root so a workspace's
  *                          own branch is reported, not the project's main).
  *   - `git_file_status`  → per-file change breakdown (count by kind).
  *   - `gh_branch_status` → PRs whose head is this branch (via cache).
@@ -98,7 +98,7 @@ export interface VcsSlice {
 }
 
 export interface UseVcsStatusContext {
-  /** Active project/worktree cwd (worktree-aware). Null collapses /vcs. */
+  /** Active project/workspace cwd (workspace-aware). Null collapses /vcs. */
   activeRoot: string | null;
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
 }
@@ -251,7 +251,7 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
       const root = activeRoot;
       polling = true;
       try {
-        // Working-tree status + branch (worktree-aware) + change breakdown
+        // Working-tree status + branch (workspace-aware) + change breakdown
         // run together; PR/CI gate on having a branch.
         const [statusRes, filesRes, statRes] = await Promise.all([
           invoke<GitStatus | null>("git_status", { path: root }).catch(

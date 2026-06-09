@@ -89,7 +89,7 @@ describe("useVcsStatus", () => {
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [
         {
           number: 9,
@@ -170,7 +170,7 @@ describe("useVcsStatus", () => {
       ghAvailable: false,
       repo: null,
       pushed: false,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [],
     });
     checksMock.mockResolvedValue({
@@ -208,7 +208,7 @@ describe("useVcsStatus", () => {
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [],
     });
     checksMock.mockResolvedValue({

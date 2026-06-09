@@ -9,7 +9,7 @@
 // the built-in tools and can drive the dashboard from a chat turn.
 //
 // Each tool is a thin shim: validate args, call the bridge API, return
-// the result as a TextContent payload. The actual work (worktree
+// the result as a TextContent payload. The actual work (workspace
 // create, tab spawn, gh shellout) happens frontend-side via the
 // dashboard_query bridge message.
 
@@ -21,7 +21,7 @@ interface TasksApi {
   start(args: {
     projectPath: string;
     prompt: string;
-    newWorktree?: boolean;
+    newWorkspace?: boolean;
     branch?: string;
     baseBranch?: string;
     model?: string;
@@ -67,7 +67,7 @@ const StartTaskParams = Type.Object({
     description:
       "The first chat message to send into the new tab. Same content the user would type into the task launcher; @file references are resolved in the launched tab's cwd.",
   }),
-  newWorktree: Type.Optional(
+  newWorkspace: Type.Optional(
     Type.Boolean({
       description:
         "When true, create a fresh git worktree off `baseBranch` (or the project's configured default, normally origin/main) and start the task in that cwd. When false / omitted, use the project root.",
@@ -76,13 +76,13 @@ const StartTaskParams = Type.Object({
   branch: Type.Optional(
     Type.String({
       description:
-        "Name of the new branch to create. Required when `newWorktree` is true.",
+        "Name of the new branch to create. Required when `newWorkspace` is true.",
     }),
   ),
   baseBranch: Type.Optional(
     Type.String({
       description:
-        "Base branch to fork the new worktree from. Defaults to the project's configured worktree base when omitted.",
+        "Base branch to fork the new workspace from. Defaults to the project's configured workspace base when omitted.",
     }),
   ),
   model: Type.Optional(
@@ -150,7 +150,7 @@ export function buildDashboardTools(): ToolDefinition[] {
     description:
       "Spawn a new agent tab in the named project (optionally creating a fresh git worktree first) and forward `prompt` as the tab's first user message. UI parity with the per-project dashboard's task launcher.",
     promptSnippet:
-      "startTask: launch a new project task, optionally in a fresh worktree",
+      "startTask: launch a new project task, optionally in a fresh workspace",
     parameters: StartTaskParams,
     async execute(_callId: string, params: StartTaskParamsT) {
       const api = getApi();
@@ -158,8 +158,8 @@ export function buildDashboardTools(): ToolDefinition[] {
       const r = await api.tasks.start({
         projectPath: params.projectPath,
         prompt: params.prompt,
-        ...(typeof params.newWorktree === "boolean"
-          ? { newWorktree: params.newWorktree }
+        ...(typeof params.newWorkspace === "boolean"
+          ? { newWorkspace: params.newWorkspace }
           : {}),
         ...(typeof params.branch === "string" ? { branch: params.branch } : {}),
         ...(typeof params.baseBranch === "string"
@@ -257,7 +257,7 @@ export function buildDashboardTools(): ToolDefinition[] {
     name: "getOpenIssue",
     label: "Fetch a single GitHub issue's body",
     description:
-      "Return the full title + url + author + body for one open issue. Pair with `startTask` to launch a fresh worktree with the issue text as the first user message.",
+      "Return the full title + url + author + body for one open issue. Pair with `startTask` to launch a fresh workspace with the issue text as the first user message.",
     promptSnippet:
       "getOpenIssue: fetch the body of one GitHub issue by number",
     parameters: GetIssueParams,

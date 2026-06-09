@@ -24,7 +24,7 @@ function makeStatus(over: Partial<GhBranchStatus> = {}): GhBranchStatus {
     repo: "owner/repo",
     pushed: true,
     prs: [],
-    worktreeBroken: false,
+    workspaceBroken: false,
     ...over,
   };
 }

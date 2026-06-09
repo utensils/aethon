@@ -36,7 +36,7 @@ describe("handleProjectsDashboard", () => {
 
   it("select-project-card activates the project", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
-      state: { landing: { kind: "worktree", worktreeId: "w-1" } },
+      state: { landing: { kind: "workspace", workspaceId: "w-1" } },
     });
     const handled = await handleProjectsDashboard(
       {
@@ -47,7 +47,7 @@ describe("handleProjectsDashboard", () => {
       ctx,
     );
     expect(handled).toBe(true);
-    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p1");
     expect(applySetState().landing).toBeNull();
   });
@@ -83,7 +83,7 @@ describe("handleProjectsDashboard", () => {
     });
   });
 
-  it("restore-session navigates to the matching worktree before opening", async () => {
+  it("restore-session navigates to the matching workspace before opening", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {
         activeProjectId: "p1",
@@ -92,7 +92,7 @@ describe("handleProjectsDashboard", () => {
           projects: [
             {
               id: "p1",
-              worktrees: [
+              workspaces: [
                 { id: "wt-1", path: "/repo/app-fix-session-restore" },
               ],
             },
@@ -114,7 +114,7 @@ describe("handleProjectsDashboard", () => {
     );
     expect(handled).toBe(true);
     expect(mocks.setActiveProjectById).not.toHaveBeenCalled();
-    expect(mocks.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(mocks.activateWorkspace).toHaveBeenCalledWith("wt-1");
     expect(mocks.newTab).toHaveBeenCalledWith("tab-42", "Earlier", {
       restoredSession: true,
       cwd: "/repo/app-fix-session-restore",
@@ -142,21 +142,21 @@ describe("handleProjectsDashboard", () => {
 });
 
 describe("handleProjectDashboard", () => {
-  it("create-worktree forwards to createWorktreeForProject", async () => {
+  it("create-workspace forwards to createWorkspaceForProject", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleProjectDashboard(
       {
         component: { id: "x", type: "project-dashboard" },
-        eventType: "create-worktree",
+        eventType: "create-workspace",
         data: { projectId: "p1" },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(ctx.createWorktreeForProject).toHaveBeenCalledWith("p1");
+    expect(ctx.createWorkspaceForProject).toHaveBeenCalledWith("p1");
   });
 
-  it("switch-worktree builds the worktree landing", async () => {
+  it("switch-workspace builds the workspace landing", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: {
         sidebar: {
@@ -164,7 +164,7 @@ describe("handleProjectDashboard", () => {
             {
               id: "p1",
               label: "aethon",
-              worktrees: [
+              workspaces: [
                 {
                   id: "w-1",
                   label: "fix/session",
@@ -181,25 +181,25 @@ describe("handleProjectDashboard", () => {
     const handled = await handleProjectDashboard(
       {
         component: { id: "x", type: "project-dashboard" },
-        eventType: "switch-worktree",
-        data: { worktreeId: "w-1" },
+        eventType: "switch-workspace",
+        data: { workspaceId: "w-1" },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(ctx.activateWorktree).toHaveBeenCalledWith("w-1");
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith("w-1");
     expect(applySetState().landing).toMatchObject({
-      kind: "worktree",
+      kind: "workspace",
       projectId: "p1",
-      worktreeId: "w-1",
+      workspaceId: "w-1",
       path: "/repo/aethon-fix-session",
     });
   });
 
-  it("switch-worktree shows landing when the destination scope is empty", async () => {
+  it("switch-workspace shows landing when the destination scope is empty", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {
-        activeWorktreeId: "w-current",
+        activeWorkspaceId: "w-current",
         activeTabId: "tab-current",
         tabs: [
           {
@@ -220,7 +220,7 @@ describe("handleProjectDashboard", () => {
             {
               id: "p1",
               label: "aethon",
-              worktrees: [
+              workspaces: [
                 {
                   id: "w-next",
                   label: "fix/session",
@@ -234,10 +234,10 @@ describe("handleProjectDashboard", () => {
         },
       },
     });
-    mocks.activateWorktree.mockImplementation(() => {
+    mocks.activateWorkspace.mockImplementation(() => {
       ctx.stateRef.current = {
         ...ctx.stateRef.current,
-        activeWorktreeId: "w-next",
+        activeWorkspaceId: "w-next",
         activeTabId: undefined,
         tabs: [],
       };
@@ -246,34 +246,34 @@ describe("handleProjectDashboard", () => {
     const handled = await handleProjectDashboard(
       {
         component: { id: "x", type: "project-dashboard" },
-        eventType: "switch-worktree",
-        data: { worktreeId: "w-next" },
+        eventType: "switch-workspace",
+        data: { workspaceId: "w-next" },
       },
       ctx,
     );
 
     expect(handled).toBe(true);
-    expect(ctx.activateWorktree).toHaveBeenCalledWith("w-next");
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith("w-next");
     expect(applySetState().landing).toMatchObject({
-      kind: "worktree",
+      kind: "workspace",
       projectId: "p1",
-      worktreeId: "w-next",
+      workspaceId: "w-next",
       path: "/repo/aethon-fix-session",
     });
   });
 
-  it("forwards dashboard worktree removal to the shared remove route", async () => {
+  it("forwards dashboard workspace removal to the shared remove route", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleProjectDashboard(
       {
         component: { id: "project-dashboard", type: "project-dashboard" },
-        eventType: "remove-worktree",
-        data: { worktreeId: "wt-1", confirmed: true },
+        eventType: "remove-workspace",
+        data: { workspaceId: "wt-1", confirmed: true },
       },
       ctx,
     );
     expect(handled).toBe(true);
-    expect(ctx.removeWorktreeById).toHaveBeenCalledWith("wt-1", {
+    expect(ctx.removeWorkspaceById).toHaveBeenCalledWith("wt-1", {
       confirmed: true,
     });
   });
@@ -287,7 +287,7 @@ describe("handleProjectDashboard", () => {
         data: {
           projectId: "p1",
           prompt: "Please work on issue #927",
-          newWorktree: true,
+          newWorkspace: true,
           branch: "fix/issue-927-crash-on-boot",
           source: "github-issue",
         },
@@ -299,7 +299,7 @@ describe("handleProjectDashboard", () => {
       expect.objectContaining({
         projectId: "p1",
         prompt: "Please work on issue #927",
-        newWorktree: true,
+        newWorkspace: true,
         branch: "fix/issue-927-crash-on-boot",
       }),
     );
@@ -336,7 +336,7 @@ describe("handleTaskLauncher", () => {
         data: {
           projectId: "p1",
           prompt: "fix the bug",
-          newWorktree: true,
+          newWorkspace: true,
           branch: "fix-bug",
           baseBranch: "main",
         },
@@ -347,14 +347,14 @@ describe("handleTaskLauncher", () => {
     expect(ctx.startTaskInProject).toHaveBeenCalledWith({
       projectId: "p1",
       prompt: "fix the bug",
-      newWorktree: true,
+      newWorkspace: true,
       branch: "fix-bug",
       baseBranch: "main",
-      worktreeId: undefined,
+      workspaceId: undefined,
     });
   });
 
-  it("start-task forwards worktreeId for existing-worktree submits", async () => {
+  it("start-task forwards workspaceId for existing-workspace submits", async () => {
     const { ctx } = buildRouteFixture();
     await handleTaskLauncher(
       {
@@ -363,8 +363,8 @@ describe("handleTaskLauncher", () => {
         data: {
           projectId: "p1",
           prompt: "investigate",
-          newWorktree: false,
-          worktreeId: "wt-7",
+          newWorkspace: false,
+          workspaceId: "wt-7",
         },
       },
       ctx,
@@ -372,10 +372,10 @@ describe("handleTaskLauncher", () => {
     expect(ctx.startTaskInProject).toHaveBeenCalledWith({
       projectId: "p1",
       prompt: "investigate",
-      newWorktree: false,
+      newWorkspace: false,
       branch: undefined,
       baseBranch: undefined,
-      worktreeId: "wt-7",
+      workspaceId: "wt-7",
     });
   });
 
@@ -402,7 +402,7 @@ describe("handleTaskLauncher", () => {
       },
       ctx,
     );
-    expect(ctx.activateWorktree).toHaveBeenCalledWith(null);
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p2");
   });
 
