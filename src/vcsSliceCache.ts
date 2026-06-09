@@ -124,6 +124,13 @@ export function hydrateVcsSliceCache(): Promise<void> {
       if (!slice || typeof slice !== "object" || slice.root !== root) continue;
       memory.set(root, slice);
     }
+    // A hand-edited / corrupted / pre-cap cache file must not blow past
+    // the in-memory cap — apply the same eviction as putCachedVcsSlice.
+    while (memory.size > MAX_ENTRIES) {
+      const oldest = memory.keys().next().value;
+      if (oldest === undefined) break;
+      memory.delete(oldest);
+    }
   })();
   return hydrated;
 }

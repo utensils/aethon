@@ -645,7 +645,7 @@ Agent-side counterparts to the per-project dashboard's task launcher
 aethon.tasks.start({
   projectPath,                // absolute fs path of the target project
   prompt,                     // the first chat message to send
-  newWorkspace?: boolean,      // create a fresh git worktree first
+  newWorkspace?: boolean,      // create a fresh workspace (git worktree) first
   branch?: string,            // required when newWorkspace is true
   baseBranch?: string,        // base to fork from (project default, then origin/main)
   model?: string,             // optional model id for the launched tab

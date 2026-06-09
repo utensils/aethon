@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { bridgeDispatchDecision } from "./useBridgeMessages";
 
-const activeTabs = new Set(["tab-active", "tab-two"]);
+const activeTabs = () => new Set(["tab-active", "tab-two"]);
 
 describe("bridgeDispatchDecision", () => {
   test("unstamped messages from the global bridge are handled", () => {

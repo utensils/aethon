@@ -66,11 +66,13 @@ export type BridgeDispatchDecision =
 export function bridgeDispatchDecision(
   message: BridgeMessage,
   hasHandler: boolean,
-  activeTabIds: ReadonlySet<string>,
+  // Lazy: most inbound traffic (streaming deltas, tool cards) carries no
+  // originTabId, so the active-tab Set is only built when gating applies.
+  activeTabIds: () => ReadonlySet<string>,
 ): BridgeDispatchDecision {
   const origin = message.originTabId;
   if (typeof origin === "string" && origin.length > 0) {
-    if (!activeTabIds.has(origin)) {
+    if (!activeTabIds().has(origin)) {
       return {
         kind: "ack-reject",
         error: `origin tab "${origin}" is not in the active workspace`,
@@ -162,7 +164,7 @@ export function useBridgeMessages(
         const decision = bridgeDispatchDecision(
           data,
           handler !== undefined,
-          activeTabIdsFromState(opts.ctx.stateRef.current),
+          () => activeTabIdsFromState(opts.ctx.stateRef.current),
         );
         if (decision.kind === "ack-reject") {
           ackMutation(data.mutationId, false, decision.error);
