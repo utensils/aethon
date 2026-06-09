@@ -20,6 +20,22 @@ export interface GitStatus {
   behind?: number;
 }
 
+/** Field-wise equality so an idle poll tick that returns the same status
+ *  doesn't notify (each notify is a full sidebar mirror + full-tree React
+ *  render — up to one per project per 30s tick before this diff). */
+export function gitStatusEquals(
+  a: GitStatus | undefined,
+  b: GitStatus | undefined,
+): boolean {
+  if (!a || !b) return !a && !b;
+  return (
+    a.branch === b.branch &&
+    a.dirty === b.dirty &&
+    a.ahead === b.ahead &&
+    a.behind === b.behind
+  );
+}
+
 export interface UseProjectsContext {
   /** Returns the absolute paths of every known project. The git poller
    *  iterates this on every tick. Callback rather than a static prop so
@@ -70,21 +86,34 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
   const gitFetchAttemptsRef = useRef<Map<string, number>>(new Map());
   const gitFetchInFlightRef = useRef<Set<string>>(new Set());
 
-  async function refreshGitStatusFor(path: string): Promise<void> {
+  /** Refresh the cache entry for one path. Returns true when the status
+   *  actually changed; does NOT notify — callers decide whether to fan
+   *  out (single refresh notifies per call, the poll batch notifies once). */
+  async function refreshStatusEntry(path: string): Promise<boolean> {
     try {
       const status = await invoke<GitStatus | null>("git_status", { path });
+      const prev = gitStatusRef.current.get(path);
       if (status) {
+        if (gitStatusEquals(prev, status)) return false;
         gitStatusRef.current.set(path, status);
       } else {
+        if (!prev) return false;
         gitStatusRef.current.delete(path);
       }
+      return true;
+    } catch {
+      // Tauri command threw — ignore so a transient git failure doesn't
+      // blank the chip on subsequent successful polls.
+      return false;
+    }
+  }
+
+  async function refreshGitStatusFor(path: string): Promise<void> {
+    if (await refreshStatusEntry(path)) {
       ctx.onGitStatusChanged();
       // Persist (debounced) so the next cold start can paint chips
       // instantly from disk before any subprocess runs.
       persistStatusesDebounced(gitStatusRef.current);
-    } catch {
-      // Tauri command threw — ignore so a transient git failure doesn't
-      // blank the chip on subsequent successful polls.
     }
   }
 
@@ -93,7 +122,13 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     // Parallel — each project's git invocation is its own subprocess
     // and the project list is capped at 16, so concurrency is bounded.
     // Sequential previously meant the slowest repo gated all the rest.
-    await Promise.all(paths.map((p) => refreshGitStatusFor(p)));
+    const changed = await Promise.all(paths.map((p) => refreshStatusEntry(p)));
+    // One notification per batch: an idle tick (nothing changed) renders
+    // nothing; a busy tick costs one sidebar mirror instead of sixteen.
+    if (changed.some(Boolean)) {
+      ctx.onGitStatusChanged();
+      persistStatusesDebounced(gitStatusRef.current);
+    }
   }
 
   async function fetchGitRemotesIfDue(
