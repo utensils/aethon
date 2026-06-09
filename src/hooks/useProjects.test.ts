@@ -90,6 +90,39 @@ describe("useProjects", () => {
     unmount();
   });
 
+  it("does not re-poll git status on focus before the tier cadence elapses", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "git_status"
+          ? { branch: "main", dirty: false, ahead: 0, behind: 0 }
+          : false,
+      ),
+    );
+
+    const { unmount } = renderHook(() =>
+      useProjects({
+        getProjectPaths: () => ["/repo"],
+        onGitStatusChanged: vi.fn(),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+      ).toBe(1),
+    );
+
+    // Immediately re-focusing must not fork another git_status — /repo is
+    // a cold-tier root that was just polled (statusPollScheduler cadence).
+    window.dispatchEvent(new FocusEvent("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(
+      invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+    ).toBe(1);
+    unmount();
+  });
+
   it("notifies once per changed batch and not at all when nothing changed", async () => {
     const status = { branch: "main", dirty: false, ahead: 0, behind: 0 };
     invokeMock.mockImplementation((cmd: string) =>

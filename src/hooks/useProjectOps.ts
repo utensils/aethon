@@ -24,6 +24,7 @@ import { editorLabelForPath } from "./tabOps/helpers";
 import { TAB_MIRROR_KEYS } from "./tabOps/constants";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { useProjectStore } from "./projectOps/projectStore";
+import { recordWorkspaceActivation } from "./statusPollScheduler";
 import {
   projectScopeBucketKey,
   switchProjectBucket as switchTabBucket,
@@ -204,6 +205,9 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     );
     scheduleProjectsSave();
     announceProjectToBridge(nextTabId ?? "default", target.path);
+    // Keep this root in the warm polling tier so switching back paints
+    // fresh git badges (statusPollScheduler).
+    recordWorkspaceActivation(target.path);
     if (previousActive && previousActive.path !== target.path) {
       unwatchProjectForBridge(previousActive.path);
     }

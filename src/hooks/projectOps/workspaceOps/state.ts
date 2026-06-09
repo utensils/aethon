@@ -17,6 +17,7 @@ import {
   type Workspace,
 } from "../../../workspaces";
 import { projectScopeBucketKey } from "../tabBuckets";
+import { recordWorkspaceActivation } from "../../statusPollScheduler";
 import { swapProjectWatch } from "./bridgeWatch";
 import type { ProjectLookups } from "./types";
 
@@ -116,6 +117,9 @@ export function activateWorkspace(
   );
   deps.scheduleProjectsSave();
   deps.announceProjectToBridge(nextTabId ?? "default", nextCwd);
+  // Keep this workspace's root in the warm polling tier so switching back
+  // paints fresh git badges (statusPollScheduler).
+  recordWorkspaceActivation(nextCwd);
   if (crossingProjects) {
     swapProjectWatch(previousActive, nextProjectPath, {
       watchProjectForBridge: deps.watchProjectForBridge,
