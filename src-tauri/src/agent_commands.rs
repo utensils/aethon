@@ -565,6 +565,7 @@ mod tests {
             spawned_at: now,
             last_activity: now,
             prompt_in_flight: false,
+            prompt_started_at: None,
             bridge_ready: true,
         }
     }

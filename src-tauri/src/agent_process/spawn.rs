@@ -19,7 +19,7 @@ use crate::{env, helpers};
 
 use std::time::Instant;
 
-use super::process::{AgentWorker, WorkerMeta};
+use super::process::{AgentWorker, WorkerMeta, lock_recover, purge_routes_for_key};
 use super::readers::{
     STDERR_TAIL_CAP, StderrReaderCtx, StdoutReaderCtx, spawn_stderr_reader, spawn_stdout_reader,
 };
@@ -37,20 +37,21 @@ pub(super) fn ensure_agent_spawned(
     mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     intentional_exits: Arc<Mutex<HashSet<String>>>,
     meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
-    worker: Option<AgentWorker>,
+    worker: Option<&AgentWorker>,
 ) -> Result<(), String> {
     let exited_status = guard.get(key).and_then(|child| {
-        child
-            .lock()
+        lock_recover(child, "agent child (exit check)")
+            .try_wait()
             .ok()
-            .and_then(|mut child| child.try_wait().ok().flatten())
+            .flatten()
     });
     if let Some(status) = exited_status {
         tracing::info!(target: "aethon::agent", key = key, "previous child exited with {status:?}; respawning");
         guard.remove(key);
+        purge_routes_for_key(&mutation_routes, key);
     }
 
-    if should_respawn_for_worker_cwd(key, &meta, worker.as_ref())
+    if should_respawn_for_worker_cwd(key, &meta, worker)
         && let Some(child) = guard.remove(key)
     {
         tracing::info!(
@@ -58,16 +59,15 @@ pub(super) fn ensure_agent_spawned(
             key = key,
             "worker cwd changed; respawning agent"
         );
-        if let Ok(mut exits) = intentional_exits.lock() {
-            exits.insert(key.to_string());
-        }
-        if let Ok(mut child) = child.lock() {
+        lock_recover(&intentional_exits, "intentional exits (cwd respawn)")
+            .insert(key.to_string());
+        {
+            let mut child = lock_recover(&child, "agent child (cwd respawn)");
             let _ = child.kill();
             let _ = child.wait();
         }
-        if let Ok(mut map) = meta.lock() {
-            map.remove(key);
-        }
+        lock_recover(&meta, "worker meta (cwd respawn)").remove(key);
+        purge_routes_for_key(&mutation_routes, key);
     }
 
     if guard.contains_key(key) {
@@ -76,10 +76,10 @@ pub(super) fn ensure_agent_spawned(
 
     let mut command = build_command(app)?;
     apply_user_env(app, &mut command);
-    apply_worker_env(&mut command, worker.as_ref());
-    clear_inherited_devshell_identity(&mut command, worker.as_ref());
-    apply_worker_devshell_env(app, &mut command, worker.as_ref());
-    apply_worker_current_dir(&mut command, worker.as_ref());
+    apply_worker_env(&mut command, worker);
+    clear_inherited_devshell_identity(&mut command, worker);
+    apply_worker_devshell_env(app, &mut command, worker);
+    apply_worker_current_dir(&mut command, worker);
 
     let mut child = command
         .stdin(Stdio::piped())
@@ -100,7 +100,7 @@ pub(super) fn ensure_agent_spawned(
         app: app.clone(),
         pid,
         key: key.to_string(),
-        tab_id: worker.as_ref().map(|w| w.tab_id.clone()),
+        tab_id: worker.map(|w| w.tab_id.clone()),
         mutation_routes,
         intentional_exits,
         meta: Arc::clone(&meta),
@@ -120,23 +120,21 @@ pub(super) fn ensure_agent_spawned(
     {
         let now = Instant::now();
         let (tab_id, cwd) = worker
-            .as_ref()
             .map(|w| (Some(w.tab_id.clone()), w.cwd.clone()))
             .unwrap_or((None, None));
-        if let Ok(mut map) = meta.lock() {
-            map.insert(
-                key.to_string(),
-                WorkerMeta {
-                    tab_id,
-                    cwd,
-                    pid,
-                    spawned_at: now,
-                    last_activity: now,
-                    prompt_in_flight: false,
-                    bridge_ready: key == super::process::GLOBAL_AGENT_KEY,
-                },
-            );
-        }
+        lock_recover(&meta, "worker meta (spawn)").insert(
+            key.to_string(),
+            WorkerMeta {
+                tab_id,
+                cwd,
+                pid,
+                spawned_at: now,
+                last_activity: now,
+                prompt_in_flight: false,
+                prompt_started_at: None,
+                bridge_ready: key == super::process::GLOBAL_AGENT_KEY,
+            },
+        );
     }
 
     // Bridge processes start with `frontendReady = false` and only
@@ -365,9 +363,7 @@ fn should_respawn_for_worker_cwd(
     else {
         return false;
     };
-    let Ok(map) = meta.lock() else {
-        return false;
-    };
+    let map = lock_recover(meta, "worker meta (cwd check)");
     let Some(existing) = map.get(key) else {
         return false;
     };
