@@ -48,7 +48,7 @@ export { emitReady } from "./ready-handshake";
 export { handleSessionEvent } from "./events";
 export { cancelAethonRetry, installAethonRetryClassifier } from "./retry";
 export type { EnsureTabOptions } from "./lifecycle";
-export { ensureTab } from "./lifecycle";
+export { ensureTab, resolveTabCwd } from "./lifecycle";
 export {
   contextUsageSnapshot,
   emitContextUsage,

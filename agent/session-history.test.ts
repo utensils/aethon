@@ -1,4 +1,4 @@
-import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1195,6 +1195,30 @@ describe("findSessionFileMatchingCwd", () => {
     const fresh = await writeSession(dir, "fresh.jsonl", "/tmp/target", 1_000);
     await expect(findSessionFileMatchingCwd(dir, "/tmp/target")).resolves.toBe(
       fresh,
+    );
+  });
+
+  it("resumes through symlinked cwds (macOS /tmp vs /private/tmp)", async () => {
+    // The session header stores whatever process.cwd() returned. When the
+    // workspace is reached through a symlink (or macOS's /tmp alias), the
+    // stored path and the lookup path differ as strings but resolve to
+    // the same directory — the lookup must still match instead of
+    // silently starting a fresh session.
+    const root = await tempRoot();
+    const realDir = join(root, "real-workspace");
+    const linkDir = join(root, "linked-workspace");
+    await mkdir(realDir);
+    await symlink(realDir, linkDir);
+
+    const dir = await tempRoot();
+    const path = await writeSession(dir, "a.jsonl", realDir, 1_000);
+
+    await expect(findSessionFileMatchingCwd(dir, linkDir)).resolves.toBe(path);
+    // And the inverse: header recorded via the symlink, lookup via real.
+    const dir2 = await tempRoot();
+    const path2 = await writeSession(dir2, "b.jsonl", linkDir, 1_000);
+    await expect(findSessionFileMatchingCwd(dir2, realDir)).resolves.toBe(
+      path2,
     );
   });
 

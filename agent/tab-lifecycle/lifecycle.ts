@@ -48,6 +48,34 @@ const WORKER_MODE =
   typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
   process.env.AETHON_WORKER_TAB_ID.length > 0;
 
+/** Cwd-precedence policy for a tab's session, exported so the multi-tab
+ *  scoping rules have direct regression coverage:
+ *
+ *    1. `cwdOverride` (carried on `tab_open` — the frontend's intent),
+ *    2. the tab's previously-recorded cwd (`tabProjectCwds`),
+ *    3. the bridge's active-project cwd,
+ *    4. the user dir, then `process.cwd()`.
+ *
+ *  (1) and (2) outranking (3) is what keeps a `tab_open` that arrives
+ *  before `set_project` — or a tab in a background workspace — from
+ *  adopting another project's cwd. */
+export function resolveTabCwd(
+  tabId: string,
+  options: Pick<EnsureTabOptions, "cwdOverride">,
+  state: Pick<
+    AethonAgentState,
+    "tabProjectCwds" | "currentProjectCwd" | "userDir"
+  >,
+): string {
+  return (
+    options.cwdOverride ??
+    state.tabProjectCwds.get(tabId) ??
+    state.currentProjectCwd ??
+    state.userDir ??
+    process.cwd()
+  );
+}
+
 /** Create (or fetch) the session record for a tabId. Subscribes to its
  *  pi session and tags every per-turn event with tabId so the frontend
  *  routes deltas / tool cards / response_end to the right tab. */
@@ -60,12 +88,7 @@ export async function ensureTab(
   const existing = state.tabs.get(tabId);
   if (existing) return existing;
 
-  const resolvedCwd =
-    options.cwdOverride ??
-    state.tabProjectCwds.get(tabId) ??
-    state.currentProjectCwd ??
-    state.userDir ??
-    process.cwd();
+  const resolvedCwd = resolveTabCwd(tabId, options, state);
   if (options.cwdOverride || !state.tabProjectCwds.has(tabId)) {
     state.tabProjectCwds.set(tabId, resolvedCwd);
   }

@@ -17,6 +17,7 @@ import {
   modelKey,
   refreshPiSlashCommands,
   installAethonRetryClassifier,
+  resolveTabCwd,
   summarizeToolArgs,
   tabSessionDir,
   toolCardPayload,
@@ -294,6 +295,56 @@ describe("inferToolResultLanguage", () => {
     expect(inferToolResultLanguage("bash", "", "diff --git a/x b/x")).toBe(
       "diff",
     );
+  });
+});
+
+describe("resolveTabCwd", () => {
+  const base = {
+    tabProjectCwds: new Map<string, string>(),
+    currentProjectCwd: undefined as string | undefined,
+    userDir: "/home/u/.aethon",
+  };
+
+  it("cwdOverride wins even when the bridge has another active project", () => {
+    // Regression: a tab_open carrying its own cwd must never adopt the
+    // bridge's currentProjectCwd (e.g. tab_open racing ahead of
+    // set_project, or a tab opened into a background workspace).
+    const state = {
+      ...base,
+      tabProjectCwds: new Map([["t1", "/projects/stale"]]),
+      currentProjectCwd: "/projects/other-project",
+    };
+    expect(
+      resolveTabCwd("t1", { cwdOverride: "/projects/mine" }, state),
+    ).toBe("/projects/mine");
+  });
+
+  it("a tab's recorded cwd outranks the active project's cwd", () => {
+    // Two tabs in different workspaces sharing one bridge: tab A's
+    // sessions stay scoped to A's cwd after the user activates B.
+    const state = {
+      ...base,
+      tabProjectCwds: new Map([
+        ["tab-a", "/projects/aethon"],
+        ["tab-b", "/projects/aethon-feature-wt"],
+      ]),
+      currentProjectCwd: "/projects/aethon-feature-wt",
+    };
+    expect(resolveTabCwd("tab-a", {}, state)).toBe("/projects/aethon");
+    expect(resolveTabCwd("tab-b", {}, state)).toBe(
+      "/projects/aethon-feature-wt",
+    );
+  });
+
+  it("falls back to the active project cwd, then the user dir", () => {
+    expect(
+      resolveTabCwd(
+        "fresh-tab",
+        {},
+        { ...base, currentProjectCwd: "/projects/active" },
+      ),
+    ).toBe("/projects/active");
+    expect(resolveTabCwd("fresh-tab", {}, base)).toBe("/home/u/.aethon");
   });
 });
 
