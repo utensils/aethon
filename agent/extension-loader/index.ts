@@ -28,4 +28,8 @@ export {
   projectExtensionDisplayName,
 } from "./directory";
 export { loadAethonExtensionPackages } from "./packages";
-export { discoverPersistedTabs, discoverPiAethonExtensions } from "./discovery";
+export {
+  discoverPersistedTabs,
+  discoverPiAethonExtensions,
+  refreshPersistedTabs,
+} from "./discovery";

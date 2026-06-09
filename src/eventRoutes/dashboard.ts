@@ -18,6 +18,7 @@ import type { EventRouteHandler } from "./types";
 import {
   handleSidebarDeleteSession,
   handleSidebarRemoveWorktree,
+  handleSidebarSwitchWorktree,
 } from "./sidebar";
 import { restoreSessionFromSelection } from "./sessionRestore";
 
@@ -99,9 +100,10 @@ export const handleProjectDashboard: EventRouteHandler = (
     return true;
   }
   if (eventType === "switch-worktree") {
-    const sel = data as { worktreeId?: string } | undefined;
-    if (sel?.worktreeId) ctx.activateWorktree(sel.worktreeId);
-    return true;
+    return handleSidebarSwitchWorktree(
+      { component: { id: "", type: "sidebar" }, eventType, data },
+      ctx,
+    );
   }
   if (eventType === "remove-worktree") {
     return handleSidebarRemoveWorktree(

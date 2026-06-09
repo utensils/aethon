@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   AethonAgentState,
   type AethonAgentStateOptions,
@@ -35,8 +38,8 @@ const baseOpts: AethonAgentStateOptions = {
   statePayloadHardKb: 512,
 };
 
-function makeFixture() {
-  const state = new AethonAgentState(baseOpts);
+function makeFixture(opts: Partial<AethonAgentStateOptions> = {}) {
+  const state = new AethonAgentState({ ...baseOpts, ...opts });
   const sent: Record<string, unknown>[] = [];
   let writes = 0;
   return {
@@ -86,6 +89,53 @@ function fakeAethonApi(overrides: Record<string, unknown> = {}) {
 const fakeExtensionApi = {} as Parameters<typeof dispatchInboundMessage>[3];
 
 describe("dispatchInboundMessage", () => {
+  it("refreshes persisted session discovery before report ready payloads", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-report-"));
+    try {
+      const sessionsDir = join(root, "sessions");
+      const tabDir = join(sessionsDir, "tab-new");
+      mkdirSync(tabDir, { recursive: true });
+      writeFileSync(
+        join(tabDir, "1.jsonl"),
+        `${JSON.stringify({ type: "session", id: "s", cwd: "/repo/worktree" })}\n${JSON.stringify(
+          {
+            type: "message",
+            message: {
+              role: "user",
+              content: [{ type: "text", text: "restore this worktree" }],
+            },
+          },
+        )}\n`,
+      );
+      const f = makeFixture({
+        userDir: root,
+        stateFile: join(root, "state.json"),
+        sessionsDir,
+      });
+      f.state.discoveredTabs = [];
+
+      await dispatchInboundMessage(
+        f.state,
+        f.deps,
+        fakeAethonApi(),
+        fakeExtensionApi,
+        { type: "report" },
+      );
+
+      expect(f.sent.find((m) => m.type === "ready")).toMatchObject({
+        discoveredTabs: [
+          {
+            tabId: "tab-new",
+            cwd: "/repo/worktree",
+            firstUserMessage: "restore this worktree",
+          },
+        ],
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps bridge API commands in the router shell", async () => {
     const f = makeFixture();
     const api = fakeAethonApi();

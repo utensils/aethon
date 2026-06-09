@@ -236,7 +236,7 @@ export async function handleSetProject(
       state.currentProjectCwd = null;
       await state.resourceLoader.reload();
       deps.scheduleStateFileWrite();
-      emitGlobalReady(state, deps);
+      await emitGlobalReady(state, deps);
     }
     return;
   }
@@ -307,7 +307,7 @@ export async function handleSetProject(
         );
     }
     deps.scheduleStateFileWrite();
-    emitGlobalReady(state, deps);
+    await emitGlobalReady(state, deps);
     if (projectChanged) {
       // Single info summary per real project switch (the per-phase timings
       // above are debug) — keeps the signal without ~4 info lines per switch,

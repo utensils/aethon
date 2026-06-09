@@ -102,11 +102,12 @@ function insertChronologically(
   messages: ChatMessage[],
   message: ChatMessage,
 ): ChatMessage[] {
-  if (typeof message.createdAt !== "number") return [...messages, message];
+  const createdAt = message.createdAt;
+  if (typeof createdAt !== "number") return [...messages, message];
   const insertAt = messages.findIndex(
     (current) =>
       typeof current.createdAt === "number" &&
-      current.createdAt > message.createdAt!,
+      current.createdAt > createdAt,
   );
   if (insertAt < 0) return [...messages, message];
   const next = [...messages];
@@ -152,7 +153,7 @@ function upsertCompletedToolCardMessage(
   payload: A2UIPayload,
   completedCard: A2UIComponent,
   identity: string | undefined,
-): Tab {
+): { tab: Tab; message: ChatMessage } {
   const incomingId = completedCard.id;
   const matched = findCurrentToolCardMatch(
     current.messages,
@@ -166,8 +167,9 @@ function upsertCompletedToolCardMessage(
         ? preserveCancelledToolState(payload)
         : payload;
     const nextMessages = [...current.messages];
-    nextMessages[matched.index] = { ...message, a2ui: finalPayload };
-    return { ...current, messages: nextMessages };
+    const finalMessage = { ...message, a2ui: finalPayload };
+    nextMessages[matched.index] = finalMessage;
+    return { tab: { ...current, messages: nextMessages }, message: finalMessage };
   }
 
   const sameMessageIndex = current.messages.findIndex(
@@ -178,12 +180,15 @@ function upsertCompletedToolCardMessage(
   if (sameMessageIndex >= 0) {
     const replacedMessages = [...current.messages];
     replacedMessages[sameMessageIndex] = message;
-    return { ...current, messages: replacedMessages };
+    return { tab: { ...current, messages: replacedMessages }, message };
   }
 
   return {
-    ...current,
-    messages: insertChronologically(current.messages, message),
+    tab: {
+      ...current,
+      messages: insertChronologically(current.messages, message),
+    },
+    message,
   };
 }
 
@@ -208,19 +213,23 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
       ...(createdAt !== undefined ? { createdAt } : {}),
     };
     if (completedCard) {
-      ctx.updateTab(tabId, (current) =>
-        upsertCompletedToolCardMessage(
+      let durableMessage = message;
+      ctx.updateTab(tabId, (current) => {
+        const result = upsertCompletedToolCardMessage(
           current,
           message,
           payload,
           completedCard,
           identity,
-        ),
-      );
+        );
+        durableMessage = result.message;
+        return result.tab;
+      });
+      ctx.persistLocalChatMessage(durableMessage, tabId);
     } else {
       ctx.appendMessage(message, tabId);
+      ctx.persistLocalChatMessage(message, tabId);
     }
-    ctx.persistLocalChatMessage(message, tabId);
   }
   if (data.done) {
     ctx.updateTab(tabId, (tab) => {

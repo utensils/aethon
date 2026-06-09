@@ -311,8 +311,8 @@ export function onDevshellEvent(
     // returns the freshly prepared resolver output.
     for (const [key, entry] of [...cache.entries()]) {
       if (isUnderRoot(key, event.root)) {
-        cache.set(key, { ...entry, stale: true, fetching: false });
-        void ensureFetched(state, deps, key);
+        cache.set(key, { ...entry, stale: true });
+        if (!entry.fetching) void ensureFetched(state, deps, key);
       }
     }
     for (const key of [...warned]) {

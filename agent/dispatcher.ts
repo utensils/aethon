@@ -102,7 +102,7 @@ export async function dispatchInboundMessage(
         break;
       case "report":
         markFrontendReady(state);
-        emitGlobalReady(state, deps);
+        await emitGlobalReady(state, deps);
         break;
       case "reload_request":
         // Rust file-watcher asked us to reload because an extension file

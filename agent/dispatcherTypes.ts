@@ -4,6 +4,7 @@ import type {
   ExtensionFailureSource,
 } from "./state";
 import { emitReady } from "./tab-lifecycle";
+import { refreshPersistedTabs } from "./extension-loader";
 
 const WORKER_MODE =
   typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
@@ -74,11 +75,13 @@ export interface InboundMessage {
   devshellKind?: string;
 }
 
-export function emitGlobalReady(
+export async function emitGlobalReady(
   state: AethonAgentState,
   deps: { send: (obj: Record<string, unknown>) => void },
-): void {
-  if (!WORKER_MODE) emitReady(state, deps);
+): Promise<void> {
+  if (WORKER_MODE) return;
+  state.discoveredTabs = await refreshPersistedTabs(state);
+  emitReady(state, deps);
 }
 
 /** If a reload was requested AND no tab has a prompt in flight, write

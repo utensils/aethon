@@ -50,9 +50,11 @@ function nonEmptyAgentTab(
   id: string,
   label: string,
   projectId: string | null,
+  cwd?: string,
 ): Tab {
   return {
     ...makeEmptyTab(id, label, projectId),
+    ...(cwd ? { cwd } : {}),
     messages: [{ id: `${id}-msg`, role: "user", text: label }],
   };
 }
@@ -221,7 +223,13 @@ describe("useProjectOps session scoping", () => {
     expect(worktreeIdForCwd(projects, "/projects/aethon-fix-issue/")).toBe(
       "wt-issue",
     );
+    expect(worktreeIdForCwd(projects, "/projects/aethon-fix-issue/app")).toBe(
+      "wt-issue",
+    );
     expect(worktreeIdForCwd(projects, "/projects/aethon")).toBeNull();
+    expect(
+      worktreeIdForCwd(projects, "/projects/aethon-fix-issue-sibling"),
+    ).toBeUndefined();
     expect(worktreeIdForCwd(projects, "/projects/other")).toBeUndefined();
   });
 
@@ -816,6 +824,7 @@ describe("useProjectOps overview terminal project switches", () => {
       "worktree-agent",
       "Worktree",
       "project-1",
+      "/projects/alpha-feature",
     );
     result.current.tabBucketsRef.current.set(
       projectScopeBucketKey("project-1", "wt-alpha-feature"),

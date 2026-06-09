@@ -266,6 +266,42 @@ describe("onDevshellEvent", () => {
     expect(h.sent.filter((c) => c.op === "env_for_path")).toHaveLength(4);
   });
 
+  it("does not start a duplicate ready refresh while a fetch is already in flight", async () => {
+    const h = makeHarness();
+    const p1 = ensureFetched(h.state, h.deps, "/proj");
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/old" },
+    });
+    await p1;
+
+    const refreshP = ensureFetched(h.state, h.deps, "/proj");
+    expect(h.sent.filter((c) => c.op === "env_for_path")).toHaveLength(2);
+
+    onDevshellEvent(h.state, h.deps, {
+      kind: "flake",
+      root: "/proj",
+      status: "ready",
+    });
+
+    expect(h.sent.filter((c) => c.op === "env_for_path")).toHaveLength(2);
+    const duringRefresh = getCachedEnv(h.state, h.deps, "/proj");
+    expect(duringRefresh.hot).toBe(true);
+    expect(duringRefresh.env).toEqual({ PATH: "/old" });
+
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/new" },
+    });
+    await refreshP;
+
+    expect(getCachedEnv(h.state, h.deps, "/proj").env).toEqual({
+      PATH: "/new",
+    });
+  });
+
   it("does not invalidate cache entries under unrelated roots", async () => {
     const h = makeHarness();
     const p = ensureFetched(h.state, h.deps, "/proj-a");

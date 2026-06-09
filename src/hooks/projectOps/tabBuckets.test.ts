@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { makeEmptyTab, type Tab } from "../../types/tab";
 import { switchProjectBucket } from "./tabBuckets";
 import type { TabBucket } from "./types";
+import type { ProjectsState } from "../../projects";
 
 function agentTab(id: string, projectId: string, cwd: string): Tab {
   return {
@@ -11,6 +12,33 @@ function agentTab(id: string, projectId: string, cwd: string): Tab {
     messages: [{ id: `${id}-m`, role: "user", text: id }],
   };
 }
+
+function shellTab(id: string, projectId: string, cwd: string): Tab {
+  return {
+    ...makeEmptyTab(id, id, projectId, "shell"),
+    shell: {
+      cwd,
+      command: "",
+      args: [],
+      shareMode: "private",
+      shellState: "running",
+    },
+  };
+}
+
+const projects: ProjectsState = {
+  projects: [{ id: "P", label: "Project", path: "/P", lastUsed: 1 }],
+  activeId: "P",
+  activeWorktreeId: null,
+  activeHostId: null,
+  worktreesByProject: {
+    P: [
+      { id: "main", projectId: "P", path: "/P", branch: "main", isMain: true },
+      { id: "A", projectId: "P", path: "/P/A", branch: "A", isMain: false },
+      { id: "B", projectId: "P", path: "/P/B", branch: "B", isMain: false },
+    ],
+  },
+};
 
 function makeHarness(initial: Record<string, unknown>) {
   let state = initial;
@@ -25,6 +53,7 @@ function makeHarness(initial: Record<string, unknown>) {
   const deps = {
     setState,
     stateRef,
+    projects,
     tabBucketsRef,
     buildProjectsMirror: () => ({}),
     dispatchTerminalReplay: () => {},
@@ -132,5 +161,52 @@ describe("switchProjectBucket", () => {
     expect(Object.keys(mirror)).toEqual(["P::worktree::A"]);
     expect(mirror["P::worktree::A"].activeTabId).toBe("a1");
     expect(mirror["P::worktree::A"].tabs.map((t) => t.id)).toEqual(["a1"]);
+  });
+
+  it("redistributes visible sibling-worktree tabs before switching buckets", () => {
+    const tabA = agentTab("a1", "P", "/P/A");
+    const tabB = agentTab("b1", "P", "/P/B");
+    const h = makeHarness({
+      tabs: [tabA, tabB],
+      activeTabId: "a1",
+    });
+
+    const restored = switchProjectBucket(
+      h.deps,
+      "P::worktree::B",
+      "P::worktree::A",
+    );
+
+    expect(restored).toBe("a1");
+    expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual(["a1"]);
+    expect(h.get().activeTabId).toBe("a1");
+    expect(
+      h.tabBucketsRef.current
+        .get("P::worktree::B")
+        ?.tabs.map((t) => t.id),
+    ).toEqual(["b1"]);
+    expect(
+      h.tabBucketsRef.current
+        .get("P::worktree::A")
+        ?.tabs.map((t) => t.id),
+    ).toEqual(["a1"]);
+  });
+
+  it("prefers an agent tab over a shell when choosing a bucket fallback active tab", () => {
+    const tabA = agentTab("a1", "P", "/P/A");
+    const shellB = shellTab("shell-b", "P", "/P/B");
+    const tabB = agentTab("b1", "P", "/P/B");
+    const h = makeHarness({
+      tabs: [tabA, shellB, tabB],
+      activeTabId: "a1",
+    });
+
+    switchProjectBucket(h.deps, "P::worktree::A", "P::worktree::B");
+
+    expect(h.get().activeTabId).toBe("b1");
+    expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual([
+      "shell-b",
+      "b1",
+    ]);
   });
 });

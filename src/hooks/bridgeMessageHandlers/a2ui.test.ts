@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleA2ui } from "./a2ui";
 import { handleResponseDelta } from "./responseDelta";
 import { buildHandlerFixture } from "./testFixtures";
@@ -229,6 +229,77 @@ describe("handleA2ui", () => {
       status: "cancelled",
       endedAt: 2_000,
     });
+  });
+
+  it("persists the preserved cancellation state for late final tool cards", () => {
+    const id = "tool-1-call_1";
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      messages: [
+        {
+          id,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  startedAt: 1_000,
+                  endedAt: 1_500,
+                  status: "cancelled",
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    ctx.updateTab = vi.fn((_tabId, updater) => {
+      updater(tab);
+    });
+    const payload = {
+      components: [
+        {
+          id,
+          type: "tool-card",
+          props: {
+            title: "bash",
+            toolName: "bash",
+            startedAt: 1_000,
+            endedAt: 2_000,
+          },
+        },
+      ],
+    };
+
+    handleA2ui({ type: "a2ui", payload, id, tabId: "tab-1" }, ctx);
+
+    expect(mocks.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        a2ui: {
+          components: [
+            expect.objectContaining({
+              props: expect.objectContaining({
+                status: "cancelled",
+                endedAt: 2_000,
+              }),
+              children: [
+                expect.objectContaining({
+                  id: `${id}-late-completion-notice`,
+                }),
+              ],
+            }),
+          ],
+        },
+      }),
+      "tab-1",
+    );
   });
 
   it("upserts a completed tool card against the current tab even when the snapshot missed it", () => {

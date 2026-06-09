@@ -86,18 +86,6 @@ export function useDerivedRenderState({
     );
     const projectDashboardWorktrees =
       (activeProjectSidebarEntry?.worktrees as unknown[] | undefined) ?? [];
-    const recentSessionsArr = Array.isArray(state.recentSessions)
-      ? (state.recentSessions as { cwd?: string }[])
-      : [];
-    const projectPath =
-      (state.project as { path?: string } | null | undefined)?.path ?? null;
-    const projectDashboardSessions = projectPath
-      ? recentSessionsArr.filter((s) => {
-          const sCwd = (s.cwd ?? "").replace(/[/\\]+$/, "");
-          const pCwd = projectPath.replace(/[/\\]+$/, "");
-          return sCwd === pCwd;
-        })
-      : [];
     const projectsArr = Array.isArray(state.projects)
       ? (state.projects as { id: string }[])
       : [];
@@ -110,7 +98,28 @@ export function useDerivedRenderState({
       ...existingProjectDashboard,
       otherProjects,
       worktrees: projectDashboardWorktrees,
-      recentSessions: projectDashboardSessions,
+      recentSessions: (() => {
+        const recentSessionsArr = Array.isArray(state.recentSessions)
+          ? (state.recentSessions as { cwd?: string }[])
+          : [];
+        const projectPath =
+          (state.project as { path?: string } | null | undefined)?.path ?? null;
+        const scopePaths = new Set<string>();
+        const addScopePath = (path?: string) => {
+          const normalized = (path ?? "").replace(/[/\\]+$/, "");
+          if (normalized) scopePaths.add(normalized);
+        };
+        addScopePath(projectPath ?? undefined);
+        for (const worktree of projectDashboardWorktrees as Array<{
+          path?: string;
+        }>) {
+          addScopePath(worktree.path);
+        }
+        if (scopePaths.size === 0) return [];
+        return recentSessionsArr.filter((s) =>
+          scopePaths.has((s.cwd ?? "").replace(/[/\\]+$/, "")),
+        );
+      })(),
       widgets: existingProjectDashboard.widgets ?? [],
     };
     const existingProjectsDashboard =

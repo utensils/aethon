@@ -8,7 +8,7 @@ import type { TabBucket } from "./types";
 const WORKTREE_BUCKET_SEPARATOR = "::worktree::";
 
 export function normalizeSessionPath(path: string | undefined): string {
-  return (path ?? "").replace(/[/\\]+$/, "");
+  return (path ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 export function projectIdFromBucketKey(key: string): string | null {
@@ -35,11 +35,38 @@ export function projectScopeBucketKey(
     : projectId;
 }
 
-export function tabsForProjectBucket(tabs: Tab[], bucketKey: string): Tab[] {
+function isSameOrChildPath(path: string, root: string): boolean {
+  if (!path || !root) return false;
+  return path === root || path.startsWith(`${root}/`);
+}
+
+function pathForTab(tab: Tab): string | undefined {
+  if (tab.kind === "shell") return tab.shell?.cwd ?? tab.cwd;
+  if (tab.kind === "editor") return tab.editor?.rootPath ?? tab.editor?.filePath;
+  return tab.cwd;
+}
+
+export function tabBucketKeyForTab(
+  projects: ProjectsState,
+  tab: Tab,
+): string {
+  if (!tab.projectId) return NO_PROJECT_KEY;
+  const resolved = worktreeIdForCwd(projects, pathForTab(tab), tab.projectId);
+  return projectScopeBucketKey(tab.projectId, resolved ?? null);
+}
+
+export function tabsForProjectBucket(
+  tabs: Tab[],
+  bucketKey: string,
+  projects?: ProjectsState,
+): Tab[] {
   const projectId = projectIdFromBucketKey(bucketKey);
-  return tabs.filter((tab) =>
-    projectId === null ? tab.projectId == null : tab.projectId === projectId,
-  );
+  return tabs.filter((tab) => {
+    if (projectId === null) return tab.projectId == null;
+    if (tab.projectId !== projectId) return false;
+    if (!projects) return true;
+    return tabBucketKeyForTab(projects, tab) === bucketKey;
+  });
 }
 
 export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
@@ -58,6 +85,19 @@ export function nonEmptyProjectTabs(tabs: Tab[]): Tab[] {
       tab.terminalBuffer.length > 0
     );
   });
+}
+
+function preferredActiveTabId(
+  tabs: Tab[],
+  currentActive: string | undefined,
+  existingActive: string | undefined,
+): string | undefined {
+  if (tabs.some((t) => t.id === currentActive)) return currentActive;
+  if (tabs.some((t) => t.id === existingActive)) return existingActive;
+  return (
+    tabs.find((t) => t.kind === "agent" || t.kind === "editor")?.id ??
+    tabs[0]?.id
+  );
 }
 
 export function worktreeIdForCwd(
@@ -79,11 +119,19 @@ export function worktreeIdForCwd(
   for (const id of orderedProjectIds) {
     const project = projects.projects.find((p) => p.id === id);
     if (!project) continue;
-    if (normalizeSessionPath(project.path) === target) return null;
-    const worktree = (projects.worktreesByProject[id] ?? []).find(
-      (w) => normalizeSessionPath(w.path) === target,
-    );
-    if (worktree) return worktree.isMain ? null : worktree.id;
+    const candidates = [
+      { id: null as string | null, path: project.path, isMain: true },
+      ...(projects.worktreesByProject[id] ?? []).map((w) => ({
+        id: w.id,
+        path: w.path,
+        isMain: w.isMain,
+      })),
+    ]
+      .map((item) => ({ ...item, path: normalizeSessionPath(item.path) }))
+      .filter((item) => isSameOrChildPath(target, item.path))
+      .sort((a, b) => b.path.length - a.path.length);
+    const hit = candidates[0];
+    if (hit) return hit.isMain ? null : hit.id;
   }
   return undefined;
 }
@@ -95,6 +143,7 @@ export interface SwitchProjectBucketOptions {
 interface SwitchProjectBucketDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
+  projects: ProjectsState;
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>;
   buildProjectsMirror: (
     prev: Record<string, unknown>,
@@ -118,6 +167,7 @@ export function switchProjectBucket(
   const {
     setState,
     stateRef,
+    projects,
     tabBucketsRef,
     buildProjectsMirror,
     dispatchTerminalReplay,
@@ -131,26 +181,37 @@ export function switchProjectBucket(
   let nextTerminalBuffer = "";
   let nextActiveTabId: string | undefined;
   setState((prev) => {
-    const currentTabs = nonEmptyProjectTabs(
-      tabsForProjectBucket(
-        ((prev.tabs as Tab[] | undefined) ?? []).slice(),
-        fromKey,
-      ),
+    const visibleTabs = nonEmptyProjectTabs(
+      ((prev.tabs as Tab[] | undefined) ?? []).slice(),
     );
     const currentActive = prev.activeTabId as string | undefined;
-    const fromActiveTabId = currentTabs.some((t) => t.id === currentActive)
-      ? currentActive
-      : currentTabs[0]?.id;
-    tabBucketsRef.current.set(fromKey, {
-      tabs: currentTabs,
-      activeTabId: fromActiveTabId,
-    });
+    const visibleBuckets = new Map<string, Tab[]>();
+    for (const tab of visibleTabs) {
+      const bucketKey = tabBucketKeyForTab(projects, tab);
+      visibleBuckets.set(bucketKey, [
+        ...(visibleBuckets.get(bucketKey) ?? []),
+        tab,
+      ]);
+    }
+    if (!visibleBuckets.has(fromKey)) visibleBuckets.set(fromKey, []);
+    for (const [bucketKey, bucketTabs] of visibleBuckets.entries()) {
+      const existing = tabBucketsRef.current.get(bucketKey);
+      const activeTabId = preferredActiveTabId(
+        bucketTabs,
+        currentActive,
+        existing?.activeTabId,
+      );
+      tabBucketsRef.current.set(bucketKey, {
+        tabs: bucketTabs,
+        activeTabId,
+      });
+    }
 
     const savedNextRaw = tabBucketsRef.current.get(toKey);
     const savedNext = savedNextRaw
       ? {
           tabs: nonEmptyProjectTabs(
-            tabsForProjectBucket(savedNextRaw.tabs, toKey),
+            tabsForProjectBucket(savedNextRaw.tabs, toKey, projects),
           ),
           activeTabId: savedNextRaw.activeTabId,
         }
