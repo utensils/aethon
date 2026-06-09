@@ -69,12 +69,11 @@ export async function discoverPersistedTabs(
   try {
     entries = await readdir(state.sessionsDir);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger
-        .scope("tabs")
-        .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
-    }
-    return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    logger
+      .scope("tabs")
+      .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
+    return state.discoveredTabs;
   }
   const results: DiscoveredTab[] = [];
   for (const name of entries) {
@@ -101,12 +100,11 @@ export async function refreshPersistedTabs(
   try {
     entries = await readdir(state.sessionsDir);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger
-        .scope("tabs")
-        .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
-    }
-    return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    logger
+      .scope("tabs")
+      .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
+    return state.discoveredTabs;
   }
   const existing = new Map(
     state.discoveredTabs.map((tab) => [tab.tabId, tab] as const),

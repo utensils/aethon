@@ -54,7 +54,12 @@ export function getCachedEnv(
   cwd: string,
 ): { env: Record<string, string>; kind: string | null; hot: boolean } {
   const entry = cache.get(cwd);
-  if (entry && (!entry.fetching || Object.keys(entry.env).length > 0)) {
+  if (
+    entry &&
+    (!entry.fetching ||
+      Object.keys(entry.env).length > 0 ||
+      entry.resolvedAt > 0)
+  ) {
     return { env: entry.env, kind: entry.kind, hot: true };
   }
   if (!entry) {

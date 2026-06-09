@@ -113,6 +113,22 @@ describe("getCachedEnv", () => {
     expect(env).toEqual({});
   });
 
+  it("keeps a known-empty env hot while a refresh fetch is in flight", async () => {
+    const h = makeHarness();
+    let fetchP = ensureFetched(h.state, h.deps, "/proj");
+    ackLastWith(h, true, { enabled: "never", kind: null, env: {} });
+    await fetchP;
+
+    fetchP = ensureFetched(h.state, h.deps, "/proj");
+    const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
+    expect(hot).toBe(true);
+    expect(kind).toBeNull();
+    expect(env).toEqual({});
+
+    ackLastWith(h, true, { enabled: "never", kind: null, env: {} });
+    await fetchP;
+  });
+
   it("preserves previous env on a failed re-fetch (marks stale)", async () => {
     const h = makeHarness();
     // 1st fetch — success
