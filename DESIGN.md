@@ -310,7 +310,7 @@ small; use a surface tier and the inner highlight instead.
   `--composer-shadow` lifting upward) with the send button overlaid bottom-right.
 
 ### Navigation
-- **Sidebar tree:** host → project → worktree, a single indented family sharing
+- **Sidebar tree:** host → project → workspace, a single indented family sharing
   one gutter rhythm (`--ae-sb-*`). The active item pulses `--accent`; rows hover
   to `--bg-hover`, select to `--bg-selected` (an `--accent`-tinted wash).
 - **Docs nav:** the active sidebar item is brass; the rest is `--text-2`.

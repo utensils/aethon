@@ -875,8 +875,8 @@ plug a custom menu by registering an event route at
   area?: string,
   project: ProjectInfo | { $ref },
   otherProjects?: ProjectInfo[] | { $ref },
-  worktrees?: WorktreeRowLite[] | { $ref },
-  activeWorktreeId?: string | { $ref },
+  workspaces?: WorkspaceRowLite[] | { $ref },
+  activeWorkspaceId?: string | { $ref },
   recentSessions?: RecentSession[] | { $ref },
   widgets?: DashboardWidget[] | { $ref },
   repoOverview?: GhRepoOverview | { $ref },
@@ -886,12 +886,12 @@ plug a custom menu by registering an event route at
 Per-project landing shown when `/empty && /project` (project active,
 no agent tab open in it). Composes the project header (label + path +
 gh description), a `gh-stats-strip`, a `task-launcher` composer, an
-inline worktree rail, recent sessions filtered to this project, and a
+inline workspace rail, recent sessions filtered to this project, and a
 `widgets` grid. The widgets array is the extension-injection slot —
 push to `/projectDashboard/widgets` with `{id, type, title?, props?}`
 entries and they render as cards beneath the rest.
 
-Events emitted: `create-worktree`, `switch-worktree`, `start-task`
+Events emitted: `create-workspace`, `switch-workspace`, `start-task`
 (via the nested task-launcher), `select-project-card` (via the
 launcher's project chip), `restore-session`.
 
@@ -901,22 +901,22 @@ launcher's project chip), `restore-session`.
 {
   project: ProjectInfo | { $ref },
   otherProjects?: ProjectInfo[] | { $ref },
-  worktrees?: WorktreeRowLite[] | { $ref },
-  activeWorktreeId?: string | { $ref },
+  workspaces?: WorkspaceRowLite[] | { $ref },
+  activeWorkspaceId?: string | { $ref },
   placeholder?: string,
   prompt?: string | { $ref },
 }
 ```
 
 Codex-style "do anything" composer. Textarea + chip row
-`[project ▾ worktree ▾ branch ▾]` + Start button. The worktree chip
-defaults to "project root"; selecting "+ New worktree" reveals the
+`[project ▾ workspace ▾ branch ▾]` + Start button. The workspace chip
+defaults to "project root"; selecting "+ New workspace" reveals the
 branch + base inputs. Submit emits `start-task` with `{projectId,
-prompt, newWorktree?, branch?, baseBranch?, worktreeId?}`; the
+prompt, newWorkspace?, branch?, baseBranch?, workspaceId?}`; the
 dashboard handler routes this to the App-level `startTaskInProject`
 orchestrator (the same path the `aethon.tasks.start` pi tool calls).
-When `baseBranch` is omitted, worktree creation uses the project's
-configured worktree base and then falls back to `origin/main`.
+When `baseBranch` is omitted, workspace creation uses the project's
+configured workspace base and then falls back to `origin/main`.
 Reusable standalone in custom layouts.
 
 ### `project-card`

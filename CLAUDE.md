@@ -169,7 +169,7 @@ register in `BUILTIN_ROUTE_TABLE`.
 Per-surface subnamespaces, each backed by a `*_query` bridge message:
 
 - `aethon.shells.{list, read, write}` — opt-in shell sharing.
-- `aethon.tasks.start({projectPath, prompt, newWorktree?, branch?, baseBranch?})`
+- `aethon.tasks.start({projectPath, prompt, newWorkspace?, branch?, baseBranch?})`
   — task launcher parity.
 - `aethon.dashboard.{getRepoOverview, refresh, listIssues, getIssue}` —
   cached gh repo data + issues.
@@ -200,6 +200,39 @@ the mutation-ack channel. **Do not add an agent-driven `setShareMode`** —
 discoverable tab ids + a setter would defeat the opt-in floor that `list()`
 enforces. Writes pop an Allow/Deny notification in `read-write` mode;
 `read-write-trusted` bypasses the prompt.
+
+### Agent process model + workspace concurrency
+
+One **global bridge** (`GLOBAL_AGENT_KEY`) plus one **worker bridge per
+non-default tab** (`tab:<id>`, `src-tauri/src/agent_process/`). Routing:
+tab-scoped message types with a non-default `tabId` go to that tab's
+worker (`route_payload_key`); everything else — including `set_project`,
+`report`, and the default tab — goes to the global bridge. Workers spawn
+lazily on first write, respawn when their cwd changes, idle-retire after
+`[agent] idle_retire_minutes` (15 min default), and are reconciled
+against the frontend's live tab set. A prompt wedged past
+`WEDGED_PROMPT_CAP` (30 min with no activity) stops protecting its
+worker from retirement.
+
+Inside a bridge, tabs multiplex over one stdio pipe;
+`state.tabContext` (AsyncLocalStorage) carries the tabId through pi
+session calls, and `tabProjectCwds` pins each tab's cwd
+(`resolveTabCwd` precedence: cwdOverride > recorded > active project).
+
+**The global bridge is the sole owner of the frontend extension
+surface.** Workers also load project extensions for their own cwd (tools
+and event handlers must work in-process), but their registry-replacing
+messages (`extension_components`, `extension_themes`, `layout_set`, … —
+see `agent/origin-gate.ts`) are stamped with `originTabId`; the frontend
+(`bridgeDispatchDecision` in `useBridgeMessages.ts`) rejects hydrates
+whose origin tab isn't in the active workspace bucket and acks them
+`ok:false`. This is what stops a background workspace's worker respawn
+from clobbering the active workspace's components/themes/keybindings —
+don't bypass it by sending registry types unstamped from worker code.
+
+Mutation acks route by `mutationId` across all bridges
+(`mutation_routes` in Rust, purged on retire/respawn/EOF); ids carry a
+per-process random seed so workers can't mint colliding ids.
 
 ### Hot reload doesn't kill in-flight prompts
 
@@ -242,22 +275,40 @@ sets `data-platform="mac"` (`src/utils/platform.ts`) and drag / no-drag
 CSS lives in `styles/chrome.css`. All macOS-gated — Linux/Windows render
 a normal titlebar unchanged.
 
-### Projects + worktrees
+### Projects + workspaces
+
+**A project has one or more workspaces; a workspace is the main checkout
+(`isMain: true`) or a git worktree.** Each workspace runs independently —
+its own tabs, agent sessions, git state, and devshell. "Worktree" survives
+only at the git mechanics layer: the `git_worktree_*` Rust commands (and
+their `worktreePath` wire args), `GitWorktreeRecord`, the `gitWorktree*`
+TS bridges, and `git-context.ts`'s `isWorktree` fact. Everything
+concept-level says workspace — types, state paths, events, UI copy.
 
 Pi sessions are scoped to a cwd. `src/projects.ts` persists the project
-list at `~/.aethon/projects.json` (max 16, MRU, schemaVersion 2; v1→v2
-migrates on read). **Existing tabs keep the cwd they were created with**
-— switching the active project only affects new tabs. Worktrees attach
-via `src/worktrees.ts`, with Rust commands in `commands/git/`. Active
-worktree is mirrored to `/activeWorktreeId` so the file tree and new
-tabs follow the sidebar selection.
+list at `~/.aethon/projects.json` (max 16, MRU, schemaVersion 5; older
+schemas — including v4's `activeWorktreeId` / `worktreesByProject`
+spellings — migrate on read). **Existing tabs keep the cwd they were
+created with** — switching the active project only affects new tabs.
+Workspaces attach via `src/workspaces.ts`, with Rust commands in
+`commands/git/`. Active workspace is mirrored to `/activeWorkspaceId` so
+the file tree and new tabs follow the sidebar selection. Tabs bucket per
+workspace (`projectOps/tabBuckets.ts`, key separator `"::workspace::"`;
+pre-rename `"::worktree::"` snapshot keys migrate on load).
 
-The sidebar tree is **host → project → worktree**
+Switching is warm: `/vcs` paints from `src/vcsSliceCache.ts` (in-memory
+LRU + `~/.aethon/vcs-status.json`) and the file tree from
+`useFileTreeData`'s module cache, both reconciling in the background.
+Git-status polling is tiered (`src/hooks/statusPollScheduler.ts`): hot =
+active workspace (useVcsStatus, 20 s + `git-state-changed` events), warm
+= last 4 activated workspace roots (60 s), cold = other projects (5 min).
+
+The sidebar tree is **host → project → workspace**
 (`src/extensions/default-layout/sidebar/`). The host is a first-class,
 collapsible node (`host-group.tsx`) that owns its project list via a
 tinted left rail; `select → setActiveHost` switches the active one.
 Project rows are two-line cards (`item-row.tsx` stacked mode: name +
-git meta); worktrees nest under them (`worktree-row.tsx`) aligned via
+git meta); workspaces nest under them (`workspace-row.tsx`) aligned via
 shared `--ae-sb-*` gutter vars. Projects without a cached icon get a
 fallback repo glyph; icons come from the async Rust command
 `fs_discover_project_icon` (in-repo discovery).
@@ -265,14 +316,14 @@ fallback repo glyph; icons come from the async Rust command
 ### Always-on VCS surface
 
 `src/hooks/useVcsStatus.ts` consolidates working-tree changes, branch
-ahead/behind, PR state, and CI rollup for the active project/worktree
+ahead/behind, PR state, and CI rollup for the active project/workspace
 into a single `/vcs` state slice. Both the header `vcs-status` cluster
 and the `source-control-panel` read from `/vcs`, so polling + fan-out
 live in one place. Cadence mirrors `useProjects`: tick on mount / root
 change, every 20 s, and on window focus, with a `cancelled` flag +
 in-flight guard against stale-root clobber. Sources (all best-effort,
-degrade silently): `git_status` (worktree-aware — called against the
-active root so a worktree reports its own branch), `git_file_status`
+degrade silently): `git_status` (workspace-aware — called against the
+active root so a workspace reports its own branch), `git_file_status`
 (per-file breakdown), `gh_branch_status` + `gh_checks` (via caches).
 Conclusion→icon/tone mapping is shared in `sidebar/vcs-presentation.ts`
 so the two surfaces never disagree on what "green" means.
