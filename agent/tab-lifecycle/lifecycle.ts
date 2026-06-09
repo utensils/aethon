@@ -130,7 +130,17 @@ export async function ensureTab(
       `worker session using pre-spawn devshell cwd=${resolvedCwd} tabId=${tabId}`,
     );
   } else {
-    await ensureDevshellPrepared(state, deps, resolvedCwd);
+    // Never let devshell preparation abort tab creation — a session on the
+    // host env beats no session. ensurePrepared also self-skips before the
+    // frontend handshake (startup default tab), where the query can't be
+    // answered and would otherwise wedge the bridge until a fatal timeout.
+    await ensureDevshellPrepared(state, deps, resolvedCwd).catch(
+      (err: unknown) => {
+        lifecycleLog.warn(
+          `devshell prepare failed for ${resolvedCwd}: ${(err as Error).message}; continuing with host env`,
+        );
+      },
+    );
   }
 
   // Shadow pi's built-in `bash` tool with our own that mounts the

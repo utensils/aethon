@@ -248,6 +248,24 @@ describe("ensurePrepared", () => {
     ackLastWith(h, false, undefined, "devshell required");
     await expect(p).rejects.toThrow("devshell required");
   });
+
+  it("skips the query entirely before the frontend handshake", async () => {
+    // Regression: the global bridge creates its default tab during startup,
+    // before the dispatcher loop that processes `frontend_ready`. A blocking
+    // prepare there can never be answered — it must return immediately
+    // instead of stalling until PREPARE_TIMEOUT_MS and throwing a fatal
+    // `frontend_not_ready` out of main().
+    const state = new AethonAgentState(baseOpts); // no markFrontendReady
+    const sent: SendCall[] = [];
+    const deps = { send: vi.fn((obj: Record<string, unknown>) => {
+      sent.push(obj as SendCall);
+    }) };
+    await expect(ensurePrepared(state, deps, "/proj")).resolves.toBeUndefined();
+    expect(sent).toEqual([]);
+    // Cache stays cold; the spawn hook degrades to the host env.
+    const { hot } = getCachedEnv(state, deps, "/proj");
+    expect(hot).toBe(false);
+  });
 });
 
 describe("onDevshellEvent", () => {

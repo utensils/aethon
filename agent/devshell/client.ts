@@ -197,6 +197,19 @@ export async function ensurePrepared(
   deps: DevshellClientDeps,
   cwd: string,
 ): Promise<void> {
+  // The prepare query is answered by the frontend, so before the handshake
+  // completes it CANNOT succeed. The global bridge creates its default tab
+  // during startup — before the dispatcher loop that would process
+  // `frontend_ready` — so awaiting here deadlocks for the full
+  // PREPARE_TIMEOUT_MS and the resulting throw is fatal to the bridge.
+  // Degrade to the documented cold-cache behavior instead: the spawn hook
+  // runs against the host env until devshell events warm the cache.
+  if (!state.frontendReady) {
+    logger
+      .scope("devshell")
+      .info(`prepare_for_path(${cwd}) skipped: frontend not ready yet`);
+    return;
+  }
   const existing = cache.get(cwd);
   cache.set(cwd, {
     kind: existing?.kind ?? null,
