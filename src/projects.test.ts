@@ -253,7 +253,7 @@ describe("migrateProjects", () => {
         ],
       },
     };
-    const out = migrateProjects(v4 as Parameters<typeof migrateProjects>[0]);
+    const out = migrateProjects(v4);
 
     expect(out.activeWorkspaceId).toBe("wt-2");
     expect(out.workspacesByProject.a).toHaveLength(2);

@@ -24,6 +24,11 @@ import { listen } from "@tauri-apps/api/event";
 
 import { getGhBranchStatus, type GhPr } from "../ghBranchStatusCache";
 import { getGhChecks, type GhCheckRun } from "../ghChecksCache";
+import {
+  getCachedVcsSlice,
+  hydrateVcsSliceCache,
+  putCachedVcsSlice,
+} from "../vcsSliceCache";
 
 type GitFileStatusKind =
   | "modified"
@@ -220,6 +225,11 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
     // effect's captured `activeRoot`.
     const writeSlice = (slice: VcsSlice) => {
       if (cancelled) return;
+      // Keep the per-workspace cache warm with every settled slice so the
+      // next switch back to this root paints instantly.
+      if (slice.root && !slice.loading) {
+        putCachedVcsSlice(slice.root, slice);
+      }
       setState((s) => ({ ...s, vcs: slice }));
     };
 
@@ -228,15 +238,35 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
       return;
     }
 
-    // Paint a loading shell immediately so the surfaces don't flash empty
-    // while the first round-trip lands.
+    // Paint immediately so the surfaces don't flash empty while the first
+    // round-trip lands: prior data for the same root (silent refresh), the
+    // cached slice for a switched-to root (warm switch), or the loading
+    // shell only when this workspace has never been seen.
     setState((s) => {
       const prev = (s.vcs as VcsSlice | undefined) ?? null;
-      // Keep prior data for the same root (silent refresh); reset on switch.
       if (prev && prev.root === activeRoot) {
         return { ...s, vcs: { ...prev, loading: true } };
       }
+      const cached = getCachedVcsSlice(activeRoot);
+      if (cached) {
+        return { ...s, vcs: { ...cached, loading: true } };
+      }
       return { ...s, vcs: emptySlice(activeRoot, true) };
+    });
+
+    // Cold start: the disk cache may hold this workspace's last-known
+    // slice. Hydrate once, then upgrade the loading shell — but never
+    // overwrite a slice the live tick already settled.
+    void hydrateVcsSliceCache().then(() => {
+      if (cancelled) return;
+      const cached = getCachedVcsSlice(activeRoot);
+      if (!cached) return;
+      setState((s) => {
+        const prev = (s.vcs as VcsSlice | undefined) ?? null;
+        if (!prev || prev.root !== activeRoot) return s;
+        if (!prev.loading || prev.branch !== null) return s;
+        return { ...s, vcs: { ...cached, loading: true } };
+      });
     });
 
     const tick = async () => {
