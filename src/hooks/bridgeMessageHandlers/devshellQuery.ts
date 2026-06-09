@@ -7,7 +7,7 @@ import type { BridgeMessageHandler } from "./types";
  *  Four ops, mirroring the Rust IPC surface:
  *    - `status` — non-blocking snapshot for the status badge / agent
  *      hot-cache primer.
- *    - `prepare_for_path` — blocking project/worktree preparation used before
+ *    - `prepare_for_path` — blocking project/workspace preparation used before
  *      provisioning an agent session.
  *    - `env_for_path` — non-blocking env lookup. The spawnHook
  *      consumes this; when state is still `Resolving` the response

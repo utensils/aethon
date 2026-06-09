@@ -21,8 +21,8 @@ describe("recentSessionItemFromClosedTab", () => {
     };
     const projects = {
       activeId: "p1",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [{ id: "p1", label: "mold", path: "/repo/mold", lastUsed: 1 }],
     };
@@ -35,9 +35,9 @@ describe("recentSessionItemFromClosedTab", () => {
     });
   });
 
-  it("keeps a closed worktree chat scoped to its original cwd", () => {
+  it("keeps a closed workspace chat scoped to its original cwd", () => {
     const tab = {
-      ...makeEmptyTab("worktree-tab", "Tab 1", "p1"),
+      ...makeEmptyTab("workspace-tab", "Tab 1", "p1"),
       cwd: "/repo/mold-fix-session-restore",
       messages: [
         {
@@ -49,8 +49,8 @@ describe("recentSessionItemFromClosedTab", () => {
     };
     const projects = {
       activeId: "p1",
-      activeWorktreeId: "wt-1",
-      worktreesByProject: {
+      activeWorkspaceId: "wt-1",
+      workspacesByProject: {
         p1: [
           {
             id: "wt-1",
@@ -66,7 +66,7 @@ describe("recentSessionItemFromClosedTab", () => {
     };
 
     expect(recentSessionItemFromClosedTab(tab, projects)).toEqual({
-      id: "worktree-tab",
+      id: "workspace-tab",
       label: "Recover this branch session",
       lastModified: "now",
       cwd: "/repo/mold-fix-session-restore",
@@ -113,8 +113,8 @@ describe("cwdForNewTab", () => {
   it("prefers the active project cwd", () => {
     const projects = {
       activeId: "p1",
-      activeWorktreeId: null,
-      worktreesByProject: {},
+      activeWorkspaceId: null,
+      workspacesByProject: {},
       activeHostId: null,
       projects: [
         { id: "p1", label: "Aethon", path: "/repo/aethon", lastUsed: 1 },

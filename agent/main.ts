@@ -95,8 +95,9 @@ import { getSubagentsForCwd } from "./subagents";
 import { buildExplicitSubagentSteer } from "./subagents/steer";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
 import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
+import { withWorkerOrigin } from "./origin-gate";
 
-function send(obj: Record<string, unknown>): void {
+function rawSend(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
@@ -117,6 +118,10 @@ async function main(): Promise<void> {
   const workerDevshellReady = process.env.AETHON_WORKER_DEVSHELL_READY === "1";
   const workerDevshellKind = process.env.AETHON_WORKER_DEVSHELL_KIND ?? null;
   const workerMode = typeof workerTabId === "string" && workerTabId.length > 0;
+  // Per-tab workers stamp registry-replacing messages with their tab id so
+  // the frontend can refuse hydrates from background workspaces — see
+  // origin-gate.ts. The global bridge sends unstamped (authoritative).
+  const send = workerTabId ? withWorkerOrigin(rawSend, workerTabId) : rawSend;
   const { warnKb, hardKb } = resolveStateLimits(
     process.env.AETHON_STATE_WARN_KB,
     process.env.AETHON_STATE_HARD_KB,
@@ -401,7 +406,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  send({
+  rawSend({
     type: "error",
     message: `fatal: ${(err as Error)?.message ?? String(err)}`,
   });

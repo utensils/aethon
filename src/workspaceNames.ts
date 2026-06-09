@@ -1,15 +1,15 @@
-// Auto-generated worktree branch names from the Helios pantheon — the
+// Auto-generated workspace branch names from the Helios pantheon — the
 // figures around the sun, dawn, wind, and sky that share mythological
 // space with the app's namesake (Aethon, "blazing horse" of Helios).
 //
-// Used by sidebar context-menu "Create worktree…" so the user never
+// Used by sidebar context-menu "Create workspace…" so the user never
 // has to type a branch name. Same pool is exposed to the task launcher
 // composer as the placeholder suggestion, but it accepts user input
 // — auto-gen is the no-click default, manual is the override.
 //
 // Collisions: when the chosen name is already a branch on the repo,
 // append `-2`, `-3`, … until free. Caller passes `taken` so we can
-// check both git's branch list AND the in-memory pending worktrees.
+// check both git's branch list AND the in-memory pending workspaces.
 
 const HELIOS_POOL = [
   // Helios chariot horses (CLAUDE.md says Aethon is the namesake).
@@ -61,10 +61,10 @@ function shuffled<T>(arr: T[]): T[] {
 }
 
 /** Pick a Helios-pantheon name not already in `taken`. Caller supplies
- *  `taken` as the union of existing branch names + pending worktree
+ *  `taken` as the union of existing branch names + pending workspace
  *  branches so we don't collide with either. If the entire pool is
  *  exhausted, append a numeric suffix to a random base. */
-export function pickWorktreeName(taken: Iterable<string>): string {
+export function pickWorkspaceName(taken: Iterable<string>): string {
   const used = new Set<string>();
   for (const t of taken) used.add(stripPrefix(t).toLowerCase());
   for (const candidate of shuffled(HELIOS_POOL)) {

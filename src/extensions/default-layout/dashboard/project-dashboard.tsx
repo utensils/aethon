@@ -4,7 +4,7 @@
  *   - hero (project label + description from gh)
  *   - gh-stats-strip (stars/forks/issues/PRs/default branch/pushed-at)
  *   - task-launcher (Codex-style "start a task" composer)
- *   - worktree rail (existing worktrees + "New worktree" trigger)
+ *   - workspace rail (existing workspaces + "New workspace" trigger)
  *   - recent sessions in this project
  *   - extension-injected widgets via /projectDashboard/widgets
  *
@@ -32,7 +32,7 @@ interface ProjectInfo {
   iconUrl?: string;
 }
 
-interface WorktreeRowLite {
+interface WorkspaceRowLite {
   id: string;
   label: string;
   branch?: string;
@@ -97,18 +97,18 @@ export function ProjectDashboard({
   state,
   onEvent,
 }: BuiltinComponentProps) {
-  const [confirmingWorktreeId, setConfirmingWorktreeId] = useState<
+  const [confirmingWorkspaceId, setConfirmingWorkspaceId] = useState<
     string | null
   >(null);
   const props = component.props as
     | {
         project?: unknown;
-        worktrees?: unknown;
+        workspaces?: unknown;
         recentSessions?: unknown;
         widgets?: unknown;
         repoOverview?: unknown;
         otherProjects?: unknown;
-        activeWorktreeId?: unknown;
+        activeWorkspaceId?: unknown;
       }
     | undefined;
 
@@ -116,9 +116,9 @@ export function ProjectDashboard({
     () => resolveOrInline<ProjectInfo>(props?.project, state),
     [props?.project, state],
   );
-  const worktrees = useMemo(
-    () => resolveArray<WorktreeRowLite>(props?.worktrees, state),
-    [props?.worktrees, state],
+  const workspaces = useMemo(
+    () => resolveArray<WorkspaceRowLite>(props?.workspaces, state),
+    [props?.workspaces, state],
   );
   const recentSessions = useMemo(
     () => resolveArray<SessionRow>(props?.recentSessions, state),
@@ -136,9 +136,9 @@ export function ProjectDashboard({
     () => resolveArray<ProjectInfo>(props?.otherProjects, state),
     [props?.otherProjects, state],
   );
-  const activeWorktreeId = useMemo(
-    () => resolveOrInline<string>(props?.activeWorktreeId, state),
-    [props?.activeWorktreeId, state],
+  const activeWorkspaceId = useMemo(
+    () => resolveOrInline<string>(props?.activeWorkspaceId, state),
+    [props?.activeWorkspaceId, state],
   );
 
   // Key the cached overview by path so switching from project A to
@@ -221,8 +221,8 @@ export function ProjectDashboard({
               props: {
                 project,
                 otherProjects,
-                worktrees,
-                activeWorktreeId,
+                workspaces,
+                activeWorkspaceId,
               },
             }}
             state={state}
@@ -239,7 +239,7 @@ export function ProjectDashboard({
             }
             componentProps={{
               project,
-              activeWorktreeIdRef: { $ref: "/activeWorktreeId" },
+              activeWorkspaceIdRef: { $ref: "/activeWorkspaceId" },
             }}
           />
         </section>
@@ -255,68 +255,68 @@ export function ProjectDashboard({
           />
         </section>
 
-        {worktrees.length > 0 && (
+        {workspaces.length > 0 && (
           <section className="a2ui-project-dashboard-section">
             <header className="a2ui-project-dashboard-section-head">
-              <h2>Worktrees</h2>
+              <h2>Workspaces</h2>
               <button
                 type="button"
                 className="a2ui-project-dashboard-section-action"
                 onClick={() =>
-                  onEvent("create-worktree", { projectId: project.id })
+                  onEvent("create-workspace", { projectId: project.id })
                 }
               >
-                + New worktree
+                + New workspace
               </button>
             </header>
-            <ul className="a2ui-project-dashboard-worktrees">
-              {worktrees.map((w) => {
-                const label = w.label || w.branch || "worktree";
-                const confirming = confirmingWorktreeId === w.id;
+            <ul className="a2ui-project-dashboard-workspaces">
+              {workspaces.map((w) => {
+                const label = w.label || w.branch || "workspace";
+                const confirming = confirmingWorkspaceId === w.id;
                 return (
                   <li
                     key={w.id}
                     className={
-                      "a2ui-project-dashboard-worktree" +
+                      "a2ui-project-dashboard-workspace" +
                       (w.active ? " is-active" : "") +
                       (confirming ? " is-confirming" : "")
                     }
                     onMouseLeave={() => {
-                      if (confirming) setConfirmingWorktreeId(null);
+                      if (confirming) setConfirmingWorkspaceId(null);
                     }}
                     onClick={() => {
                       if (confirming) return;
                       onEvent(
-                        "switch-worktree",
-                        { worktreeId: w.id, projectId: project.id },
+                        "switch-workspace",
+                        { workspaceId: w.id, projectId: project.id },
                         w.id,
                       );
                     }}
                     title={w.path}
                   >
-                    <span className="a2ui-project-dashboard-worktree-label">
+                    <span className="a2ui-project-dashboard-workspace-label">
                       {label}
                     </span>
                     {w.branch && (
-                      <span className="a2ui-project-dashboard-worktree-branch">
+                      <span className="a2ui-project-dashboard-workspace-branch">
                         ⎇ {w.branch}
                       </span>
                     )}
                     {w.isMain ? (
-                      <span className="a2ui-project-dashboard-worktree-main">
+                      <span className="a2ui-project-dashboard-workspace-main">
                         main
                       </span>
                     ) : confirming ? (
                       <button
                         type="button"
-                        className="a2ui-project-dashboard-worktree-confirm-remove"
+                        className="a2ui-project-dashboard-workspace-confirm-remove"
                         aria-label={`Confirm remove ${label}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onEvent(
-                            "remove-worktree",
+                            "remove-workspace",
                             {
-                              worktreeId: w.id,
+                              workspaceId: w.id,
                               projectId: project.id,
                               confirmed: true,
                             },
@@ -329,12 +329,12 @@ export function ProjectDashboard({
                     ) : (
                       <button
                         type="button"
-                        className="a2ui-project-dashboard-worktree-remove"
+                        className="a2ui-project-dashboard-workspace-remove"
                         aria-label={`Remove ${label}`}
-                        title="Remove worktree"
+                        title="Remove workspace"
                         onClick={(event) => {
                           event.stopPropagation();
-                          setConfirmingWorktreeId(w.id);
+                          setConfirmingWorkspaceId(w.id);
                         }}
                       >
                         <svg

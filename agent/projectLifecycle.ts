@@ -311,7 +311,7 @@ export async function handleSetProject(
     if (projectChanged) {
       // Single info summary per real project switch (the per-phase timings
       // above are debug) — keeps the signal without ~4 info lines per switch,
-      // which dominated logs during worktree-heavy sessions (#159).
+      // which dominated logs during workspace-heavy sessions (#159).
       logger
         .scope("project-switch")
         .info(

@@ -645,14 +645,14 @@ Agent-side counterparts to the per-project dashboard's task launcher
 aethon.tasks.start({
   projectPath,                // absolute fs path of the target project
   prompt,                     // the first chat message to send
-  newWorktree?: boolean,      // create a fresh git worktree first
-  branch?: string,            // required when newWorktree is true
+  newWorkspace?: boolean,      // create a fresh git worktree first
+  branch?: string,            // required when newWorkspace is true
   baseBranch?: string,        // base to fork from (project default, then origin/main)
   model?: string,             // optional model id for the launched tab
   bridgePrompt?: string,      // hidden bridge prompt; prompt remains visible text
 });
 // → { ok: true, data: { projectId } }
-//   Worktree-create + new-tab + send first message run as one chain;
+//   Workspace-create + new-tab + send first message run as one chain;
 //   the resolved Promise fires after the prompt lands in the new tab.
 //   `bridgePrompt` is extension-trusted hidden context, not user-visible text.
 
@@ -678,7 +678,7 @@ These actions register as pi tools `startTask`, `getRepoOverview`,
 `refreshDashboard`, `listOpenIssues`, and `getOpenIssue` so the model
 can drive them directly via the standard tool-use protocol. The matching
 UI events on the dashboard composites (`start-task`,
-`select-project-card`, `switch-worktree`, …) route through the same
+`select-project-card`, `switch-workspace`, …) route through the same
 App-level `startTaskInProject` orchestrator, so a user click and an
 agent tool call follow identical code paths.
 

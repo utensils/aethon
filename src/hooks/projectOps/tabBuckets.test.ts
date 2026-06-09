@@ -29,9 +29,9 @@ function shellTab(id: string, projectId: string, cwd: string): Tab {
 const projects: ProjectsState = {
   projects: [{ id: "P", label: "Project", path: "/P", lastUsed: 1 }],
   activeId: "P",
-  activeWorktreeId: null,
+  activeWorkspaceId: null,
   activeHostId: null,
-  worktreesByProject: {
+  workspacesByProject: {
     P: [
       { id: "main", projectId: "P", path: "/P", branch: "main", isMain: true },
       { id: "A", projectId: "P", path: "/P/A", branch: "A", isMain: false },
@@ -66,39 +66,39 @@ describe("switchProjectBucket", () => {
     const tabP = agentTab("p-main", "P", "/P");
     const h = makeHarness({ tabs: [tabP], activeTabId: "p-main" });
 
-    // P-main -> worktree A (empty bucket -> overview).
-    switchProjectBucket(h.deps, "P", "P::worktree::A");
+    // P-main -> workspace A (empty bucket -> overview).
+    switchProjectBucket(h.deps, "P", "P::workspace::A");
     expect(h.tabBucketsRef.current.get("P")?.tabs.map((t) => t.id)).toEqual([
       "p-main",
     ]);
     expect((h.get().tabs as Tab[]).length).toBe(0);
 
-    // Open a session in worktree A.
+    // Open a session in workspace A.
     const tabA = agentTab("a1", "P", "/P/A");
     h.deps.setState((prev) => ({ ...prev, tabs: [tabA], activeTabId: "a1" }));
 
     // A -> B.
-    switchProjectBucket(h.deps, "P::worktree::A", "P::worktree::B");
+    switchProjectBucket(h.deps, "P::workspace::A", "P::workspace::B");
     expect(
-      h.tabBucketsRef.current.get("P::worktree::A")?.tabs.map((t) => t.id),
+      h.tabBucketsRef.current.get("P::workspace::A")?.tabs.map((t) => t.id),
     ).toEqual(["a1"]);
 
-    // Open a session in worktree B.
+    // Open a session in workspace B.
     const tabB = agentTab("b1", "P", "/P/B");
     h.deps.setState((prev) => ({ ...prev, tabs: [tabB], activeTabId: "b1" }));
 
     // B -> back to P-main: should restore p-main, not the landing.
-    const restored = switchProjectBucket(h.deps, "P::worktree::B", "P");
+    const restored = switchProjectBucket(h.deps, "P::workspace::B", "P");
     expect(restored).toBe("p-main");
     expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual(["p-main"]);
     expect(h.get().activeTabId).toBe("p-main");
 
-    // No cross-contamination: each worktree bucket kept only its own tab.
+    // No cross-contamination: each workspace bucket kept only its own tab.
     expect(
-      h.tabBucketsRef.current.get("P::worktree::A")?.tabs.map((t) => t.id),
+      h.tabBucketsRef.current.get("P::workspace::A")?.tabs.map((t) => t.id),
     ).toEqual(["a1"]);
     expect(
-      h.tabBucketsRef.current.get("P::worktree::B")?.tabs.map((t) => t.id),
+      h.tabBucketsRef.current.get("P::workspace::B")?.tabs.map((t) => t.id),
     ).toEqual(["b1"]);
   });
 
@@ -107,19 +107,19 @@ describe("switchProjectBucket", () => {
     const h = makeHarness({
       tabs: [],
       activeTabId: undefined,
-      landing: { kind: "worktree", worktreeId: "B" },
+      landing: { kind: "workspace", workspaceId: "B" },
       messages: [{ id: "stale", role: "user", text: "stale landing" }],
       draft: "stale draft",
     });
-    h.tabBucketsRef.current.set("P::worktree::A", {
+    h.tabBucketsRef.current.set("P::workspace::A", {
       tabs: [tabA],
       activeTabId: "a1",
     });
 
     const restored = switchProjectBucket(
       h.deps,
-      "P::worktree::B",
-      "P::worktree::A",
+      "P::workspace::B",
+      "P::workspace::A",
     );
 
     expect(restored).toBe("a1");
@@ -133,37 +133,37 @@ describe("switchProjectBucket", () => {
     const h = makeHarness({
       tabs: [],
       activeTabId: undefined,
-      landing: { kind: "worktree", worktreeId: "B" },
+      landing: { kind: "workspace", workspaceId: "B" },
     });
 
-    switchProjectBucket(h.deps, "P::worktree::B", "P::worktree::A");
+    switchProjectBucket(h.deps, "P::workspace::B", "P::workspace::A");
 
     expect(h.get().activeTabId).toBeUndefined();
     expect(h.get().tabs).toEqual([]);
-    expect(h.get().landing).toEqual({ kind: "worktree", worktreeId: "B" });
+    expect(h.get().landing).toEqual({ kind: "workspace", workspaceId: "B" });
   });
 
   it("mirrors non-active buckets into state.persistedTabBuckets for persistence", () => {
     const tabP = agentTab("p-main", "P", "/P");
     const h = makeHarness({ tabs: [tabP], activeTabId: "p-main" });
 
-    switchProjectBucket(h.deps, "P", "P::worktree::A");
+    switchProjectBucket(h.deps, "P", "P::workspace::A");
     const tabA = agentTab("a1", "P", "/P/A");
     h.deps.setState((prev) => ({ ...prev, tabs: [tabA], activeTabId: "a1" }));
-    switchProjectBucket(h.deps, "P::worktree::A", "P");
+    switchProjectBucket(h.deps, "P::workspace::A", "P");
 
     // Active workspace ("P") lives in state.tabs, so it's excluded from the
-    // mirror; the backgrounded worktree A is included with its active tab.
+    // mirror; the backgrounded workspace A is included with its active tab.
     const mirror = h.get().persistedTabBuckets as Record<
       string,
       { tabs: Tab[]; activeTabId?: string }
     >;
-    expect(Object.keys(mirror)).toEqual(["P::worktree::A"]);
-    expect(mirror["P::worktree::A"].activeTabId).toBe("a1");
-    expect(mirror["P::worktree::A"].tabs.map((t) => t.id)).toEqual(["a1"]);
+    expect(Object.keys(mirror)).toEqual(["P::workspace::A"]);
+    expect(mirror["P::workspace::A"].activeTabId).toBe("a1");
+    expect(mirror["P::workspace::A"].tabs.map((t) => t.id)).toEqual(["a1"]);
   });
 
-  it("redistributes visible sibling-worktree tabs before switching buckets", () => {
+  it("redistributes visible sibling-workspace tabs before switching buckets", () => {
     const tabA = agentTab("a1", "P", "/P/A");
     const tabB = agentTab("b1", "P", "/P/B");
     const h = makeHarness({
@@ -173,8 +173,8 @@ describe("switchProjectBucket", () => {
 
     const restored = switchProjectBucket(
       h.deps,
-      "P::worktree::B",
-      "P::worktree::A",
+      "P::workspace::B",
+      "P::workspace::A",
     );
 
     expect(restored).toBe("a1");
@@ -182,12 +182,12 @@ describe("switchProjectBucket", () => {
     expect(h.get().activeTabId).toBe("a1");
     expect(
       h.tabBucketsRef.current
-        .get("P::worktree::B")
+        .get("P::workspace::B")
         ?.tabs.map((t) => t.id),
     ).toEqual(["b1"]);
     expect(
       h.tabBucketsRef.current
-        .get("P::worktree::A")
+        .get("P::workspace::A")
         ?.tabs.map((t) => t.id),
     ).toEqual(["a1"]);
   });
@@ -201,7 +201,7 @@ describe("switchProjectBucket", () => {
       activeTabId: "a1",
     });
 
-    switchProjectBucket(h.deps, "P::worktree::A", "P::worktree::B");
+    switchProjectBucket(h.deps, "P::workspace::A", "P::workspace::B");
 
     expect(h.get().activeTabId).toBe("b1");
     expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual([

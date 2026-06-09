@@ -26,7 +26,7 @@ describe("useMutations setActiveTab", () => {
     const { actions, stateRef, setState } = setup({
       tabs: [tab],
       activeTabId: "tab-1",
-      landing: { kind: "worktree", worktreeId: "wt-1" },
+      landing: { kind: "workspace", workspaceId: "wt-1" },
       messages: [{ role: "user", text: "hello" }],
     });
 

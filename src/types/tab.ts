@@ -159,7 +159,7 @@ export interface Tab {
   // hides everyone else.
   projectId: string | null;
   // Immutable working directory the bridge session was created with.
-  // For worktree sessions this is the worktree path, not the project root.
+  // For workspace sessions this is the workspace path, not the project root.
   cwd?: string;
   /** Auth profile id selected for this agent session, if any. */
   authProfileId?: string;
@@ -208,7 +208,7 @@ export const NO_PROJECT_KEY = "__no_project__";
  * Sentinel id for the permanent "overview" pseudo-tab pinned to the left
  * of the tab strip. It is *not* stored in `/tabs` — setting `activeTabId`
  * to this value (or any value that doesn't match a real tab) means
- * "no active session; show the host / project / worktree overview." Tab
+ * "no active session; show the host / project / workspace overview." Tab
  * ids elsewhere are UUIDs, so a literal can't collide.
  */
 export const OVERVIEW_TAB_ID = "__overview__";

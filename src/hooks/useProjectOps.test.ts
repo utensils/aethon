@@ -16,7 +16,7 @@ import {
   projectScopeBucketKey,
   tabsForProjectBucket,
   useProjectOps,
-  worktreeIdForCwd,
+  workspaceIdForCwd,
   type UseProjectOpsContext,
 } from "./useProjectOps";
 
@@ -39,8 +39,8 @@ function makeProjectsState(
       },
     ],
     activeId: null,
-    activeWorktreeId: null,
-    worktreesByProject: {},
+    activeWorkspaceId: null,
+    workspacesByProject: {},
     activeHostId: null,
     ...overrides,
   };
@@ -94,8 +94,8 @@ function renderProjectOps(
       return { ...prev, tabs, activeTabId };
     });
   });
-  const worktreePrompts = {
-    promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+  const workspacePrompts = {
+    promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
     promptForceRemove: vi.fn(() => Promise.resolve(true)),
     promptOrphanCleanup: vi.fn(() => Promise.resolve(true)),
     notifyCannotRemoveMain: vi.fn(),
@@ -115,7 +115,7 @@ function renderProjectOps(
     dispatchTerminalReplay: vi.fn(),
     autoRestoreDiscoveredSessions: vi.fn(),
     closeTabNow,
-    worktreePrompts,
+    workspacePrompts,
     ...overrides,
   };
   const rendered = renderHook(() => useProjectOps(ctx));
@@ -126,7 +126,7 @@ function renderProjectOps(
     stateRef,
     setState,
     closeTabNow,
-    worktreePrompts: ctx.worktreePrompts,
+    workspacePrompts: ctx.workspacePrompts,
   };
 }
 
@@ -134,7 +134,7 @@ describe("projectIdFromBucketKey", () => {
   it("maps the no-project bucket back to null", () => {
     expect(projectIdFromBucketKey(NO_PROJECT_KEY)).toBeNull();
     expect(projectIdFromBucketKey("project-1")).toBe("project-1");
-    expect(projectIdFromBucketKey("project-1::worktree::wt-1")).toBe(
+    expect(projectIdFromBucketKey("project-1::workspace::wt-1")).toBe(
       "project-1",
     );
   });
@@ -196,11 +196,11 @@ describe("nonEmptyProjectTabs", () => {
 });
 
 describe("useProjectOps session scoping", () => {
-  it("resolves a session cwd to the matching worktree selection", () => {
+  it("resolves a session cwd to the matching workspace selection", () => {
     const projects = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: null,
-      worktreesByProject: {
+      activeWorkspaceId: null,
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -220,24 +220,24 @@ describe("useProjectOps session scoping", () => {
       },
     });
 
-    expect(worktreeIdForCwd(projects, "/projects/aethon-fix-issue/")).toBe(
+    expect(workspaceIdForCwd(projects, "/projects/aethon-fix-issue/")).toBe(
       "wt-issue",
     );
-    expect(worktreeIdForCwd(projects, "/projects/aethon-fix-issue/app")).toBe(
+    expect(workspaceIdForCwd(projects, "/projects/aethon-fix-issue/app")).toBe(
       "wt-issue",
     );
-    expect(worktreeIdForCwd(projects, "/projects/aethon")).toBeNull();
+    expect(workspaceIdForCwd(projects, "/projects/aethon")).toBeNull();
     expect(
-      worktreeIdForCwd(projects, "/projects/aethon-fix-issue-sibling"),
+      workspaceIdForCwd(projects, "/projects/aethon-fix-issue-sibling"),
     ).toBeUndefined();
-    expect(worktreeIdForCwd(projects, "/projects/other")).toBeUndefined();
+    expect(workspaceIdForCwd(projects, "/projects/other")).toBeUndefined();
   });
 
-  it("marks the child worktree as selected without painting the parent row active", () => {
+  it("marks the child workspace as selected without painting the parent row active", () => {
     const { result, stateRef } = renderProjectOps(
       makeProjectsState({
         activeId: "project-1",
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         projects: [
           {
             id: "project-1",
@@ -246,7 +246,7 @@ describe("useProjectOps session scoping", () => {
             lastUsed: 1,
           },
         ],
-        worktreesByProject: {
+        workspacesByProject: {
           "project-1": [
             {
               id: "wt-main",
@@ -268,25 +268,25 @@ describe("useProjectOps session scoping", () => {
     );
 
     act(() => {
-      result.current.activateWorktree("wt-issue");
+      result.current.activateWorkspace("wt-issue");
     });
 
     const projects = (
       stateRef.current.sidebar as {
         projects?: {
           active?: boolean;
-          worktrees?: { id: string; active?: boolean }[];
+          workspaces?: { id: string; active?: boolean }[];
         }[];
       }
     ).projects;
     expect(projects?.[0]?.active).toBe(false);
     expect(
-      projects?.[0]?.worktrees?.find((w) => w.id === "wt-issue")?.active,
+      projects?.[0]?.workspaces?.find((w) => w.id === "wt-issue")?.active,
     ).toBe(true);
     expect(stateRef.current.activeProjectId).toBe("project-1");
   });
 
-  it("keeps project-root and worktree tabs in separate visible buckets", () => {
+  it("keeps project-root and workspace tabs in separate visible buckets", () => {
     const rootTab = {
       id: "root-tab",
       kind: "agent",
@@ -296,20 +296,20 @@ describe("useProjectOps session scoping", () => {
       terminalBuffer: "",
       model: "gpt-5.5",
     } as unknown as Tab;
-    const worktreeTab = {
-      id: "worktree-tab",
+    const workspaceTab = {
+      id: "workspace-tab",
       kind: "agent",
       projectId: "project-1",
       cwd: "/projects/aethon-fix-issue",
-      messages: [{ id: "m-wt", role: "user", text: "worktree" }],
+      messages: [{ id: "m-wt", role: "user", text: "workspace" }],
       terminalBuffer: "",
       model: "gpt-5.5",
     } as unknown as Tab;
     const { result, stateRef, projectsRef } = renderProjectOps(
       makeProjectsState({
         activeId: "project-1",
-        activeWorktreeId: null,
-        worktreesByProject: {
+        activeWorkspaceId: null,
+        workspacesByProject: {
           "project-1": [
             {
               id: "wt-issue",
@@ -329,39 +329,39 @@ describe("useProjectOps session scoping", () => {
     };
 
     act(() => {
-      result.current.activateWorktree("wt-issue");
+      result.current.activateWorkspace("wt-issue");
     });
 
-    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect(projectsRef.current.activeWorkspaceId).toBe("wt-issue");
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([]);
 
     stateRef.current = {
       ...stateRef.current,
-      tabs: [worktreeTab],
-      activeTabId: "worktree-tab",
+      tabs: [workspaceTab],
+      activeTabId: "workspace-tab",
     };
 
     act(() => {
       expect(result.current.setActiveProjectById("project-1")).toBe(true);
     });
 
-    expect(projectsRef.current.activeWorktreeId).toBeNull();
+    expect(projectsRef.current.activeWorkspaceId).toBeNull();
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
       "root-tab",
     ]);
     expect(stateRef.current.activeTabId).toBe("root-tab");
   });
 
-  it("clears stale landing when activateWorktree restores a saved tab", () => {
-    const worktreeTab = {
-      ...nonEmptyAgentTab("worktree-tab", "Worktree chat", "project-1"),
+  it("clears stale landing when activateWorkspace restores a saved tab", () => {
+    const workspaceTab = {
+      ...nonEmptyAgentTab("workspace-tab", "Workspace chat", "project-1"),
       cwd: "/projects/aethon-fix-issue",
     };
     const { result, stateRef, projectsRef } = renderProjectOps(
       makeProjectsState({
         activeId: "project-1",
-        activeWorktreeId: "wt-issue",
-        worktreesByProject: {
+        activeWorkspaceId: "wt-issue",
+        workspacesByProject: {
           "project-1": [
             {
               id: "wt-issue",
@@ -383,45 +383,45 @@ describe("useProjectOps session scoping", () => {
     );
     stateRef.current = {
       ...stateRef.current,
-      tabs: [worktreeTab],
-      activeTabId: "worktree-tab",
+      tabs: [workspaceTab],
+      activeTabId: "workspace-tab",
     };
 
     act(() => {
-      result.current.activateWorktree("wt-empty");
+      result.current.activateWorkspace("wt-empty");
     });
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([]);
 
     stateRef.current = {
       ...stateRef.current,
-      landing: { kind: "worktree", worktreeId: "wt-empty" },
+      landing: { kind: "workspace", workspaceId: "wt-empty" },
       messages: [{ id: "stale", role: "user", text: "stale" }],
       draft: "stale draft",
     };
 
     act(() => {
-      result.current.activateWorktree("wt-issue");
+      result.current.activateWorkspace("wt-issue");
     });
 
-    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect(projectsRef.current.activeWorkspaceId).toBe("wt-issue");
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
-      "worktree-tab",
+      "workspace-tab",
     ]);
-    expect(stateRef.current.activeTabId).toBe("worktree-tab");
+    expect(stateRef.current.activeTabId).toBe("workspace-tab");
     expect(stateRef.current.landing).toBeNull();
-    expect(stateRef.current.messages).toEqual(worktreeTab.messages);
-    expect(stateRef.current.draft).toBe(worktreeTab.draft);
+    expect(stateRef.current.messages).toEqual(workspaceTab.messages);
+    expect(stateRef.current.draft).toBe(workspaceTab.draft);
   });
 
-  it("swaps the project extensions watcher when a worktree from another project is activated", () => {
-    // Regression: activateWorktree changed activeId directly when the
-    // worktree belonged to a different project than the current one,
+  it("swaps the project extensions watcher when a workspace from another project is activated", () => {
+    // Regression: activateWorkspace changed activeId directly when the
+    // workspace belonged to a different project than the current one,
     // skipping the unwatch/watch swap that setActiveProjectById does.
     // The previous project's `.aethon/extensions/` watcher kept
     // firing while the new project's never got installed.
     const initial = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: null,
+      activeWorkspaceId: null,
       projects: [
         {
           id: "project-1",
@@ -436,7 +436,7 @@ describe("useProjectOps session scoping", () => {
           lastUsed: 1,
         },
       ],
-      worktreesByProject: {
+      workspacesByProject: {
         "project-2": [
           {
             id: "wt-beta-feature",
@@ -477,8 +477,8 @@ describe("useProjectOps session scoping", () => {
       dispatchTerminalReplay: vi.fn(),
       autoRestoreDiscoveredSessions: vi.fn(),
       closeTabNow: vi.fn(),
-      worktreePrompts: {
-        promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+      workspacePrompts: {
+        promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
         promptForceRemove: vi.fn(() => Promise.resolve(true)),
         promptOrphanCleanup: vi.fn(() => Promise.resolve(true)),
         notifyCannotRemoveMain: vi.fn(),
@@ -489,7 +489,7 @@ describe("useProjectOps session scoping", () => {
     projectsRef.current = initial;
 
     act(() => {
-      result.current.activateWorktree("wt-beta-feature");
+      result.current.activateWorkspace("wt-beta-feature");
     });
 
     // Previous project's watcher uninstalled, new project's watcher
@@ -497,15 +497,15 @@ describe("useProjectOps session scoping", () => {
     expect(unwatchProjectForBridge).toHaveBeenCalledWith("/projects/alpha");
     expect(watchProjectForBridge).toHaveBeenCalledWith("/projects/beta");
     expect(projectsRef.current.activeId).toBe("project-2");
-    expect(projectsRef.current.activeWorktreeId).toBe("wt-beta-feature");
+    expect(projectsRef.current.activeWorkspaceId).toBe("wt-beta-feature");
   });
 
-  it("scopes discovered sessions to the active worktree cwd", () => {
+  it("scopes discovered sessions to the active workspace cwd", () => {
     const { result } = renderProjectOps(
       makeProjectsState({
         activeId: "project-1",
-        activeWorktreeId: "wt-1",
-        worktreesByProject: {
+        activeWorkspaceId: "wt-1",
+        workspacesByProject: {
           "project-1": [
             {
               id: "wt-1",
@@ -523,25 +523,25 @@ describe("useProjectOps session scoping", () => {
       result.current.scopedDiscoveredSessions([
         { tabId: "main", lastModified: 1, cwd: "/projects/aethon" },
         {
-          tabId: "worktree",
+          tabId: "workspace",
           lastModified: 2,
           cwd: "/projects/aethon-fix-session-restore",
         },
       ]),
     ).toEqual([
       {
-        tabId: "worktree",
+        tabId: "workspace",
         lastModified: 2,
         cwd: "/projects/aethon-fix-session-restore",
       },
     ]);
   });
 
-  it("excludes project and worktree sessions from the host scope", () => {
+  it("excludes project and workspace sessions from the host scope", () => {
     const { result } = renderProjectOps(
       makeProjectsState({
         activeId: null,
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         projects: [
           {
             id: "project-1",
@@ -550,7 +550,7 @@ describe("useProjectOps session scoping", () => {
             lastUsed: 1,
           },
         ],
-        worktreesByProject: {
+        workspacesByProject: {
           "project-1": [
             {
               id: "wt-1",
@@ -569,7 +569,7 @@ describe("useProjectOps session scoping", () => {
         { tabId: "host", lastModified: 1 },
         { tabId: "project", lastModified: 2, cwd: "/projects/aethon/" },
         {
-          tabId: "worktree",
+          tabId: "workspace",
           lastModified: 3,
           cwd: "/projects/aethon-fix-session-restore",
         },
@@ -603,7 +603,7 @@ describe("useProjectOps overview terminal project switches", () => {
     });
   }
 
-  function projectWithWorktreeState(): ProjectsState {
+  function projectWithWorkspaceState(): ProjectsState {
     return makeProjectsState({
       activeId: "project-1",
       projects: [
@@ -614,7 +614,7 @@ describe("useProjectOps overview terminal project switches", () => {
           lastUsed: 1,
         },
       ],
-      worktreesByProject: {
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-alpha-feature",
@@ -815,22 +815,22 @@ describe("useProjectOps overview terminal project switches", () => {
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
-  it("preserves overview and spawns a shell when switching to a worktree", () => {
+  it("preserves overview and spawns a shell when switching to a workspace", () => {
     const newShellTab = vi.fn();
-    const { result, stateRef } = renderProjectOps(projectWithWorktreeState(), {
+    const { result, stateRef } = renderProjectOps(projectWithWorkspaceState(), {
       newShellTab,
     });
-    const savedWorktreeAgent = nonEmptyAgentTab(
-      "worktree-agent",
-      "Worktree",
+    const savedWorkspaceAgent = nonEmptyAgentTab(
+      "workspace-agent",
+      "Workspace",
       "project-1",
       "/projects/alpha-feature",
     );
     result.current.tabBucketsRef.current.set(
       projectScopeBucketKey("project-1", "wt-alpha-feature"),
       {
-        tabs: [savedWorktreeAgent],
-        activeTabId: "worktree-agent",
+        tabs: [savedWorkspaceAgent],
+        activeTabId: "workspace-agent",
       },
     );
     stateRef.current = {
@@ -841,23 +841,23 @@ describe("useProjectOps overview terminal project switches", () => {
     };
 
     act(() => {
-      result.current.activateWorktree("wt-alpha-feature");
+      result.current.activateWorkspace("wt-alpha-feature");
     });
 
     expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
-      "worktree-agent",
+      "workspace-agent",
     ]);
     expect(newShellTab).toHaveBeenCalledTimes(1);
   });
 
-  it("does not spawn another shell when switching to a worktree bucket with a shell", () => {
+  it("does not spawn another shell when switching to a workspace bucket with a shell", () => {
     const newShellTab = vi.fn();
-    const { result, stateRef } = renderProjectOps(projectWithWorktreeState(), {
+    const { result, stateRef } = renderProjectOps(projectWithWorkspaceState(), {
       newShellTab,
     });
-    const savedWorktreeShell = {
-      ...makeEmptyTab("worktree-shell", "Shell 1", "project-1", "shell"),
+    const savedWorkspaceShell = {
+      ...makeEmptyTab("workspace-shell", "Shell 1", "project-1", "shell"),
       shell: {
         cwd: "/projects/alpha-feature",
         command: "",
@@ -869,7 +869,7 @@ describe("useProjectOps overview terminal project switches", () => {
     result.current.tabBucketsRef.current.set(
       projectScopeBucketKey("project-1", "wt-alpha-feature"),
       {
-        tabs: [savedWorktreeShell],
+        tabs: [savedWorkspaceShell],
         activeTabId: undefined,
       },
     );
@@ -881,7 +881,7 @@ describe("useProjectOps overview terminal project switches", () => {
     };
 
     act(() => {
-      result.current.activateWorktree("wt-alpha-feature");
+      result.current.activateWorkspace("wt-alpha-feature");
     });
 
     expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
@@ -889,8 +889,8 @@ describe("useProjectOps overview terminal project switches", () => {
   });
 });
 
-describe("useProjectOps worktree refresh", () => {
-  it("refreshes worktrees when reselecting a project with cached rows", async () => {
+describe("useProjectOps workspace refresh", () => {
+  it("refreshes workspaces when reselecting a project with cached rows", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktrees") {
@@ -915,7 +915,7 @@ describe("useProjectOps worktree refresh", () => {
     };
     const { result } = renderProjectOps(
       makeProjectsState({
-        worktreesByProject: { "project-1": [cached] },
+        workspacesByProject: { "project-1": [cached] },
       }),
     );
 
@@ -930,7 +930,7 @@ describe("useProjectOps worktree refresh", () => {
     });
   });
 
-  it("clears a stale active worktree missing from a fresh git listing", async () => {
+  it("clears a stale active workspace missing from a fresh git listing", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktrees") {
@@ -946,7 +946,7 @@ describe("useProjectOps worktree refresh", () => {
       }
       return Promise.resolve(undefined);
     });
-    const staleWorktree = {
+    const staleWorkspace = {
       id: "wt-deleted",
       projectId: "project-1",
       path: "/projects/aethon-deleted",
@@ -956,8 +956,8 @@ describe("useProjectOps worktree refresh", () => {
     const { result, projectsRef } = renderProjectOps(
       makeProjectsState({
         activeId: "project-1",
-        activeWorktreeId: "wt-deleted",
-        worktreesByProject: { "project-1": [staleWorktree] },
+        activeWorkspaceId: "wt-deleted",
+        workspacesByProject: { "project-1": [staleWorkspace] },
       }),
     );
     await act(async () => {
@@ -966,18 +966,18 @@ describe("useProjectOps worktree refresh", () => {
     });
     projectsRef.current = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: "wt-deleted",
-      worktreesByProject: { "project-1": [staleWorktree] },
+      activeWorkspaceId: "wt-deleted",
+      workspacesByProject: { "project-1": [staleWorkspace] },
     });
 
     await act(async () => {
-      await result.current.refreshProjectWorktrees("project-1");
+      await result.current.refreshProjectWorkspaces("project-1");
     });
 
-    expect(projectsRef.current.activeWorktreeId).toBeNull();
-    expect(projectsRef.current.worktreesByProject["project-1"]).toHaveLength(1);
+    expect(projectsRef.current.activeWorkspaceId).toBeNull();
+    expect(projectsRef.current.workspacesByProject["project-1"]).toHaveLength(1);
     expect(
-      projectsRef.current.worktreesByProject["project-1"]?.[0],
+      projectsRef.current.workspacesByProject["project-1"]?.[0],
     ).toMatchObject({
       path: "/projects/aethon",
       branch: "main",
@@ -986,8 +986,8 @@ describe("useProjectOps worktree refresh", () => {
   });
 });
 
-describe("useProjectOps worktree creation", () => {
-  it("creates worktrees from origin/main by default and activates the result", async () => {
+describe("useProjectOps workspace creation", () => {
+  it("creates workspaces from origin/main by default and activates the result", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktree_add") {
@@ -1029,7 +1029,7 @@ describe("useProjectOps worktree creation", () => {
     projectsRef.current = initial;
 
     await act(async () => {
-      const created = await result.current.createWorktreeWithParams({
+      const created = await result.current.createWorkspaceWithParams({
         projectId: "project-1",
         branch: "fix/thing",
       });
@@ -1042,15 +1042,15 @@ describe("useProjectOps worktree creation", () => {
       branch: "fix/thing",
       base: "origin/main",
     });
-    expect(projectsRef.current.activeWorktreeId).toBeTruthy();
-    const active = projectsRef.current.worktreesByProject["project-1"]?.find(
-      (w) => w.id === projectsRef.current.activeWorktreeId,
+    expect(projectsRef.current.activeWorkspaceId).toBeTruthy();
+    const active = projectsRef.current.workspacesByProject["project-1"]?.find(
+      (w) => w.id === projectsRef.current.activeWorkspaceId,
     );
     expect(active?.path).toBe("/tmp/aethon/aethon/fix-thing");
     expect(projectsRef.current.projects[0].uiExpanded).toBe(true);
   });
 
-  it("auto-generates blank worktree branches under the Aethon user dir", async () => {
+  it("auto-generates blank workspace branches under the Aethon user dir", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string, args) => {
       if (cmd === "git_branch_list") {
@@ -1094,7 +1094,7 @@ describe("useProjectOps worktree creation", () => {
 
     let created: string | null = null;
     await act(async () => {
-      created = await result.current.createWorktreeWithParams({
+      created = await result.current.createWorkspaceWithParams({
         projectId: "project-1",
       });
     });
@@ -1146,7 +1146,7 @@ describe("useProjectOps worktree creation", () => {
           label: "aethon",
           path: "/projects/aethon",
           lastUsed: 1,
-          worktreeBaseBranch: "upstream/trunk",
+          workspaceBaseBranch: "upstream/trunk",
         },
       ],
     });
@@ -1158,11 +1158,11 @@ describe("useProjectOps worktree creation", () => {
     projectsRef.current = initial;
 
     await act(async () => {
-      await result.current.createWorktreeWithParams({
+      await result.current.createWorkspaceWithParams({
         projectId: "project-1",
         branch: "topic",
       });
-      await result.current.createWorktreeWithParams({
+      await result.current.createWorkspaceWithParams({
         projectId: "project-1",
         branch: "topic-2",
         baseBranch: "release/next",
@@ -1177,14 +1177,14 @@ describe("useProjectOps worktree creation", () => {
   });
 });
 
-describe("useProjectOps worktree removal", () => {
-  it("closes visible and stored session tabs for the removed worktree", async () => {
+describe("useProjectOps workspace removal", () => {
+  it("closes visible and stored session tabs for the removed workspace", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktree_remove") return Promise.resolve(undefined);
       return Promise.resolve(undefined);
     });
-    const worktree = {
+    const workspace = {
       id: "wt-issue",
       projectId: "project-1",
       path: "/projects/aethon-fix-issue",
@@ -1193,8 +1193,8 @@ describe("useProjectOps worktree removal", () => {
     };
     const initial = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: "wt-issue",
-      worktreesByProject: {
+      activeWorkspaceId: "wt-issue",
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -1203,7 +1203,7 @@ describe("useProjectOps worktree removal", () => {
             branch: "main",
             isMain: true,
           },
-          worktree,
+          workspace,
         ],
       },
     });
@@ -1247,7 +1247,7 @@ describe("useProjectOps worktree removal", () => {
     );
 
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
 
     expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove", {
@@ -1263,10 +1263,10 @@ describe("useProjectOps worktree removal", () => {
         projectScopeBucketKey("project-1", "wt-issue"),
       ),
     ).toBe(false);
-    expect(projectsRef.current.activeWorktreeId).toBeNull();
+    expect(projectsRef.current.activeWorkspaceId).toBeNull();
     await waitFor(() =>
       expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
+        projectsRef.current.workspacesByProject["project-1"]?.some(
           (wt) => wt.id === "wt-issue",
         ),
       ).toBe(false),
@@ -1282,8 +1282,8 @@ describe("useProjectOps worktree removal", () => {
     });
     const initial = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: "wt-issue",
-      worktreesByProject: {
+      activeWorkspaceId: "wt-issue",
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -1316,7 +1316,7 @@ describe("useProjectOps worktree removal", () => {
     projectsRef.current = initial;
 
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
 
     expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove", {
@@ -1325,13 +1325,13 @@ describe("useProjectOps worktree removal", () => {
       force: false,
     });
     expect(
-      projectsRef.current.worktreesByProject["project-1"]?.find(
+      projectsRef.current.workspacesByProject["project-1"]?.find(
         (wt) => wt.id === "wt-issue",
       )?.pendingState,
     ).toBe("removing");
 
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
     expect(
       harness.invoke.mock.calls.filter(
@@ -1341,7 +1341,7 @@ describe("useProjectOps worktree removal", () => {
 
     projectsRef.current = {
       ...projectsRef.current,
-      activeWorktreeId: "wt-other",
+      activeWorkspaceId: "wt-other",
     };
 
     await act(async () => {
@@ -1350,12 +1350,12 @@ describe("useProjectOps worktree removal", () => {
     });
     await waitFor(() =>
       expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
+        projectsRef.current.workspacesByProject["project-1"]?.some(
           (wt) => wt.id === "wt-issue",
         ),
       ).toBe(false),
     );
-    expect(projectsRef.current.activeWorktreeId).toBe("wt-other");
+    expect(projectsRef.current.activeWorkspaceId).toBe("wt-other");
   });
 
   it("restores the row if dirty removal is not forced", async () => {
@@ -1366,7 +1366,7 @@ describe("useProjectOps worktree removal", () => {
           return Promise.resolve(undefined);
         }
         if (cmd === "git_worktree_remove") {
-          return Promise.reject(new Error("worktree contains modified files"));
+          return Promise.reject(new Error("workspace contains modified files"));
         }
         return Promise.resolve(undefined);
       },
@@ -1375,8 +1375,8 @@ describe("useProjectOps worktree removal", () => {
     const promptForceRemove = vi.fn(() => forcePrompt.promise);
     const initial = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: "wt-issue",
-      worktreesByProject: {
+      activeWorkspaceId: "wt-issue",
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -1398,8 +1398,8 @@ describe("useProjectOps worktree removal", () => {
     const { result, projectsRef, stateRef, closeTabNow } = renderProjectOps(
       initial,
       {
-        worktreePrompts: {
-          promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+        workspacePrompts: {
+          promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
           promptForceRemove,
           promptOrphanCleanup: vi.fn(() => Promise.resolve(true)),
           notifyCannotRemoveMain: vi.fn(),
@@ -1424,15 +1424,15 @@ describe("useProjectOps worktree removal", () => {
     };
 
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
     await waitFor(() => expect(promptForceRemove).toHaveBeenCalledTimes(1));
     expect(
-      projectsRef.current.worktreesByProject["project-1"]?.find(
+      projectsRef.current.workspacesByProject["project-1"]?.find(
         (wt) => wt.id === "wt-issue",
       )?.pendingState,
     ).toBe("removing");
-    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect(projectsRef.current.activeWorkspaceId).toBe("wt-issue");
     expect(closeTabNow).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -1445,29 +1445,29 @@ describe("useProjectOps worktree removal", () => {
     );
     await waitFor(() =>
       expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
+        projectsRef.current.workspacesByProject["project-1"]?.some(
           (wt) => wt.id === "wt-issue",
         ),
       ).toBe(true),
     );
-    expect(projectsRef.current.activeWorktreeId).toBe("wt-issue");
+    expect(projectsRef.current.activeWorkspaceId).toBe("wt-issue");
     expect(closeTabNow).not.toHaveBeenCalled();
   });
 
-  it("falls through to the orphan command when git reports 'worktree not tracked'", async () => {
+  it("falls through to the orphan command when git reports 'workspace not tracked'", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktree_remove")
         return Promise.reject(
-          new Error("worktree not tracked: /projects/aethon-fix-issue"),
+          new Error("workspace not tracked: /projects/aethon-fix-issue"),
         );
       if (cmd === "git_worktree_remove_orphan") return Promise.resolve(undefined);
       return Promise.resolve(undefined);
     });
     const initial = makeProjectsState({
       activeId: "project-1",
-      activeWorktreeId: "wt-issue",
-      worktreesByProject: {
+      activeWorkspaceId: "wt-issue",
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -1486,25 +1486,25 @@ describe("useProjectOps worktree removal", () => {
         ],
       },
     });
-    const { result, projectsRef, worktreePrompts } = renderProjectOps(initial);
+    const { result, projectsRef, workspacePrompts } = renderProjectOps(initial);
     await act(async () => {
       await Promise.resolve();
     });
     projectsRef.current = initial;
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
     await waitFor(() =>
-      expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1),
+      expect(workspacePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1),
     );
     expect(harness.invoke).toHaveBeenCalledWith("git_worktree_remove_orphan", {
       projectPath: "/projects/aethon",
       worktreePath: "/projects/aethon-fix-issue",
     });
-    expect(worktreePrompts.notifyFailure).not.toHaveBeenCalled();
+    expect(workspacePrompts.notifyFailure).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
+        projectsRef.current.workspacesByProject["project-1"]?.some(
           (wt) => wt.id === "wt-issue",
         ),
       ).toBe(false),
@@ -1516,13 +1516,13 @@ describe("useProjectOps worktree removal", () => {
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktree_remove")
         return Promise.reject(
-          new Error("worktree not tracked: /projects/aethon-fix-issue"),
+          new Error("workspace not tracked: /projects/aethon-fix-issue"),
         );
       return Promise.resolve(undefined);
     });
     const initial = makeProjectsState({
       activeId: "project-1",
-      worktreesByProject: {
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -1542,9 +1542,9 @@ describe("useProjectOps worktree removal", () => {
       },
     });
     const promptOrphanCleanup = vi.fn(() => Promise.resolve(false));
-    const { result, projectsRef, worktreePrompts } = renderProjectOps(initial, {
-      worktreePrompts: {
-        promptRemoveWorktree: vi.fn(() => Promise.resolve(true)),
+    const { result, projectsRef, workspacePrompts } = renderProjectOps(initial, {
+      workspacePrompts: {
+        promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
         promptForceRemove: vi.fn(() => Promise.resolve(true)),
         promptOrphanCleanup,
         notifyCannotRemoveMain: vi.fn(),
@@ -1556,20 +1556,20 @@ describe("useProjectOps worktree removal", () => {
     });
     projectsRef.current = initial;
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
     await waitFor(() =>
-      expect(worktreePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1),
+      expect(workspacePrompts.promptOrphanCleanup).toHaveBeenCalledTimes(1),
     );
     expect(harness.invoke).not.toHaveBeenCalledWith(
       "git_worktree_remove_orphan",
       expect.anything(),
     );
-    expect(worktreePrompts.notifyFailure).not.toHaveBeenCalled();
+    expect(workspacePrompts.notifyFailure).not.toHaveBeenCalled();
     // Row is restored so the user can try again later.
     await waitFor(() =>
       expect(
-        projectsRef.current.worktreesByProject["project-1"]?.some(
+        projectsRef.current.workspacesByProject["project-1"]?.some(
           (wt) => wt.id === "wt-issue",
         ),
       ).toBe(true),
@@ -1580,14 +1580,14 @@ describe("useProjectOps worktree removal", () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
       if (cmd === "git_worktree_remove")
-        return Promise.reject(new Error("worktree not tracked: x"));
+        return Promise.reject(new Error("workspace not tracked: x"));
       if (cmd === "git_worktree_remove_orphan")
         return Promise.reject(new Error("trash: permission denied"));
       return Promise.resolve(undefined);
     });
     const initial = makeProjectsState({
       activeId: "project-1",
-      worktreesByProject: {
+      workspacesByProject: {
         "project-1": [
           {
             id: "wt-main",
@@ -1606,22 +1606,22 @@ describe("useProjectOps worktree removal", () => {
         ],
       },
     });
-    const { result, projectsRef, worktreePrompts } = renderProjectOps(initial);
+    const { result, projectsRef, workspacePrompts } = renderProjectOps(initial);
     await act(async () => {
       await Promise.resolve();
     });
     projectsRef.current = initial;
     await act(async () => {
-      await result.current.removeWorktreeById("wt-issue", { confirmed: true });
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
     });
     await waitFor(() =>
-      expect(worktreePrompts.notifyFailure).toHaveBeenCalledWith(
+      expect(workspacePrompts.notifyFailure).toHaveBeenCalledWith(
         "Error: trash: permission denied",
       ),
     );
     // Row is restored so a follow-up attempt is possible.
     expect(
-      projectsRef.current.worktreesByProject["project-1"]?.some(
+      projectsRef.current.workspacesByProject["project-1"]?.some(
         (wt) => wt.id === "wt-issue",
       ),
     ).toBe(true);

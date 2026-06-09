@@ -14,12 +14,12 @@ import {
  *
  *  Three ops:
  *    - `start_task` — call the App-level `startTaskInProject` to spawn a
- *      worktree (if requested, using the project's configured base
+ *      workspace (if requested, using the project's configured base
  *      when no baseBranch is supplied) + new tab + send first message.
  *      The caller passes `projectPath`; we resolve to a projectId from
  *      the live projects list.
  *    - `get_repo_overview` — return cached gh data for a project. Pure
- *      query; never triggers a worktree-create or tab spawn.
+ *      query; never triggers a workspace-create or tab spawn.
  *    - `refresh` — bust the gh cache for one project (or all if no
  *      path given) so the next read shells out fresh.
  *
@@ -47,7 +47,7 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       await ctx.startTaskInProject({
         projectId: project.id,
         prompt,
-        newWorktree: args.newWorktree === true,
+        newWorkspace: args.newWorkspace === true,
         branch: args.branch as string | undefined,
         baseBranch: args.baseBranch as string | undefined,
         ...(typeof args.model === "string" && args.model.length > 0

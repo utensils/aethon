@@ -23,9 +23,29 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 use super::process::{
-    GLOBAL_AGENT_KEY, WorkerMeta, clear_worker_meta_for_pid, mark_worker_ready,
-    touch_worker_activity,
+    GLOBAL_AGENT_KEY, WorkerMeta, clear_worker_meta_for_pid, lock_recover, mark_worker_ready,
+    purge_routes_for_key, touch_worker_activity,
 };
+
+/// EOF cleanup shared by every stdout-reader exit path: purge this key's
+/// mutation routes (pending acks for a dead process are unroutable and used
+/// to leak forever), then drop the meta entry. Both steps are pid-guarded so
+/// a late-exiting reader of an already-replaced child can't clobber the
+/// respawned worker's state.
+fn cleanup_after_stdout_eof(
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    mutation_routes: &Arc<Mutex<HashMap<String, String>>>,
+    key: &str,
+    pid: u32,
+) {
+    let owned_by_other = lock_recover(meta, "worker meta (eof)")
+        .get(key)
+        .is_some_and(|m| m.pid != pid);
+    if !owned_by_other {
+        purge_routes_for_key(mutation_routes, key);
+    }
+    clear_worker_meta_for_pid(meta, key, pid);
+}
 
 pub(super) const STDERR_TAIL_CAP: usize = 32;
 
@@ -74,9 +94,9 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                     let mut prompt_flag = None;
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
                         if let Some(mutation_id) = value.get("mutationId").and_then(|v| v.as_str())
-                            && let Ok(mut routes) = mutation_routes.lock()
                         {
-                            routes.insert(mutation_id.to_string(), key.clone());
+                            lock_recover(&mutation_routes, "mutation routes (insert)")
+                                .insert(mutation_id.to_string(), key.clone());
                         }
                         prompt_flag = match value.get("type").and_then(|v| v.as_str()) {
                             Some("worker_ready") => {
@@ -91,7 +111,8 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                             Some("response_end") => Some(false),
                             _ => None,
                         };
-                    } else if let Ok(mut g) = stderr_tail.lock() {
+                    } else {
+                        let mut g = lock_recover(&stderr_tail, "stderr tail (stdout noise)");
                         if g.len() >= STDERR_TAIL_CAP {
                             g.pop_front();
                         }
@@ -107,25 +128,23 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
             }
         }
         tracing::debug!(target: "aethon::agent", key = key, "stdout reader for pid={pid} exited");
-        let intentional_exit = intentional_exits
-            .lock()
-            .map(|mut exits| exits.remove(&key))
-            .unwrap_or(false);
+        let intentional_exit =
+            lock_recover(&intentional_exits, "intentional exits (eof)").remove(&key);
         if intentional_exit || saw_reload_done {
-            clear_worker_meta_for_pid(&meta, &key, pid);
+            cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
             return;
         }
-        let mut tail: Vec<String> = match stderr_tail.lock() {
-            Ok(g) => g.iter().cloned().collect(),
-            Err(_) => Vec::new(),
-        };
+        let mut tail: Vec<String> = lock_recover(&stderr_tail, "stderr tail (eof)")
+            .iter()
+            .cloned()
+            .collect();
         if quiet_global_stdout_eof(&key, &tail) {
             tracing::info!(
                 target: "aethon::agent",
                 key = key,
                 "global agent stdout closed without stderr; waiting for the next global request"
             );
-            clear_worker_meta_for_pid(&meta, &key, pid);
+            cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
             return;
         }
         fill_empty_stdout_tail(&mut tail, &key, pid);
@@ -138,7 +157,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                 "stderrTail": tail,
             }),
         );
-        clear_worker_meta_for_pid(&meta, &key, pid);
+        cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
     });
 }
 
@@ -161,6 +180,45 @@ pub(super) struct StderrReaderCtx {
     pub(super) key: String,
     pub(super) stderr_tail: Arc<Mutex<VecDeque<String>>>,
     pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+}
+
+pub(super) fn spawn_stderr_reader(ctx: StderrReaderCtx) {
+    let StderrReaderCtx {
+        stderr,
+        app,
+        pid,
+        key,
+        stderr_tail,
+        meta,
+    } = ctx;
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(text) => {
+                    tracing::info!(target: "aethon::agent::stderr", pid = pid, key = key, "{text}");
+                    let prompt_flag = if text.contains("turn: start") {
+                        Some(true)
+                    } else if text.contains("turn: end") {
+                        Some(false)
+                    } else {
+                        None
+                    };
+                    touch_worker_activity(&meta, &key, prompt_flag);
+                    {
+                        let mut g = lock_recover(&stderr_tail, "stderr tail (stderr line)");
+                        if g.len() >= STDERR_TAIL_CAP {
+                            g.pop_front();
+                        }
+                        g.push_back(text.clone());
+                    }
+                    let _ = app.emit("agent-stderr", text);
+                }
+                Err(_) => break,
+            }
+        }
+        tracing::debug!(target: "aethon::agent", key = key, "stderr reader for pid={pid} exited");
+    });
 }
 
 #[cfg(test)]
@@ -187,42 +245,4 @@ mod tests {
             ["agent stdout closed unexpectedly (key=tab:abc, pid=42)"]
         );
     }
-}
-
-pub(super) fn spawn_stderr_reader(ctx: StderrReaderCtx) {
-    let StderrReaderCtx {
-        stderr,
-        app,
-        pid,
-        key,
-        stderr_tail,
-        meta,
-    } = ctx;
-    std::thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            match line {
-                Ok(text) => {
-                    tracing::info!(target: "aethon::agent::stderr", pid = pid, key = key, "{text}");
-                    let prompt_flag = if text.contains("turn: start") {
-                        Some(true)
-                    } else if text.contains("turn: end") {
-                        Some(false)
-                    } else {
-                        None
-                    };
-                    touch_worker_activity(&meta, &key, prompt_flag);
-                    if let Ok(mut g) = stderr_tail.lock() {
-                        if g.len() >= STDERR_TAIL_CAP {
-                            g.pop_front();
-                        }
-                        g.push_back(text.clone());
-                    }
-                    let _ = app.emit("agent-stderr", text);
-                }
-                Err(_) => break,
-            }
-        }
-        tracing::debug!(target: "aethon::agent", key = key, "stderr reader for pid={pid} exited");
-    });
 }

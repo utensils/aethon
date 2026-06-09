@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Worktree,
-  newPendingWorktree,
-  orderWorktreesForDisplay,
-  reconcileWorktrees,
-  removeWorktreeFromList,
-  reorderExtraWorktreeToIndex,
-  sortWorktreesNewestFirst,
-  updateWorktreePendingState,
-  worktreesForPersist,
-} from "./worktrees";
+  type Workspace,
+  newPendingWorkspace,
+  orderWorkspacesForDisplay,
+  reconcileWorkspaces,
+  removeWorkspaceFromList,
+  reorderExtraWorkspaceToIndex,
+  sortWorkspacesNewestFirst,
+  updateWorkspacePendingState,
+  workspacesForPersist,
+} from "./workspaces";
 
-function wt(overrides: Partial<Worktree> = {}): Worktree {
+function wt(overrides: Partial<Workspace> = {}): Workspace {
   return {
     id: "wt-1",
     projectId: "p1",
@@ -22,12 +22,12 @@ function wt(overrides: Partial<Worktree> = {}): Worktree {
   };
 }
 
-describe("reconcileWorktrees", () => {
+describe("reconcileWorkspaces", () => {
   it("preserves id + label across reconciles by path", () => {
-    const prior: Worktree[] = [
+    const prior: Workspace[] = [
       wt({ id: "stable-id", path: "/repo", label: "Stable", createdAt: 10 }),
     ];
-    const next = reconcileWorktrees("p1", prior, [
+    const next = reconcileWorkspaces("p1", prior, [
       {
         path: "/repo",
         branch: "main",
@@ -44,7 +44,7 @@ describe("reconcileWorktrees", () => {
   });
 
   it("uses listing createdAt for new rows and first-seen time as fallback", () => {
-    const next = reconcileWorktrees(
+    const next = reconcileWorkspaces(
       "p1",
       [],
       [
@@ -69,11 +69,11 @@ describe("reconcileWorktrees", () => {
     expect(next.map((w) => w.createdAt)).toEqual([11, 22]);
   });
 
-  it("clears creation pendingState when the worktree appears in listing", () => {
-    const prior: Worktree[] = [
+  it("clears creation pendingState when the workspace appears in listing", () => {
+    const prior: Workspace[] = [
       wt({ id: "p", path: "/repo-feat", pendingState: "starting" }),
     ];
-    const next = reconcileWorktrees("p1", prior, [
+    const next = reconcileWorkspaces("p1", prior, [
       {
         path: "/repo-feat",
         branch: "feat",
@@ -86,11 +86,11 @@ describe("reconcileWorktrees", () => {
     expect(next[0].pendingState).toBeUndefined();
   });
 
-  it("preserves removing state while git still lists the worktree", () => {
-    const prior: Worktree[] = [
+  it("preserves removing state while git still lists the workspace", () => {
+    const prior: Workspace[] = [
       wt({ id: "p", path: "/repo-feat", pendingState: "removing" }),
     ];
-    const next = reconcileWorktrees("p1", prior, [
+    const next = reconcileWorkspaces("p1", prior, [
       {
         path: "/repo-feat",
         branch: "feat",
@@ -106,14 +106,14 @@ describe("reconcileWorktrees", () => {
   });
 
   it("drops in-flight pending rows that disappeared from listing", () => {
-    const prior: Worktree[] = [
+    const prior: Workspace[] = [
       wt({ id: "p1", path: "/main", isMain: true }),
       wt({ id: "p2", path: "/feat", pendingState: "starting" }),
     ];
-    const next = reconcileWorktrees("p1", prior, [
+    const next = reconcileWorkspaces("p1", prior, [
       { path: "/main", branch: "main", head: null, isMain: true, locked: false },
     ]);
-    // Only the main worktree from listing. The starting pending row is
+    // Only the main workspace from listing. The starting pending row is
     // kept because it might still resolve; reconcile keeps queued+starting
     // pending rows.
     expect(next.find((w) => w.path === "/feat")?.pendingState).toBe(
@@ -122,19 +122,19 @@ describe("reconcileWorktrees", () => {
   });
 
   it("keeps failed pending rows for the user to Dismiss", () => {
-    const prior: Worktree[] = [
+    const prior: Workspace[] = [
       wt({ id: "p1", path: "/main", isMain: true }),
       wt({ id: "f", path: "/broken", pendingState: "failed", pendingError: "x" }),
     ];
-    const next = reconcileWorktrees("p1", prior, [
+    const next = reconcileWorkspaces("p1", prior, [
       { path: "/main", branch: "main", head: null, isMain: true, locked: false },
     ]);
     expect(next.find((w) => w.id === "f")?.pendingState).toBe("failed");
   });
 
   it("flags isMain from the listing, not prior state", () => {
-    const prior: Worktree[] = [];
-    const next = reconcileWorktrees("p1", prior, [
+    const prior: Workspace[] = [];
+    const next = reconcileWorkspaces("p1", prior, [
       { path: "/main", branch: "main", head: null, isMain: true, locked: false },
       { path: "/feat", branch: "feat", head: null, isMain: false, locked: false },
     ]);
@@ -143,14 +143,14 @@ describe("reconcileWorktrees", () => {
   });
 });
 
-describe("worktree ordering", () => {
-  it("sorts extra worktrees newest-first while keeping main first", () => {
+describe("workspace ordering", () => {
+  it("sorts extra workspaces newest-first while keeping main first", () => {
     const list = [
       wt({ id: "main", path: "/repo", isMain: true, createdAt: 1 }),
       wt({ id: "old", path: "/old", isMain: false, createdAt: 10 }),
       wt({ id: "new", path: "/new", isMain: false, createdAt: 20 }),
     ];
-    expect(sortWorktreesNewestFirst(list).map((w) => w.id)).toEqual([
+    expect(sortWorkspacesNewestFirst(list).map((w) => w.id)).toEqual([
       "main",
       "new",
       "old",
@@ -163,75 +163,75 @@ describe("worktree ordering", () => {
       wt({ id: "old", path: "/old", isMain: false, createdAt: 10 }),
       wt({ id: "new", path: "/new", isMain: false, createdAt: 20 }),
     ];
-    expect(orderWorktreesForDisplay(list, "manual").map((w) => w.id)).toEqual([
+    expect(orderWorkspacesForDisplay(list, "manual").map((w) => w.id)).toEqual([
       "main",
       "old",
       "new",
     ]);
-    expect(orderWorktreesForDisplay(list, "newest").map((w) => w.id)).toEqual([
+    expect(orderWorkspacesForDisplay(list, "newest").map((w) => w.id)).toEqual([
       "main",
       "new",
       "old",
     ]);
   });
 
-  it("reorders only extra worktrees", () => {
+  it("reorders only extra workspaces", () => {
     const list = [
       wt({ id: "main", path: "/repo", isMain: true }),
       wt({ id: "a", path: "/a", isMain: false }),
       wt({ id: "b", path: "/b", isMain: false }),
       wt({ id: "c", path: "/c", isMain: false }),
     ];
-    const next = reorderExtraWorktreeToIndex(list, "c", 0);
+    const next = reorderExtraWorkspaceToIndex(list, "c", 0);
     expect(next?.map((w) => w.id)).toEqual(["main", "c", "a", "b"]);
   });
 });
 
-describe("updateWorktreePendingState", () => {
+describe("updateWorkspacePendingState", () => {
   it("strips pending fields on success", () => {
-    const list: Worktree[] = [wt({ id: "x", pendingState: "starting" })];
-    const next = updateWorktreePendingState(list, "x", "succeeded");
+    const list: Workspace[] = [wt({ id: "x", pendingState: "starting" })];
+    const next = updateWorkspacePendingState(list, "x", "succeeded");
     expect(next[0].pendingState).toBeUndefined();
     expect(next[0].pendingError).toBeUndefined();
   });
 
   it("stores the failure message on failed", () => {
-    const list: Worktree[] = [wt({ id: "x", pendingState: "starting" })];
-    const next = updateWorktreePendingState(list, "x", "failed", "boom");
+    const list: Workspace[] = [wt({ id: "x", pendingState: "starting" })];
+    const next = updateWorkspacePendingState(list, "x", "failed", "boom");
     expect(next[0].pendingState).toBe("failed");
     expect(next[0].pendingError).toBe("boom");
   });
 
   it("is a no-op when id is missing", () => {
-    const list: Worktree[] = [wt({ id: "x" })];
-    const next = updateWorktreePendingState(list, "missing", "failed", "huh");
+    const list: Workspace[] = [wt({ id: "x" })];
+    const next = updateWorkspacePendingState(list, "missing", "failed", "huh");
     expect(next).toEqual(list);
   });
 });
 
-describe("worktreesForPersist", () => {
+describe("workspacesForPersist", () => {
   it("drops in-flight pending rows", () => {
-    const list: Worktree[] = [
+    const list: Workspace[] = [
       wt({ id: "a" }),
       wt({ id: "b", pendingState: "queued" }),
       wt({ id: "c", pendingState: "starting" }),
       wt({ id: "d", pendingState: "failed" }),
       wt({ id: "e", pendingState: "removing" }),
     ];
-    const out = worktreesForPersist(list);
+    const out = workspacesForPersist(list);
     expect(out.map((w) => w.id)).toEqual(["a", "d"]);
   });
 });
 
-describe("removeWorktreeFromList + newPendingWorktree", () => {
+describe("removeWorkspaceFromList + newPendingWorkspace", () => {
   it("removes the matching id", () => {
-    const list: Worktree[] = [wt({ id: "a" }), wt({ id: "b" })];
-    expect(removeWorktreeFromList(list, "a")).toEqual([wt({ id: "b" })]);
+    const list: Workspace[] = [wt({ id: "a" }), wt({ id: "b" })];
+    expect(removeWorkspaceFromList(list, "a")).toEqual([wt({ id: "b" })]);
   });
 
-  it("creates a queued pending worktree with a fresh id", () => {
-    const a = newPendingWorktree("p1", "feat-x", "/tmp/a");
-    const b = newPendingWorktree("p1", "feat-x", "/tmp/a");
+  it("creates a queued pending workspace with a fresh id", () => {
+    const a = newPendingWorkspace("p1", "feat-x", "/tmp/a");
+    const b = newPendingWorkspace("p1", "feat-x", "/tmp/a");
     expect(a.pendingState).toBe("queued");
     expect(a.id).not.toBe(b.id);
     expect(a.path).toBe("/tmp/a");

@@ -1,8 +1,8 @@
 /**
  * Host group — a first-class node at the TOP of the sidebar hierarchy:
- * host → project → worktree. Each known host renders as a collapsible
+ * host → project → workspace. Each known host renders as a collapsible
  * group header (machine glyph + name + this-mac / remote badge); the
- * active host's group holds the project list (and worktrees nest under
+ * active host's group holds the project list (and workspaces nest under
  * those). This is built to stack: when more hosts are paired they each
  * get their own group, and selecting one switches the active host (the
  * same `select` event the old flat `hosts` section emitted, routed by

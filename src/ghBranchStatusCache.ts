@@ -1,9 +1,9 @@
 /**
  * In-memory cache for `gh_branch_status` Tauri-command results. The
- * worktree landing page re-renders on every worktree click, and the
+ * workspace landing page re-renders on every workspace click, and the
  * underlying Rust command shells out to `gh` up to four times per
  * call. Caching keyed by (projectPath, branch) means flipping back to
- * a worktree you already opened is instant.
+ * a workspace you already opened is instant.
  *
  * Why in-memory (not disk-backed): PR state changes more often than
  * git index state, so a fresh cold-start fetch is the safe default.
@@ -26,11 +26,11 @@ export interface GhBranchStatus {
   repo: string | null;
   pushed: boolean;
   prs: GhPr[];
-  /** True when the worktree dir's `.git` marker points to a pruned
+  /** True when the workspace dir's `.git` marker points to a pruned
    *  `.git/worktrees/<name>/` entry. Distinct from `ghAvailable=false`
    *  (gh missing) and `repo=null` (no GitHub remote) — those are
    *  healthy states. */
-  worktreeBroken: boolean;
+  workspaceBroken: boolean;
 }
 
 /** How long a successful cache entry remains valid. 60s is short
@@ -97,7 +97,7 @@ export async function getGhBranchStatus(
 }
 
 /** Force-refresh a single cache entry. Currently unused, exposed for
- *  a future "refresh" action on the worktree landing. */
+ *  a future "refresh" action on the workspace landing. */
 export async function refreshGhBranchStatus(
   projectPath: string,
   branch: string,

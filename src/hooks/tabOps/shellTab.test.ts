@@ -41,7 +41,7 @@ describe("newShellTab", () => {
       stateRef,
       projectsRef: ref<ProjectsState>({
         activeId: "p1",
-        activeWorktreeId: null,
+        activeWorkspaceId: null,
         activeHostId: null,
         projects: [
           {
@@ -51,7 +51,7 @@ describe("newShellTab", () => {
             lastUsed: 1,
           },
         ],
-        worktreesByProject: {},
+        workspacesByProject: {},
       }),
       appendSystem: vi.fn(),
       defaultShareModeRef: ref("read"),

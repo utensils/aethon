@@ -48,7 +48,7 @@ export default tseslint.config(
             "eslint.config.js",
             "*.{js,mjs,cjs}",
           ],
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 128,
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 256,
         },
         tsconfigRootDir: import.meta.dirname,
       },

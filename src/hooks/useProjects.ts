@@ -12,12 +12,29 @@ import {
   dueGitFetchPaths,
   GIT_FETCH_INTERVAL_MS,
 } from "./gitFetchScheduler";
+import { dueStatusRoots, warmStatusRoots } from "./statusPollScheduler";
 
 export interface GitStatus {
   branch?: string;
   dirty?: boolean;
   ahead?: number;
   behind?: number;
+}
+
+/** Field-wise equality so an idle poll tick that returns the same status
+ *  doesn't notify (each notify is a full sidebar mirror + full-tree React
+ *  render — up to one per project per 30s tick before this diff). */
+export function gitStatusEquals(
+  a: GitStatus | undefined,
+  b: GitStatus | undefined,
+): boolean {
+  if (!a || !b) return !a && !b;
+  return (
+    a.branch === b.branch &&
+    a.dirty === b.dirty &&
+    a.ahead === b.ahead &&
+    a.behind === b.behind
+  );
 }
 
 export interface UseProjectsContext {
@@ -59,41 +76,92 @@ export interface UseProjectsActions {
  * useTabs is extracted in a follow-up.
  *
  * The git status poller ticks immediately on mount, every 30s, and on window
- * focus. Remote-tracking refs are refreshed on a separate 10-minute cadence
- * with persisted attempt timestamps so ahead/behind can catch up without
- * hammering remotes after reloads or repeated focus toggles. Guard refs prevent
- * overlapping refresh/fetch batches from forking redundant git processes.
+ * focus — but each tick only refreshes roots whose tier cadence elapsed
+ * (statusPollScheduler: warm = recently activated workspaces at 60s, cold =
+ * everything else at 5min; the active workspace is the hot tier owned by
+ * useVcsStatus). Remote-tracking refs are refreshed on a separate 10-minute
+ * cadence with persisted attempt timestamps so ahead/behind can catch up
+ * without hammering remotes after reloads or repeated focus toggles. Guard
+ * refs prevent overlapping refresh/fetch batches from forking redundant git
+ * processes.
  */
 export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
   const gitStatusRef = useRef<Map<string, GitStatus>>(new Map());
   const gitPollingRef = useRef(false);
   const gitFetchAttemptsRef = useRef<Map<string, number>>(new Map());
   const gitFetchInFlightRef = useRef<Set<string>>(new Set());
+  /** Last completed git_status refresh per root — the tiered scheduler's
+   *  cadence state (see statusPollScheduler). */
+  const statusPolledAtRef = useRef<Map<string, number>>(new Map());
 
-  async function refreshGitStatusFor(path: string): Promise<void> {
+  /** Refresh the cache entry for one path. Returns true when the status
+   *  actually changed; does NOT notify — callers decide whether to fan
+   *  out (single refresh notifies per call, the poll batch notifies once). */
+  async function refreshStatusEntry(path: string): Promise<boolean> {
     try {
       const status = await invoke<GitStatus | null>("git_status", { path });
+      const prev = gitStatusRef.current.get(path);
       if (status) {
+        if (gitStatusEquals(prev, status)) return false;
         gitStatusRef.current.set(path, status);
       } else {
+        if (!prev) return false;
         gitStatusRef.current.delete(path);
       }
+      return true;
+    } catch {
+      // Tauri command threw — ignore so a transient git failure doesn't
+      // blank the chip on subsequent successful polls.
+      return false;
+    }
+  }
+
+  async function refreshGitStatusFor(path: string): Promise<void> {
+    const changed = await refreshStatusEntry(path);
+    statusPolledAtRef.current.set(path, Date.now());
+    if (changed) {
       ctx.onGitStatusChanged();
       // Persist (debounced) so the next cold start can paint chips
       // instantly from disk before any subprocess runs.
       persistStatusesDebounced(gitStatusRef.current);
-    } catch {
-      // Tauri command threw — ignore so a transient git failure doesn't
-      // blank the chip on subsequent successful polls.
     }
   }
 
+  /** Refresh a batch of roots: parallel subprocesses (bounded — the
+   *  project list caps at 16), one notification per batch when anything
+   *  changed, and a cadence stamp per root for the tiered scheduler. */
+  async function refreshStatusBatch(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const changed = await Promise.all(paths.map((p) => refreshStatusEntry(p)));
+    const now = Date.now();
+    for (const p of paths) statusPolledAtRef.current.set(p, now);
+    // One notification per batch: an idle tick (nothing changed) renders
+    // nothing; a busy tick costs one sidebar mirror instead of sixteen.
+    if (changed.some(Boolean)) {
+      ctx.onGitStatusChanged();
+      persistStatusesDebounced(gitStatusRef.current);
+    }
+  }
+
+  /** Uncadenced full sweep across every known project. Used after a git
+   *  fetch (remote refs moved for every fetched repo) and exposed to
+   *  callers; the periodic poll goes through the tiered scheduler. */
   async function refreshAllGitStatus(): Promise<void> {
-    const paths = ctx.getProjectPaths();
-    // Parallel — each project's git invocation is its own subprocess
-    // and the project list is capped at 16, so concurrency is bounded.
-    // Sequential previously meant the slowest repo gated all the rest.
-    await Promise.all(paths.map((p) => refreshGitStatusFor(p)));
+    await refreshStatusBatch(ctx.getProjectPaths());
+  }
+
+  /** Scheduler-driven refresh: only roots whose tier cadence elapsed.
+   *  Warm tier = recently activated workspace roots (MRU recorded by the
+   *  activation paths); cold tier = all known project paths. The active
+   *  workspace itself is the hot tier, owned by useVcsStatus. */
+  async function refreshDueGitStatus(): Promise<void> {
+    await refreshStatusBatch(
+      dueStatusRoots({
+        coldRoots: ctx.getProjectPaths(),
+        warmRoots: warmStatusRoots(),
+        lastPolledAt: statusPolledAtRef.current,
+      }),
+    );
   }
 
   async function fetchGitRemotesIfDue(
@@ -126,10 +194,13 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     );
 
     // Fetches may mutate remote-tracking refs even when one remote exits
-    // nonzero. Once any fetch ran, run the existing status fan-out so every
-    // surface that reads cached git status (including duplicate worktree rows)
-    // gets refreshed from local metadata.
+    // nonzero. Once any fetch ran, force the fetched roots stale so the
+    // follow-up refresh (which may go through the tiered scheduler) picks
+    // them up regardless of cadence, then run the status fan-out so every
+    // surface that reads cached git status (including duplicate workspace
+    // rows) gets refreshed from local metadata.
     if (results.some(Boolean)) {
+      for (const path of due) statusPolledAtRef.current.delete(path);
       await refreshStatusAfterFetch();
     }
   }
@@ -172,7 +243,7 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
       }
       gitPollingRef.current = true;
       try {
-        await refreshAllGitStatus();
+        await refreshDueGitStatus();
       } finally {
         gitPollingRef.current = false;
         if (rerun && !cancelled) {

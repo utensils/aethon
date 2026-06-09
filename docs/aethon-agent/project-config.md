@@ -11,7 +11,7 @@ When a user sends a GitHub issue to an agent, matching templates replace the bui
 ```toml
 [issue_templates.default]
 label = "Default implementation task"
-new_worktree = true
+new_workspace = true
 branch = "{branchPrefix}/issue-{number}-{slug}"
 prompt = """
 Work on GitHub issue #{number}: {title}
@@ -40,8 +40,8 @@ Each template lives under `[issue_templates.<id>]`.
 
 - `label` — human-readable menu label. Defaults to `<id>`.
 - `prompt` — required multiline or single-line prompt template.
-- `new_worktree` — optional default launch mode when choosing this template directly.
-- `branch` — optional branch name template for new worktree launches. Defaults to Aethon's built-in issue branch.
+- `new_workspace` — optional default launch mode when choosing this template directly (the legacy `new_worktree` spelling is still accepted).
+- `branch` — optional branch name template for new workspace launches. Defaults to Aethon's built-in issue branch.
 - `branch_prefix` — optional override for the `{branchPrefix}` variable.
 - `when_labels` — optional case-insensitive GitHub label names. Templates without `when_labels` are catch-all templates.
 

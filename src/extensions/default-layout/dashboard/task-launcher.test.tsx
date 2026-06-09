@@ -80,8 +80,8 @@ describe("TaskLauncher", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "+ New worktree" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "+ New workspace" }));
 
     for (const input of [
       screen.getByLabelText("New branch name"),
@@ -93,7 +93,7 @@ describe("TaskLauncher", () => {
     }
   });
 
-  it("allows a new worktree session with an automatic branch", async () => {
+  it("allows a new workspace session with an automatic branch", async () => {
     const onEvent = vi.fn();
     render(
       <TaskLauncher
@@ -108,8 +108,8 @@ describe("TaskLauncher", () => {
     fireEvent.change(screen.getByLabelText("Task prompt"), {
       target: { value: "start this" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "+ New worktree" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "+ New workspace" }));
 
     const start = screen.getByRole("button", { name: "Start" });
     expect(start.hasAttribute("disabled")).toBe(false);
@@ -121,7 +121,7 @@ describe("TaskLauncher", () => {
         expect.objectContaining({
           projectId: "p1",
           prompt: "start this",
-          newWorktree: true,
+          newWorkspace: true,
           branch: "",
         }),
       ),
@@ -146,7 +146,7 @@ describe("TaskLauncher", () => {
         <TaskLauncher
           component={launcher({
             project: { id: "p1", label: "aethon", path: "/a" },
-            worktrees: [{ id: "wt-1", label: "main", path: "/a-wt" }],
+            workspaces: [{ id: "wt-1", label: "main", path: "/a-wt" }],
           })}
           state={{}}
           onEvent={() => {}}
@@ -155,13 +155,13 @@ describe("TaskLauncher", () => {
       </>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(screen.getByRole("menu").textContent).toContain("main");
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(screen.getByRole("menu")).toBeTruthy();
     fireEvent.focusIn(screen.getByRole("button", { name: "outside" }));
     expect(screen.queryByRole("menu")).toBeNull();

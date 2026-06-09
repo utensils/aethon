@@ -2,17 +2,17 @@ export function activeWorkspaceCwd(
   state: Record<string, unknown>,
 ): string | null {
   const wtId =
-    typeof state.activeWorktreeId === "string" && state.activeWorktreeId.length > 0
-      ? state.activeWorktreeId
+    typeof state.activeWorkspaceId === "string" && state.activeWorkspaceId.length > 0
+      ? state.activeWorkspaceId
       : null;
   if (wtId) {
     const projects =
       ((state.sidebar as
-        | { projects?: Array<{ worktrees?: Array<{ id?: string; path?: string }> }> }
+        | { projects?: Array<{ workspaces?: Array<{ id?: string; path?: string }> }> }
         | undefined)?.projects) ?? [];
     for (const project of projects) {
-      const worktree = project.worktrees?.find((w) => w.id === wtId);
-      if (worktree?.path) return worktree.path;
+      const workspace = project.workspaces?.find((w) => w.id === wtId);
+      if (workspace?.path) return workspace.path;
     }
   }
 

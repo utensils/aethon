@@ -17,7 +17,7 @@ describe("sessionUiSnapshot", () => {
   it("round-trips open tabs, active tab, and chrome state", () => {
     const tabA = {
       ...makeEmptyTab("tab-a", "A"),
-      cwd: "/repo/a-worktree",
+      cwd: "/repo/a-workspace",
       messages: [{ id: "m1", role: "user" as const, text: "hi" }],
     };
     const tabB = {
@@ -56,7 +56,7 @@ describe("sessionUiSnapshot", () => {
         {
           id: "tab-a",
           label: "A",
-          cwd: "/repo/a-worktree",
+          cwd: "/repo/a-workspace",
           messages: [{ text: "hi" }],
         },
         { id: "tab-b", label: "B", canvas: { type: "card" } },
@@ -103,13 +103,13 @@ describe("sessionUiSnapshot", () => {
   });
 
   it("persists buckets-only when the active workspace has no sessions", () => {
-    // User sitting on a project overview while agents run in its worktrees:
+    // User sitting on a project overview while agents run in its workspaces:
     // state.tabs is empty but a backgrounded bucket has a session.
     saveSessionUiSnapshot({
       tabs: [],
       activeTabId: "__overview__",
       persistedTabBuckets: {
-        "project-1::worktree::wt-1": {
+        "project-1::workspace::wt-1": {
           tabs: [
             {
               ...makeEmptyTab("wt-tab", "WT Tab", "project-1"),
@@ -125,9 +125,35 @@ describe("sessionUiSnapshot", () => {
     expect(loaded).not.toBeNull();
     expect(loaded?.activeTabId).toBe("__overview__");
     expect(loaded?.tabs).toEqual([]);
-    expect(loaded?.buckets?.["project-1::worktree::wt-1"]?.activeTabId).toBe(
+    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.activeTabId).toBe(
       "wt-tab",
     );
+  });
+
+  it("migrates pre-rename '::worktree::' bucket keys on load", () => {
+    // A snapshot written before the workspace rename — the bucket key
+    // carries the old separator. Tabs must restore into the renamed key.
+    saveSessionUiSnapshot({
+      tabs: [],
+      activeTabId: "__overview__",
+      persistedTabBuckets: {
+        "project-1::worktree::wt-1": {
+          tabs: [
+            {
+              ...makeEmptyTab("old-tab", "Old Tab", "project-1"),
+              messages: [{ id: "m", role: "user" as const, text: "hi" }],
+            },
+          ],
+          activeTabId: "old-tab",
+        },
+      },
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.activeTabId).toBe(
+      "old-tab",
+    );
+    expect(loaded?.buckets?.["project-1::worktree::wt-1"]).toBeUndefined();
   });
 
   it("persists empty agent tabs in the active workspace and background buckets", () => {
@@ -135,7 +161,7 @@ describe("sessionUiSnapshot", () => {
       tabs: [makeEmptyTab("empty-active", "Empty Active", "project-1")],
       activeTabId: "empty-active",
       persistedTabBuckets: {
-        "project-1::worktree::wt-1": {
+        "project-1::workspace::wt-1": {
           tabs: [makeEmptyTab("empty-bucket", "Empty Bucket", "project-1")],
           activeTabId: "empty-bucket",
         },
@@ -147,7 +173,7 @@ describe("sessionUiSnapshot", () => {
     expect(loaded?.tabs).toMatchObject([
       { id: "empty-active", label: "Empty Active", messages: [] },
     ]);
-    expect(loaded?.buckets?.["project-1::worktree::wt-1"]?.tabs).toMatchObject([
+    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.tabs).toMatchObject([
       { id: "empty-bucket", label: "Empty Bucket", messages: [] },
     ]);
   });

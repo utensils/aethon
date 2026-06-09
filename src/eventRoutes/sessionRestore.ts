@@ -15,7 +15,7 @@ interface ProjectStateItem {
 interface SidebarProjectItem {
   id?: unknown;
   path?: unknown;
-  worktrees?: {
+  workspaces?: {
     id?: unknown;
     path?: unknown;
   }[];
@@ -48,7 +48,7 @@ function alignProjectToSessionCwd(ctx: EventRouteContext, cwd?: string): void {
     ) {
       if (state.activeProjectId !== project.id)
         ctx.setActiveProjectById(project.id);
-      ctx.activateWorktree(null);
+      ctx.activateWorkspace(null);
       return;
     }
   }
@@ -61,18 +61,18 @@ function alignProjectToSessionCwd(ctx: EventRouteContext, cwd?: string): void {
     ) {
       if (state.activeProjectId !== project.id)
         ctx.setActiveProjectById(project.id);
-      ctx.activateWorktree(null);
+      ctx.activateWorkspace(null);
       return;
     }
-    for (const worktree of project.worktrees ?? []) {
+    for (const workspace of project.workspaces ?? []) {
       if (
-        typeof worktree.id === "string" &&
-        typeof worktree.path === "string" &&
-        normalizePath(worktree.path) === target
+        typeof workspace.id === "string" &&
+        typeof workspace.path === "string" &&
+        normalizePath(workspace.path) === target
       ) {
         if (state.activeProjectId !== project.id)
           ctx.setActiveProjectById(project.id);
-        ctx.activateWorktree(worktree.id);
+        ctx.activateWorkspace(workspace.id);
         return;
       }
     }

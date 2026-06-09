@@ -1,14 +1,14 @@
 import { useRef } from "react";
 import type { NotificationInput } from "./useNotifications";
 
-export interface UseWorktreePromptsContext {
+export interface UseWorkspacePromptsContext {
   pushNotification: (input: NotificationInput) => void;
 }
 
-export interface WorktreePromptActions {
-  hasPendingWorktreePrompt: (id: string) => boolean;
-  resolveWorktreePrompt: (id: string, allowed: boolean) => void;
-  promptRemoveWorktree: (label: string) => Promise<boolean>;
+export interface WorkspacePromptActions {
+  hasPendingWorkspacePrompt: (id: string) => boolean;
+  resolveWorkspacePrompt: (id: string, allowed: boolean) => void;
+  promptRemoveWorkspace: (label: string) => Promise<boolean>;
   promptForceRemove: (message: string) => Promise<boolean>;
   promptOrphanCleanup: () => Promise<boolean>;
   notifyCannotRemoveMain: () => void;
@@ -16,21 +16,21 @@ export interface WorktreePromptActions {
 }
 
 function idFor(kind: string): string {
-  return `worktree-confirm-${kind}-${crypto.randomUUID().slice(0, 8)}`;
+  return `workspace-confirm-${kind}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-export function useWorktreePrompts(
-  ctx: UseWorktreePromptsContext,
-): WorktreePromptActions {
+export function useWorkspacePrompts(
+  ctx: UseWorkspacePromptsContext,
+): WorkspacePromptActions {
   const pendingRef = useRef<Map<string, (allowed: boolean) => void>>(
     new Map(),
   );
 
-  function hasPendingWorktreePrompt(id: string): boolean {
+  function hasPendingWorkspacePrompt(id: string): boolean {
     return pendingRef.current.has(id);
   }
 
-  function resolveWorktreePrompt(id: string, allowed: boolean): void {
+  function resolveWorkspacePrompt(id: string, allowed: boolean): void {
     const resolve = pendingRef.current.get(id);
     if (!resolve) return;
     pendingRef.current.delete(id);
@@ -53,17 +53,17 @@ export function useWorktreePrompts(
         kind: "warning",
         durationMs: null,
         actions: [
-          { label: input.allowLabel, action: `worktree-confirm-allow:${id}` },
-          { label: "Cancel", action: `worktree-confirm-deny:${id}` },
+          { label: input.allowLabel, action: `workspace-confirm-allow:${id}` },
+          { label: "Cancel", action: `workspace-confirm-deny:${id}` },
         ],
       });
     });
   }
 
-  function promptRemoveWorktree(label: string): Promise<boolean> {
+  function promptRemoveWorkspace(label: string): Promise<boolean> {
     return promptConfirm({
       kind: "remove",
-      title: "Remove worktree?",
+      title: "Remove workspace?",
       message: `"${label}" will be removed from disk and from Aethon.`,
       allowLabel: "Remove",
     });
@@ -72,7 +72,7 @@ export function useWorktreePrompts(
   function promptForceRemove(message: string): Promise<boolean> {
     return promptConfirm({
       kind: "force",
-      title: "Force-remove worktree?",
+      title: "Force-remove workspace?",
       message,
       allowLabel: "Force remove",
     });
@@ -81,32 +81,32 @@ export function useWorktreePrompts(
   function promptOrphanCleanup(): Promise<boolean> {
     return promptConfirm({
       kind: "orphan",
-      title: "Forget orphaned worktree?",
+      title: "Forget orphaned workspace?",
       message:
-        "Aethon has this worktree but git no longer tracks it. Remove the leftover folder and forget the entry?",
+        "Aethon has this workspace but git no longer tracks it. Remove the leftover folder and forget the entry?",
       allowLabel: "Remove leftover",
     });
   }
 
   function notifyCannotRemoveMain(): void {
     ctx.pushNotification({
-      title: "Cannot remove main worktree",
+      title: "Cannot remove main workspace",
       kind: "warning",
     });
   }
 
   function notifyFailure(message: string): void {
     ctx.pushNotification({
-      title: "Worktree removal failed",
+      title: "Workspace removal failed",
       message,
       kind: "error",
     });
   }
 
   return {
-    hasPendingWorktreePrompt,
-    resolveWorktreePrompt,
-    promptRemoveWorktree,
+    hasPendingWorkspacePrompt,
+    resolveWorkspacePrompt,
+    promptRemoveWorkspace,
     promptForceRemove,
     promptOrphanCleanup,
     notifyCannotRemoveMain,

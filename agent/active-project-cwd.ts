@@ -6,7 +6,7 @@ interface PersistedProject {
   path?: unknown;
 }
 
-interface PersistedWorktree {
+interface PersistedWorkspace {
   id?: unknown;
   projectId?: unknown;
   path?: unknown;
@@ -14,9 +14,9 @@ interface PersistedWorktree {
 
 interface PersistedProjects {
   activeId?: unknown;
-  activeWorktreeId?: unknown;
+  activeWorkspaceId?: unknown;
   projects?: PersistedProject[];
-  worktreesByProject?: Record<string, PersistedWorktree[]>;
+  workspacesByProject?: Record<string, PersistedWorkspace[]>;
 }
 
 export function activeProjectCwdFromJson(text: string): string | undefined {
@@ -37,17 +37,17 @@ export function activeProjectCwdFromJson(text: string): string | undefined {
       : undefined;
   if (!projectPath) return undefined;
 
-  if (typeof parsed.activeWorktreeId === "string" && parsed.activeWorktreeId) {
-    const worktrees = parsed.worktreesByProject?.[parsed.activeId] ?? [];
-    const activeWorktree = worktrees.find(
+  if (typeof parsed.activeWorkspaceId === "string" && parsed.activeWorkspaceId) {
+    const workspaces = parsed.workspacesByProject?.[parsed.activeId] ?? [];
+    const activeWorkspace = workspaces.find(
       (w) =>
         w &&
-        w.id === parsed.activeWorktreeId &&
+        w.id === parsed.activeWorkspaceId &&
         w.projectId === parsed.activeId &&
         typeof w.path === "string" &&
         w.path.length > 0,
     );
-    if (typeof activeWorktree?.path === "string") return activeWorktree.path;
+    if (typeof activeWorkspace?.path === "string") return activeWorkspace.path;
   }
 
   return projectPath;

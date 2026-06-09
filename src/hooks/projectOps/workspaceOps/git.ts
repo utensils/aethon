@@ -1,20 +1,20 @@
 import type { MutableRefObject } from "react";
 import {
-  DEFAULT_WORKTREE_BASE_BRANCH,
+  DEFAULT_WORKSPACE_BASE_BRANCH,
   setProjectUiExpanded,
-  setProjectWorktrees,
+  setProjectWorkspaces,
   type Project,
   type ProjectsState,
 } from "../../../projects";
-import { pickWorktreeName } from "../../../worktreeNames";
+import { pickWorkspaceName } from "../../../workspaceNames";
 import {
   gitBranchList,
   gitWorktreeAdd,
   gitWorktrees,
-  newPendingWorktree,
-  reconcileWorktrees,
-  updateWorktreePendingState,
-} from "../../../worktrees";
+  newPendingWorkspace,
+  reconcileWorkspaces,
+  updateWorkspacePendingState,
+} from "../../../workspaces";
 import type { ProjectLookups } from "./types";
 
 interface GitDeps {
@@ -24,31 +24,31 @@ interface GitDeps {
   syncProjectsToState: () => void;
   persistProjects: () => Promise<void>;
   setActiveProjectById: (id: string) => boolean;
-  activateWorktree: (worktreeId: string | null) => void;
+  activateWorkspace: (workspaceId: string | null) => void;
 }
 
-export function resolveWorktreeBaseBranch(
+export function resolveWorkspaceBaseBranch(
   project: Project,
   explicit?: string,
 ): string {
   const trimmed = explicit?.trim();
   if (trimmed) return trimmed;
-  return project.worktreeBaseBranch?.trim() || DEFAULT_WORKTREE_BASE_BRANCH;
+  return project.workspaceBaseBranch?.trim() || DEFAULT_WORKSPACE_BASE_BRANCH;
 }
 
-export function defaultWorktreePath(
+export function defaultWorkspacePath(
   projectPath: string,
   branch: string,
   aethonRoot?: string,
 ): string {
-  const worktreeName = safePathSegment(branch, "worktree");
+  const workspaceName = safePathSegment(branch, "workspace");
   const root = aethonRoot?.trim();
   if (root) {
     const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/";
     const repoName = safePathSegment(pathBasename(projectPath), "repo");
-    return `${trimTrailingSeparators(root)}${sep}${repoName}${sep}${worktreeName}`;
+    return `${trimTrailingSeparators(root)}${sep}${repoName}${sep}${workspaceName}`;
   }
-  return `${projectPath.replace(/[\\/]+$/, "")}-${worktreeName}`;
+  return `${projectPath.replace(/[\\/]+$/, "")}-${workspaceName}`;
 }
 
 function trimTrailingSeparators(path: string): string {
@@ -64,12 +64,12 @@ function safePathSegment(value: string, fallback: string): string {
   return value.replace(/[^a-z0-9._-]/gi, "-").replace(/^-+|-+$/g, "") || fallback;
 }
 
-async function pickGeneratedWorktreeBranch(
+async function pickGeneratedWorkspaceBranch(
   deps: Pick<GitDeps, "projectsRef"> & { lookups: ProjectLookups },
   project: Project,
 ): Promise<string> {
   const taken = new Set<string>();
-  for (const w of deps.projectsRef.current.worktreesByProject[project.id] ??
+  for (const w of deps.projectsRef.current.workspacesByProject[project.id] ??
     []) {
     if (w.branch) taken.add(w.branch);
     if (w.label) taken.add(w.label);
@@ -80,16 +80,16 @@ async function pickGeneratedWorktreeBranch(
   } catch {
     // Branch list failed; random naming remains good enough.
   }
-  return pickWorktreeName(taken);
+  return pickWorkspaceName(taken);
 }
 
-export function navigateToWorktree(
+export function navigateToWorkspace(
   deps: Pick<
     GitDeps,
-    "projectsRef" | "setActiveProjectById" | "activateWorktree"
+    "projectsRef" | "setActiveProjectById" | "activateWorkspace"
   >,
   projectId: string,
-  worktreeId: string,
+  workspaceId: string,
 ): void {
   if (deps.projectsRef.current.activeId !== projectId) {
     deps.setActiveProjectById(projectId);
@@ -99,10 +99,10 @@ export function navigateToWorktree(
     projectId,
     true,
   );
-  deps.activateWorktree(worktreeId);
+  deps.activateWorkspace(workspaceId);
 }
 
-export async function refreshProjectWorktrees(
+export async function refreshProjectWorkspaces(
   deps: Pick<GitDeps, "projectsRef" | "lookups" | "persistProjects">,
   projectId: string,
 ): Promise<void> {
@@ -110,20 +110,20 @@ export async function refreshProjectWorktrees(
   if (!project) return;
   try {
     const listing = await gitWorktrees(project.path);
-    const prior = deps.projectsRef.current.worktreesByProject[projectId] ?? [];
-    const next = reconcileWorktrees(projectId, prior, listing);
-    let nextState = setProjectWorktrees(
+    const prior = deps.projectsRef.current.workspacesByProject[projectId] ?? [];
+    const next = reconcileWorkspaces(projectId, prior, listing);
+    let nextState = setProjectWorkspaces(
       deps.projectsRef.current,
       projectId,
       next,
     );
-    const activeWorktreeId = nextState.activeWorktreeId;
+    const activeWorkspaceId = nextState.activeWorkspaceId;
     if (
       nextState.activeId === projectId &&
-      activeWorktreeId &&
-      !next.some((w) => w.id === activeWorktreeId)
+      activeWorkspaceId &&
+      !next.some((w) => w.id === activeWorkspaceId)
     ) {
-      nextState = { ...nextState, activeWorktreeId: null };
+      nextState = { ...nextState, activeWorkspaceId: null };
     }
     deps.projectsRef.current = nextState;
     void deps.persistProjects();
@@ -146,16 +146,16 @@ export async function fetchBranches(
   }
 }
 
-export async function createWorktreeForProject(
+export async function createWorkspaceForProject(
   deps: GitDeps,
   projectId: string,
 ): Promise<void> {
   const project = deps.lookups.findProject(projectId);
   if (!project) return;
-  await createWorktreeWithParams(deps, { projectId });
+  await createWorkspaceWithParams(deps, { projectId });
 }
 
-export async function createWorktreeWithParams(
+export async function createWorkspaceWithParams(
   deps: GitDeps,
   opts: {
     projectId: string;
@@ -167,29 +167,29 @@ export async function createWorktreeWithParams(
   const project = deps.lookups.findProject(opts.projectId);
   if (!project) return null;
   const branch =
-    opts.branch?.trim() || (await pickGeneratedWorktreeBranch(deps, project));
+    opts.branch?.trim() || (await pickGeneratedWorkspaceBranch(deps, project));
   const aethonRoot =
     typeof deps.stateRef?.current.aethonRoot === "string"
       ? deps.stateRef.current.aethonRoot
       : undefined;
   const targetPath =
     opts.targetPath?.trim() ||
-    defaultWorktreePath(project.path, branch, aethonRoot);
-  const pending = newPendingWorktree(opts.projectId, branch, targetPath);
-  const baseBranch = resolveWorktreeBaseBranch(project, opts.baseBranch);
+    defaultWorkspacePath(project.path, branch, aethonRoot);
+  const pending = newPendingWorkspace(opts.projectId, branch, targetPath);
+  const baseBranch = resolveWorkspaceBaseBranch(project, opts.baseBranch);
   const before =
-    deps.projectsRef.current.worktreesByProject[opts.projectId] ?? [];
-  deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current.workspacesByProject[opts.projectId] ?? [];
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     opts.projectId,
     [...before, pending],
   );
   deps.syncProjectsToState();
-  deps.projectsRef.current = setProjectWorktrees(
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     opts.projectId,
-    updateWorktreePendingState(
-      deps.projectsRef.current.worktreesByProject[opts.projectId] ?? [],
+    updateWorkspacePendingState(
+      deps.projectsRef.current.workspacesByProject[opts.projectId] ?? [],
       pending.id,
       "starting",
     ),
@@ -202,32 +202,32 @@ export async function createWorktreeWithParams(
       branch,
       base: baseBranch,
     });
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       opts.projectId,
-      updateWorktreePendingState(
-        deps.projectsRef.current.worktreesByProject[opts.projectId] ?? [],
+      updateWorkspacePendingState(
+        deps.projectsRef.current.workspacesByProject[opts.projectId] ?? [],
         pending.id,
         "succeeded",
       ),
     );
-    await refreshProjectWorktrees(deps, opts.projectId);
+    await refreshProjectWorkspaces(deps, opts.projectId);
     const list =
-      deps.projectsRef.current.worktreesByProject[opts.projectId] ?? [];
+      deps.projectsRef.current.workspacesByProject[opts.projectId] ?? [];
     const live = list.find(
       (w) =>
         w.id === pending.id ||
         w.path === created.path ||
         w.path === targetPath,
     );
-    navigateToWorktree(deps, opts.projectId, live?.id ?? pending.id);
+    navigateToWorkspace(deps, opts.projectId, live?.id ?? pending.id);
     return live?.path ?? created.path ?? targetPath;
   } catch (err) {
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       opts.projectId,
-      updateWorktreePendingState(
-        deps.projectsRef.current.worktreesByProject[opts.projectId] ?? [],
+      updateWorkspacePendingState(
+        deps.projectsRef.current.workspacesByProject[opts.projectId] ?? [],
         pending.id,
         "failed",
         String(err),
@@ -238,32 +238,32 @@ export async function createWorktreeWithParams(
   }
 }
 
-export async function retryPendingWorktree(
-  deps: GitDeps & { dismissPendingWorktree: (worktreeId: string) => void },
-  worktreeId: string,
+export async function retryPendingWorkspace(
+  deps: GitDeps & { dismissPendingWorkspace: (workspaceId: string) => void },
+  workspaceId: string,
 ): Promise<void> {
-  const hit = deps.lookups.findProjectOfWorktree(worktreeId);
-  if (!hit || !hit.worktree.branch) return;
-  deps.dismissPendingWorktree(worktreeId);
-  const pending = newPendingWorktree(
+  const hit = deps.lookups.findProjectOfWorkspace(workspaceId);
+  if (!hit || !hit.workspace.branch) return;
+  deps.dismissPendingWorkspace(workspaceId);
+  const pending = newPendingWorkspace(
     hit.project.id,
-    hit.worktree.branch,
-    hit.worktree.path,
+    hit.workspace.branch,
+    hit.workspace.path,
   );
-  deps.projectsRef.current = setProjectWorktrees(
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     hit.project.id,
     [
-      ...(deps.projectsRef.current.worktreesByProject[hit.project.id] ?? []),
+      ...(deps.projectsRef.current.workspacesByProject[hit.project.id] ?? []),
       pending,
     ],
   );
   deps.syncProjectsToState();
-  deps.projectsRef.current = setProjectWorktrees(
+  deps.projectsRef.current = setProjectWorkspaces(
     deps.projectsRef.current,
     hit.project.id,
-    updateWorktreePendingState(
-      deps.projectsRef.current.worktreesByProject[hit.project.id] ?? [],
+    updateWorkspacePendingState(
+      deps.projectsRef.current.workspacesByProject[hit.project.id] ?? [],
       pending.id,
       "starting",
     ),
@@ -272,32 +272,32 @@ export async function retryPendingWorktree(
   try {
     await gitWorktreeAdd({
       projectPath: hit.project.path,
-      targetPath: hit.worktree.path,
-      branch: hit.worktree.branch,
-      base: resolveWorktreeBaseBranch(hit.project),
+      targetPath: hit.workspace.path,
+      branch: hit.workspace.branch,
+      base: resolveWorkspaceBaseBranch(hit.project),
     });
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       hit.project.id,
-      updateWorktreePendingState(
-        deps.projectsRef.current.worktreesByProject[hit.project.id] ?? [],
+      updateWorkspacePendingState(
+        deps.projectsRef.current.workspacesByProject[hit.project.id] ?? [],
         pending.id,
         "succeeded",
       ),
     );
-    await refreshProjectWorktrees(deps, hit.project.id);
+    await refreshProjectWorkspaces(deps, hit.project.id);
     const list =
-      deps.projectsRef.current.worktreesByProject[hit.project.id] ?? [];
+      deps.projectsRef.current.workspacesByProject[hit.project.id] ?? [];
     const live = list.find(
-      (w) => w.id === pending.id || w.path === hit.worktree.path,
+      (w) => w.id === pending.id || w.path === hit.workspace.path,
     );
-    navigateToWorktree(deps, hit.project.id, live?.id ?? pending.id);
+    navigateToWorkspace(deps, hit.project.id, live?.id ?? pending.id);
   } catch (err) {
-    deps.projectsRef.current = setProjectWorktrees(
+    deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
       hit.project.id,
-      updateWorktreePendingState(
-        deps.projectsRef.current.worktreesByProject[hit.project.id] ?? [],
+      updateWorkspacePendingState(
+        deps.projectsRef.current.workspacesByProject[hit.project.id] ?? [],
         pending.id,
         "failed",
         String(err),

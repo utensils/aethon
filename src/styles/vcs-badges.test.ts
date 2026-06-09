@@ -23,15 +23,15 @@ function cssProperty(body: string, name: string): string {
 }
 
 describe("VCS merged PR badge CSS", () => {
-  it("matches the source-control merged badge to the worktree success treatment", () => {
-    const worktreeMerged = cssRuleBody(".ae-pr-merged");
+  it("matches the source-control merged badge to the workspace success treatment", () => {
+    const workspaceMerged = cssRuleBody(".ae-pr-merged");
     const sourceControlMerged = cssRuleBody(".ae-scm-badge.is-merged");
 
     expect(cssProperty(sourceControlMerged, "background")).toBe(
-      cssProperty(worktreeMerged, "background"),
+      cssProperty(workspaceMerged, "background"),
     );
     expect(cssProperty(sourceControlMerged, "color")).toBe(
-      cssProperty(worktreeMerged, "color"),
+      cssProperty(workspaceMerged, "color"),
     );
   });
 

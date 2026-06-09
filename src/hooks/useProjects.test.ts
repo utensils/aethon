@@ -26,7 +26,7 @@ vi.mock("../gitFetchCache", () => ({
   persistGitFetchAttemptsDebounced: persistGitFetchAttemptsDebouncedMock,
 }));
 
-import { useProjects } from "./useProjects";
+import { gitStatusEquals, useProjects } from "./useProjects";
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -88,5 +88,82 @@ describe("useProjects", () => {
 
     expect(invokeMock.mock.calls.filter((c) => c[0] === "git_fetch_all")).toHaveLength(1);
     unmount();
+  });
+
+  it("does not re-poll git status on focus before the tier cadence elapses", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "git_status"
+          ? { branch: "main", dirty: false, ahead: 0, behind: 0 }
+          : false,
+      ),
+    );
+
+    const { unmount } = renderHook(() =>
+      useProjects({
+        getProjectPaths: () => ["/repo"],
+        onGitStatusChanged: vi.fn(),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+      ).toBe(1),
+    );
+
+    // Immediately re-focusing must not fork another git_status — /repo is
+    // a cold-tier root that was just polled (statusPollScheduler cadence).
+    window.dispatchEvent(new FocusEvent("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(
+      invokeMock.mock.calls.filter((c) => c[0] === "git_status").length,
+    ).toBe(1);
+    unmount();
+  });
+
+  it("notifies once per changed batch and not at all when nothing changed", async () => {
+    const status = { branch: "main", dirty: false, ahead: 0, behind: 0 };
+    invokeMock.mockImplementation((cmd: string) =>
+      Promise.resolve(cmd === "git_status" ? { ...status } : false),
+    );
+    const onGitStatusChanged = vi.fn();
+
+    const { result, unmount } = renderHook(() =>
+      useProjects({
+        getProjectPaths: () => ["/a", "/b", "/c"],
+        onGitStatusChanged,
+      }),
+    );
+
+    // First batch: all three paths are new entries -> exactly one notify.
+    await waitFor(() => expect(onGitStatusChanged).toHaveBeenCalledTimes(1));
+
+    // Second batch with identical statuses -> no further notify.
+    await result.current.refreshAllGitStatus();
+    expect(onGitStatusChanged).toHaveBeenCalledTimes(1);
+
+    // A real change notifies again.
+    invokeMock.mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "git_status" ? { ...status, dirty: true } : false,
+      ),
+    );
+    await result.current.refreshAllGitStatus();
+    expect(onGitStatusChanged).toHaveBeenCalledTimes(2);
+
+    unmount();
+  });
+});
+
+describe("gitStatusEquals", () => {
+  it("compares field-wise and treats both-missing as equal", () => {
+    const a = { branch: "main", dirty: false, ahead: 1, behind: 0 };
+    expect(gitStatusEquals(a, { ...a })).toBe(true);
+    expect(gitStatusEquals(a, { ...a, behind: 2 })).toBe(false);
+    expect(gitStatusEquals(undefined, undefined)).toBe(true);
+    expect(gitStatusEquals(a, undefined)).toBe(false);
+    expect(gitStatusEquals(undefined, a)).toBe(false);
   });
 });

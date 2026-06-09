@@ -98,13 +98,13 @@ export interface ShellsApi {
  *  the model UI parity: anything the user can do via the task-launcher
  *  is reachable from a tool call. */
 export interface TasksApi {
-  /** End-to-end task start: optionally create a worktree, spawn a new
+  /** End-to-end task start: optionally create a workspace, spawn a new
    *  agent tab with the right cwd, and forward `prompt` as the first
    *  message. `projectPath` identifies the target project. */
   start(input: {
     projectPath: string;
     prompt: string;
-    newWorktree?: boolean;
+    newWorkspace?: boolean;
     branch?: string;
     baseBranch?: string;
     /** Model the launched session should use. Mirrors the task-launcher

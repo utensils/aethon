@@ -59,13 +59,13 @@ describe("buildDashboardTools()", () => {
 });
 
 describe("startTask tool", () => {
-  it("forwards prompt + worktree options to aethon.tasks.start", async () => {
+  it("forwards prompt + workspace options to aethon.tasks.start", async () => {
     fakeTasks.start.mockResolvedValue({ ok: true, data: { projectId: "p1" } });
     const tool = getTool("startTask");
     await tool.execute("c1", {
       projectPath: "/p",
       prompt: "fix it",
-      newWorktree: true,
+      newWorkspace: true,
       branch: "fix",
       baseBranch: "main",
       model: "openai/gpt-5",
@@ -74,7 +74,7 @@ describe("startTask tool", () => {
     expect(fakeTasks.start).toHaveBeenCalledWith({
       projectPath: "/p",
       prompt: "fix it",
-      newWorktree: true,
+      newWorkspace: true,
       branch: "fix",
       baseBranch: "main",
       model: "openai/gpt-5",

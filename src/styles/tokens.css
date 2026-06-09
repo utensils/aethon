@@ -24,7 +24,7 @@
   --chrome-text: var(--text-sm);
   --chrome-text-compact: var(--text-xs);
   --chrome-text-muted: var(--text-2xs);
-  /* Shared by both sidebars (left projects/worktrees + right file tree)
+  /* Shared by both sidebars (left projects/workspaces + right file tree)
      so they read as one family. Density toggles can multiply this in
      one place. */
   --font-size-sidebar: var(--text-md);

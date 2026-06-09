@@ -1,39 +1,44 @@
-// Worktrees — git worktree handles attached to a Project.
+// Workspaces — the working checkouts of a Project.
 //
-// Modelled after Codex's discovery-not-creation pattern: the source of
+// A project has one or more workspaces: the main checkout (`isMain: true`)
+// or a git worktree. Each workspace runs independently — its own tabs,
+// agent sessions, git state, and devshell — and the sidebar switches
+// between them.
+//
+// Discovery follows the discovery-not-creation pattern: the source of
 // truth is `.git/worktrees/` on disk, surfaced through the Rust shell's
-// `git_worktrees` command. This file owns the frontend-side state model
-// (the in-memory shape, the pending-state machine, and the JSON-shaped
-// persistence on disk).
+// `git_worktrees` command (git mechanics keep the literal git term). This
+// file owns the frontend-side state model (the in-memory shape, the
+// pending-state machine, and the JSON-shaped persistence on disk).
 //
-// Persistence layout (schemaVersion 2, augments src/projects.ts):
+// Persistence layout (see src/projects.ts for the schema version):
 //
 //   {
-//     "schemaVersion": 2,
+//     "schemaVersion": 5,
 //     "projects": [{ id, label, path, lastUsed, uiExpanded?, ... }],
 //     "activeId": "…",
-//     "activeWorktreeId": "…" | null,
-//     "worktreesByProject": {
+//     "activeWorkspaceId": "…" | null,
+//     "workspacesByProject": {
 //        "<projectId>": [{ id, projectId, path, branch, isMain, head?, label? }, …]
 //     }
 //   }
 //
-// Pending worktrees (`pendingState in {queued, starting, removing}`) are
+// Pending workspaces (`pendingState in {queued, starting, removing}`) are
 // filtered out at save time — they only live in memory while git is doing
-// the async `worktree add` or `worktree remove`. Failed worktrees stay
-// until the user dismisses them (the row carries Retry / Dismiss actions
-// in the sidebar UI).
+// the async `git worktree add` or `git worktree remove`. Failed workspaces
+// stay until the user dismisses them (the row carries Retry / Dismiss
+// actions in the sidebar UI).
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type WorktreePendingState =
+export type WorkspacePendingState =
   | "queued"
   | "starting"
   | "removing"
   | "succeeded"
   | "failed";
 
-export interface Worktree {
+export interface Workspace {
   /** Stable frontend-side UUID — survives across `git_worktrees` polls
    *  even when the path was renamed by an external `git` command, since
    *  we re-key by path on each refresh. */
@@ -43,7 +48,7 @@ export interface Worktree {
   path: string;
   /** Short branch name (no `refs/heads/`). `null` for detached HEAD. */
   branch: string | null;
-  /** True for the repo's main worktree — can't be removed via UI. */
+  /** True for the repo's main workspace — can't be removed via UI. */
   isMain: boolean;
   /** Short SHA at HEAD; populated by git_worktrees on each refresh. */
   head?: string;
@@ -53,8 +58,8 @@ export interface Worktree {
   createdAt?: number;
   /** User-renameable label; falls back to branch name in the UI. */
   label?: string;
-  /** Pending-state machine; absent for fully-live worktrees. */
-  pendingState?: WorktreePendingState;
+  /** Pending-state machine; absent for fully-live workspaces. */
+  pendingState?: WorkspacePendingState;
   pendingError?: string;
 }
 
@@ -68,10 +73,10 @@ export interface GitWorktreeRecord {
   createdAt?: number | null;
 }
 
-export type WorktreeSortMode = "newest" | "manual";
+export type WorkspaceSortMode = "newest" | "manual";
 
 function createdAtFor(
-  existing: Worktree | undefined,
+  existing: Workspace | undefined,
   rec: GitWorktreeRecord,
   now: number,
 ): number | undefined {
@@ -97,17 +102,17 @@ export interface GitBranchInfo {
  * path now appears in the listing collapse into the matching live row;
  * removing entries stay pending until the background remove finalizes.
  */
-export function reconcileWorktrees(
+export function reconcileWorkspaces(
   projectId: string,
-  prior: Worktree[],
+  prior: Workspace[],
   listing: GitWorktreeRecord[],
   now = Date.now(),
-): Worktree[] {
-  const byPath = new Map<string, Worktree>();
+): Workspace[] {
+  const byPath = new Map<string, Workspace>();
   for (const w of prior) {
     byPath.set(w.path, w);
   }
-  const out: Worktree[] = [];
+  const out: Workspace[] = [];
   for (const rec of listing) {
     const existing = byPath.get(rec.path);
     if (existing?.pendingState === "removing") {
@@ -137,7 +142,7 @@ export function reconcileWorktrees(
     }
     byPath.delete(rec.path);
   }
-  // Preserve unresolved pending rows + any prior worktrees that didn't
+  // Preserve unresolved pending rows + any prior workspaces that didn't
   // surface this poll (rare: stale fs cache, external delete). We keep
   // failed pending entries so the user can Dismiss them; queued/starting
   // and removing entries are still in-flight on the bridge.
@@ -149,11 +154,11 @@ export function reconcileWorktrees(
   return out;
 }
 
-export function newPendingWorktree(
+export function newPendingWorkspace(
   projectId: string,
   branch: string,
   path: string,
-): Worktree {
+): Workspace {
   return {
     id: crypto.randomUUID(),
     projectId,
@@ -164,12 +169,12 @@ export function newPendingWorktree(
   };
 }
 
-export function updateWorktreePendingState(
-  list: Worktree[],
+export function updateWorkspacePendingState(
+  list: Workspace[],
   id: string,
-  next: WorktreePendingState,
+  next: WorkspacePendingState,
   error?: string,
-): Worktree[] {
+): Workspace[] {
   return list.map((w) => {
     if (w.id !== id) return w;
     if (next === "succeeded") {
@@ -181,23 +186,23 @@ export function updateWorktreePendingState(
   });
 }
 
-export function removeWorktreeFromList(
-  list: Worktree[],
+export function removeWorkspaceFromList(
+  list: Workspace[],
   id: string,
-): Worktree[] {
+): Workspace[] {
   return list.filter((w) => w.id !== id);
 }
 
-/** Drop pending in-flight worktrees before persisting; they should not
+/** Drop pending in-flight workspaces before persisting; they should not
  *  outlive the bun process. Failed entries are kept so the user can
  *  Retry / Dismiss on next open. */
-export function worktreesForPersist(list: Worktree[]): Worktree[] {
+export function workspacesForPersist(list: Workspace[]): Workspace[] {
   return list.filter(
     (w) => !w.pendingState || w.pendingState === "failed",
   );
 }
 
-export function sortWorktreesNewestFirst(list: readonly Worktree[]): Worktree[] {
+export function sortWorkspacesNewestFirst(list: readonly Workspace[]): Workspace[] {
   const main = list.filter((w) => w.isMain);
   const extra = list
     .filter((w) => !w.isMain)
@@ -212,22 +217,22 @@ export function sortWorktreesNewestFirst(list: readonly Worktree[]): Worktree[] 
   return [...main, ...extra];
 }
 
-export function orderWorktreesForDisplay(
-  list: readonly Worktree[],
-  mode: WorktreeSortMode | undefined,
-): Worktree[] {
-  return mode === "manual" ? list.slice() : sortWorktreesNewestFirst(list);
+export function orderWorkspacesForDisplay(
+  list: readonly Workspace[],
+  mode: WorkspaceSortMode | undefined,
+): Workspace[] {
+  return mode === "manual" ? list.slice() : sortWorkspacesNewestFirst(list);
 }
 
-export function reorderExtraWorktreeToIndex(
-  list: readonly Worktree[],
-  worktreeId: string,
+export function reorderExtraWorkspaceToIndex(
+  list: readonly Workspace[],
+  workspaceId: string,
   toIndex: number,
-): Worktree[] | null {
-  if (!worktreeId || !Number.isFinite(toIndex)) return null;
+): Workspace[] | null {
+  if (!workspaceId || !Number.isFinite(toIndex)) return null;
   const main = list.filter((w) => w.isMain);
   const extra = list.filter((w) => !w.isMain);
-  const fromIndex = extra.findIndex((w) => w.id === worktreeId);
+  const fromIndex = extra.findIndex((w) => w.id === workspaceId);
   if (fromIndex < 0) return null;
   const [moved] = extra.splice(fromIndex, 1);
   const targetIndex = Math.max(0, Math.min(extra.length, Math.trunc(toIndex)));
@@ -258,26 +263,28 @@ export async function gitWorktreeAdd(args: {
 
 export async function gitWorktreeRemove(args: {
   projectPath: string;
-  worktreePath: string;
+  workspacePath: string;
   force?: boolean;
 }): Promise<void> {
+  // Wire key stays `worktreePath` — the Rust command removes a literal
+  // git worktree (git mechanics layer).
   await invoke("git_worktree_remove", {
     projectPath: args.projectPath,
-    worktreePath: args.worktreePath,
+    worktreePath: args.workspacePath,
     force: args.force ?? false,
   });
 }
 
-/** Recovery path for a worktree git no longer tracks. The Rust command
+/** Recovery path for a workspace git no longer tracks. The Rust command
  *  guards the path (must be a `.git`-marker file pointing into this
  *  project's `.git/worktrees/`) before trashing. */
 export async function gitWorktreeRemoveOrphan(args: {
   projectPath: string;
-  worktreePath: string;
+  workspacePath: string;
 }): Promise<void> {
   await invoke("git_worktree_remove_orphan", {
     projectPath: args.projectPath,
-    worktreePath: args.worktreePath,
+    worktreePath: args.workspacePath,
   });
 }
 

@@ -218,12 +218,12 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     expect(mocks.newTab).toHaveBeenCalledTimes(1);
   });
 
-  it("worktree landing routes session restore rows through the built-in restore handler", async () => {
+  it("workspace landing routes session restore rows through the built-in restore handler", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {
         landing: {
-          kind: "worktree",
-          worktreeId: "wt-1",
+          kind: "workspace",
+          workspaceId: "wt-1",
           path: "/repo/app-fix",
         },
         activeProjectId: "p1",
@@ -232,7 +232,7 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
           projects: [
             {
               id: "p1",
-              worktrees: [{ id: "wt-1", path: "/repo/app-fix" }],
+              workspaces: [{ id: "wt-1", path: "/repo/app-fix" }],
             },
           ],
         },
@@ -240,11 +240,11 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     });
     const handled = await dispatchEvent(
       {
-        component: { id: "worktree-landing", type: "worktree-landing" },
+        component: { id: "workspace-landing", type: "workspace-landing" },
         eventType: "restore-session",
         data: {
           sessionId: "session-1",
-          label: "Continue worktree fix",
+          label: "Continue workspace fix",
           cwd: "/repo/app-fix",
         },
       },
@@ -252,10 +252,10 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     );
 
     expect(handled).toBe(true);
-    expect(mocks.activateWorktree).toHaveBeenCalledWith("wt-1");
+    expect(mocks.activateWorkspace).toHaveBeenCalledWith("wt-1");
     expect(mocks.newTab).toHaveBeenCalledWith(
       "session-1",
-      "Continue worktree fix",
+      "Continue workspace fix",
       {
         restoredSession: true,
         cwd: "/repo/app-fix",
@@ -264,15 +264,15 @@ describe("dispatchEvent — chrome composites route by type, not id", () => {
     expect(applySetState().landing).toBeNull();
   });
 
-  it("worktree landing routes inline session delete confirmations", async () => {
+  it("workspace landing routes inline session delete confirmations", async () => {
     const { ctx, mocks } = buildRouteFixture({ promptDeleteAllow: true });
     const handled = await dispatchEvent(
       {
-        component: { id: "worktree-landing", type: "worktree-landing" },
+        component: { id: "workspace-landing", type: "workspace-landing" },
         eventType: "delete-session",
         data: {
           sessionId: "session-1",
-          label: "Continue worktree fix",
+          label: "Continue workspace fix",
           confirmed: true,
         },
       },

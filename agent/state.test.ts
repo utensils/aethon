@@ -57,8 +57,16 @@ describe("AethonAgentState", () => {
     const b = s.nextMutationId();
     expect(a).not.toBe(b);
     expect(s.mutationCounter).toBe(2);
-    expect(a).toMatch(/^m[a-z0-9]+-1$/);
-    expect(b).toMatch(/^m[a-z0-9]+-2$/);
+    // time token, per-process seed (cross-worker collision guard), counter.
+    expect(a).toMatch(/^m[a-z0-9]+-[a-z0-9]+-1$/);
+    expect(b).toMatch(/^m[a-z0-9]+-[a-z0-9]+-2$/);
+  });
+
+  it("nextMutationId seeds differ across bridge processes", () => {
+    const a = new AethonAgentState(defaultOpts).nextMutationId();
+    const b = new AethonAgentState(defaultOpts).nextMutationId();
+    // Same millisecond + same counter must still differ (per-process seed).
+    expect(a).not.toBe(b);
   });
 
   it("nextNotificationId increments and yields unique ids", () => {

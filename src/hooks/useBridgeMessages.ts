@@ -45,6 +45,59 @@ export interface UseBridgeMessagesActions {
 const DEFAULT_HANG_WARN_MS = 30_000;
 const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
 
+export type BridgeDispatchDecision =
+  | { kind: "handle" }
+  | { kind: "ignore" }
+  | { kind: "ack-reject"; error: string };
+
+/** Pure dispatch policy for an inbound bridge message.
+ *
+ *  - `originTabId` (stamped by per-tab workers on registry-replacing
+ *    messages — see agent/origin-gate.ts) must belong to a tab in the
+ *    active workspace bucket (`/tabs`). Hydrates from background-workspace
+ *    workers are rejected so they can't clobber the active workspace's
+ *    extension surface; the reject is acked so the worker's awaiting
+ *    extension resolves instead of hitting the 5s mutation timeout.
+ *  - A mutation-bearing message with no registered handler is acked as
+ *    failed instead of silently dropped — a silent drop leaks the
+ *    bridge-side pending entry until timeout AND the Rust supervisor's
+ *    mutation route forever.
+ */
+export function bridgeDispatchDecision(
+  message: BridgeMessage,
+  hasHandler: boolean,
+  activeTabIds: ReadonlySet<string>,
+): BridgeDispatchDecision {
+  const origin = message.originTabId;
+  if (typeof origin === "string" && origin.length > 0) {
+    if (!activeTabIds.has(origin)) {
+      return {
+        kind: "ack-reject",
+        error: `origin tab "${origin}" is not in the active workspace`,
+      };
+    }
+  }
+  if (!hasHandler) {
+    if (typeof message.mutationId === "string" && message.mutationId) {
+      return {
+        kind: "ack-reject",
+        error: `unhandled message type "${String(message.type)}"`,
+      };
+    }
+    return { kind: "ignore" };
+  }
+  return { kind: "handle" };
+}
+
+function activeTabIdsFromState(state: Record<string, unknown>): Set<string> {
+  const tabs = state.tabs as { id?: unknown }[] | undefined;
+  const ids = new Set<string>();
+  for (const tab of tabs ?? []) {
+    if (typeof tab?.id === "string") ids.add(tab.id);
+  }
+  return ids;
+}
+
 export function useBridgeMessages(
   options: UseBridgeMessagesOptions,
 ): UseBridgeMessagesActions {
@@ -105,8 +158,17 @@ export function useBridgeMessages(
         const type = data.type;
         if (typeof type !== "string") return;
         const handler = bridgeMessageHandlers[type];
-        if (!handler) return;
         const opts = optionsRef.current;
+        const decision = bridgeDispatchDecision(
+          data,
+          handler !== undefined,
+          activeTabIdsFromState(opts.ctx.stateRef.current),
+        );
+        if (decision.kind === "ack-reject") {
+          ackMutation(data.mutationId, false, decision.error);
+          return;
+        }
+        if (decision.kind === "ignore" || !handler) return;
         const fullCtx: BridgeMessageContext = {
           ...opts.ctx,
           ackMutation,

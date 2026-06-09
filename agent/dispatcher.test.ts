@@ -97,12 +97,12 @@ describe("dispatchInboundMessage", () => {
       mkdirSync(tabDir, { recursive: true });
       writeFileSync(
         join(tabDir, "1.jsonl"),
-        `${JSON.stringify({ type: "session", id: "s", cwd: "/repo/worktree" })}\n${JSON.stringify(
+        `${JSON.stringify({ type: "session", id: "s", cwd: "/repo/workspace" })}\n${JSON.stringify(
           {
             type: "message",
             message: {
               role: "user",
-              content: [{ type: "text", text: "restore this worktree" }],
+              content: [{ type: "text", text: "restore this workspace" }],
             },
           },
         )}\n`,
@@ -126,8 +126,8 @@ describe("dispatchInboundMessage", () => {
         discoveredTabs: [
           {
             tabId: "tab-new",
-            cwd: "/repo/worktree",
-            firstUserMessage: "restore this worktree",
+            cwd: "/repo/workspace",
+            firstUserMessage: "restore this workspace",
           },
         ],
       });

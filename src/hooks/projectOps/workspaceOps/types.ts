@@ -1,9 +1,9 @@
 import type { MutableRefObject } from "react";
 import type { Project, ProjectsState } from "../../../projects";
-import type { Worktree } from "../../../worktrees";
+import type { Workspace } from "../../../workspaces";
 import type { TabBucket } from "../types";
 
-export interface WorktreeOperationDeps {
+export interface WorkspaceOperationDeps {
   projectsRef: MutableRefObject<ProjectsState>;
   stateRef: MutableRefObject<Record<string, unknown>>;
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>;
@@ -21,56 +21,56 @@ export interface WorktreeOperationDeps {
   watchProjectForBridge: (path: string) => void;
   unwatchProjectForBridge: (path: string) => void;
   closeTabNow: (tabId: string) => void;
-  worktreePrompts: WorktreeRemovalPrompts;
+  workspacePrompts: WorkspaceRemovalPrompts;
 }
 
-export interface WorktreeRemovalPrompts {
-  promptRemoveWorktree: (label: string) => Promise<boolean>;
+export interface WorkspaceRemovalPrompts {
+  promptRemoveWorkspace: (label: string) => Promise<boolean>;
   promptForceRemove: (message: string) => Promise<boolean>;
   promptOrphanCleanup: () => Promise<boolean>;
   notifyCannotRemoveMain: () => void;
   notifyFailure: (message: string) => void;
 }
 
-export interface WorktreeOperations {
+export interface WorkspaceOperations {
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
   setProjectIconUrl: (projectId: string, iconUrl: string | null) => void;
-  refreshProjectWorktrees: (projectId: string) => Promise<void>;
-  activateWorktree: (worktreeId: string | null) => void;
-  createWorktreeForProject: (projectId: string) => Promise<void>;
-  createWorktreeWithParams: (opts: {
+  refreshProjectWorkspaces: (projectId: string) => Promise<void>;
+  activateWorkspace: (workspaceId: string | null) => void;
+  createWorkspaceForProject: (projectId: string) => Promise<void>;
+  createWorkspaceWithParams: (opts: {
     projectId: string;
     branch?: string;
     targetPath?: string;
     baseBranch?: string;
   }) => Promise<string | null>;
-  removeWorktreeById: (
-    worktreeId: string,
+  removeWorkspaceById: (
+    workspaceId: string,
     opts?: { confirmed?: boolean },
   ) => Promise<void>;
-  dismissPendingWorktree: (worktreeId: string) => void;
-  retryPendingWorktree: (worktreeId: string) => Promise<void>;
-  renameWorktree: (worktreeId: string, label: string) => void;
+  dismissPendingWorkspace: (workspaceId: string) => void;
+  retryPendingWorkspace: (workspaceId: string) => Promise<void>;
+  renameWorkspace: (workspaceId: string, label: string) => void;
   fetchBranches: (projectId: string) => Promise<string[]>;
   renameProject: (projectId: string, label: string) => void;
-  setProjectWorktreeBaseBranch: (
+  setProjectWorkspaceBaseBranch: (
     projectId: string,
     baseBranch: string | null,
   ) => void;
-  reorderWorktree: (
+  reorderWorkspace: (
     projectId: string,
-    worktreeId: string,
+    workspaceId: string,
     toIndex: number,
   ) => void;
-  sortProjectWorktreesNewest: (projectId: string) => void;
-  findProjectOfWorktree: (
-    worktreeId: string,
-  ) => { project: Project; worktree: Worktree } | null;
+  sortProjectWorkspacesNewest: (projectId: string) => void;
+  findProjectOfWorkspace: (
+    workspaceId: string,
+  ) => { project: Project; workspace: Workspace } | null;
 }
 
 export interface ProjectLookups {
   findProject: (id: string) => Project | null;
-  findProjectOfWorktree: (
-    worktreeId: string,
-  ) => { project: Project; worktree: Worktree } | null;
+  findProjectOfWorkspace: (
+    workspaceId: string,
+  ) => { project: Project; workspace: Workspace } | null;
 }

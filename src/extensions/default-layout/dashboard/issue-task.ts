@@ -9,7 +9,7 @@ export interface IssueTemplateProjectContext {
 
 export interface IssueTaskPayload {
   prompt: string;
-  newWorktree: boolean;
+  newWorkspace: boolean;
   branch?: string;
   templateId?: string;
   templateLabel?: string;
@@ -46,19 +46,19 @@ export function buildIssueTask(
   project: IssueTemplateProjectContext,
   options: {
     template?: IssueTemplate | null;
-    forceNewWorktree?: boolean;
+    forceNewWorkspace?: boolean;
     existingBranches?: ReadonlySet<string>;
   } = {},
 ): IssueTaskPayload {
   const existingBranches = options.existingBranches ?? new Set<string>();
   const fallbackBranch = buildIssueBranch(issue, existingBranches);
   const template = options.template ?? null;
-  const newWorktree = options.forceNewWorktree ?? template?.newWorktree ?? true;
+  const newWorkspace = options.forceNewWorkspace ?? template?.newWorkspace ?? true;
   if (!template) {
     return {
       prompt: buildIssuePrompt(detail),
-      newWorktree,
-      branch: newWorktree ? fallbackBranch : undefined,
+      newWorkspace,
+      branch: newWorkspace ? fallbackBranch : undefined,
     };
   }
 
@@ -74,7 +74,7 @@ export function buildIssueTask(
     ? interpolateIssueTemplate(template.branch, scopedVars).trim()
     : "";
   // Compact template-generated branches to the same ceiling as the built-in
-  // path so a long {slug} can't blow past OS path limits via the worktree dir.
+  // path so a long {slug} can't blow past OS path limits via the workspace dir.
   const branch = interpolatedBranch
     ? compactIssueBranch(
         interpolatedBranch,
@@ -84,8 +84,8 @@ export function buildIssueTask(
     : fallbackBranch;
   return {
     prompt: interpolateIssueTemplate(template.prompt, scopedVars).trim(),
-    newWorktree,
-    branch: newWorktree
+    newWorkspace,
+    branch: newWorkspace
       ? uniquifyIssueBranch(branch || fallbackBranch, existingBranches)
       : undefined,
     templateId: template.id,

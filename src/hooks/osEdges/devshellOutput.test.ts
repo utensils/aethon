@@ -36,8 +36,8 @@ describe("subscribeDevshellOutput", () => {
       activeTabId: "agent-1",
       terminalPanel: { activeSubId: "shell-1" },
       tabs: [
-        agentTab("agent-1", "/repo/worktree"),
-        shellTab("shell-1", "/repo/worktree"),
+        agentTab("agent-1", "/repo/workspace"),
+        shellTab("shell-1", "/repo/workspace"),
         agentTab("other", "/other"),
       ],
     };

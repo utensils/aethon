@@ -20,7 +20,7 @@ describe("handleNotifications", () => {
       "ext-1",
       false,
     );
-    expect(mocks.resolveWorktreePrompt).toHaveBeenCalledWith("ext-1", false);
+    expect(mocks.resolveWorkspacePrompt).toHaveBeenCalledWith("ext-1", false);
     expect(mocks.dismissNotification).toHaveBeenCalledWith("ext-1");
   });
 

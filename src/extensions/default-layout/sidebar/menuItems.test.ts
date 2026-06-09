@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canRemoveWorktree, canRenameWorktree } from "./menuItems";
-import type { WorktreeSidebarItem } from "./worktree-row";
+import { canRemoveWorkspace, canRenameWorkspace } from "./menuItems";
+import type { WorkspaceSidebarItem } from "./workspace-row";
 
 function wt(
-  overrides: Partial<WorktreeSidebarItem> = {},
-): WorktreeSidebarItem {
+  overrides: Partial<WorkspaceSidebarItem> = {},
+): WorkspaceSidebarItem {
   return {
     id: "wt-1",
     label: "feature-x",
@@ -16,36 +16,36 @@ function wt(
   };
 }
 
-describe("canRenameWorktree", () => {
-  it("requires a worktree item", () => {
-    expect(canRenameWorktree(undefined)).toBe(false);
+describe("canRenameWorkspace", () => {
+  it("requires a workspace item", () => {
+    expect(canRenameWorkspace(undefined)).toBe(false);
   });
 
-  it("allows non-pending worktrees", () => {
-    expect(canRenameWorktree(wt())).toBe(true);
-    expect(canRenameWorktree(wt({ pendingState: "succeeded" }))).toBe(true);
+  it("allows non-pending workspaces", () => {
+    expect(canRenameWorkspace(wt())).toBe(true);
+    expect(canRenameWorkspace(wt({ pendingState: "succeeded" }))).toBe(true);
   });
 
-  it("rejects pending or failed worktrees", () => {
-    expect(canRenameWorktree(wt({ pendingState: "queued" }))).toBe(false);
-    expect(canRenameWorktree(wt({ pendingState: "starting" }))).toBe(false);
-    expect(canRenameWorktree(wt({ pendingState: "removing" }))).toBe(false);
-    expect(canRenameWorktree(wt({ pendingState: "failed" }))).toBe(false);
+  it("rejects pending or failed workspaces", () => {
+    expect(canRenameWorkspace(wt({ pendingState: "queued" }))).toBe(false);
+    expect(canRenameWorkspace(wt({ pendingState: "starting" }))).toBe(false);
+    expect(canRenameWorkspace(wt({ pendingState: "removing" }))).toBe(false);
+    expect(canRenameWorkspace(wt({ pendingState: "failed" }))).toBe(false);
   });
 });
 
-describe("canRemoveWorktree", () => {
-  it("rejects missing, main, and pending worktrees", () => {
-    expect(canRemoveWorktree(undefined)).toBe(false);
-    expect(canRemoveWorktree(wt({ isMain: true }))).toBe(false);
-    expect(canRemoveWorktree(wt({ pendingState: "queued" }))).toBe(false);
-    expect(canRemoveWorktree(wt({ pendingState: "starting" }))).toBe(false);
-    expect(canRemoveWorktree(wt({ pendingState: "removing" }))).toBe(false);
-    expect(canRemoveWorktree(wt({ pendingState: "failed" }))).toBe(false);
+describe("canRemoveWorkspace", () => {
+  it("rejects missing, main, and pending workspaces", () => {
+    expect(canRemoveWorkspace(undefined)).toBe(false);
+    expect(canRemoveWorkspace(wt({ isMain: true }))).toBe(false);
+    expect(canRemoveWorkspace(wt({ pendingState: "queued" }))).toBe(false);
+    expect(canRemoveWorkspace(wt({ pendingState: "starting" }))).toBe(false);
+    expect(canRemoveWorkspace(wt({ pendingState: "removing" }))).toBe(false);
+    expect(canRemoveWorkspace(wt({ pendingState: "failed" }))).toBe(false);
   });
 
-  it("allows removable live worktrees", () => {
-    expect(canRemoveWorktree(wt())).toBe(true);
-    expect(canRemoveWorktree(wt({ pendingState: "succeeded" }))).toBe(true);
+  it("allows removable live workspaces", () => {
+    expect(canRemoveWorkspace(wt())).toBe(true);
+    expect(canRemoveWorkspace(wt({ pendingState: "succeeded" }))).toBe(true);
   });
 });

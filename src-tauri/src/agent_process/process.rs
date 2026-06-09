@@ -14,7 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::process::Child;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, State};
@@ -25,6 +25,27 @@ use super::spawn::ensure_agent_spawned;
 use crate::env;
 
 pub(crate) const GLOBAL_AGENT_KEY: &str = "__global__";
+
+/// A prompt that has shown no activity for this long is considered wedged:
+/// the bridge process is alive but the turn will never produce a
+/// `response_end` (provider hang, exception between `prompt_started` and
+/// `response_end`). A wedged worker stops blocking idle retirement and tab
+/// reconciliation — without this cap a single wedged turn made its worker
+/// unreclaimable until app quit. A healthy long turn keeps bumping
+/// `last_activity` via stdout/stderr traffic, so it never trips this.
+pub(crate) const WEDGED_PROMPT_CAP: Duration = Duration::from_secs(30 * 60);
+
+/// Lock a mutex, recovering from poisoning instead of silently dropping the
+/// operation. Every mutex in this module guards plain map/process data that
+/// stays structurally valid even if a holder panicked mid-update; recovering
+/// is strictly better than freezing routing/meta for the rest of the app
+/// (the old `if let Ok(..) = m.lock()` pattern did exactly that, silently).
+pub(crate) fn lock_recover<'a, T>(m: &'a Mutex<T>, what: &str) -> MutexGuard<'a, T> {
+    m.lock().unwrap_or_else(|poisoned| {
+        tracing::warn!(target: "aethon::agent", "recovered poisoned lock: {what}");
+        poisoned.into_inner()
+    })
+}
 
 /// Per-worker diagnostic metadata, keyed alongside `children`. Lets a
 /// release-safe `agent_diagnostics` command map a live `aethon-agent` PID back
@@ -37,7 +58,22 @@ pub(crate) struct WorkerMeta {
     pub(crate) spawned_at: Instant,
     pub(crate) last_activity: Instant,
     pub(crate) prompt_in_flight: bool,
+    /// When the in-flight prompt started. Set when `prompt_in_flight` flips
+    /// to true, cleared when it flips to false. Drives the wedged-prompt
+    /// deadline ([`WEDGED_PROMPT_CAP`]).
+    pub(crate) prompt_started_at: Option<Instant>,
     pub(crate) bridge_ready: bool,
+}
+
+/// True when this worker's prompt has been in flight past the wedge cap
+/// with no activity in the same window — i.e. the `prompt_in_flight` flag
+/// can no longer be trusted to mean "a live turn is streaming".
+pub(crate) fn prompt_wedged(meta: &WorkerMeta, now: Instant) -> bool {
+    meta.prompt_in_flight
+        && meta
+            .prompt_started_at
+            .is_some_and(|t| now.duration_since(t) >= WEDGED_PROMPT_CAP)
+        && now.duration_since(meta.last_activity) >= WEDGED_PROMPT_CAP
 }
 
 pub(crate) struct AgentProcesses {
@@ -77,20 +113,24 @@ pub(crate) fn touch_worker_activity(
     key: &str,
     prompt_in_flight: Option<bool>,
 ) {
-    if let Ok(mut map) = meta.lock()
-        && let Some(entry) = map.get_mut(key)
-    {
-        entry.last_activity = Instant::now();
+    let mut map = lock_recover(meta, "worker meta (touch)");
+    if let Some(entry) = map.get_mut(key) {
+        let now = Instant::now();
+        entry.last_activity = now;
         if let Some(flag) = prompt_in_flight {
+            if flag && !entry.prompt_in_flight {
+                entry.prompt_started_at = Some(now);
+            } else if !flag {
+                entry.prompt_started_at = None;
+            }
             entry.prompt_in_flight = flag;
         }
     }
 }
 
 pub(crate) fn mark_worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) {
-    if let Ok(mut map) = meta.lock()
-        && let Some(entry) = map.get_mut(key)
-    {
+    let mut map = lock_recover(meta, "worker meta (ready)");
+    if let Some(entry) = map.get_mut(key) {
         entry.last_activity = Instant::now();
         entry.bridge_ready = true;
     }
@@ -101,18 +141,26 @@ pub(crate) fn clear_worker_meta_for_pid(
     key: &str,
     pid: u32,
 ) {
-    if let Ok(mut map) = meta.lock() {
-        let should_remove = map.get(key).is_some_and(|entry| entry.pid == pid);
-        if should_remove {
-            map.remove(key);
-        }
+    let mut map = lock_recover(meta, "worker meta (clear)");
+    let should_remove = map.get(key).is_some_and(|entry| entry.pid == pid);
+    if should_remove {
+        map.remove(key);
     }
 }
 
+/// Drop every mutation route pointing at `key`. Called whenever the process
+/// behind the key goes away (retirement, cwd respawn, stdout EOF) — pending
+/// acks for a dead process are unroutable, and before this purge they leaked
+/// in the map forever.
+pub(crate) fn purge_routes_for_key(routes: &Arc<Mutex<HashMap<String, String>>>, key: &str) {
+    let mut map = lock_recover(routes, "mutation routes (purge)");
+    map.retain(|_, v| v != key);
+}
+
 fn worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) -> bool {
-    meta.lock()
-        .ok()
-        .and_then(|map| map.get(key).map(|entry| entry.bridge_ready))
+    lock_recover(meta, "worker meta (ready check)")
+        .get(key)
+        .map(|entry| entry.bridge_ready)
         .unwrap_or(false)
 }
 
@@ -130,10 +178,10 @@ async fn wait_for_worker_ready(
         if worker_ready(meta, key) {
             return Ok(());
         }
-        if let Some(status) = child
-            .lock()
+        if let Some(status) = lock_recover(child, "agent child (ready wait)")
+            .try_wait()
             .ok()
-            .and_then(|mut child| child.try_wait().ok().flatten())
+            .flatten()
         {
             return Err(format!("agent worker exited before ready: {status:?}"));
         }
@@ -146,7 +194,9 @@ async fn wait_for_worker_ready(
 
 /// Should this worker be retired by the idle sweep? Pure so the policy is
 /// testable without spawning processes. Never retires the global agent or a
-/// worker that's mid-prompt; otherwise retires once idle past `ttl`.
+/// worker that's mid-prompt — unless the prompt is wedged past
+/// [`WEDGED_PROMPT_CAP`], in which case the flag no longer protects it;
+/// otherwise retires once idle past `ttl`.
 pub(crate) fn should_retire_idle(
     key: &str,
     meta: &WorkerMeta,
@@ -156,7 +206,7 @@ pub(crate) fn should_retire_idle(
     if key == GLOBAL_AGENT_KEY {
         return false;
     }
-    if meta.prompt_in_flight {
+    if meta.prompt_in_flight && !prompt_wedged(meta, now) {
         return false;
     }
     now.duration_since(meta.last_activity) >= ttl
@@ -170,9 +220,7 @@ pub(crate) fn idle_keys_to_retire(
     now: Instant,
     ttl: Duration,
 ) -> Vec<String> {
-    let Ok(map) = meta.lock() else {
-        return Vec::new();
-    };
+    let map = lock_recover(meta, "worker meta (idle sweep)");
     map.iter()
         .filter(|(key, m)| should_retire_idle(key, m, now, ttl))
         .map(|(key, _)| key.clone())
@@ -193,13 +241,11 @@ pub(crate) fn keys_to_reconcile(
     now: Instant,
     min_age: Duration,
 ) -> Vec<String> {
-    let Ok(map) = meta.lock() else {
-        return Vec::new();
-    };
+    let map = lock_recover(meta, "worker meta (reconcile)");
     map.iter()
         .filter(|(key, m)| {
             *key != GLOBAL_AGENT_KEY
-                && !m.prompt_in_flight
+                && (!m.prompt_in_flight || prompt_wedged(m, now))
                 && now.duration_since(m.spawned_at) >= min_age
                 && m.tab_id
                     .as_deref()
@@ -225,45 +271,84 @@ pub(crate) async fn write_agent_payload(
     payload: serde_json::Value,
     worker: Option<AgentWorker>,
 ) -> Result<(), String> {
-    let child = {
-        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
-        ensure_agent_spawned(
-            &mut guard,
-            &key,
-            app,
-            Arc::clone(&state.mutation_routes),
-            Arc::clone(&state.intentional_exits),
-            Arc::clone(&state.meta),
-            worker,
-        )?;
-        guard.get(&key).cloned().ok_or("agent not running")?
-    };
-
     let prompt_starts = payload_starts_prompt(&payload);
-    if prompt_starts {
-        wait_for_worker_ready(&child, &state.meta, &key, Duration::from_secs(20)).await?;
-    }
     let prompt_flag = prompt_starts.then_some(true);
+    let mut last_err = String::from("agent not running");
 
-    {
-        let mut child = child.lock().map_err(|e| e.to_string())?;
-        let stdin = child.stdin.as_mut().ok_or("no stdin")?;
-        use std::io::Write;
-        writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
-        stdin.flush().map_err(|e| format!("flush failed: {e}"))?;
+    // Two attempts: `wait_for_worker_ready` can take seconds, and a
+    // concurrent cwd-change respawn may replace the child under us in that
+    // window. Writing into the replaced (killed) child would either error or
+    // — worse — succeed into a pipe nobody reads. Re-verify the handle is
+    // still the registered one before writing; on mismatch or write failure,
+    // re-ensure and retry once.
+    for _attempt in 0..2 {
+        let child = {
+            let mut guard = lock_recover(&state.children, "agent children (write)");
+            ensure_agent_spawned(
+                &mut guard,
+                &key,
+                app,
+                Arc::clone(&state.mutation_routes),
+                Arc::clone(&state.intentional_exits),
+                Arc::clone(&state.meta),
+                worker.as_ref(),
+            )?;
+            guard.get(&key).cloned().ok_or("agent not running")?
+        };
+
+        if prompt_starts {
+            wait_for_worker_ready(&child, &state.meta, &key, Duration::from_secs(20)).await?;
+        }
+
+        let still_current = {
+            let guard = lock_recover(&state.children, "agent children (verify)");
+            guard
+                .get(&key)
+                .is_some_and(|current| Arc::ptr_eq(current, &child))
+        };
+        if !still_current {
+            last_err = "agent worker was replaced while preparing the write".to_string();
+            continue;
+        }
+
+        let write_result = {
+            let mut child = lock_recover(&child, "agent child (write)");
+            write_payload_line(&mut child, &payload)
+        };
+        match write_result {
+            Ok(()) => {
+                // Inbound traffic counts as activity; a forwarded prompt also
+                // marks the worker busy so the idle sweep won't retire it
+                // mid-turn.
+                touch_worker_activity(&state.meta, &key, prompt_flag);
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = e;
+                continue;
+            }
+        }
     }
+    tracing::warn!(
+        target: "aethon::agent",
+        key = key.as_str(),
+        "payload not delivered after retry: {last_err}"
+    );
+    Err(format!("agent message not delivered: {last_err}"))
+}
 
-    // Inbound traffic counts as activity; a forwarded prompt also marks the
-    // worker busy so the idle sweep won't retire it mid-turn.
-    touch_worker_activity(&state.meta, &key, prompt_flag);
-    Ok(())
+fn write_payload_line(child: &mut Child, payload: &serde_json::Value) -> Result<(), String> {
+    let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+    use std::io::Write;
+    writeln!(stdin, "{}", payload).map_err(|e| format!("write failed: {e}"))?;
+    stdin.flush().map_err(|e| format!("flush failed: {e}"))
 }
 
 pub(crate) fn ensure_global_agent(
     state: &State<'_, AgentProcesses>,
     app: &AppHandle,
 ) -> Result<(), String> {
-    let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+    let mut guard = lock_recover(&state.children, "agent children (ensure global)");
     ensure_agent_spawned(
         &mut guard,
         GLOBAL_AGENT_KEY,
@@ -277,19 +362,16 @@ pub(crate) fn ensure_global_agent(
 
 pub(crate) fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> Result<(), String> {
     let child = {
-        let mut guard = state.children.lock().map_err(|e| e.to_string())?;
+        let mut guard = lock_recover(&state.children, "agent children (retire)");
         guard.remove(key)
     };
-    if let Ok(mut map) = state.meta.lock() {
-        map.remove(key);
-    }
+    lock_recover(&state.meta, "worker meta (retire)").remove(key);
+    purge_routes_for_key(&state.mutation_routes, key);
     let Some(child) = child else {
         return Ok(());
     };
-    if let Ok(mut exits) = state.intentional_exits.lock() {
-        exits.insert(key.to_string());
-    }
-    let mut child = child.lock().map_err(|e| e.to_string())?;
+    lock_recover(&state.intentional_exits, "intentional exits (retire)").insert(key.to_string());
+    let mut child = lock_recover(&child, "agent child (retire)");
     let pid = child.id();
     tracing::info!(target: "aethon::agent", key = key, "retiring pid={pid}");
     let _ = child.kill();
@@ -298,36 +380,27 @@ pub(crate) fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> 
 }
 
 pub(crate) fn shutdown_all_agents(state: &AgentProcesses, reason: &str) {
-    let children: Vec<_> = match state.children.lock() {
-        Ok(mut guard) => guard.drain().collect(),
-        Err(e) => {
-            tracing::warn!(target: "aethon::agent", "shutdown: children lock: {e}");
-            Vec::new()
-        }
-    };
+    let children: Vec<_> = lock_recover(&state.children, "agent children (shutdown)")
+        .drain()
+        .collect();
     if children.is_empty() {
         return;
     }
-    if let Ok(mut exits) = state.intentional_exits.lock() {
+    {
+        let mut exits = lock_recover(&state.intentional_exits, "intentional exits (shutdown)");
         for (key, _) in &children {
             exits.insert(key.clone());
         }
     }
     for (key, child) in children {
-        let Ok(mut child) = child.lock() else {
-            continue;
-        };
+        let mut child = lock_recover(&child, "agent child (shutdown)");
         let pid = child.id();
         tracing::info!(target: "aethon::agent", key = key, "shutdown: killing pid={pid}; reason={reason}");
         let _ = child.kill();
         let _ = child.wait();
     }
-    if let Ok(mut routes) = state.mutation_routes.lock() {
-        routes.clear();
-    }
-    if let Ok(mut meta) = state.meta.lock() {
-        meta.clear();
-    }
+    lock_recover(&state.mutation_routes, "mutation routes (shutdown)").clear();
+    lock_recover(&state.meta, "worker meta (shutdown)").clear();
 }
 
 pub(crate) fn cleanup_orphaned_dev_agents() {
@@ -420,8 +493,8 @@ pub(crate) fn route_payload_key(
 ) -> String {
     if payload.get("type").and_then(|v| v.as_str()) == Some("mutation_ack")
         && let Some(mutation_id) = payload.get("mutationId").and_then(|v| v.as_str())
-        && let Ok(mut routes) = state.mutation_routes.lock()
-        && let Some(key) = routes.remove(mutation_id)
+        && let Some(key) =
+            lock_recover(&state.mutation_routes, "mutation routes (ack)").remove(mutation_id)
     {
         return key;
     }
@@ -431,9 +504,10 @@ pub(crate) fn route_payload_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        Arc, GLOBAL_AGENT_KEY, HashMap, HashSet, Instant, Mutex, WorkerMeta, idle_keys_to_retire,
-        keys_to_reconcile, payload_starts_prompt, route_payload_key_without_mutation,
-        should_retire_idle, tab_agent_key, touch_worker_activity,
+        Arc, GLOBAL_AGENT_KEY, HashMap, HashSet, Instant, Mutex, WEDGED_PROMPT_CAP, WorkerMeta,
+        idle_keys_to_retire, keys_to_reconcile, payload_starts_prompt, prompt_wedged,
+        purge_routes_for_key, route_payload_key_without_mutation, should_retire_idle,
+        tab_agent_key, touch_worker_activity,
     };
     use std::time::Duration;
 
@@ -446,6 +520,7 @@ mod tests {
             spawned_at: spawned,
             last_activity: spawned,
             prompt_in_flight: false,
+            prompt_started_at: None,
             bridge_ready: true,
         }
     }
@@ -459,6 +534,7 @@ mod tests {
             spawned_at: last,
             last_activity: last,
             prompt_in_flight,
+            prompt_started_at: prompt_in_flight.then_some(last),
             bridge_ready: true,
         }
     }
@@ -637,6 +713,7 @@ mod tests {
                 spawned_at: stale,
                 last_activity: stale,
                 prompt_in_flight: true,
+                prompt_started_at: Some(stale),
                 bridge_ready: true,
             },
         );
@@ -672,5 +749,117 @@ mod tests {
         touch_worker_activity(&meta, "tab:missing", Some(false));
         // Existing entry untouched, no panic for the missing key.
         assert!(meta.lock().unwrap().get("tab:x").unwrap().prompt_in_flight);
+    }
+
+    #[test]
+    fn touch_manages_prompt_started_at_lifecycle() {
+        let meta = meta_with_stale_entry("tab:x");
+        // Already in flight: flag true again must NOT reset the start time.
+        let before = meta
+            .lock()
+            .unwrap()
+            .get("tab:x")
+            .unwrap()
+            .prompt_started_at;
+        touch_worker_activity(&meta, "tab:x", Some(true));
+        assert_eq!(
+            meta.lock()
+                .unwrap()
+                .get("tab:x")
+                .unwrap()
+                .prompt_started_at,
+            before
+        );
+        // Turn end clears it.
+        touch_worker_activity(&meta, "tab:x", Some(false));
+        assert!(
+            meta.lock()
+                .unwrap()
+                .get("tab:x")
+                .unwrap()
+                .prompt_started_at
+                .is_none()
+        );
+        // A fresh turn sets a new start time.
+        touch_worker_activity(&meta, "tab:x", Some(true));
+        assert!(
+            meta.lock()
+                .unwrap()
+                .get("tab:x")
+                .unwrap()
+                .prompt_started_at
+                .is_some()
+        );
+    }
+
+    fn wedged_worker() -> WorkerMeta {
+        let long_ago = Instant::now()
+            .checked_sub(WEDGED_PROMPT_CAP + Duration::from_secs(60))
+            .expect("instant in range");
+        WorkerMeta {
+            tab_id: Some("t".into()),
+            cwd: None,
+            pid: 1,
+            spawned_at: long_ago,
+            last_activity: long_ago,
+            prompt_in_flight: true,
+            prompt_started_at: Some(long_ago),
+            bridge_ready: true,
+        }
+    }
+
+    #[test]
+    fn wedged_prompt_no_longer_blocks_idle_retirement() {
+        let now = Instant::now();
+        let wedged = wedged_worker();
+        assert!(prompt_wedged(&wedged, now));
+        assert!(should_retire_idle(
+            "tab:x",
+            &wedged,
+            now,
+            Duration::from_secs(60)
+        ));
+    }
+
+    #[test]
+    fn streaming_turn_is_never_wedged() {
+        let now = Instant::now();
+        let mut streaming = wedged_worker();
+        // A live turn keeps bumping last_activity via stdout traffic.
+        streaming.last_activity = now;
+        assert!(!prompt_wedged(&streaming, now));
+        assert!(!should_retire_idle(
+            "tab:x",
+            &streaming,
+            now,
+            Duration::from_secs(60)
+        ));
+    }
+
+    #[test]
+    fn wedged_orphan_is_reconciled() {
+        let mut map = HashMap::new();
+        map.insert(tab_agent_key("gone"), wedged_worker());
+        let meta = Arc::new(Mutex::new(map));
+        let live: HashSet<String> = HashSet::new();
+
+        let keys = keys_to_reconcile(&meta, &live, Instant::now(), Duration::from_secs(10));
+
+        assert_eq!(keys, vec![tab_agent_key("gone")]);
+    }
+
+    #[test]
+    fn purge_routes_drops_only_the_dead_key() {
+        let routes = Arc::new(Mutex::new(HashMap::from([
+            ("m1".to_string(), "tab:dead".to_string()),
+            ("m2".to_string(), "tab:dead".to_string()),
+            ("m3".to_string(), "tab:live".to_string()),
+        ])));
+
+        purge_routes_for_key(&routes, "tab:dead");
+
+        let map = routes.lock().unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("m3"), Some(&"tab:live".to_string()));
     }
 }

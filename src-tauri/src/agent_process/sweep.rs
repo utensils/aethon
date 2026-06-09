@@ -20,7 +20,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::helpers::{self, parse_config_toml};
 
-use super::process::{AgentProcesses, idle_keys_to_retire, retire_agent_key};
+use super::process::{AgentProcesses, idle_keys_to_retire, lock_recover, retire_agent_key};
 
 /// How often the sweep wakes. Coarse on purpose — retirement is a cleanup, not
 /// a latency-sensitive path, and a 60s cadence keeps the wakeup cost trivial.
@@ -89,4 +89,34 @@ fn sweep_once(app: &AppHandle, ttl: Duration) {
             }
         }
     }
+    reap_meta_less_children(&state);
+}
+
+/// Reap child handles whose meta entry is gone — the stdout-EOF cleanup
+/// removes meta on crash, but the exited `Child` stayed in `children`
+/// holding a zombie process until the next write for that key. Collect the
+/// exit status here so the OS entry is released.
+fn reap_meta_less_children(state: &AgentProcesses) {
+    let meta_keys: std::collections::HashSet<String> = lock_recover(&state.meta, "meta (reap)")
+        .keys()
+        .cloned()
+        .collect();
+    let mut guard = lock_recover(&state.children, "children (reap)");
+    guard.retain(|key, child| {
+        if meta_keys.contains(key) {
+            return true;
+        }
+        let mut child = lock_recover(child, "agent child (reap)");
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                tracing::info!(
+                    target: "aethon::agent",
+                    key = key.as_str(),
+                    "reaped exited child without meta: {status:?}"
+                );
+                false
+            }
+            _ => true,
+        }
+    });
 }

@@ -5,7 +5,7 @@ export interface IssueTemplate {
   id: string;
   label: string;
   prompt: string;
-  newWorktree: boolean | null;
+  newWorkspace: boolean | null;
   branch: string | null;
   branchPrefix: string | null;
   whenLabels: string[];
@@ -63,8 +63,8 @@ function normalizeIssueTemplate(raw: unknown): IssueTemplate[] {
       id,
       label,
       prompt,
-      newWorktree:
-        typeof obj.newWorktree === "boolean" ? obj.newWorktree : null,
+      newWorkspace:
+        typeof obj.newWorkspace === "boolean" ? obj.newWorkspace : null,
       branch: typeof obj.branch === "string" ? obj.branch : null,
       branchPrefix:
         typeof obj.branchPrefix === "string" && obj.branchPrefix.trim().length > 0

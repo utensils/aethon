@@ -32,6 +32,30 @@ const EXPAND_ALL_MAX_DEPTH = 8;
  *  event so badges never stick stale indefinitely. */
 const GIT_STATUS_POLL_MS = 20_000;
 
+/** Warm per-workspace tree cache so switching projects/workspaces paints
+ *  the last-known tree instantly instead of flashing empty while the
+ *  listing refetches. The fetch still runs on every switch — it
+ *  reconciles the cached paint in the background. Module-level on
+ *  purpose: the hook unmounts/remounts with the sidebar, but the cache
+ *  should survive that. */
+interface TreeCacheEntry {
+  root: TreeNode;
+  gitStatuses: Map<string, GitFileStatusEntry>;
+  ignoredPaths: string[];
+}
+const TREE_CACHE_MAX = 8;
+const treeCache = new Map<string, TreeCacheEntry>();
+
+function cacheTree(projectPath: string, entry: TreeCacheEntry): void {
+  treeCache.delete(projectPath);
+  treeCache.set(projectPath, entry);
+  while (treeCache.size > TREE_CACHE_MAX) {
+    const oldest = treeCache.keys().next().value;
+    if (oldest === undefined) break;
+    treeCache.delete(oldest);
+  }
+}
+
 interface UseFileTreeDataArgs {
   hidden: boolean;
   projectPath: string;
@@ -157,11 +181,15 @@ function useFileTreeData({
       clearTimeout(gitStatusRefreshTimerRef.current);
       gitStatusRefreshTimerRef.current = null;
     }
-    // Reset the previous project's tree synchronously so stale rows never
-    // render under the new root while the async listing loads.
+    // Paint the cached tree synchronously when we've seen this workspace
+    // before (warm switch); otherwise clear so stale rows never render
+    // under the new root while the async listing loads. The fetch below
+    // runs either way and reconciles the cached paint.
+    const cached = projectPath ? treeCache.get(projectPath) : undefined;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRoot(null);
-    setGitStatuses(new Map());
+    setRoot(cached?.root ?? null);
+    setGitStatuses(cached?.gitStatuses ?? new Map());
+    setIgnoredPaths(cached?.ignoredPaths ?? []);
     setError("");
     setExpanded(new Set(expandedStoreRef.current.byProject[projectPath] ?? []));
     if (!projectPath) return;
@@ -213,6 +241,15 @@ function useFileTreeData({
       cancelled = true;
     };
   }, [projectPath, refreshGitStatuses, rootLabel]);
+
+  // Keep the warm cache in sync with the live tree. Only cache when the
+  // rendered root actually belongs to the current projectPath — this
+  // guards the transition window where state still holds the previous
+  // workspace's tree.
+  useEffect(() => {
+    if (!projectPath || !root || root.entry.path !== projectPath) return;
+    cacheTree(projectPath, { root, gitStatuses, ignoredPaths });
+  }, [projectPath, root, gitStatuses, ignoredPaths]);
 
   // Git-decoration refresh that the working-tree fs watcher can't drive. The
   // file tree's primary refresh is `useFileTreeWatch`, which only fires on

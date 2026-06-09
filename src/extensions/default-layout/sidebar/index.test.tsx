@@ -334,7 +334,7 @@ describe("Sidebar extension controls", () => {
 });
 
 describe("Sidebar project menu", () => {
-  it("starts inline worktree rename from the context menu without prompt", () => {
+  it("starts inline workspace rename from the context menu without prompt", () => {
     vi.useFakeTimers();
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("prompt label");
     const { onEvent } = renderSidebar({
@@ -348,7 +348,7 @@ describe("Sidebar project menu", () => {
                 id: "project-1",
                 label: "aethon",
                 expanded: true,
-                worktrees: [
+                workspaces: [
                   {
                     id: "main",
                     label: "main",
@@ -375,17 +375,17 @@ describe("Sidebar project menu", () => {
 
     fireEvent.contextMenu(screen.getByText("feature-x").closest("li")!);
     fireEvent.click(
-      screen.getByRole("menuitem", { name: /Rename worktree/ }),
+      screen.getByRole("menuitem", { name: /Rename workspace/ }),
     );
 
     expect(prompt).not.toHaveBeenCalled();
     expect(screen.queryByRole("menu")).toBeNull();
-    const input = screen.getByRole("textbox", { name: /rename worktree/i });
+    const input = screen.getByRole("textbox", { name: /rename workspace/i });
     expect((input as HTMLInputElement).value).toBe("feature-x");
     act(() => {
       vi.runAllTimers();
     });
-    expect(screen.getByRole("textbox", { name: /rename worktree/i })).toBe(
+    expect(screen.getByRole("textbox", { name: /rename workspace/i })).toBe(
       input,
     );
     expect(document.activeElement).toBe(input);
@@ -394,18 +394,18 @@ describe("Sidebar project menu", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onEvent).toHaveBeenCalledWith(
-      "rename-worktree",
+      "rename-workspace",
       expect.objectContaining({
         sectionId: "projects",
         itemId: "wt-1",
-        worktreeId: "wt-1",
+        workspaceId: "wt-1",
         label: "renamed feature",
       }),
       "wt-1",
     );
   });
 
-  it("emits the project worktree base event", () => {
+  it("emits the project workspace base event", () => {
     const { onEvent } = renderSidebar({
       props: {
         sections: [
@@ -422,7 +422,7 @@ describe("Sidebar project menu", () => {
             id: "project-1",
             label: "aethon",
             path: "/projects/aethon",
-            worktreeBaseBranch: "origin/main",
+            workspaceBaseBranch: "origin/main",
           },
         ],
       },
@@ -433,14 +433,14 @@ describe("Sidebar project menu", () => {
     // project row label.
     fireEvent.contextMenu(screen.getByText("aethon").closest("li")!);
     fireEvent.click(
-      screen.getByRole("menuitem", { name: /Set worktree base/ }),
+      screen.getByRole("menuitem", { name: /Set workspace base/ }),
     );
     fireEvent.change(screen.getByLabelText("Base branch"), {
       target: { value: "upstream/trunk" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(onEvent).toHaveBeenCalledWith("set-project-worktree-base", {
+    expect(onEvent).toHaveBeenCalledWith("set-project-workspace-base", {
       sectionId: "projects",
       itemId: "project-1",
       projectId: "project-1",
@@ -448,7 +448,7 @@ describe("Sidebar project menu", () => {
     });
   });
 
-  it("emits the project worktree newest-first sort event", () => {
+  it("emits the project workspace newest-first sort event", () => {
     const { onEvent } = renderSidebar({
       props: {
         sections: [
@@ -459,7 +459,7 @@ describe("Sidebar project menu", () => {
               {
                 id: "project-1",
                 label: "aethon",
-                worktrees: [
+                workspaces: [
                   {
                     id: "main",
                     label: "main",
@@ -486,10 +486,10 @@ describe("Sidebar project menu", () => {
 
     fireEvent.contextMenu(screen.getByText("aethon").closest("li")!);
     fireEvent.click(
-      screen.getByRole("menuitem", { name: /Sort worktrees newest first/ }),
+      screen.getByRole("menuitem", { name: /Sort workspaces newest first/ }),
     );
 
-    expect(onEvent).toHaveBeenCalledWith("sort-project-worktrees", {
+    expect(onEvent).toHaveBeenCalledWith("sort-project-workspaces", {
       sectionId: "projects",
       itemId: "project-1",
       projectId: "project-1",

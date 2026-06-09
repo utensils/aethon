@@ -6,9 +6,9 @@ interface BridgeWatchDeps {
 }
 
 /**
- * When activating a worktree crosses project boundaries, swap the
+ * When activating a workspace crosses project boundaries, swap the
  * bridge file-watch from the previous project root to the next one.
- * Caller owns the decision to invoke this — see activateWorktree.
+ * Caller owns the decision to invoke this — see activateWorkspace.
  */
 export function swapProjectWatch(
   previousActive: Project | null,

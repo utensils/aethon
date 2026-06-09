@@ -2,14 +2,14 @@ import { useCallback, useEffect, type MutableRefObject } from "react";
 import type { ProjectsState } from "../projects";
 import { discoverIcon } from "../projectIcons";
 import type { Tab } from "../types/tab";
-import { worktreeIdForCwd } from "./useProjectOps";
+import { workspaceIdForCwd } from "./useProjectOps";
 
 export interface UseProjectSyncEffectsOptions {
   state: Record<string, unknown>;
   stateRef: MutableRefObject<Record<string, unknown>>;
   projectsRef: MutableRefObject<ProjectsState>;
   setActiveProjectById: (id: string) => boolean;
-  activateWorktree: (worktreeId: string | null) => void;
+  activateWorkspace: (workspaceId: string | null) => void;
   setProjectIconUrl: (projectId: string, iconUrl: string) => void;
 }
 
@@ -18,15 +18,15 @@ export function useProjectSyncEffects({
   stateRef,
   projectsRef,
   setActiveProjectById,
-  activateWorktree,
+  activateWorkspace,
   setProjectIconUrl,
 }: UseProjectSyncEffectsOptions): void {
-  const syncActiveWorktreeToActiveTab = useCallback(() => {
+  const syncActiveWorkspaceToActiveTab = useCallback(() => {
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     const activeId = stateRef.current.activeTabId as string | undefined;
     const active = activeId ? tabs.find((t) => t.id === activeId) : undefined;
     if (!active || active.kind !== "agent") return;
-    const resolved = worktreeIdForCwd(
+    const resolved = workspaceIdForCwd(
       projectsRef.current,
       active.cwd,
       active.projectId,
@@ -35,17 +35,17 @@ export function useProjectSyncEffects({
     if (active.projectId && projectsRef.current.activeId !== active.projectId) {
       if (!setActiveProjectById(active.projectId)) return;
     }
-    if (projectsRef.current.activeWorktreeId !== resolved) {
-      activateWorktree(resolved);
+    if (projectsRef.current.activeWorkspaceId !== resolved) {
+      activateWorkspace(resolved);
     }
-  }, [activateWorktree, projectsRef, setActiveProjectById, stateRef]);
+  }, [activateWorkspace, projectsRef, setActiveProjectById, stateRef]);
 
   useEffect(() => {
-    syncActiveWorktreeToActiveTab();
+    syncActiveWorkspaceToActiveTab();
   }, [
-    syncActiveWorktreeToActiveTab,
+    syncActiveWorkspaceToActiveTab,
     state.activeTabId,
-    state.activeWorktreeId,
+    state.activeWorkspaceId,
     state.cwd,
     state.projects,
     state.sidebar,

@@ -1,37 +1,37 @@
 import {
-  createWorktreeForProject,
-  createWorktreeWithParams,
+  createWorkspaceForProject,
+  createWorkspaceWithParams,
   fetchBranches,
-  refreshProjectWorktrees,
-  retryPendingWorktree,
-} from "./worktreeOps/git";
-import { makeProjectLookups } from "./worktreeOps/lookups";
-import { removeWorktreeById } from "./worktreeOps/remove";
+  refreshProjectWorkspaces,
+  retryPendingWorkspace,
+} from "./workspaceOps/git";
+import { makeProjectLookups } from "./workspaceOps/lookups";
+import { removeWorkspaceById } from "./workspaceOps/remove";
 import {
-  activateWorktree,
-  dismissPendingWorktree,
+  activateWorkspace,
+  dismissPendingWorkspace,
   renameProject,
-  renameWorktree,
-  reorderWorktree,
-  sortProjectWorktreesNewest,
+  renameWorkspace,
+  reorderWorkspace,
+  sortProjectWorkspacesNewest,
   setProjectExpanded,
   setProjectIconUrl,
-  setProjectWorktreeBaseBranch,
-} from "./worktreeOps/state";
+  setProjectWorkspaceBaseBranch,
+} from "./workspaceOps/state";
 import type {
-  WorktreeOperationDeps,
-  WorktreeOperations,
-} from "./worktreeOps/types";
+  WorkspaceOperationDeps,
+  WorkspaceOperations,
+} from "./workspaceOps/types";
 
-export type { WorktreeOperationDeps, WorktreeOperations };
+export type { WorkspaceOperationDeps, WorkspaceOperations };
 
-export function useWorktreeOperations(
-  deps: WorktreeOperationDeps,
-): WorktreeOperations {
+export function useWorkspaceOperations(
+  deps: WorkspaceOperationDeps,
+): WorkspaceOperations {
   const lookups = makeProjectLookups(deps.projectsRef);
 
-  const activateWorktreeBound = (worktreeId: string | null): void =>
-    activateWorktree(
+  const activateWorkspaceBound = (workspaceId: string | null): void =>
+    activateWorkspace(
       {
         projectsRef: deps.projectsRef,
         syncProjectsToState: deps.syncProjectsToState,
@@ -43,7 +43,7 @@ export function useWorktreeOperations(
         watchProjectForBridge: deps.watchProjectForBridge,
         unwatchProjectForBridge: deps.unwatchProjectForBridge,
       },
-      worktreeId,
+      workspaceId,
     );
 
   const refreshDeps = {
@@ -59,17 +59,17 @@ export function useWorktreeOperations(
     syncProjectsToState: deps.syncProjectsToState,
     persistProjects: deps.persistProjects,
     setActiveProjectById: deps.setActiveProjectById,
-    activateWorktree: activateWorktreeBound,
+    activateWorkspace: activateWorkspaceBound,
   };
 
-  const dismissPendingWorktreeBound = (worktreeId: string): void =>
-    dismissPendingWorktree(
+  const dismissPendingWorkspaceBound = (workspaceId: string): void =>
+    dismissPendingWorkspace(
       {
         projectsRef: deps.projectsRef,
         persistProjects: deps.persistProjects,
         lookups,
       },
-      worktreeId,
+      workspaceId,
     );
 
   return {
@@ -81,7 +81,7 @@ export function useWorktreeOperations(
           persistProjects: deps.persistProjects,
           scheduleProjectsSave: deps.scheduleProjectsSave,
           onFirstExpand: (id) => {
-            void refreshProjectWorktrees(refreshDeps, id);
+            void refreshProjectWorkspaces(refreshDeps, id);
           },
         },
         projectId,
@@ -96,15 +96,15 @@ export function useWorktreeOperations(
         projectId,
         iconUrl,
       ),
-    refreshProjectWorktrees: (projectId) =>
-      refreshProjectWorktrees(refreshDeps, projectId),
-    activateWorktree: activateWorktreeBound,
-    createWorktreeForProject: (projectId) =>
-      createWorktreeForProject(gitDeps, projectId),
-    createWorktreeWithParams: (opts) =>
-      createWorktreeWithParams(gitDeps, opts),
-    removeWorktreeById: (worktreeId, opts) =>
-      removeWorktreeById(
+    refreshProjectWorkspaces: (projectId) =>
+      refreshProjectWorkspaces(refreshDeps, projectId),
+    activateWorkspace: activateWorkspaceBound,
+    createWorkspaceForProject: (projectId) =>
+      createWorkspaceForProject(gitDeps, projectId),
+    createWorkspaceWithParams: (opts) =>
+      createWorkspaceWithParams(gitDeps, opts),
+    removeWorkspaceById: (workspaceId, opts) =>
+      removeWorkspaceById(
         {
           projectsRef: deps.projectsRef,
           lookups,
@@ -115,27 +115,27 @@ export function useWorktreeOperations(
             tabBucketsRef: deps.tabBucketsRef,
             syncRecentSessionsToState: deps.syncRecentSessionsToState,
             closeTabNow: deps.closeTabNow,
-            activateWorktree: activateWorktreeBound,
+            activateWorkspace: activateWorkspaceBound,
           },
-          worktreePrompts: deps.worktreePrompts,
+          workspacePrompts: deps.workspacePrompts,
         },
-        worktreeId,
+        workspaceId,
         opts,
       ),
-    dismissPendingWorktree: dismissPendingWorktreeBound,
-    retryPendingWorktree: (worktreeId) =>
-      retryPendingWorktree(
-        { ...gitDeps, dismissPendingWorktree: dismissPendingWorktreeBound },
-        worktreeId,
+    dismissPendingWorkspace: dismissPendingWorkspaceBound,
+    retryPendingWorkspace: (workspaceId) =>
+      retryPendingWorkspace(
+        { ...gitDeps, dismissPendingWorkspace: dismissPendingWorkspaceBound },
+        workspaceId,
       ),
-    renameWorktree: (worktreeId, label) =>
-      renameWorktree(
+    renameWorkspace: (workspaceId, label) =>
+      renameWorkspace(
         {
           projectsRef: deps.projectsRef,
           persistProjects: deps.persistProjects,
           lookups,
         },
-        worktreeId,
+        workspaceId,
         label,
       ),
     fetchBranches: (projectId) => fetchBranches({ lookups }, projectId),
@@ -148,8 +148,8 @@ export function useWorktreeOperations(
         projectId,
         label,
       ),
-    setProjectWorktreeBaseBranch: (projectId, baseBranch) =>
-      setProjectWorktreeBaseBranch(
+    setProjectWorkspaceBaseBranch: (projectId, baseBranch) =>
+      setProjectWorkspaceBaseBranch(
         {
           projectsRef: deps.projectsRef,
           persistProjects: deps.persistProjects,
@@ -157,19 +157,19 @@ export function useWorktreeOperations(
         projectId,
         baseBranch,
       ),
-    reorderWorktree: (projectId, worktreeId, toIndex) =>
-      reorderWorktree(
+    reorderWorkspace: (projectId, workspaceId, toIndex) =>
+      reorderWorkspace(
         {
           projectsRef: deps.projectsRef,
           syncProjectsToState: deps.syncProjectsToState,
           persistProjects: deps.persistProjects,
         },
         projectId,
-        worktreeId,
+        workspaceId,
         toIndex,
       ),
-    sortProjectWorktreesNewest: (projectId) =>
-      sortProjectWorktreesNewest(
+    sortProjectWorkspacesNewest: (projectId) =>
+      sortProjectWorkspacesNewest(
         {
           projectsRef: deps.projectsRef,
           syncProjectsToState: deps.syncProjectsToState,
@@ -177,6 +177,6 @@ export function useWorktreeOperations(
         },
         projectId,
       ),
-    findProjectOfWorktree: lookups.findProjectOfWorktree,
+    findProjectOfWorkspace: lookups.findProjectOfWorkspace,
   };
 }

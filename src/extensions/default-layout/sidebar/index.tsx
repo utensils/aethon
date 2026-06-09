@@ -4,7 +4,7 @@
  *
  * The render shell composes three units extracted from the original
  * god-file: `useSidebarContextMenu` owns the right-click menu state +
- * project/worktree/session/extension handlers; `useSidebarResize` owns
+ * project/workspace/session/extension handlers; `useSidebarResize` owns
  * the drag handle; `composeSidebarSections` and `resolveSidebarItems`
  * own the section/items derivation (extension auto-injection, extra
  * sections, $ref resolution). `buildSidebarMenuItems` /
@@ -23,7 +23,7 @@ import { isMacOS } from "../../../utils/platform";
 import { onWindowDragMouseDown } from "../../../utils/windowDrag";
 import { ContextMenu } from "../../../components/primitives/context-menu";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
-import { WorktreeRow, type WorktreeSidebarItem } from "./worktree-row";
+import { WorkspaceRow, type WorkspaceSidebarItem } from "./workspace-row";
 import { AeWordmark } from "../layout";
 import { HostGroup, type HostGroupItem } from "./host-group";
 import { ItemRow } from "./item-row";
@@ -61,7 +61,7 @@ export function Sidebar({
     /** When true, render an inline AeMark monogram before the title. */
     brandMark?: BooleanValue;
     /** When true, group the `projects` section under host node(s) — the
-     *  top tier of the host → project → worktree hierarchy. Each host is
+     *  top tier of the host → project → workspace hierarchy. Each host is
      *  a collapsible header; the active host owns the project list. The
      *  default workstation layout sets this; generic sidebars omit it and
      *  render `projects` as a plain top-level section. */
@@ -90,17 +90,17 @@ export function Sidebar({
     normalizedResizeEdge === "left" ? "left" : "right";
   const resizeFromLeft = resizeEdge === "left";
 
-  const [renamingWorktreeId, setRenamingWorktreeId] = useState<string | null>(
+  const [renamingWorkspaceId, setRenamingWorkspaceId] = useState<string | null>(
     null,
   );
   const menu = useSidebarContextMenu({
     state,
     onEvent,
-    beginWorktreeRename: setRenamingWorktreeId,
+    beginWorkspaceRename: setRenamingWorkspaceId,
   });
-  const handleRenameWorktreeEnd = useCallback((worktreeId: string) => {
-    setRenamingWorktreeId((current) =>
-      current === worktreeId ? null : current,
+  const handleRenameWorkspaceEnd = useCallback((workspaceId: string) => {
+    setRenamingWorkspaceId((current) =>
+      current === workspaceId ? null : current,
     );
   }, []);
   const { asideRef, onResizeStart } = useSidebarResize({
@@ -179,9 +179,9 @@ export function Sidebar({
         onEvent={onEvent}
         renderChildWithState={renderChildWithState}
         openItemContextMenu={menu.openItemContextMenu}
-        openWorktreeContextMenu={menu.openWorktreeContextMenu}
-        renamingWorktreeId={renamingWorktreeId}
-        onRenameWorktreeEnd={handleRenameWorktreeEnd}
+        openWorkspaceContextMenu={menu.openWorkspaceContextMenu}
+        renamingWorkspaceId={renamingWorkspaceId}
+        onRenameWorkspaceEnd={handleRenameWorkspaceEnd}
       />
     );
   };
@@ -289,15 +289,15 @@ interface SidebarSectionBlockProps {
   openItemContextMenu: ReturnType<
     typeof useSidebarContextMenu
   >["openItemContextMenu"];
-  openWorktreeContextMenu: ReturnType<
+  openWorkspaceContextMenu: ReturnType<
     typeof useSidebarContextMenu
-  >["openWorktreeContextMenu"];
-  renamingWorktreeId: string | null;
-  onRenameWorktreeEnd: (worktreeId: string) => void;
+  >["openWorkspaceContextMenu"];
+  renamingWorkspaceId: string | null;
+  onRenameWorkspaceEnd: (workspaceId: string) => void;
 }
 
 /** Plain (non-searchable) section block. Renders the title, the row
- *  list (with extension toggle / worktree disclosure / projects-slot
+ *  list (with extension toggle / workspace disclosure / projects-slot
  *  alignment), and the trailing action row. Pulled out of Sidebar so
  *  the map callback stays at one screen. */
 function SidebarSectionBlock({
@@ -309,22 +309,22 @@ function SidebarSectionBlock({
   onEvent,
   renderChildWithState,
   openItemContextMenu,
-  openWorktreeContextMenu,
-  renamingWorktreeId,
-  onRenameWorktreeEnd,
+  openWorkspaceContextMenu,
+  renamingWorkspaceId,
+  onRenameWorkspaceEnd,
 }: SidebarSectionBlockProps) {
-  const [draggingWorktreeId, setDraggingWorktreeId] = useState<string | null>(
+  const [draggingWorkspaceId, setDraggingWorkspaceId] = useState<string | null>(
     null,
   );
   const [dropIndicator, setDropIndicator] = useState<{
-    worktreeId: string;
+    workspaceId: string;
     side: "before" | "after";
   } | null>(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
   const pendingPointerDragRef = useRef<{
     projectId: string;
-    worktreeId: string;
+    workspaceId: string;
     startX: number;
     startY: number;
     dragging: boolean;
@@ -336,32 +336,32 @@ function SidebarSectionBlock({
   const isExtensionsSection =
     section.id === "extensions" || section.id === "extensions-user";
 
-  const finishWorktreeDrag = () => {
-    setDraggingWorktreeId(null);
+  const finishWorkspaceDrag = () => {
+    setDraggingWorkspaceId(null);
     setDropIndicator(null);
     setDragOffsetY(0);
   };
 
-  const worktreeElementsForDrop = (
+  const workspaceElementsForDrop = (
     root: HTMLElement,
     projectId: string,
-    draggedWorktreeId: string,
+    draggedWorkspaceId: string,
   ) =>
     Array.from(
-      root.querySelectorAll<HTMLElement>(".ae-worktree-row[data-worktree-id]"),
+      root.querySelectorAll<HTMLElement>(".ae-workspace-row[data-workspace-id]"),
     ).filter(
       (el) =>
         el.dataset.projectId === projectId &&
-        el.dataset.worktreeId !== draggedWorktreeId,
+        el.dataset.workspaceId !== draggedWorkspaceId,
     );
 
-  const insertionIndexForWorktreeDrop = (
+  const insertionIndexForWorkspaceDrop = (
     root: HTMLElement,
     projectId: string,
-    draggedWorktreeId: string,
+    draggedWorkspaceId: string,
     clientY: number,
   ) => {
-    const rows = worktreeElementsForDrop(root, projectId, draggedWorktreeId);
+    const rows = workspaceElementsForDrop(root, projectId, draggedWorkspaceId);
     for (let index = 0; index < rows.length; index += 1) {
       const rect = rows[index].getBoundingClientRect();
       if (clientY < rect.top + rect.height / 2) return index;
@@ -369,13 +369,13 @@ function SidebarSectionBlock({
     return rows.length;
   };
 
-  const showWorktreeDropIndicator = (
+  const showWorkspaceDropIndicator = (
     root: HTMLElement,
     projectId: string,
-    draggedWorktreeId: string,
+    draggedWorkspaceId: string,
     clientY: number,
   ) => {
-    const rows = worktreeElementsForDrop(root, projectId, draggedWorktreeId);
+    const rows = workspaceElementsForDrop(root, projectId, draggedWorkspaceId);
     if (rows.length === 0) {
       setDropIndicator(null);
       return;
@@ -383,13 +383,13 @@ function SidebarSectionBlock({
     for (const row of rows) {
       const rect = row.getBoundingClientRect();
       if (clientY < rect.top + rect.height / 2) {
-        const worktreeId = row.dataset.worktreeId;
-        if (worktreeId) setDropIndicator({ worktreeId, side: "before" });
+        const workspaceId = row.dataset.workspaceId;
+        if (workspaceId) setDropIndicator({ workspaceId, side: "before" });
         return;
       }
     }
-    const worktreeId = rows[rows.length - 1].dataset.worktreeId;
-    if (worktreeId) setDropIndicator({ worktreeId, side: "after" });
+    const workspaceId = rows[rows.length - 1].dataset.workspaceId;
+    if (workspaceId) setDropIndicator({ workspaceId, side: "after" });
   };
 
   const clearSuppressionSoon = () => {
@@ -414,9 +414,9 @@ function SidebarSectionBlock({
     [],
   );
 
-  const startWorktreeDrag = (
+  const startWorkspaceDrag = (
     event: React.PointerEvent<HTMLElement>,
-    item: WorktreeSidebarItem,
+    item: WorkspaceSidebarItem,
   ) => {
     if (!isProjects || item.isMain || event.button !== 0) return;
     if (!item.projectId) return;
@@ -424,7 +424,7 @@ function SidebarSectionBlock({
     if (
       target.closest("button") ||
       target.closest("input") ||
-      target.closest(".ae-worktree-rename-input")
+      target.closest(".ae-workspace-rename-input")
     ) {
       return;
     }
@@ -433,7 +433,7 @@ function SidebarSectionBlock({
     pointerCleanupRef.current?.();
     pendingPointerDragRef.current = {
       projectId: item.projectId,
-      worktreeId: item.id,
+      workspaceId: item.id,
       startX: event.clientX,
       startY: event.clientY,
       dragging: false,
@@ -448,14 +448,14 @@ function SidebarSectionBlock({
       if (!pending.dragging) {
         pending.dragging = true;
         suppressNextClickRef.current = true;
-        setDraggingWorktreeId(pending.worktreeId);
+        setDraggingWorkspaceId(pending.workspaceId);
       }
       moveEvent.preventDefault();
       setDragOffsetY(dy);
-      showWorktreeDropIndicator(
+      showWorkspaceDropIndicator(
         root,
         pending.projectId,
-        pending.worktreeId,
+        pending.workspaceId,
         moveEvent.clientY,
       );
     };
@@ -465,16 +465,16 @@ function SidebarSectionBlock({
       const wasDragging = pending?.dragging;
       if (pending && wasDragging) {
         upEvent.preventDefault();
-        const toIndex = insertionIndexForWorktreeDrop(
+        const toIndex = insertionIndexForWorkspaceDrop(
           root,
           pending.projectId,
-          pending.worktreeId,
+          pending.workspaceId,
           upEvent.clientY,
         );
-        onEvent("reorder-worktree", {
+        onEvent("reorder-workspace", {
           sectionId: section.id,
           projectId: pending.projectId,
-          worktreeId: pending.worktreeId,
+          workspaceId: pending.workspaceId,
           toIndex,
         });
       }
@@ -482,7 +482,7 @@ function SidebarSectionBlock({
       pointerCleanupRef.current = null;
       pendingPointerDragRef.current = null;
       if (wasDragging) clearSuppressionSoon();
-      finishWorktreeDrag();
+      finishWorkspaceDrag();
     };
 
     document.addEventListener("pointermove", onMove);
@@ -493,7 +493,7 @@ function SidebarSectionBlock({
     };
   };
 
-  const consumeSuppressedWorktreeClick = () => {
+  const consumeSuppressedWorkspaceClick = () => {
     if (!suppressNextClickRef.current) return false;
     suppressNextClickRef.current = false;
     return true;
@@ -517,11 +517,11 @@ function SidebarSectionBlock({
           {items.map((item, idx) => {
             const projectItem = isProjects
               ? (item as unknown as {
-                  worktrees?: WorktreeSidebarItem[];
+                  workspaces?: WorkspaceSidebarItem[];
                   expanded?: boolean;
                 })
               : null;
-            const worktrees = projectItem?.worktrees;
+            const workspaces = projectItem?.workspaces;
             const expanded = projectItem?.expanded === true;
             // Inline toggle for extension rows — quick on/off without
             // diving into the right-click menu. The context menu stays
@@ -557,20 +557,20 @@ function SidebarSectionBlock({
                 }}
               />
             ) : undefined;
-            // Only show the disclosure when there are EXTRA worktrees
+            // Only show the disclosure when there are EXTRA workspaces
             // beyond the main one — every git repo returns ≥1 entry
             // (the project's primary checkout), so a 1-element list is
-            // "no extra worktrees" and the chevron is meaningless.
-            // Surface the chevron only when worktrees.length > 1.
-            const hasExtraWorktrees = !!worktrees && worktrees.length > 1;
-            const extraWorktrees = hasExtraWorktrees
-              ? worktrees.filter((w) => !w.isMain)
+            // "no extra workspaces" and the chevron is meaningless.
+            // Surface the chevron only when workspaces.length > 1.
+            const hasExtraWorkspaces = !!workspaces && workspaces.length > 1;
+            const extraWorkspaces = hasExtraWorkspaces
+              ? workspaces.filter((w) => !w.isMain)
               : [];
             return (
               <Fragment key={item.id}>
                 <ItemRow
                   item={
-                    hasExtraWorktrees
+                    hasExtraWorkspaces
                       ? {
                           ...item,
                           componentType: undefined,
@@ -586,14 +586,14 @@ function SidebarSectionBlock({
                   renderChildWithState={renderChildWithState}
                   state={state}
                   disclosure={
-                    hasExtraWorktrees
+                    hasExtraWorkspaces
                       ? expanded
                         ? "expanded"
                         : "collapsed"
                       : undefined
                   }
                   onToggleDisclosure={
-                    hasExtraWorktrees
+                    hasExtraWorkspaces
                       ? () =>
                           onEvent(
                             "toggle-project-expand",
@@ -604,7 +604,7 @@ function SidebarSectionBlock({
                   }
                   // Reserve chevron + dirty-dot slots across every row in
                   // the projects section so labels align regardless of
-                  // which rows happen to have worktrees or uncommitted
+                  // which rows happen to have workspaces or uncommitted
                   // changes.
                   alignSlots={isProjects}
                   // Projects render as two-line cards (name over a git
@@ -612,25 +612,25 @@ function SidebarSectionBlock({
                   stacked={isProjects}
                   trailingControl={trailingControl}
                 />
-                {hasExtraWorktrees && expanded
-                  ? extraWorktrees.map((wt) => (
-                      <WorktreeRow
+                {hasExtraWorkspaces && expanded
+                  ? extraWorkspaces.map((wt) => (
+                      <WorkspaceRow
                         key={wt.id}
                         item={wt}
                         sectionId={section.id}
                         onEvent={onEvent}
-                        onItemContextMenu={openWorktreeContextMenu}
-                        renaming={renamingWorktreeId === wt.id}
-                        onRenameEnd={onRenameWorktreeEnd}
-                        dragging={draggingWorktreeId === wt.id}
+                        onItemContextMenu={openWorkspaceContextMenu}
+                        renaming={renamingWorkspaceId === wt.id}
+                        onRenameEnd={onRenameWorkspaceEnd}
+                        dragging={draggingWorkspaceId === wt.id}
                         dropSide={
-                          dropIndicator?.worktreeId === wt.id
+                          dropIndicator?.workspaceId === wt.id
                             ? dropIndicator.side
                             : undefined
                         }
                         dragOffsetY={dragOffsetY}
-                        onPointerDragStart={startWorktreeDrag}
-                        consumeSuppressedClick={consumeSuppressedWorktreeClick}
+                        onPointerDragStart={startWorkspaceDrag}
+                        consumeSuppressedClick={consumeSuppressedWorkspaceClick}
                       />
                     ))
                   : null}

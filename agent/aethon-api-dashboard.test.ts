@@ -48,7 +48,7 @@ describe("buildTasksApi", () => {
     const p = tasks.start({
       projectPath: "/repo",
       prompt: "build it",
-      newWorktree: true,
+      newWorkspace: true,
       model: "openai/gpt-5",
       bridgePrompt: "hidden context",
     });
@@ -59,7 +59,7 @@ describe("buildTasksApi", () => {
       args: {
         projectPath: "/repo",
         prompt: "build it",
-        newWorktree: true,
+        newWorkspace: true,
         model: "openai/gpt-5",
         bridgePrompt: "hidden context",
       },

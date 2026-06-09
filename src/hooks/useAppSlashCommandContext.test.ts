@@ -25,8 +25,8 @@ function makeProjects(): ProjectsState {
       },
     ],
     activeId: "project-1",
-    activeWorktreeId: null,
-    worktreesByProject: {},
+    activeWorkspaceId: null,
+    workspacesByProject: {},
     activeHostId: null,
   };
 }

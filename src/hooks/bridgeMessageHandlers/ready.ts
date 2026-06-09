@@ -498,7 +498,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // different cwd. Otherwise a ready -> set_project -> ready loop can
   // monopolize the release app and blank the webview.
   const projectActivePath = activeCwd(ctx.projectsRef.current);
-  const activePath = ctx.projectsRef.current.activeWorktreeId
+  const activePath = ctx.projectsRef.current.activeWorkspaceId
     ? projectActivePath
     : (priorActiveTabCwd ?? projectActivePath);
   if (activePath && currentProjectCwd !== activePath) {

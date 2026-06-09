@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { _POOL_SIZE_FOR_TESTS, pickWorktreeName } from "./worktreeNames";
+import { _POOL_SIZE_FOR_TESTS, pickWorkspaceName } from "./workspaceNames";
 
-describe("pickWorktreeName", () => {
+describe("pickWorkspaceName", () => {
   it("returns a feat/<name> from the helios pool", () => {
-    const picked = pickWorktreeName([]);
+    const picked = pickWorkspaceName([]);
     expect(picked.startsWith("feat/")).toBe(true);
     expect(picked.length).toBeGreaterThan("feat/".length);
   });
@@ -12,7 +12,7 @@ describe("pickWorktreeName", () => {
   it("avoids names already in taken (with or without prefix)", () => {
     const taken = ["feat/helios", "phaethon", "feat/orion"];
     for (let i = 0; i < 30; i++) {
-      const picked = pickWorktreeName(taken);
+      const picked = pickWorkspaceName(taken);
       expect(picked).not.toBe("feat/helios");
       expect(picked).not.toBe("feat/phaethon");
       expect(picked).not.toBe("feat/orion");
@@ -60,7 +60,7 @@ describe("pickWorktreeName", () => {
       "feat/antares",
       "feat/polaris",
     ];
-    const picked = pickWorktreeName(taken);
+    const picked = pickWorkspaceName(taken);
     expect(picked.startsWith("feat/")).toBe(true);
     // After full exhaustion, every result should carry a `-N` suffix.
     expect(picked).toMatch(/-\d+$/);

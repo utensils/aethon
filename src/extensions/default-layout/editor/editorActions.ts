@@ -43,7 +43,7 @@ export interface EditorActionsDeps {
   getEditor: () => monaco.editor.IStandaloneCodeEditor | null;
   /** Current buffer's on-disk path (project-relative root anchor below). */
   getFilePath: () => string;
-  /** Active project / worktree root for relative-path + reveal. */
+  /** Active project / workspace root for relative-path + reveal. */
   getRoot: () => string;
   /** Active editor tab id, for close routing. */
   getTabId: () => string;

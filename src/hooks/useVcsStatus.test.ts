@@ -36,6 +36,7 @@ function emitGitStateChanged(root: string) {
 }
 
 import { useVcsStatus, type VcsSlice } from "./useVcsStatus";
+import { __TEST__ as vcsCacheTest } from "../vcsSliceCache";
 
 /** A setState double that applies the functional-update form and records
  *  the latest `/vcs` slice the hook wrote. */
@@ -57,6 +58,7 @@ beforeEach(() => {
   checksMock.mockReset();
   listenMock.mockClear();
   gitEventHandlers.length = 0;
+  vcsCacheTest.reset();
 });
 
 describe("useVcsStatus", () => {
@@ -89,7 +91,7 @@ describe("useVcsStatus", () => {
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [
         {
           number: 9,
@@ -170,7 +172,7 @@ describe("useVcsStatus", () => {
       ghAvailable: false,
       repo: null,
       pushed: false,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [],
     });
     checksMock.mockResolvedValue({
@@ -198,6 +200,55 @@ describe("useVcsStatus", () => {
     expect(h.vcs()?.loading).toBe(false);
   });
 
+  it("paints the cached slice instantly when switching back to a seen workspace", async () => {
+    // Warm-switch regression: A -> B -> A must NOT reset /vcs to the empty
+    // loading shell for A; the last settled slice paints (loading: true)
+    // while the background tick reconciles.
+    invokeMock.mockImplementation(
+      (cmd: string, args: { path?: string; root?: string }) => {
+        const root = args?.path ?? args?.root;
+        if (cmd === "git_status") {
+          return Promise.resolve({
+            branch: root === "/a" ? "branch-a" : "branch-b",
+            ahead: 0,
+            behind: 0,
+            dirty: false,
+          });
+        }
+        if (cmd === "git_file_status") return Promise.resolve([]);
+        return Promise.resolve(null);
+      },
+    );
+    branchMock.mockResolvedValue({
+      ghAvailable: false,
+      repo: null,
+      pushed: false,
+      workspaceBroken: false,
+      prs: [],
+    });
+    checksMock.mockResolvedValue(null);
+
+    const h = makeSetState();
+    const { rerender } = renderHook(
+      ({ root }: { root: string }) =>
+        useVcsStatus({ activeRoot: root, setState: h.setState }),
+      { initialProps: { root: "/a" } },
+    );
+    await waitFor(() => expect(h.vcs()?.branch).toBe("branch-a"));
+
+    rerender({ root: "/b" });
+    await waitFor(() => expect(h.vcs()?.branch).toBe("branch-b"));
+
+    // Make A's refresh hang so we can observe the synchronous warm paint.
+    invokeMock.mockImplementation(() => new Promise(() => {}));
+    rerender({ root: "/a" });
+
+    const warm = h.vcs()!;
+    expect(warm.root).toBe("/a");
+    expect(warm.branch).toBe("branch-a"); // cached, not the empty shell
+    expect(warm.loading).toBe(true); // reconcile in flight
+  });
+
   it("treats a 'none' CI conclusion as no CI signal", async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_status"
@@ -208,7 +259,7 @@ describe("useVcsStatus", () => {
       ghAvailable: true,
       repo: "owner/repo",
       pushed: true,
-      worktreeBroken: false,
+      workspaceBroken: false,
       prs: [],
     });
     checksMock.mockResolvedValue({

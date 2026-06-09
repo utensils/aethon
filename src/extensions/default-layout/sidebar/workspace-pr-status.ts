@@ -1,15 +1,15 @@
 import type { GhBranchStatus, GhPr } from "../../../ghBranchStatusCache";
 import type { GhChecks } from "../../../ghChecksCache";
 
-export type WorktreePrKind = "open" | "draft" | "merged" | "closed" | "stale";
-export type WorktreeCiKind = "success" | "failure" | "pending" | "neutral";
+export type WorkspacePrKind = "open" | "draft" | "merged" | "closed" | "stale";
+export type WorkspaceCiKind = "success" | "failure" | "pending" | "neutral";
 
-export interface WorktreePrChip {
-  kind: WorktreePrKind;
+export interface WorkspacePrChip {
+  kind: WorkspacePrKind;
   label: string;
   title: string;
   url?: string;
-  ci?: WorktreeCiKind;
+  ci?: WorkspaceCiKind;
 }
 
 function pickPr(prs: GhPr[]): GhPr | null {
@@ -17,7 +17,7 @@ function pickPr(prs: GhPr[]): GhPr | null {
   return prs.find((p) => p.state?.toUpperCase() === "OPEN") ?? prs[0];
 }
 
-function ciKind(checks: GhChecks | null | undefined): WorktreeCiKind | undefined {
+function ciKind(checks: GhChecks | null | undefined): WorkspaceCiKind | undefined {
   if (!checks?.ghAvailable || !checks.conclusion || checks.conclusion === "none") {
     return undefined;
   }
@@ -32,16 +32,16 @@ function ciKind(checks: GhChecks | null | undefined): WorktreeCiKind | undefined
   return undefined;
 }
 
-export function summarizeWorktreePrStatus(
+export function summarizeWorkspacePrStatus(
   status: GhBranchStatus | null | undefined,
   checks?: GhChecks | null,
-): WorktreePrChip | null {
+): WorkspacePrChip | null {
   if (!status) return null;
-  if (status.worktreeBroken) {
+  if (status.workspaceBroken) {
     return {
       kind: "stale",
       label: "stale",
-      title: "Worktree metadata is stale. Git no longer tracks this checkout.",
+      title: "Workspace metadata is stale. Git no longer tracks this checkout.",
     };
   }
   if (!status.ghAvailable || !status.repo) return null;
@@ -49,7 +49,7 @@ export function summarizeWorktreePrStatus(
   if (!pr) return null;
 
   const open = pr.state?.toUpperCase() === "OPEN";
-  const kind: WorktreePrKind = pr.merged
+  const kind: WorkspacePrKind = pr.merged
     ? "merged"
     : pr.isDraft && open
       ? "draft"

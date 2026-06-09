@@ -175,7 +175,7 @@ describe("useDerivedRenderState", () => {
     expect(result.current.renderState.agentTabActive).toBe(true);
   });
 
-  it("builds the active project dashboard from matching sessions and worktrees", () => {
+  it("builds the active project dashboard from matching sessions and workspaces", () => {
     const { result } = renderHook(() =>
       useDerivedRenderState({
         state: {
@@ -187,7 +187,7 @@ describe("useDerivedRenderState", () => {
             projects: [
               {
                 id: "p1",
-                worktrees: [{ id: "wt-1", path: "/repo/app-fix" }],
+                workspaces: [{ id: "wt-1", path: "/repo/app-fix" }],
               },
             ],
           },
@@ -204,13 +204,13 @@ describe("useDerivedRenderState", () => {
     expect(result.current.renderState.emptyAndProject).toBe(true);
     expect(result.current.renderState.projectDashboard).toMatchObject({
       otherProjects: [{ id: "p2" }],
-      worktrees: [{ id: "wt-1", path: "/repo/app-fix" }],
+      workspaces: [{ id: "wt-1", path: "/repo/app-fix" }],
       recentSessions: [{ id: "s1", cwd: "/repo/app/" }],
       widgets: [],
     });
   });
 
-  it("keeps worktree sessions visible on the project dashboard", () => {
+  it("keeps workspace sessions visible on the project dashboard", () => {
     const { result } = renderHook(() =>
       useDerivedRenderState({
         state: {
@@ -222,13 +222,13 @@ describe("useDerivedRenderState", () => {
             projects: [
               {
                 id: "p1",
-                worktrees: [{ id: "wt-1", path: "/repo/app-fix" }],
+                workspaces: [{ id: "wt-1", path: "/repo/app-fix" }],
               },
             ],
           },
           recentSessions: [
             { id: "main", cwd: "/repo/app" },
-            { id: "worktree", cwd: "/repo/app-fix/" },
+            { id: "workspace", cwd: "/repo/app-fix/" },
             { id: "other", cwd: "/repo/other" },
           ],
         },
@@ -240,7 +240,7 @@ describe("useDerivedRenderState", () => {
     expect(result.current.renderState.projectDashboard).toMatchObject({
       recentSessions: [
         { id: "main", cwd: "/repo/app" },
-        { id: "worktree", cwd: "/repo/app-fix/" },
+        { id: "workspace", cwd: "/repo/app-fix/" },
       ],
     });
   });
@@ -250,7 +250,7 @@ describe("useDerivedRenderState", () => {
       ...makeEmptyTab("m", "m", "p1", "agent"),
       cwd: "/repo/app",
     };
-    // Background worktree session lives in a stashed bucket (mirrored into
+    // Background workspace session lives in a stashed bucket (mirrored into
     // state.persistedTabBuckets), not state.tabs.
     const bgTab = {
       ...makeEmptyTab("w", "w", "p1", "agent"),
@@ -261,16 +261,16 @@ describe("useDerivedRenderState", () => {
         state: {
           tabs: [mainTab],
           activeTabId: "m",
-          // bucket-independent running set: the backgrounded worktree turn.
+          // bucket-independent running set: the backgrounded workspace turn.
           agentRunningTabs: { w: true },
           persistedTabBuckets: {
-            "p1::worktree::wt-1": { tabs: [bgTab], activeTabId: "w" },
+            "p1::workspace::wt-1": { tabs: [bgTab], activeTabId: "w" },
           },
           sidebar: {
             projects: [
               {
                 id: "p1",
-                worktrees: [
+                workspaces: [
                   { id: "wt-main", path: "/repo/app", isMain: true },
                   { id: "wt-1", path: "/repo/app-fix" },
                 ],
@@ -288,20 +288,20 @@ describe("useDerivedRenderState", () => {
         projects: {
           agent: { status: string };
           agentRollup: { status: string };
-          worktrees: { id: string; agent?: { status: string } }[];
+          workspaces: { id: string; agent?: { status: string } }[];
         }[];
       }
     ).projects;
     // Main scope has an idle session (mainTab is not running).
     expect(projects[0].agent.status).toBe("idle-with-session");
-    // The worktree row reports "running" even though its tab is stashed —
+    // The workspace row reports "running" even though its tab is stashed —
     // liveness comes from the running set, not the bucket's stale waiting.
-    const wt1 = projects[0].worktrees.find((w) => w.id === "wt-1");
+    const wt1 = projects[0].workspaces.find((w) => w.id === "wt-1");
     expect(wt1?.agent?.status).toBe("running");
-    // Rollup is running (a worktree turn is in flight).
+    // Rollup is running (a workspace turn is in flight).
     expect(projects[0].agentRollup.status).toBe("running");
-    // The main worktree row stays dot-free (activity shown on project line).
-    const wtMain = projects[0].worktrees.find((w) => w.id === "wt-main");
+    // The main workspace row stays dot-free (activity shown on project line).
+    const wtMain = projects[0].workspaces.find((w) => w.id === "wt-main");
     expect(wtMain && "agent" in wtMain).toBe(false);
   });
 
@@ -324,7 +324,7 @@ describe("useDerivedRenderState", () => {
             projects: [
               {
                 id: "p1",
-                worktrees: [{ id: "wt-main", path: "/repo/app", isMain: true }],
+                workspaces: [{ id: "wt-main", path: "/repo/app", isMain: true }],
               },
             ],
           },
@@ -372,7 +372,7 @@ describe("useDerivedRenderState", () => {
             projects: [
               {
                 id: "p1",
-                worktrees: [{ id: "wt-main", path: "/repo/app", isMain: true }],
+                workspaces: [{ id: "wt-main", path: "/repo/app", isMain: true }],
               },
             ],
           },

@@ -16,30 +16,30 @@ describe("useTabBucketHydration", () => {
     renderHook(() =>
       useTabBucketHydration(
         {
-          "P::worktree::A": { tabs: [bucketTab("a1")], activeTabId: "a1" },
+          "P::workspace::A": { tabs: [bucketTab("a1")], activeTabId: "a1" },
         },
         ref,
       ),
     );
-    expect(ref.current.get("P::worktree::A")?.activeTabId).toBe("a1");
-    expect(ref.current.get("P::worktree::A")?.tabs.map((t) => t.id)).toEqual([
+    expect(ref.current.get("P::workspace::A")?.activeTabId).toBe("a1");
+    expect(ref.current.get("P::workspace::A")?.tabs.map((t) => t.id)).toEqual([
       "a1",
     ]);
   });
 
   it("never clobbers a bucket the session already populated", () => {
     const live: TabBucket = { tabs: [bucketTab("live")], activeTabId: "live" };
-    const ref = { current: new Map<string, TabBucket>([["P::worktree::A", live]]) };
+    const ref = { current: new Map<string, TabBucket>([["P::workspace::A", live]]) };
     renderHook(() =>
       useTabBucketHydration(
         {
-          "P::worktree::A": { tabs: [bucketTab("stale")], activeTabId: "stale" },
+          "P::workspace::A": { tabs: [bucketTab("stale")], activeTabId: "stale" },
         },
         ref,
       ),
     );
     // Live bucket wins over the disk snapshot.
-    expect(ref.current.get("P::worktree::A")?.activeTabId).toBe("live");
+    expect(ref.current.get("P::workspace::A")?.activeTabId).toBe("live");
   });
 
   it("ignores empty / missing snapshots", () => {
@@ -47,7 +47,7 @@ describe("useTabBucketHydration", () => {
     renderHook(() => useTabBucketHydration(undefined, ref));
     renderHook(() => useTabBucketHydration({}, ref));
     renderHook(() =>
-      useTabBucketHydration({ "P::worktree::A": { tabs: [] } }, ref),
+      useTabBucketHydration({ "P::workspace::A": { tabs: [] } }, ref),
     );
     expect(ref.current.size).toBe(0);
   });

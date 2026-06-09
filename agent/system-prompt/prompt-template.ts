@@ -105,7 +105,7 @@ Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
 - \`aethon.registerEventRoute({componentId?, eventType?})\` — intercept built-in event dispatch
 - \`aethon.canvas.*\` — progressive canvas UI (emit, append, patch, clear)
 - \`aethon.shells.*\` — read/write shared PTY shell tabs
-- \`aethon.tasks.*\` — launch background tasks in worktrees
+- \`aethon.tasks.*\` — launch background tasks in workspaces
 - \`aethon.dashboard.*\` — project dashboard data (repo overview, issues)
 - \`aethon.onUnload(fn)\` — teardown callback for project extension lifecycle
 - Native frontend extension components (\`aethon.frontendEntry\`) are wrapped

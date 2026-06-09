@@ -10,13 +10,13 @@ describe("devshell terminal seed helpers", () => {
     const state = {
       devshell: {
         entries: {
-          "/worktrees/nyc": { state: "resolving" },
+          "/workspaces/nyc": { state: "resolving" },
         },
       },
     };
 
-    expect(devshellNeedsPreparation(state, "/worktrees/nyc/feature")).toBe(true);
-    expect(initialDevshellTerminalBuffer(state, "/worktrees/nyc/feature")).toBe(
+    expect(devshellNeedsPreparation(state, "/workspaces/nyc/feature")).toBe(true);
+    expect(initialDevshellTerminalBuffer(state, "/workspaces/nyc/feature")).toBe(
       "[devshell] Preparing Nix devshell for this workspace...\r\n",
     );
   });
@@ -25,17 +25,17 @@ describe("devshell terminal seed helpers", () => {
     const state = {
       devshell: {
         entries: {
-          "/worktrees/nyc": { state: "resolving" },
-          "/worktrees/nyc/feature": { state: "ready" },
+          "/workspaces/nyc": { state: "resolving" },
+          "/workspaces/nyc/feature": { state: "ready" },
         },
         outputByRoot: {
-          "/worktrees/nyc": "parent output\r\n",
-          "/worktrees/nyc/feature": "feature output\r\n",
+          "/workspaces/nyc": "parent output\r\n",
+          "/workspaces/nyc/feature": "feature output\r\n",
         },
       },
     };
 
-    expect(initialDevshellTerminalBuffer(state, "/worktrees/nyc/feature")).toBe(
+    expect(initialDevshellTerminalBuffer(state, "/workspaces/nyc/feature")).toBe(
       "feature output\r\n",
     );
   });

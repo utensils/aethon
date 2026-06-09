@@ -65,7 +65,7 @@ export function useDerivedRenderState({
     const activeKind = activeTabKind(tabs, activeTabId);
     const overviewActive = activeKind === null || activeKind === "shell";
     const landing = state.landing as { kind?: string } | null | undefined;
-    const landingVisible = !!landing && landing.kind === "worktree";
+    const landingVisible = !!landing && landing.kind === "workspace";
     // The overview owns the canvas when there are no session tabs *or*
     // when the user has explicitly selected the overview pseudo-tab.
     // Either case keeps the host / project dashboards visible while
@@ -79,13 +79,13 @@ export function useDerivedRenderState({
       (state.project as { id?: string } | null | undefined)?.id ?? null;
     const sidebarProjects =
       ((state.sidebar as { projects?: unknown } | undefined)?.projects as
-        | { id: string; worktrees?: unknown }[]
+        | { id: string; workspaces?: unknown }[]
         | undefined) ?? [];
     const activeProjectSidebarEntry = sidebarProjects.find(
       (p) => p.id === activeProjectId,
     );
-    const projectDashboardWorktrees =
-      (activeProjectSidebarEntry?.worktrees as unknown[] | undefined) ?? [];
+    const projectDashboardWorkspaces =
+      (activeProjectSidebarEntry?.workspaces as unknown[] | undefined) ?? [];
     const projectsArr = Array.isArray(state.projects)
       ? (state.projects as { id: string }[])
       : [];
@@ -97,7 +97,7 @@ export function useDerivedRenderState({
     const projectDashboard = {
       ...existingProjectDashboard,
       otherProjects,
-      worktrees: projectDashboardWorktrees,
+      workspaces: projectDashboardWorkspaces,
       recentSessions: (() => {
         const recentSessionsArr = Array.isArray(state.recentSessions)
           ? (state.recentSessions as { cwd?: string }[])
@@ -110,10 +110,10 @@ export function useDerivedRenderState({
           if (normalized) scopePaths.add(normalized);
         };
         addScopePath(projectPath ?? undefined);
-        for (const worktree of projectDashboardWorktrees as Array<{
+        for (const workspace of projectDashboardWorkspaces as Array<{
           path?: string;
         }>) {
-          addScopePath(worktree.path);
+          addScopePath(workspace.path);
         }
         if (scopePaths.size === 0) return [];
         return recentSessionsArr.filter((s) =>
@@ -182,7 +182,7 @@ export function useDerivedRenderState({
       ? attachAgentActivity(
           sidebar.projects as Array<{
             id: string;
-            worktrees?: { path?: string; isMain?: boolean }[];
+            workspaces?: { path?: string; isMain?: boolean }[];
           }>,
           agentTabs,
           runningIds,

@@ -8,9 +8,36 @@
  * efficiency hook we rely on.
  */
 
-import { open, readdir, stat } from "node:fs/promises";
+import { open, readdir, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { LOCAL_CHAT_FILE, type LatestSessionLog } from "./shared";
+
+function stripTrailingSlashes(p: string): string {
+  return p.replace(/[/\\]+$/, "");
+}
+
+/** Canonicalize a cwd for comparison: trailing slashes stripped, then
+ *  symlinks resolved when the path still exists. macOS aliases like
+ *  `/tmp` vs `/private/tmp` (or a symlinked workspace parent) otherwise
+ *  miss on exact string compare and silently start a fresh session
+ *  instead of resuming. A vanished path (deleted workspace) falls back
+ *  to the normalized string so old sessions still compare predictably. */
+async function canonicalCwd(
+  p: string,
+  cache: Map<string, string>,
+): Promise<string> {
+  const norm = stripTrailingSlashes(p);
+  const hit = cache.get(norm);
+  if (hit !== undefined) return hit;
+  let out = norm;
+  try {
+    out = stripTrailingSlashes(await realpath(norm));
+  } catch {
+    // Path no longer exists — compare the stored string as-is.
+  }
+  cache.set(norm, out);
+  return out;
+}
 
 /** Bytes to read from the head of each session file when we only need
  *  the first line. Session headers are tiny JSON objects (`type`,
@@ -72,10 +99,10 @@ async function readSessionHeaderCwd(path: string): Promise<string | undefined> {
  * pick whichever session was touched last regardless of project, which
  * leaks one project's chat into another on cold start.
  *
- * Trailing slashes on the cwd are normalised; case-sensitivity follows
- * the host filesystem (we only compare strings — pi's session header
- * stores whatever `process.cwd()` returned, so an exact match is fine
- * on the platforms we ship).
+ * Trailing slashes are normalised and symlinks resolved on both sides
+ * (`canonicalCwd`), so `/tmp/x` resumes a session recorded under
+ * `/private/tmp/x` and vice versa. Case-sensitivity follows the host
+ * filesystem.
  */
 export async function findSessionFileMatchingCwd(
   sessionDir: string,
@@ -88,7 +115,8 @@ export async function findSessionFileMatchingCwd(
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     return undefined;
   }
-  const target = expectedCwd.replace(/[/\\]+$/, "");
+  const realpathCache = new Map<string, string>();
+  const target = await canonicalCwd(expectedCwd, realpathCache);
   const matches: LatestSessionLog[] = [];
   for (const name of entries) {
     if (name === LOCAL_CHAT_FILE) continue;
@@ -102,7 +130,7 @@ export async function findSessionFileMatchingCwd(
     }
     const cwd = await readSessionHeaderCwd(path);
     if (!cwd) continue;
-    if (cwd.replace(/[/\\]+$/, "") !== target) continue;
+    if ((await canonicalCwd(cwd, realpathCache)) !== target) continue;
     matches.push({ path, mtimeMs, name });
   }
   if (matches.length === 0) return undefined;

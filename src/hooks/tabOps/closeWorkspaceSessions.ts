@@ -46,7 +46,7 @@ export function closeAllWorkspaceSessions(
   const { setState, stateRef, projectsRef, tabBucketsRef, closeTab } = deps;
   const bucketKey = projectScopeBucketKey(
     projectsRef.current.activeId,
-    projectsRef.current.activeWorktreeId,
+    projectsRef.current.activeWorkspaceId,
   );
   const visibleTabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
   const visibleSessionTabs = visibleTabs.filter((tab) => tab.kind !== "shell");

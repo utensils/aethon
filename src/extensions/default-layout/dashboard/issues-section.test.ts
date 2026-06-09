@@ -78,12 +78,12 @@ function renderIssues(
         },
       },
       state: {
-        activeWorktreeId: "wt-current",
+        activeWorkspaceId: "wt-current",
         sidebar: {
           projects: [
             {
               id: "p1",
-              worktrees: [
+              workspaces: [
                 { id: "wt-current", branch: "fix/current", active: true },
                 { id: "wt-other", branch: "fix/issue-85-existing" },
               ],
@@ -228,7 +228,7 @@ describe("issues-section task helpers", () => {
       label: "Docs issue",
       prompt:
         "Work on #{number}: {title}\nLabels: {labels}\nSlug: {slug}\nProject: {projectLabel}",
-      newWorktree: true,
+      newWorkspace: true,
       branch: "{branchPrefix}/issue-{number}-{slug}",
       branchPrefix: "docs",
       whenLabels: ["documentation"],
@@ -265,7 +265,7 @@ describe("issues-section task helpers", () => {
       id: "empty-prefix",
       label: "Empty prefix",
       prompt: "Work on #{number}",
-      newWorktree: true,
+      newWorkspace: true,
       // Interpolates to an empty string for an issue with no labels — must
       // not collapse `{branchPrefix}` into a leading slash (`/issue-...`).
       branch: "{branchPrefix}/issue-{number}-{slug}",
@@ -296,7 +296,7 @@ describe("issues-section task helpers", () => {
         id: "default",
         label: "Default",
         prompt: "Default {title}",
-        newWorktree: null,
+        newWorkspace: null,
         branch: null,
         branchPrefix: null,
         whenLabels: [],
@@ -305,7 +305,7 @@ describe("issues-section task helpers", () => {
         id: "docs",
         label: "Docs",
         prompt: "Docs {title}",
-        newWorktree: null,
+        newWorkspace: null,
         branch: null,
         branchPrefix: null,
         whenLabels: ["Documentation"],
@@ -327,7 +327,7 @@ describe("issues-section task helpers", () => {
           id: "default",
           label: "Default",
           prompt: "Work on {title}",
-          newWorktree: true,
+          newWorkspace: true,
           branch: null,
           branchPrefix: null,
           whenLabels: [],
@@ -369,7 +369,7 @@ describe("IssuesSection", () => {
     expect(refreshIssues).toHaveBeenCalledWith("/repo/aethon", 30);
   });
 
-  it("sends the hover action to a fresh worktree by default", async () => {
+  it("sends the hover action to a fresh workspace by default", async () => {
     const { onEvent } = renderIssues();
 
     await screen.findByText(issue.title);
@@ -380,7 +380,7 @@ describe("IssuesSection", () => {
         "start-task",
         expect.objectContaining({
           projectId: "p1",
-          newWorktree: true,
+          newWorkspace: true,
           branch: expect.stringMatching(/^fix\/issue-85-/),
           source: "github-issue",
           issueNumber: 85,
@@ -397,7 +397,7 @@ describe("IssuesSection", () => {
           id: "default",
           label: "Default implementation task",
           prompt: "CUSTOM #{number}: {title}\n{body}",
-          newWorktree: true,
+          newWorkspace: true,
           branch: "feat/issue-{number}-{slug}",
           branchPrefix: null,
           whenLabels: [],
@@ -424,30 +424,30 @@ describe("IssuesSection", () => {
     );
   });
 
-  it("offers both new-worktree and current-worktree launches in the context menu", async () => {
+  it("offers both new-workspace and current-workspace launches in the context menu", async () => {
     renderIssues();
 
     await screen.findByText(issue.title);
     fireEvent.contextMenu(screen.getByText(issue.title).closest("li")!);
 
     expect(
-      screen.getByRole("menuitem", { name: "Send to agent (new worktree)" }),
+      screen.getByRole("menuitem", { name: "Send to agent (new workspace)" }),
     ).toBeTruthy();
     expect(
       screen.getByRole("menuitem", {
-        name: "Send to agent (current worktree/branch)",
+        name: "Send to agent (current workspace/branch)",
       }),
     ).toBeTruthy();
   });
 
-  it("sends context-menu current worktree launches to the active worktree", async () => {
+  it("sends context-menu current workspace launches to the active workspace", async () => {
     const { onEvent } = renderIssues();
 
     await screen.findByText(issue.title);
     fireEvent.contextMenu(screen.getByText(issue.title).closest("li")!);
     fireEvent.click(
       screen.getByRole("menuitem", {
-        name: "Send to agent (current worktree/branch)",
+        name: "Send to agent (current workspace/branch)",
       }),
     );
 
@@ -456,8 +456,8 @@ describe("IssuesSection", () => {
         "start-task",
         expect.objectContaining({
           projectId: "p1",
-          newWorktree: false,
-          worktreeId: "wt-current",
+          newWorkspace: false,
+          workspaceId: "wt-current",
           source: "github-issue",
           issueNumber: 85,
         }),
@@ -473,7 +473,7 @@ describe("IssuesSection", () => {
           id: "default",
           label: "Default",
           prompt: "DEFAULT {title}",
-          newWorktree: true,
+          newWorkspace: true,
           branch: null,
           branchPrefix: null,
           whenLabels: [],
@@ -482,7 +482,7 @@ describe("IssuesSection", () => {
           id: "bug",
           label: "Bug fix handoff",
           prompt: "BUGFIX {title}",
-          newWorktree: false,
+          newWorkspace: false,
           branch: null,
           branchPrefix: null,
           whenLabels: ["bug"],
@@ -506,8 +506,8 @@ describe("IssuesSection", () => {
         "start-task",
         expect.objectContaining({
           prompt: expect.stringContaining("BUGFIX"),
-          newWorktree: false,
-          worktreeId: "wt-current",
+          newWorkspace: false,
+          workspaceId: "wt-current",
           issueTemplateId: "bug",
         }),
         "issue-85",

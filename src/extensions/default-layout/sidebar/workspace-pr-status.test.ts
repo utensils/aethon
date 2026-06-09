@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { GhBranchStatus } from "../../../ghBranchStatusCache";
 import type { GhChecks } from "../../../ghChecksCache";
-import { summarizeWorktreePrStatus } from "./worktree-pr-status";
+import { summarizeWorkspacePrStatus } from "./workspace-pr-status";
 
 function status(overrides: Partial<GhBranchStatus> = {}): GhBranchStatus {
   return {
     ghAvailable: true,
     repo: "owner/repo",
     pushed: true,
-    worktreeBroken: false,
+    workspaceBroken: false,
     prs: [
       {
         number: 12,
@@ -39,21 +39,21 @@ function checks(overrides: Partial<GhChecks> = {}): GhChecks {
   };
 }
 
-describe("summarizeWorktreePrStatus", () => {
+describe("summarizeWorkspacePrStatus", () => {
   it("returns null when there is no applicable GitHub PR", () => {
-    expect(summarizeWorktreePrStatus(status({ prs: [] }))).toBeNull();
+    expect(summarizeWorkspacePrStatus(status({ prs: [] }))).toBeNull();
     expect(
-      summarizeWorktreePrStatus(status({ ghAvailable: false, repo: null })),
+      summarizeWorkspacePrStatus(status({ ghAvailable: false, repo: null })),
     ).toBeNull();
   });
 
   it("summarizes open and draft PRs", () => {
-    const openChip = summarizeWorktreePrStatus(status(), checks());
+    const openChip = summarizeWorkspacePrStatus(status(), checks());
     expect(openChip?.label).toBe("open #12");
     expect(openChip?.kind).toBe("open");
     expect(openChip?.title).toContain("CI success");
     expect(
-      summarizeWorktreePrStatus(
+      summarizeWorkspacePrStatus(
         status({
           prs: [
             {
@@ -70,7 +70,7 @@ describe("summarizeWorktreePrStatus", () => {
       )?.label,
     ).toBe("draft #13");
     expect(
-      summarizeWorktreePrStatus(
+      summarizeWorkspacePrStatus(
         status({
           prs: [
             {
@@ -90,7 +90,7 @@ describe("summarizeWorktreePrStatus", () => {
 
   it("summarizes merged and closed PRs", () => {
     expect(
-      summarizeWorktreePrStatus(
+      summarizeWorkspacePrStatus(
         status({
           prs: [
             {
@@ -107,7 +107,7 @@ describe("summarizeWorktreePrStatus", () => {
       )?.label,
     ).toBe("merged #14");
     expect(
-      summarizeWorktreePrStatus(
+      summarizeWorkspacePrStatus(
         status({
           prs: [
             {
@@ -126,26 +126,26 @@ describe("summarizeWorktreePrStatus", () => {
   });
 
   it("carries CI rollup into the chip", () => {
-    const chip = summarizeWorktreePrStatus(
+    const chip = summarizeWorkspacePrStatus(
       status(),
       checks({ conclusion: "failure" }),
     );
     expect(chip?.ci).toBe("failure");
     expect(chip?.title).toContain("CI failure");
     expect(
-      summarizeWorktreePrStatus(status(), checks({ conclusion: "pending" }))
+      summarizeWorkspacePrStatus(status(), checks({ conclusion: "pending" }))
         ?.ci,
     ).toBe("pending");
     expect(
-      summarizeWorktreePrStatus(status(), checks({ conclusion: "neutral" }))
+      summarizeWorkspacePrStatus(status(), checks({ conclusion: "neutral" }))
         ?.ci,
     ).toBe("neutral");
   });
 
-  it("marks broken worktrees as stale", () => {
+  it("marks broken workspaces as stale", () => {
     expect(
-      summarizeWorktreePrStatus(
-        status({ worktreeBroken: true, ghAvailable: false, repo: null, prs: [] }),
+      summarizeWorkspacePrStatus(
+        status({ workspaceBroken: true, ghAvailable: false, repo: null, prs: [] }),
       )?.label,
     ).toBe("stale");
   });

@@ -8,7 +8,7 @@ interface TabCleanupDeps {
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>;
   syncRecentSessionsToState: () => void;
   closeTabNow: (tabId: string) => void;
-  activateWorktree: (worktreeId: string | null) => void;
+  activateWorkspace: (workspaceId: string | null) => void;
 }
 
 function tabCwdMatches(tab: Tab, path: string): boolean {
@@ -16,7 +16,7 @@ function tabCwdMatches(tab: Tab, path: string): boolean {
   return normalizeSessionPath(tab.cwd) === normalizeSessionPath(path);
 }
 
-function removeStoredTabsForWorktreePath(
+function removeStoredTabsForWorkspacePath(
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>,
   path: string,
   removedBucketKey: string,
@@ -36,7 +36,7 @@ function removeStoredTabsForWorktreePath(
   }
 }
 
-function closeVisibleTabsForWorktreePath(
+function closeVisibleTabsForWorkspacePath(
   stateRef: MutableRefObject<Record<string, unknown>>,
   closeTabNow: (tabId: string) => void,
   path: string,
@@ -48,19 +48,19 @@ function closeVisibleTabsForWorktreePath(
   for (const tabId of closing) closeTabNow(tabId);
 }
 
-export function closeTabsForRemovedWorktree(
+export function closeTabsForRemovedWorkspace(
   deps: TabCleanupDeps,
   projectId: string,
-  worktreeId: string,
+  workspaceId: string,
   path: string,
   wasActive: boolean,
 ): void {
-  closeVisibleTabsForWorktreePath(deps.stateRef, deps.closeTabNow, path);
-  if (wasActive) deps.activateWorktree(null);
-  removeStoredTabsForWorktreePath(
+  closeVisibleTabsForWorkspacePath(deps.stateRef, deps.closeTabNow, path);
+  if (wasActive) deps.activateWorkspace(null);
+  removeStoredTabsForWorkspacePath(
     deps.tabBucketsRef,
     path,
-    projectScopeBucketKey(projectId, worktreeId),
+    projectScopeBucketKey(projectId, workspaceId),
   );
   deps.syncRecentSessionsToState();
 }

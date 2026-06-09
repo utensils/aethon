@@ -252,9 +252,9 @@ body.ae-resizing-composer .a2ui-layout {
   overflow-y: auto;
   overscroll-behavior: none;
   position: relative;
-  /* Shared gutter geometry for the project → worktree hierarchy. The
+  /* Shared gutter geometry for the project → workspace hierarchy. The
      stacked project row lays out as [chevron][icon][stacked text]; these
-     drive where the worktree indent + guide line land so a worktree
+     drive where the workspace indent + guide line land so a workspace
      label sits under its project name and the guide descends through the
      project's icon column. Change here, both follow. */
   --ae-sb-chevron: 16px;
@@ -735,7 +735,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   letter-spacing: 0.02em;
 }
 
-/* ---- Host group (top tier of host → project → worktree) --------------- */
+/* ---- Host group (top tier of host → project → workspace) --------------- */
 
 .ae-host-group {
   display: flex;
@@ -809,7 +809,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   position: relative;
   /* Small step only — the rail carries the grouping, so projects don't
      need a deep indent on top of their own chevron/icon gutter. Keeps
-     names + worktrees from over-truncating in a narrow column. */
+     names + workspaces from over-truncating in a narrow column. */
   padding-left: var(--space-3);
 }
 .ae-host-group-body::before {
@@ -967,9 +967,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 /* Active selection — 2px accent bar hugging the row's left edge. Skips
-   worktree rows (their guide line already carries the accent) and rows
+   workspace rows (their guide line already carries the accent) and rows
    inside the searchable group lists, which read as a flat menu. */
-.a2ui-sidebar-item-active:not(.ae-worktree-row)::before {
+.a2ui-sidebar-item-active:not(.ae-workspace-row)::before {
   content: "";
   position: absolute;
   left: 0;
@@ -1051,7 +1051,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* Invisible placeholders mirroring the disclosure chevron + git dirty
    dot. Rendered for project rows that have neither, so the label text
    starts at the same x-coordinate across every row in the section
-   regardless of whether the row has worktrees or uncommitted changes.
+   regardless of whether the row has workspaces or uncommitted changes.
    Dimensions must stay in lockstep with `.a2ui-sidebar-item-discl`
    and `.a2ui-sidebar-item-git-dot`. */
 .a2ui-sidebar-item-discl-spacer {
@@ -1079,7 +1079,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 0;
 }
 
-/* Agent-activity dot — leading status indicator on project / worktree rows.
+/* Agent-activity dot — leading status indicator on project / workspace rows.
    Deliberately the theme SUCCESS tone, not --accent: the trailing git dirty
    dot already owns --accent, so "an agent is here" must never read as
    "uncommitted changes". A filled, softly-haloed dot pulses while a turn is
@@ -1133,7 +1133,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 /* Clean fixed gutter — override the single-line chevron's negative margin
    so the icon column lands exactly where --ae-sb-indent / --ae-sb-guide
-   expect it (worktree alignment depends on this). */
+   expect it (workspace alignment depends on this). */
 .a2ui-sidebar-item-stacked > .a2ui-sidebar-item-discl,
 .a2ui-sidebar-item-stacked > .a2ui-sidebar-item-discl-spacer {
   width: var(--ae-sb-chevron);
@@ -1147,7 +1147,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   align-self: center;
 }
 /* Fallback glyph when a project has no cached favicon — keeps the icon
-   column (and therefore the worktree guide) aligned across all rows. */
+   column (and therefore the workspace guide) aligned across all rows. */
 .a2ui-sidebar-item-icon--fallback {
   display: inline-flex;
   align-items: center;
@@ -1249,16 +1249,16 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--accent);
 }
 
-/* Worktree row — nested under a project row when worktrees are present
+/* Workspace row — nested under a project row when workspaces are present
    and the parent is expanded. The whole group reads as one branch via
    a continuous left guide line drawn by `::before` (one segment per
    row, stacked tight so they fuse). Labels align under the parent
    project's icon column. */
-.ae-worktree-row {
+.ae-workspace-row {
   position: relative;
   /* Align the label under the parent project's NAME column. Both the
      indent and the guide line derive from the shared --ae-sb-* gutter
-     vars on .a2ui-sidebar, so project (stacked) rows and worktree rows
+     vars on .a2ui-sidebar, so project (stacked) rows and workspace rows
      stay locked together if the gutter changes. */
   padding-left: var(--ae-sb-indent);
   /* Tighter than full project rows — these are subordinate. */
@@ -1272,7 +1272,7 @@ body.ae-resizing-sidebar .a2ui-layout {
    where the project icon would render) so it visually descends from
    the project row's icon. Top/bottom flush across siblings so the
    line fuses into one unbroken stroke. */
-.ae-worktree-row::before {
+.ae-workspace-row::before {
   content: "";
   position: absolute;
   left: var(--ae-sb-guide);
@@ -1285,23 +1285,23 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 /* First child rounds the top of the line so it doesn't jut into the
    project row's pill; last child does the same for the bottom. */
-.ae-worktree-row:first-of-type::before {
+.ae-workspace-row:first-of-type::before {
   top: 2px;
   border-top-left-radius: 1px;
 }
-.ae-worktree-row:last-of-type::before {
+.ae-workspace-row:last-of-type::before {
   bottom: 2px;
   border-bottom-left-radius: 1px;
 }
-.ae-worktree-row:hover {
+.ae-workspace-row:hover {
   color: var(--text);
 }
-.ae-worktree-row--dragging {
+.ae-workspace-row--dragging {
   z-index: var(--z-elevated);
   color: var(--text);
   background: var(--bg-active);
   opacity: 0.94;
-  transform: translate3d(0, var(--ae-worktree-drag-y, 0px), 0);
+  transform: translate3d(0, var(--ae-workspace-drag-y, 0px), 0);
   box-shadow:
     0 0 0 1px var(--border-hover),
     var(--shadow-2);
@@ -1312,12 +1312,12 @@ body.ae-resizing-sidebar .a2ui-layout {
     box-shadow var(--motion-fast) var(--ease-out),
     transform 0ms linear;
 }
-.ae-worktree-row-drop-before,
-.ae-worktree-row-drop-after {
+.ae-workspace-row-drop-before,
+.ae-workspace-row-drop-after {
   background: var(--accent-hover-tint);
 }
-.ae-worktree-row-drop-before::after,
-.ae-worktree-row-drop-after::after {
+.ae-workspace-row-drop-before::after,
+.ae-workspace-row-drop-after::after {
   content: "";
   position: absolute;
   left: calc(var(--ae-sb-indent) - 2px);
@@ -1329,23 +1329,23 @@ body.ae-resizing-sidebar .a2ui-layout {
   pointer-events: none;
   z-index: 1;
 }
-.ae-worktree-row-drop-before::after {
+.ae-workspace-row-drop-before::after {
   top: -1px;
 }
-.ae-worktree-row-drop-after::after {
+.ae-workspace-row-drop-after::after {
   bottom: -1px;
 }
-.ae-worktree-row:hover::before,
-.ae-worktree-row.a2ui-sidebar-item-active::before {
+.ae-workspace-row:hover::before,
+.ae-workspace-row.a2ui-sidebar-item-active::before {
   background: var(--accent);
 }
-.ae-worktree-row.a2ui-sidebar-item-active {
+.ae-workspace-row.a2ui-sidebar-item-active {
   color: var(--accent);
 }
-/* Main worktree (rarely rendered as a child — kept for layouts that
+/* Main workspace (rarely rendered as a child — kept for layouts that
    surface it explicitly). Small accent dot sits at the row's content
    start; the guide line still runs left of it. */
-.ae-worktree-glyph {
+.ae-workspace-glyph {
   flex-shrink: 0;
   width: 10px;
   height: 10px;
@@ -1354,16 +1354,16 @@ body.ae-resizing-sidebar .a2ui-layout {
   justify-content: center;
   margin-left: calc(-1 * var(--space-3));
 }
-.ae-worktree-glyph svg {
+.ae-workspace-glyph svg {
   display: block;
 }
-.ae-worktree-glyph--main {
+.ae-workspace-glyph--main {
   color: var(--accent);
 }
-.ae-worktree-branch {
+.ae-workspace-branch {
   margin-left: auto;
 }
-.ae-worktree-pr-slot {
+.ae-workspace-pr-slot {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -1371,7 +1371,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 86px;
   margin-left: var(--space-1);
 }
-.ae-worktree-pr-chip {
+.ae-workspace-pr-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1390,58 +1390,58 @@ body.ae-resizing-sidebar .a2ui-layout {
   text-decoration: none;
   white-space: nowrap;
 }
-.ae-worktree-pr-chip:hover {
+.ae-workspace-pr-chip:hover {
   color: var(--text);
   border-color: var(--border-hover);
   background: var(--bg-hover);
 }
-.ae-worktree-pr-chip--open {
+.ae-workspace-pr-chip--open {
   border-color: var(--state-info-border, var(--border-hover));
   color: var(--state-info-fg, var(--text));
 }
-.ae-worktree-pr-chip--draft,
-.ae-worktree-pr-chip--closed {
+.ae-workspace-pr-chip--draft,
+.ae-workspace-pr-chip--closed {
   color: var(--text-dim);
 }
-.ae-worktree-pr-chip--merged {
+.ae-workspace-pr-chip--merged {
   border-color: var(--state-success-border, var(--border-hover));
   color: var(--state-success-fg, var(--success));
 }
-.ae-worktree-pr-chip--stale {
+.ae-workspace-pr-chip--stale {
   border-color: color-mix(in oklab, var(--warn) 42%, var(--border));
   color: var(--warn);
 }
-.ae-worktree-pr-label {
+.ae-workspace-pr-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ae-worktree-pr-ci {
+.ae-workspace-pr-ci {
   flex: 0 0 auto;
   width: 5px;
   height: 5px;
   border-radius: 999px;
 }
-.ae-worktree-pr-ci--success {
+.ae-workspace-pr-ci--success {
   background: var(--state-success-fg, var(--success));
 }
-.ae-worktree-pr-ci--failure {
+.ae-workspace-pr-ci--failure {
   background: var(--error);
 }
-.ae-worktree-pr-ci--pending {
+.ae-workspace-pr-ci--pending {
   background: var(--warn);
   animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
 }
-.ae-worktree-pr-ci--neutral {
+.ae-workspace-pr-ci--neutral {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--text-dim);
 }
 @media (prefers-reduced-motion: reduce) {
-  .ae-worktree-pr-ci--pending {
+  .ae-workspace-pr-ci--pending {
     animation: none;
   }
 }
-.ae-worktree-rename-input {
+.ae-workspace-rename-input {
   flex: 1 1 auto;
   min-width: 0;
   height: 24px;
@@ -1453,13 +1453,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   font: inherit;
   line-height: 1;
 }
-.ae-worktree-rename-input:focus {
+.ae-workspace-rename-input:focus {
   outline: none;
 }
-.ae-worktree-rename-input:focus-visible {
+.ae-workspace-rename-input:focus-visible {
   box-shadow: var(--focus-ring);
 }
-.ae-worktree-remove-slot {
+.ae-workspace-remove-slot {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -1467,13 +1467,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 28px;
   margin-left: var(--space-1);
 }
-.ae-worktree-row--pending {
+.ae-workspace-row--pending {
   opacity: 0.8;
 }
-.ae-worktree-row--failed {
+.ae-workspace-row--failed {
   background: color-mix(in srgb, var(--error) 8%, transparent);
 }
-.ae-worktree-pending-status {
+.ae-workspace-pending-status {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -1482,10 +1482,10 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
 }
-.ae-worktree-pending-failed {
+.ae-workspace-pending-failed {
   color: var(--error);
 }
-.ae-worktree-action {
+.ae-workspace-action {
   border: 0;
   padding: 0 var(--space-1);
   background: transparent;
@@ -1495,13 +1495,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   cursor: pointer;
   border-radius: var(--radius-xs);
 }
-.ae-worktree-action:hover,
-.ae-worktree-action:focus-visible {
+.ae-workspace-action:hover,
+.ae-workspace-action:focus-visible {
   outline: none;
   background: var(--accent-hover-tint);
   color: var(--accent);
 }
-.ae-worktree-remove {
+.ae-workspace-remove {
   display: inline-grid;
   place-items: center;
   width: 28px;
@@ -1521,22 +1521,22 @@ body.ae-resizing-sidebar .a2ui-layout {
     background var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out);
 }
-.ae-worktree-row:hover .ae-worktree-remove,
-.ae-worktree-remove:focus-visible {
+.ae-workspace-row:hover .ae-workspace-remove,
+.ae-workspace-remove:focus-visible {
   opacity: 1;
   transform: scale(1);
 }
-.ae-worktree-remove:hover {
+.ae-workspace-remove:hover {
   color: var(--error);
   background: color-mix(in oklab, var(--error) 10%, transparent);
   border-color: color-mix(in oklab, var(--error) 28%, transparent);
 }
-.ae-worktree-remove:focus-visible,
-.ae-worktree-confirm-remove:focus-visible {
+.ae-workspace-remove:focus-visible,
+.ae-workspace-confirm-remove:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
-.ae-worktree-confirm-remove {
+.ae-workspace-confirm-remove {
   height: 26px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
@@ -1546,11 +1546,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--error);
   cursor: pointer;
 }
-.ae-worktree-confirm-remove:hover {
+.ae-workspace-confirm-remove:hover {
   background: color-mix(in oklab, var(--error) 16%, transparent);
   border-color: color-mix(in oklab, var(--error) 52%, var(--border));
 }
-.ae-worktree-lock {
+.ae-workspace-lock {
   flex-shrink: 0;
   font-size: var(--chrome-text-muted);
   color: var(--warn);
@@ -2137,8 +2137,8 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-empty-state-card {
-  /* Width matched to .a2ui-worktree-landing .a2ui-empty-state-card so
-     both landing views (empty-tabs welcome + worktree start-session)
+  /* Width matched to .a2ui-workspace-landing .a2ui-empty-state-card so
+     both landing views (empty-tabs welcome + workspace start-session)
      share the same outer footprint and only differ in content. */
   max-width: 760px;
   width: 100%;
@@ -2160,7 +2160,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   filter: drop-shadow(var(--shadow-1));
 }
 
-.a2ui-worktree-landing-icon {
+.a2ui-workspace-landing-icon {
   width: 64px;
   height: 64px;
   border-radius: var(--radius-lg);
@@ -2295,41 +2295,41 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--accent);
 }
 
-/* Worktree landing — GitHub branch status block. Inherits the
+/* Workspace landing — GitHub branch status block. Inherits the
    empty-state recent-block layout (border-top + uppercase H2) and adds
    PR-row treatment with merged/open/closed/draft pills. */
-/* Worktree landing reuses .a2ui-empty-state-card but carries
+/* Workspace landing reuses .a2ui-empty-state-card but carries
    substantially more content (GitHub status + PR list + action row).
    Widen the card so the PR titles + repo path don't truncate on
    typical viewports, and bump the inner gap to space the sections. */
-.a2ui-worktree-landing .a2ui-empty-state-card {
+.a2ui-workspace-landing .a2ui-empty-state-card {
   max-width: 760px;
   gap: var(--space-5);
   text-align: left;
   align-items: stretch;
 }
 
-.a2ui-worktree-landing .a2ui-empty-state-hero,
-.a2ui-worktree-landing .a2ui-empty-state-title,
-.a2ui-worktree-landing .a2ui-empty-state-subtitle {
+.a2ui-workspace-landing .a2ui-empty-state-hero,
+.a2ui-workspace-landing .a2ui-empty-state-title,
+.a2ui-workspace-landing .a2ui-empty-state-subtitle {
   align-self: center;
   text-align: center;
 }
 
-.a2ui-worktree-landing .a2ui-empty-state-actions {
+.a2ui-workspace-landing .a2ui-empty-state-actions {
   justify-content: center;
 }
 
-.a2ui-worktree-landing-gh,
-.a2ui-worktree-landing-sessions {
+.a2ui-workspace-landing-gh,
+.a2ui-workspace-landing-sessions {
   width: 100%;
   text-align: left;
   border-top: 1px solid var(--border);
   padding-top: var(--space-4);
   margin-top: var(--space-4);
 }
-.a2ui-worktree-landing-gh h2,
-.a2ui-worktree-landing-sessions h2 {
+.a2ui-workspace-landing-gh h2,
+.a2ui-workspace-landing-sessions h2 {
   margin: 0 0 var(--space-2) 0;
   font-size: var(--text-sm);
   font-weight: 600;
@@ -2337,14 +2337,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.a2ui-worktree-landing-session-list {
+.a2ui-workspace-landing-session-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
 }
-.a2ui-worktree-landing-session-list li {
+.a2ui-workspace-landing-session-list li {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2354,14 +2354,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   cursor: pointer;
   transition: background var(--motion-fast) ease;
 }
-.a2ui-worktree-landing-session-list li:hover,
-.a2ui-worktree-landing-session-list li.is-confirming {
+.a2ui-workspace-landing-session-list li:hover,
+.a2ui-workspace-landing-session-list li.is-confirming {
   background: var(--bg-hover);
 }
-.a2ui-worktree-landing-session-list li.is-confirming {
+.a2ui-workspace-landing-session-list li.is-confirming {
   cursor: default;
 }
-.a2ui-worktree-landing-session-label {
+.a2ui-workspace-landing-session-label {
   font-size: var(--text-md);
   color: var(--text);
   flex: 1 1 auto;
@@ -2370,19 +2370,19 @@ body.ae-resizing-sidebar .a2ui-layout {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.a2ui-worktree-landing-session-meta {
+.a2ui-workspace-landing-session-meta {
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
   flex-shrink: 0;
 }
-.a2ui-worktree-landing-session-actions {
+.a2ui-workspace-landing-session-actions {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
   min-width: max-content;
 }
-.a2ui-worktree-landing-session-delete {
+.a2ui-workspace-landing-session-delete {
   display: inline-grid;
   place-items: center;
   width: 24px;
@@ -2397,16 +2397,16 @@ body.ae-resizing-sidebar .a2ui-layout {
     border-color var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out);
 }
-.a2ui-worktree-landing-session-delete:hover {
+.a2ui-workspace-landing-session-delete:hover {
   background: color-mix(in oklab, var(--error) 10%, transparent);
   border-color: color-mix(in oklab, var(--error) 26%, var(--border));
   color: var(--error);
 }
-.a2ui-worktree-landing-session-delete:focus-visible {
+.a2ui-workspace-landing-session-delete:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
-.a2ui-worktree-landing-gh-list {
+.a2ui-workspace-landing-gh-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2414,24 +2414,24 @@ body.ae-resizing-sidebar .a2ui-layout {
   flex-direction: column;
   gap: var(--space-1);
 }
-.a2ui-worktree-landing-gh-list li {
+.a2ui-workspace-landing-gh-list li {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-md);
 }
-.a2ui-worktree-landing-gh-label {
+.a2ui-workspace-landing-gh-label {
   font-family: var(--font-mono);
   color: var(--text-dim);
 }
-.a2ui-worktree-landing-gh-pushed {
+.a2ui-workspace-landing-gh-pushed {
   color: var(--text-dim);
 }
-.a2ui-worktree-landing-gh-pushed.is-pushed {
+.a2ui-workspace-landing-gh-pushed.is-pushed {
   color: var(--accent);
 }
-.a2ui-worktree-landing-gh-pr a {
+.a2ui-workspace-landing-gh-pr a {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -2440,10 +2440,10 @@ body.ae-resizing-sidebar .a2ui-layout {
   width: 100%;
   min-width: 0;
 }
-.a2ui-worktree-landing-gh-pr a:hover {
+.a2ui-workspace-landing-gh-pr a:hover {
   color: var(--accent);
 }
-.a2ui-worktree-landing-gh-pr-state {
+.a2ui-workspace-landing-gh-pr-state {
   font-family: var(--font-mono);
   font-size: var(--chrome-text-compact);
   font-weight: 600;
@@ -2470,12 +2470,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg-input);
   color: var(--text-dim);
 }
-.a2ui-worktree-landing-gh-pr-number {
+.a2ui-workspace-landing-gh-pr-number {
   font-family: var(--font-mono);
   color: var(--text-dim);
   flex-shrink: 0;
 }
-.a2ui-worktree-landing-gh-pr-title {
+.a2ui-workspace-landing-gh-pr-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4320,7 +4320,7 @@ body.ae-resizing-composer * {
   opacity: 0.6;
   flex-shrink: 0;
 }
-.a2ui-status-chip-worktree,
+.a2ui-status-chip-workspace,
 .a2ui-status-chip-branch {
   color: var(--accent);
   overflow: hidden;
@@ -4845,7 +4845,7 @@ body.ae-resizing-composer * {
 }
 
 /* Overview pseudo-tab — always-visible escape hatch back to the host /
-   project / worktree dashboard. Narrower than a real tab so it reads as
+   project / workspace dashboard. Narrower than a real tab so it reads as
    navigation, not a session, and carries the Æ brand glyph instead of a
    close button (it can't be closed). */
 .a2ui-tab-overview {
@@ -7325,7 +7325,7 @@ button.a2ui-gh-stat:hover {
   border-color: var(--accent);
 }
 
-.a2ui-project-dashboard-worktrees {
+.a2ui-project-dashboard-workspaces {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -7333,7 +7333,7 @@ button.a2ui-gh-stat:hover {
   flex-direction: column;
   gap: 4px;
 }
-.a2ui-project-dashboard-worktree {
+.a2ui-project-dashboard-workspace {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -7343,30 +7343,30 @@ button.a2ui-gh-stat:hover {
   cursor: pointer;
   transition: background var(--motion-fast) ease;
 }
-.a2ui-project-dashboard-worktree:hover {
+.a2ui-project-dashboard-workspace:hover {
   background: var(--bg-hover);
 }
-.a2ui-project-dashboard-worktree.is-active {
+.a2ui-project-dashboard-workspace.is-active {
   border-color: var(--accent);
   background: var(--accent-hover-tint, var(--bg-hover));
 }
-.a2ui-project-dashboard-worktree-label {
+.a2ui-project-dashboard-workspace-label {
   font-weight: 600;
   color: var(--text);
 }
-.a2ui-project-dashboard-worktree-branch {
+.a2ui-project-dashboard-workspace-branch {
   font-family: var(--font-mono);
   color: var(--accent);
   font-size: var(--chrome-text-muted);
 }
-.a2ui-project-dashboard-worktree-main {
+.a2ui-project-dashboard-workspace-main {
   margin-left: auto;
   font-size: var(--chrome-text-muted);
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
-.a2ui-project-dashboard-worktree-remove {
+.a2ui-project-dashboard-workspace-remove {
   display: inline-grid;
   place-items: center;
   width: 28px;
@@ -7387,17 +7387,17 @@ button.a2ui-gh-stat:hover {
     background var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out);
 }
-.a2ui-project-dashboard-worktree:hover .a2ui-project-dashboard-worktree-remove,
-.a2ui-project-dashboard-worktree-remove:focus-visible {
+.a2ui-project-dashboard-workspace:hover .a2ui-project-dashboard-workspace-remove,
+.a2ui-project-dashboard-workspace-remove:focus-visible {
   opacity: 1;
   transform: scale(1);
 }
-.a2ui-project-dashboard-worktree-remove:hover {
+.a2ui-project-dashboard-workspace-remove:hover {
   color: var(--error);
   background: color-mix(in oklab, var(--error) 10%, transparent);
   border-color: color-mix(in oklab, var(--error) 28%, transparent);
 }
-.a2ui-project-dashboard-worktree-confirm-remove {
+.a2ui-project-dashboard-workspace-confirm-remove {
   height: 28px;
   margin-left: auto;
   padding: 0 var(--space-3);
@@ -7408,12 +7408,12 @@ button.a2ui-gh-stat:hover {
   color: var(--error);
   cursor: pointer;
 }
-.a2ui-project-dashboard-worktree-confirm-remove:hover {
+.a2ui-project-dashboard-workspace-confirm-remove:hover {
   background: color-mix(in oklab, var(--error) 16%, transparent);
   border-color: color-mix(in oklab, var(--error) 52%, var(--border));
 }
-.a2ui-project-dashboard-worktree-remove:focus-visible,
-.a2ui-project-dashboard-worktree-confirm-remove:focus-visible {
+.a2ui-project-dashboard-workspace-remove:focus-visible,
+.a2ui-project-dashboard-workspace-confirm-remove:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }

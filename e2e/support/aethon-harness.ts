@@ -131,7 +131,7 @@ export async function installAethonHarness(page: Page): Promise<void> {
         JSON.stringify({
           schemaVersion: 3,
           activeId: "project-aethon",
-          activeWorktreeId: null,
+          activeWorkspaceId: null,
           activeHostId: "local:test",
           projects: [
             {
@@ -143,7 +143,7 @@ export async function installAethonHarness(page: Page): Promise<void> {
               hostId: "local:test",
             },
           ],
-          worktreesByProject: {
+          workspacesByProject: {
             "project-aethon": [
               {
                 id: "wt-main",

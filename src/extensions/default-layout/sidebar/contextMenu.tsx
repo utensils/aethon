@@ -1,8 +1,8 @@
 /**
  * Sidebar context-menu controller. Owns the open/close state plus every
- * handler the menu invokes — project, worktree, session, and extension
+ * handler the menu invokes — project, workspace, session, and extension
  * verbs. Returns an opaque controller the Sidebar wires into the
- * ItemRow / WorktreeRow `onContextMenu` callbacks and into the
+ * ItemRow / WorkspaceRow `onContextMenu` callbacks and into the
  * ContextMenu primitive.
  *
  * Handlers fire app-level events via `onEvent`; the App-side route
@@ -14,11 +14,11 @@ import { useState } from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { SidebarItem } from "../../../types/a2ui";
 import { canDeleteHistoryItem, extractSessionId } from "../../../utils/sidebarHistory";
-import { DEFAULT_WORKTREE_BASE_BRANCH } from "../../../projects";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
 import type { ItemRowProps } from "./item-row";
-import type { WorktreeSidebarItem } from "./worktree-row";
+import type { WorkspaceSidebarItem } from "./workspace-row";
 import {
-  canRenameWorktree,
+  canRenameWorkspace,
   type SidebarContextMenuState,
   type SidebarMenuHandlers,
 } from "./menuItems";
@@ -27,9 +27,9 @@ export interface SidebarContextMenuController {
   contextMenu: SidebarContextMenuState | null;
   close: () => void;
   openItemContextMenu: ItemRowProps["onItemContextMenu"];
-  openWorktreeContextMenu: (
+  openWorkspaceContextMenu: (
     e: React.MouseEvent<HTMLElement>,
-    item: WorktreeSidebarItem,
+    item: WorkspaceSidebarItem,
     sectionId: string,
   ) => void;
   handlers: SidebarMenuHandlers;
@@ -38,13 +38,13 @@ export interface SidebarContextMenuController {
 export interface UseSidebarContextMenuDeps {
   state: Record<string, unknown>;
   onEvent: BuiltinComponentProps["onEvent"];
-  beginWorktreeRename: (worktreeId: string) => void;
+  beginWorkspaceRename: (workspaceId: string) => void;
 }
 
 export function useSidebarContextMenu(
   deps: UseSidebarContextMenuDeps,
 ): SidebarContextMenuController {
-  const { state, onEvent, beginWorktreeRename } = deps;
+  const { state, onEvent, beginWorkspaceRename } = deps;
   const [contextMenu, setContextMenu] =
     useState<SidebarContextMenuState | null>(null);
 
@@ -76,18 +76,18 @@ export function useSidebarContextMenu(
       label: item.label,
       kind: kind.kind,
       extensionName: kind.extensionName,
-      hasExtraWorktrees:
+      hasExtraWorkspaces:
         kind.kind === "project" &&
-        Array.isArray((item as { worktrees?: unknown }).worktrees) &&
-        ((item as { worktrees?: unknown[] }).worktrees ?? []).filter(
+        Array.isArray((item as { workspaces?: unknown }).workspaces) &&
+        ((item as { workspaces?: unknown[] }).workspaces ?? []).filter(
           (w) => !(w as { isMain?: boolean } | null)?.isMain,
         ).length > 0,
     });
   };
 
-  const openWorktreeContextMenu = (
+  const openWorkspaceContextMenu = (
     e: React.MouseEvent<HTMLElement>,
-    item: WorktreeSidebarItem,
+    item: WorkspaceSidebarItem,
     sectionId: string,
   ) => {
     e.preventDefault();
@@ -97,9 +97,9 @@ export function useSidebarContextMenu(
       y: e.clientY,
       sectionId,
       itemId: item.id,
-      label: item.label || item.branch || "worktree",
-      kind: "worktree",
-      worktree: item,
+      label: item.label || item.branch || "workspace",
+      kind: "workspace",
+      workspace: item,
     });
   };
 
@@ -159,37 +159,37 @@ export function useSidebarContextMenu(
     close();
   };
 
-  // Project + worktree context-menu handlers. Each fires an event the
+  // Project + workspace context-menu handlers. Each fires an event the
   // App-side route table picks up via `type:sidebar`; the App handles
   // the actual git / clipboard / dialog work so this component stays
-  // surface-only. The "Switch to project / worktree" entries were
+  // surface-only. The "Switch to project / workspace" entries were
   // dropped — clicking the row already switches, so the menu only
   // lists verbs that aren't reachable from a plain click.
-  const createWorktreeForContextProject = () => {
+  const createWorkspaceForContextProject = () => {
     if (!contextMenu) return;
-    onEvent("create-worktree", {
+    onEvent("create-workspace", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
     });
     close();
   };
-  const editContextProjectWorktreeBase = () => {
+  const editContextProjectWorkspaceBase = () => {
     if (!contextMenu) return;
     const projects =
       (state.projects as
-        | { id: string; worktreeBaseBranch?: string }[]
+        | { id: string; workspaceBaseBranch?: string }[]
         | undefined) ?? [];
     const project = projects.find((p) => p.id === contextMenu.itemId);
     setContextMenu({
       ...contextMenu,
       kind: "project-base",
-      baseBranch: project?.worktreeBaseBranch ?? DEFAULT_WORKTREE_BASE_BRANCH,
+      baseBranch: project?.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH,
     });
   };
-  const submitContextProjectWorktreeBase = (baseBranch: string) => {
+  const submitContextProjectWorkspaceBase = (baseBranch: string) => {
     if (!contextMenu) return;
-    onEvent("set-project-worktree-base", {
+    onEvent("set-project-workspace-base", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
@@ -197,9 +197,9 @@ export function useSidebarContextMenu(
     });
     close();
   };
-  const sortContextProjectWorktreesNewest = () => {
+  const sortContextProjectWorkspacesNewest = () => {
     if (!contextMenu) return;
-    onEvent("sort-project-worktrees", {
+    onEvent("sort-project-workspaces", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
@@ -239,40 +239,40 @@ export function useSidebarContextMenu(
     });
     close();
   };
-  const openContextWorktreeInFinder = () => {
-    if (!contextMenu?.worktree) return;
-    onEvent("open-worktree-in-finder", {
+  const openContextWorkspaceInFinder = () => {
+    if (!contextMenu?.workspace) return;
+    onEvent("open-workspace-in-finder", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
-      worktreeId: contextMenu.worktree.id,
-      path: contextMenu.worktree.path,
+      workspaceId: contextMenu.workspace.id,
+      path: contextMenu.workspace.path,
     });
     close();
   };
-  const copyContextWorktreePath = () => {
-    if (!contextMenu?.worktree) return;
-    onEvent("copy-worktree-path", {
+  const copyContextWorkspacePath = () => {
+    if (!contextMenu?.workspace) return;
+    onEvent("copy-workspace-path", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
-      worktreeId: contextMenu.worktree.id,
-      path: contextMenu.worktree.path,
+      workspaceId: contextMenu.workspace.id,
+      path: contextMenu.workspace.path,
     });
     close();
   };
-  const renameContextWorktree = () => {
-    if (!contextMenu?.worktree) return;
-    if (canRenameWorktree(contextMenu.worktree)) {
-      beginWorktreeRename(contextMenu.worktree.id);
+  const renameContextWorkspace = () => {
+    if (!contextMenu?.workspace) return;
+    if (canRenameWorkspace(contextMenu.workspace)) {
+      beginWorkspaceRename(contextMenu.workspace.id);
     }
     close();
   };
-  const removeContextWorktree = () => {
-    if (!contextMenu?.worktree) return;
-    onEvent("remove-worktree", {
+  const removeContextWorkspace = () => {
+    if (!contextMenu?.workspace) return;
+    onEvent("remove-workspace", {
       sectionId: contextMenu.sectionId,
       itemId: contextMenu.itemId,
-      worktreeId: contextMenu.worktree.id,
-      path: contextMenu.worktree.path,
+      workspaceId: contextMenu.workspace.id,
+      path: contextMenu.workspace.path,
     });
     close();
   };
@@ -281,20 +281,20 @@ export function useSidebarContextMenu(
     contextMenu,
     close,
     openItemContextMenu,
-    openWorktreeContextMenu,
+    openWorkspaceContextMenu,
     handlers: {
-      createWorktreeForContextProject,
-      editContextProjectWorktreeBase,
-      submitContextProjectWorktreeBase,
-      sortContextProjectWorktreesNewest,
+      createWorkspaceForContextProject,
+      editContextProjectWorkspaceBase,
+      submitContextProjectWorkspaceBase,
+      sortContextProjectWorkspacesNewest,
       openContextProjectInFinder,
       copyContextProjectPath,
       renameContextProject,
       removeContextProject,
-      openContextWorktreeInFinder,
-      copyContextWorktreePath,
-      renameContextWorktree,
-      removeContextWorktree,
+      openContextWorkspaceInFinder,
+      copyContextWorkspacePath,
+      renameContextWorkspace,
+      removeContextWorkspace,
       renameContextSession,
       deleteContextSession,
       toggleContextExtension,

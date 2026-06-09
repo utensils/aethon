@@ -25,8 +25,8 @@ export interface ItemRowProps {
   onToggleDisclosure?: () => void;
   /** Reserve the same horizontal space for the disclosure chevron and
    *  the git dirty-dot whether or not this row actually has them.
-   *  Projects section sets this so a repo without worktrees aligns its
-   *  label at the same x-coordinate as a sibling project with worktrees.
+   *  Projects section sets this so a repo without workspaces aligns its
+   *  label at the same x-coordinate as a sibling project with workspaces.
    *  Other sections (panels, history) leave it off so they stay tight. */
   alignSlots?: boolean;
   /** Render as a two-line card: the label on line 1, a git meta line
@@ -103,8 +103,8 @@ export function ItemRow({
 
   // Agent-activity dot — leading status indicator distinct from the trailing
   // git dirty dot. When the project row is collapsed, fall back to the
-  // rollup so a hidden active worktree still surfaces a dot; when expanded,
-  // show only this row's own (main-scope) activity since the worktree rows
+  // rollup so a hidden active workspace still surfaces a dot; when expanded,
+  // show only this row's own (main-scope) activity since the workspace rows
   // carry their own dots.
   const agentRaw = item as {
     agent?: { status?: string; runningCount?: number };
@@ -134,7 +134,7 @@ export function ItemRow({
     ) : null;
 
   // Disclosure caret (or a reserved spacer when alignSlots is set so
-  // worktree-less rows align with their siblings). Shared by both the
+  // workspace-less rows align with their siblings). Shared by both the
   // flat and stacked layouts; lives in the row's left gutter.
   const chevronEl = disclosure ? (
     <button
@@ -185,7 +185,7 @@ export function ItemRow({
       loading="lazy"
     />
   ) : stacked ? (
-    // Fallback repo glyph so the icon column (and the worktree guide that
+    // Fallback repo glyph so the icon column (and the workspace guide that
     // aligns to it) stays consistent across projects without a favicon.
     <span
       className="a2ui-sidebar-item-icon a2ui-sidebar-item-icon--fallback"

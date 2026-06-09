@@ -23,7 +23,7 @@ function restartAgentForAction(
 /** General notification-stack handler. Runs AFTER `handleShellConsent`
  *  in the dispatch table — the consent gate has already short-circuited
  *  the three reserved action prefixes (shell-write-, shell-close-,
- *  session-delete-, worktree-confirm-). Remaining shapes:
+ *  session-delete-, workspace-confirm-). Remaining shapes:
  *
  *  • dismiss/expire of any id — defensively resolves consents to
  *    `false` so a dropped notification can't dangle the originator's
@@ -46,7 +46,7 @@ export const handleNotifications: EventRouteHandler = (
     ctx.resolveShellWriteConsent(id, false);
     ctx.resolveShellCloseConsent(id, false);
     ctx.resolveSessionDeleteConsent(id, false);
-    ctx.resolveWorktreePrompt(id, false);
+    ctx.resolveWorkspacePrompt(id, false);
     ctx.dismissNotification(id);
     return true;
   }
@@ -62,9 +62,9 @@ export const handleNotifications: EventRouteHandler = (
     } else if (action && action.startsWith("session-delete-")) {
       const allowed = action.startsWith("session-delete-allow:");
       ctx.resolveSessionDeleteConsent(id, allowed);
-    } else if (action && action.startsWith("worktree-confirm-")) {
-      const allowed = action.startsWith("worktree-confirm-allow:");
-      ctx.resolveWorktreePrompt(id, allowed);
+    } else if (action && action.startsWith("workspace-confirm-")) {
+      const allowed = action.startsWith("workspace-confirm-allow:");
+      ctx.resolveWorkspacePrompt(id, allowed);
     } else if (action && action.startsWith("ae-agent-crashed:")) {
       if (action.startsWith("ae-agent-crashed:restart")) {
         restartAgentForAction(action, ctx).catch((err: unknown) => {

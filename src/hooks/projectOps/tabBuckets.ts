@@ -5,7 +5,7 @@ import type { ProjectsState } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
 import type { TabBucket } from "./types";
 
-const WORKTREE_BUCKET_SEPARATOR = "::worktree::";
+const WORKSPACE_BUCKET_SEPARATOR = "::workspace::";
 
 export function normalizeSessionPath(path: string | undefined): string {
   return (path ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
@@ -13,25 +13,25 @@ export function normalizeSessionPath(path: string | undefined): string {
 
 export function projectIdFromBucketKey(key: string): string | null {
   if (key === NO_PROJECT_KEY) return null;
-  return key.split(WORKTREE_BUCKET_SEPARATOR, 1)[0] || null;
+  return key.split(WORKSPACE_BUCKET_SEPARATOR, 1)[0] || null;
 }
 
-/** Worktree id encoded in a bucket key, or null for a project-main /
+/** Workspace id encoded in a bucket key, or null for a project-main /
  *  no-project bucket. Inverse of `projectScopeBucketKey`. */
-export function worktreeIdFromBucketKey(key: string): string | null {
+export function workspaceIdFromBucketKey(key: string): string | null {
   if (key === NO_PROJECT_KEY) return null;
-  const idx = key.indexOf(WORKTREE_BUCKET_SEPARATOR);
+  const idx = key.indexOf(WORKSPACE_BUCKET_SEPARATOR);
   if (idx < 0) return null;
-  return key.slice(idx + WORKTREE_BUCKET_SEPARATOR.length) || null;
+  return key.slice(idx + WORKSPACE_BUCKET_SEPARATOR.length) || null;
 }
 
 export function projectScopeBucketKey(
   projectId: string | null | undefined,
-  worktreeId: string | null | undefined,
+  workspaceId: string | null | undefined,
 ): string {
   if (!projectId) return NO_PROJECT_KEY;
-  return worktreeId
-    ? `${projectId}${WORKTREE_BUCKET_SEPARATOR}${worktreeId}`
+  return workspaceId
+    ? `${projectId}${WORKSPACE_BUCKET_SEPARATOR}${workspaceId}`
     : projectId;
 }
 
@@ -51,7 +51,7 @@ export function tabBucketKeyForTab(
   tab: Tab,
 ): string {
   if (!tab.projectId) return NO_PROJECT_KEY;
-  const resolved = worktreeIdForCwd(projects, pathForTab(tab), tab.projectId);
+  const resolved = workspaceIdForCwd(projects, pathForTab(tab), tab.projectId);
   return projectScopeBucketKey(tab.projectId, resolved ?? null);
 }
 
@@ -100,7 +100,7 @@ function preferredActiveTabId(
   );
 }
 
-export function worktreeIdForCwd(
+export function workspaceIdForCwd(
   projects: ProjectsState,
   cwd: string | undefined,
   projectId?: string | null,
@@ -121,7 +121,7 @@ export function worktreeIdForCwd(
     if (!project) continue;
     const candidates = [
       { id: null as string | null, path: project.path, isMain: true },
-      ...(projects.worktreesByProject[id] ?? []).map((w) => ({
+      ...(projects.workspacesByProject[id] ?? []).map((w) => ({
         id: w.id,
         path: w.path,
         isMain: w.isMain,
@@ -253,7 +253,7 @@ export function switchProjectBucket(
       }
       result.empty = false;
       result.hasTabs = true;
-      // Restoring a real tab must clear any worktree-landing override,
+      // Restoring a real tab must clear any workspace-landing override,
       // matching setActiveTab's invariant so the active tab's canvas owns
       // the main surface after a workspace switch.
       result.landing = null;

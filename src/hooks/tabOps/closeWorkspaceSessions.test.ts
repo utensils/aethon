@@ -40,10 +40,10 @@ function buildHarness(initial: Record<string, unknown>) {
   });
   const projectsRef = ref<ProjectsState>({
     activeId: null,
-    activeWorktreeId: null,
+    activeWorkspaceId: null,
     activeHostId: "local:test",
     projects: [],
-    worktreesByProject: {},
+    workspacesByProject: {},
   });
   return {
     stateRef,

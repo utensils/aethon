@@ -81,25 +81,25 @@ export function FileTreePanel({
     };
   }, [activeEditorRoot, aethonRoot, project?.path]);
 
-  const activeWorktreeId = (state["activeWorktreeId"] as string | null) ?? null;
+  const activeWorkspaceId = (state["activeWorkspaceId"] as string | null) ?? null;
   const projectPath = useMemo(() => {
-    if (activeWorktreeId) {
+    if (activeWorkspaceId) {
       const sidebar = state["sidebar"] as
         | {
             projects?: {
               id?: string;
-              worktrees?: { id?: string; path?: string }[];
+              workspaces?: { id?: string; path?: string }[];
             }[];
           }
         | undefined;
       const projects = sidebar?.projects ?? [];
       for (const p of projects) {
-        const wt = p.worktrees?.find((w) => w.id === activeWorktreeId);
+        const wt = p.workspaces?.find((w) => w.id === activeWorkspaceId);
         if (wt?.path) return wt.path;
       }
     }
     return project?.path ?? activeEditorRoot ?? aethonRoot;
-  }, [activeEditorRoot, activeWorktreeId, aethonRoot, project?.path, state]);
+  }, [activeEditorRoot, activeWorkspaceId, aethonRoot, project?.path, state]);
   const rootLabel = (project?.name ?? basename(projectPath)) || "files";
 
   const { collapsed, hidden, height, setCollapsed, setHidden, setHeight } =
@@ -284,7 +284,7 @@ export function FileTreePanel({
           id: string;
           label?: string;
           active?: boolean;
-          worktrees?: Array<{
+          workspaces?: Array<{
             id: string;
             label?: string;
             branch?: string;
@@ -300,13 +300,13 @@ export function FileTreePanel({
   const activeProject =
     sidebarProjects.find((p) => p.id === activeProjectId) ??
     sidebarProjects.find((p) => p.active === true);
-  const activeWorktree = activeProject?.worktrees?.find(
+  const activeWorkspace = activeProject?.workspaces?.find(
     (w) => w.active === true,
   );
   const headerLabel = activeProject?.label ?? rootLabel;
   const headerBranch =
-    activeWorktree?.label ??
-    activeWorktree?.branch ??
+    activeWorkspace?.label ??
+    activeWorkspace?.branch ??
     activeProject?.git?.branch;
 
   const headerActions =

@@ -588,10 +588,17 @@ export class AethonAgentState {
   }
 
   // ---- Helpers tied to the few re-assigned scalars ----------------------
+  /** Per-process random token baked into every mutationId. The Rust
+   *  supervisor routes acks by mutationId across ALL bridge processes
+   *  (global + per-tab workers); without this, two workers minting ids
+   *  in the same millisecond at the same counter value would collide
+   *  and cross-route their acks. */
+  private readonly mutationIdSeed = Math.random().toString(36).slice(2, 8);
+
   /** Generate the next mutationId. Mutates `mutationCounter`. */
   nextMutationId(): string {
     this.mutationCounter += 1;
-    return `m${Date.now().toString(36)}-${this.mutationCounter}`;
+    return `m${Date.now().toString(36)}-${this.mutationIdSeed}-${this.mutationCounter}`;
   }
 
   nextNotificationId(): string {

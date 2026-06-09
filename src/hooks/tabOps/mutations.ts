@@ -124,7 +124,7 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
         prev.sidebar as Record<string, unknown> | undefined,
         target.model,
       );
-      // Selecting any tab clears a worktree-landing override so the
+      // Selecting any tab clears a workspace-landing override so the
       // chat canvas can render. Without this, clicking a tab while the
       // landing was visible would leave the landing stuck on top.
       result.landing = null;

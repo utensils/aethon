@@ -5,11 +5,11 @@
  *
  *  - resize.ts    — sidebar resize / resize-end (layout column token)
  *  - project.ts   — remove / toggle-expand / rename / open-finder /
- *                   copy-path / set-worktree-base (project CRUD + chrome)
+ *                   copy-path / set-workspace-base (project CRUD + chrome)
  *  - session.ts   — delete-session / rename-session (with consent prompt)
- *  - worktree.ts  — create / switch / open-in-new-tab / start-session /
+ *  - workspace.ts  — create / switch / open-in-new-tab / start-session /
  *                   remove / cancel-pending / retry-pending / rename /
- *                   open-finder / copy-path (10 worktree handlers)
+ *                   open-finder / copy-path (10 workspace handlers)
  *  - extension.ts — toggle-extension (bridge command)
  *  - chrome.ts    — handleSectionedSelect (sidebar + model-picker +
  *                   appearance-menu select dispatch by sectionId)
@@ -28,25 +28,25 @@ export {
   handleSidebarOpenProjectInFinder,
   handleSidebarCopyProjectPath,
   handleSidebarRenameProject,
-  handleSidebarSetProjectWorktreeBase,
+  handleSidebarSetProjectWorkspaceBase,
 } from "./project";
 export {
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
 } from "./session";
 export {
-  handleSidebarCreateWorktree,
-  handleSidebarSwitchWorktree,
-  handleSidebarOpenWorktreeInNewTab,
+  handleSidebarCreateWorkspace,
+  handleSidebarSwitchWorkspace,
+  handleSidebarOpenWorkspaceInNewTab,
   handleSidebarStartSession,
-  handleSidebarRemoveWorktree,
-  handleSidebarCancelPendingWorktree,
-  handleSidebarRetryPendingWorktree,
-  handleSidebarRenameWorktree,
-  handleSidebarReorderWorktree,
-  handleSidebarSortProjectWorktrees,
-  handleSidebarOpenWorktreeInFinder,
-  handleSidebarCopyWorktreePath,
-} from "./worktree";
+  handleSidebarRemoveWorkspace,
+  handleSidebarCancelPendingWorkspace,
+  handleSidebarRetryPendingWorkspace,
+  handleSidebarRenameWorkspace,
+  handleSidebarReorderWorkspace,
+  handleSidebarSortProjectWorkspaces,
+  handleSidebarOpenWorkspaceInFinder,
+  handleSidebarCopyWorkspacePath,
+} from "./workspace";
 export { handleSidebarToggleExtension } from "./extension";
 export { handleSectionedSelect } from "./chrome";
