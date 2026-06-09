@@ -54,7 +54,7 @@ export function getCachedEnv(
   cwd: string,
 ): { env: Record<string, string>; kind: string | null; hot: boolean } {
   const entry = cache.get(cwd);
-  if (entry && !entry.fetching) {
+  if (entry && (!entry.fetching || Object.keys(entry.env).length > 0)) {
     return { env: entry.env, kind: entry.kind, hot: true };
   }
   if (!entry) {
@@ -278,15 +278,11 @@ export async function refresh(
   deps: DevshellClientDeps,
   root: string,
 ): Promise<void> {
-  // Clear all cache entries whose cwd lies under root — a worktree
-  // shares the root flake but lives in a different cwd. Mirror the
-  // same loop into `warned` so a subpath cwd that previously emitted
-  // a cold-run warning will warn again after the refresh (otherwise
-  // the user gets a silent first command on stale env).
-  for (const key of [...cache.keys()]) {
-    if (isUnderRoot(key, root)) {
-      cache.delete(key);
-    }
+  // Keep any previous env hot while Rust refreshes the resolver. The bash
+  // spawnHook is synchronous, so deleting here would make the next command
+  // fall back to the host env for one turn.
+  for (const [key, entry] of [...cache.entries()]) {
+    if (isUnderRoot(key, root)) cache.set(key, { ...entry, stale: true });
   }
   for (const key of [...warned]) {
     if (isUnderRoot(key, root)) {
@@ -310,15 +306,13 @@ export function onDevshellEvent(
   },
 ): void {
   if (event.status === "ready") {
-    // Just invalidate; the next spawnHook call will re-fetch under
-    // its own cwd (which may be a worktree subpath of `root`).
-    // Mirror the loop into `warned` so a subpath cwd that previously
-    // emitted a cold-run warning will warn again after the resolver
-    // completes a fresh resolve (otherwise the user gets a silent
-    // first command on stale env).
-    for (const key of [...cache.keys()]) {
+    // Refresh any matching agent-side entries without making the synchronous
+    // bash spawnHook go cold. Existing env remains usable until env_for_path
+    // returns the freshly prepared resolver output.
+    for (const [key, entry] of [...cache.entries()]) {
       if (isUnderRoot(key, event.root)) {
-        cache.delete(key);
+        cache.set(key, { ...entry, stale: true, fetching: false });
+        void ensureFetched(state, deps, key);
       }
     }
     for (const key of [...warned]) {

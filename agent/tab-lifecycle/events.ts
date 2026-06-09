@@ -25,6 +25,10 @@ import {
 } from "../agent-errors";
 import { logger } from "../logger";
 import type { AethonAgentState, TabRecord } from "../state";
+import {
+  textFromContent,
+  thinkingFromContent,
+} from "../session-history/shared";
 import { consumeBashTerminalSnapshot } from "../terminal-stream";
 import {
   extractToolContent,
@@ -68,6 +72,8 @@ function startResponseSegment(
   rec.activeResponseMessageId = canonical
     ? `text-${safeIdPart(canonical)}-${rec.responseMessageSeq}`
     : `text-${Date.now()}-${rec.responseMessageSeq}`;
+  rec.activeResponseText = "";
+  rec.activeResponseThinking = "";
   return rec.activeResponseMessageId;
 }
 
@@ -96,6 +102,87 @@ function responseMessageId(
 function rollResponseMessage(rec: TabRecord): void {
   rec.activeResponseMessageId = undefined;
   rec.activeResponseCanonicalId = undefined;
+  rec.activeResponseText = undefined;
+  rec.activeResponseThinking = undefined;
+}
+
+function rememberResponseDelta(
+  rec: TabRecord,
+  channel: "text" | "thinking",
+  delta: string,
+): void {
+  if (channel === "thinking") {
+    rec.activeResponseThinking = (rec.activeResponseThinking ?? "") + delta;
+  } else {
+    rec.activeResponseText = (rec.activeResponseText ?? "") + delta;
+  }
+}
+
+function assistantMessageCanonicalId(message: {
+  id?: unknown;
+  messageId?: unknown;
+}): string | undefined {
+  return assistantEventMessageId(message);
+}
+
+function missingSuffix(
+  finalContent: string,
+  streamedContent: string | undefined,
+): string {
+  if (!finalContent) return "";
+  const streamed = streamedContent ?? "";
+  if (!streamed) return finalContent;
+  if (finalContent === streamed) return "";
+  if (finalContent.startsWith(streamed))
+    return finalContent.slice(streamed.length);
+  if (streamed.includes(finalContent)) return "";
+  return finalContent;
+}
+
+function emitFinalAssistantContent(
+  deps: TabLifecycleDeps,
+  rec: TabRecord,
+  tabId: string,
+  assistant:
+    | ({ role?: unknown; content?: unknown } & {
+        id?: unknown;
+        messageId?: unknown;
+      })
+    | undefined,
+): void {
+  if (!assistant || assistant.role !== "assistant") return;
+  const finalThinking = thinkingFromContent(assistant.content);
+  const finalText = textFromContent(assistant.content);
+  if (!finalThinking && !finalText) return;
+
+  const messageId =
+    rec.activeResponseMessageId ??
+    startResponseSegment(rec, assistantMessageCanonicalId(assistant));
+  const thinkingDelta = missingSuffix(
+    finalThinking,
+    rec.activeResponseThinking,
+  );
+  if (thinkingDelta) {
+    deps.send({
+      type: "response_delta",
+      tabId,
+      messageId,
+      content: thinkingDelta,
+      channel: "thinking",
+    });
+    rememberResponseDelta(rec, "thinking", thinkingDelta);
+  }
+  const textDelta = missingSuffix(finalText, rec.activeResponseText);
+  if (textDelta) {
+    deps.send({
+      type: "response_delta",
+      tabId,
+      messageId,
+      content: textDelta,
+      channel: "text",
+    });
+    rememberResponseDelta(rec, "text", textDelta);
+  }
 }
 
 function compactionNotice(
@@ -122,7 +209,8 @@ function compactionNotice(
     type.includes("success")
   ) {
     const tokensBefore =
-      typeof event.tokensBefore === "number" && Number.isFinite(event.tokensBefore)
+      typeof event.tokensBefore === "number" &&
+      Number.isFinite(event.tokensBefore)
         ? ` · ${event.tokensBefore.toLocaleString("en-US")} tokens summarized`
         : "";
     return { message: `Context compacted${tokensBefore}` };
@@ -206,6 +294,7 @@ export function handleSessionEvent(
             content: delta,
             channel,
           });
+          rememberResponseDelta(rec, channel, delta);
           addLiveContextUsageEstimate(rec, delta);
           emitContextUsageThrottled(state, deps, tabId, rec);
         }
@@ -368,7 +457,13 @@ export function handleSessionEvent(
         ? modelKey(rec.session.model)
         : "unknown";
       const lastAssistant = [
-        ...((messages ?? []) as { role?: string; stopReason?: string }[]),
+        ...((messages ?? []) as Array<{
+          role?: string;
+          stopReason?: string;
+          content?: unknown;
+          id?: unknown;
+          messageId?: unknown;
+        }>),
       ]
         .reverse()
         .find((m) => m.role === "assistant");
@@ -389,6 +484,7 @@ export function handleSessionEvent(
         if (state.currentAgentTabId === tabId) {
           state.currentAgentTabId = undefined;
         }
+        emitFinalAssistantContent(deps, rec, tabId, lastAssistant);
         rollResponseMessage(rec);
         clearLiveContextUsageEstimate(rec);
         emitContextUsage(state, deps, tabId, rec);
