@@ -31,6 +31,26 @@ describe("activeProjectCwdFromJson", () => {
     ).toBe("/repo/aethon-fix");
   });
 
+  it("reads pre-v5 worktree spellings on an upgrade boot (regression)", () => {
+    // The bridge can start against a projects.json the frontend hasn't
+    // re-saved in the v5 schema yet. The old keys must still resolve the
+    // active workspace cwd, or the agent boots in the project root and
+    // loads the wrong extensions / session scope.
+    expect(
+      activeProjectCwdFromJson(
+        JSON.stringify({
+          schemaVersion: 4,
+          activeId: "p1",
+          activeWorktreeId: "wt1",
+          projects: [{ id: "p1", path: "/repo/aethon" }],
+          worktreesByProject: {
+            p1: [{ id: "wt1", projectId: "p1", path: "/repo/aethon-fix" }],
+          },
+        }),
+      ),
+    ).toBe("/repo/aethon-fix");
+  });
+
   it("falls back to the project path when the active workspace is stale", () => {
     expect(
       activeProjectCwdFromJson(

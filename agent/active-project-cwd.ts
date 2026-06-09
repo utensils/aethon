@@ -17,6 +17,14 @@ interface PersistedProjects {
   activeWorkspaceId?: unknown;
   projects?: PersistedProject[];
   workspacesByProject?: Record<string, PersistedWorkspace[]>;
+  /** Pre-v5 spellings. The frontend migrates these on load, but this
+   *  parser runs at bridge startup — possibly BEFORE the frontend has
+   *  re-saved the file in the v5 schema. Without the fallback, an
+   *  upgrade boot with an active workspace selected would resolve the
+   *  project root instead of the workspace cwd and load the wrong
+   *  extensions / session scope. */
+  activeWorktreeId?: unknown;
+  worktreesByProject?: Record<string, PersistedWorkspace[]>;
 }
 
 export function activeProjectCwdFromJson(text: string): string | undefined {
@@ -37,12 +45,19 @@ export function activeProjectCwdFromJson(text: string): string | undefined {
       : undefined;
   if (!projectPath) return undefined;
 
-  if (typeof parsed.activeWorkspaceId === "string" && parsed.activeWorkspaceId) {
-    const workspaces = parsed.workspacesByProject?.[parsed.activeId] ?? [];
+  const activeWorkspaceId =
+    typeof parsed.activeWorkspaceId === "string" && parsed.activeWorkspaceId
+      ? parsed.activeWorkspaceId
+      : typeof parsed.activeWorktreeId === "string" && parsed.activeWorktreeId
+        ? parsed.activeWorktreeId
+        : undefined;
+  if (activeWorkspaceId) {
+    const byProject = parsed.workspacesByProject ?? parsed.worktreesByProject;
+    const workspaces = byProject?.[parsed.activeId] ?? [];
     const activeWorkspace = workspaces.find(
       (w) =>
         w &&
-        w.id === parsed.activeWorkspaceId &&
+        w.id === activeWorkspaceId &&
         w.projectId === parsed.activeId &&
         typeof w.path === "string" &&
         w.path.length > 0,
