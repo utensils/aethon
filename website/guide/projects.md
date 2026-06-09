@@ -77,9 +77,10 @@ The MRU order is updated whenever you activate a project.
 
 ## Workspaces
 
-Projects can expand into their git worktrees in the sidebar. Selecting a
-workspace makes it the active working directory for new tabs; existing tabs keep
-their original `cwd`.
+A project has one or more workspaces: the main checkout, plus any number of
+additional working copies (each backed by a git worktree). Projects expand into
+their workspaces in the sidebar. Selecting a workspace makes it the active
+working directory for new tabs; existing tabs keep their original `cwd`.
 
 New workspaces fork from `origin/main` by default. To change that for a project,
 right-click the project and choose **Set workspace base...**. Leaving it blank

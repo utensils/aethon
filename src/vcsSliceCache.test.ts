@@ -127,6 +127,27 @@ describe("vcsSliceCache", () => {
     expect(getCachedVcsSlice("/live")?.branch).toBe("fresh-live");
   });
 
+  it("enforces the entry cap when hydrating an oversized disk cache", async () => {
+    const entries: Record<string, unknown> = {};
+    for (let i = 0; i < __TEST__.MAX_ENTRIES + 8; i++) {
+      entries[`/p${i}`] = {
+        updatedAt: new Date().toISOString(),
+        slice: slice(`/p${i}`),
+      };
+    }
+    readStateMock.mockResolvedValue(
+      JSON.stringify({ schemaVersion: 1, entries }),
+    );
+
+    await hydrateVcsSliceCache();
+
+    let inMemory = 0;
+    for (let i = 0; i < __TEST__.MAX_ENTRIES + 8; i++) {
+      if (getCachedVcsSlice(`/p${i}`)) inMemory += 1;
+    }
+    expect(inMemory).toBeLessThanOrEqual(__TEST__.MAX_ENTRIES);
+  });
+
   it("drops stale and malformed disk entries", async () => {
     readStateMock.mockResolvedValue(
       JSON.stringify({
