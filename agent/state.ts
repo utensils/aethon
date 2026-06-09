@@ -249,6 +249,11 @@ export interface TabRecord {
   activeResponseMessageId?: string;
   /** Canonical pi id (when present) for the active streamed segment. */
   activeResponseCanonicalId?: string;
+  /** Text streamed into the active response segment. Used to reconcile
+   *  missing final content from agent_end without duplicating deltas. */
+  activeResponseText?: string;
+  /** Thinking/reasoning streamed into the active response segment. */
+  activeResponseThinking?: string;
   /** Monotonic per-tab counter used to make synthetic response ids unique
    *  without trusting pi message_update timestamps (which can refer to an
    *  earlier transcript record during streaming). */

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleA2ui } from "./a2ui";
 import { handleResponseDelta } from "./responseDelta";
 import { buildHandlerFixture } from "./testFixtures";
@@ -228,6 +228,215 @@ describe("handleA2ui", () => {
     expect(out.messages[0].a2ui?.components[0].props).toMatchObject({
       status: "cancelled",
       endedAt: 2_000,
+    });
+  });
+
+  it("persists the preserved cancellation state for late final tool cards", () => {
+    const id = "tool-1-call_1";
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      messages: [
+        {
+          id,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  startedAt: 1_000,
+                  endedAt: 1_500,
+                  status: "cancelled",
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    ctx.updateTab = vi.fn((_tabId, updater) => {
+      updater(tab);
+    });
+    const payload = {
+      components: [
+        {
+          id,
+          type: "tool-card",
+          props: {
+            title: "bash",
+            toolName: "bash",
+            startedAt: 1_000,
+            endedAt: 2_000,
+          },
+        },
+      ],
+    };
+
+    handleA2ui({ type: "a2ui", payload, id, tabId: "tab-1" }, ctx);
+
+    expect(mocks.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        a2ui: {
+          components: [
+            expect.objectContaining({
+              props: expect.objectContaining({
+                status: "cancelled",
+                endedAt: 2_000,
+              }),
+              children: [
+                expect.objectContaining({
+                  id: `${id}-late-completion-notice`,
+                }),
+              ],
+            }),
+          ],
+        },
+      }),
+      "tab-1",
+    );
+  });
+
+  it("upserts a completed tool card against the current tab even when the snapshot missed it", () => {
+    const id = "tool-1-call_1";
+    const snapshotTab = makeEmptyTab("tab-1", "Tab 1");
+    const currentTab = {
+      ...snapshotTab,
+      messages: [
+        {
+          id,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "codex review",
+                  startedAt: 1_000,
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [snapshotTab] },
+    });
+    const payload = {
+      components: [
+        {
+          id,
+          type: "tool-card",
+          props: {
+            title: "bash",
+            toolName: "bash",
+            description: "codex review",
+            startedAt: 1_000,
+            endedAt: 2_000,
+          },
+        },
+      ],
+    };
+
+    handleA2ui({ type: "a2ui", payload, id, tabId: "tab-1" }, ctx);
+
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(currentTab);
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0]).toMatchObject({
+      id,
+      role: "agent",
+      a2ui: payload,
+    });
+  });
+
+  it("prefers the current tab's exact running id over a stale snapshot identity match", () => {
+    const oldId = "tool-1-call_1";
+    const currentId = "tool-2-call_1";
+    const snapshotTab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      messages: [
+        {
+          id: oldId,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: oldId,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "older codex review",
+                  startedAt: 1_000,
+                  endedAt: 1_500,
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const currentTab = {
+      ...snapshotTab,
+      messages: [
+        {
+          id: currentId,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: currentId,
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "current codex review",
+                  startedAt: 2_000,
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [snapshotTab] },
+    });
+    const payload = {
+      components: [
+        {
+          id: currentId,
+          type: "tool-card",
+          props: {
+            title: "bash",
+            toolName: "bash",
+            description: "current codex review",
+            startedAt: 2_000,
+            endedAt: 2_500,
+          },
+        },
+      ],
+    };
+
+    handleA2ui({ type: "a2ui", payload, id: currentId, tabId: "tab-1" }, ctx);
+
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(currentTab);
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0]).toMatchObject({
+      id: currentId,
+      a2ui: payload,
     });
   });
 

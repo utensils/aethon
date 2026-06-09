@@ -118,6 +118,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       {
         setState,
         stateRef,
+        projects: projectsRef.current,
         tabBucketsRef,
         buildProjectsMirror,
         dispatchTerminalReplay,

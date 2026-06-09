@@ -113,6 +113,22 @@ describe("getCachedEnv", () => {
     expect(env).toEqual({});
   });
 
+  it("keeps a known-empty env hot while a refresh fetch is in flight", async () => {
+    const h = makeHarness();
+    let fetchP = ensureFetched(h.state, h.deps, "/proj");
+    ackLastWith(h, true, { enabled: "never", kind: null, env: {} });
+    await fetchP;
+
+    fetchP = ensureFetched(h.state, h.deps, "/proj");
+    const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
+    expect(hot).toBe(true);
+    expect(kind).toBeNull();
+    expect(env).toEqual({});
+
+    ackLastWith(h, true, { enabled: "never", kind: null, env: {} });
+    await fetchP;
+  });
+
   it("preserves previous env on a failed re-fetch (marks stale)", async () => {
     const h = makeHarness();
     // 1st fetch — success
@@ -130,6 +146,27 @@ describe("getCachedEnv", () => {
     const { env, hot } = getCachedEnv(h.state, h.deps, "/proj");
     expect(env).toEqual({ PATH: "/x" });
     expect(hot).toBe(true);
+  });
+
+  it("keeps using a prepared env while a refresh fetch is in flight", async () => {
+    const h = makeHarness();
+    const p = ensureFetched(h.state, h.deps, "/proj");
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/nix/store/old/bin", IN_NIX_SHELL: "impure" },
+    });
+    await p;
+
+    void ensureFetched(h.state, h.deps, "/proj");
+
+    const { env, kind, hot } = getCachedEnv(h.state, h.deps, "/proj");
+    expect(hot).toBe(true);
+    expect(kind).toBe("flake");
+    expect(env).toEqual({
+      PATH: "/nix/store/old/bin",
+      IN_NIX_SHELL: "impure",
+    });
   });
 });
 
@@ -214,7 +251,7 @@ describe("ensurePrepared", () => {
 });
 
 describe("onDevshellEvent", () => {
-  it("invalidates cache entries under a root on ready", async () => {
+  it("keeps existing env hot under a root on ready while refreshing it", async () => {
     const h = makeHarness();
     const p1 = ensureFetched(h.state, h.deps, "/proj");
     ackLastWith(h, true, {
@@ -236,11 +273,49 @@ describe("onDevshellEvent", () => {
       root: "/proj",
       status: "ready",
     });
-    const { hot: hotRoot } = getCachedEnv(h.state, h.deps, "/proj");
-    const { hot: hotSub } = getCachedEnv(h.state, h.deps, "/proj/sub");
-    // Both went cold → fetches kicked off.
-    expect(hotRoot).toBe(false);
-    expect(hotSub).toBe(false);
+    const root = getCachedEnv(h.state, h.deps, "/proj");
+    const sub = getCachedEnv(h.state, h.deps, "/proj/sub");
+    expect(root.hot).toBe(true);
+    expect(sub.hot).toBe(true);
+    expect(root.env).toEqual({ PATH: "/old" });
+    expect(sub.env).toEqual({ PATH: "/old-sub" });
+    expect(h.sent.filter((c) => c.op === "env_for_path")).toHaveLength(4);
+  });
+
+  it("does not start a duplicate ready refresh while a fetch is already in flight", async () => {
+    const h = makeHarness();
+    const p1 = ensureFetched(h.state, h.deps, "/proj");
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/old" },
+    });
+    await p1;
+
+    const refreshP = ensureFetched(h.state, h.deps, "/proj");
+    expect(h.sent.filter((c) => c.op === "env_for_path")).toHaveLength(2);
+
+    onDevshellEvent(h.state, h.deps, {
+      kind: "flake",
+      root: "/proj",
+      status: "ready",
+    });
+
+    expect(h.sent.filter((c) => c.op === "env_for_path")).toHaveLength(2);
+    const duringRefresh = getCachedEnv(h.state, h.deps, "/proj");
+    expect(duringRefresh.hot).toBe(true);
+    expect(duringRefresh.env).toEqual({ PATH: "/old" });
+
+    ackLastWith(h, true, {
+      enabled: "auto",
+      kind: "flake",
+      env: { PATH: "/new" },
+    });
+    await refreshP;
+
+    expect(getCachedEnv(h.state, h.deps, "/proj").env).toEqual({
+      PATH: "/new",
+    });
   });
 
   it("does not invalidate cache entries under unrelated roots", async () => {
@@ -264,7 +339,7 @@ describe("onDevshellEvent", () => {
 });
 
 describe("refresh", () => {
-  it("clears cache for the root and sends a refresh query", async () => {
+  it("keeps cached env hot for the root while sending a refresh query", async () => {
     const h = makeHarness();
     const p = ensureFetched(h.state, h.deps, "/proj");
     ackLastWith(h, true, {
@@ -275,11 +350,12 @@ describe("refresh", () => {
     await p;
 
     const refreshP = refresh(h.state, h.deps, "/proj");
-    // Cache should be gone immediately, before the refresh ack lands.
+    // The old devshell env should remain usable until the refresh result lands.
     const beforeAck = getCachedEnv(h.state, h.deps, "/proj");
-    expect(beforeAck.hot).toBe(false);
+    expect(beforeAck.hot).toBe(true);
+    expect(beforeAck.env).toEqual({ PATH: "/old" });
 
-    // Now ack the refresh + the cache-miss fetch fired by getCachedEnv above.
+    // Now ack the refresh query.
     // Two acks may be pending — drain them in order.
     while (h.sent.length > 0) {
       const last = h.sent[h.sent.length - 1];

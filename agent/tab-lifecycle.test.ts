@@ -538,6 +538,81 @@ describe("handleSessionEvent", () => {
     });
   });
 
+  it("agent_end emits missing final text when streaming only delivered thinking", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    rec.promptInFlight = true;
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "thinking_delta",
+        delta: "checking",
+        messageId: "assistant-final",
+      },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "agent_end",
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "stop",
+          content: [
+            { type: "thinking", thinking: "checking" },
+            { type: "text", text: "No. The PR did not add a rake task." },
+          ],
+        },
+      ],
+    });
+
+    expect(f.sent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "response_delta",
+          tabId: "tab-1",
+          messageId: "text-assistant-final-1",
+          channel: "text",
+          content: "No. The PR did not add a rake task.",
+        }),
+      ]),
+    );
+    const responseEndIndex = f.sent.findIndex((m) => m.type === "response_end");
+    const finalTextIndex = f.sent.findIndex(
+      (m) => m.type === "response_delta" && m.channel === "text",
+    );
+    expect(finalTextIndex).toBeGreaterThan(-1);
+    expect(finalTextIndex).toBeLessThan(responseEndIndex);
+  });
+
+  it("agent_end only emits the unstreamed suffix of final text", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "text_delta",
+        delta: "Done",
+        messageId: "assistant-final",
+      },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "agent_end",
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "Done." }],
+        },
+      ],
+    });
+
+    const textDeltas = f.sent.filter(
+      (m) => m.type === "response_delta" && m.channel === "text",
+    );
+    expect(textDeltas.map((m) => m.content)).toEqual(["Done", "."]);
+  });
+
   it("rolls streamed assistant message ids at tool boundaries", () => {
     const f = makeFixture();
     const rec = fakeRec();

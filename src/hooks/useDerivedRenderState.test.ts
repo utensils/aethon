@@ -210,6 +210,41 @@ describe("useDerivedRenderState", () => {
     });
   });
 
+  it("keeps worktree sessions visible on the project dashboard", () => {
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: { id: "p1", path: "/repo/app" },
+          projects: [{ id: "p1" }],
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                worktrees: [{ id: "wt-1", path: "/repo/app-fix" }],
+              },
+            ],
+          },
+          recentSessions: [
+            { id: "main", cwd: "/repo/app" },
+            { id: "worktree", cwd: "/repo/app-fix/" },
+            { id: "other", cwd: "/repo/other" },
+          ],
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.projectDashboard).toMatchObject({
+      recentSessions: [
+        { id: "main", cwd: "/repo/app" },
+        { id: "worktree", cwd: "/repo/app-fix/" },
+      ],
+    });
+  });
+
   it("overlays agent-activity across the active tabs and stashed buckets", () => {
     const mainTab = {
       ...makeEmptyTab("m", "m", "p1", "agent"),

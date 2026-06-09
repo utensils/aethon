@@ -36,6 +36,6 @@ export {
   truncateLocalChatAfterEntry,
   writeSessionLabel,
 } from "./io";
-export { readSessionMetadata } from "./metadata";
+export { latestSessionLog, readSessionMetadata } from "./metadata";
 export { findSessionFileMatchingCwd } from "./lookup";
 export { readSessionTranscript } from "./restore";

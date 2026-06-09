@@ -3,7 +3,11 @@ import { basename, extname, join } from "node:path";
 import type { AethonAgentState } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { emitGlobalReady } from "./dispatcherTypes";
-import { normalizeSessionLabel, writeSessionLabel } from "./session-history";
+import {
+  normalizeSessionLabel,
+  readSessionMetadata,
+  writeSessionLabel,
+} from "./session-history";
 import { ensureTab, modelKey, tabSessionDir } from "./tab-lifecycle";
 
 interface NativeContextUsage {
@@ -249,6 +253,13 @@ export async function handleNativeSlashCommand(
       tab.session.setSessionName(nextName);
       try {
         await writeSessionLabel(tabSessionDir(state, tabId), nextName);
+        const refreshed = await readSessionMetadata(tabSessionDir(state, tabId));
+        if (refreshed) {
+          const idx = state.discoveredTabs.findIndex((t) => t.tabId === tabId);
+          const entry = { tabId, ...refreshed };
+          if (idx >= 0) state.discoveredTabs[idx] = entry;
+          else state.discoveredTabs.push(entry);
+        }
       } catch {
         /* pi session name still succeeded; label replay is best effort */
       }
@@ -258,7 +269,7 @@ export async function handleNativeSlashCommand(
         command,
         message: `Session name set: ${nextName}`,
       });
-      emitGlobalReady(state, deps);
+      await emitGlobalReady(state, deps);
       return;
     }
     case "export": {

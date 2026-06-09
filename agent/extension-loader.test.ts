@@ -23,6 +23,7 @@ import {
   loadProjectAethonExtensions,
   normalizeTheme,
   projectExtensionDisplayName,
+  refreshPersistedTabs,
 } from "./extension-loader";
 
 function makeOpts(userDir: string): AethonAgentStateOptions {
@@ -137,6 +138,35 @@ describe("discoverPersistedTabs", () => {
       const ids = tabs.map((t) => t.tabId);
       expect(ids).toContain("default");
       expect(ids).not.toContain("weird name?!");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("refreshPersistedTabs", () => {
+  it("returns [] when sessionsDir does not exist", async () => {
+    const f = makeFixture("/tmp/aethon-nope-" + Date.now());
+    f.state.discoveredTabs = [
+      { tabId: "existing", lastModified: 123, cwd: "/proj" },
+    ];
+
+    expect(await refreshPersistedTabs(f.state)).toEqual([]);
+  });
+
+  it("preserves existing tabs on non-ENOENT readdir failures", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-ext-"));
+    try {
+      const stateOpts = makeOpts(root);
+      stateOpts.sessionsDir = join(root, "sessions-as-file");
+      writeFileSync(stateOpts.sessionsDir, "not a directory");
+      const state = new AethonAgentState(stateOpts);
+      const existing = [
+        { tabId: "existing", lastModified: 123, cwd: "/proj" },
+      ];
+      state.discoveredTabs = existing;
+
+      expect(await refreshPersistedTabs(state)).toBe(existing);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

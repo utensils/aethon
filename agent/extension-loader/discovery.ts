@@ -11,7 +11,7 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { logger } from "../logger";
-import { readSessionMetadata } from "../session-history";
+import { latestSessionLog, readSessionMetadata } from "../session-history";
 import type {
   AethonAgentState,
   DiscoveredTab,
@@ -69,18 +69,58 @@ export async function discoverPersistedTabs(
   try {
     entries = await readdir(state.sessionsDir);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger
-        .scope("tabs")
-        .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
-    }
-    return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    logger
+      .scope("tabs")
+      .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
+    return state.discoveredTabs;
   }
   const results: DiscoveredTab[] = [];
   for (const name of entries) {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
     const dir = join(state.sessionsDir, name);
     try {
+      const meta = await readSessionMetadata(dir);
+      if (meta) results.push({ tabId: name, ...meta });
+    } catch {
+      /* skip — best effort */
+    }
+  }
+  results.sort((a, b) => b.lastModified - a.lastModified);
+  return results;
+}
+
+/** Incrementally refresh `state.discoveredTabs` from disk. This keeps
+ * report/ready payloads current without rereading every large transcript on
+ * every webview reload or project switch. */
+export async function refreshPersistedTabs(
+  state: AethonAgentState,
+): Promise<DiscoveredTab[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(state.sessionsDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    logger
+      .scope("tabs")
+      .warn(`readdir ${state.sessionsDir}: ${(err as Error).message}`);
+    return state.discoveredTabs;
+  }
+  const existing = new Map(
+    state.discoveredTabs.map((tab) => [tab.tabId, tab] as const),
+  );
+  const results: DiscoveredTab[] = [];
+  for (const name of entries) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
+    const dir = join(state.sessionsDir, name);
+    try {
+      const latest = await latestSessionLog(dir);
+      if (!latest) continue;
+      const cached = existing.get(name);
+      if (cached?.lastModified === latest.mtimeMs) {
+        results.push(cached);
+        continue;
+      }
       const meta = await readSessionMetadata(dir);
       if (meta) results.push({ tabId: name, ...meta });
     } catch {

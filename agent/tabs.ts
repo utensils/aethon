@@ -69,7 +69,7 @@ export async function handleTabOpen(
     ) {
       await state.resourceLoader.reload();
       deps.scheduleStateFileWrite();
-      emitGlobalReady(state, deps);
+      await emitGlobalReady(state, deps);
     }
   }
   const restoreHistory =
@@ -162,7 +162,7 @@ export async function handleSetSessionLabel(
     if (idx >= 0) state.discoveredTabs[idx] = entry;
     else state.discoveredTabs.push(entry);
   }
-  emitGlobalReady(state, deps);
+  await emitGlobalReady(state, deps);
 }
 
 export async function handleLocalChatMessage(

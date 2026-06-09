@@ -156,8 +156,28 @@ describe("handleProjectDashboard", () => {
     expect(ctx.createWorktreeForProject).toHaveBeenCalledWith("p1");
   });
 
-  it("switch-worktree activates the worktree", async () => {
-    const { ctx } = buildRouteFixture();
+  it("switch-worktree builds the worktree landing", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        sidebar: {
+          projects: [
+            {
+              id: "p1",
+              label: "aethon",
+              worktrees: [
+                {
+                  id: "w-1",
+                  label: "fix/session",
+                  branch: "fix/session",
+                  path: "/repo/aethon-fix-session",
+                  isMain: false,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
     const handled = await handleProjectDashboard(
       {
         component: { id: "x", type: "project-dashboard" },
@@ -168,6 +188,78 @@ describe("handleProjectDashboard", () => {
     );
     expect(handled).toBe(true);
     expect(ctx.activateWorktree).toHaveBeenCalledWith("w-1");
+    expect(applySetState().landing).toMatchObject({
+      kind: "worktree",
+      projectId: "p1",
+      worktreeId: "w-1",
+      path: "/repo/aethon-fix-session",
+    });
+  });
+
+  it("switch-worktree shows landing when the destination scope is empty", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeWorktreeId: "w-current",
+        activeTabId: "tab-current",
+        tabs: [
+          {
+            id: "tab-current",
+            kind: "agent",
+            projectId: "p1",
+            cwd: "/repo/aethon-current",
+            messages: [{ id: "m1", role: "user", text: "current" }],
+            draft: "",
+            waiting: false,
+            queueCount: 0,
+            canvas: null,
+            terminalBuffer: "",
+          },
+        ],
+        sidebar: {
+          projects: [
+            {
+              id: "p1",
+              label: "aethon",
+              worktrees: [
+                {
+                  id: "w-next",
+                  label: "fix/session",
+                  branch: "fix/session",
+                  path: "/repo/aethon-fix-session",
+                  isMain: false,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    mocks.activateWorktree.mockImplementation(() => {
+      ctx.stateRef.current = {
+        ...ctx.stateRef.current,
+        activeWorktreeId: "w-next",
+        activeTabId: undefined,
+        tabs: [],
+      };
+    });
+
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "x", type: "project-dashboard" },
+        eventType: "switch-worktree",
+        data: { worktreeId: "w-next" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.activateWorktree).toHaveBeenCalledWith("w-next");
+    expect(applySetState().landing).toMatchObject({
+      kind: "worktree",
+      projectId: "p1",
+      worktreeId: "w-next",
+      path: "/repo/aethon-fix-session",
+    });
   });
 
   it("forwards dashboard worktree removal to the shared remove route", async () => {

@@ -671,7 +671,7 @@ async function handleUseForTab(
       : "",
   });
   emitAuthProfiles(state, deps);
-  emitGlobalReady(state, deps);
+  await emitGlobalReady(state, deps);
 }
 
 function handleSetDefault(

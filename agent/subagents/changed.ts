@@ -20,5 +20,5 @@ export async function handleSubagentsChanged(
   refreshSubagents(state);
   await state.resourceLoader.reload();
   deps.scheduleStateFileWrite();
-  emitGlobalReady(state, deps);
+  await emitGlobalReady(state, deps);
 }
