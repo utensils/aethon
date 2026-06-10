@@ -171,7 +171,13 @@ describe("sweepOrphanWorkspaceTabs", () => {
     const deadKey = projectScopeBucketKey("project-1", "ws-deleted");
     const liveKey = projectScopeBucketKey("project-1", "ws-live");
     const deadBucket: TabBucket = {
-      tabs: [agentTab("dead-tab", "project-1", "/projects/aethon-deleted")],
+      tabs: [
+        agentTab("dead-tab", "project-1", "/projects/aethon-deleted"),
+        {
+          ...makeEmptyTab("dead-shell", "Shell", "project-1", "shell"),
+          cwd: "/projects/aethon-deleted",
+        },
+      ],
       activeTabId: "dead-tab",
     };
     const liveBucket: TabBucket = {
@@ -196,8 +202,16 @@ describe("sweepOrphanWorkspaceTabs", () => {
     expect(persisted[deadKey]).toBeUndefined();
     expect(persisted[liveKey]).toBeDefined();
     expect(stateRef.current.closedSessionIds).toContain("dead-tab");
+    // Shell ids never enter closedSessionIds — that list is for agent
+    // session suppression only.
+    expect(stateRef.current.closedSessionIds).not.toContain("dead-shell");
     expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
       payload: JSON.stringify({ type: "tab_close", tabId: "dead-tab" }),
+    });
+    // The hidden shell's PTY is still alive in the Rust registry —
+    // sweeping its tab must close it explicitly.
+    expect(harness.invoke).toHaveBeenCalledWith("shell_close", {
+      tabId: "dead-shell",
     });
   });
 

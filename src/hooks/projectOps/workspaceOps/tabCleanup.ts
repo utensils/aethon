@@ -34,23 +34,26 @@ function readPersistedBuckets(
   return value as Record<string, TabBucket>;
 }
 
-/** Agent-tab ids belonging to the removed workspace, gathered from every
+/** Tab ids belonging to the removed workspace, gathered from every
  *  store: its own bucket (matching cwd or not — the bucket IS the
  *  workspace's tab set), plus matching-cwd tabs in any other bucket and
- *  the persisted mirror. Must run BEFORE any mutation: the wasActive
- *  bucket switch rewrites the removed workspace's bucket and would lose
- *  these ids. */
-function collectRemovedSessionIds(
+ *  the persisted mirror. Agent ids feed closedSessionIds suppression +
+ *  worker teardown; shell ids feed PTY teardown (their processes keep
+ *  running in the Rust ShellRegistry while hidden). Must run BEFORE any
+ *  mutation: the wasActive bucket switch rewrites the removed
+ *  workspace's bucket and would lose these ids. */
+function collectRemovedTabIds(
   deps: Pick<TabCleanupDeps, "stateRef" | "tabBucketsRef">,
   path: string,
   removedBucketKey: string,
-): Set<string> {
-  const suppressed = new Set<string>();
+): { agentIds: Set<string>; shellIds: Set<string> } {
+  const agentIds = new Set<string>();
+  const shellIds = new Set<string>();
   const collect = (key: string, tabs: readonly Tab[] | undefined) => {
     for (const tab of tabs ?? []) {
-      if (tab.kind !== "agent") continue;
+      if (tab.kind !== "agent" && tab.kind !== "shell") continue;
       if (key === removedBucketKey || tabCwdMatches(tab, path)) {
-        suppressed.add(tab.id);
+        (tab.kind === "agent" ? agentIds : shellIds).add(tab.id);
       }
     }
   };
@@ -65,7 +68,7 @@ function collectRemovedSessionIds(
       collect(key, bucket.tabs);
     }
   }
-  return suppressed;
+  return { agentIds, shellIds };
 }
 
 function filterBucket(bucket: TabBucket, path: string): TabBucket | null {
@@ -105,9 +108,9 @@ function closeVisibleTabsForWorkspacePath(
   const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
   const closing = tabs.filter((tab) => tabCwdMatches(tab, path));
   for (const tab of closing) closeTabNow(tab.id);
-  return new Set(
-    closing.filter((tab) => tab.kind === "agent").map((tab) => tab.id),
-  );
+  // closeTabNow owns the full teardown for these (bridge tab_close for
+  // agents, shell_close for shells) — the caller skips them.
+  return new Set(closing.map((tab) => tab.id));
 }
 
 export function mergeClosedSessionIds(
@@ -128,8 +131,12 @@ export function closeTabsForRemovedWorkspace(
   wasActive: boolean,
 ): void {
   const removedBucketKey = projectScopeBucketKey(projectId, workspaceId);
-  const suppressed = collectRemovedSessionIds(deps, path, removedBucketKey);
-  const visibleAgentClosed = closeVisibleTabsForWorkspacePath(
+  const { agentIds: suppressed, shellIds } = collectRemovedTabIds(
+    deps,
+    path,
+    removedBucketKey,
+  );
+  const visibleClosed = closeVisibleTabsForWorkspacePath(
     deps.stateRef,
     deps.closeTabNow,
     path,
@@ -186,15 +193,21 @@ export function closeTabsForRemovedWorkspace(
     });
   }
 
-  // Retire background workers for tabs that were never visible —
-  // closeTabNow already sent tab_close for the visible ones. The bridge
-  // no-ops on unknown tab ids.
+  // Retire background workers and hidden-shell PTYs for tabs that were
+  // never visible — closeTabNow already tore down the visible ones. The
+  // bridge and the shell registry both no-op on unknown tab ids.
   for (const tabId of suppressed) {
-    if (visibleAgentClosed.has(tabId)) continue;
+    if (visibleClosed.has(tabId)) continue;
     invoke("agent_command", {
       payload: JSON.stringify({ type: "tab_close", tabId }),
     }).catch(() => {
       /* best-effort teardown */
+    });
+  }
+  for (const tabId of shellIds) {
+    if (visibleClosed.has(tabId)) continue;
+    invoke("shell_close", { tabId }).catch(() => {
+      /* idempotent — already torn down by natural exit */
     });
   }
 

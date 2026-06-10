@@ -60,24 +60,30 @@ function bucketWorkspaceIsGone(
 }
 
 /** Returns the cleaned bucket, `null` to drop it, or the input bucket
- *  unchanged (identity) when nothing matched. */
+ *  unchanged (identity) when nothing matched. Swept agent ids land in
+ *  `suppressed` (session suppression + worker teardown); swept shell ids
+ *  in `sweptShells` (their PTYs keep running in the Rust ShellRegistry
+ *  while hidden and need an explicit shell_close). */
 function cleanBucket(
   projects: ProjectsState,
   bucketKey: string,
   bucket: TabBucket,
   suppressed: Set<string>,
+  sweptShells: Set<string>,
 ): TabBucket | null {
   const tabs = bucket.tabs ?? [];
+  const sweep = (tab: Tab) => {
+    if (tab.kind === "agent") suppressed.add(tab.id);
+    if (tab.kind === "shell") sweptShells.add(tab.id);
+  };
   if (bucketWorkspaceIsGone(projects, bucketKey)) {
-    for (const tab of tabs) {
-      if (tab.kind === "agent") suppressed.add(tab.id);
-    }
+    for (const tab of tabs) sweep(tab);
     return null;
   }
   const keep = tabs.filter((tab) => !isOrphanWorkspaceTab(projects, tab));
   if (keep.length === tabs.length) return bucket;
   for (const tab of tabs) {
-    if (tab.kind === "agent" && !keep.includes(tab)) suppressed.add(tab.id);
+    if (!keep.includes(tab)) sweep(tab);
   }
   if (keep.length === 0) return null;
   return {
@@ -101,6 +107,7 @@ function cleanBucket(
 export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
   const projects = deps.projectsRef.current;
   const suppressed = new Set<string>();
+  const sweptShells = new Set<string>();
 
   // Visible strip: closeTabNow handles closedSessionIds, bridge
   // tab_close / shell_close, and active-tab mirror fixup.
@@ -112,7 +119,7 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
 
   // Live bucket store.
   for (const [key, bucket] of [...deps.tabBucketsRef.current.entries()]) {
-    const next = cleanBucket(projects, key, bucket, suppressed);
+    const next = cleanBucket(projects, key, bucket, suppressed, sweptShells);
     if (next === bucket) continue;
     if (next === null) deps.tabBucketsRef.current.delete(key);
     else deps.tabBucketsRef.current.set(key, next);
@@ -131,7 +138,7 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
     let changed = false;
     const result: Record<string, TabBucket> = {};
     for (const [key, bucket] of Object.entries(persisted)) {
-      const next = cleanBucket(projects, key, bucket, suppressed);
+      const next = cleanBucket(projects, key, bucket, suppressed, sweptShells);
       if (next === bucket) {
         result[key] = bucket;
         continue;
@@ -157,7 +164,8 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
     });
   }
 
-  // Retire any background workers still running for swept hidden tabs.
+  // Retire any background workers and hidden-shell PTYs still running
+  // for swept hidden tabs. Both sides no-op on unknown tab ids.
   for (const tabId of suppressed) {
     invoke("agent_command", {
       payload: JSON.stringify({ type: "tab_close", tabId }),
@@ -165,8 +173,17 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
       /* best-effort teardown */
     });
   }
+  for (const tabId of sweptShells) {
+    invoke("shell_close", { tabId }).catch(() => {
+      /* idempotent — already torn down by natural exit */
+    });
+  }
 
-  if (visibleOrphans.length > 0 || suppressed.size > 0) {
+  if (
+    visibleOrphans.length > 0 ||
+    suppressed.size > 0 ||
+    sweptShells.size > 0
+  ) {
     deps.syncRecentSessionsToState();
   }
 }
