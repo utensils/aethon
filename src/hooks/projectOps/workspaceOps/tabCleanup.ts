@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { disposeEditorBuffer } from "../../../monaco/editor-buffers";
 import type { Tab } from "../../../types/tab";
 import { normalizeSessionPath, projectScopeBucketKey } from "../tabBuckets";
 import type { TabBucket } from "../types";
@@ -34,23 +35,33 @@ function readPersistedBuckets(
   return value as Record<string, TabBucket>;
 }
 
-/** Tab ids belonging to the removed workspace, gathered from every
- *  store: its own bucket (matching cwd or not — the bucket IS the
- *  workspace's tab set), plus matching-cwd tabs in any other bucket and
- *  the persisted mirror. Agent ids feed closedSessionIds suppression +
- *  worker teardown; shell ids feed PTY teardown (their processes keep
- *  running in the Rust ShellRegistry while hidden). Must run BEFORE any
- *  mutation: the wasActive bucket switch rewrites the removed
- *  workspace's bucket and would lose these ids. */
+/** Agent-, shell-, and editor-tab ids retired with the removed
+ *  workspace, gathered from every store: its own bucket (matching cwd
+ *  or not — the bucket IS the workspace's tab set), plus matching-cwd
+ *  agent/shell tabs in any other bucket and the persisted mirror.
+ *  Agent ids feed closedSessionIds suppression + worker teardown;
+ *  shell ids feed PTY teardown (their processes keep running in the
+ *  Rust ShellRegistry while hidden); editor ids feed Monaco buffer
+ *  disposal (the buffer cache is intentionally long-lived for hidden
+ *  buckets, but a dropped bucket leaves no UI handle to ever reach the
+ *  model again). Editor tabs only retire with their own bucket — they
+ *  have no cwd to match elsewhere. Must run BEFORE any mutation: the
+ *  wasActive bucket switch rewrites the removed workspace's bucket and
+ *  would lose these ids. */
 function collectRemovedTabIds(
   deps: Pick<TabCleanupDeps, "stateRef" | "tabBucketsRef">,
   path: string,
   removedBucketKey: string,
-): { agentIds: Set<string>; shellIds: Set<string> } {
+): { agentIds: Set<string>; shellIds: Set<string>; editorIds: Set<string> } {
   const agentIds = new Set<string>();
   const shellIds = new Set<string>();
+  const editorIds = new Set<string>();
   const collect = (key: string, tabs: readonly Tab[] | undefined) => {
     for (const tab of tabs ?? []) {
+      if (tab.kind === "editor") {
+        if (key === removedBucketKey) editorIds.add(tab.id);
+        continue;
+      }
       if (tab.kind !== "agent" && tab.kind !== "shell") continue;
       if (key === removedBucketKey || tabCwdMatches(tab, path)) {
         (tab.kind === "agent" ? agentIds : shellIds).add(tab.id);
@@ -68,7 +79,7 @@ function collectRemovedTabIds(
       collect(key, bucket.tabs);
     }
   }
-  return { agentIds, shellIds };
+  return { agentIds, shellIds, editorIds };
 }
 
 function filterBucket(bucket: TabBucket, path: string): TabBucket | null {
@@ -131,11 +142,11 @@ export function closeTabsForRemovedWorkspace(
   wasActive: boolean,
 ): void {
   const removedBucketKey = projectScopeBucketKey(projectId, workspaceId);
-  const { agentIds: suppressed, shellIds } = collectRemovedTabIds(
-    deps,
-    path,
-    removedBucketKey,
-  );
+  const {
+    agentIds: suppressed,
+    shellIds,
+    editorIds,
+  } = collectRemovedTabIds(deps, path, removedBucketKey);
   const visibleClosed = closeVisibleTabsForWorkspacePath(
     deps.stateRef,
     deps.closeTabNow,
@@ -209,6 +220,13 @@ export function closeTabsForRemovedWorkspace(
     invoke("shell_close", { tabId }).catch(() => {
       /* idempotent — already torn down by natural exit */
     });
+  }
+  // Hidden editor tabs dropped with the bucket: release their cached
+  // Monaco models — nothing can reach them again. No-op for ids that
+  // never materialised a buffer.
+  for (const tabId of editorIds) {
+    if (visibleClosed.has(tabId)) continue;
+    disposeEditorBuffer(tabId);
   }
 
   deps.syncRecentSessionsToState();

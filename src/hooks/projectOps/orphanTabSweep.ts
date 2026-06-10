@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { disposeEditorBuffer } from "../../monaco/editor-buffers";
 import type { ProjectsState } from "../../projects";
 import type { Tab } from "../../types/tab";
 import {
@@ -63,18 +64,22 @@ function bucketWorkspaceIsGone(
  *  unchanged (identity) when nothing matched. Swept agent ids land in
  *  `suppressed` (session suppression + worker teardown); swept shell ids
  *  in `sweptShells` (their PTYs keep running in the Rust ShellRegistry
- *  while hidden and need an explicit shell_close). */
+ *  while hidden and need an explicit shell_close); swept editor ids in
+ *  `sweptEditors` (their cached Monaco models become unreachable once
+ *  the bucket is gone and must be disposed). */
 function cleanBucket(
   projects: ProjectsState,
   bucketKey: string,
   bucket: TabBucket,
   suppressed: Set<string>,
   sweptShells: Set<string>,
+  sweptEditors: Set<string>,
 ): TabBucket | null {
   const tabs = bucket.tabs ?? [];
   const sweep = (tab: Tab) => {
     if (tab.kind === "agent") suppressed.add(tab.id);
     if (tab.kind === "shell") sweptShells.add(tab.id);
+    if (tab.kind === "editor") sweptEditors.add(tab.id);
   };
   if (bucketWorkspaceIsGone(projects, bucketKey)) {
     for (const tab of tabs) sweep(tab);
@@ -108,6 +113,7 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
   const projects = deps.projectsRef.current;
   const suppressed = new Set<string>();
   const sweptShells = new Set<string>();
+  const sweptEditors = new Set<string>();
 
   // Visible strip: closeTabNow handles closedSessionIds, bridge
   // tab_close / shell_close, and active-tab mirror fixup.
@@ -119,7 +125,14 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
 
   // Live bucket store.
   for (const [key, bucket] of [...deps.tabBucketsRef.current.entries()]) {
-    const next = cleanBucket(projects, key, bucket, suppressed, sweptShells);
+    const next = cleanBucket(
+      projects,
+      key,
+      bucket,
+      suppressed,
+      sweptShells,
+      sweptEditors,
+    );
     if (next === bucket) continue;
     if (next === null) deps.tabBucketsRef.current.delete(key);
     else deps.tabBucketsRef.current.set(key, next);
@@ -138,7 +151,14 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
     let changed = false;
     const result: Record<string, TabBucket> = {};
     for (const [key, bucket] of Object.entries(persisted)) {
-      const next = cleanBucket(projects, key, bucket, suppressed, sweptShells);
+      const next = cleanBucket(
+        projects,
+        key,
+        bucket,
+        suppressed,
+        sweptShells,
+        sweptEditors,
+      );
       if (next === bucket) {
         result[key] = bucket;
         continue;
@@ -178,11 +198,17 @@ export function sweepOrphanWorkspaceTabs(deps: OrphanTabSweepDeps): void {
       /* idempotent — already torn down by natural exit */
     });
   }
+  // Swept editor tabs: release their cached Monaco models — nothing can
+  // reach them once the bucket is gone. No-op for ids without a buffer.
+  for (const tabId of sweptEditors) {
+    disposeEditorBuffer(tabId);
+  }
 
   if (
     visibleOrphans.length > 0 ||
     suppressed.size > 0 ||
-    sweptShells.size > 0
+    sweptShells.size > 0 ||
+    sweptEditors.size > 0
   ) {
     deps.syncRecentSessionsToState();
   }

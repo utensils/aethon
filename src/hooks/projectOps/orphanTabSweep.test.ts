@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeEmptyTab, NO_PROJECT_KEY, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { installTauriMocks, clearTauriMocks } from "../../test/tauriMocks";
+import { disposeEditorBuffer } from "../../monaco/editor-buffers";
+
+vi.mock("../../monaco/editor-buffers", () => ({
+  disposeEditorBuffer: vi.fn(),
+}));
 import {
   isOrphanWorkspaceTab,
   sweepOrphanWorkspaceTabs,
@@ -177,6 +182,7 @@ describe("sweepOrphanWorkspaceTabs", () => {
           ...makeEmptyTab("dead-shell", "Shell", "project-1", "shell"),
           cwd: "/projects/aethon-deleted",
         },
+        makeEmptyTab("dead-editor", "file.ts", "project-1", "editor"),
       ],
       activeTabId: "dead-tab",
     };
@@ -213,6 +219,10 @@ describe("sweepOrphanWorkspaceTabs", () => {
     expect(harness.invoke).toHaveBeenCalledWith("shell_close", {
       tabId: "dead-shell",
     });
+    // A dropped bucket's editor tabs lose their last UI handle — their
+    // cached Monaco models must be disposed.
+    expect(disposeEditorBuffer).toHaveBeenCalledWith("dead-editor");
+    expect(stateRef.current.closedSessionIds).not.toContain("dead-editor");
   });
 
   it("filters orphan tabs out of live buckets and keeps the rest", () => {
