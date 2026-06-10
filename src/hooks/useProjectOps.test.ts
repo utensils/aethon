@@ -1415,6 +1415,10 @@ describe("useProjectOps workspace removal", () => {
           projectId: "project-1",
           cwd: "/projects/aethon-fix-issue",
         },
+        {
+          ...makeEmptyTab("hidden-shell-tab", "Shell", "project-1", "shell"),
+          cwd: "/projects/aethon-fix-issue",
+        },
       ],
     });
 
@@ -1438,6 +1442,12 @@ describe("useProjectOps workspace removal", () => {
     expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
       payload: JSON.stringify({ type: "tab_close", tabId: "hidden-issue-tab" }),
     });
+    // The hidden shell's PTY still runs in the Rust registry — removal
+    // must close it explicitly (visible shells get this via closeTabNow).
+    expect(harness.invoke).toHaveBeenCalledWith("shell_close", {
+      tabId: "hidden-shell-tab",
+    });
+    expect(stateRef.current.closedSessionIds).not.toContain("hidden-shell-tab");
   });
 
   it("marks the row as removing before a delayed git removal resolves", async () => {
