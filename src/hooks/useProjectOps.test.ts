@@ -10,6 +10,7 @@ import {
 } from "../types/tab";
 import type { ProjectsState } from "../projects";
 import { installTauriMocks, clearTauriMocks } from "../test/tauriMocks";
+import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import {
   nonEmptyProjectTabs,
   projectIdFromBucketKey,
@@ -19,6 +20,10 @@ import {
   workspaceIdForCwd,
   type UseProjectOpsContext,
 } from "./useProjectOps";
+
+vi.mock("../monaco/editor-buffers", () => ({
+  disposeEditorBuffer: vi.fn(),
+}));
 
 afterEach(() => {
   clearTauriMocks();
@@ -1419,6 +1424,7 @@ describe("useProjectOps workspace removal", () => {
           ...makeEmptyTab("hidden-shell-tab", "Shell", "project-1", "shell"),
           cwd: "/projects/aethon-fix-issue",
         },
+        makeEmptyTab("hidden-editor-tab", "file.ts", "project-1", "editor"),
       ],
     });
 
@@ -1448,6 +1454,12 @@ describe("useProjectOps workspace removal", () => {
       tabId: "hidden-shell-tab",
     });
     expect(stateRef.current.closedSessionIds).not.toContain("hidden-shell-tab");
+    // The removed bucket's editor tab loses its last UI handle — its
+    // cached Monaco model must be disposed.
+    expect(disposeEditorBuffer).toHaveBeenCalledWith("hidden-editor-tab");
+    expect(stateRef.current.closedSessionIds).not.toContain(
+      "hidden-editor-tab",
+    );
   });
 
   it("marks the row as removing before a delayed git removal resolves", async () => {
