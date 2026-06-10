@@ -1,10 +1,11 @@
-import type { MutableRefObject } from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Project, ProjectsState } from "../../../projects";
 import type { Workspace } from "../../../workspaces";
 import type { TabBucket } from "../types";
 
 export interface WorkspaceOperationDeps {
   projectsRef: MutableRefObject<ProjectsState>;
+  setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>;
   syncProjectsToState: () => void;

@@ -15,6 +15,10 @@ import {
   reconcileWorkspaces,
   updateWorkspacePendingState,
 } from "../../../workspaces";
+import {
+  closeTabsForRemovedWorkspace,
+  type TabCleanupDeps,
+} from "./tabCleanup";
 import type { ProjectLookups } from "./types";
 
 interface GitDeps {
@@ -25,6 +29,10 @@ interface GitDeps {
   persistProjects: () => Promise<void>;
   setActiveProjectById: (id: string) => boolean;
   activateWorkspace: (workspaceId: string | null) => void;
+  /** When present, reconcile-pruned workspaces (worktree removed outside
+   *  the app) get the same tab/bucket/session retirement as an in-app
+   *  removal. Optional so pure listing callers stay side-effect free. */
+  tabCleanup?: TabCleanupDeps;
 }
 
 export function resolveWorkspaceBaseBranch(
@@ -56,12 +64,16 @@ function trimTrailingSeparators(path: string): string {
 }
 
 function pathBasename(path: string): string {
-  const parts = trimTrailingSeparators(path).split(/[\\/]+/).filter(Boolean);
+  const parts = trimTrailingSeparators(path)
+    .split(/[\\/]+/)
+    .filter(Boolean);
   return parts[parts.length - 1] ?? "repo";
 }
 
 function safePathSegment(value: string, fallback: string): string {
-  return value.replace(/[^a-z0-9._-]/gi, "-").replace(/^-+|-+$/g, "") || fallback;
+  return (
+    value.replace(/[^a-z0-9._-]/gi, "-").replace(/^-+|-+$/g, "") || fallback
+  );
 }
 
 async function pickGeneratedWorkspaceBranch(
@@ -103,7 +115,10 @@ export function navigateToWorkspace(
 }
 
 export async function refreshProjectWorkspaces(
-  deps: Pick<GitDeps, "projectsRef" | "lookups" | "persistProjects">,
+  deps: Pick<
+    GitDeps,
+    "projectsRef" | "lookups" | "persistProjects" | "tabCleanup"
+  >,
   projectId: string,
 ): Promise<void> {
   const project = deps.lookups.findProject(projectId);
@@ -112,6 +127,30 @@ export async function refreshProjectWorkspaces(
     const listing = await gitWorktrees(project.path);
     const prior = deps.projectsRef.current.workspacesByProject[projectId] ?? [];
     const next = reconcileWorkspaces(projectId, prior, listing);
+    // A successful listing that no longer shows a previously-live
+    // workspace means its worktree was removed outside the app (a task
+    // runner archiving its branch, a manual `git worktree remove`, …).
+    // Retire its tabs, buckets, and session discoverability exactly like
+    // an in-app removal — otherwise the dropped workspace's sessions
+    // squat in whatever workspace is active and auto-restore can
+    // resurrect them later. Pending rows are skipped: they're still
+    // in-flight on the create/remove state machines.
+    if (deps.tabCleanup) {
+      const nextIds = new Set(next.map((w) => w.id));
+      const pruned = prior.filter(
+        (w) => !nextIds.has(w.id) && !w.isMain && !w.pendingState,
+      );
+      for (const workspace of pruned) {
+        const ps = deps.projectsRef.current;
+        closeTabsForRemovedWorkspace(
+          deps.tabCleanup,
+          projectId,
+          workspace.id,
+          workspace.path,
+          ps.activeId === projectId && ps.activeWorkspaceId === workspace.id,
+        );
+      }
+    }
     let nextState = setProjectWorkspaces(
       deps.projectsRef.current,
       projectId,
@@ -216,9 +255,7 @@ export async function createWorkspaceWithParams(
       deps.projectsRef.current.workspacesByProject[opts.projectId] ?? [];
     const live = list.find(
       (w) =>
-        w.id === pending.id ||
-        w.path === created.path ||
-        w.path === targetPath,
+        w.id === pending.id || w.path === created.path || w.path === targetPath,
     );
     navigateToWorkspace(deps, opts.projectId, live?.id ?? pending.id);
     return live?.path ?? created.path ?? targetPath;
