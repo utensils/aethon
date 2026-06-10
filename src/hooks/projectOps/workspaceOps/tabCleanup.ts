@@ -1,9 +1,11 @@
-import type { MutableRefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Tab } from "../../../types/tab";
 import { normalizeSessionPath, projectScopeBucketKey } from "../tabBuckets";
 import type { TabBucket } from "../types";
 
-interface TabCleanupDeps {
+export interface TabCleanupDeps {
+  setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>;
   syncRecentSessionsToState: () => void;
@@ -11,9 +13,71 @@ interface TabCleanupDeps {
   activateWorkspace: (workspaceId: string | null) => void;
 }
 
+const CLOSED_SESSION_IDS_CAP = 200;
+
 function tabCwdMatches(tab: Tab, path: string): boolean {
-  if (tab.kind !== "agent") return false;
-  return normalizeSessionPath(tab.cwd) === normalizeSessionPath(path);
+  const target = normalizeSessionPath(path);
+  if (!target) return false;
+  if (tab.kind === "agent") return normalizeSessionPath(tab.cwd) === target;
+  // Shell tabs anchor their PTY at shell.cwd; a removed worktree leaves
+  // them pointing at a deleted directory, so they go too.
+  if (tab.kind === "shell") {
+    return normalizeSessionPath(tab.shell?.cwd ?? tab.cwd) === target;
+  }
+  return false;
+}
+
+function readPersistedBuckets(
+  value: unknown,
+): Record<string, TabBucket> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, TabBucket>;
+}
+
+/** Agent-tab ids belonging to the removed workspace, gathered from every
+ *  store: its own bucket (matching cwd or not — the bucket IS the
+ *  workspace's tab set), plus matching-cwd tabs in any other bucket and
+ *  the persisted mirror. Must run BEFORE any mutation: the wasActive
+ *  bucket switch rewrites the removed workspace's bucket and would lose
+ *  these ids. */
+function collectRemovedSessionIds(
+  deps: Pick<TabCleanupDeps, "stateRef" | "tabBucketsRef">,
+  path: string,
+  removedBucketKey: string,
+): Set<string> {
+  const suppressed = new Set<string>();
+  const collect = (key: string, tabs: readonly Tab[] | undefined) => {
+    for (const tab of tabs ?? []) {
+      if (tab.kind !== "agent") continue;
+      if (key === removedBucketKey || tabCwdMatches(tab, path)) {
+        suppressed.add(tab.id);
+      }
+    }
+  };
+  for (const [key, bucket] of deps.tabBucketsRef.current.entries()) {
+    collect(key, bucket.tabs);
+  }
+  const persisted = readPersistedBuckets(
+    deps.stateRef.current.persistedTabBuckets,
+  );
+  if (persisted) {
+    for (const [key, bucket] of Object.entries(persisted)) {
+      collect(key, bucket.tabs);
+    }
+  }
+  return suppressed;
+}
+
+function filterBucket(bucket: TabBucket, path: string): TabBucket | null {
+  const keep = bucket.tabs.filter((tab) => !tabCwdMatches(tab, path));
+  if (keep.length === bucket.tabs.length) return bucket;
+  if (keep.length === 0) return null;
+  return {
+    tabs: keep,
+    activeTabId: keep.some((tab) => tab.id === bucket.activeTabId)
+      ? bucket.activeTabId
+      : keep[0]?.id,
+  };
 }
 
 function removeStoredTabsForWorkspacePath(
@@ -23,16 +87,13 @@ function removeStoredTabsForWorkspacePath(
 ): void {
   tabBucketsRef.current.delete(removedBucketKey);
   for (const [key, bucket] of tabBucketsRef.current.entries()) {
-    const tabs = bucket.tabs.filter((tab) => !tabCwdMatches(tab, path));
-    if (tabs.length === bucket.tabs.length) continue;
-    if (tabs.length === 0) {
+    const next = filterBucket(bucket, path);
+    if (next === bucket) continue;
+    if (next === null) {
       tabBucketsRef.current.delete(key);
       continue;
     }
-    const activeTabId = tabs.some((tab) => tab.id === bucket.activeTabId)
-      ? bucket.activeTabId
-      : tabs[0]?.id;
-    tabBucketsRef.current.set(key, { tabs, activeTabId });
+    tabBucketsRef.current.set(key, next);
   }
 }
 
@@ -40,12 +101,23 @@ function closeVisibleTabsForWorkspacePath(
   stateRef: MutableRefObject<Record<string, unknown>>,
   closeTabNow: (tabId: string) => void,
   path: string,
-): void {
+): Set<string> {
   const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-  const closing = tabs
-    .filter((tab) => tabCwdMatches(tab, path))
-    .map((tab) => tab.id);
-  for (const tabId of closing) closeTabNow(tabId);
+  const closing = tabs.filter((tab) => tabCwdMatches(tab, path));
+  for (const tab of closing) closeTabNow(tab.id);
+  return new Set(
+    closing.filter((tab) => tab.kind === "agent").map((tab) => tab.id),
+  );
+}
+
+export function mergeClosedSessionIds(
+  prev: unknown,
+  ids: Iterable<string>,
+): string[] {
+  const closedIds = Array.isArray(prev) ? (prev as string[]) : [];
+  return Array.from(new Set([...closedIds, ...ids])).slice(
+    -CLOSED_SESSION_IDS_CAP,
+  );
 }
 
 export function closeTabsForRemovedWorkspace(
@@ -55,12 +127,76 @@ export function closeTabsForRemovedWorkspace(
   path: string,
   wasActive: boolean,
 ): void {
-  closeVisibleTabsForWorkspacePath(deps.stateRef, deps.closeTabNow, path);
-  if (wasActive) deps.activateWorkspace(null);
-  removeStoredTabsForWorkspacePath(
-    deps.tabBucketsRef,
+  const removedBucketKey = projectScopeBucketKey(projectId, workspaceId);
+  const suppressed = collectRemovedSessionIds(deps, path, removedBucketKey);
+  const visibleAgentClosed = closeVisibleTabsForWorkspacePath(
+    deps.stateRef,
+    deps.closeTabNow,
     path,
-    projectScopeBucketKey(projectId, workspaceId),
   );
+  if (wasActive) deps.activateWorkspace(null);
+  removeStoredTabsForWorkspacePath(deps.tabBucketsRef, path, removedBucketKey);
+
+  // Purge the persisted-bucket mirror too — otherwise a webview reload
+  // rehydrates the removed workspace's tabs straight back into the ref.
+  // Read it AFTER the activate/close mutations so we purge the freshest
+  // mirror, but suppress with the ids collected up front.
+  const persisted = readPersistedBuckets(
+    deps.stateRef.current.persistedTabBuckets,
+  );
+  let nextPersisted: Record<string, TabBucket> | null = null;
+  if (persisted) {
+    let changed = false;
+    const result: Record<string, TabBucket> = {};
+    for (const [key, bucket] of Object.entries(persisted)) {
+      if (key === removedBucketKey) {
+        changed = true;
+        continue;
+      }
+      const original: TabBucket = {
+        tabs: bucket.tabs ?? [],
+        activeTabId: bucket.activeTabId,
+      };
+      const next = filterBucket(original, path);
+      if (next === original) {
+        result[key] = bucket;
+        continue;
+      }
+      changed = true;
+      if (next === null) continue;
+      result[key] = next;
+    }
+    if (changed) nextPersisted = result;
+  }
+
+  if (nextPersisted !== null || suppressed.size > 0) {
+    deps.setState((prev) => {
+      const result: Record<string, unknown> = { ...prev };
+      if (nextPersisted !== null) result.persistedTabBuckets = nextPersisted;
+      if (suppressed.size > 0) {
+        // Suppress the retired sessions from discovery-driven auto-restore.
+        // A deleted workspace's session must not resurrect into whatever
+        // workspace happens to be active later.
+        result.closedSessionIds = mergeClosedSessionIds(
+          prev.closedSessionIds,
+          suppressed,
+        );
+      }
+      return result;
+    });
+  }
+
+  // Retire background workers for tabs that were never visible —
+  // closeTabNow already sent tab_close for the visible ones. The bridge
+  // no-ops on unknown tab ids.
+  for (const tabId of suppressed) {
+    if (visibleAgentClosed.has(tabId)) continue;
+    invoke("agent_command", {
+      payload: JSON.stringify({ type: "tab_close", tabId }),
+    }).catch(() => {
+      /* best-effort teardown */
+    });
+  }
+
   deps.syncRecentSessionsToState();
 }

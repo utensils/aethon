@@ -24,6 +24,7 @@ import { editorLabelForPath } from "./tabOps/helpers";
 import { TAB_MIRROR_KEYS } from "./tabOps/constants";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { useProjectStore } from "./projectOps/projectStore";
+import { sweepOrphanWorkspaceTabs } from "./projectOps/orphanTabSweep";
 import { recordWorkspaceActivation } from "./statusPollScheduler";
 import {
   projectScopeBucketKey,
@@ -278,6 +279,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
 
   const workspaceOps = useWorkspaceOperations({
     projectsRef,
+    setState,
     stateRef,
     tabBucketsRef,
     syncProjectsToState,
@@ -315,6 +317,17 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
           return { ...prev, tabs };
         });
       }
+      // Retire tabs whose backing workspace no longer exists BEFORE
+      // auto-restore runs, so their session ids are suppressed by the
+      // time discovery could resurrect them.
+      sweepOrphanWorkspaceTabs({
+        setState,
+        stateRef,
+        projectsRef,
+        tabBucketsRef,
+        closeTabNow,
+        syncRecentSessionsToState,
+      });
       const scoped = scopedDiscoveredSessions(allDiscoveredSessionsRef.current);
       autoRestoreDiscoveredSessions(scoped, knownTabIds());
       syncRecentSessionsToState();
@@ -381,7 +394,8 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       `${t.editor?.filePath}::${t.editor?.diff ? "d" : "e"}`;
     const activeRestored = persisted.activeFilePath
       ? restored.find(
-          (t) => t.editor?.filePath === persisted.activeFilePath && !t.editor?.diff,
+          (t) =>
+            t.editor?.filePath === persisted.activeFilePath && !t.editor?.diff,
         )
       : undefined;
     setState((prev) => {

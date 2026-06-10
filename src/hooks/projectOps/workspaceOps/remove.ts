@@ -6,25 +6,18 @@ import {
   removeWorkspaceFromList,
   type Workspace,
 } from "../../../workspaces";
-import { closeTabsForRemovedWorkspace } from "./tabCleanup";
-import type {
-  ProjectLookups,
-  WorkspaceOperationDeps,
-  WorkspaceRemovalPrompts,
-} from "./types";
+import {
+  closeTabsForRemovedWorkspace,
+  type TabCleanupDeps,
+} from "./tabCleanup";
+import type { ProjectLookups, WorkspaceRemovalPrompts } from "./types";
 
 interface RemoveDeps {
   projectsRef: MutableRefObject<ProjectsState>;
   lookups: ProjectLookups;
   syncProjectsToState: () => void;
   persistProjects: () => Promise<void>;
-  tabCleanupDeps: {
-    stateRef: WorkspaceOperationDeps["stateRef"];
-    tabBucketsRef: WorkspaceOperationDeps["tabBucketsRef"];
-    syncRecentSessionsToState: WorkspaceOperationDeps["syncRecentSessionsToState"];
-    closeTabNow: WorkspaceOperationDeps["closeTabNow"];
-    activateWorkspace: (workspaceId: string | null) => void;
-  };
+  tabCleanupDeps: TabCleanupDeps;
   workspacePrompts: WorkspaceRemovalPrompts;
 }
 

@@ -46,10 +46,20 @@ export function useWorkspaceOperations(
       workspaceId,
     );
 
+  const tabCleanupDeps = {
+    setState: deps.setState,
+    stateRef: deps.stateRef,
+    tabBucketsRef: deps.tabBucketsRef,
+    syncRecentSessionsToState: deps.syncRecentSessionsToState,
+    closeTabNow: deps.closeTabNow,
+    activateWorkspace: activateWorkspaceBound,
+  };
+
   const refreshDeps = {
     projectsRef: deps.projectsRef,
     lookups,
     persistProjects: deps.persistProjects,
+    tabCleanup: tabCleanupDeps,
   };
 
   const gitDeps = {
@@ -60,6 +70,7 @@ export function useWorkspaceOperations(
     persistProjects: deps.persistProjects,
     setActiveProjectById: deps.setActiveProjectById,
     activateWorkspace: activateWorkspaceBound,
+    tabCleanup: tabCleanupDeps,
   };
 
   const dismissPendingWorkspaceBound = (workspaceId: string): void =>
@@ -110,13 +121,7 @@ export function useWorkspaceOperations(
           lookups,
           syncProjectsToState: deps.syncProjectsToState,
           persistProjects: deps.persistProjects,
-          tabCleanupDeps: {
-            stateRef: deps.stateRef,
-            tabBucketsRef: deps.tabBucketsRef,
-            syncRecentSessionsToState: deps.syncRecentSessionsToState,
-            closeTabNow: deps.closeTabNow,
-            activateWorkspace: activateWorkspaceBound,
-          },
+          tabCleanupDeps,
           workspacePrompts: deps.workspacePrompts,
         },
         workspaceId,

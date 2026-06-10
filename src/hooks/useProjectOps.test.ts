@@ -975,7 +975,9 @@ describe("useProjectOps workspace refresh", () => {
     });
 
     expect(projectsRef.current.activeWorkspaceId).toBeNull();
-    expect(projectsRef.current.workspacesByProject["project-1"]).toHaveLength(1);
+    expect(projectsRef.current.workspacesByProject["project-1"]).toHaveLength(
+      1,
+    );
     expect(
       projectsRef.current.workspacesByProject["project-1"]?.[0],
     ).toMatchObject({
@@ -983,6 +985,86 @@ describe("useProjectOps workspace refresh", () => {
       branch: "main",
       isMain: true,
     });
+  });
+
+  it("retires tabs and sessions for a workspace pruned by an external worktree removal", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_worktrees") {
+        return Promise.resolve([
+          {
+            path: "/projects/aethon",
+            branch: "main",
+            head: "abc123",
+            isMain: true,
+            locked: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const externallyRemoved = {
+      id: "wt-archived",
+      projectId: "project-1",
+      path: "/projects/aethon-archived",
+      branch: "archived",
+      isMain: false,
+    };
+    const makeInitial = () =>
+      makeProjectsState({
+        activeId: "project-1",
+        activeWorkspaceId: "wt-archived",
+        workspacesByProject: { "project-1": [externallyRemoved] },
+      });
+    const { result, projectsRef, stateRef, closeTabNow } =
+      renderProjectOps(makeInitial());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    projectsRef.current = makeInitial();
+    const removedKey = projectScopeBucketKey("project-1", "wt-archived");
+    stateRef.current = {
+      activeTabId: "visible-archived-tab",
+      closedSessionIds: [],
+      tabs: [
+        nonEmptyAgentTab(
+          "visible-archived-tab",
+          "Archived task",
+          "project-1",
+          "/projects/aethon-archived",
+        ),
+      ],
+    };
+    result.current.tabBucketsRef.current.set(removedKey, {
+      activeTabId: "hidden-archived-tab",
+      tabs: [
+        nonEmptyAgentTab(
+          "hidden-archived-tab",
+          "Hidden archived task",
+          "project-1",
+          "/projects/aethon-archived",
+        ),
+      ],
+    });
+
+    await act(async () => {
+      await result.current.refreshProjectWorkspaces("project-1");
+    });
+
+    // The reconcile prune retires the workspace's tabs exactly like an
+    // in-app removal: visible tab closed, stored bucket dropped, hidden
+    // session suppressed from auto-restore, worker told to retire.
+    expect(closeTabNow).toHaveBeenCalledWith("visible-archived-tab");
+    expect(result.current.tabBucketsRef.current.has(removedKey)).toBe(false);
+    expect(stateRef.current.closedSessionIds).toContain("hidden-archived-tab");
+    expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "tab_close",
+        tabId: "hidden-archived-tab",
+      }),
+    });
+    expect(projectsRef.current.activeWorkspaceId).toBeNull();
   });
 });
 
@@ -1107,9 +1189,7 @@ describe("useProjectOps workspace creation", () => {
       base: "origin/main",
     });
     expect(addCall?.[1]?.branch).toMatch(/^feat\//);
-    expect(addCall?.[1]?.targetPath).toMatch(
-      /^\/tmp\/aethon\/aethon\/feat-/,
-    );
+    expect(addCall?.[1]?.targetPath).toMatch(/^\/tmp\/aethon\/aethon\/feat-/);
     expect(created).toBe(addCall?.[1]?.targetPath);
   });
 
@@ -1255,9 +1335,7 @@ describe("useProjectOps workspace removal", () => {
       worktreePath: "/projects/aethon-fix-issue",
       force: false,
     });
-    await waitFor(() =>
-      expect(closeTabNow).toHaveBeenCalledWith("issue-tab"),
-    );
+    await waitFor(() => expect(closeTabNow).toHaveBeenCalledWith("issue-tab"));
     expect(
       result.current.tabBucketsRef.current.has(
         projectScopeBucketKey("project-1", "wt-issue"),
@@ -1271,6 +1349,95 @@ describe("useProjectOps workspace removal", () => {
         ),
       ).toBe(false),
     );
+  });
+
+  it("suppresses removed-workspace sessions and closes matching shell tabs", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation(() => Promise.resolve(undefined));
+    const workspace = {
+      id: "wt-issue",
+      projectId: "project-1",
+      path: "/projects/aethon-fix-issue",
+      branch: "fix/issue",
+      isMain: false,
+    };
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorkspaceId: null,
+      workspacesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          workspace,
+        ],
+      },
+    });
+    const { result, projectsRef, stateRef, closeTabNow } =
+      renderProjectOps(initial);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+    const removedKey = projectScopeBucketKey("project-1", "wt-issue");
+    stateRef.current = {
+      activeTabId: "shell-tab",
+      closedSessionIds: [],
+      tabs: [
+        {
+          ...makeEmptyTab("shell-tab", "Shell", "project-1", "shell"),
+          cwd: "/projects/aethon-fix-issue",
+        },
+      ],
+      persistedTabBuckets: {
+        [removedKey]: {
+          activeTabId: "persisted-issue-tab",
+          tabs: [
+            {
+              ...makeEmptyTab("persisted-issue-tab", "Persisted"),
+              projectId: "project-1",
+              cwd: "/projects/aethon-fix-issue",
+            },
+          ],
+        },
+      },
+    };
+    result.current.tabBucketsRef.current.set(removedKey, {
+      activeTabId: "hidden-issue-tab",
+      tabs: [
+        {
+          ...makeEmptyTab("hidden-issue-tab", "Hidden issue"),
+          projectId: "project-1",
+          cwd: "/projects/aethon-fix-issue",
+        },
+      ],
+    });
+
+    await act(async () => {
+      await result.current.removeWorkspaceById("wt-issue", { confirmed: true });
+    });
+
+    // The shell tab anchored in the removed worktree closes with it.
+    await waitFor(() => expect(closeTabNow).toHaveBeenCalledWith("shell-tab"));
+    // Hidden bucket sessions are suppressed from discovery auto-restore
+    // and their background workers are told to retire.
+    await waitFor(() =>
+      expect(stateRef.current.closedSessionIds).toContain("hidden-issue-tab"),
+    );
+    expect(stateRef.current.closedSessionIds).toContain("persisted-issue-tab");
+    expect(
+      (stateRef.current.persistedTabBuckets as Record<string, unknown>)[
+        removedKey
+      ],
+    ).toBeUndefined();
+    expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({ type: "tab_close", tabId: "hidden-issue-tab" }),
+    });
   });
 
   it("marks the row as removing before a delayed git removal resolves", async () => {
@@ -1461,7 +1628,8 @@ describe("useProjectOps workspace removal", () => {
         return Promise.reject(
           new Error("workspace not tracked: /projects/aethon-fix-issue"),
         );
-      if (cmd === "git_worktree_remove_orphan") return Promise.resolve(undefined);
+      if (cmd === "git_worktree_remove_orphan")
+        return Promise.resolve(undefined);
       return Promise.resolve(undefined);
     });
     const initial = makeProjectsState({
@@ -1542,15 +1710,18 @@ describe("useProjectOps workspace removal", () => {
       },
     });
     const promptOrphanCleanup = vi.fn(() => Promise.resolve(false));
-    const { result, projectsRef, workspacePrompts } = renderProjectOps(initial, {
-      workspacePrompts: {
-        promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
-        promptForceRemove: vi.fn(() => Promise.resolve(true)),
-        promptOrphanCleanup,
-        notifyCannotRemoveMain: vi.fn(),
-        notifyFailure: vi.fn(),
+    const { result, projectsRef, workspacePrompts } = renderProjectOps(
+      initial,
+      {
+        workspacePrompts: {
+          promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
+          promptForceRemove: vi.fn(() => Promise.resolve(true)),
+          promptOrphanCleanup,
+          notifyCannotRemoveMain: vi.fn(),
+          notifyFailure: vi.fn(),
+        },
       },
-    });
+    );
     await act(async () => {
       await Promise.resolve();
     });

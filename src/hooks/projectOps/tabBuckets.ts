@@ -40,16 +40,14 @@ function isSameOrChildPath(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
 
-function pathForTab(tab: Tab): string | undefined {
+export function pathForTab(tab: Tab): string | undefined {
   if (tab.kind === "shell") return tab.shell?.cwd ?? tab.cwd;
-  if (tab.kind === "editor") return tab.editor?.rootPath ?? tab.editor?.filePath;
+  if (tab.kind === "editor")
+    return tab.editor?.rootPath ?? tab.editor?.filePath;
   return tab.cwd;
 }
 
-export function tabBucketKeyForTab(
-  projects: ProjectsState,
-  tab: Tab,
-): string {
+export function tabBucketKeyForTab(projects: ProjectsState, tab: Tab): string {
   if (!tab.projectId) return NO_PROJECT_KEY;
   const resolved = workspaceIdForCwd(projects, pathForTab(tab), tab.projectId);
   return projectScopeBucketKey(tab.projectId, resolved ?? null);
