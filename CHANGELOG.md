@@ -4,6 +4,30 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.9.0](https://github.com/utensils/aethon/compare/v0.8.1...v0.9.0) (2026-06-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **workspaces:** first-class workspaces — concurrency fixes, instant switching, terminology ([#259](https://github.com/utensils/aethon/issues/259))
+
+### Bug Fixes
+
+* **agent:** read pre-v5 worktree keys in the bridge startup cwd parser ([#261](https://github.com/utensils/aethon/issues/261)) ([cfae7b3](https://github.com/utensils/aethon/commit/cfae7b36cf5a0c6eea5d55520af283262702594e))
+* **agent:** skip startup devshell prepare before the frontend handshake ([#262](https://github.com/utensils/aethon/issues/262)) ([d8dedfc](https://github.com/utensils/aethon/commit/d8dedfc660ccc7bf2b028a299e3819b4cfabc5e9))
+* **frontend:** address Copilot review findings from [#259](https://github.com/utensils/aethon/issues/259) ([#260](https://github.com/utensils/aethon/issues/260)) ([d16c67d](https://github.com/utensils/aethon/commit/d16c67d94e4b1fab652eaf6250da838bffc9a3c2))
+* preserve live agent activity until turn end ([#254](https://github.com/utensils/aethon/issues/254)) ([a2ceef8](https://github.com/utensils/aethon/commit/a2ceef86014f8fe9789798dc8110a66bec030e29))
+* run project agents and shells inside devshells ([#256](https://github.com/utensils/aethon/issues/256)) ([81ef244](https://github.com/utensils/aethon/commit/81ef244528b5fcb3f9e206af0906b1053a1d406f))
+* stabilize agent sessions and worktree routing ([ecf1aa6](https://github.com/utensils/aethon/commit/ecf1aa6a0278daf7e7d50df0ee0f3daf057ba725))
+* **workspaces:** close hidden shell PTYs when their workspace is retired ([#264](https://github.com/utensils/aethon/issues/264)) ([0d3255e](https://github.com/utensils/aethon/commit/0d3255eddbdab2f21342f94a031f7fc718579186))
+* **workspaces:** dispose Monaco buffers for editor tabs in dropped buckets ([#265](https://github.com/utensils/aethon/issues/265)) ([6ea69e7](https://github.com/utensils/aethon/commit/6ea69e74852164d70d30c72aae9a3954b3b5440c))
+* **workspaces:** retire tabs and sessions when a workspace is removed or externally pruned ([#263](https://github.com/utensils/aethon/issues/263)) ([48aecec](https://github.com/utensils/aethon/commit/48aecece9f798bd76d625fb4b203090cea2b3ade))
+
+
+### Refactors
+
+* **workspaces:** first-class workspaces — concurrency fixes, instant switching, terminology ([#259](https://github.com/utensils/aethon/issues/259)) ([1e51c4c](https://github.com/utensils/aethon/commit/1e51c4cab58bd6c450cb03b3904a6a0bc373feef))
+
 ## [0.8.1](https://github.com/utensils/aethon/compare/v0.8.0...v0.8.1) (2026-06-06)
 
 
